@@ -1,0 +1,114 @@
+# Installation guide
+
+
+```bash
+conda install -c conda-forge root libframe healpix_cxx
+conda install -c conda-forge root lal lalinspiral lalburst lalmetaio lalsimulation framel cfitsio
+```
+
+Add conda path to the `cmake/FindHealpix.cmake`
+```bash
+find_path(HEALPIX_INCLUDE_DIR
+NAMES
+        healpix_base.h
+PATHS
+        ${HEALPIX_PATH}/include
+        ${HEALPIX_PATH}/include/healpix_cxx
+        ${HEALPIX_CXX_DIR}/Healpix_cxx
+		$ENV{CONDA_PREFIX}/include
+		$ENV{CONDA_PREFIX}/include/healpix_cxx
+		/user/local/include/healpix_cxx
+        /usr/include/healpix_cxx
+        /usr/local/include
+        /usr/include
+)
+find_path(HEALPIX_SUP_DIR
+NAMES
+        alm.h
+PATHS
+        ${HEALPIX_PATH}/include
+        ${HEALPIX_PATH}/include/healpix_cxx
+        ${HEALPIX_CXX_DIR}/cxxsupport
+		$ENV{CONDA_PREFIX}/include
+		$ENV{CONDA_PREFIX}/include/healpix_cxx
+        /usr/local/include/healpix_cxx
+        /usr/include/healpix_cxx
+        /usr/local/include
+        /usr/include
+)
+```
+
+and comment out the line 78 in file `CMakeLists.txt` to prevent undefined Healpix symbols in linking
+
+```bash
+# pkg_check_modules(HEALPIX IMPORTED_TARGET "healpix_cxx")
+# if(NOT HEALPIX_FOUND)
+   find_package(Healpix REQUIRED)
+# else()
+#    set(HEALPIX_INCLUDE_DIR ${HEALPIX_INCLUDE_DIRS})
+# endif()
+```
+
+Compile `watasm.S` for your own platform
+
+```bash
+cd wat && gcc -c watasm.S && cd ..
+```
+
+Replace line 52 and from line 72 to end in `wat/CMakeLists.txt` with
+```bash
+# line 52
+list(APPEND WAT_SRC watasm.o)
+
+# line 72 - end
+if(APPLE)
+   set(lib_ext dylib)
+else()
+   set(lib_ext so)
+endif()
+
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ln -sf wavelet-${XIFO}x.${lib_ext} wavelet.so
+    COMMAND ln -sf wavelet.so libwavelet.so
+    WORKING_DIRECTORY lib
+)
+install(FILES ${WAT_HDRS}
+        TYPE INCLUDE)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/lib/wavelet-${XIFO}x.${lib_ext}
+              ${CMAKE_CURRENT_BINARY_DIR}/lib/wavelet.so
+              ${CMAKE_CURRENT_BINARY_DIR}/lib/libwavelet.so
+              ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${PROJECT_NAME}_rdict.pcm
+        TYPE LIB)
+```
+
+
+Add flag in `tools/cwb/CMakeLists.txt` to prevent `Undefined Symbol: CWB_Plugin`
+```bash
+set(CMAKE_SHARED_LINKER_FLAGS "-undefined dynamic_lookup")
+``` 
+
+
+Run
+```bash
+bash ./build.sh
+```
+<!-- Use llvm, not gcc -->
+<!-- ```bash
+export CC=gcc-11
+export CXX=gcc-11
+alias gcc=/usr/local/opt/llvm/bin/clang
+alias g++=/usr/local/opt/llvm/bin/clang
+``` -->
+
+<!-- In Makefile, do not use version below c++17. Change to llvm (default clang doesn't support openmpi, gcc doesn't support ...)
+
+There is a addition -I in tools/toolbox Makefile if not all options are provided
+
+In file `tools/frdisplay/Makefile`, the `${HOME_FRLIB}/{UNAME}/libFrame.a` should be change to `${HOME_FRLIB}/lib/libFrame.a` and
+
+```bash
+export HOME_FRLIB="/usr/local/anaconda3/envs/cwb/lib"
+```
+
+Still have problem, skipping. -->
