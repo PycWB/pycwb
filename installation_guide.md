@@ -93,6 +93,18 @@ Run
 ```bash
 bash ./build.sh
 ```
+
+
+Install addtional package
+```bash
+# install sky map
+git clone https://github.com/reedessick/skymap_statistics.git
+. setup.sh
+
+# install baudline
+
+# install aladin
+```
 <!-- Use llvm, not gcc -->
 <!-- ```bash
 export CC=gcc-11

@@ -20,6 +20,7 @@ import os
 os.environ['LD_LIBRARY_PATH'] = f"{CWB_INSTALL}/lib" # TODO: add previous LD path
 
 from ROOT import gROOT, gSystem, gStyle
+import ROOT
 
 # include paths
 include_path = [f"{CWB_INSTALL}/include"]
@@ -63,7 +64,7 @@ for lib in tools_lib:
 
 # declare ACLiC includes environment 
 for inc in include_path:
-	gSystem.AddIncludePath(inc)
+	gSystem.AddIncludePath(f"-I\"{inc}\"")
 
 # declare ACLiCFlag options 
 flag = "-D_USE_ROOT -fPIC -Wno-deprecated -mavx -Wall -Wno-unknown-pragmas -fexceptions -O2 -D__STDC_CONSTANT_MACROS"
@@ -86,3 +87,21 @@ gStyle.SetPalette(1,0);
 gStyle.SetNumberContours(256);
 
 gROOT.ForceStyle(0);
+
+
+envs = {
+	"HOME_WAT_FILTERS": "path",
+	"HOME_BAUDLINE": "baudline", # independent, path of software
+	"HOME_ALADIN": "aladin", # independent, path of software
+	"HOME_SKYMAP_LIB": "path", # required
+	"CWB_USER_URL": "url", # report url
+	"WWW_PUBLIC_DIR": "~/Downloads/tmp/public_html/reports",
+	"CONDOR_LOG_DIR": "~/Downloads/tmp/condor",
+	"NODE_DATA_DIR": "~/Downloads/tmp/node",
+	"CWB_ANALYSIS": '2G'
+	}
+
+for key in envs.keys():
+	os.environ[key] = envs[key]
+
+gROOT.LoadMacro(f"{CWB_INSTALL}/etc/cwb/macros/cwb2G_parameters.C")
