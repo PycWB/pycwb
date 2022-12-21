@@ -11,8 +11,8 @@ _USE_ICC = False # optional
 _USE_EBBH = False # optional
 HOME_CVODE = ""
 
-CWB_INSTALL = "~/Project/Physics/cwb/cwb_source/tools/install"
-CWB_SOURCE = "~/Project/Physics/cwb/cwb_source" # For loading macros
+CWB_INSTALL = "/Users/yumengxu/Project/Physics/cwb/cwb_source/tools/install" # CAUTION: Do not use relative path here!
+CWB_SOURCE = "/Users/yumengxu/Project/Physics/cwb/cwb_source" # For loading macros
 
 import platform
 import os
@@ -98,10 +98,16 @@ envs = {
 	"WWW_PUBLIC_DIR": "~/Downloads/tmp/public_html/reports",
 	"CONDOR_LOG_DIR": "~/Downloads/tmp/condor",
 	"NODE_DATA_DIR": "~/Downloads/tmp/node",
-	"CWB_ANALYSIS": '2G'
+	"CWB_ANALYSIS": '2G',
+	"CWB_PARAMETERS_FILE": f"{CWB_INSTALL}/etc/cwb/macros/cwb2G_parameters.C",
+	"CWB_ROOTLOGON_FILE": "",
+	"CWB_UPARAMETERS_FILE": "",
+	"CWB_EPARAMETERS_FILE": "",
 	}
+
+envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} {envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
 
 for key in envs.keys():
 	os.environ[key] = envs[key]
 
-gROOT.LoadMacro(f"{CWB_INSTALL}/etc/cwb/macros/cwb2G_parameters.C")
+gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
