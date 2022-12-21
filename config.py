@@ -16,17 +16,6 @@ import platform
 import os
 import configparser
 
-# read config
-config = configparser.ConfigParser(inline_comment_prefixes='#')
-config.read('../open_cWB/config.ini')
-
-# set LD search path before loading ROOT
-os.environ['LD_LIBRARY_PATH'] = f"{config['CWB']['CWB_INSTALL']}/lib" # TODO: add previous LD path
-
-# load ROOT
-from ROOT import gROOT, gSystem, gStyle
-import ROOT
-
 def ROOT_logon(gROOT, gSystem, gStyle, config):
 	################
 	# set include paths for compiling
@@ -120,12 +109,31 @@ def load_envs(config):
 	for key in envs.keys():
 		os.environ[key] = envs[key]
 
-def initialize_parameters(gROOT):
+	return envs
+
+def initialize_parameters(gROOT, envs):
 	gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
 
 
-ROOT_logon(gROOT, gSystem, gStyle, config)
-load_envs(config)
-initialize_parameters(gROOT)
+def config(config_file='../open_cWB/config.ini'):
+	# read config
+	config = configparser.ConfigParser(
+		interpolation=configparser.ExtendedInterpolation(),
+		inline_comment_prefixes='#')
+	config.optionxform = str
+	config.read(config_file)
+
+	# set LD search path before loading ROOT
+	os.environ['LD_LIBRARY_PATH'] = f"{config['CWB']['CWB_INSTALL']}/lib" # TODO: add previous LD path
+
+	# load ROOT
+	from ROOT import gROOT, gSystem, gStyle
+	import ROOT
+
+	ROOT_logon(gROOT, gSystem, gStyle, config)
+	envs = load_envs(config)
+	initialize_parameters(gROOT, envs)
+
+	return ROOT
 
 
