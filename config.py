@@ -98,6 +98,9 @@ def ROOT_logon(gROOT, gSystem, gStyle, config):
 
 def load_envs(config):
 	envs = {}
+	for key in config['CWB'].keys():
+		envs[key] = config['CWB'][key]
+
 	for key in config['TOOLS'].keys():
 		envs[key] = config['TOOLS'][key]
 
@@ -115,7 +118,7 @@ def initialize_parameters(gROOT, envs):
 	gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
 
 
-def config(config_file='../open_cWB/config.ini'):
+def init(config_file='../pycWB/config.ini'):
 	# read config
 	config = configparser.ConfigParser(
 		interpolation=configparser.ExtendedInterpolation(),
@@ -134,6 +137,6 @@ def config(config_file='../open_cWB/config.ini'):
 	envs = load_envs(config)
 	initialize_parameters(gROOT, envs)
 
-	return ROOT
+	return ROOT, gROOT, gSystem, gStyle, config
 
 
