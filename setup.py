@@ -97,22 +97,30 @@ def ROOT_logon(gROOT, gSystem, gStyle, config):
 
 
 def load_envs(config):
-	envs = {}
+	envs = {
+		'LALINSPINJ_EXEC': 'lalapps_inspinj'
+	}
 	for key in config['CWB'].keys():
 		envs[key] = config['CWB'][key]
 
 	for key in config['TOOLS'].keys():
 		envs[key] = config['TOOLS'][key]
 
+	for key in config['DUMB'].keys():
+		envs[key] = config['DUMB'][key]
+
 	for key in config['PROJECT'].keys():
 		envs[key] = config['PROJECT'][key]
 
-	envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} {envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
+	# envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} {envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
+
+	envs['CWB_PARMS_FILES'] = envs['CWB_ROOTLOGON_FILE']
 
 	for key in envs.keys():
 		os.environ[key] = envs[key]
 
 	return envs
+
 
 def initialize_parameters(gROOT, envs):
 	gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
