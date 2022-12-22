@@ -109,6 +109,9 @@ def load_envs(config):
 	for key in config['DUMB'].keys():
 		envs[key] = config['DUMB'][key]
 
+	for key in config['DERIVED'].keys():
+		envs[key] = config['DERIVED'][key]
+		
 	for key in config['MACROS'].keys():
 		envs[key] = config['MACROS'][key]
 
