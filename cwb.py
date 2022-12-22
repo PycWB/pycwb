@@ -16,6 +16,7 @@ def cwb_inet2G(ROOT, gROOT, config, run_id, f_name, j_stage, u_name = "", eced =
 		"FINISH": 8,
 	}
 
+	os.environ['CWB_JOBID'] = str(run_id)
 	if inet_option:
 		os.environ['CWB_INET_OPTIONS'] = inet_option
 	ROOT.cwb_inet2G(run_id, f_name, CWB_STAGE[j_stage], u_name, eced)

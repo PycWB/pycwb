@@ -109,12 +109,15 @@ def load_envs(config):
 	for key in config['DUMB'].keys():
 		envs[key] = config['DUMB'][key]
 
+	for key in config['MACROS'].keys():
+		envs[key] = config['MACROS'][key]
+
 	for key in config['PROJECT'].keys():
 		envs[key] = config['PROJECT'][key]
 
 	# envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} {envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
 
-	envs['CWB_PARMS_FILES'] = envs['CWB_ROOTLOGON_FILE']
+	envs['CWB_PARMS_FILES'] = envs['CWB_PARAMETERS_FILE']
 
 	for key in envs.keys():
 		os.environ[key] = envs[key]
