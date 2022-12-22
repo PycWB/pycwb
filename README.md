@@ -2,9 +2,9 @@
 
 This is a project to simplify the installation of `cWB` and run `cWB` with python.
 
-Check [installation guide](./0.installation_guide) to simply install `cWB` with conda
+Check [installation guide](./0.installation_guide.md) to simply install `cWB` with conda
 
-The [initialisation guide](1.initialisation_guide) can help you understand the detail of the environment setup and library loading with python. This processing is coded in the class `pycWB`.  If you are not interested in the detail, you can directly initialize the `cWB` with
+The [initialisation guide](1.initialisation_guide.md) can help you understand the detail of the environment setup and library loading with python. This processing is coded in the class `pycWB`.  If you are not interested in the detail, you can directly initialize the `cWB` with
 
 ```python
 import sys
