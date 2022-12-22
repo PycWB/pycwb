@@ -10,6 +10,6 @@ class pycWB:
 		self.gStyle = gStyle
 		self.config = config
 
-	def cwb_inet2G(self, run_id, f_name, j_stage, u_name = "", eced = False):
-		cwb.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, f_name, j_stage, u_name, eced)
+	def cwb_inet2G(self, run_id, f_name, j_stage, u_name = "", eced = False, inet_option=None):
+		cwb.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, f_name, j_stage, u_name, eced, inet_option)
 
