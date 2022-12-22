@@ -18,5 +18,5 @@ gROOT = cwb.gROOT
 
 The [Example : interactive multistages 2G analysis](./2.test_interactive_multistages_2G_analysis.md) contains a full example to run the `pycWB`
 
-> The compatibility of `ROOT TBrower` with macos still need to be fixed
+> The compatibility of `ROOT TBroswer` with macos still need to be fixed
 > This project is tested with macos, linux should be fine in princple.
