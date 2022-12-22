@@ -13,3 +13,7 @@ class pycWB:
 	def cwb_inet2G(self, run_id, f_name, j_stage, u_name = "", eced = False, inet_option=None):
 		cwb.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, f_name, j_stage, u_name, eced, inet_option)
 
+
+	def cwb_load_macro(self, file_name):
+		self.gROOT.LoadMacro(self.config['MACROS']['CWB_MACROS'] + "/" + file_name)
+
