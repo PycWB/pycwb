@@ -27,3 +27,6 @@ an analysis with `yaml` config file.
 
 > The reason to choose `yaml` is that it can support more complicated types compare to `ini` and 
 > much close to python compare to `json`
+> 
+> "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`
+> and converted to C code to run with `pyROOT`
