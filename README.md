@@ -16,10 +16,13 @@ import sys
 sys.path.append('..') # add pycWB parent path
 from pycWB import pycWB
 
-cwb = pycWB('../pycWB/config/config.ini')
+cwb = pycWB('../pycWB/config/config.ini') # config file path
 ROOT = cwb.ROOT
 gROOT = cwb.gROOT
 ```
+
+Required directories will be automatically created unless you initialise 
+with `pycWB('config.ini', create_dirs=False)`
 
 ## Run analysis
 
@@ -38,6 +41,10 @@ The [Example : interactive multistages 2G analysis](./docs/2.test_interactive_mu
 If you don't want to setup a cwb run with c file `user_parameters.c`, 
 you can follow [YAML Example : interactive multistages 2G analysis](./docs/3.run_pycwb_with_yaml_config.md) to setup
 an analysis with `yaml` config file.
+
+```python
+cwb.cwb_inet2G(job_id,'user_parameters.yaml', 'FULL')
+```
 
 > The reason to choose `yaml` is that it can support more complicated types compare to `ini` and 
 > much close to python compare to `json`

@@ -5,7 +5,7 @@ import os, glob
 
 
 class pycWB:
-    def __init__(self, config_file):
+    def __init__(self, config_file, create_dirs=True):
         ROOT, gROOT, gSystem, gStyle, config = setup.init(config_file)
         self.ROOT = ROOT
         self.gROOT = gROOT
@@ -13,8 +13,11 @@ class pycWB:
         self.gStyle = gStyle
         self.config = config
 
+        if create_dirs:
+            self.setup_project_dirs()
+
     def cwb_inet2G(self, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
-        _, ext =  os.path.splitext(f_name)
+        _, ext = os.path.splitext(f_name)
         if ext.lower() == '.c':
             pass
         elif ext.lower() == '.yaml':
