@@ -1,0 +1,65 @@
+###### search ######
+analysis: "2G"
+online: False
+cfg_search: "r"
+optim: False
+fLow: 32.
+fHigh: 512.
+
+
+
+###### network configuration ######
+ifo: ["L1","H1","V1"]
+refIFO: "L1"
+#nIFO: 3 # derive from ifo?
+
+###### cWB production thresholds & regulators ######
+
+Acore: 1.5
+subnet: 0.6
+netRHO: 5
+Tgap: 0.5
+
+# regulators
+delta: 0.05
+cfg_gamma: 0.5
+
+###### run configuration ######
+
+# time shift analysis lags
+lagSize: 1
+lagOff: 0
+
+#  job segments
+segTHR: 0
+segLen: 200
+segMLS: 30
+
+channelNamesRaw: ["L1:SIM-STRAIN", "H1:SIM-STRAIN", "V1:SIM-STRAIN"]
+channelNamesMDC: ["L1:GW-H", "H1:GW-H", "V1:GW-H"]
+frFiles: ["input/L1.frames", "input/H1.frames", "input/V1.frames", "input/L1H1V1-NSNS-Log.frl"]
+
+DQF: [
+  [ "L1" ,"input/inspiral.in", CWB_CAT1, 0., False, False ],
+  [ "L1" ,"input/inspiral.in", CWB_CAT2, 0., False, False ],
+  [ "H1" ,"input/inspiral.in", CWB_CAT1, 0., False, False ],
+  [ "H1" ,"input/inspiral.in", CWB_CAT2, 0., False, False ],
+  [ "V1" ,"input/inspiral.in", CWB_CAT1, 0., False, False ],
+  [ "V1" ,"input/inspiral.in", CWB_CAT2, 0., False, False ]
+]
+
+gap: 100 # MDC signal must be inside Tinj +/- gap/2
+
+simulation: 2
+nfactor: 1
+factors: [120.]   # network snr
+
+
+
+levelR: 4      # resampling level
+
+healpix: 7
+
+plugin: "plugins/CWB_Plugin_MDC_OTF.C"
+configPlugin: "plugins/CWB_Plugin_MDC_OTF_Config_NSNS.C"
+
