@@ -20,3 +20,10 @@ The [Example : interactive multistages 2G analysis](./2.test_interactive_multist
 
 > The compatibility of `ROOT TBroswer` with macos still need to be fixed
 > This project is tested with macos, linux should be fine in princple.
+
+If you don't want to setup a cwb run with c file `user_parameters.c`, 
+you can follow [YAML Example : interactive multistages 2G analysis](./3.run_pycwb_with_yaml_config.md) to setup
+an analysis with `yaml` config file.
+
+> The reason to choose `yaml` is that it can support more complicated types compare to `ini` and 
+> much close to python compare to `json`
