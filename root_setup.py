@@ -84,16 +84,16 @@ def ROOT_logon(gROOT, gSystem, gStyle, config):
 	################
 	# additional setup
 	################
-	gSystem.SetFlagsOpt(flag);
+	gSystem.SetFlagsOpt(flag)
 
 	# set the offset for TimeDisplay, the seconds declared in xaxis
 	# are refered to "1980-01-06 00:00:00 UTC Sun" -> GPS = 0
-	gStyle.SetTimeOffset(315964790); 
+	gStyle.SetTimeOffset(315964790)
 
-	gStyle.SetPalette(1,0);
-	gStyle.SetNumberContours(256);
+	gStyle.SetPalette(1,0)
+	gStyle.SetNumberContours(256)
 
-	gROOT.ForceStyle(0);
+	gROOT.ForceStyle(0)
 
 
 def load_envs(config):
@@ -132,7 +132,7 @@ def initialize_parameters(gROOT, envs):
 	gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
 
 
-def init(config_file='../pycWB/config.ini'):
+def init(config_file):
 	# read config
 	config = configparser.ConfigParser(
 		interpolation=configparser.ExtendedInterpolation(),

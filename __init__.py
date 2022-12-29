@@ -1,12 +1,12 @@
-from . import setup
-from . import cwb
+from . import root_setup
+from . import cwb_interface
 from . import user_parameters
 import os, glob
 
 
 class pycWB:
     def __init__(self, config_file, create_dirs=True):
-        ROOT, gROOT, gSystem, gStyle, config = setup.init(config_file)
+        ROOT, gROOT, gSystem, gStyle, config = root_setup.init(config_file)
         self.ROOT = ROOT
         self.gROOT = gROOT
         self.gSystem = gSystem
@@ -23,7 +23,7 @@ class pycWB:
         elif ext.lower() == '.yaml':
             self.user_params_with_yaml(f_name)
             f_name = self.config["DUMB"]["C_DUMB"]
-        cwb.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, f_name, j_stage, u_name, eced, inet_option)
+        cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, f_name, j_stage, u_name, eced, inet_option)
 
     def cwb_load_macro(self, file_name):
         self.gROOT.LoadMacro(self.config['MACROS']['CWB_MACROS'] + "/" + file_name)
