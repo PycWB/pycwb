@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 import pycWB
 import os
+import shutil
 import sys, getopt
 
 
 def generate_config_ini(cwb_install, cwb_source, work_dir):
-    pycwb_path = os.path.abspath(pycWB.__file__)
+    pycwb_path = os.path.dirname(os.path.abspath(pycWB.__file__))
 
     if not os.path.exists(cwb_install):
         raise ValueError("Directory cwb_install doesn't exist")
@@ -14,8 +15,7 @@ def generate_config_ini(cwb_install, cwb_source, work_dir):
     if not os.path.exists(work_dir):
         raise ValueError("directory work_dir doesn't exist")
 
-    return f"""
-[LIB]
+    return f"""[LIB]
 
 _USE_ROOT6 = true
 _USE_HEALPIX = true
@@ -75,6 +75,12 @@ CWB_PARAMETERS_FILE = ${{CWB:CWB_INSTALL}}/etc/cwb/macros/cwb2G_parameters.C
 """
 
 
+def copy_job_config(work_dir):
+    pycwb_path = os.path.dirname(os.path.abspath(pycWB.__file__))
+
+    shutil.copyfile(f"{pycwb_path}/shared/example.yaml", f"{work_dir}/user_parameters.yaml")
+
+
 def main(argv):
     cwb_install = ""
     cwb_source = ""
@@ -99,6 +105,9 @@ def main(argv):
     with open(f'{work_dir}/config.ini', 'w') as f:
         f.write(ini)
     print(f"Config file wrote to {work_dir}/config.ini")
+
+    copy_job_config(work_dir)
+    print(f"User parameter config sample copied to {work_dir}/user_parameters.yaml")
 
 
 if __name__ == "__main__":
