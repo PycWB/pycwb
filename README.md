@@ -20,17 +20,15 @@ pip install ./pycWB
 The [initialisation guide](./docs/1.initialisation_guide.md) can help you understand the detail of the environment setup and library loading with python. This processing is coded in the class `pycWB`.  If you are not interested in the detail, you can directly initialize the `cWB` with
 
 ```python
-import sys
-sys.path.append('..') # add pycWB parent path
 from pycWB import pycWB
 
-cwb = pycWB('../pycWB/config/config.ini') # config file path
+cwb = pycWB('./config.ini') # config file path
 ROOT = cwb.ROOT
 gROOT = cwb.gROOT
 ```
 
 Required directories will be automatically created unless you initialise 
-with `pycWB('config.ini', create_dirs=False)`
+with `pycWB('./config.ini', create_dirs=False)`
 
 ## Run analysis
 
@@ -51,7 +49,10 @@ you can follow [YAML Example : interactive multistages 2G analysis](./docs/3.run
 an analysis with `yaml` config file.
 
 ```python
-cwb.cwb_inet2G(job_id,'user_parameters.yaml', 'FULL')
+job_id = 1
+job_stage = 'FULL'
+job_file = './user_parameters.yaml'
+cwb.cwb_inet2G(job_id, job_file, job_stage)
 ```
 
 > The reason to choose `yaml` is that it can support more complicated types compare to `ini` and 
