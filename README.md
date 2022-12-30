@@ -83,7 +83,8 @@ sim.setup_sim_data(['H1','L1','V1'])
 job_id = 1
 job_stage = 'FULL'
 job_file = './user_parameters.yaml'
-cwb.cwb_inet2G(job_id, job_file, job_stage)
+inet_option = '--tool emax --level 8  --draw true'
+cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
 ```
 
 > The reason to choose `yaml` is that it can support more complicated types compare to `ini` and
