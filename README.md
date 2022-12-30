@@ -4,8 +4,15 @@ This is a project to simplify the installation of `cWB` and run `cWB` with pytho
 
 ## Installation
 
+### Install cWB
+
 Check [installation guide](./docs/0.installation_guide.md) to simply install `cWB` with conda
 
+### Install pycWB from git
+
+```bash
+pip install git@git.ligo.org:yumeng.xu/pycwb.git
+```
 
 ## Initialise pycWB
 

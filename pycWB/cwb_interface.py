@@ -1,7 +1,7 @@
 # cwb.py is a module to convert cwb functionality to python functions
 
 import os
-from pycWB.config.constants import CWB_STAGE
+from .config.constants import CWB_STAGE
 
 
 def cwb_inet2G(ROOT, gROOT, config, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
