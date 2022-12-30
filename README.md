@@ -12,7 +12,8 @@ Check [installation guide](./docs/0.installation_guide.md) to simply install `cW
 
 ```bash
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
-pip install ./pycWB
+cd pycWB
+python setup.py sdist && pip install dist/*.tar.gz
 ```
 
 ## Initialise pycWB

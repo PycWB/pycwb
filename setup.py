@@ -27,9 +27,11 @@ def find_files(dirname, relpath=None):
             elif not path.endswith(".py") and not path.endswith(".pyc"):
                 items.append(path)
         return items
+
     items = find_paths(dirname)
     if relpath is None:
         relpath = dirname
+    print(items)
     return [os.path.relpath(path, relpath) for path in items]
 
 
@@ -42,8 +44,9 @@ setup(
     long_description_content_type="text/markdown",
     keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst'],
     url="https://git.ligo.org/yumeng.xu/pycwb",
-    install_requires = install_requires,
-    scripts  = find_files('bin', relpath='./'),
-    packages = find_packages(),
+    install_requires=install_requires,
+    scripts=["bin/pycwb_gen_config"],#find_files('bin', relpath='./'),
+    packages=find_packages(),
+    include_package_data=True,
     python_requires='>=3.8'
 )

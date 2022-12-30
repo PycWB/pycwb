@@ -1,0 +1,4 @@
+include bin/*
+include pycWB/shared/*
+include pycWB/shared/wdmXTalk/*
+include README.md

@@ -1,0 +1,109 @@
+#!/usr/bin/env python
+import pycWB
+import os
+import sys, getopt
+
+
+def generate_config_ini(cwb_install, cwb_source, work_dir):
+    pycwb_path = os.path.abspath(pycWB.__file__)
+
+    if not os.path.exists(cwb_install):
+        raise ValueError("Directory cwb_install doesn't exist")
+    if not os.path.exists(cwb_source):
+        raise ValueError("directory cwb_source doesn't exist")
+    if not os.path.exists(work_dir):
+        raise ValueError("directory work_dir doesn't exist")
+
+    return f"""
+[LIB]
+
+_USE_ROOT6 = true
+_USE_HEALPIX = true
+_USE_LAL = true
+
+HOME_CFITSIO =  # leave empty if installed with conda
+HOME_HEALPIX =  # leave empty if installed with conda
+HOME_LAL =  # leave empty if installed with conda
+
+_USE_ICC = false # optional
+
+_USE_EBBH = False # optional
+HOME_CVODE = 
+
+[CWB]
+
+CWB_INSTALL = {os.path.abspath(cwb_install)} # CAUTION: Do not use relative path here!
+CWB_SOURCE = {os.path.abspath(cwb_source)} # For loading macros
+pyCWB_SOURCE = {os.path.abspath(pycwb_path)}
+
+[DUMB]
+
+# Here is just obsoleted files required by cWB, use empty file to trick cWB
+C_DUMB = ${{CWB:pyCWB_SOURCE}}/shared/dumb.c
+CWB_ROOTLOGON_FILE = ${{C_DUMB}} # TODO: change to automatically seaching in next version
+CWB_UPARAMETERS_FILE = 
+CWB_EPARAMETERS_FILE = 
+
+[DERIVED]
+
+# Here are derived variables for cwb. No need to change!
+HOME_WAT = ${{CWB:CWB_SOURCE}}
+HOME_FRDISPLAY = ${{CWB:CWB_INSTALL}}/bin
+CWB_PARMS_FILES = ${{PROJECT:CWB_PARAMETERS_FILE}}
+
+[TOOLS]
+
+HOME_WAT_FILTERS = ${{CWB:pyCWB_SOURCE}}/shared
+HOME_BAUDLINE = baudline # independent, path of software
+HOME_ALADIN = aladin # independent, path of software
+HOME_SKYMAP_LIB = path # required
+
+[MACROS]
+
+CWB_MACROS = ${{CWB:CWB_INSTALL}}/etc/cwb/macros
+CWB_NETC_FILE = ${{CWB_MACROS}}/cwb_net.C
+
+[PROJECT]
+
+WORK_DIR = {work_dir}
+CWB_USER_URL = your_url # report url
+WWW_PUBLIC_DIR = ${{WORK_DIR}}/tmp/public_html/reports
+CONDOR_LOG_DIR = ${{WORK_DIR}}/tmp/condor
+NODE_DATA_DIR = ${{WORK_DIR}}/tmp/node
+CWB_ANALYSIS = 2G
+CWB_PARAMETERS_FILE = ${{CWB:CWB_INSTALL}}/etc/cwb/macros/cwb2G_parameters.C
+"""
+
+
+def main(argv):
+    cwb_install = ""
+    cwb_source = ""
+    work_dir = ""
+    opts, args = getopt.getopt(argv, "hi:s:w:", ["cwb_install=", "cwb_source=", "work_dir="])
+    for opt, arg in opts:
+        if opt == '-h':
+            print(
+                'test.py --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>')
+            sys.exit()
+        elif opt in ("-i", "--cwb_install"):
+            cwb_install = arg
+        elif opt in ("-s", "--cwb_source"):
+            cwb_source = arg
+        elif opt in ("-w", "--work_dir"):
+            work_dir = arg
+
+    # generate config ini
+    ini = generate_config_ini(cwb_install, cwb_source, work_dir)
+
+    # write file to current path
+    with open(f'{work_dir}/config.ini', 'w') as f:
+        f.write(ini)
+    print(f"Config file wrote to {work_dir}/config.ini")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
+
+# /Users/yumengxu/Project/Physics/cwb/cwb_source/tools/install
+# /Users/yumengxu/Project/Physics/cwb/cwb_source
+# /Users/yumengxu/Project/Physics/cwb/MultiStages2G
