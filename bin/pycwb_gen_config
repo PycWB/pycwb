@@ -89,7 +89,7 @@ def main(argv):
     for opt, arg in opts:
         if opt == '-h':
             print(
-                'test.py --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>')
+                'pycwb_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>')
             sys.exit()
         elif opt in ("-i", "--cwb_install"):
             cwb_install = arg
