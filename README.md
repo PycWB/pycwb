@@ -64,8 +64,6 @@ you can setup an analysis with `yaml` config file.
 
 #### A quick example
 
-see detail in [YAML Example : interactive multistages 2G analysis](./docs/3.run_pycwb_with_yaml_config.md) to
-
 ```python
 from pycWB import pycWB, sim
 
