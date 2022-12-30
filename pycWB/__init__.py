@@ -36,12 +36,3 @@ class pycWB:
         if not os.path.exists('plugins'): os.symlink(f"{self.config['CWB']['CWB_INSTALL']}/etc/cwb/plugins", 'plugins')
         for dir in ['input', 'data', 'tmp/public_html/reports', 'tmp/condor', 'tmp/node', 'report/dump']:
             os.makedirs(f'{working_dir}/{dir}', exist_ok=True)
-
-    @staticmethod
-    def setup_sim_data(detectors, working_dir=os.getcwd()):
-        for det in detectors:
-            with open(f"{working_dir}/input/{det}.frames", 'w') as t:
-                t.write(glob.glob(f"{working_dir}/frames/*/{det}*.gwf")[0])
-
-        with open(f'{working_dir}/input/inspiral.in', 'w') as t:
-            t.write("931158200    931158600\n")
