@@ -24,8 +24,9 @@ class pycWB:
             pass
         elif ext.lower() == '.yaml':
             self.user_params_with_yaml(f_name)
-            f_name = self.config["DUMB"]["C_DUMB"]
-        cwb_interface.cwb_inet2G(self.ROOT, run_id, CWB_STAGE[j_stage], inet_option)
+            print(f"cwb_inet2G: loaded {f_name}")
+
+        cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage], inet_option=inet_option)
 
     def cwb_load_macro(self, file_name):
         self.gROOT.LoadMacro(self.config['MACROS']['CWB_MACROS'] + "/" + file_name)
