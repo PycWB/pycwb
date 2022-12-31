@@ -90,3 +90,11 @@ cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
 >
 > "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`
 > and converted to C code to run with `pyROOT`
+
+## cWB pythonize list
+
+- [x] `cwb_inet2G.c` entry point
+- [ ] `CWB:run` final target to control the workflow
+- [ ] `cwb_inet.c` optional: used to parse `CWB_INET_OPTIONS`
+- [ ] `config.c` optional: better control on config
+- [ ] `CWB2G` could be required by `CWB:run` 
