@@ -16,7 +16,7 @@ class pycWB:
         self.config = config
 
         if create_dirs:
-            self.setup_project_dirs()
+            self.setup_project_dirs(config['PROJECT']['WORK_DIR'])
 
     def cwb_inet2G(self, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
         _, ext = os.path.splitext(f_name)
