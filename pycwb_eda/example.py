@@ -1,5 +1,5 @@
 from messenger import Messenger
-from config import config
+from _config import config
 ##########################
 # Entry point event
 ##########################

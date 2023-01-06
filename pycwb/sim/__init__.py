@@ -1,9 +1,9 @@
-import pycWB
+import pycwb
 import os, glob
 
 
 def create_frame_noise(gROOT, ROOT):
-    pycwb_path = os.path.dirname(os.path.abspath(pycWB.__file__))
+    pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
 
     gROOT.LoadMacro(f"{pycwb_path}/shared/CreateFramesNOISE.C")
     ROOT.CreateFramesNOISE()

@@ -26,7 +26,7 @@ config = {
         },
         {
             "event": "CWB_INITED",
-            "handler": "_handlers.cwb_read_data",
+            "handler": "pycwb.handlers.cwb_read_data",
             "trigger": ["DATA_RETRIEVED"]
         },
         {
