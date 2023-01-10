@@ -2,6 +2,15 @@
 
 This is a project to simplify the installation of `cWB` and run `cWB` with python.
 
+## What does this package do
+
+ - [x] Generate `ini` and `yaml` configuration file with python script
+ - [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
+ - [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
+ - [ ] Wrap cwb modules to pure functions 
+ - [ ] Rewrite `cwb.run()` to python for better workflow control and plugin system
+ - [ ] (Optional) Supply addition event interface for event-driven architecture
+
 ## Installation
 
 ### Install cWB
@@ -98,3 +107,14 @@ cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
 - [ ] `cwb_inet.c` optional: used to parse `CWB_INET_OPTIONS`
 - [ ] `config.c` optional: better control on config
 - [ ] `CWB2G` could be required by `CWB:run` 
+
+# Advance of Event-based Architecture
+
+ - simply assemble events from pure function by configuration file 
+ - easy parallelization
+ - each event can be recorded and traced
+ - easy to resume from interruption
+ - multiple handler can process same event
+ - easy to create schedule job
+ - assemble new handler with modules
+ - monitor the file to trigger event

@@ -44,35 +44,39 @@ class Messenger:
 
     async def dispatcher(self):
         while True:
+            # get event from event queue
             event = await self.events.get()
             print("event:", event)
             if event['key'] == 'EXIT':
                 break
 
-            # check if event handler exist
+            # check if event key exist
             if not event['key'] in [r['event'] for r in self.registered]:
                 print("Event not exist, key error")
 
-            # check middle ware
+            # check and fetch middleware
             middlewares = []
             for middleware in self.middlewares:
                 if event['key'] in middleware['inject']:
                     middlewares.append(middleware)
 
-            # get all modules registered for this event
+            # get all handlers registered for this event
             funcs = [r for r in self.registered if r['event'] == event['key']]
 
+            # throw error is no handler for this event
             if len(funcs) == 0:
                 print(f"No handler for key {event['key']}")
 
             # trigger event
             for f in funcs:
+                # periodic trigger
                 if "periodic" in f.keys():
                     task = asyncio.create_task(
                         self.periodic_task_wrapper(f["periodic"]["interval"],
                                                    f['handler'],
                                                    event,
                                                    middlewares))
+                # normal trigger
                 else:
                     task = asyncio.create_task(
                         self.task_wrapper(f['handler'],
@@ -87,11 +91,12 @@ class Messenger:
             for mw in middlewares:
                 event = mw['handler'](event)
 
+            # execute the handler
             func(event, self.trigger)
         except Exception as e:
+            # TODO: handle error
             print('Error: ', e)
             self.events.task_done()
-        # self.events.task_done()
 
     async def periodic_task_wrapper(self, dt, func, event, middlewares):
         try:
@@ -99,19 +104,28 @@ class Messenger:
             for mw in middlewares:
                 event = mw['handler'](event)
 
+            # execute periodically
             while True:
+                # execute the handler
                 func(event, self.trigger)
+                # wait for dt seconds
                 await asyncio.sleep(dt)
         except Exception as e:
+            # TODO: handle error
             print('Error: ', e)
             self.events.task_done()
 
     def aggregator(self, event):
+        # TODO: wait for multiple event to execute the handler
         pass
 
     def trigger(self, event):
         self.events.put_nowait(event)
 
     def cleaner(self):
+        """
+        Clean all the task
+        :return:
+        """
         for task in self.tasks:
             task.cancel()
