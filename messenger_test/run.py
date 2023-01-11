@@ -9,5 +9,5 @@ starter = {"key": "ONLINE", "cwb": "", "data": {
 }}
 
 if __name__ == '__main__':
-    messenger = Messenger(config, starter)
-    messenger.run()
+    app = Messenger(config)
+    app.run(starter)

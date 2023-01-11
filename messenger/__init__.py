@@ -14,7 +14,7 @@ def import_helper(name):
 
 
 class Messenger:
-    def __init__(self, config, starter):
+    def __init__(self, config):
         self.events = asyncio.Queue()
         self.tasks = []
         self.registered = []
@@ -22,8 +22,6 @@ class Messenger:
         self.watched_dir = []
         self.file_watchers = []
         self.load_config(config)
-
-        self.trigger(starter)
 
         pass
 
@@ -46,8 +44,9 @@ class Messenger:
         if 'file_watcher' in config:
             self.file_watchers = config['file_watcher']
 
-    def run(self):
+    def run(self, starter):
         try:
+            self.trigger(starter)
             asyncio.run(self.supervisor())
         except KeyboardInterrupt as e:
             print("Caught keyboard interrupt. Canceling tasks...")
