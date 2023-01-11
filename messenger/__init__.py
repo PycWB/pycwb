@@ -1,6 +1,8 @@
 import asyncio
 import importlib
 from watchfiles import awatch
+import os
+import re
 
 
 def import_helper(name):
@@ -18,6 +20,7 @@ class Messenger:
         self.registered = []
         self.middlewares = []
         self.watched_dir = []
+        self.file_watchers = []
         self.load_config(config)
 
         self.trigger(starter)
@@ -37,6 +40,7 @@ class Messenger:
 
         # Register watched files
         self.watched_dir = config['watched_dir']
+        self.file_watchers = config['file_watcher']
 
     def run(self):
         try:
@@ -104,10 +108,26 @@ class Messenger:
             self.events.task_done()
 
     async def filewatcher(self):
-        async for changes in awatch(*self.watched_dir):
-            for change in changes:
-                if change[0] <= 2:
-                    print(change[1])
+        try:
+            async for changes in awatch(*self.watched_dir):
+                for change in changes:
+                    if change[0] <= 2:
+                        # print(change)
+                        filename = os.path.basename(change[1])
+                        for watcher in self.file_watchers:
+                            # print(filename, watcher)
+                            if re.match(watcher['name'], filename):
+                                self.trigger({
+                                    "key": watcher['trigger']['event'],
+                                    "data": {
+                                        "file": change[1],
+                                        "job_id": "_".join(filename.split('_')[1:])
+                                    }
+                                })
+        except Exception as e:
+            # TODO: handle error
+            print('Filewatcher Error: ', e)
+            self.events.task_done()
 
     async def task_wrapper(self, func, event, middlewares):
 

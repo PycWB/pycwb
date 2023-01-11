@@ -25,66 +25,45 @@ def retrieve_data(event, trigger):
     print(f"new data retrieved: from {event['data']['start']} to {event['data']['end']} "
           f"Data length is {event['data']['interval']} second")
     # wrap some gwpy retrieve data functions
-    trigger({"key": "DATA_RETRIEVED",
-             "data": "a.hdf5",
-             "cwb": event['cwb']})
-
-
-def cwb_init(event, trigger):
-    cwb = event['cwb']
     job_id = event['data']['job_id']
-    cwb.cwb_inet2G(job_id, event['data']['user_parameters'], 'INIT')
-
-    trigger({"key": "CWB_INITED",
-             "data": {
-                 "job_id": job_id,
-                 "file_label": f"_"
-             },
-             "cwb": cwb})
-
-
-def cwb_read_data(event, trigger):
-    cwb = event['cwb']
-    job_id = event['data']['job_id']
-
-    # cwb.cwb_inet2G(job_id, event['data']['user_parameters'], 'FULL')
-    trigger({"key": "DATA_RETRIEVED",
-             "data": {
-                 "job_id": job_id
-             },
-             "cwb": cwb})
+    with open(f"data/strain_{job_id}.txt", "w") as my_file:
+        my_file.write("Hello world \n")
 
 
 def coherence(event, trigger):
     time.sleep(0.5)
     # wrap cwb functions
-    print(f"pixelating {event['data']}")
-    trigger({"key": "COHERENCE_DONE", "data": "cluster.hdf5",
-             "cwb": event['cwb']})
+    print(f"coherence {event['data']}")
+    job_id = event['data']['job_id']
+    with open(f"data/coherence_{job_id}.txt", "w") as my_file:
+        my_file.write("Hello world \n")
 
 
 def cluster(event, trigger):
     time.sleep(0.5)
     # wrap cwb functions
     print(f"clustering {event['data']}")
-    trigger({"key": "CLUSTERED", "data": "cluster1.hdf5",
-             "cwb": event['cwb']})
+    job_id = event['data']['job_id']
+    with open(f"data/cluster_{job_id}.txt", "w") as my_file:
+        my_file.write("Hello world \n")
 
 
 def cluster2(event, trigger):
     time.sleep(0.5)
     # some user defined clustering algorithm
     print(f"clustering {event['data']} with another methods")
-    trigger({"key": "CLUSTERED", "data": "cluster2.hdf5",
-             "cwb": event['cwb']})
+    job_id = event['data']['job_id']
+    with open(f"data/cluster_{job_id}_2.txt", "w") as my_file:
+        my_file.write("Hello world \n")
 
 
 def likelihood(event, trigger):
     time.sleep(0.5)
     # wrap cwb functions
     print(f"calculate likelihood from {event['data']}")
-    trigger({"key": "LIKELIHOOD_CALCULATED", "data": "likelihood.hdf5",
-             "cwb": event['cwb']})
+    job_id = event['data']['job_id']
+    with open(f"data/likelihood_{job_id}_2.txt", "w") as my_file:
+        my_file.write("Hello world \n")
 
 
 def plot(event, trigger):

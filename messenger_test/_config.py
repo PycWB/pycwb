@@ -2,7 +2,33 @@
 # Event configurations
 ##########################
 config = {
-    "watched_dir": ["/Users/yumengxu/Project/Physics/cwb/MultiStages2G_yaml"],
+    "watched_dir": ["./data"],
+    "file_watcher": [
+        {
+            "name": "strain_*",
+            "trigger": {
+                "event": "DATA_RETRIEVED"
+            }
+        },
+        {
+            "name": "coherence_*",
+            "trigger": {
+                "event": "COHERENCE_DONE"
+            }
+        },
+        {
+            "name": "cluster_*",
+            "trigger": {
+                "event": "CLUSTERED"
+            }
+        },
+        {
+            "name": "likelihood_*",
+            "trigger": {
+                "event": "LIKELIHOOD_CALCULATED"
+            }
+        }
+    ],
     "middlewares": [
         {
             "key": "CWB_CONFIG",
@@ -19,16 +45,6 @@ config = {
                 # "repeat": 20
             },
             "trigger": ["RETRIEVE_DATA"]
-        },
-        {
-            "event": "CWB_2G",
-            "handler": "_handlers.cwb_init",
-            "trigger": ["CWB_INITED"]
-        },
-        {
-            "event": "CWB_INITED",
-            "handler": "_handlers.cwb_read_data",
-            "trigger": ["DATA_RETRIEVED"]
         },
         {
             "event": "RETRIEVE_DATA",
