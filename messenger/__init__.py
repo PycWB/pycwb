@@ -34,13 +34,17 @@ class Messenger:
             f['handler'] = import_helper(f['handler'])
 
         # Register middlewares
-        self.middlewares = config['middlewares']
-        for f in self.middlewares:
-            f['handler'] = import_helper(f['handler'])
+        if 'middlewares' in config:
+            self.middlewares = config['middlewares']
+            for f in self.middlewares:
+                f['handler'] = import_helper(f['handler'])
 
         # Register watched files
-        self.watched_dir = config['watched_dir']
-        self.file_watchers = config['file_watcher']
+        if 'watched_dir' in config:
+            self.watched_dir = config['watched_dir']
+
+        if 'file_watcher' in config:
+            self.file_watchers = config['file_watcher']
 
     def run(self):
         try:
