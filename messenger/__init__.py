@@ -1,6 +1,6 @@
 import asyncio
 import importlib
-from watchgod import awatch
+from watchfiles import awatch
 
 
 def import_helper(name):

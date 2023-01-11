@@ -5,7 +5,8 @@ from setuptools import find_packages
 requires = []
 install_requires = [
     "pyyaml",
-    "jsonschema"
+    "jsonschema",
+    "watchfiles"
 ]
 
 
