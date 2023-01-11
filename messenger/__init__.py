@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+from watchgod import awatch
 
 
 def import_helper(name):
@@ -16,6 +17,7 @@ class Messenger:
         self.tasks = []
         self.registered = []
         self.middlewares = []
+        self.watched_dir = []
         self.load_config(config)
 
         self.trigger(starter)
@@ -23,12 +25,18 @@ class Messenger:
         pass
 
     def load_config(self, config):
+        # Register event handlers
         self.registered = config['events']
         for f in self.registered:
             f['handler'] = import_helper(f['handler'])
+
+        # Register middlewares
         self.middlewares = config['middlewares']
         for f in self.middlewares:
             f['handler'] = import_helper(f['handler'])
+
+        # Register watched files
+        self.watched_dir = config['watched_dir']
 
     def run(self):
         try:
@@ -39,50 +47,67 @@ class Messenger:
 
     async def supervisor(self):
         # TODO: task monitor
-        # TODO: file monitor
-        await self.dispatcher()
+        # file monitor
+        filewatcher = asyncio.create_task(self.filewatcher())
+        # dispatcher
+        dispatcher = asyncio.create_task(self.dispatcher())
+
+        # wait for all job to be finished
+        await filewatcher
+        await dispatcher
 
     async def dispatcher(self):
-        while True:
-            # get event from event queue
-            event = await self.events.get()
-            print("event:", event)
-            if event['key'] == 'EXIT':
-                break
+        try:
+            while True:
+                # get event from event queue
+                event = await self.events.get()
+                print("event:", event)
+                if event['key'] == 'EXIT':
+                    break
 
-            # check if event key exist
-            if not event['key'] in [r['event'] for r in self.registered]:
-                print("Event not exist, key error")
+                # check if event key exist
+                if not event['key'] in [r['event'] for r in self.registered]:
+                    print("Event not exist, key error")
 
-            # check and fetch middleware
-            middlewares = []
-            for middleware in self.middlewares:
-                if event['key'] in middleware['inject']:
-                    middlewares.append(middleware)
+                # check and fetch middleware
+                middlewares = []
+                for middleware in self.middlewares:
+                    if event['key'] in middleware['inject']:
+                        middlewares.append(middleware)
 
-            # get all handlers registered for this event
-            funcs = [r for r in self.registered if r['event'] == event['key']]
+                # get all handlers registered for this event
+                funcs = [r for r in self.registered if r['event'] == event['key']]
 
-            # throw error is no handler for this event
-            if len(funcs) == 0:
-                print(f"No handler for key {event['key']}")
+                # throw error is no handler for this event
+                if len(funcs) == 0:
+                    print(f"No handler for key {event['key']}")
 
-            # trigger event
-            for f in funcs:
-                # periodic trigger
-                if "periodic" in f.keys():
-                    task = asyncio.create_task(
-                        self.periodic_task_wrapper(f["periodic"]["interval"],
-                                                   f['handler'],
-                                                   event,
-                                                   middlewares))
-                # normal trigger
-                else:
-                    task = asyncio.create_task(
-                        self.task_wrapper(f['handler'],
-                                          event,
-                                          middlewares))
-                self.tasks.append(task)
+                # trigger event
+                for f in funcs:
+                    # periodic trigger
+                    if "periodic" in f.keys():
+                        task = asyncio.create_task(
+                            self.periodic_task_wrapper(f["periodic"]["interval"],
+                                                       f['handler'],
+                                                       event,
+                                                       middlewares))
+                    # normal trigger
+                    else:
+                        task = asyncio.create_task(
+                            self.task_wrapper(f['handler'],
+                                              event,
+                                              middlewares))
+                    self.tasks.append(task)
+        except Exception as e:
+            # TODO: handle error
+            print('Dispatcher Error: ', e)
+            self.events.task_done()
+
+    async def filewatcher(self):
+        async for changes in awatch(*self.watched_dir):
+            for change in changes:
+                if change[0] <= 2:
+                    print(change[1])
 
     async def task_wrapper(self, func, event, middlewares):
 
@@ -95,7 +120,7 @@ class Messenger:
             func(event, self.trigger)
         except Exception as e:
             # TODO: handle error
-            print('Error: ', e)
+            print('Task Error: ', e)
             self.events.task_done()
 
     async def periodic_task_wrapper(self, dt, func, event, middlewares):
