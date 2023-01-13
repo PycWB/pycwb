@@ -43,7 +43,7 @@ and library loading with python. This processing is coded in the class `pycWB`. 
 you can directly initialize the `cWB` with
 
 ```python
-from pycWB import pycWB
+from pycwb import pycWB
 
 cwb = pycWB('./config.ini')  # config file path
 ROOT = cwb.ROOT
@@ -74,7 +74,7 @@ you can setup an analysis with `yaml` config file.
 #### A quick example
 
 ```python
-from pycWB import pycWB, sim
+from pycwb import pycWB, sim
 
 cwb = pycWB('./config.ini')  # config file path
 ROOT = cwb.ROOT
