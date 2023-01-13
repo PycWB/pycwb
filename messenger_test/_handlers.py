@@ -49,12 +49,22 @@ def cluster(event, trigger):
 
 
 def cluster2(event, trigger):
-    time.sleep(0.5)
+    job_id = event['data']['job_id']
+
     # some user defined clustering algorithm
     print(f"clustering {event['data']} with another methods")
-    job_id = event['data']['job_id']
+    data = "Hello world \n"
+
+    # manually trigger a plot handler
+    trigger({"key": "PLOT_MODULE",
+             "data": {
+                 "job_id": job_id,
+                 "data": data
+             }})
+
+    # write file
     with open(f"data/cluster_{job_id}_2.txt", "w") as my_file:
-        my_file.write("Hello world \n")
+        my_file.write(data)
 
 
 def likelihood(event, trigger):

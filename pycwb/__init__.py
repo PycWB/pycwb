@@ -21,6 +21,7 @@ class pycWB:
     def cwb_inet2G(self, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
         _, ext = os.path.splitext(f_name)
         if ext.lower() == '.c':
+            # FIXME: pass c file to cwb_inet2G
             pass
         elif ext.lower() == '.yaml':
             self.user_params_with_yaml(f_name)

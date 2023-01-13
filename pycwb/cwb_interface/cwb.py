@@ -25,6 +25,15 @@ def run(ROOT, run_id):
     ROOT.watchJob.Start()  # start job benchmark
     ROOT.watchStage.Start()  # start stage benchmark
 
+    cwb_InitNetwork()
+    cwb_InitHistory(ROOT)
+    cwb_ReadData()
+    cwb_DataConditioning()
+    cwb_Coherence()
+    cwb_SuperCluster()
+    cwb_Likelihood()
+
+
 
 def init():
     pass

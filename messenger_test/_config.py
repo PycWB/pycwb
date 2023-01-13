@@ -42,7 +42,7 @@ config = {
             "handler": "_handlers.online_periodic_trigger",
             "periodic": {
                 "interval": 5,
-                # "repeat": 20
+                "repeat": 20
             },
             "trigger": ["RETRIEVE_DATA"]
         },
@@ -64,7 +64,6 @@ config = {
         {
             "event": "COHERENCE_DONE",
             "handler": "_handlers.cluster2",
-            "trigger": ["CLUSTERED"]
         },
         {
             "event": "CLUSTERED",
