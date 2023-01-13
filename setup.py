@@ -37,7 +37,7 @@ def find_files(dirname, relpath=None):
 
 
 setup(
-    name="pycWB",
+    name="pycwb",
     author="Yumeng Xu",
     author_email="xusmailbox@gmail.com",
     description=("This is a project to simplify the installation of `cWB` and run `cWB` with python."),
