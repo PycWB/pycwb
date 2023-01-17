@@ -5,3 +5,5 @@ __pycache__
 build
 dist
 messenger_test/data
+tests
+!tests/*_test.py
