@@ -12,6 +12,12 @@ from pycwb.config.constants import CWB_CAT
 #     print(error.message)
 
 def load_yaml(gROOT, file_name):
+    """
+    Load yaml file to ROOT global variable
+    :param gROOT:
+    :param file_name:
+    :return:
+    """
     with open(file_name, 'r') as file:
         params = yaml.safe_load(file)
 
@@ -19,7 +25,7 @@ def load_yaml(gROOT, file_name):
     validate(instance=params, schema=schema)
 
     params = add_generated_key(params)
-    # TODO: assign to ROOT
+    # assign variable
     cmd = ""
     for key in params.keys():
         cmd += assign_variable(schema, key, params[key]) + '\n'
@@ -30,6 +36,13 @@ def load_yaml(gROOT, file_name):
 
 
 def assign_variable(schema, key, value):
+    """
+    Assign variable
+    :param schema:
+    :param key:
+    :param value:
+    :return:
+    """
     cmd = ""
 
     if "c_type" in schema['properties'][key]:
@@ -60,6 +73,11 @@ def assign_variable(schema, key, value):
 
 
 def add_generated_key(params):
+    """
+    Add generated key to the user parameters
+    :param params:
+    :return:
+    """
     new_params = {}
     for key in params.keys():
         if key == 'ifo':
@@ -72,6 +90,13 @@ def add_generated_key(params):
 
 
 def process_special_type(c_type, key, value):
+    """
+    Process special type
+    :param c_type:
+    :param key:
+    :param value:
+    :return:
+    """
     if c_type == 'TMacro':
         return f'{key} = TMacro("{value}");'
     if c_type == 'dqfile':
