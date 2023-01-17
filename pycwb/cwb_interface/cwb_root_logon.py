@@ -132,14 +132,7 @@ def initialize_parameters(gROOT, envs):
 	gROOT.LoadMacro(envs['CWB_PARMS_FILES'])
 
 
-def init(config_file):
-	# read config
-	config = configparser.ConfigParser(
-		interpolation=configparser.ExtendedInterpolation(),
-		inline_comment_prefixes='#')
-	config.optionxform = str
-	config.read(config_file)
-
+def root_setup(config):
 	# set LD search path before loading ROOT
 	os.environ['LD_LIBRARY_PATH'] = f"{config['CWB']['CWB_INSTALL']}/lib" # TODO: add previous LD path
 
@@ -147,10 +140,15 @@ def init(config_file):
 	from ROOT import gROOT, gSystem, gStyle
 	import ROOT
 
+	# load ROOT libraries and macros
 	ROOT_logon(gROOT, gSystem, gStyle, config)
+
+	# load environment variables
 	envs = load_envs(config)
+
+	# declare types for c user parameters
 	initialize_parameters(gROOT, envs)
 
-	return ROOT, gROOT, gSystem, gStyle, config
+	return ROOT, gROOT
 
 
