@@ -37,6 +37,9 @@ class pycWB:
             self.logger.error(f"Unknown file extension {ext}")
             return 1
 
+        # check analysis (from cwb_eparameters.C)
+        self.ROOT.CheckAnalysis()
+
         cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
                                  inet_option=inet_option, file_name=file_name)
 

@@ -100,7 +100,7 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     gROOT.ForceStyle(0)
 
 
-def load_envs(config, config_object):
+def load_envs(config, config_object: CWBConfig):
     pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
 
     envs = {
@@ -108,24 +108,42 @@ def load_envs(config, config_object):
     }
 
     if config_object.use_lal:
-        envs['_USE_LAL'] = "yes"
+        envs['_USE_LAL'] = "1"
     if config_object.use_healpix:
-        envs['_USE_HEALPIX'] = "yes"
+        envs['_USE_HEALPIX'] = "1"
     if config_object.use_root6:
-        envs['_USE_ROOT6'] = "yes"
+        envs['_USE_ROOT6'] = "1"
     if config_object.use_ebbh:
-        envs['_USE_EBBH'] = "yes"
+        envs['_USE_EBBH'] = "1"
 
-    for section in ['CWB', 'TOOLS', 'DERIVED', 'MACROS', 'PROJECT']:
+    for section in ['CWB', 'TOOLS', 'PROJECT']:
         for key in config[section].keys():
             envs[key] = config[section][key]
 
-    # envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} {envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
+    envs['CWB_SCRIPTS'] = f"{config_object.cwb_install}/etc/cwb/scripts"
+
     envs['HOME_WAT'] = config_object.cwb_source
     envs['HOME_FRDISPLAY'] = f"{config_object.cwb_install}/bin"
+    envs['HOME_CWB'] = f"{config_object.cwb_install}/etc/cwb"
 
     envs['CWB_ROOTLOGON_FILE'] = f"{pycwb_path}/shared/dumb.c"
+    envs['CWB_MACROS'] = config_object.cwb_macros
+    envs['CWB_NETC_FILE'] = f"{config_object.cwb_macros}/cwb_net.C"
+    envs['CWB_ANALYSIS'] = config_object.cwb_analysis
+    envs['CWB_PARAMETERS_FILE'] = config_object.cwb_parameters_file
     envs['CWB_PARMS_FILES'] = config_object.cwb_parameters_file
+    # envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} " \
+    #                           f"{envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
+
+    # TODO: figure out these parameter files
+    envs['CWB_EMPARAMETERS_FILE'] = ""
+    envs['CWB_PPARAMETERS_FILE'] = f"{config_object.cwb_macros}/cwb_pparameters.C"
+    envs['CWB_EPARAMETERS_FILE'] = f"{config_object.cwb_macros}/cwb_eparameters.C"
+    envs['CWB_PPARMS_FILES'] = envs['CWB_PPARAMETERS_FILE']
+    # envs['CWB_PPARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} " \
+    #                            f"{envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EMPARAMETERS_FILE']} " \
+    #                            f"{envs['CWB_EPARAMETERS_FILE']} {envs['CWB_PPARAMETERS_FILE']} " \
+    #                            f"{envs['CWB_UPPARAMETERS_FILE']} {envs['CWB_EPPARAMETERS_FILE']}"
 
     for key in envs.keys():
         os.environ[key] = envs[key]

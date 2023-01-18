@@ -35,19 +35,17 @@ HOME_CVODE =
 
 CWB_INSTALL = {os.path.abspath(cwb_install)} # CAUTION: Do not use relative path here!
 CWB_SOURCE = {os.path.abspath(cwb_source)} # For loading macros
-pyCWB_SOURCE = {os.path.abspath(pycwb_path)}
+# CWB_MACROS = ${{CWB:CWB_INSTALL}}/etc/cwb/macros
+# CWB_PARAMETERS_FILE = ${{CWB:CWB_INSTALL}}/etc/cwb/macros/cwb2G_parameters.C
+# CWB_ANALYSIS = 2G
 
 [TOOLS]
 
-HOME_WAT_FILTERS = ${{CWB:pyCWB_SOURCE}}/shared
+HOME_WAT_FILTERS = {os.path.abspath(pycwb_path)}/shared
 HOME_BAUDLINE = baudline # independent, path of software
 HOME_ALADIN = aladin # independent, path of software
 HOME_SKYMAP_LIB = path # required
 
-[MACROS]
-
-CWB_MACROS = ${{CWB:CWB_INSTALL}}/etc/cwb/macros
-CWB_NETC_FILE = ${{CWB_MACROS}}/cwb_net.C
 
 [PROJECT]
 
@@ -56,8 +54,6 @@ CWB_USER_URL = your_url # report url
 WWW_PUBLIC_DIR = ${{WORK_DIR}}/tmp/public_html/reports
 CONDOR_LOG_DIR = ${{WORK_DIR}}/tmp/condor
 NODE_DATA_DIR = ${{WORK_DIR}}/tmp/node
-CWB_ANALYSIS = 2G
-CWB_PARAMETERS_FILE = ${{CWB:CWB_INSTALL}}/etc/cwb/macros/cwb2G_parameters.C
 """
 
 
