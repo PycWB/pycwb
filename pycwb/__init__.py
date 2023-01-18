@@ -1,6 +1,7 @@
 import configparser
 import os
 import logging, sys
+
 logger = logging.getLogger(__name__)
 
 from . import cwb_interface
@@ -27,6 +28,12 @@ class pycWB:
             self.setup_project_dirs(self.config.working_dir)
 
     def cwb_inet2G(self, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
+        file_name = self.init_cfg(f_name)
+
+        cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
+                                 inet_option=inet_option, file_name=file_name)
+
+    def init_cfg(self, f_name):
         _, ext = os.path.splitext(f_name)
 
         logger.info(f"Loading user parameters from {f_name}")
@@ -34,34 +41,14 @@ class pycWB:
         if ext.lower() == '.c':
             file_name = f_name
         elif ext.lower() == '.yaml':
-            self.user_params_with_yaml(f_name)
+            user_parameters.load_yaml(self.gROOT, file_name)
         else:
             logger.error(f"Unknown file extension {ext}")
-            return 1
+            raise ValueError(f"Unknown file extension {ext}")
 
         # check analysis (from cwb_eparameters.C)
         self.ROOT.CheckAnalysis()
-
-        cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
-                                 inet_option=inet_option, file_name=file_name)
-
-    @staticmethod
-    def load_config(config_file):
-        config = configparser.ConfigParser(
-            interpolation=configparser.ExtendedInterpolation(),
-            inline_comment_prefixes='#')
-        config.optionxform = str
-        config.read(config_file)
-        logger.info(f"Loaded config from {config_file}")
-        return config
-
-    def cwb_load_macro(self, file_name):
-        self.gROOT.LoadMacro(self.config.cwb_macros + "/" + file_name)
-        logger.info(f"Loaded macro from {file_name}")
-
-    def user_params_with_yaml(self, file_name):
-        user_parameters.load_yaml(self.gROOT, file_name)
-        logger.info(f"Loaded user parameters from {file_name}")
+        return file_name
 
     def setup_project_dirs(self, working_dir=os.getcwd()):
         if not os.path.exists('plugins'): os.symlink(f"{self.config.cwb_install}/etc/cwb/plugins", 'plugins')
@@ -78,4 +65,5 @@ def logger_init(log_file: str = None, log_level: str = 'INFO'):
     :return:
     """
     # create logger
-    logging.basicConfig(stream=sys.stdout, level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(stream=sys.stdout, level=log_level,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
