@@ -11,6 +11,11 @@ This is a project to simplify the installation of `cWB` and run `cWB` with pytho
  - [ ] Rewrite `cwb.run()` to python for better workflow control and plugin system
  - [ ] (Optional) Supply addition event interface for event-driven architecture
 
+## TODO List
+
+ - [ ] Optimize logging system
+ - [ ] Check inputs
+
 ## Installation
 
 ### Install cWB
@@ -74,7 +79,7 @@ you can setup an analysis with `yaml` config file.
 #### A quick example
 
 ```python
-from pycwb import pycWB, sim
+from pycwb import pycWB, tools
 
 cwb = pycWB('./config.ini')  # config file path
 ROOT = cwb.ROOT
@@ -82,8 +87,8 @@ gROOT = cwb.gROOT
 
 # create frame file
 
-sim.create_frame_noise(gROOT, ROOT)
-sim.setup_sim_data(['H1','L1','V1'])
+tools.create_frame_noise(gROOT, ROOT)
+tools.setup_sim_data(['H1','L1','V1'])
 
 # run full `cwb_inet2G` analysis
 
