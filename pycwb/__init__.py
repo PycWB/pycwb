@@ -33,6 +33,12 @@ class pycWB:
         cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
                                  inet_option=inet_option, file_name=file_name)
 
+    def cwb_xnet(self, run_id, f_name, j_stage, inet_option=None):
+        file_name = self.init_cfg(f_name)
+
+        cwb_interface.cwb_xnet(self.ROOT, self.config, run_id, CWB_STAGE[j_stage],
+                               inet_option=inet_option, file_name=file_name)
+
     def init_cfg(self, f_name):
         _, ext = os.path.splitext(f_name)
 
@@ -41,7 +47,7 @@ class pycWB:
         if ext.lower() == '.c':
             file_name = f_name
         elif ext.lower() == '.yaml':
-            user_parameters.load_yaml(self.gROOT, file_name)
+            user_parameters.load_yaml(self.gROOT, f_name)
         else:
             logger.error(f"Unknown file extension {ext}")
             raise ValueError(f"Unknown file extension {ext}")

@@ -1,1 +1,1 @@
-from cwb_config import CWBConfig
+from .cwb_config import CWBConfig

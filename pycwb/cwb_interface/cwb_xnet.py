@@ -1,15 +1,56 @@
 import os
 from pycwb.config import CWBConfig
 import logging
+
 logger = logging.getLogger(__name__)
 
 
-def cwb_xnet(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None, file_name=""):
+def cwb_xnet(ROOT, config: CWBConfig, run_id: int, j_stage: int,
+             batch=False, eced=False, inet_option=None, file_name=""):
+    logger.info("Starting cwb_xnet")
+
+    os.environ['CWB_JOBID'] = str(run_id)
+    logger.info(f"Setting CWB_JOBID to {run_id}")
+
+    # TODO: parameters check
+    # TODO: handle inet_option in python
+    if inet_option:
+        os.environ['CWB_INET_OPTIONS'] = inet_option
+        logger.info(f"inet_option: {inet_option}")
+
+    get_job_from_gps()
+
+    if batch:
+        # get process pid
+        pid = os.getpid()
+        # TODO: implement
+        pass
+
     if config.cwb_analysis == "1G":
-        CWB = ROOT.cwb1G()
+        CWB = ROOT.cwb1G(file_name, "", j_stage)
     elif config.cwb_analysis == "2G":
-        CWB = ROOT.cwb2G("", "", j_stage)
+        CWB = ROOT.cwb2G(file_name, "", j_stage)
+    elif config.cwb_analysis == "XP":
+        CWB = ROOT.cwbXP(file_name, "", j_stage)
+    else:
+        raise ValueError("Invalid cwb_analysis value in config file")
+
+    cfg = CWB.GetConfig()
+    if not batch:
+        if eced:
+            cfg.Import(f"{config.cwb_macros}/cwb_eced.C")
+        logger.info("Initializing CWB inet")
+        cfg.Import(f"{config.cwb_macros}/cwb_inet.C")
+
+    logger.info("Setting up job stage")
+    CWB.SetupStage(j_stage)
+
+    logger.info("Running CWB")
+    CWB.run(run_id)
+
+    logger.info("Finished cwb_xnet2G")
 
 
 def get_job_from_gps():
+    # TODO: implement
     pass

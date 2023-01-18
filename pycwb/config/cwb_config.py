@@ -76,7 +76,7 @@ class CWBConfig:
                 envs[key] = config[section][key]
 
         envs['CWB_SCRIPTS'] = f"{self.cwb_install}/etc/cwb/scripts"
-
+        # TODO: remove this by copying html files to installation directory
         envs['HOME_WAT'] = self.cwb_source
         envs['HOME_FRDISPLAY'] = f"{self.cwb_install}/bin"
         envs['HOME_CWB'] = f"{self.cwb_install}/etc/cwb"
