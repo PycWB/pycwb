@@ -5,8 +5,8 @@ logger = logging.getLogger(__name__)
 
 from . import cwb_interface
 from .cwb_interface import cwb_root_logon
-from . import user_parameters
-from .config.constants import CWB_STAGE
+from .config import user_parameters
+from .constants.cwb_dict import CWB_STAGE
 from .config import CWBConfig
 
 
@@ -17,6 +17,7 @@ class pycWB:
 
         # load config
         self.config = CWBConfig(config_file)
+        self.config.export_to_envs()
 
         # setup ROOT
         self.ROOT, self.gROOT = cwb_root_logon(self.config)

@@ -96,58 +96,6 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     logger.info("ROOT logon finished")
 
 
-def load_envs(config, config_object: CWBConfig):
-    pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-
-    envs = {
-        'LALINSPINJ_EXEC': 'lalapps_inspinj'
-    }
-
-    if config_object.use_lal:
-        envs['_USE_LAL'] = "1"
-    if config_object.use_healpix:
-        envs['_USE_HEALPIX'] = "1"
-    if config_object.use_root6:
-        envs['_USE_ROOT6'] = "1"
-    if config_object.use_ebbh:
-        envs['_USE_EBBH'] = "1"
-
-    for section in ['CWB', 'TOOLS', 'PROJECT']:
-        for key in config[section].keys():
-            envs[key] = config[section][key]
-
-    envs['CWB_SCRIPTS'] = f"{config_object.cwb_install}/etc/cwb/scripts"
-
-    envs['HOME_WAT'] = config_object.cwb_source
-    envs['HOME_FRDISPLAY'] = f"{config_object.cwb_install}/bin"
-    envs['HOME_CWB'] = f"{config_object.cwb_install}/etc/cwb"
-
-    envs['CWB_ROOTLOGON_FILE'] = f"{pycwb_path}/shared/dumb.c"
-    envs['CWB_MACROS'] = config_object.cwb_macros
-    envs['CWB_NETC_FILE'] = f"{config_object.cwb_macros}/cwb_net.C"
-    envs['CWB_ANALYSIS'] = config_object.cwb_analysis
-    envs['CWB_PARAMETERS_FILE'] = config_object.cwb_parameters_file
-    envs['CWB_PARMS_FILES'] = config_object.cwb_parameters_file
-    # envs['CWB_PARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} " \
-    #                           f"{envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EPARAMETERS_FILE']}"
-
-    # TODO: figure out these parameter files
-    envs['CWB_EMPARAMETERS_FILE'] = ""
-    envs['CWB_PPARAMETERS_FILE'] = f"{config_object.cwb_macros}/cwb_pparameters.C"
-    envs['CWB_EPARAMETERS_FILE'] = f"{config_object.cwb_macros}/cwb_eparameters.C"
-    envs['CWB_PPARMS_FILES'] = envs['CWB_PPARAMETERS_FILE']
-    # envs['CWB_PPARMS_FILES'] = f"{envs['CWB_ROOTLOGON_FILE']} {envs['CWB_PARAMETERS_FILE']} " \
-    #                            f"{envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EMPARAMETERS_FILE']} " \
-    #                            f"{envs['CWB_EPARAMETERS_FILE']} {envs['CWB_PPARAMETERS_FILE']} " \
-    #                            f"{envs['CWB_UPPARAMETERS_FILE']} {envs['CWB_EPPARAMETERS_FILE']}"
-
-    for key in envs.keys():
-        os.environ[key] = envs[key]
-
-    logger.info("Environment variables loaded")
-    return envs
-
-
 def cwb_root_logon(config: CWBConfig):
     # set LD search path before loading ROOT
     os.environ['LD_LIBRARY_PATH'] = f"{config.cwb_install}/lib"  # TODO: add previous LD path
@@ -158,9 +106,6 @@ def cwb_root_logon(config: CWBConfig):
 
     # load ROOT libraries and macros
     ROOT_logon(gROOT, gSystem, gStyle, config)
-
-    # load environment variables
-    load_envs(config.config, config)
 
     # declare types for c user parameters
     logger.info("Declaring types for user parameters")

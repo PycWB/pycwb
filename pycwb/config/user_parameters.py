@@ -1,7 +1,6 @@
 import yaml
 from jsonschema import validate, Draft202012Validator
-from pycwb.config.user_parameters_schema import schema
-from pycwb.config.constants import CWB_CAT
+from pycwb.constants.user_parameters_schema import schema
 
 
 # v = Draft202012Validator(schema)
