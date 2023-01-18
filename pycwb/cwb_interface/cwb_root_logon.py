@@ -1,28 +1,17 @@
-# _USE_ROOT6 = True
-# _USE_HEALPIX = True
-# _USE_LAL = True
-
-# HOME_CFITSIO = "" # leave empty if installed with conda
-# HOME_HEALPIX = "" # leave empty if installed with conda
-# HOME_LAL = "" # leave empty if installed with conda
-
-# _USE_ICC = False # optional
-
-# _USE_EBBH = False # optional
-# HOME_CVODE = ""
-
-
 import platform
 import os
 from pycwb.config import CWBConfig
 import pycwb
-import configparser
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     ################
     # set include paths for compiling
     ################
+    logger.info("Setting ROOT include paths")
     include_path = [f"{config.cwb_install}/include"]
     if config.use_ebbh: include_path += [f"{config.home_cvode}/include"]
 
@@ -33,6 +22,8 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     ################
     # load cwb libraries
     ################
+    logger.info("Loading CWB libraries")
+
     root_lib = ['libPhysics', 'libFFTW', 'libHtml', 'libTreeViewer', 'libpng', 'libFITSIO']  # libFITSIO mac only?
     lal_lib = ['liblal', 'liblalsupport', 'liblalframe', 'liblalmetaio', 'liblalsimulation', 'liblalinspiral',
                'liblalburst']
@@ -54,15 +45,19 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     ################
     # Loading Macros
     ################
+    logger.info("Loading CWB macros")
     wat_macros = ["Histogram.C", "AddPulse.C", "readAscii.C", "readtxt.C"]
 
     for macro in wat_macros:
+        logger.debug(f"Loading macro {macro}")
         gROOT.LoadMacro(f"{config.cwb_source}/wat/macro/{macro}")
 
     # Loading tools
+    logger.info("Loading CWB tools")
     tools_lib = ['STFT', 'gwat', 'Toolbox', 'History', 'Bicoherence', 'Filter', 'frame', 'cwb', 'wavegraph']
 
     for lib in tools_lib:
+        logger.debug(f"Loading tool {lib}")
         # TODO: error process
         gSystem.Load(f"{config.cwb_install}/lib/{lib}")
 
@@ -98,6 +93,7 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     gStyle.SetNumberContours(256)
 
     gROOT.ForceStyle(0)
+    logger.info("ROOT logon finished")
 
 
 def load_envs(config, config_object: CWBConfig):
@@ -148,6 +144,7 @@ def load_envs(config, config_object: CWBConfig):
     for key in envs.keys():
         os.environ[key] = envs[key]
 
+    logger.info("Environment variables loaded")
     return envs
 
 
@@ -166,6 +163,7 @@ def cwb_root_logon(config: CWBConfig):
     load_envs(config.config, config)
 
     # declare types for c user parameters
+    logger.info("Declaring types for user parameters")
     gROOT.LoadMacro(config.cwb_parameters_file)
 
     return ROOT, gROOT

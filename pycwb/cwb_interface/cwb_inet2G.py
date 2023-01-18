@@ -15,6 +15,8 @@ def cwb_inet2G_old(ROOT, gROOT, config, run_id, j_stage, f_name="", u_name="", e
 
 
 def cwb_inet2G(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None, file_name=""):
+    logger.info("Starting cwb_inet2G")
+
     os.environ['CWB_JOBID'] = str(run_id)
     logger.info(f"Setting CWB_JOBID to {run_id}")
 
@@ -27,6 +29,7 @@ def cwb_inet2G(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None
     # TODO: figure out ecem
 
     # initialize CWB config object
+    logger.info("Initializing CWB config object")
     icfg = ROOT.CWB.config()
     if file_name:
         icfg.Import(file_name)
@@ -37,6 +40,7 @@ def cwb_inet2G(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None
     icfg.Export()
 
     # initialize CWB job object
+    logger.info("Initializing CWB job object")
     CWB = ROOT.cwb2G(icfg, j_stage)
 
     # TODO: why is this needed? why can't we just use icfg?
@@ -53,12 +57,17 @@ def cwb_inet2G(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None
         cfg.lagMode = lagMode
         cfg.Export()
 
+    # initialize CWB inet
+    logger.info("Initializing CWB inet")
     cfg.Import(f"{config.cwb_install}/etc/cwb/macros/cwb_inet.C")
 
     # TODO: why setup stage again?
     # setup jobfOptions in global variables
+    logger.info("Setting up job stage")
     CWB.SetupStage(j_stage)
 
+    logger.info("Running CWB")
     CWB.run(run_id)
-
+    
+    logger.info("Finished cwb_inet2G")
     return 0
