@@ -3,6 +3,7 @@ import importlib
 from watchfiles import awatch
 import os
 import re
+import logging
 
 
 def import_helper(name):
@@ -13,8 +14,46 @@ def import_helper(name):
     return met
 
 
+def logger_init(log_file: str = None, log_level: str = 'INFO'):
+    """
+    Initialize logger
+    :param log_file:
+    :param log_level:
+    :return:
+    """
+    # create logger
+    logger = logging.getLogger('messenger')
+    logger.setLevel(log_level)
+
+    # create console handler and set level to debug
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+
+    # create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # add formatter to ch
+    ch.setFormatter(formatter)
+
+    # add ch to logger
+    logger.addHandler(ch)
+
+    # add file handler
+    if log_file:
+        fh = logging.FileHandler(log_file)
+        fh.setLevel(log_level)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+    return logger
+
+
 class Messenger:
-    def __init__(self, config):
+    def __init__(self, config: dict):
+        """
+        Initialize the messenger
+        :param config: config file in dict format
+        """
         self.events = asyncio.Queue()
         self.tasks = []
         self.registered = []
@@ -22,37 +61,73 @@ class Messenger:
         self.watched_dir = []
         self.file_watchers = []
         self.load_config(config)
+        self.logger = logger_init()
 
         pass
 
-    def load_config(self, config):
-        # Register event handlers
-        self.registered = config['events']
-        for f in self.registered:
-            f['handler'] = import_helper(f['handler'])
+    def load_config(self, config: dict):
+        """
+        Load config from config file
+        :param config: config file in dict format
+        """
+        # load middleware
+        if 'middleware' in config:
+            for middleware in config['middleware']:
+                self.middlewares.append({
+                    "handler": import_helper(middleware['handler']),
+                    "inject": middleware['inject']
+                })
 
-        # Register middlewares
-        if 'middlewares' in config:
-            self.middlewares = config['middlewares']
-            for f in self.middlewares:
-                f['handler'] = import_helper(f['handler'])
-
-        # Register watched files
+        # load file watcher
         if 'watched_dir' in config:
             self.watched_dir = config['watched_dir']
 
-        if 'file_watcher' in config:
-            self.file_watchers = config['file_watcher']
+        if 'filewatcher' in config:
+            for watcher in config['filewatcher']:
+                self.file_watchers.append({
+                    "name": watcher['name'],
+                    "trigger": watcher['trigger']
+                })
+                # self.watched_dir.append(watcher['dir'])
+
+        # load event handler
+        if 'events' in config:
+            for event in config['events']:
+                self.registered.append({
+                    "event": event['event'],
+                    "handler": import_helper(event['handler'])
+                })
+        else:
+            self.logger.error("No event handler registered")
+
+        # load periodic event handler
+        if 'periodic' in config:
+            for event in config['periodic']:
+                self.registered.append({
+                    "event": event['event'],
+                    "periodic": {
+                        "interval": event['interval']
+                    },
+                    "handler": import_helper(event['handler'])
+                })
 
     def run(self, starter):
+        """
+        Run the messenger
+        :param starter:
+        :return:
+        """
         try:
             self.trigger(starter)
             asyncio.run(self.supervisor())
         except KeyboardInterrupt as e:
-            print("Caught keyboard interrupt. Canceling tasks...")
+            self.logger.error("Keyboard interrupt, exit")
             self.cleaner()
 
     async def supervisor(self):
+        """
+        Supervisor to run the event loop
+        """
         # TODO: task monitor
         # file monitor
         filewatcher = asyncio.create_task(self.filewatcher())
@@ -64,11 +139,15 @@ class Messenger:
         await dispatcher
 
     async def dispatcher(self):
+        """
+        Dispatch the event to the handler
+        :return:
+        """
         try:
             while True:
                 # get event from event queue
                 event = await self.events.get()
-                print("event:", event)
+                self.logger.info("Event: {}".format(event))
                 if event['key'] == 'EXIT':
                     break
 
@@ -107,10 +186,16 @@ class Messenger:
                     self.tasks.append(task)
         except Exception as e:
             # TODO: handle error
-            print('Dispatcher Error: ', e)
+            # log the error
+            self.logger.error(e)
+            self.logger.error("Error in dispatcher, exit")
             self.events.task_done()
 
     async def filewatcher(self):
+        """
+        Watch for file changes
+        :return:
+        """
         try:
             async for changes in awatch(*self.watched_dir):
                 for change in changes:
@@ -129,8 +214,24 @@ class Messenger:
                                 })
         except Exception as e:
             # TODO: handle error
-            print('Filewatcher Error: ', e)
+            self.logger.error(e)
+            self.logger.error("Error in filewatcher, exit")
             self.events.task_done()
+
+    async def wait(self):
+        """
+        Wait for all task to be finished
+        :return:
+        """
+        await self.events.join()
+
+    async def exit(self):
+        """
+        Exit the program
+        :return:
+        """
+        self.trigger({"key": "EXIT"})
+        self.cleaner()
 
     async def task_wrapper(self, func, event, middlewares):
 
@@ -143,7 +244,7 @@ class Messenger:
             func(event, self.trigger)
         except Exception as e:
             # TODO: handle error
-            print('Task Error: ', e)
+            self.logger.error(e)
             self.events.task_done()
 
     async def periodic_task_wrapper(self, dt, func, event, middlewares):
@@ -159,8 +260,7 @@ class Messenger:
                 # wait for dt seconds
                 await asyncio.sleep(dt)
         except Exception as e:
-            # TODO: handle error
-            print('Error: ', e)
+            self.logger.error(e)
             self.events.task_done()
 
     def aggregator(self, event):
