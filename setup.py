@@ -6,7 +6,11 @@ requires = []
 install_requires = [
     "pyyaml",
     "jsonschema",
-    "watchfiles"
+    "watchfiles",
+    "numpy",
+    "gwpy",
+    "ligo-segments",
+    "aiohttp",
 ]
 
 

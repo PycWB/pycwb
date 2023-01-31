@@ -6,4 +6,8 @@ build
 dist
 messenger_test/data
 tests
+.pytest_cache
 !tests/*_test.py
+
+messenger-web-interface/node_modules
+messenger-web-interface/dist
