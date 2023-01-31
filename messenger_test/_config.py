@@ -3,7 +3,7 @@
 ##########################
 config = {
     "watched_dir": ["./data"],
-    "file_watcher": [
+    "filewatcher": [
         {
             "name": "strain_*",
             "trigger": {
@@ -29,23 +29,23 @@ config = {
             }
         }
     ],
-    "middlewares": [
+    "middleware": [
         {
             "key": "CWB_CONFIG",
             "inject": ["CWB_2G"],
             "handler": "_middlewares.cwb_config"
         }
     ],
-    "events": [
+    "periodic": [
         {
             "event": "ONLINE",
             "handler": "_handlers.online_periodic_trigger",
-            "periodic": {
-                "interval": 5,
-                "repeat": 20
-            },
+            "interval": 5,
+            "repeat": 20,
             "trigger": ["RETRIEVE_DATA"]
-        },
+        }
+    ],
+    "events": [
         {
             "event": "RETRIEVE_DATA",
             "handler": "_handlers.retrieve_data",
