@@ -2,11 +2,14 @@ import ROOT
 import sys, os
 import numpy as np
 from gwpy.timeseries import TimeSeries
-import time
+from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
+import logging
 
-ROOT.gSystem.Load("cwb.so")
+logger = logging.getLogger(__name__)
 
-"---------------------------------------"
+if not hasattr(ROOT, "WDM"):
+    ROOT.gSystem.Load("wavelet")
+    logger.info("Loading wavelet library")
 
 
 def convert_wseries_to_wavearray(w):
@@ -19,9 +22,6 @@ def convert_wseries_to_wavearray(w):
     h.rate(w.rate())
 
     return h
-
-
-"---------------------------------------"
 
 
 def convert_wavearray_to_wseries(data):
@@ -44,10 +44,7 @@ def convert_wavearray_to_wseries(data):
     return w
 
 
-"---------------------------------------"
-
-
-def convert_timeseries_to_wavearray(data):
+def convert_timeseries_to_wavearray(data: TimeSeries):
     """
         this is to convert timeseries to wavearray,
         if we read noise data with something else just need to make a new conversion function
@@ -65,10 +62,24 @@ def convert_timeseries_to_wavearray(data):
     return h
 
 
-"---------------------------------------"
+def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
+    """
+        this is to convert timeseries to wavearray,
+        if we read noise data with something else just need to make a new conversion function
+    """
+    h = ROOT.wavearray(np.double)()
+
+    data_val = np.round(data.data, 25)
+    for i, d in enumerate(data_val):
+        h.append(d)
+
+    h.start(np.asarray(data.start_time, dtype=np.double))
+    h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
+
+    return h
 
 
-def convert_numpy_to_wavearray(data, start, stop, rate):
+def convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double, rate: int):
     """
         this is to convert numpy to wavearray.
     """
@@ -82,9 +93,6 @@ def convert_numpy_to_wavearray(data, start, stop, rate):
         h.append(d)
 
     return h
-
-
-"---------------------------------------"
 
 
 def gettimeseriesfromfiles(filelist, channelname, START, END, rate):
@@ -105,9 +113,6 @@ def gettimeseriesfromfiles(filelist, channelname, START, END, rate):
     return data
 
 
-"---------------------------------------"
-
-
 def fill_wavearray(filelist, channelname, START, END, rate=-1):
     data = gettimeseriesfromfiles(filelist,
                                   channelname,
@@ -119,20 +124,14 @@ def fill_wavearray(filelist, channelname, START, END, rate=-1):
     return data
 
 
-"---------------------------------------"
-
-
 def data_to_TFmap(h):
     # TODO: write something
     lev = int(h.rate() / 2)  # TFmap and wavearray should have the same rate?
     wdtf = ROOT.WDM(np.double)(lev, 2 * lev, 6, 10)  # what is this? there is a problem with this function
     w = ROOT.WSeries(np.double)(h, wdtf)
-    w.Forward()  # what is this doing?
+    w.Forward()  # Perform n steps of forward wavelet transform
 
     return w
-
-
-"---------------------------------------"
 
 
 def WSeries_to_matrix(w):
@@ -147,9 +146,6 @@ def WSeries_to_matrix(w):
     return matrix
 
 
-"---------------------------------------"
-
-
 def convert_wavearray_to_timeseries(h):
     ar = []
     for i in range(h.size()):
@@ -158,9 +154,6 @@ def convert_wavearray_to_timeseries(h):
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
     return ar
-
-
-"---------------------------------------"
 
 
 def transform(h, time_layer, freq_layer):
@@ -182,9 +175,6 @@ def transform(h, time_layer, freq_layer):
     w.Forward(h, WDMt)
 
     return w
-
-
-"---------------------------------------"
 
 
 def crop_wavearray(data, rate, totalscratch):
@@ -215,9 +205,6 @@ def crop_wavearray(data, rate, totalscratch):
     return data_crop
 
 
-"---------------------------------------"
-
-
 def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bins):
     """
         Returns Z-histogram as numpy matrix
@@ -246,9 +233,6 @@ def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bin
     freq_arr = np.linspace(F1, F2, freq_bins)
 
     return time_arr, freq_arr, z_arr
-
-
-"---------------------------------------"
 
 
 def scaling(x):

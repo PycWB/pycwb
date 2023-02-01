@@ -11,6 +11,7 @@ install_requires = [
     "gwpy",
     "ligo-segments",
     "aiohttp",
+    "pycbc",
 ]
 
 
