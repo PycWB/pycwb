@@ -1,4 +1,4 @@
-import numpy as np
+from pycwb.utils import convert_pycbc_timeseries_to_wavearray
 from gwpy.timeseries import TimeSeries
 from .data_check import data_check
 from ligo.segments import segment, segmentlist
@@ -42,4 +42,6 @@ def read_from_catalog(catalog: str, event: str, detector: str, time_slice: tuple
     if time_slice:
         data = data.time_slice(time_slice[0], time_slice[1])
 
-    return data, m
+    h = convert_pycbc_timeseries_to_wavearray(data)
+
+    return data, m, h

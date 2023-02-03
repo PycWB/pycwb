@@ -24,9 +24,8 @@ def load_yaml(file_name, load_to_root=True):
     # TODO: better error message
     validate(instance=params, schema=user_parameters_schema)
 
-    params = add_generated_key(params)
-
     if load_to_root:
+        params = add_generated_key(params)
         # assign variable
         cmd = ""
         for key in params.keys():
@@ -35,9 +34,6 @@ def load_yaml(file_name, load_to_root=True):
             gROOT.ProcessLine(cmd)
     else:
         params = set_default(params, user_parameters_schema)
-
-    # move some derived key from cwb code to config
-    params = add_derived_key(params)
 
     return params
 
@@ -95,7 +91,7 @@ def assign_variable(schema, key, value):
 
 def add_generated_key(params):
     """
-    Add generated key to the user parameters
+    Add generated key to the user parameters for ROOT
     :param params:
     :return:
     """
@@ -110,24 +106,6 @@ def add_generated_key(params):
 
     return new_params
 
-
-def add_derived_key(params):
-    """
-    Add derived key to the user parameters
-    :param params:
-    :return:
-    """
-
-    # alias
-    params["gamma"] = params["cfg_gamma"]
-
-    # calculate analysis data rate
-    if params['fResample'] > 0:
-        params['rateANA'] = params['fResample'] >> params['levelR']
-    else:
-        params['rateANA'] = params['inRate'] >> params['levelR']
-
-    return params
 
 def process_special_type(c_type, key, value):
     """

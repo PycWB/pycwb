@@ -346,7 +346,18 @@ schema = {
             "type": "string",
             "c_type": "TMacro",
             "default": ""
+        },
+        "filter_dir": {
+            "type": "string",
+            "description": "filter directory, defaults to environment HOME_WAT_FILTERS",
+            "default": ""
+        },
+        "wdmXTalk": {
+            "type": "string",
+            "description": "WDM cross-talk file",
+            "default": "wdmXTalk/OverlapCatalog_Lev_8_16_32_64_128_256_iNu_4_Prec_10.bin"
         }
+
     },
     "required": ["analysis", "ifo", "refIFO"],
     "additionalProperties": False

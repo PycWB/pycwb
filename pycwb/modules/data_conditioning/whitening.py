@@ -4,11 +4,12 @@ import numpy as np
 import copy
 import ROOT
 import logging
+from pycwb.config import Config
 
 logger = logging.getLogger(__name__)
 
 
-def whitening(config: dict, h: TimeSeries):
+def whitening(config: Config, h: TimeSeries):
     """
         
     Input
@@ -26,22 +27,22 @@ def whitening(config: dict, h: TimeSeries):
     hw: whitened data
     """
 
-    layers_white = 2 ** config['l_white'] if config['l_white'] > 0 else 2 ** config['l_high']
+    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
 
     wdm_white = ROOT.WDM(np.double)(layers_white,
                                     layers_white, 6, 10)
 
     tf_map = ROOT.WSeries(np.double)(h, wdm_white)
     tf_map.Forward()
-    tf_map.setlow(config['fLow'])
-    tf_map.sethigh(config['fHigh'])
+    tf_map.setlow(config.fLow)
+    tf_map.sethigh(config.fHigh)
 
     # calculate noise rms
     logger.info('calculate noise rms')
     # FIXME: should here be tf_map?
     # FIXME: check the length of data and white parameters to prevent freezing
-    nRMS = tf_map.white(config['whiteWindow'], 0, config['segEdge'],
-                        config['whiteStride'])
+    nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge,
+                        config.whiteStride)
 
     # high pass filtering at 16Hz
     logger.info('high pass filtering at 16Hz')
