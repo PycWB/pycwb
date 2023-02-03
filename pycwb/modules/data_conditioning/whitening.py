@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def whitening(config: dict, h: TimeSeries, detectors = 'H1'):
+def whitening(config: dict, h: TimeSeries):
     """
         
     Input
