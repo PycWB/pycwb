@@ -1,19 +1,24 @@
 import ROOT
-
+import logging
+logger = logging.getLogger(__name__)
 
 def init_network(run_id, config: dict):
+    logger.info("Initializing network")
     net = ROOT.network()
     for ifo in config['ifo']:
+        logger.info("Adding ifo %s", ifo)
         det = ROOT.detector(ifo)
 
         det.rate = config["inRate"] if not config['fResample'] else config['fResample']
         net.add(det)
 
     # set network skymaps
+    logger.info("Setting skymaps")
     net.setSkyMaps(int(config['healpix']))
     net.setAntenna()
 
     # restore network parameters
+    logger.info("Restoring network parameters")
     net.constraint(config['delta'], config['gamma'])
     net.setDelay(config['refIFO'])
     net.Edge = config['segEdge']
@@ -28,7 +33,7 @@ def init_network(run_id, config: dict):
     net.pattern = config['pattern']
 
     # set sky mask
-    # decleare cpp struct with healpix
+    logger.info("Setting sky mask")
     tmp_cfg = ROOT.CWB.config()
     tmp_cfg.healpix = config['healpix']
     tmp_cfg.Theta1 = config['Theta1']
