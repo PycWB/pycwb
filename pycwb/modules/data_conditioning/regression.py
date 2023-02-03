@@ -1,44 +1,42 @@
 from gwpy.timeseries import TimeSeries
-from pycwb import utils as ut
+from pycwb.constants import REGRESSION_FILTER_LENGTH, \
+    REGRESSION_MATRIX_FRACTION, \
+    REGRESSION_SOLVE_EIGEN_THR, REGRESSION_SOLVE_EIGEN_NUM, \
+    REGRESSION_SOLVE_REGULATOR, REGRESSION_APPLY_THR, \
+    WDM_BETAORDER, WDM_PRECISION
 import ROOT
+import numpy as np
 
 
-def regression(h: TimeSeries, f_min: int, f_max: int, scratch: float):
+def regression(config: dict, h: TimeSeries):
     """
         Clean data with cWB regression method.
     Input
     ------
     
-    h: (wavearray) data to clean
-    f_min: (int) minimum frequency
-    f_max: (int) maximum frequency
-    scratch: (float) extra data to avoid artifacts
+    config: (dict) configuration dictionary
+    h: (TimeSeries) data
     
     Output
     ------
     hh: (ROOT wavearray) cleaned data 
     
     """
+    layers = int(config['rateANA'] / 8)
+    wdm = ROOT.WDM(np.double)(layers, layers, WDM_BETAORDER, WDM_PRECISION)
+    tf_map = ROOT.WSeries(np.double)(h, wdm)
+    tf_map.Forward()
 
-    tfmap = ut.data_to_TFmap(h)
-
-    # define regression
-    r = ROOT.regression()
-    r.add(tfmap, "hchannel")
-    r.mask(0)
-    r.unmask(0, f_min, f_max)
-
-    # add original channel as aux
-    r.add(h, "hchannel")
+    r = ROOT.regression(tf_map, "target", 1., config['fHigh'])
+    r.add(h, "target")
 
     # Calculate prediction
-    r.setFilter(8)  # length of filter
-    r.setMatrix(scratch, .95)  # totalscracht and % of data excluded
-    r.solve(0.2, 0, 'h')  # 0.2, 0, 'h'
-    r.apply(0.2)  # 0.2
-
-    # get clean channel -> should be converted to timeseries or whatever interested.
-    # amplitude is stored in data (array with size hh.size())
+    r.setFilter(REGRESSION_FILTER_LENGTH)  # length of filter
+    r.setMatrix(config['segEdge'], REGRESSION_MATRIX_FRACTION)
+    r.solve(REGRESSION_SOLVE_EIGEN_THR,
+            REGRESSION_SOLVE_EIGEN_NUM,
+            REGRESSION_SOLVE_REGULATOR)
+    r.apply(REGRESSION_APPLY_THR)
 
     # cleaned data
     hh = r.getClean()
