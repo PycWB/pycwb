@@ -1,20 +1,63 @@
 import ROOT
 import logging
 from pycwb.config import Config
+from pycwb.constants import WDM_BETAORDER, WDM_PRECISION
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
 def init(run_id, config: Config):
     net = ROOT.network()
-    load_MRA(config, net)
-    init_network(config, net, run_id)
+    load_mra(config, net)
+    wdm_list = create_wdm(config, net)
+    net = init_network(config, net, run_id)
+    return net, wdm_list
 
 
-def load_MRA(config: Config, net: ROOT.network):
+def load_mra(config: Config, net: ROOT.network):
     logger.info("Loading MRA")
     net.setMRAcatalog(config.MRAcatalog)
 
+
+def create_wdm(config: Config, net: ROOT.network):
+    beta_order = WDM_BETAORDER  # beta function order for Meyer
+    precision = WDM_PRECISION  # wavelet precision
+
+    if net.wdmMRA.tag != 0:
+        beta_order = net.wdmMRA.BetaOrder
+        precision = net.wdmMRA.precision
+
+    wdm_list = []
+    for i in range(config.l_low, config.l_high + 1):
+        level = config.l_high + config.l_low - i
+        layers = 2 ** level if level > 0 else 0
+        wdm = ROOT.WDM(np.double)(layers, layers, beta_order, precision)
+        wdmFLen = wdm.m_H / config.rateANA
+
+        if wdmFLen > config.segEdge + 0.001:
+            logger.error("Filter length must be <= segEdge !!!")
+            logger.error("filter length : %s sec", wdmFLen)
+            logger.error("cwb   scratch : %s sec", config.segEdge)
+            raise ValueError("Filter length must be <= segEdge !!!")
+        else:
+            logger.info("Filter length = %s (sec)", wdmFLen)
+
+        # check if the length for time delay amplitudes is less than cwb scratch length
+        # the factor 1.5 is used to avoid to use pixels on the border which could be distorted
+        rate = config.rateANA >> level
+
+        if config.segEdge < int(1.5 * (config.TDSize / rate) + 0.5):
+            logger.error("segEdge must be > 1.5x the length for time delay amplitudes!!!")
+            logger.error("TD length : %s sec", config.TDSize / rate)
+            logger.error("segEdge   : %s sec", config.segEdge)
+            logger.error("Select segEdge > %s", int(1.5 * (config.TDSize / rate) + 0.5))
+            raise ValueError("segEdge must be > 1.5x the length for time delay amplitudes!!!")
+
+        wdm_list.append(wdm)
+        net.add(wdm)
+
+    return wdm_list
 
 def init_network(config: Config, net: ROOT.network, run_id):
     logger.info("Initializing network")
