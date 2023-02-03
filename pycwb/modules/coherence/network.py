@@ -9,13 +9,15 @@ logger = logging.getLogger(__name__)
 
 def init(run_id, config: Config):
     net = ROOT.network()
-    load_mra(config, net)
+    load_MRA(config, net)
     wdm_list = create_wdm(config, net)
+    check_layers_with_MRAcatalog(config, net)
+    check_lagStep(config)
     net = init_network(config, net, run_id)
     return net, wdm_list
 
 
-def load_mra(config: Config, net: ROOT.network):
+def load_MRA(config: Config, net: ROOT.network):
     logger.info("Loading MRA")
     net.setMRAcatalog(config.MRAcatalog)
 
@@ -58,6 +60,69 @@ def create_wdm(config: Config, net: ROOT.network):
         net.add(wdm)
 
     return wdm_list
+
+
+def check_layers_with_MRAcatalog(config: Config, net: ROOT.network):
+    """
+    check if analysis layers are contained in the MRAcatalog
+
+    level : is the decomposition level
+    layers : are the number of layers along the frequency axis rateANA/(rateANA>>level)
+    :param config:
+    :param net:
+    :return:
+    """
+    check_layers = 0
+    for i in range(config.l_low, config.l_high + 1):
+        level = config.l_high + config.l_low - i
+        layers = 2 ** level if level > 0 else 0
+        for j in range(net.wdmMRA.nRes):
+            if layers == net.wdmMRA.layers[j]:
+                check_layers += 1
+
+    if check_layers != config.nRES:
+        logger.error("analysis layers do not match the MRA catalog")
+        logger.error("analysis layers : ")
+        for level in range(config.l_high, config.l_low - 1, -1):
+            layers = 1 << level if level > 0 else 0
+            logger.error("level : %s layers : %s", level, layers)
+
+        logger.error("MRA catalog layers : ")
+        for i in range(net.wdmMRA.nRes):
+            logger.error("layers : %s", net.wdmMRA.layers[i])
+        raise ValueError("analysis layers do not match the MRA catalog")
+
+
+def check_lagStep(config: Config):
+    """
+    Check if lagStep compatible with WDM parity
+
+    his condition is necessary to avoid mixing between odd
+    and even pixels when circular buffer is used for lag shift
+    The MRAcatalog distinguish odd and even pixels
+
+    :param config:
+    :param net:
+    :return:
+    """
+    rate_min = config.rateANA >> config.l_high
+    dt_max = 1. / rate_min
+    if rate_min % 1:
+        logger.error("rate min=%s (Hz) is not integer", rate_min)
+        raise ValueError("rate min=%s (Hz) is not integer", rate_min)
+    if int(config.lagStep * rate_min + 0.001) & 1:
+        logger.error("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.lagStep, 2 * dt_max)
+        raise ValueError("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.lagStep,
+                         2 * dt_max)
+    if int(config.segEdge * rate_min + 0.001) & 1:
+        logger.error("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segEdge, 2 * dt_max)
+        raise ValueError("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segEdge,
+                         2 * dt_max)
+    if int(config.segMLS * rate_min + 0.001) & 1:
+        logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segMLS, 2 * dt_max)
+        raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segMLS,
+                         2 * dt_max)
+
 
 def init_network(config: Config, net: ROOT.network, run_id):
     logger.info("Initializing network")
