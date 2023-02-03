@@ -3,9 +3,12 @@ from pycwb import utils as ut
 import numpy as np
 import copy
 import ROOT
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def whitening(h: TimeSeries, edge, white_window: float, white_stride: float, f_min: int, f_max: int):
+def whitening(config: dict, h: TimeSeries, detectors = 'H1'):
     """
         
     Input
@@ -23,20 +26,32 @@ def whitening(h: TimeSeries, edge, white_window: float, white_stride: float, f_m
     hw: whitened data
     """
 
-    layers_high = 1 << 9
+    layers_white = 2 ** config['l_white'] if config['l_white'] > 0 else 2 ** config['l_high']
 
-    WDMwhite = ROOT.WDM(np.double)(layers_high,
-                                   layers_high, 6, 10)
+    wdm_white = ROOT.WDM(np.double)(layers_white,
+                                    layers_white, 6, 10)
 
-    tf_map = ROOT.WSeries(np.double)(h, WDMwhite)
+    tf_map = ROOT.WSeries(np.double)(h, wdm_white)
     tf_map.Forward()
-    tf_map.setlow(f_min)
-    tf_map.sethigh(f_max)
-    # // calculate noise rms
-    nRMS = tf_map.white(white_window, 0, edge, white_stride)
+    tf_map.setlow(config['fLow'])
+    tf_map.sethigh(config['fHigh'])
 
-    # // whiten  0 phase WSeries
+    # calculate noise rms
+    logger.info('calculate noise rms')
+    # FIXME: should here be tf_map?
+    # FIXME: check the length of data and white parameters to prevent freezing
+    nRMS = tf_map.white(config['whiteWindow'], 0, config['segEdge'],
+                        config['whiteStride'])
+
+    # high pass filtering at 16Hz
+    logger.info('high pass filtering at 16Hz')
+    # nRMS.bandpass(16., 0., 1)
+
+    # whiten  0 phase WSeries
+    logger.info('whiten  0 phase WSeries')
     tf_map.white(nRMS, 1)
+    # whiten 90 phase WSeries
+    logger.info('whiten 90 phase WSeries')
     tf_map.white(nRMS, -1)
 
     wtmp = copy.deepcopy(tf_map)

@@ -285,6 +285,31 @@ schema = {
             "description": "alias of iwindow",
             "default": 5.0
         },
+        "l_low": {
+            "type": "integer",
+            "description": "low frequency resolution level (2^l_low Hz)",
+            "default": 3
+        },
+        "l_high": {
+            "type": "integer",
+            "description": "high frequency resolution level (2^l_high Hz)",
+            "default": 8
+        },
+        "l_white": {
+            "type": "integer",
+            "description": "whitening frequency resolution level (2^l_white Hz), if 0 then l_white=l_high",
+            "default": 0
+        },
+        "whiteWindow": {
+            "type": "number",
+            "description": "[sec] time window dT. if = 0 - dT=T, where T is segment duration",
+            "default": 60.
+        },
+        "whiteStride": {
+            "type": "number",
+            "description": "[sec] noise sampling time stride",
+            "default": 20.
+        },
         "simulation": {
             "type": "integer",
             "default": 0

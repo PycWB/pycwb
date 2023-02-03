@@ -27,6 +27,7 @@ def regression(config: dict, h: TimeSeries):
     tf_map = ROOT.WSeries(np.double)(h, wdm)
     tf_map.Forward()
 
+    # TOOD: consideration?
     r = ROOT.regression(tf_map, "target", 1., config['fHigh'])
     r.add(h, "target")
 

@@ -1,6 +1,6 @@
 import yaml
 from jsonschema import validate, Draft202012Validator
-from pycwb.constants.user_parameters_schema import schema
+from pycwb.constants import user_parameters_schema
 from ROOT import gROOT
 
 
@@ -22,7 +22,7 @@ def load_yaml(file_name, load_to_root=True):
         params = yaml.safe_load(file)
 
     # TODO: better error message
-    validate(instance=params, schema=schema)
+    validate(instance=params, schema=user_parameters_schema)
 
     params = add_generated_key(params)
 
@@ -30,11 +30,14 @@ def load_yaml(file_name, load_to_root=True):
         # assign variable
         cmd = ""
         for key in params.keys():
-            cmd += assign_variable(schema, key, params[key]) + '\n'
+            cmd += assign_variable(user_parameters_schema, key, params[key]) + '\n'
 
             gROOT.ProcessLine(cmd)
     else:
-        params = set_default(params, schema)
+        params = set_default(params, user_parameters_schema)
+
+    # move some derived key from cwb code to config
+    params = add_derived_key(params)
 
     return params
 
@@ -104,9 +107,27 @@ def add_generated_key(params):
             new_params['nDQF'] = len(params[key])
 
         new_params[key] = params[key]
-    new_params["gamma"] = new_params["cfg_gamma"]
+
     return new_params
 
+
+def add_derived_key(params):
+    """
+    Add derived key to the user parameters
+    :param params:
+    :return:
+    """
+
+    # alias
+    params["gamma"] = params["cfg_gamma"]
+
+    # calculate analysis data rate
+    if params['fResample'] > 0:
+        params['rateANA'] = params['fResample'] >> params['levelR']
+    else:
+        params['rateANA'] = params['inRate'] >> params['levelR']
+
+    return params
 
 def process_special_type(c_type, key, value):
     """
