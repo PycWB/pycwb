@@ -357,6 +357,11 @@ schema = {
             "description": "WDM cross-talk file",
             "default": "wdmXTalk/OverlapCatalog_Lev_8_16_32_64_128_256_iNu_4_Prec_10.bin"
         },
+        "upTDF": {
+            "type": "integer",
+            "description": "upsample factor to obtain rate of TD filter : TDRate = (inRate>>levelR)*upTDF",
+            "default": 4
+        },
         "TDSize": {
             "type": "integer",
             "description": "time-delay filter size (max 20) ",
