@@ -2,11 +2,13 @@ import os
 from pycwb.config import CWBConfig
 import logging
 from pycwb.cwb_interface import CWB
+from ROOT import gROOT
+import ROOT
 
 logger = logging.getLogger(__name__)
 
 
-def cwb_xnet(ROOT, config: CWBConfig, run_id: int, j_stage: int,
+def cwb_xnet(config: CWBConfig, run_id: int, j_stage: int,
              batch=False, eced=False, inet_option=None, file_name=""):
     logger.info("Starting cwb_xnet")
 
@@ -52,7 +54,7 @@ def cwb_xnet(ROOT, config: CWBConfig, run_id: int, j_stage: int,
     logger.info("Finished cwb_xnet2G")
 
 
-def cwb_xnet_new(ROOT, gROOT, config: CWBConfig, run_id: int, j_stage: int,
+def cwb_xnet_new(config: CWBConfig, run_id: int, j_stage: int,
              batch=False, eced=False, inet_option=None, file_name=""):
     logger.info("Starting cwb_xnet")
 

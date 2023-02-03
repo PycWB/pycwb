@@ -1,3 +1,6 @@
+NIFO_MAX = 8
+
+# todo: split object into sections, and flatten them before validation
 schema = {
     "type": "object",
     "properties": {
@@ -42,7 +45,9 @@ schema = {
             "default": ["L1", "H1", "V1", "I1", "J1", "G1"]
         },
         "nIFO": {
-            "type": "integer"
+            "type": "integer",
+            "description": "number of interferometers",
+            "default": NIFO_MAX
         },
         "refIFO": {
             "type": "string",
@@ -63,6 +68,55 @@ schema = {
             "type": "number",
             "description": "probability for black pixel selection (netpixel)",
             "default": 0.001
+        },
+        "fResample": {
+            "type": "number",
+            "description": "if zero resampling is not applied",
+            "default": 0
+        },
+        "inRate": {
+            "type": "number",
+            "description": "input data rate",
+            "default": 16384
+        },
+        "EFEC": {
+            "type": "boolean",
+            "description": "Earth Fixed / Selestial coordinates",
+            "default": True,
+        },
+        # fixme: implement Toolfun::GetPrecision
+        "precision": {
+            "type": "number",
+            "description": "set parameters for big clusters events management",
+            "default": 0.0,
+        },
+        "pattern": {
+            "type": "integer",
+            "description": "select pixel pattern used to produce the energy max maps for pixel's selection \n"
+                           'patterns: "/" - ring-up, "\\" - ring-down, "|" - delta, "-" line, "*" - single \n'
+                           'pattern =  0 - "*"   1-pixel  standard search \n'
+                           'pattern =  1 - "3|"  3-pixels vertical packet (delta) \n'
+                           'pattern =  2 - "3-"  3-pixels horizontal packet (line) \n'
+                           'pattern =  3 - "3/"  3-pixels diagonal packet (ring-up) \n'
+                           'pattern =  4 - "3\"  3-pixels anti-diagonal packet (ring-down) \n'
+                           'pattern =  5 - "5/"  5-pixels diagonal packet (ring-up) \n'
+                           'pattern =  6 - "5\"  5-pixels anti-diagonal packet (ring-down) \n'
+                           'pattern =  7 - "3+"  5-pixels plus packet (plus) \n'
+                           'pattern =  8 - "3x"  5-pixels cross packet (cross) \n'
+                           'pattern =  9 - "9p"  9-pixels square packet (box) \n'
+                           'pattern = else - "*" 1-pixel  packet (single) \n'
+                           '------------------------------------------------------------------------------------ \n'
+                           'pattern==0                   Standard Search : std-pixel    selection + likelihood2G \n'
+                           'pattern!=0 && pattern<0      Mixed    Search : packet-pixel selection + likelihood2G  \n'
+                           'pattern!=0 && pattern>0      Packed   Search : packet-pixel selection + likelihoodWP \n',
+            "default": 0
+        },
+        "nSky": {
+            "type": "integer",
+            "description": "if nSky>0 -> # of skymap prob pixels dumped to ascii \n "
+                           "if nSky=0 -> (#pixels==1000 || cum prob > 0.99) \n "
+                           "if nSky<0 -> nSky=-XYZ... save all pixels with prob < 0.XYZ...",
+            "default": 0
         },
         "subnet": {
             "type": "number",
@@ -92,7 +146,7 @@ schema = {
         "Acore": {
             "type": "number",
             "description": "threshold of core pixels (supercluster, likelihood)",
-            "default": 2**0.5
+            "default": 2 ** 0.5
         },
         "Tgap": {
             "type": "number",
@@ -122,6 +176,36 @@ schema = {
             "default": 0.5,
             "minimum": -1,
             "maximum": 1,
+        },
+        "Theta1": {
+            "type": "number",
+            "description": "start theta",
+            "default": 0.0
+        },
+        "Theta2": {
+            "type": "number",
+            "description": "stop theta",
+            "default": 180.,
+        },
+        "Phi1": {
+            "type": "number",
+            "description": "start phi",
+            "default": 0.0
+        },
+        "Phi2": {
+            "type": "number",
+            "description": "stop phi",
+            "default": 360.,
+        },
+        "skyMaskFile": {
+            "type": "string",
+            "description": "sky mask file",
+            "default": ""
+        },
+        "skyMaskCCFile": {
+            "type": "string",
+            "description": "sky mask file",
+            "default": ""
         },
         "segLen": {
             "type": "number",
@@ -169,49 +253,74 @@ schema = {
             "default": 150
         },
         "channelNamesRaw": {
-            "type": "array"
+            "type": "array",
+            "description": "channel names for raw data",
+            "default": []
         },
         "channelNamesMDC": {
-            "type": "array"
+            "type": "array",
+            "description": "channel names for MDC data",
+            "default": []
         },
         "frFiles": {
-            "type": "array"
+            "type": "array",
+            "default": []
         },
         "DQF": {
             "type": "array",
-            "c_type": "dqfile"
+            "c_type": "dqfile",
+            "default": []
         },
         "nDQF": {
-            "type": "integer"
+            "type": "integer",
+            "default": NIFO_MAX
+        },
+        "iwindow": {
+            "type": "number",
+            "description": "injection time window (Tinj +/- iwindow/2)",
+            "default": 5.0
         },
         "gap": {
-            "type": "number"
+            "type": "number",
+            "description": "alias of iwindow",
+            "default": 5.0
         },
         "simulation": {
-            "type": "number"
+            "type": "integer",
+            "default": 0
         },
         "nfactor": {
-            "type": "number"
+            "type": "number",
+            "description": "number of simulation factors",
+            "default": 0
         },
         "factors": {
             "type": "array",
             "items": {
                 "type": "number"
-            }
+            },
+            "description": "array of simulation factors (when sim=4 factors[0] is used as offset [must be int])",
+            "default": []
         },
         "levelR": {
-            "type": "integer"
+            "type": "integer",
+            "description": "resampling level : inRate[fResample]/(2^levelR) Hz",
+            "default": 2
         },
         "healpix": {
-            "type": "number"
+            "type": "number",
+            "description": "if not 0 use healpix sky map (number of sky pixels = 12*pow(4,healpix))",
+            "default": 7
         },
         "plugin": {
             "type": "string",
-            "c_type": "TMacro"
+            "c_type": "TMacro",
+            "default": ""
         },
         "configPlugin": {
             "type": "string",
-            "c_type": "TMacro"
+            "c_type": "TMacro",
+            "default": ""
         }
     },
     "required": ["analysis", "ifo", "refIFO"],

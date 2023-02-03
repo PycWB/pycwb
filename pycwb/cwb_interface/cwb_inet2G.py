@@ -1,9 +1,12 @@
 import os
 from pycwb.config import CWBConfig
 import logging
+from ROOT import gROOT
+import ROOT
+
 logger = logging.getLogger(__name__)
 
-def cwb_inet2G_old(ROOT, gROOT, config, run_id, j_stage, f_name="", u_name="", eced=False, inet_option=None):
+def cwb_inet2G_old(config, run_id, j_stage, f_name="", u_name="", eced=False, inet_option=None):
     gROOT.LoadMacro(f"{config['CWB']['CWB_INSTALL']}/etc/cwb/macros/cwb_inet2G.C")
 
     # TODO: parameters check
@@ -14,7 +17,7 @@ def cwb_inet2G_old(ROOT, gROOT, config, run_id, j_stage, f_name="", u_name="", e
     ROOT.cwb_inet2G(run_id, f_name, j_stage, u_name, eced)
 
 
-def cwb_inet2G(ROOT, gROOT, config: CWBConfig, run_id, j_stage, inet_option=None, file_name=""):
+def cwb_inet2G(config: CWBConfig, run_id, j_stage, inet_option=None, file_name=""):
     logger.info("Starting cwb_inet2G")
 
     os.environ['CWB_JOBID'] = str(run_id)

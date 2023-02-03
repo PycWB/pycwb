@@ -59,8 +59,8 @@ def ROOT_logon(gROOT, gSystem, gStyle, config: CWBConfig):
     for lib in tools_lib:
         logger.debug(f"Loading tool {lib}")
         # TODO: error process
-        gSystem.Load(f"{config.cwb_install}/lib/{lib}")
-
+        # gSystem.Load(f"{config.cwb_install}/lib/{lib}")
+        gSystem.Load(lib)
     ################
     # declare ACLiC includes environment
     ################

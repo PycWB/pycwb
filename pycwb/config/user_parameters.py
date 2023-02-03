@@ -1,6 +1,7 @@
 import yaml
 from jsonschema import validate, Draft202012Validator
 from pycwb.constants.user_parameters_schema import schema
+from ROOT import gROOT
 
 
 # v = Draft202012Validator(schema)
@@ -10,7 +11,7 @@ from pycwb.constants.user_parameters_schema import schema
 #     print(error.schema_path)
 #     print(error.message)
 
-def load_yaml(gROOT, file_name):
+def load_yaml(file_name, load_to_root=True):
     """
     Load yaml file to ROOT global variable
     :param gROOT:
@@ -24,12 +25,30 @@ def load_yaml(gROOT, file_name):
     validate(instance=params, schema=schema)
 
     params = add_generated_key(params)
-    # assign variable
-    cmd = ""
-    for key in params.keys():
-        cmd += assign_variable(schema, key, params[key]) + '\n'
 
-    gROOT.ProcessLine(cmd)
+    if load_to_root:
+        # assign variable
+        cmd = ""
+        for key in params.keys():
+            cmd += assign_variable(schema, key, params[key]) + '\n'
+
+            gROOT.ProcessLine(cmd)
+    else:
+        params = set_default(params, schema)
+
+    return params
+
+
+def set_default(params, schema):
+    """
+    Set default value if not set
+    :param params:
+    :param schema:
+    :return:
+    """
+    for key in schema['properties'].keys():
+        if key not in params:
+            params[key] = schema['properties'][key]['default']
 
     return params
 
@@ -85,6 +104,7 @@ def add_generated_key(params):
             new_params['nDQF'] = len(params[key])
 
         new_params[key] = params[key]
+    new_params["gamma"] = new_params["cfg_gamma"]
     return new_params
 
 

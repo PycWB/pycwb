@@ -99,7 +99,7 @@ class CWBConfig:
         #                            f"{envs['CWB_UPARAMETERS_FILE']} {envs['CWB_EMPARAMETERS_FILE']} " \
         #                            f"{envs['CWB_EPARAMETERS_FILE']} {envs['CWB_PPARAMETERS_FILE']} " \
         #                            f"{envs['CWB_UPPARAMETERS_FILE']} {envs['CWB_EPPARAMETERS_FILE']}"
-
+        envs['LD_LIBRARY_PATH'] = f"{self.cwb_install}/lib"
         for key in envs.keys():
             environ[key] = envs[key]
 

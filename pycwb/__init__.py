@@ -1,18 +1,17 @@
 import configparser
 import os
 import logging, sys
-
-logger = logging.getLogger(__name__)
-
 from . import cwb_interface
 from .cwb_interface import cwb_root_logon
 from .config import user_parameters
 from .constants.cwb_dict import CWB_STAGE
 from .config import CWBConfig
 
+logger = logging.getLogger(__name__)
+
 
 class pycWB:
-    def __init__(self, config_file, create_dirs=True, log_file=None, log_level='INFO'):
+    def __init__(self, config_file, create_dirs=True, log_file=None, log_level='INFO', minimal_load=False):
         # setup logger
         logger_init(log_file, log_level)
 
@@ -21,7 +20,11 @@ class pycWB:
         self.config.export_to_envs()
 
         # setup ROOT
-        self.ROOT, self.gROOT = cwb_root_logon(self.config)
+        if minimal_load:
+            import ROOT
+            ROOT.gSystem.Load(f"{self.config.cwb_install}/lib/cwb")
+        else:
+            self.ROOT, self.gROOT = cwb_root_logon(self.config)
 
         # setup project directories
         if create_dirs:
@@ -30,19 +33,19 @@ class pycWB:
     def cwb_inet2G(self, run_id, f_name, j_stage, u_name="", eced=False, inet_option=None):
         file_name = self.init_cfg(f_name)
 
-        return cwb_interface.cwb_inet2G(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
-                                 inet_option=inet_option, file_name=file_name)
+        return cwb_interface.cwb_inet2G(self.config, run_id, CWB_STAGE[j_stage],
+                                        inet_option=inet_option, file_name=file_name)
 
     def cwb_xnet(self, run_id, f_name, j_stage, inet_option=None):
         file_name = self.init_cfg(f_name)
 
-        return cwb_interface.cwb_xnet(self.ROOT, self.config, run_id, CWB_STAGE[j_stage],
-                               inet_option=inet_option, file_name=file_name)
+        return cwb_interface.cwb_xnet(self.config, run_id, CWB_STAGE[j_stage],
+                                      inet_option=inet_option, file_name=file_name)
 
     def cwb_xnet_new(self, run_id, f_name, j_stage, inet_option=None):
         file_name = self.init_cfg(f_name)
 
-        return cwb_interface.cwb_xnet_new(self.ROOT, self.gROOT, self.config, run_id, CWB_STAGE[j_stage],
+        return cwb_interface.cwb_xnet_new(self.config, run_id, CWB_STAGE[j_stage],
                                           inet_option=inet_option, file_name=file_name)
 
     def init_cfg(self, f_name):
@@ -53,7 +56,7 @@ class pycWB:
         if ext.lower() == '.c':
             file_name = f_name
         elif ext.lower() == '.yaml':
-            user_parameters.load_yaml(self.gROOT, f_name)
+            user_parameters.load_yaml(f_name)
         else:
             logger.error(f"Unknown file extension {ext}")
             raise ValueError(f"Unknown file extension {ext}")
