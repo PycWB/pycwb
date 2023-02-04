@@ -38,4 +38,4 @@ def max_energy(config: Config, net: ROOT.network, strain_list: list[ROOT.wavearr
             net.getifo(n).getTFmap().sethigh(config.fHigh)
         alp_list.append(alp)
 
-    return alp_list
+    return np.array(alp_list)
