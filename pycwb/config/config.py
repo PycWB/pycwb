@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Config:
     def __init__(self, file_name):
         self.cfg_gamma = None

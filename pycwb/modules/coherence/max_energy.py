@@ -4,15 +4,39 @@ import numpy as np
 import copy
 import ROOT
 
+from pycwb.config import Config
 
-def max_energy(h: TimeSeries, pwdm, m_tau: float, up_N: int, pattern: int):
+
+def max_energy(config: Config, net: ROOT.network, h: ROOT.wavearray(np.double),
+               wdm_list: list):
     """
     produce TF maps with max over the sky energy
     Input
-    :param h: input time series
-    :param pwdm: wavelet used for the transformation
-    :param m_tau: range of time delays
-    :param up_N: downsample factor to obtain coarse TD steps
-    :param pattern: clustering pattern
+    -----
+    config: Config
+    net: ROOT.network
+    h: ROOT.wavearray(np.double)
+    wdm_list: list
     :return:
+    alp: int
     """
+    # maximum time delay
+    m_tau = net.getDelay('MAX')
+
+    # calculate upsample factor
+    up_n = config.rateANA // 1024
+    if up_n < 1:
+        up_n = 1
+
+    alp_list = []
+    for i in range(config.nRES):
+        alp = 0
+        for n in range(len(config.ifo)):
+            alp += net.getifo(n).getTFmap().maxEnergy(h, wdm_list[i],
+                                                      m_tau, up_n,
+                                                      net.pattern)
+            net.getifo(n).getTFmap().setlow(config.fLow)
+            net.getifo(n).getTFmap().sethigh(config.fHigh)
+        alp_list.append(alp)
+
+    return alp_list
