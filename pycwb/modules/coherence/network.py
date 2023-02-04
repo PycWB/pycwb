@@ -7,13 +7,14 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def init(run_id, config: Config):
+def create_network(run_id, config: Config,
+                   strain_list: list[ROOT.wavearray(np.double)]):
     net = ROOT.network()
     load_MRA(config, net)
     wdm_list = create_wdm(config, net)
     check_layers_with_MRAcatalog(config, net)
     # check_lagStep(config)
-    net = init_network(config, net, run_id)
+    net = init_network(config, net, strain_list, run_id)
     return net, wdm_list
 
 
@@ -93,7 +94,9 @@ def check_layers_with_MRAcatalog(config: Config, net: ROOT.network):
         raise ValueError("analysis layers do not match the MRA catalog")
 
 
-def init_network(config: Config, net: ROOT.network, run_id):
+def init_network(config: Config, net: ROOT.network,
+                 strain_list: list[ROOT.wavearray(np.double)],
+                 run_id):
     logger.info("Initializing network")
 
     for ifo in config.ifo:
@@ -101,6 +104,8 @@ def init_network(config: Config, net: ROOT.network, run_id):
         det = ROOT.detector(ifo)
 
         det.rate = config.inRate if not config.fResample else config.fResample
+        det.HoT = strain_list[config.ifo.index(ifo)]
+        det.TFmap = strain_list[config.ifo.index(ifo)]
         net.add(det)
 
     # set network skymaps

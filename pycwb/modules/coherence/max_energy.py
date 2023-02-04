@@ -6,7 +6,8 @@ from pycwb.config import Config
 logger = logging.getLogger(__name__)
 
 
-def max_energy(config: Config, net: ROOT.network, strain_list: list[ROOT.wavearray(np.double)],
+def max_energy(config: Config, net: ROOT.network,
+               strain_list: list[ROOT.wavearray(np.double)],
                wdm_list: list[ROOT.WDM(np.double)]):
     """
     produce TF maps with max over the sky energy
