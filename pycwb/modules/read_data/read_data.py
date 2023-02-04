@@ -34,14 +34,15 @@ def read_from_online(detector, sample_rate, channel, start, end):
     return data
 
 
-def read_from_catalog(catalog: str, event: str, detector: str, time_slice: tuple = None):
+def read_from_catalog(catalog: str, event: str, detectors: list, time_slice: tuple = None):
     # Read data from catalog
     m = pycbc.catalog.Merger(event, source=catalog)
-    data = m.strain(detector)
+    data = [m.strain(ifo) for ifo in detectors]
 
     if time_slice:
-        data = data.time_slice(time_slice[0], time_slice[1])
+        for i in range(len(data)):
+            data[i] = data[i].crop(time_slice[0], time_slice[1])
 
-    h = convert_pycbc_timeseries_to_wavearray(data)
+    wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in data]
 
-    return data, m, h
+    return data, m, wavearray

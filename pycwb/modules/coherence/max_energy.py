@@ -1,14 +1,13 @@
-from gwpy.timeseries import TimeSeries
-from pycwb import utils as ut
 import numpy as np
-import copy
 import ROOT
-
+import logging
 from pycwb.config import Config
 
+logger = logging.getLogger(__name__)
 
-def max_energy(config: Config, net: ROOT.network, h: ROOT.wavearray(np.double),
-               wdm_list: list):
+
+def max_energy(config: Config, net: ROOT.network, strain_list: list[ROOT.wavearray(np.double)],
+               wdm_list: list[ROOT.WDM(np.double)]):
     """
     produce TF maps with max over the sky energy
     Input
@@ -32,7 +31,7 @@ def max_energy(config: Config, net: ROOT.network, h: ROOT.wavearray(np.double),
     for i in range(config.nRES):
         alp = 0
         for n in range(len(config.ifo)):
-            alp += net.getifo(n).getTFmap().maxEnergy(h, wdm_list[i],
+            alp += net.getifo(n).getTFmap().maxEnergy(strain_list[n], wdm_list[i],
                                                       m_tau, up_n,
                                                       net.pattern)
             net.getifo(n).getTFmap().setlow(config.fLow)
