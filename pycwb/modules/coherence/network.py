@@ -150,10 +150,6 @@ def init_network(config: Config, net: ROOT.network,
 
 
 def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str):
-    # lags = NET.setTimeShifts(cfg.lagSize,cfg.lagStep,cfg.lagOff,cfg.lagMax,
-    #                          lagBuffer.GetArray(),lagMode,cfg.lagSite);
-    # cout<<"lag step: "<<cfg.lagStep<<endl;
-    # cout<<"number of time lags: "<<lags<<endl;
     if lagBuffer:
         lags = net.setTimeShifts(config.lagSize, config.lagStep, config.lagOff, config.lagMax,
                                  lagBuffer,
@@ -168,7 +164,6 @@ def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str
 
 
 def get_lag_buffer(config: Config):
-    lagMode = config.lagMode
     if config.lagMode == "r":
         with open(config.lagFile, "r") as f:
             lagBuffer = f.read()

@@ -12,6 +12,7 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Check data
     data_check(data, config.inRate)
     data = data.to_pycbc()
+    # TODO: complete the following
     # data shift
     # SLAG
     # DC correction
