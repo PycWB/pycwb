@@ -41,8 +41,12 @@ def select_pixels(config: Config, net: ROOT.network,
         psize_tot = 0
 
         for j in range(int(net.nLag)):
+            print("lag: ", j)
             net.getNetworkPixels(j, threshold_list[i])
+            print("pixels selected")
             pwc = net.getwc(j)
+            print("wc got")
+            print("net pattern: ", net.pattern)
             if net.pattern != 0:
                 net.cluster(2, 3)
                 wc.cpf(pwc, False)
@@ -54,6 +58,7 @@ def select_pixels(config: Config, net: ROOT.network,
             # store cluster into temporary job file
             csize_tot += pwc.csize()
             psize_tot += pwc.size()
+            logger.info("%3d|%9d|%7d ", j, csize_tot, psize_tot)
 
             # add core pixels to sparse table
             for n in range(config.nIFO):

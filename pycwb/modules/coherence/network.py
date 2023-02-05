@@ -15,6 +15,8 @@ def create_network(run_id, config: Config,
     check_layers_with_MRAcatalog(config, net)
     # check_lagStep(config)
     net = init_network(config, net, strain_list, run_id)
+    lag_buffer, lag_mode = get_lag_buffer(config)
+    net = set_liv_time(config, net, lag_buffer, lag_mode)
     return net, wdm_list
 
 
@@ -144,3 +146,34 @@ def init_network(config: Config, net: ROOT.network,
         ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskCCFile, 'c')
 
     return net
+
+
+def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str):
+    # lags = NET.setTimeShifts(cfg.lagSize,cfg.lagStep,cfg.lagOff,cfg.lagMax,
+    #                          lagBuffer.GetArray(),lagMode,cfg.lagSite);
+    # cout<<"lag step: "<<cfg.lagStep<<endl;
+    # cout<<"number of time lags: "<<lags<<endl;
+    if lagBuffer:
+        lags = net.setTimeShifts(config.lagSize, config.lagStep, config.lagOff, config.lagMax,
+                                 lagBuffer,
+                                 lagMode,
+                                 config.lagSite)
+    else:
+        lags = net.setTimeShifts(config.lagSize, config.lagStep, config.lagOff, config.lagMax)
+    logger.info("lag step: %s", config.lagStep)
+    logger.info("number of time lags: %s", lags)
+
+    return net
+
+
+def get_lag_buffer(config: Config):
+    lagMode = config.lagMode
+    if config.lagMode == "r":
+        with open(config.lagFile, "r") as f:
+            lagBuffer = f.read()
+        lagMode = 's'
+    else:
+        lagBuffer = config.lagFile
+        lagMode = 'w'
+
+    return lagBuffer, lagMode

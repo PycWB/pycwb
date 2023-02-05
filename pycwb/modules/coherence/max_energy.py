@@ -32,15 +32,11 @@ def max_energy(config: Config, net: ROOT.network,
     for i in range(config.nRES):
         alp = 0.0
         for n in range(len(config.ifo)):
-            print('ifo: ', n)
             alp += net.getifo(n).getTFmap().maxEnergy(strain_list[n], wdm_list[i],
                                                       m_tau, up_n,
                                                       net.pattern)
-            print('alp: ', alp)
             net.getifo(n).getTFmap().setlow(config.fLow)
-            print('fLow: ', config.fLow)
             net.getifo(n).getTFmap().sethigh(config.fHigh)
-            print('fHigh: ', config.fHigh)
         alp_list.append(alp)
 
     return np.array(alp_list)

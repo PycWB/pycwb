@@ -252,6 +252,21 @@ schema = {
             "description": "0/>0 -  standard/extended lags",
             "default": 150
         },
+        "lagMode": {
+            "enum": ["w", "r"],
+            "description": "w/r  -  write/read lag list",
+            "default": "w"
+        },
+        "lagSite": {
+            "type": "integer",
+            "description": "site index starting with 0",
+            "default": None,
+        },
+        "lagFile": {
+            "type": "string",
+            "description": "slag file list",
+            "default": None
+        },
         "channelNamesRaw": {
             "type": "array",
             "description": "channel names for raw data",
