@@ -61,6 +61,9 @@ class Config:
         else:
             self.TDRate = (self.inRate >> self.levelR) * self.upTDF
 
+        self.nIFO = len(self.ifo)
+        self.nDQF = len(self.DQF)
+
     @staticmethod
     def check_file(file_name):
         """

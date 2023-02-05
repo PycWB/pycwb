@@ -27,13 +27,13 @@ def select_pixels(config: Config, net: ROOT.network,
     for i in range(config.nRES):
         sparse_table = []
         wdm_list[i].setTDFilter(config.TDSize, 1)
-        for n in range(len(config.ifo)):
+        for n in range(config.nIFO):
             ws = ROOT.WSeries(np.double)(strain_list[n], wdm_list[i])
             ws.Forward()
             ss = ROOT.SSeries(np.double)()
             ss.SetMap(ws)
             ss.SetHalo(m_tau)
-            sparse_table.append(ws)
+            sparse_table.append(ss)
 
         logger.info("lag|clusters|pixels ")
 

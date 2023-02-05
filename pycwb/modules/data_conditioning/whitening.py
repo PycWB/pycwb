@@ -63,4 +63,4 @@ def whitening(config: Config, h: TimeSeries):
 
     # hw = ut.convert_wseries_to_wavearray(tf_map)
 
-    return tf_map
+    return {"TFmap": tf_map, 'nRMS': nRMS}
