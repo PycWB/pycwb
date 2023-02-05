@@ -5,18 +5,29 @@ from ligo.segments import segment, segmentlist
 import pycbc.catalog
 
 
-def read_from_gwf(detector, sample_rate, filename, channel, start, end):
+def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Read data from GWF file
     data = TimeSeries.read(filename, channel, start, end)
 
     # Check data
-    data_check(data, sample_rate)
-
+    data_check(data, config.inRate)
+    data = data.to_pycbc()
     # data shift
     # SLAG
     # DC correction
+    # if config.dcCal[ifo_index] > 0:
+    #     data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
+
     # resampling
+    if config.fResample > 0:
+        data = data.resample(1.0 / config.fResample)
+
+    new_sample_rate = data.sample_rate / (1 << config.levelR)
+    data = data.resample(1.0 / new_sample_rate)
+
     # rescaling
+    data.data *= (2 ** config.levelR) ** 0.5
+
     # return data
     return data
 
