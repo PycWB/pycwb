@@ -9,6 +9,7 @@ tests/*
 .pytest_cache
 !tests/*_test.py
 !tests/*.ipynb
+!tests/*.yaml
 
 messenger-web-interface/node_modules
 messenger-web-interface/dist
