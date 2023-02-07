@@ -12,6 +12,7 @@ install_requires = [
     "ligo-segments",
     "aiohttp",
     "pycbc",
+    "ROOT"
 ]
 
 
