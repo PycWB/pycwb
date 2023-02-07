@@ -1,16 +1,12 @@
-import numpy as np
-from gwpy.timeseries import TimeSeries
 import pycbc.noise
 import pycbc.psd
-from .data_check import data_check
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
-from pycbc.waveform import utils
 import lalsimulation as lalsim
 
 
-def generate_noise(psd: str, f_low: int = 30, delta_f: float = 1.0 / 16, duration: int = 32,
-                   delta_t: float = 1.0 / 4096, seed: int = 1234):
+def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 16, duration: int = 32,
+                   sample_rate: float = 4096, seed: int = 1234, start_time: int = 0):
     # generate noise
     flen = int(2048 / delta_f) + 1
     if psd:
@@ -18,9 +14,13 @@ def generate_noise(psd: str, f_low: int = 30, delta_f: float = 1.0 / 16, duratio
     else:
         psd = pycbc.psd.aLIGOZeroDetHighPower(flen, delta_f, f_low)
 
+    delta_t = 1.0 / sample_rate
     # Generate 32 seconds of noise at 4096 Hz
     t_samples = int(duration / delta_t)
     noise = pycbc.noise.noise_from_psd(t_samples, delta_t, psd, seed=seed)
+
+    if start_time:
+        noise._epoch = start_time
     # return noise
     return noise
 
