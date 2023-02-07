@@ -5,9 +5,10 @@ __pycache__
 build
 dist
 messenger_test/data
-tests
+tests/*
 .pytest_cache
 !tests/*_test.py
+!tests/*.ipynb
 
 messenger-web-interface/node_modules
 messenger-web-interface/dist
