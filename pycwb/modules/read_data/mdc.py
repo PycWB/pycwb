@@ -46,7 +46,7 @@ def generate_from_pycbc(m1, m2, inclination, distance, sample_rate,
     pass
 
 
-def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_time):
+def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_time, ref_ifo='H1'):
     """Make a h(t) strain time-series from an injection object as read from
     a sim_inspiral table, for example.
 
@@ -70,7 +70,6 @@ def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_ti
     signal : float
         h(t) corresponding to the injection.
     """
-
     hp._epoch += geocent_end_time
     hc._epoch += geocent_end_time
 

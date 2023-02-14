@@ -51,10 +51,9 @@ def cwb_2g():
     net, wdm_list = create_network(1, config, data_w_reg)
 
     # calculate coherence
-    ## threshold
-    from pycwb.modules.coherence import threshold
-    threshold_list = threshold(config, net, tf_map, wdm_list)
-
-    ## select pixels
     from pycwb.modules.coherence import select_pixels
-    sparse_table_list = select_pixels(config, net, tf_map, wdm_list, threshold_list)
+    sparse_table_list, cluster_list = select_pixels(config, net, tf_map, wdm_list)
+
+    # supercluster
+    from pycwb.modules.super_cluster import supercluster
+    supercluster(config, net, wdm_list, cluster_list, sparse_table_list)

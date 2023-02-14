@@ -111,6 +111,16 @@ schema = {
                            'pattern!=0 && pattern>0      Packed   Search : packet-pixel selection + likelihoodWP \n',
             "default": 0
         },
+        "BATCH": {
+            "type": "integer",
+            "description": "max number of pixel to process in one loadTDamp batch",
+            "default": 10000,
+        },
+        "LOUD": {
+            "type": "integer",
+            "description": "number of pixel per cluster to load TD amplitudes ",
+            "default": 200,
+        },
         "nSky": {
             "type": "integer",
             "description": "if nSky>0 -> # of skymap prob pixels dumped to ascii \n "
@@ -131,6 +141,22 @@ schema = {
             "default": 0.33,
             "minimum": 0,
             "maximum": 1,
+        },
+        "subnorm": {
+            "type": "number",
+            "description": " [0,2*num_resolution_levels] sub network norm threshold, enabled only if >0 (supercluster) ",
+            "default": 0.0,
+            "minimum": 0,
+        },
+        "subrho": {
+            "type": "number",
+            "description": "sub network threshold in the skyloop subNetCuts, if<=0 then subacor=netRHO (supercluster) ",
+            "default": 0.0
+        },
+        "subacor": {
+            "type": "number",
+            "description": "sub network threshold in the skyloop subNetCuts, if<=0 then subacor=Acore (supercluster) ",
+            "default": 0.0
         },
         "netRHO": {
             "type": "number",

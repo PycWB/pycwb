@@ -10,8 +10,7 @@ logger = logging.getLogger(__name__)
 
 def select_pixels(config: Config, net: ROOT.network,
                   strain_list: list[ROOT.wavearray(np.double)],
-                  wdm_list: list[ROOT.WDM(np.double)],
-                  threshold_list: np.array):
+                  wdm_list: list[ROOT.WDM(np.double)]):
     """
     select pixels
     :param config: config
@@ -22,12 +21,44 @@ def select_pixels(config: Config, net: ROOT.network,
     :return:
     """
     # init sparse table (used in supercluster stage : set the TD filter size)
+    m_tau = net.getDelay('MAX')
+
+    # calculate upsample factor
+    up_n = config.rateANA // 1024
+    if up_n < 1:
+        up_n = 1
+
     sparse_table_list = []
     pwc_list = []
     m_tau = net.getDelay('MAX')
     wc = ROOT.netcluster()
 
     for i in range(config.nRES):
+        alp = 0.0
+        for n in range(len(config.ifo)):
+            t = net.getifo(n).getTFmap().maxEnergy(strain_list[n], wdm_list[i],
+                                                   m_tau, up_n,
+                                                   net.pattern)
+            alp += t
+            net.getifo(n).getTFmap().setlow(config.fLow)
+            net.getifo(n).getTFmap().sethigh(config.fHigh)
+
+
+        alp = alp / len(config.ifo)
+
+        if net.pattern != 0:
+            Eo = net.THRESHOLD(config.bpp, alp)
+        else:
+            Eo = net.THRESHOLD(config.bpp)
+        logger.info("thresholds in units of noise variance: Eo=%g Emax=%g", Eo, Eo * 2)
+        logger.info(f"cwb2G::Coherence -RES:{i}-THR:{Eo}")
+        # set veto array
+        # TODO: test if we need to re-export net again from here, or set veto in init
+        TL = net.setVeto(config.iwindow)
+        logger.info("live time in zero lag: %g", TL)
+        if TL <= 0.:
+            raise ValueError("live time is zero")
+
         sparse_table = []
         wdm_list[i].setTDFilter(config.TDSize, 1)
         for n in range(config.nIFO):
@@ -45,7 +76,7 @@ def select_pixels(config: Config, net: ROOT.network,
 
         for j in range(int(net.nLag)):
             # select pixels above Eo
-            net.getNetworkPixels(j, threshold_list[i])
+            net.getNetworkPixels(j, Eo)
             # get pixel list
             pwc = net.getwc(j)
             if net.pattern != 0:
