@@ -51,13 +51,9 @@ def cwb_2g():
     net, wdm_list = create_network(1, config, data_w_reg)
 
     # calculate coherence
-    ## max energy
-    from pycwb.modules.coherence import max_energy
-    alp_list = max_energy(config, net, tf_map, wdm_list)
-
     ## threshold
     from pycwb.modules.coherence import threshold
-    threshold_list = threshold(config, net, alp_list)
+    threshold_list = threshold(config, net, tf_map, wdm_list)
 
     ## select pixels
     from pycwb.modules.coherence import select_pixels

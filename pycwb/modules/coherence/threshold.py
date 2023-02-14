@@ -6,7 +6,9 @@ from pycwb.config import Config
 logger = logging.getLogger(__name__)
 
 
-def threshold(config: Config, net: ROOT.network, alp_list: np.array):
+def threshold(config: Config, net: ROOT.network,
+              strain_list: list[ROOT.wavearray(np.double)],
+              wdm_list: list[ROOT.WDM(np.double)]):
     """
     threshold on pixel energy
     :param net:
@@ -14,8 +16,27 @@ def threshold(config: Config, net: ROOT.network, alp_list: np.array):
     :param alp_list:
     :return:
     """
+    m_tau = net.getDelay('MAX')
+
+    # calculate upsample factor
+    up_n = config.rateANA // 1024
+    if up_n < 1:
+        up_n = 1
     threshold_list = []
-    for i, alp in enumerate(alp_list / len(config.ifo)):
+    for i in range(config.nRES):
+        alp = 0.0
+        for n in range(len(config.ifo)):
+            t = net.getifo(n).getTFmap().maxEnergy(strain_list[n], wdm_list[i],
+                                                   m_tau, up_n,
+                                                   net.pattern)
+            alp += t
+            net.getifo(n).getTFmap().setlow(config.fLow)
+            net.getifo(n).getTFmap().sethigh(config.fHigh)
+
+
+        alp = alp / len(config.ifo)
+        logger.info("average max energy: %g", alp)
+
         if net.pattern != 0:
             Eo = net.THRESHOLD(config.bpp, alp)
         else:

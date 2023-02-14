@@ -112,14 +112,12 @@ def init_network(config: Config, net: ROOT.network,
         net.add(det)
 
     # set network skymaps
-    logger.info("Setting skymaps")
-    net.setSkyMaps(int(config.healpix))
-    net.setAntenna()
+    update_sky_map(config, net, config.healpix)
 
     # restore network parameters
     logger.info("Restoring network parameters")
     net.constraint(config.delta, config.gamma)
-    net.setDelay(config.refIFO)
+    # net.setDelay(config.refIFO)
     net.Edge = config.segEdge
     net.netCC = config.netCC
     net.netRHO = config.netRHO
@@ -132,6 +130,19 @@ def init_network(config: Config, net: ROOT.network,
     net.pattern = config.pattern
 
     # set sky mask
+    update_sky_mask(config, net)
+
+    return net
+
+
+def update_sky_map(config: Config, net: ROOT.network, skyres: int = None):
+    logger.info("Setting skymaps")
+    net.setSkyMaps(int(skyres))
+    net.setAntenna()
+    net.setDelay(config.refIFO)
+
+
+def update_sky_mask(config: Config, net: ROOT.network, skyres: int = None):
     logger.info("Setting sky mask")
     tmp_cfg = ROOT.CWB.config()
     tmp_cfg.healpix = config.healpix
@@ -140,13 +151,19 @@ def init_network(config: Config, net: ROOT.network,
     tmp_cfg.Phi1 = config.Phi1
     tmp_cfg.Phi2 = config.Phi2
 
-    if len(config.skyMaskFile) > 0:
-        ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskFile, 'e')
+    if skyres:
+        if len(config.skyMaskFile) > 0:
+            ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskFile, 'e', skyres)
 
-    if len(config.skyMaskCCFile) > 0:
-        ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskCCFile, 'c')
+        if len(config.skyMaskCCFile) > 0:
+            ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskCCFile, 'c', skyres)
 
-    return net
+    else:
+        if len(config.skyMaskFile) > 0:
+            ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskFile, 'e')
+
+        if len(config.skyMaskCCFile) > 0:
+            ROOT.SetSkyMask(net, tmp_cfg, config.skyMaskCCFile, 'c')
 
 
 def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str):
