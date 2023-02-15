@@ -14,7 +14,7 @@ for file in os.listdir('./data'):
 cwb = pycWB('./config.ini')
 
 job_id = 1
-job_stage = 'FULL'
-job_file = './user_parameters.yaml'
+job_stage = 'SUPERCLUSTER'
+job_file = './user_parameters_online.yaml'
 
 cwb.cwb_inet2G(job_id, job_file, job_stage)

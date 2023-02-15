@@ -271,7 +271,7 @@ schema = {
         "lagOff": {
             "type": "integer",
             "description": "first lag id (lagOff=0 - include zero lag )",
-            "default": 6.
+            "default": 6
         },
         "lagMax": {
             "type": "number",

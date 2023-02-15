@@ -1,0 +1,68 @@
+###### search ######
+analysis: "2G"
+online: False
+cfg_search: "r"
+optim: False
+
+
+fLow: 16.
+fHigh: 2048.
+
+
+levelR: 2
+l_low: 4
+l_high: 10
+
+
+healpix: 7
+nSky: 196608
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+pattern: 5
+
+###### network configuration ######
+ifo: ["L1","H1"]
+refIFO: "L1"
+
+###### cWB production thresholds & regulators ######
+
+bpp: 0.001
+subnet: 0.5
+subcut: 0.0
+netRHO: 5.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: -1.0
+LOUD: 300
+
+###### run configuration ######
+
+# time shift analysis lags
+#lagSize: 1
+#lagOff: 0
+
+#  job segments
+#segTHR: 0
+#segLen: 200
+#segMLS: 30
+
+channelNamesRaw: ['L1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01', 'H1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01', 'V1:Hrec_hoft_16384Hz']
+frFiles: ["input/L1o.frames", "input/H1o.frames", "input/V1o.frames"]
+
+DQF: [
+  [ "L1" ,"input/inspiralo.in", CWB_CAT1, 0., False, False ],
+  [ "L1" ,"input/inspiralo.in", CWB_CAT2, 0., False, False ],
+  [ "H1" ,"input/inspiralo.in", CWB_CAT1, 0., False, False ],
+  [ "H1" ,"input/inspiralo.in", CWB_CAT2, 0., False, False ],
+  [ "V1" ,"input/inspiralo.in", CWB_CAT1, 0., False, False ],
+  [ "V1" ,"input/inspiralo.in", CWB_CAT2, 0., False, False ]
+]
+
+simulation: 0
+nfactor: 1
+
+

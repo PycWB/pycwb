@@ -1,10 +1,10 @@
 import os
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
-from pycwb.modules.read_data import read_from_gwf, generate_noise
+from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config
 
 
-def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
+def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=1242442760, end_time=1242443160):
     logger_init()
 
     # load user parameters
@@ -12,9 +12,9 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
     cwb_config.export_to_envs()
     config = Config(user_parameters)
 
-    data = generate_injected(config)
+    data = read_from_config(config)
 
-    dc_data = [i.crop(931158200 - i.start_time, i.end_time - 931158600) for i in data]
+    dc_data = [i.crop(start_time - float(i.start_time), float(i.end_time) - end_time) for i in data]
 
     from pycwb.utils import convert_pycbc_timeseries_to_wavearray
     wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in dc_data]
@@ -66,15 +66,3 @@ def generate_injected(config):
     injected = [noise[i].add_into(strain[i]) for i in range(len(config.ifo))]
 
     return injected
-
-
-def read_from_config(config):
-    data = []
-    for i in range(len(config.ifo)):
-        # read path string from the files in config.frFiles
-        filenames = ""
-        with open(config.frFiles[i], 'r') as f:
-            filenames = f.read()
-        # read data from the files
-        data.append(read_from_gwf(i, config, filenames, config.channelNamesRaw[i]))
-    return data

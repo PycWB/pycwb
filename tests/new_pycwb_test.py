@@ -7,4 +7,4 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from pycwb.modules import cwb_2g
 
-cwb_2g()
+cwb_2g(config='./config.ini', user_parameters='./user_parameters_online.yaml')

@@ -3,14 +3,22 @@ from gwpy.timeseries import TimeSeries
 from .data_check import data_check
 from ligo.segments import segment, segmentlist
 import pycbc.catalog
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Read data from GWF file
+    if start or end:
+        logger.info(f'Reading data from {filename} from {channel} from {start} to {end}')
+    else:
+        logger.info(f'Reading data from {filename} from {channel}')
+
     data = TimeSeries.read(filename, channel, start, end)
 
     # TODO: Check data
-    # data_check(data, config.inRate)
+    data_check(data, config.inRate)
     data = data.to_pycbc()
     # TODO: complete the following
     # data shift
@@ -35,6 +43,19 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
 
 def read_from_online(detector, sample_rate, channel, start, end):
     data = segmentlist([segment(start, end)])
+    from gwpy.timeseries import TimeSeriesDict
+
+    channels = ['H1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01',
+                'L1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01',
+                'V1:Hrec_hoft_16384Hz']
+
+    data_dict = TimeSeriesDict.get(
+        channels,
+        1242442967 - 300,
+        1242442967 + 300,
+    )
+
+    data = [data_dict[c] for c in channels]
     # Check data
 
     # data shift
@@ -58,3 +79,15 @@ def read_from_catalog(catalog: str, event: str, detectors: list, time_slice: tup
     wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in data]
 
     return data, m, wavearray
+
+
+def read_from_config(config):
+    data = []
+    for i in range(len(config.ifo)):
+        # read path string from the files in config.frFiles
+        filenames = ""
+        with open(config.frFiles[i], 'r') as f:
+            filenames = f.read()
+        # read data from the files
+        data.append(read_from_gwf(i, config, filenames, config.channelNamesRaw[i]))
+    return data

@@ -12,7 +12,8 @@ install_requires = [
     "ligo-segments",
     "aiohttp",
     "pycbc",
-    "ROOT"
+    "nds2-client",
+    "python-nds2-client"
 ]
 
 
