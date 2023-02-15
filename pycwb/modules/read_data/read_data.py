@@ -9,8 +9,8 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Read data from GWF file
     data = TimeSeries.read(filename, channel, start, end)
 
-    # Check data
-    data_check(data, config.inRate)
+    # TODO: Check data
+    # data_check(data, config.inRate)
     data = data.to_pycbc()
     # TODO: complete the following
     # data shift
