@@ -3,6 +3,8 @@ import pycbc.psd
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
+import os
+from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 
 def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 16, duration: int = 32,
@@ -82,3 +84,17 @@ def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_ti
         signals.append(signal)
 
     return signals
+
+
+def save_to_gwf(signals, detectors, channel_name, out_dir, start_time, duration, label):
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    for i, detector in enumerate(detectors):
+        strain = GWpyTimeSeries(
+            data=signals[i].data,
+            times=signals[i].sample_times,
+        )
+        strain.channel = f'{detector}:{channel_name}'
+        strain.name = strain.channel
+        strain.write(f'{out_dir}/{detector}-{label}-{int(start_time)}-{int(duration)}.gwf')
