@@ -81,4 +81,4 @@ def logger_init(log_file: str = None, log_level: str = 'INFO'):
     """
     # create logger
     logging.basicConfig(stream=sys.stdout, level=log_level,
-                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                        format='%(asctime)s - %(funcName)s - %(levelname)s - %(message)s', datefmt='%y-%m-%d %H:%M:%S')

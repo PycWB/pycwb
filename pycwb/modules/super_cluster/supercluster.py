@@ -5,7 +5,6 @@ from pycwb.config import Config
 from pycwb.constants import MIN_SKYRES_HEALPIX
 from pycwb.modules.coherence.network import update_sky_map, update_sky_mask
 from pycwb.modules.netcluster import append_cluster
-
 logger = logging.getLogger(__name__)
 
 
@@ -13,6 +12,7 @@ def supercluster(config: Config, net: ROOT.network,
                  wdm_list: list[ROOT.WDM(np.double)],
                  cluster_list: list[ROOT.netcluster],
                  sparse_table_list: list):
+
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
     if skyres > 0:
@@ -48,7 +48,7 @@ def supercluster(config: Config, net: ROOT.network,
 
         logger.info("-> Processing %s ...", cycle_name)
         logger.info("   --------------------------------------------------")
-        logger.info("   coher  clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+        logger.info("    coher clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         if config.l_high == config.l_low:
             net.pair = False
@@ -82,8 +82,8 @@ def supercluster(config: Config, net: ROOT.network,
                 count = pwc.loadTDampSSE(net, 'a', config.BATCH, config.LOUD)
                 # FIXME: O4 code have addtional config.subnorm
                 psel += net.subNetCut(j, config.subnet, config.subcut, ROOT.nullptr)
-                ptot = cluster.psize(1) + cluster.psize(-1)
-                pfrac = ptot / psel if ptot > 0 else 0
+                # ptot = cluster.psize(1) + cluster.psize(-1)
+                # pfrac = ptot / psel if ptot > 0 else 0
                 if count < 10000:
                     break
             logger.info("   subnet clusters|pixels      : %6d|%d", net.events(), pwc.psize(-1))
@@ -96,7 +96,7 @@ def supercluster(config: Config, net: ROOT.network,
 
         if net.pattern == 0:
             pwc.defragment(config.Tgap, config.Fgap)
-            logger.info("    defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+            logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         nevt += net.events()
         nnn += pwc.psize(-1)
