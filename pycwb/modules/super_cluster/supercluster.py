@@ -23,7 +23,7 @@ def supercluster(config: Config, net: ROOT.network,
     for n in range(config.nIFO):
         hot.append(net.getifo(n).getHoT())
     # set low-rate TD filters
-    for wdm in wdm_list:
+    for wdm in net.wdmList:
         wdm.setTDFilter(config.TDSize, 1)
     # read sparse map to detector
     for n in range(config.nIFO):
@@ -61,7 +61,7 @@ def supercluster(config: Config, net: ROOT.network,
         # defragmentation for pattern != 0
         if net.pattern != 0:
             cluster.defragment(config.Tgap, config.Fgap)
-            logger.info("    defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+            logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         # copy selected clusters to network
         pwc = net.getwc(j)
@@ -107,3 +107,5 @@ def supercluster(config: Config, net: ROOT.network,
         logger.info("total  clusters|pixels|frac : %6d|%d|%f", nevt, nnn, nnn / mmm)
     else:
         logger.info("total  clusters             : %6d", nevt)
+
+    return cluster, pwc

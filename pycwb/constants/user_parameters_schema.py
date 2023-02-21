@@ -139,7 +139,7 @@ schema = {
             "type": "number",
             "description": "[0,1]   sub network threshold in the skyloop (supercluster)",
             "default": 0.33,
-            "minimum": 0,
+            "minimum": -1,  # TODO: check if this is correct
             "maximum": 1,
         },
         "subnorm": {
@@ -223,6 +223,11 @@ schema = {
             "description": "stop phi",
             "default": 360.,
         },
+        "cedRHO": {
+            "type": "number",
+            "description": "cedRHO",
+            "default": 4.0
+        },
         "skyMaskFile": {
             "type": "string",
             "description": "sky mask file",
@@ -292,6 +297,26 @@ schema = {
             "type": "string",
             "description": "slag file list",
             "default": None
+        },
+        "slagSize": {
+            "type": "integer",
+            "description": "number of super lags (simulation=1) - if slagSize=0 -> Standard Segments",
+            "default": 0
+        },
+        "slagMin": {
+            "type": "integer",
+            "description": "select the minimum available slag distance : slagMin must be <= slagMax",
+            "default": 0
+        },
+        "slagMax": {
+            "type": "integer",
+            "description": "select the maximum available slag distance",
+            "default": 0
+        },
+        "slagOff": {
+            "type": "integer",
+            "description": "first slag id (slagOff=0 - include zero slag )",
+            "default": 0
         },
         "channelNamesRaw": {
             "type": "array",
