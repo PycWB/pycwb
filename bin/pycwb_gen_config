@@ -41,7 +41,7 @@ CWB_SOURCE = {os.path.abspath(cwb_source)} # For loading macros
 
 [TOOLS]
 
-HOME_WAT_FILTERS = {os.path.abspath(pycwb_path)}/shared
+HOME_WAT_FILTERS = {os.path.abspath(pycwb_path)}/vendor
 HOME_BAUDLINE = baudline # independent, path of software
 HOME_ALADIN = aladin # independent, path of software
 HOME_SKYMAP_LIB = path # required

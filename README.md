@@ -31,9 +31,7 @@ conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nd
 ```bash
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycWB
-python setup.py clean
-python setup.py build_cwb
-python setup.py sdist && pip install dist/*.tar.gz
+python setup.py clean && python setup.py build_cwb && python setup.py sdist && pip install dist/*.tar.gz
 ```
 
 ## Generate config files

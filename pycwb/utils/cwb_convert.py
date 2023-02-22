@@ -1,5 +1,5 @@
 import ROOT
-import sys, os
+import pycwb, os
 import numpy as np
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
@@ -8,9 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 if not hasattr(ROOT, "WDM"):
-    ROOT.gSystem.Load("wavelet")
     logger.info("Loading wavelet library")
-
+    try:
+        pycwb_path = os.path.dirname(pycwb.__file__)
+        ROOT.gSystem.Load(f"{pycwb_path}/vendor/lib/wavelet")
+    except:
+        logger.error("Cannot find wavelet library in pycwb, trying to load from system")
+        try:
+            ROOT.gSystem.Load("wavelet")
+        except:
+            logger.error("Cannot load wavelet library")
+            # sys.exit(1)
 
 def convert_wseries_to_wavearray(w):
     h = ROOT.wavearray(np.double)()

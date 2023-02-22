@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$">
+      <excludeFolder url="file://$MODULE_DIR$/messenger-web-interface/dist" />
+      <excludeFolder url="file://$MODULE_DIR$/messenger_test/data" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/data" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/frames" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/input" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/log" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/O3_K99_C01_LH_OPBM_SIM_SET0_std_run1" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/report" />
+      <excludeFolder url="file://$MODULE_DIR$/tests/tmp" />
+      <excludeFolder url="file://$MODULE_DIR$/.pytest_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/dist" />
+      <excludeFolder url="file://$MODULE_DIR$/pycwb.egg-info" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>
