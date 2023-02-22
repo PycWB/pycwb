@@ -2,9 +2,14 @@ import os
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
 from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config
+from pycwb.utils import convert_pycbc_timeseries_to_wavearray
+from pycwb.modules.data_conditioning import regression, whitening
+from pycwb.modules.coherence import create_network
+from pycwb.modules.coherence import coherence
+from pycwb.modules.super_cluster import supercluster
 
 
-def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=1242442760, end_time=1242443160):
+def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=None, end_time=None):
     logger_init()
 
     # load user parameters
@@ -14,26 +19,24 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
 
     data = read_from_config(config)
 
-    dc_data = [i.crop(start_time - float(i.start_time), float(i.end_time) - end_time) for i in data]
+    if start_time is None:
+        dc_data = data
+    else:
+        dc_data = [i.crop(start_time - float(i.start_time), float(i.end_time) - end_time) for i in data]
 
-    from pycwb.utils import convert_pycbc_timeseries_to_wavearray
     wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in dc_data]
 
-    from pycwb.modules.data_conditioning import regression, whitening
     data_reg = [regression(config, wavearray[i]) for i in range(len(config.ifo))]
     data_w_reg = [whitening(config, data_reg[i]) for i in range(len(config.ifo))]
     tf_map = [d['TFmap'] for d in data_w_reg]
 
     # initialize network
-    from pycwb.modules.coherence import create_network
     net, wdm_list = create_network(1, config, data_w_reg)
 
     # calculate coherence
-    from pycwb.modules.coherence import coherence
     sparse_table_list, cluster_list = coherence(config, net, tf_map, wdm_list)
 
     # supercluster
-    from pycwb.modules.super_cluster import supercluster
     supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
 
 
