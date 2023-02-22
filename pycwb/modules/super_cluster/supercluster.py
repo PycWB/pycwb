@@ -81,7 +81,7 @@ def supercluster(config: Config, net: ROOT.network,
             while True:
                 count = pwc.loadTDampSSE(net, 'a', config.BATCH, config.LOUD)
                 # FIXME: O4 code have addtional config.subnorm
-                psel += net.subNetCut(j, config.subnet, config.subcut, ROOT.nullptr)
+                psel += net.subNetCut(j, config.subnet, config.subcut, config.subnorm, ROOT.nullptr)
                 # ptot = cluster.psize(1) + cluster.psize(-1)
                 # pfrac = ptot / psel if ptot > 0 else 0
                 if count < 10000:

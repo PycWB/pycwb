@@ -1,6 +1,8 @@
-import os
-from setuptools import setup
+import os, shutil
+from setuptools import setup, Command
 from setuptools import find_packages
+from distutils.errors import DistutilsExecError
+from distutils.command.clean import clean as _clean
 
 requires = []
 install_requires = [
@@ -12,8 +14,8 @@ install_requires = [
     "ligo-segments",
     "aiohttp",
     "pycbc",
-    "nds2-client",
-    "python-nds2-client"
+    # "nds2-client",
+    # "python-nds2-client"
 ]
 
 
@@ -43,6 +45,57 @@ def find_files(dirname, relpath=None):
     return [os.path.relpath(path, relpath) for path in items]
 
 
+class BuildCWB(Command):
+    user_options = []
+    description = "Build the core functions of cWB"
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        # pwd
+        pwd = os.getcwd()
+        try:
+            # remove dist
+            print('removing old dist')
+            if os.path.exists('dist'):
+                self.spawn(['rm', '-rf', 'dist'])
+
+            print('compiling cwb core')
+            # build cwb core
+            os.chdir('cwb-core')
+            self.spawn(['bash', './build.sh'])
+        except DistutilsExecError:
+            self.warn('cwb core compilation failed, skipping')
+        finally:
+            print('exiting cwb-core directory')
+            os.chdir(pwd)
+
+
+class Clean(_clean):
+    def finalize_options(self):
+        _clean.finalize_options(self)
+        self.clean_files = ["pycwb/vendor/lib/libWAT_rdict.pcm", 'pycwb/vendor/lib/libwavelet.so',
+                            'pycwb/vendor/lib/wavelet.so', 'pycwb/vendor/lib/wavelet-4x.dylib']
+        self.clean_folders = ['cwb-core/build', 'dist', 'pycwb.egg-info']
+
+    def run(self):
+        _clean.run(self)
+        for f in self.clean_files:
+            try:
+                os.unlink(f)
+                print('removed {0}'.format(f))
+            except:
+                pass
+
+        for fol in self.clean_folders:
+            shutil.rmtree(fol, ignore_errors=True)
+            print('removed {0}'.format(fol))
+
+
 setup(
     name="pycwb",
     author="Yumeng Xu",
@@ -53,7 +106,11 @@ setup(
     keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst'],
     url="https://git.ligo.org/yumeng.xu/pycwb",
     install_requires=install_requires,
-    scripts=["bin/pycwb_gen_config"],#find_files('bin', relpath='./'),
+    cmdclass={
+        'build_cwb': BuildCWB,
+        'clean': Clean
+    },
+    scripts=["bin/pycwb_gen_config"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,
     python_requires='>=3.8'

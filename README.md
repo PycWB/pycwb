@@ -25,8 +25,14 @@ Check [installation guide](./docs/0.installation_guide.md) to simply install `cW
 ### Install pycWB from git
 
 ```bash
+conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client
+```
+
+```bash
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycWB
+python setup.py clean
+python setup.py build_cwb
 python setup.py sdist && pip install dist/*.tar.gz
 ```
 

@@ -11,5 +11,9 @@ tests/*
 !tests/*.ipynb
 !tests/*.yaml
 
+cwb-core/install
+*/vendor/lib/*
+!*/vendor/lib/*.py
+
 messenger-web-interface/node_modules
 messenger-web-interface/dist

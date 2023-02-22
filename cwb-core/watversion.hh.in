@@ -1,0 +1,59 @@
+#ifndef WATVERSION_HH
+#define WATVERSION_HH
+
+/* WAT Version */
+#define WAT_VERSION "${WAT_VERSION}"
+/* WAT Version Major Number  */
+#define WAT_VERSION_MAJOR ${WAT_VERSION_MAJOR}
+/* WAT Version Minor Number  */
+#define WAT_VERSION_MINOR ${WAT_VERSION_MINOR}
+/* WAT Version Micro Number  */
+#define WAT_VERSION_MICRO ${WAT_VERSION_PATCH}
+/* WAT Version Devel Number  */
+#define WAT_VERSION_DEVEL ${WAT_VERSION_TWEAK}
+
+const char *const watVersion       = WAT_VERSION;
+const int         watVersionMajor  = WAT_VERSION_MAJOR;
+const int         watVersionMinor  = WAT_VERSION_MINOR;
+const int         watVersionMicro  = WAT_VERSION_MICRO;
+const int         watVersionDevel  = WAT_VERSION_DEVEL;
+
+inline char* watversion(char c='s')
+{
+  if(c=='s') 
+    return (char*)watVersion;
+  if(c=='r') 
+    return (char*)"${GIT_HASH}";
+  if(c=='R') 
+    return (char*)"${GIT_HASH_SHORT}";
+  if(c=='b') 
+    return (char*)"${GIT_BRANCH}";
+  if(c=='x') 
+    return (char*)"${GIT_DATE}";
+  if(c=='u') 
+    return (char*)"${GIT_REMOTE_ORIGIN}";
+  if(c=='g') 
+    return (char*)"${GIT_TAG}";
+  if(c=='k') 
+    return (char*)"${CMAKE_SYSTEM_NAME}";
+  if(c=='n') 
+    return (char*)"${HOST_NAME}";
+  if(c=='q') 
+    return (char*)"${CMAKE_SYSTEM_VERSION}";
+  if(c=='v') 
+    return (char*)"${UNAME_VERSION}";
+  if(c=='m') 
+    return (char*)"${UNAME_MACH}";
+  if(c=='p') 
+    return (char*)"${CMAKE_SYSTEM_PROCESSOR}";
+  if(c=='t') 
+    return (char*)"${BTIME_UTC}";
+  if(c=='T') 
+    return (char*)"${CMAKE_BTIME_UTC}";
+  if(c=='i') 
+    return (char*)"${XIFO}";
+  else
+    return (char*)watVersion;
+}
+
+#endif
