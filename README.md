@@ -7,14 +7,9 @@ This is a project to simplify the installation of `cWB` and run `cWB` with pytho
  - [x] Generate `ini` and `yaml` configuration file with python script
  - [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
  - [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
- - [ ] Wrap cwb modules to pure functions 
+ - [ ]️ Wrap cwb modules to pure functions 
  - [ ] Rewrite `cwb.run()` to python for better workflow control and plugin system
  - [ ] (Optional) Supply addition event interface for event-driven architecture
-
-## TODO List
-
- - [ ] Optimize logging system
- - [ ] Check inputs
 
 ## Installation
 
@@ -26,11 +21,8 @@ Check [installation guide](./docs/0.installation_guide.md) to simply install `cW
 
 ```bash
 conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client
-```
-
-```bash
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
-cd pycWB
+cd pycwb
 python setup.py clean && python setup.py build_cwb && python setup.py sdist && pip install dist/*.tar.gz
 ```
 
@@ -109,21 +101,35 @@ cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
 > "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`
 > and converted to C code to run with `pyROOT`
 
-## cWB pythonize list
+[//]: # (## cWB pythonize list)
 
-- [x] `cwb_inet2G.c` entry point
-- [ ] `CWB:run` final target to control the workflow
-- [ ] `cwb_inet.c` optional: used to parse `CWB_INET_OPTIONS`
-- [ ] `config.c` optional: better control on config
-- [ ] `CWB2G` could be required by `CWB:run` 
+[//]: # ()
+[//]: # (- [x] `cwb_inet2G.c` entry point)
 
-# Advance of Event-based Architecture
+[//]: # (- [ ] `CWB:run` final target to control the workflow)
 
- - simply assemble events from pure function by configuration file 
- - easy parallelization
- - each event can be recorded and traced
- - easy to resume from interruption
- - multiple handler can process same event
- - easy to create schedule job
- - assemble new handler with modules
- - monitor the file to trigger event
+[//]: # (- [ ] `cwb_inet.c` optional: used to parse `CWB_INET_OPTIONS`)
+
+[//]: # (- [ ] `config.c` optional: better control on config)
+
+[//]: # (- [ ] `CWB2G` could be required by `CWB:run` )
+
+[//]: # ()
+[//]: # (# Advance of Event-based Architecture)
+
+[//]: # ()
+[//]: # ( - simply assemble events from pure function by configuration file )
+
+[//]: # ( - easy parallelization)
+
+[//]: # ( - each event can be recorded and traced)
+
+[//]: # ( - easy to resume from interruption)
+
+[//]: # ( - multiple handler can process same event)
+
+[//]: # ( - easy to create schedule job)
+
+[//]: # ( - assemble new handler with modules)
+
+[//]: # ( - monitor the file to trigger event)
