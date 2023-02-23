@@ -136,6 +136,20 @@ def init_network(config: Config, net: ROOT.network,
     return net
 
 
+def restore_skymap(config: Config, net: ROOT.network, skyres):
+    if skyres:
+        if config.healpix:
+            net.setSkyMaps(int(config.healpix))
+        else:
+            net.setSkyMaps(config.angle, config.Theta1, config.Theta2, config.Phi1, config.Phi2)
+    net.setAntenna()
+    net.setDelay(config.refIFO)
+    if len(config.skyMaskFile) > 0:
+        set_sky_mask(net, config, config.skyMaskFile, 'e')
+    if len(config.skyMaskCCFile) > 0:
+        set_sky_mask(net, config, config.skyMaskCCFile, 'c')
+
+
 def update_sky_map(config: Config, net: ROOT.network, skyres: int = None):
     logger.info("Setting skymaps")
     net.setSkyMaps(int(skyres))

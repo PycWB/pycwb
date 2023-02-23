@@ -42,6 +42,7 @@ class Config:
         :return:
         """
         self.gamma = self.cfg_gamma
+        self.search = self.cfg_search
 
         # calculate analysis data rate
         if self.fResample > 0:

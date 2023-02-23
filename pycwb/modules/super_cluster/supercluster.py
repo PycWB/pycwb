@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from pycwb.config import Config
 from pycwb.constants import MIN_SKYRES_HEALPIX
-from pycwb.modules.coherence.network import update_sky_map, update_sky_mask
+from pycwb.modules.coherence.network import update_sky_map, update_sky_mask, restore_skymap
 from pycwb.modules.netcluster import append_cluster
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ def supercluster(config: Config, net: ROOT.network,
     nevt = 0
     nnn = 0
     mmm = 0
+    pwc_list = []
     for j in range(int(net.nLag)):
         # cycle = cfg.simulation ? ifactor : Long_t(NET.wc_List[j].shift);
         cycle = int(net.wc_List[j].shift)
@@ -101,6 +102,7 @@ def supercluster(config: Config, net: ROOT.network,
         nevt += net.events()
         nnn += pwc.psize(-1)
         mmm += pwc.psize(1) + pwc.psize(-1)
+        pwc_list.append(pwc)
 
     logger.info("Supercluster done")
     if mmm:
@@ -108,4 +110,7 @@ def supercluster(config: Config, net: ROOT.network,
     else:
         logger.info("total  clusters             : %6d", nevt)
 
-    return cluster, pwc
+    # restore skymap resolution
+    restore_skymap(config, net, skyres)
+
+    return cluster, pwc_list

@@ -1,2 +1,1 @@
-def likelihood():
-    pass
+from .likelihood import *

@@ -15,6 +15,11 @@ schema = {
             "description": "see description below",
             "default": "r"
         },
+        "Search": {
+            "enum": ["", "CBC", "BBH", "IMBHB"],
+            "description": "2G pipeline: If equals '' then it is ignored by the 2G pipeline (default, back compatibility), Available values are: ''/CBC/BBH/IMBHB. If equals CBC/BBH/IMBHB then the chirp line is added to the CED l_tfmap_scalogram, moreover when netRHO<0 (rho0.XGB) than the chirp mass is computed only if Search=CBC/BBH/IMBHB ",
+            "default": ""
+        },
         "online": {
             "type": "boolean",
             "description": "true/false -> online/offline",
