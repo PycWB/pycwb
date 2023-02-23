@@ -7,6 +7,7 @@ from pycwb.modules.data_conditioning import regression, whitening
 from pycwb.modules.coherence import create_network
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
+from pycwb.modules.likelihood import likelihood
 
 
 def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=None, end_time=None):
@@ -37,7 +38,10 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     sparse_table_list, cluster_list = coherence(config, net, tf_map, wdm_list)
 
     # supercluster
-    supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
+    cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
+
+    # likelihood
+    likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
 
 
 def generate_injected(config):
