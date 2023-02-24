@@ -25,8 +25,8 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # data shift
     # SLAG
     # DC correction
-    # if config.dcCal[ifo_index] > 0:
-    #     data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
+    if config.dcCal[ifo_index] > 0 and config.dcCal[ifo_index] != 1.0:
+        data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
 
     # resampling
     if config.fResample > 0:

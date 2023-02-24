@@ -84,6 +84,11 @@ schema = {
             "description": "input data rate",
             "default": 16384
         },
+        "dcCal": {
+            "type": "array",
+            "description": "DC corrections",
+            "default": [1.0] * NIFO_MAX
+        },
         "EFEC": {
             "type": "boolean",
             "description": "Earth Fixed / Selestial coordinates",

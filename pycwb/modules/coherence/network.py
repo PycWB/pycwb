@@ -11,10 +11,18 @@ logger = logging.getLogger(__name__)
 def create_network(run_id, config: Config,
                    tf_maps: list, nRMS_list: list):
     net = ROOT.network()
+
+    # load MRA catalog
     load_MRA(config, net)
+
+    # create WDM
     wdm_list = create_wdm(config, net)
+
+    # check layers
     check_layers_with_MRAcatalog(config, net)
-    # check_lagStep(config)
+
+    # Note: check_lagStep(config) is moved to Config
+
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
@@ -22,7 +30,7 @@ def create_network(run_id, config: Config,
 
 
 def load_MRA(config: Config, net: ROOT.network):
-    logger.info("Loading MRA")
+    logger.info("Loading catalog of WDM cross-talk coefficients")
     net.setMRAcatalog(config.MRAcatalog)
 
 
@@ -113,7 +121,7 @@ def init_network(config: Config, net: ROOT.network,
         net.add(det)
 
     # set network skymaps
-    update_sky_map(config, net, config.healpix)
+    update_sky_map(config, net)
 
     # restore network parameters
     logger.info("Restoring network parameters")
@@ -125,6 +133,7 @@ def init_network(config: Config, net: ROOT.network,
     net.EFEC = config.EFEC
     net.precision = config.precision
     net.nSky = config.nSky
+    # net.eDisbalance = config.eDisbalance
     net.setRunID(run_id)
     net.setAcore(config.Acore)
     net.optim = config.optim
@@ -132,6 +141,9 @@ def init_network(config: Config, net: ROOT.network,
 
     # set sky mask
     update_sky_mask(config, net)
+
+    # mdc = new injection(nIFO);
+    # netburst = new netevent(nIFO,cfg.Psave);
 
     return net
 
@@ -152,7 +164,14 @@ def restore_skymap(config: Config, net: ROOT.network, skyres):
 
 def update_sky_map(config: Config, net: ROOT.network, skyres: int = None):
     logger.info("Setting skymaps")
-    net.setSkyMaps(int(skyres))
+    if skyres:
+        net.setSkyMaps(int(skyres))
+    else:
+        if config.healpix:
+            net.setSkyMaps(int(config.healpix))
+        else:
+            net.setSkyMaps(config.angle, config.Theta1, config.Theta2, config.Phi1, config.Phi2)
+
     net.setAntenna()
     net.setDelay(config.refIFO)
 
@@ -311,7 +330,7 @@ def make_sky_mask(sky_mask: ROOT.skymap, theta: float, phi: float, radius: float
     # compute the minimun available radius
     # must be greater than the side of a pixel
     if healpix:
-        npix = 12 * (int) (4. ** healpix)
+        npix = 12 * (int)(4. ** healpix)
         sphere_solid_angle = 4 * np.pi * np.pow(180. / np.pi, 2.)
         skyres = sphere_solid_angle / npix
         if radius < np.sqrt(skyres):
