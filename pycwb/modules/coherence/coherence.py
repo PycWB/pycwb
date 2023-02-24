@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def coherence_parallel(config: Config, net: ROOT.network,
-                       strain_list: list[ROOT.wavearray(np.double)],
+                       tf_maps: list[ROOT.wavearray(np.double)],
                        wdm_list: list[ROOT.WDM(np.double)]):
     """
 
@@ -32,7 +32,7 @@ def coherence_parallel(config: Config, net: ROOT.network,
     with Pool() as pool:
         tasks = []
         for i in range(config.nRES):
-            tasks.append((i, config, copy.deepcopy(net), copy.deepcopy(strain_list), copy.deepcopy(wdm_list), m_tau, up_n))
+            tasks.append((i, config, copy.deepcopy(net),tf_maps, wdm_list[i], m_tau, up_n))
         for sparse_table, pwc in pool.starmap(_coherence_single_res, tasks):
             sparse_table_list.append(sparse_table)
             pwc_list += pwc
@@ -42,13 +42,13 @@ def coherence_parallel(config: Config, net: ROOT.network,
 
 
 def coherence(config: Config, net: ROOT.network,
-              strain_list: list[ROOT.wavearray(np.double)],
+              tf_maps: list[ROOT.wavearray(np.double)],
               wdm_list: list[ROOT.WDM(np.double)]):
     """
     select pixels
     :param config: config
     :param net: network
-    :param strain_list: list of strain
+    :param tf_maps: list of strain
     :param wdm_list: list of wdm
     :param threshold_list: list of threshold
     :return:
@@ -65,7 +65,7 @@ def coherence(config: Config, net: ROOT.network,
     wc = ROOT.netcluster()
 
     for i in range(config.nRES):
-        sparse_table, pwc_list_res = _coherence_single_res(i, config, net, strain_list, wdm_list, m_tau, up_n)
+        sparse_table, pwc_list_res = _coherence_single_res(i, config, net, tf_maps, wdm_list[i], m_tau, up_n)
         sparse_table_list.append(sparse_table)
         pwc_list += pwc_list_res
 
@@ -73,7 +73,7 @@ def coherence(config: Config, net: ROOT.network,
     return sparse_table_list, pwc_list
 
 
-def _coherence_single_res(i, config, net, strain_list, wdm_list, m_tau, up_n):
+def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     # print start time
 
     wc = ROOT.netcluster()
@@ -89,7 +89,12 @@ def _coherence_single_res(i, config, net, strain_list, wdm_list, m_tau, up_n):
     # produce TF maps with max over the sky energy
     alp = 0.0
     for n in range(len(config.ifo)):
-        alp += net.getifo(n).getTFmap().maxEnergy(strain_list[n], wdm_list[i],
+        # tf_map = ROOT.WSeries(np.double)(tf_maps[n])
+        ts = ROOT.wavearray(np.double)(tf_maps[n])
+        # alp += tf_map.maxEnergy(ts, wdm, m_tau, up_n, net.pattern)
+        # tf_map.setlow(config.fLow)
+        # tf_map.sethigh(config.fHigh)
+        alp += net.getifo(n).getTFmap().maxEnergy(ts, wdm,
                                                   m_tau, up_n,
                                                   net.pattern)
         net.getifo(n).getTFmap().setlow(config.fLow)
@@ -111,9 +116,9 @@ def _coherence_single_res(i, config, net, strain_list, wdm_list, m_tau, up_n):
 
     # init sparse table (used in supercluster stage : set the TD filter size)
     sparse_table = []
-    wdm_list[i].setTDFilter(config.TDSize, 1)
+    wdm.setTDFilter(config.TDSize, 1)
     for n in range(config.nIFO):
-        ws = ROOT.WSeries(np.double)(strain_list[n], wdm_list[i])
+        ws = ROOT.WSeries(np.double)(tf_maps[n], wdm)
         ws.Forward()
         ss = ROOT.SSeries(np.double)()
         ss.SetMap(ws)
