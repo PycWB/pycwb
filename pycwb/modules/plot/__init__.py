@@ -10,6 +10,7 @@ def plot_spectrogram(wavearray, xmin=None, xmax=None, gwpy_plot=False):
         wavearray = convert_wavearray_to_timeseries(wavearray)
 
     if isinstance(wavearray, TimeSeries):
+        wavearray = wavearray.crop(xmin, xmax)
         specgram = wavearray.spectrogram(0.5, fftlength=0.5, overlap=0.49) ** (1 / 2.)
         plot = specgram.plot(norm='log')  # vmin=1e-23, vmax=1e-19
         ax = plot.gca()
