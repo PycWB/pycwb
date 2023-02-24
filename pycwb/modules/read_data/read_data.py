@@ -4,7 +4,8 @@ from .data_check import data_check
 from ligo.segments import segment, segmentlist
 import pycbc.catalog
 import logging
-
+from multiprocessing import Pool
+import time
 logger = logging.getLogger(__name__)
 
 
@@ -82,12 +83,28 @@ def read_from_catalog(catalog: str, event: str, detectors: list, time_slice: tup
 
 
 def read_from_config(config):
-    data = []
-    for i in range(len(config.ifo)):
-        # read path string from the files in config.frFiles
-        filenames = ""
-        with open(config.frFiles[i], 'r') as f:
-            filenames = f.read()
-        # read data from the files
-        data.append(read_from_gwf(i, config, filenames, config.channelNamesRaw[i]))
+    # timer
+    timer_start = time.perf_counter()
+
+    # data = []
+    with Pool(processes=len(config.ifo)) as pool:
+        data = pool.starmap(_read_from_config_wrapper, [(config, i) for i in range(len(config.ifo))])
+    # for i in range(len(config.ifo)):
+    #     # read path string from the files in config.frFiles
+    #     filenames = ""
+    #     with open(config.frFiles[i], 'r') as f:
+    #         filenames = f.read()
+    #     # read data from the files
+    #     data.append(read_from_gwf(i, config, filenames, config.channelNamesRaw[i]))
+
+    # timer
+    timer_end = time.perf_counter()
+    logger.info(f'Read data from config in {timer_end - timer_start} seconds')
     return data
+
+
+def _read_from_config_wrapper(config, i):
+    with open(config.frFiles[i], 'r') as f:
+        filenames = f.read()
+    # read data from the files
+    return read_from_gwf(i, config, filenames, config.channelNamesRaw[i])

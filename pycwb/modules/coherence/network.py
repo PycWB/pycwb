@@ -9,13 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 def create_network(run_id, config: Config,
-                   strain_list: list):
+                   tf_maps: list, nRMS_list: list):
     net = ROOT.network()
     load_MRA(config, net)
     wdm_list = create_wdm(config, net)
     check_layers_with_MRAcatalog(config, net)
     # check_lagStep(config)
-    net = init_network(config, net, strain_list, run_id)
+    net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
     return net, wdm_list
@@ -98,7 +98,7 @@ def check_layers_with_MRAcatalog(config: Config, net: ROOT.network):
 
 
 def init_network(config: Config, net: ROOT.network,
-                 strain_list: list,
+                 tf_maps: list, nRMS_list: list,
                  run_id):
     logger.info("Initializing network")
 
@@ -107,9 +107,9 @@ def init_network(config: Config, net: ROOT.network,
         det = ROOT.detector(ifo)
 
         det.rate = config.inRate if not config.fResample else config.fResample
-        det.HoT = strain_list[i]['TFmap']
-        det.TFmap = strain_list[i]['TFmap']
-        det.nRMS = strain_list[i]['nRMS']
+        det.HoT = tf_maps[i]
+        det.TFmap = tf_maps[i]
+        det.nRMS = nRMS_list[i]
         net.add(det)
 
     # set network skymaps

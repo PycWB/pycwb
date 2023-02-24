@@ -3,7 +3,7 @@ from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
 from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config
 from pycwb.utils import convert_pycbc_timeseries_to_wavearray
-from pycwb.modules.data_conditioning import regression, whitening
+from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import create_network
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
@@ -25,17 +25,18 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     else:
         dc_data = [i.crop(start_time - float(i.start_time), float(i.end_time) - end_time) for i in data]
 
-    wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in dc_data]
-
-    data_reg = [regression(config, wavearray[i]) for i in range(len(config.ifo))]
-    data_w_reg = [whitening(config, data_reg[i]) for i in range(len(config.ifo))]
-    tf_map = [d['TFmap'] for d in data_w_reg]
+    # wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in dc_data]
+    #
+    # data_reg = [regression(config, wavearray[i]) for i in range(len(config.ifo))]
+    # tf_map, nRMS_list = [whitening(config, data_reg[i]) for i in range(len(config.ifo))]
+    # tf_map = [d['TFmap'] for d in data_w_reg]
+    tf_maps, nRMS_list = data_conditioning(config, dc_data)
 
     # initialize network
-    net, wdm_list = create_network(1, config, data_w_reg)
+    net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
 
     # calculate coherence
-    sparse_table_list, cluster_list = coherence(config, net, tf_map, wdm_list)
+    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
 
     # supercluster
     cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)

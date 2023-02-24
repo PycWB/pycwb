@@ -1,5 +1,4 @@
 from gwpy.timeseries import TimeSeries
-from pycwb import utils as ut
 import numpy as np
 import copy
 import ROOT
@@ -9,7 +8,7 @@ from pycwb.config import Config
 logger = logging.getLogger(__name__)
 
 
-def whitening(config: Config, h: TimeSeries):
+def whitening(config: Config, wdm_white: ROOT.WDM, h: TimeSeries):
     """
         
     Input
@@ -27,10 +26,7 @@ def whitening(config: Config, h: TimeSeries):
     hw: whitened data
     """
 
-    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
 
-    wdm_white = ROOT.WDM(np.double)(layers_white,
-                                    layers_white, 6, 10)
 
     tf_map = ROOT.WSeries(np.double)(h, wdm_white)
     tf_map.Forward()
@@ -38,24 +34,20 @@ def whitening(config: Config, h: TimeSeries):
     tf_map.sethigh(config.fHigh)
 
     # calculate noise rms
-    logger.info('calculate noise rms')
     # FIXME: should here be tf_map?
     # FIXME: check the length of data and white parameters to prevent freezing
     nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge,
                         config.whiteStride)
 
     # high pass filtering at 16Hz
-    logger.info('high pass filtering at 16Hz')
-    # nRMS.bandpass(16., 0., 1)
+    nRMS.bandpass(16., 0., 1)
 
     # whiten  0 phase WSeries
-    logger.info('whiten  0 phase WSeries')
     tf_map.white(nRMS, 1)
     # whiten 90 phase WSeries
-    logger.info('whiten 90 phase WSeries')
     tf_map.white(nRMS, -1)
 
-    wtmp = copy.deepcopy(tf_map)
+    wtmp = ROOT.WSeries(np.double)(tf_map)
     tf_map.Inverse()
     wtmp.Inverse(-2)
     tf_map += wtmp
@@ -63,4 +55,4 @@ def whitening(config: Config, h: TimeSeries):
 
     # hw = ut.convert_wseries_to_wavearray(tf_map)
 
-    return {"TFmap": tf_map, 'nRMS': nRMS}
+    return tf_map, nRMS
