@@ -4,6 +4,9 @@ import numpy as np
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 import logging
+import ctypes
+
+c_double_p = ctypes.POINTER(ctypes.c_double)
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,7 @@ if not hasattr(ROOT, "WDM"):
         except:
             logger.error("Cannot load wavelet library")
             # sys.exit(1)
+
 
 def convert_wseries_to_wavearray(w):
     h = ROOT.wavearray(np.double)()
@@ -57,12 +61,12 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
         this is to convert timeseries to wavearray,
         if we read noise data with something else just need to make a new conversion function
     """
-    h = ROOT.wavearray(np.double)()
+    h = ROOT.wavearray(np.double)(len(data.value))
 
     data_val = data.value
     data_val = np.round(data_val, 25)
     for i, d in enumerate(data_val):
-        h.append(d)
+        h[i] = d
 
     h.start(np.asarray(data.t0, dtype=np.double))
     h.rate(int(1. / np.asarray(data.dt, dtype=np.double)))
@@ -75,11 +79,19 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
         this is to convert timeseries to wavearray,
         if we read noise data with something else just need to make a new conversion function
     """
-    h = ROOT.wavearray(np.double)()
+    ROOT.gInterpreter.Declare("""
+    void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
+        for (int i = 0; i < size; i++) {
+            wave->data[i] = value[i];
+        }
+    }
+    """)
+
+    h = ROOT.wavearray(np.double)(len(data.data))
 
     data_val = np.round(data.data, 25)
-    for i, d in enumerate(data_val):
-        h.append(d)
+
+    ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.data))
 
     h.start(np.asarray(data.start_time, dtype=np.double))
     h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
