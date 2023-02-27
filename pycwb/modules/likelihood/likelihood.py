@@ -4,6 +4,7 @@ import numpy as np
 import ROOT
 import logging
 from pycwb.config import Config
+from pycwb.modules.netcluster import select_clusters
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,13 @@ def likelihood(config: Config, net: ROOT.network,
     n_events = 0
     for j in range(int(net.nLag)):
         cycle = net.wc_List[j].shift
-        pwc = pwc_list[j]
-        pwc.print()
+        pwc = net.getwc(j)
+        # pwc = copy.deepcopy(pwc_list[0])
+        # pwc.clear()
+        pwc.cData.clear()
+        pwc.cpf(pwc_list[0])
+        pwc.clean()
+        # pwc.print()
 
         # print header
 
@@ -57,7 +63,9 @@ def likelihood(config: Config, net: ROOT.network,
         nselected_core_pixels = 0
         nrejected_weak_pixels = 0  # remove weak glitches
         nrejected_loud_pixels = 0  # remove loud glitches
-        for k in range(pwc.cList.size()):  # loop over the cluster list
+        for k in range(pwc_list[j].cList.size()):  # loop over the cluster list
+            # pwc.clear()
+            select_clusters(pwc, pwc_list[j], k)
             cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
             if not cid.size():
                 continue
@@ -69,11 +77,11 @@ def likelihood(config: Config, net: ROOT.network,
             lag = j
 
             ID = 0
-            selected_core_pixels = 0
             if net.pattern > 0:
                 selected_core_pixels = net.likelihoodWP(config.search, lag, ID, ROOT.nullptr, config.Search)
             else:
                 selected_core_pixels = net.likelihood2G(config.search, lag, ID, ROOT.nullptr)
+            logger.info("Selected core pixels: %d" % selected_core_pixels)
 
             rejected_weak_pixels = 0
             rejected_loud_pixels = 0
@@ -81,7 +89,7 @@ def likelihood(config: Config, net: ROOT.network,
             detected = (net.getwc(j).sCuts[k] == -1)
 
             # print reconstructed event
-            logger.info("   cluster-id|pixels: %5d|%d" % (k, int(pwc.size() - npixels)))
+            logger.info("   cluster-id|pixels: %5d|%d" % (k + 1, int(pwc.size() - npixels)))
             if detected:
                 logger.info("\t -> SELECTED !!!")
             else:

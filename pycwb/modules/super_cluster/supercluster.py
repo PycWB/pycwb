@@ -1,3 +1,5 @@
+import copy
+
 import ROOT
 import logging
 import numpy as np
@@ -32,7 +34,7 @@ def supercluster(config: Config, net: ROOT.network,
         for sparse_table in sparse_table_list:
             det.vSS.push_back(sparse_table[n])
 
-    cluster = cluster_list[0]
+    cluster = copy.deepcopy(cluster_list[0])
     cluster.clear()
 
     for c in cluster_list:
@@ -102,7 +104,8 @@ def supercluster(config: Config, net: ROOT.network,
         nevt += net.events()
         nnn += pwc.psize(-1)
         mmm += pwc.psize(1) + pwc.psize(-1)
-        pwc_list.append(pwc)
+        pwc_list.append(copy.deepcopy(pwc))
+        pwc.clear()
 
     logger.info("Supercluster done")
     if mmm:
