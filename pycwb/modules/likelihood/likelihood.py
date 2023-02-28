@@ -4,7 +4,7 @@ import numpy as np
 import ROOT
 import logging
 from pycwb.config import Config
-from pycwb.modules.netcluster import select_clusters
+from pycwb.modules.netcluster import select_clusters, copy_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,7 @@ def likelihood(config: Config, net: ROOT.network,
         # pwc = copy.deepcopy(pwc_list[0])
         # pwc.clear()
         pwc.cData.clear()
-        pwc.cpf(pwc_list[0])
-        pwc.clean()
+        copy_metadata(pwc, pwc_list[j])
         # pwc.print()
 
         # print header

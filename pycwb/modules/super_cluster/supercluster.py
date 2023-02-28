@@ -6,7 +6,7 @@ import numpy as np
 from pycwb.config import Config
 from pycwb.constants import MIN_SKYRES_HEALPIX
 from pycwb.modules.coherence.network import update_sky_map, update_sky_mask, restore_skymap
-from pycwb.modules.netcluster import append_cluster
+from pycwb.modules.netcluster import append_cluster, copy_metadata
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +34,8 @@ def supercluster(config: Config, net: ROOT.network,
         for sparse_table in sparse_table_list:
             det.vSS.push_back(sparse_table[n])
 
-    cluster = copy.deepcopy(cluster_list[0])
-    cluster.clear()
+    cluster = ROOT.netcluster()
+    copy_metadata(cluster, cluster_list[0])
 
     for c in cluster_list:
         append_cluster(cluster, c, -2)
