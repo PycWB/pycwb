@@ -1,6 +1,7 @@
 import os
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
+from pycwb.modules.plot import plot_spectrogram
 from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import create_network
@@ -43,6 +44,19 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     import pickle
     with open('events.pkl', 'wb') as f:
         pickle.dump(events, f)
+
+    import matplotlib.pyplot as plt
+    plot = plot_spectrogram(tf_maps[0], figsize=(24,6), gwpy_plot=True)
+
+    # plot boxes on the plot
+    boxes = [[e.start[0], e.stop[0], e.low[0], e.high[0]] for e in events]
+
+    for box in boxes:
+        ax = plot.gca()
+        ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False, color='red'))
+
+    # save to png
+    plot.savefig('events.png')
 
 
 def generate_injected(config):

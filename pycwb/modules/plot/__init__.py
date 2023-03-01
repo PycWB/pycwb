@@ -5,14 +5,14 @@ import numpy as np
 import ROOT
 
 
-def plot_spectrogram(wavearray, xmin=None, xmax=None, gwpy_plot=False):
+def plot_spectrogram(wavearray, xmin=None, xmax=None, figsize=None, gwpy_plot=False):
     if gwpy_plot:
         wavearray = convert_wavearray_to_timeseries(wavearray)
 
     if isinstance(wavearray, TimeSeries):
         wavearray = wavearray.crop(xmin, xmax)
         specgram = wavearray.spectrogram(0.5, fftlength=0.5, overlap=0.49) ** (1 / 2.)
-        plot = specgram.plot(norm='log')  # vmin=1e-23, vmax=1e-19
+        plot = specgram.plot(norm='log', figsize=figsize)  # vmin=1e-23, vmax=1e-19
         ax = plot.gca()
         ax.set_ylim(15, 1000)
     else:
@@ -33,3 +33,5 @@ def plot_spectrogram(wavearray, xmin=None, xmax=None, gwpy_plot=False):
     ax.set_yscale('log')
     if xmin or xmax:
         ax.set_xlim(xmin, xmax)
+
+    return plot
