@@ -49,7 +49,8 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     plot = plot_spectrogram(tf_maps[0], figsize=(24,6), gwpy_plot=True)
 
     # plot boxes on the plot
-    boxes = [[e.start[0], e.stop[0], e.low[0], e.high[0]] for e in events]
+    i = 0
+    boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
 
     for box in boxes:
         ax = plot.gca()
@@ -57,6 +58,15 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
 
     # save to png
     plot.savefig('events.png')
+
+    # save event to txt
+    for i, event in enumerate(events):
+        try:
+            output = event.dump()
+            with open(f'event_{i+1}.txt', 'a') as f:
+                f.write(output)
+        except:
+            pass
 
 
 def generate_injected(config):

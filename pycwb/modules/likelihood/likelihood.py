@@ -84,6 +84,10 @@ def likelihood(config: Config, net: ROOT.network,
                 selected_core_pixels = net.likelihood2G(config.search, lag, ID, ROOT.nullptr)
             logger.info("Selected core pixels: %d" % selected_core_pixels)
 
+            event = Event()
+            event.output(net, k + 1, 0)
+            events.append(event)
+
             rejected_weak_pixels = 0
             rejected_loud_pixels = 0
 
@@ -94,9 +98,6 @@ def likelihood(config: Config, net: ROOT.network,
             logger.info("   cluster-id|pixels: %5d|%d" % (k + 1, int(pwc.size() - npixels)))
             if detected:
                 logger.info("\t -> SELECTED !!!")
-                event = Event()
-                event.output(net, nevents + 1, 0)
-                events.append(event)
                 # print("-------------------------------------------------------")
                 # print(event.dump())
                 # print("-------------------------------------------------------")

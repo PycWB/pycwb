@@ -7,9 +7,9 @@ class Event:
         self.nevent = 0  # number of events
         self.ndim = None  # number of dimensions
         self.run = None  # run ID
-        self.rho = [0,0]  # effective correlated SNR
-        self.netcc = [0,0]  # network correlation coefficients: 0-net,1-pc,2-cc,3-net2
-        self.neted = [0,0]  # network energy disbalance: 0 - total, 1 - 00-phase, 2 - 90-phase
+        self.rho = [0, 0]  # effective correlated SNR
+        self.netcc = [0, 0]  # network correlation coefficients: 0-net,1-pc,2-cc,3-net2
+        self.neted = [0, 0]  # network energy disbalance: 0 - total, 1 - 00-phase, 2 - 90-phase
         self.gnet = None  # network sensitivity
         self.anet = None  # network alignment factor
         self.inet = None  # network index
@@ -86,7 +86,11 @@ class Event:
         duration_net = pwc.get("duration", 0, 'L', 0, False)
         bandwidth_net = pwc.get("bandwidth", 0, 'L', 0, False)
 
-        k = ID - 1
+        cluster_ids = [int(i) for i in list(pwc.get("ID", 0, 'S', 0))]
+        if ID not in cluster_ids:
+            return
+
+        kid = cluster_ids.index(ID)
 
         start_net = []
         stop_net = []
@@ -121,8 +125,8 @@ class Event:
         self.inet = pcd.iNET
         self.norm = pcd.norm
         self.likelihood = pcd.likenet
-        self.volume = [int(vol0_net.data[k] + 0.5), int(vol1_net.data[k] + 0.5)]
-        self.size = [int(size_net.data[k] + 0.5), pcd.skySize]
+        self.volume = [int(vol0_net.data[kid] + 0.5), int(vol1_net.data[kid] + 0.5)]
+        self.size = [int(size_net.data[kid] + 0.5), pcd.skySize]
         self.chirp = [0, pcd.mchirp, pcd.mchirperr, pcd.chirpEllip, pcd.chirpPfrac, pcd.chirpEfrac]
         self.range = [0]
 
@@ -138,7 +142,7 @@ class Event:
             pd = net.getifo(i)
             Aa = pd.antenna(self.theta[0], self.phi[0], self.psi[0])
             self.type = [1]
-            self.rate.append(rate_net.data[k] if net.optim else 0)
+            self.rate.append(rate_net.data[kid] if net.optim else 0)
             self.gap.append(0)
             self.lag.append(pd.lagShift.data[LAG])
             self.snr.append(pd.enrg)
@@ -153,12 +157,12 @@ class Event:
                 self.time[i] += psm.get(self.theta[0], self.phi[0]) - TAU
             # print("start_net size = %d" % len(start_net[i]))
             # print("pwc size = %d" % len(pwc.get("ID", 0, 'S', 0)))
-            # print("indexes i = %d, k = %d" % (i, k))
-            self.left.append(start_net[i][k])
-            self.right.append(pwc.stop - pwc.start - stop_net[i][k])
-            self.duration.append(stop_net[i][k] - start_net[i][k])
-            self.start.append(start_net[i][k] + self.gps[i])
-            self.stop.append(stop_net[i][k] + self.gps[i])
+            # print("indexes i = %d, kid = %d" % (i, kid))
+            self.left.append(start_net[i][kid])
+            self.right.append(pwc.stop - pwc.start - stop_net[i][kid])
+            self.duration.append(stop_net[i][kid] - start_net[i][kid])
+            self.start.append(start_net[i][kid] + self.gps[i])
+            self.stop.append(stop_net[i][kid] + self.gps[i])
 
             # take lag shift into account
             xstart = self.gps[i] + net.Edge  # start data
@@ -167,96 +171,95 @@ class Event:
             if self.time[i] > xstop:
                 self.time[i] = xstart + (self.time[i] - xstop)
 
-            self.frequency.append(cFreq_net.data[k])
-            self.low.append(low_net.data[k])
-            self.high.append(high_net.data[k])
-            self.bandwidth.append(high_net.data[k] - low_net.data[k])
+            self.frequency.append(cFreq_net.data[kid])
+            self.low.append(low_net.data[kid])
+            self.high.append(high_net.data[kid])
+            self.bandwidth.append(high_net.data[kid] - low_net.data[kid])
 
             self.hrss.append(np.sqrt(pd.get_SS() / inRate))
-            self.noise.append(np.power(10., noise_net[i][k]) / np.sqrt(inRate))
+            self.noise.append(np.power(10., noise_net[i][kid]) / np.sqrt(inRate))
             self.bp.append(Aa.real())
             self.bx.append(Aa.imag())
             self.strain[0] += self.hrss[i] * self.hrss[i]
 
-            # Aa /= np.power(10., NOISE_net[i][k])
+            # Aa /= np.power(10., NOISE_net[i][kid])
             # gC += Aa * Aa.conj()
 
             # psm.gps = pcd.cTime + self.gps[0]
 
-
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
             self.rho[0] = pcd.netRHO  # reduced coherent SNR per detector
-            self.rho[1] = pcd.netrho if pat0 else pcd.netRHO * chrho  # reduced coherent SNR per detector for chirp events
+            self.rho[
+                1] = pcd.netrho if pat0 else pcd.netRHO * chrho  # reduced coherent SNR per detector for chirp events
         else:  # (XGB.rho0)
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
-
     def dump(self):
         return f"""
-nevent = {self.nevent}
-ndim = {self.ndim}
-run = {self.run}
-rho = {self.rho[0]}
-netCC = {self.netcc[0]}
-netED = {self.neted}
-penalty = {self.penalty}
-gnet = {self.gnet}
-anet = {self.anet}
-inet = {self.inet}
-likelihood = {self.likelihood}
-ecor = {self.ecor}
-ECOR = {self.ECOR}
-factor = {self.factor}
-range = {self.range}
-mchirp = {self.chirp}
-norm = {self.norm}
-usize = {self.usize}
+nevent: \t\t {self.nevent}
+ndim: \t\t {self.ndim}
+run: \t\t {self.run}
+rho: \t\t {self.rho[0]}
+netCC: \t\t {self.netcc[0]}
+netED: \t\t {self.neted}
+penalty: \t\t {self.penalty}
+gnet: \t\t {self.gnet}
+anet: \t\t {self.anet}
+inet: \t\t {self.inet}
+likelihood: \t\t {self.likelihood}
+ecor: \t\t {self.ecor}
+ECOR: \t\t {self.ECOR}
+factor: \t\t {self.factor}
+range: \t\t {self.range}
+mchirp: \t\t {self.chirp}
+norm: \t\t {self.norm}
+usize: \t\t {self.usize}
 
-ifo = {self.ifo_list}
-eventID = {self.eventID}
-rho = {self.rho}
-type = {self.type}
-rate = {self.rate}
-volume = {self.volume}
-size = {self.size}
-lag = {self.lag}
-slag = {self.slag}
-phi = {self.phi}
-theta = {self.theta}
-psi = {self.psi}
-iota = {self.iota}
-bp = {self.bp}
-bx = {self.bx}
-chirp = {self.chirp}
-range = {self.range}
-Deff = {self.Deff}
-mass = {self.mass}
-spin = {self.spin}
-eBBH = {self.eBBH}
-null = {self.null}
-strain = {self.strain}
-hrss = {self.hrss}
-noise = {self.noise}
+ifo: \t\t {self.ifo_list}
+eventID: \t\t {self.eventID}
+rho: \t\t {self.rho}
+type: \t\t {self.type}
+rate: \t\t {self.rate}
+volume: \t\t {self.volume}
+size: \t\t {self.size}
+lag: \t\t {self.lag}
+slag: \t\t {self.slag}
+phi: \t\t {self.phi}
+theta: \t\t {self.theta}
+psi: \t\t {self.psi}
+iota: \t\t {self.iota}
+bp: \t\t {self.bp}
+bx: \t\t {self.bx}
+chirp: \t\t {self.chirp}
+range: \t\t {self.range}
+Deff: \t\t {self.Deff}
+mass: \t\t {self.mass}
+spin: \t\t {self.spin}
+eBBH: \t\t {self.eBBH}
+null: \t\t {self.null}
+strain: \t\t {self.strain}
+hrss: \t\t {self.hrss}
+noise: \t\t {self.noise}
 
-start = {self.start}
-stop = {self.stop}
-left = {self.left}
-right = {self.right}
-duration = {self.duration}
-frequency = {self.frequency}
-low = {self.low}
-high = {self.high}
-bandwidth = {self.bandwidth}
+start: \t\t {self.start}
+stop: \t\t {self.stop}
+left: \t\t {self.left}
+right: \t\t {self.right}
+duration: \t\t {self.duration}
+frequency: \t\t {self.frequency}
+low: \t\t {self.low}
+high: \t\t {self.high}
+bandwidth: \t\t {self.bandwidth}
 
-snr = {self.snr}
-xSNR = {self.xSNR}
-sSNR = {self.sSNR}
-iSNR = {self.iSNR}
-oSNR = {self.oSNR}
-ioSNR = {self.ioSNR}
+snr: \t\t {self.snr}
+xSNR: \t\t {self.xSNR}
+sSNR: \t\t {self.sSNR}
+iSNR: \t\t {self.iSNR}
+oSNR: \t\t {self.oSNR}
+ioSNR: \t\t {self.ioSNR}
 
-netcc = {self.netcc}
-neted = {self.neted}
+netcc: \t\t {self.netcc}
+neted: \t\t {self.neted}
         """
