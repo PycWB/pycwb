@@ -42,6 +42,7 @@ def likelihood(config: Config, net: ROOT.network,
             pD.vSS.push_back(sparse_table_list[i][n])
 
     n_events = 0
+    events = []
     for j in range(int(net.nLag)):
         cycle = net.wc_List[j].shift
         pwc = net.getwc(j)
@@ -94,10 +95,11 @@ def likelihood(config: Config, net: ROOT.network,
             if detected:
                 logger.info("\t -> SELECTED !!!")
                 event = Event()
-                event.output(net, k+1, 0)
-                print("-------------------------------------------------------")
-                print(event.dump())
-                print("-------------------------------------------------------")
+                event.output(net, nevents + 1, 0)
+                events.append(event)
+                # print("-------------------------------------------------------")
+                # print(event.dump())
+                # print("-------------------------------------------------------")
             else:
                 logger.info("\t <- rejected    ")
 
@@ -117,5 +119,7 @@ def likelihood(config: Config, net: ROOT.network,
     logger.info("Total events: %d" % n_events)
     logger.info("Total time: %.2f s" % (timer_end - timer_start))
     logger.info("-------------------------------------------------------")
+
+    return events
 
 

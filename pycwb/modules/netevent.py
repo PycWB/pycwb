@@ -86,17 +86,19 @@ class Event:
         duration_net = pwc.get("duration", 0, 'L', 0, False)
         bandwidth_net = pwc.get("bandwidth", 0, 'L', 0, False)
 
-        kid = k = ID - 1
+        k = ID - 1
 
         start_net = []
         stop_net = []
         noise_net = []
         NOISE_net = []
-        for i in range(1, n_ifo + 1):
-            start_net += list(pwc.get("start", i, 'L', 0))
-            stop_net += list(pwc.get("stop", i, 'L', 0))
-            noise_net += list(pwc.get("noise", i, 'S', 0))
-            NOISE_net += list(pwc.get("NOISE", i, 'S', 0))
+        for i in range(n_ifo):
+            start_net.append(list(pwc.get("start", i, 'L', 0)))
+            stop_net.append(list(pwc.get("stop", i, 'L', 0)))
+            noise_net.append(list(pwc.get("noise", i, 'S', 0)))
+            NOISE_net.append(list(pwc.get("NOISE", i, 'S', 0)))
+
+        # print('duration ', np.array(start_net) - np.array(stop_net))
 
         psm = net.getifo(0).tau
         vI = net.wc_List[LAG].p_Ind[ID - 1]
@@ -119,8 +121,8 @@ class Event:
         self.inet = pcd.iNET
         self.norm = pcd.norm
         self.likelihood = pcd.likenet
-        self.volume = [int(vol0_net.data[kid] + 0.5), int(vol1_net.data[kid] + 0.5)]
-        self.size = [int(size_net.data[kid] + 0.5), pcd.skySize]
+        self.volume = [int(vol0_net.data[k] + 0.5), int(vol1_net.data[k] + 0.5)]
+        self.size = [int(size_net.data[k] + 0.5), pcd.skySize]
         self.chirp = [0, pcd.mchirp, pcd.mchirperr, pcd.chirpEllip, pcd.chirpPfrac, pcd.chirpEfrac]
         self.range = [0]
 
@@ -135,9 +137,8 @@ class Event:
         for i in range(n_ifo):
             pd = net.getifo(i)
             Aa = pd.antenna(self.theta[0], self.phi[0], self.psi[0])
-            m = kid #i * n_ifo + kid
             self.type = [1]
-            self.rate.append(rate_net.data[kid] if net.optim else 0)
+            self.rate.append(rate_net.data[k] if net.optim else 0)
             self.gap.append(0)
             self.lag.append(pd.lagShift.data[LAG])
             self.snr.append(pd.enrg)
@@ -150,11 +151,14 @@ class Event:
             if i == 0:
                 psm = net.getifo(i).tau
                 self.time[i] += psm.get(self.theta[0], self.phi[0]) - TAU
-            self.left.append(start_net[m])
-            self.right.append(pwc.stop - pwc.start - stop_net[m])
-            self.duration.append(stop_net[m] - start_net[m])
-            self.start.append(start_net[m] + self.gps[i])
-            self.stop.append(stop_net[m] + self.gps[i])
+            # print("start_net size = %d" % len(start_net[i]))
+            # print("pwc size = %d" % len(pwc.get("ID", 0, 'S', 0)))
+            # print("indexes i = %d, k = %d" % (i, k))
+            self.left.append(start_net[i][k])
+            self.right.append(pwc.stop - pwc.start - stop_net[i][k])
+            self.duration.append(stop_net[i][k] - start_net[i][k])
+            self.start.append(start_net[i][k] + self.gps[i])
+            self.stop.append(stop_net[i][k] + self.gps[i])
 
             # take lag shift into account
             xstart = self.gps[i] + net.Edge  # start data
@@ -169,12 +173,12 @@ class Event:
             self.bandwidth.append(high_net.data[k] - low_net.data[k])
 
             self.hrss.append(np.sqrt(pd.get_SS() / inRate))
-            self.noise.append(np.power(10., noise_net[m]) / np.sqrt(inRate))
+            self.noise.append(np.power(10., noise_net[i][k]) / np.sqrt(inRate))
             self.bp.append(Aa.real())
             self.bx.append(Aa.imag())
             self.strain[0] += self.hrss[i] * self.hrss[i]
 
-            # Aa /= np.power(10., NOISE_net[m])
+            # Aa /= np.power(10., NOISE_net[i][k])
             # gC += Aa * Aa.conj()
 
             # psm.gps = pcd.cTime + self.gps[0]

@@ -37,12 +37,12 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
 
     # likelihood
-    likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
+    events = likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
 
-    #
-    # event = Event()
-    # event.output(net, 0, 0)
-    # event.dump()
+    # save events to pickle
+    import pickle
+    with open('events.pkl', 'wb') as f:
+        pickle.dump(events, f)
 
 
 def generate_injected(config):
