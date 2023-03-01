@@ -69,7 +69,10 @@ def coherence(config: Config, net: ROOT.network,
         sparse_table_list.append(sparse_table)
         pwc_list += pwc_list_res
 
+    logger.info("----------------------------------------")
     logger.info("Coherence time: %f s", time.perf_counter() - timer_start)
+    logger.info("----------------------------------------")
+
     return sparse_table_list, pwc_list
 
 

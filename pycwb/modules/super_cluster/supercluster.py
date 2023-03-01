@@ -2,6 +2,7 @@ import copy
 
 import ROOT
 import logging
+import time
 import numpy as np
 from pycwb.config import Config
 from pycwb.constants import MIN_SKYRES_HEALPIX
@@ -14,6 +15,8 @@ def supercluster(config: Config, net: ROOT.network,
                  wdm_list: list[ROOT.WDM(np.double)],
                  cluster_list: list[ROOT.netcluster],
                  sparse_table_list: list):
+    # timer
+    timer_start = time.perf_counter()
 
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
@@ -115,5 +118,11 @@ def supercluster(config: Config, net: ROOT.network,
 
     # restore skymap resolution
     restore_skymap(config, net, skyres)
+
+    # timer
+    timer_stop = time.perf_counter()
+    logger.info("----------------------------------------")
+    logger.info("Supercluster time: %.2f s", timer_stop - timer_start)
+    logger.info("----------------------------------------")
 
     return cluster, pwc_list

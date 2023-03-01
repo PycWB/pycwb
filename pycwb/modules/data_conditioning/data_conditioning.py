@@ -1,4 +1,5 @@
 import time
+import logging
 from .regression import regression
 from .whitening import whitening
 from pycwb.config import Config
@@ -8,6 +9,8 @@ from pycwb.constants import WDM_BETAORDER, WDM_PRECISION
 import ROOT
 import numpy as np
 from multiprocessing import Pool
+
+logger = logging.getLogger(__name__)
 
 
 def data_conditioning(config: Config, strains):
@@ -48,7 +51,9 @@ def data_conditioning(config: Config, strains):
 
     # timer
     timer_end = time.perf_counter()
-    print(f"Data Conditioning Time: {timer_end - timer_start:.2f} seconds")
+    logger.info("-------------------------------------------------------")
+    logger.info(f"Data Conditioning Time: {timer_end - timer_start:.2f} seconds")
+    logger.info("-------------------------------------------------------")
 
     return tf_maps, nRMS_list
 

@@ -7,7 +7,7 @@ from pycwb.modules.coherence import create_network
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood
-
+from pycwb.modules.netevent import Event
 
 def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=None, end_time=None):
     logger_init()
@@ -38,6 +38,11 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
 
     # likelihood
     likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
+
+    #
+    # event = Event()
+    # event.output(net, 0, 0)
+    # event.dump()
 
 
 def generate_injected(config):

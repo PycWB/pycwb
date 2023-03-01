@@ -5,6 +5,7 @@ import ROOT
 import logging
 from pycwb.config import Config
 from pycwb.modules.netcluster import select_clusters, copy_metadata
+from pycwb.modules.netevent import Event
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def likelihood(config: Config, net: ROOT.network,
         nrejected_weak_pixels = 0  # remove weak glitches
         nrejected_loud_pixels = 0  # remove loud glitches
         for k in range(pwc_list[j].cList.size()):  # loop over the cluster list
-            # pwc.clear()
+            # Decoupling: copy_metadata(pwc, pwc_list[j])
             select_clusters(pwc, pwc_list[j], k)
             cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
             if not cid.size():
@@ -86,11 +87,17 @@ def likelihood(config: Config, net: ROOT.network,
             rejected_loud_pixels = 0
 
             detected = (net.getwc(j).sCuts[k] == -1)
+            # Decoupling: detected = (net.getwc(j).sCuts[0] == -1)
 
             # print reconstructed event
             logger.info("   cluster-id|pixels: %5d|%d" % (k + 1, int(pwc.size() - npixels)))
             if detected:
                 logger.info("\t -> SELECTED !!!")
+                event = Event()
+                event.output(net, k+1, 0)
+                print("-------------------------------------------------------")
+                print(event.dump())
+                print("-------------------------------------------------------")
             else:
                 logger.info("\t <- rejected    ")
 
@@ -99,8 +106,16 @@ def likelihood(config: Config, net: ROOT.network,
             if detected:
                 nevents += 1
             npixels = pwc.size()
+            # Decoupling: remove above line
 
             pwc.clean(k+1)
         n_events += nevents
+
+    # timer
+    timer_end = time.perf_counter()
+    logger.info("-------------------------------------------------------")
+    logger.info("Total events: %d" % n_events)
+    logger.info("Total time: %.2f s" % (timer_end - timer_start))
+    logger.info("-------------------------------------------------------")
 
 
