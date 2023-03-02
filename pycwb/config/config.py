@@ -5,6 +5,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class DQFile:
+    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
+        self.ifo = ifo
+        self.file = file
+        self.dq_cat = dq_cat
+        self.shift = shift
+        self.invert = invert
+        self.c4 = c4
+
+
 class Config:
     def __init__(self, file_name):
         self.cfg_gamma = None
@@ -25,6 +35,7 @@ class Config:
         self.MRAcatalog = None
         self.TDRate = None
         self.lagStep = None
+        self.dq_files = []
 
         params = load_yaml(file_name, load_to_root=False)
 
@@ -33,7 +44,7 @@ class Config:
 
         self.add_derived_key()
         self.check_file(self.MRAcatalog)
-        self.check_lagStep(self)
+        self.check_lagStep()
 
     def add_derived_key(self):
         """
@@ -52,18 +63,25 @@ class Config:
 
         self.nRES = self.l_high - self.l_low + 1
 
+        # load WAT filter directory and set MRAcatalog
         if not self.filter_dir:
             self.filter_dir = os.environ['HOME_WAT_FILTERS']
 
         self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
+        # calculate TDRate
         if self.fResample > 0:
             self.TDRate = (self.fResample >> self.levelR) * self.upTDF
         else:
             self.TDRate = (self.inRate >> self.levelR) * self.upTDF
 
+        # derive number of IFOs and DQFs
         self.nIFO = len(self.ifo)
         self.nDQF = len(self.DQF)
+
+        # convert DQF to object
+        for dqf in self.DQF:
+            self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
 
     @staticmethod
     def check_file(file_name):
@@ -75,8 +93,7 @@ class Config:
         if not os.path.isfile(file_name):
             raise FileNotFoundError(f"File {file_name} does not exist")
 
-    @staticmethod
-    def check_lagStep(config):
+    def check_lagStep(self):
         """
         Check if lagStep compatible with WDM parity
 
@@ -88,23 +105,23 @@ class Config:
         :param net:
         :return:
         """
-        rate_min = config.rateANA >> config.l_high
+        rate_min = self.rateANA >> self.l_high
         dt_max = 1. / rate_min
         if rate_min % 1:
             logger.error("rate min=%s (Hz) is not integer", rate_min)
             raise ValueError("rate min=%s (Hz) is not integer", rate_min)
-        if int(config.lagStep * rate_min + 0.001) & 1:
-            logger.error("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.lagStep,
+        if int(self.lagStep * rate_min + 0.001) & 1:
+            logger.error("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
                          2 * dt_max)
-            raise ValueError("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.lagStep,
+            raise ValueError("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
                              2 * dt_max)
-        if int(config.segEdge * rate_min + 0.001) & 1:
-            logger.error("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segEdge,
+        if int(self.segEdge * rate_min + 0.001) & 1:
+            logger.error("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
                          2 * dt_max)
-            raise ValueError("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segEdge,
+            raise ValueError("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
                              2 * dt_max)
-        if int(config.segMLS * rate_min + 0.001) & 1:
-            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segMLS,
+        if int(self.segMLS * rate_min + 0.001) & 1:
+            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
                          2 * dt_max)
-            raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", config.segMLS,
+            raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
                              2 * dt_max)
