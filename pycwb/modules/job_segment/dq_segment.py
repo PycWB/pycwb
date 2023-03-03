@@ -1,35 +1,9 @@
 import logging
 import numpy as np
-import csv
+import csv, math
+from .types import DQFile, WaveSegment
+
 logger = logging.getLogger(__name__)
-
-
-class WaveSegment:
-    def __init__(self, index, start_time, end_time):
-        self.index = index
-        self.start_time = start_time
-        self.end_time = end_time
-
-
-class DQFile:
-    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
-        self.ifo = ifo
-        self.file = file
-        self.dq_cat = dq_cat
-        self.shift = shift
-        self.invert = invert
-        self.c4 = c4
-
-
-def select_job_segment():
-    """Select a job segment from the database.
-
-    Returns:
-        A list of job segments.
-    """
-    job_segment = []
-
-    return job_segment
 
 
 def read_seg_list(dq_file_list: list[DQFile], dq_cat):
@@ -115,7 +89,8 @@ def load_dq_file(dq_file: DQFile):
     return start, stop
 
 
-def merge_seg_list(seg_list_1: tuple[np.ndarray | list, np.ndarray | list], seg_list_2:  tuple[np.ndarray | list, np.ndarray | list]):
+def merge_seg_list(seg_list_1: tuple[np.ndarray | list, np.ndarray | list],
+                   seg_list_2: tuple[np.ndarray | list, np.ndarray | list]):
     """Merge the segment list.
 
     Args:
@@ -160,29 +135,82 @@ def merge_seg_list(seg_list_1: tuple[np.ndarray | list, np.ndarray | list], seg_
     return merged_start, merged_stop
 
 
-def plot_seg_list(seg_list: tuple[np.ndarray | list, np.ndarray | list], merged_seg_list=None, figsize=(24, 6)):
-    """Plot the segment list.
+def get_seg_list(dq_list, seg_len, seg_mls, seg_edge):
+    job_list = get_job_list(dq_list, seg_len, seg_mls, seg_edge)
+    return []
 
-    Args:
-        seg_list (list): The segment list.
+
+def get_job_list(dq_list, seg_len, seg_mls, seg_edge):
     """
-    import matplotlib.pyplot as plt
+    Build the job segment list.
 
-    plt.figure(figsize=figsize)
+    The job segments are builded starting from the input ilist
+    each segment must have a minimum length of segMLS+2segEdge and a maximum length of segLen+2*segEdge
+    in order to maximize the input live time each segment with lenght<2*(segLen+segEdge) is
+    divided in 2 segments with length<segLen+2*segEdge
+    segEdge     : xxx
+    segMLS      : -------
+    segLen      : ---------------
+    input seg   : ----------------------------
+    output segA : xxx---------xxx
+    output segB :             xxx----------xxx
 
-    min_start = min([np.nanmin(seg[0][seg[0] != 0]) for seg in seg_list])
-    max_stop = max([np.nanmax(seg[1][seg[1] != np.inf]) for seg in seg_list])
+    :param dq_list:  number of detectors
+    :param seg_len:  Segment length [sec]
+    :param seg_mls:  Minimum Segment Length after DQ_CAT1 [sec]
+    :param seg_edge:  wavelet boundary offset [sec]
+    :return:  Return the job segment list
+    """
+    if seg_mls > seg_len:
+        logger.error('seg_mls must be <= seg_len')
+        raise ValueError('seg_mls must be <= seg_len')
 
-    for i, seg in enumerate(seg_list):
-        data = zip(seg[0], seg[1])
-        for d in data:
-            plt.plot(d, [i+1, i+1], color='red', linewidth=3)
+    lostlivetime = 0
+    job_list = []
 
-    if merged_seg_list is not None:
-        data = zip(merged_seg_list[0], merged_seg_list[1])
-        for d in data:
-            plt.plot(d, [len(seg_list)+1,len(seg_list)+1], color='blue', linewidth=10)
+    seg_index = 0
 
-    plt.xlim(min_start, max_stop)
+    for i in range(len(dq_list[0])):
+        start = math.ceil(dq_list[0][i]) + seg_edge
+        stop = math.floor(dq_list[1][i]) - seg_edge
+        length = stop - start
+        if length <= 0:
+            continue
 
-    return plt
+        seg_index += 1
+        n = int(length / seg_len)
+        if n == 0:
+            if length < seg_mls:
+                lostlivetime += length
+                continue
+            job_list.append(WaveSegment(seg_index, start, stop))
+            continue
+        if n == 1:
+            if length > seg_len:
+                remainder = length
+                half = int(remainder / 2)
+                if half >= seg_mls:
+                    job_list.append(WaveSegment(seg_index, start, start + half))
+
+                    seg_index += 1
+                    job_list.append(WaveSegment(seg_index, start + half, stop))
+                else:
+                    job_list.append(WaveSegment(seg_index, start, start + seg_len))
+            else:
+                job_list.append(WaveSegment(i, start, stop))
+            continue
+
+        for j in range(n - 1):
+            job_list.append(WaveSegment(seg_index, seg_len * j + start, seg_len * j + start + seg_len))
+
+        remainder = stop - job_list[1][-1]
+        half = int(remainder / 2)
+        if half >= seg_mls:
+            job_list.append(WaveSegment(i, job_list[1][-1], job_list[1][-1] + half))
+            job_list.append(WaveSegment(i, job_list[1][-1], stop))
+        else:
+            job_list.append(WaveSegment(i, job_list[1][-1], job_list[1][-1] + seg_len))
+
+    logger.info('lost livetime after building of the standard job list = %d sec' % lostlivetime)
+
+    return job_list
