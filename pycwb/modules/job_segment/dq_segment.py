@@ -40,12 +40,17 @@ def load_dq_file(dq_file: DQFile):
     with open(dq_file.file, 'r') as f:
         lines = csv.reader(f, delimiter=" ", skipinitialspace=True)
         for line in lines:
-            if line[0] == '#':
-                continue
-            if dq_file.c4:
-                _, _start, _stop, _ = line
-            else:
-                _start, _stop = line
+            try:
+                if line[0] == '#':
+                    continue
+                if dq_file.c4:
+                    _, _start, _stop, _ = line
+                else:
+                    _start, _stop = line
+            except ValueError:
+                logger.error(f"Error to parse : {line}")
+                raise Exception("Wrong format")
+
 
             _start = float(_start)
             _stop = float(_stop)
@@ -177,12 +182,12 @@ def get_job_list(dq_list, seg_len, seg_mls, seg_edge):
         if length <= 0:
             continue
 
-        seg_index += 1
         n = int(length / seg_len)
         if n == 0:
             if length < seg_mls:
                 lostlivetime += length
                 continue
+            seg_index += 1
             job_list.append(WaveSegment(seg_index, start, stop))
             continue
         if n == 1:
@@ -190,26 +195,33 @@ def get_job_list(dq_list, seg_len, seg_mls, seg_edge):
                 remainder = length
                 half = int(remainder / 2)
                 if half >= seg_mls:
+                    seg_index += 1
                     job_list.append(WaveSegment(seg_index, start, start + half))
 
                     seg_index += 1
                     job_list.append(WaveSegment(seg_index, start + half, stop))
                 else:
+                    seg_index += 1
                     job_list.append(WaveSegment(seg_index, start, start + seg_len))
             else:
+                seg_index += 1
                 job_list.append(WaveSegment(i, start, stop))
             continue
 
         for j in range(n - 1):
+            seg_index += 1
             job_list.append(WaveSegment(seg_index, seg_len * j + start, seg_len * j + start + seg_len))
 
-        remainder = stop - job_list[1][-1]
+        remainder = stop - job_list[-1].end_time
         half = int(remainder / 2)
         if half >= seg_mls:
-            job_list.append(WaveSegment(i, job_list[1][-1], job_list[1][-1] + half))
-            job_list.append(WaveSegment(i, job_list[1][-1], stop))
+            seg_index += 1
+            job_list.append(WaveSegment(i, job_list[-1].end_time, job_list[-1].end_time + half))
+            seg_index += 1
+            job_list.append(WaveSegment(i, job_list[-1].end_time, stop))
         else:
-            job_list.append(WaveSegment(i, job_list[1][-1], job_list[1][-1] + seg_len))
+            seg_index += 1
+            job_list.append(WaveSegment(i, job_list[-1].end_time, job_list[-1].end_time + seg_len))
 
     logger.info('lost livetime after building of the standard job list = %d sec' % lostlivetime)
 

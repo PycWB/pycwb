@@ -22,9 +22,9 @@ def get_frame_meta(frame_list_file, ifo, label=".gwf"):
             # if frame_path contains label
             if frame_path.find(label) != -1:
                 # test if file exists
-                if not Path(frame_path).is_file():
-                    logger.error("Frame file not found: %s", frame_path)
-                    raise FileNotFoundError("Frame file not found: {}".format(frame_path))
+                # if not Path(frame_path).is_file():
+                #     logger.error("Frame file not found: %s", frame_path)
+                #     raise FileNotFoundError("Frame file not found: {}".format(frame_path))
 
                 # get the file name without the extension with pathlib
                 frame_name = Path(frame_path).stem
