@@ -6,6 +6,9 @@ import pycbc.catalog
 import logging
 from multiprocessing import Pool
 import time
+
+from ..job_segment import WaveSegment
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,13 +92,6 @@ def read_from_config(config):
     # data = []
     with Pool(processes=len(config.ifo)) as pool:
         data = pool.starmap(_read_from_config_wrapper, [(config, i) for i in range(len(config.ifo))])
-    # for i in range(len(config.ifo)):
-    #     # read path string from the files in config.frFiles
-    #     filenames = ""
-    #     with open(config.frFiles[i], 'r') as f:
-    #         filenames = f.read()
-    #     # read data from the files
-    #     data.append(read_from_gwf(i, config, filenames, config.channelNamesRaw[i]))
 
     # timer
     timer_end = time.perf_counter()
@@ -108,3 +104,24 @@ def _read_from_config_wrapper(config, i):
         filenames = f.read()
     # read data from the files
     return read_from_gwf(i, config, filenames, config.channelNamesRaw[i])
+
+
+def read_from_job_segment(config, job_seg: WaveSegment):
+    timer_start = time.perf_counter()
+
+    with Pool(processes=len(job_seg.frames)) as pool:
+        data = pool.starmap(_read_from_job_segment_wrapper, [
+            (config, frame.path, frame.ifo, job_seg) for frame in job_seg.frames
+        ])
+
+    timer_end = time.perf_counter()
+    logger.info(f'Read data from job segment in {timer_end - timer_start} seconds')
+    return data
+
+
+def _read_from_job_segment_wrapper(config, filename, ifo, job_seg: WaveSegment):
+    start = job_seg.start_time - config.segEdge
+    end = job_seg.end_time + config.segEdge
+    i = config.ifo.index(ifo)
+    return read_from_gwf(i, config, filename, config.channelNamesRaw[i], start=start, end=end)
+

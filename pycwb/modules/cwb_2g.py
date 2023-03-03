@@ -1,16 +1,20 @@
-import os
+import os, time
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
 from pycwb.modules.plot import plot_spectrogram
-from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config
+from pycwb.modules.read_data import read_from_gwf, generate_noise, read_from_config, read_from_job_segment
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import create_network
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood
-from pycwb.modules.netevent import Event
+from pycwb.modules.job_segment import select_job_segment
+import logging
 
-def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', start_time=None, end_time=None):
+logger = logging.getLogger(__name__)
+
+
+def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
     logger_init()
 
     # load user parameters
@@ -18,55 +22,74 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml', star
     cwb_config.export_to_envs()
     config = Config(user_parameters)
 
-    data = read_from_config(config)
+    job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
+                                      config.segLen, config.segMLS, config.segEdge, config.segOverlap,
+                                      config.rateANA, config.l_high)
 
-    if start_time is None:
-        dc_data = data
-    else:
-        dc_data = [i.crop(start_time - float(i.start_time), float(i.end_time) - end_time) for i in data]
+    # data = read_from_config(config)
+    # log number of segments
+    logger.info(f"Number of segments: {len(job_segments)}")
+    for job_seg in job_segments:
+        # timer
+        start_time = time.perf_counter()
 
-    # data conditioning
-    tf_maps, nRMS_list = data_conditioning(config, dc_data)
+        job_id = job_seg.index
+        # log job info
+        logger.info(f"Job ID: {job_id}")
+        logger.info(f"Start time: {job_seg.start_time}")
+        logger.info(f"End time: {job_seg.end_time}")
+        logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
 
-    # initialize network
-    net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
+        data = read_from_job_segment(config, job_seg)
 
-    # calculate coherence
-    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
+        # data conditioning
+        tf_maps, nRMS_list = data_conditioning(config, data)
 
-    # supercluster
-    cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
+        # initialize network
+        net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
 
-    # likelihood
-    events = likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
+        # calculate coherence
+        sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
 
-    # save events to pickle
-    import pickle
-    with open('events.pkl', 'wb') as f:
-        pickle.dump(events, f)
+        # supercluster
+        cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
 
-    import matplotlib.pyplot as plt
-    plot = plot_spectrogram(tf_maps[0], figsize=(24,6), gwpy_plot=True)
+        # likelihood
+        events = likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
 
-    # plot boxes on the plot
-    i = 0
-    boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
+        # save events to pickle
+        import pickle
+        with open('events.pkl', 'wb') as f:
+            pickle.dump(events, f)
 
-    for box in boxes:
-        ax = plot.gca()
-        ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False, color='red'))
+        import matplotlib.pyplot as plt
+        plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
 
-    # save to png
-    plot.savefig('events.png')
+        # plot boxes on the plot
+        i = 0
+        boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
 
-    # save event to txt
-    for i, event in enumerate(events):
-        try:
-            output = event.dump()
-            with open(f'event_{i+1}.txt', 'a') as f:
-                f.write(output)
-        except:
-            pass
+        for box in boxes:
+            ax = plot.gca()
+            ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False,
+                                       color='red'))
+
+        # save to png
+        plot.savefig(f'events_{job_id}_all.png')
+
+        # save event to txt
+        for i, event in enumerate(events):
+            try:
+                output = event.dump()
+                with open(f'event_{job_id}_{i + 1}.txt', 'a') as f:
+                    f.write(output)
+            except:
+                pass
+
+        # calculate the performance
+        end_time = time.perf_counter()
+        logger.info(f"Job {job_id} finished in {round(end_time - start_time, 1)} seconds")
+        logger.info(f"Speed factor: {round((job_seg.end_time - job_seg.start_time) / (end_time - start_time), 1)}X")
 
 
 def generate_injected(config):
