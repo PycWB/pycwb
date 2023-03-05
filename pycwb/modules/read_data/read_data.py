@@ -114,9 +114,28 @@ def read_from_job_segment(config, job_seg: WaveSegment):
             (config, frame.path, frame.ifo, job_seg) for frame in job_seg.frames
         ])
 
+    merged_data = []
+    for ifo in config.ifo:
+        ifo_data = None
+        # merge data if there are more than one file for one ifo
+        for i, frame in enumerate(job_seg.frames):
+            if frame.ifo == ifo:
+                if ifo_data is None:
+                    ifo_data = data[i]
+                else:
+                    ifo_data.append(data[i], gap='raise')
+
+        # check if data range match with job segment
+        if ifo_data.times[0] != job_seg.start_time or ifo_data.times[-1] != job_seg.end_time:
+            logger.error(f'Job segment {job_seg} not match with data {ifo_data}, '
+                         f'the gwf data start at {ifo_data.times[0]} and end at {ifo_data.times[-1]}')
+            raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
+        
+        merged_data.append(ifo_data)
+
     timer_end = time.perf_counter()
     logger.info(f'Read data from job segment in {timer_end - timer_start} seconds')
-    return data
+    return merged_data
 
 
 def _read_from_job_segment_wrapper(config, filename, ifo, job_seg: WaveSegment):
