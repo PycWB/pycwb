@@ -19,6 +19,7 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     else:
         logger.info(f'Reading data from {filename} from {channel}')
 
+    # TODO: read directly with pycbc?
     data = TimeSeries.read(filename, channel, start, end)
 
     # TODO: Check data
@@ -124,19 +125,9 @@ def read_from_job_segment(config, job_seg: WaveSegment):
         else:
             ifo_data = TimeSeries.from_pycbc(data[frames[0]])
             for i in frames[1:]:
-                ifo_data.append(data[i], gap='raise')
+                ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
 
             ifo_data = ifo_data.to_pycbc()
-    # for ifo in config.ifo:
-    #     ifo_data = None
-    #     # merge data if there are more than one file for one ifo
-    #     for i, frame in enumerate(job_seg.frames):
-    #
-    #         if frame.ifo == ifo:
-    #             if ifo_data is None:
-    #                 ifo_data = data[i]
-    #             else:
-    #                 ifo_data.append(data[i], gap='raise')
 
         # check if data range match with job segment
         if ifo_data.start_time != job_seg.start_time - config.segEdge or ifo_data.end_time != job_seg.end_time + config.segEdge:

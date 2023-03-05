@@ -3,8 +3,8 @@ class WaveSegment:
 
     def __init__(self, index, start_time, end_time):
         self.index = index
-        self.start_time = start_time
-        self.end_time = end_time
+        self.start_time = float(start_time)
+        self.end_time = float(end_time)
         self.frames = []
 
     def __repr__(self):

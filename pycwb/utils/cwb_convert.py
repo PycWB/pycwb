@@ -20,11 +20,12 @@ if not hasattr(ROOT, "WDM"):
         try:
             ROOT.gSystem.Load("wavelet")
         except:
-            logger.error("Cannot load wavelet library")
-            # sys.exit(1)
+            logger.error("Cannot find wavelet library")
+            raise Exception("Cannot find wavelet library")
 
 
-ROOT.gInterpreter.Declare("""
+def declare_function():
+    ROOT.gInterpreter.Declare("""
     void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
         for (int i = 0; i < size; i++) {
             wave->data[i] = value[i];
@@ -74,6 +75,9 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
 
     data_val = np.round(data.value, 25)
 
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
+
     ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.value))
 
     h.start(np.asarray(data.t0, dtype=np.double))
@@ -91,6 +95,9 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
     h = ROOT.wavearray(np.double)(len(data.data))
 
     data_val = np.round(data.data, 25)
+
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
 
     ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.data))
 
