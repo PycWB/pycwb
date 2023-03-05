@@ -18,6 +18,7 @@ def get_frame_meta(frame_list_file, ifo, label=".gwf"):
             frame_path = frame_path.replace("framefile=", "")
             frame_path = frame_path.replace("file://localhost", "")
             frame_path = frame_path.replace("gsiftp://ldr.aei.uni-hannover.de:15000", "")
+            frame_path = frame_path.strip()
 
             # if frame_path contains label
             if not frame_path.find(label):

@@ -58,7 +58,8 @@ def select_job_segment(dq_file_list: list[DQFile], ifos, fr_files,
         # add segOverlap to the dataector's segments stop for this job
         job_seg.end_time += seg_overlap
 
-        logger.info(f"job segment gps range = {job_seg.start_time} - {job_seg.end_time}")
+        logger.debug(f"job segment gps range = {job_seg.start_time} - {job_seg.end_time}")
+    logger.info(f"Number of job segments = {len(job_segments)}")
 
     # Get frame file list
     frame_files = []
