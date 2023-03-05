@@ -70,6 +70,9 @@ class BuildCWB(Command):
             self.spawn(['bash', './build.sh'])
         except DistutilsExecError:
             self.warn('cwb core compilation failed, skipping')
+            print('exiting cwb-core directory')
+            os.chdir(pwd)
+            raise DistutilsExecError
         finally:
             print('exiting cwb-core directory')
             os.chdir(pwd)
