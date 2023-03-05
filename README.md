@@ -7,7 +7,7 @@ This is python version of `cWB`
  - [x] Generate `ini` and `yaml` configuration file with python script
  - [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
  - [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
- - [x]️ Wrap cwb modules to pure functions 
+ - [x] Wrap cwb modules to pure functions 
  - [x] Rewrite `cwb.run()` to python for better workflow control and plugin system
  - [ ] (Optional) Supply addition event interface for event-driven architecture
 
