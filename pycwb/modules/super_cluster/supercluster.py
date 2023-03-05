@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 def supercluster(config: Config, net: ROOT.network,
-                 wdm_list: list[ROOT.WDM(np.double)],
                  cluster_list: list[ROOT.netcluster],
                  sparse_table_list: list):
     # timer
@@ -125,4 +124,4 @@ def supercluster(config: Config, net: ROOT.network,
     logger.info("Supercluster time: %.2f s", timer_stop - timer_start)
     logger.info("----------------------------------------")
 
-    return cluster, pwc_list
+    return pwc_list

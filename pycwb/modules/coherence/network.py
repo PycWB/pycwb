@@ -264,7 +264,6 @@ def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str,
                 net.setIndexMode(0)
             return 0
 
-        theta = -1000
         # parse options with python for TB.getParameter(options, "--theta")
 
         parser = argparse.ArgumentParser(description='Example with long option names')

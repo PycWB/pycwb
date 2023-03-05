@@ -5,6 +5,4 @@ sys.path.insert(0, '..')
 
 from pycwb.modules.cwb_2g import cwb_2g
 
-# cwb_2g('./config.ini', './user_parameters_mdc.yaml', 1264130816, 1264131610)
-# cwb_2g('./config.ini', './user_parameters_mdc.yaml', 1264130816, 1264131592)
-cwb_2g('./config.ini', './user_parameters_mdc.yaml')
+cwb_2g('./user_parameters_mdc.yaml')

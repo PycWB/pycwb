@@ -60,7 +60,7 @@ NODE_DATA_DIR = ${{WORK_DIR}}/tmp/node
 def copy_job_config(work_dir):
     pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
 
-    shutil.copyfile(f"{pycwb_path}/shared/example.yaml", f"{work_dir}/user_parameters.yaml")
+    shutil.copyfile(f"{pycwb_path}/vendor/example.yaml", f"{work_dir}/user_parameters.yaml")
 
 
 def main(argv):

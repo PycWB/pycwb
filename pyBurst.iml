@@ -3,6 +3,7 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/messenger-web-interface/dist" />
       <excludeFolder url="file://$MODULE_DIR$/messenger_test/data" />
       <excludeFolder url="file://$MODULE_DIR$/tests/data" />
@@ -15,6 +16,8 @@
       <excludeFolder url="file://$MODULE_DIR$/.pytest_cache" />
       <excludeFolder url="file://$MODULE_DIR$/dist" />
       <excludeFolder url="file://$MODULE_DIR$/pycwb.egg-info" />
+      <excludeFolder url="file://$MODULE_DIR$/cwb-core/build" />
+      <excludeFolder url="file://$MODULE_DIR$/cwb-core" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

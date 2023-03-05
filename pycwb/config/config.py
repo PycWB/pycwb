@@ -17,6 +17,8 @@ class DQFile:
 
 class Config:
     def __init__(self, file_name):
+        self.outputDir = None
+        self.logDir = None
         self.cfg_gamma = None
         self.gamma = None
         self.fResample = None

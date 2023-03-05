@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 def likelihood(config: Config, net: ROOT.network,
                sparse_table_list: list,
                pwc_list: list,
-               cluster: ROOT.netcluster,
                wdm_list: list[ROOT.WDM(np.double)]):
     """
     calculate likelihood

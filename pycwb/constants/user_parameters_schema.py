@@ -4,6 +4,18 @@ NIFO_MAX = 8
 schema = {
     "type": "object",
     "properties": {
+        "outputDir": {
+            "type": "string",
+            "description": "output directory",
+            "default": "output",
+            "cwb": False
+        },
+        "logDir": {
+            "type": "string",
+            "description": "log directory",
+            "default": "log",
+            "cwb": False
+        },
         "analysis": {
             "enum": ["1G", "2G"],
             "description": "true/false -> online/offline",

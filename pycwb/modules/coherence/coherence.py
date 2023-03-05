@@ -62,7 +62,6 @@ def coherence(config: Config, net: ROOT.network,
     sparse_table_list = []
     pwc_list = []
     m_tau = net.getDelay('MAX')
-    wc = ROOT.netcluster()
 
     for i in range(config.nRES):
         sparse_table, pwc_list_res = _coherence_single_res(i, config, net, tf_maps, wdm_list[i], m_tau, up_n)

@@ -1,4 +1,5 @@
 import os, time
+import pycwb
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
 from pycwb.modules.plot import plot_spectrogram
@@ -14,13 +15,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
-    logger_init()
+def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO'):
+    logger_init(log_file, log_level)
 
-    # load user parameters
-    cwb_config = CWBConfig(config)
-    cwb_config.export_to_envs()
+    # set env HOME_WAT_FILTERS
+    if not os.environ.get('HOME_WAT_FILTERS'):
+        pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
+        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
+
     config = Config(user_parameters)
+
+    # create folder for output and log
+    if not os.path.exists(config.outputDir):
+        os.makedirs(config.outputDir)
+    if not os.path.exists(config.logDir):
+        os.makedirs(config.logDir)
 
     job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
                                       config.segLen, config.segMLS, config.segEdge, config.segOverlap,
@@ -29,6 +38,8 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
     # data = read_from_config(config)
     # log number of segments
     logger.info(f"Number of segments: {len(job_segments)}")
+    logger.info("-" * 80)
+
     for job_seg in job_segments:
         # timer
         start_time = time.perf_counter()
@@ -52,14 +63,14 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
         sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
 
         # supercluster
-        cluster, pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
+        pwc_list = supercluster(config, net, cluster_list, sparse_table_list)
 
         # likelihood
-        events = likelihood(config, net, sparse_table_list, pwc_list, cluster, wdm_list)
+        events = likelihood(config, net, sparse_table_list, pwc_list, wdm_list)
 
         # save events to pickle
         import pickle
-        with open('events.pkl', 'wb') as f:
+        with open(f'{config.outputDir}/events_{job_id}.pkl', 'wb') as f:
             pickle.dump(events, f)
 
         import matplotlib.pyplot as plt
@@ -75,21 +86,23 @@ def cwb_2g(config='./config.ini', user_parameters='./user_parameters.yaml'):
                                        color='red'))
 
         # save to png
-        plot.savefig(f'events_{job_id}_all.png')
+        plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
 
         # save event to txt
         for i, event in enumerate(events):
             try:
                 output = event.dump()
-                with open(f'event_{job_id}_{i + 1}.txt', 'a') as f:
+                with open(f'{config.outputDir}/event_{job_id}_{i + 1}.txt', 'a') as f:
                     f.write(output)
             except:
                 pass
 
         # calculate the performance
         end_time = time.perf_counter()
+        logger.info("-" * 80)
         logger.info(f"Job {job_id} finished in {round(end_time - start_time, 1)} seconds")
         logger.info(f"Speed factor: {round((job_seg.end_time - job_seg.start_time) / (end_time - start_time), 1)}X")
+        logger.info("-" * 80)
 
 
 def generate_injected(config):
