@@ -52,3 +52,7 @@ class FrameFile:
     def __repr__(self):
         return f"FrameFile(ifo={self.ifo}, path={self.path}, " \
                f"start_time={self.start_time}, duration={self.duration})"
+
+    @property
+    def end_time(self):
+        return self.start_time + self.duration

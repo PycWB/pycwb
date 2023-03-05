@@ -3,8 +3,9 @@ import logging
 from .regression import regression
 from .whitening import whitening
 from pycwb.config import Config
+from gwpy.timeseries import TimeSeries as gwpyTimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
-from pycwb.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray
+from pycwb.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray, convert_timeseries_to_wavearray
 from pycwb.constants import WDM_BETAORDER, WDM_PRECISION
 import ROOT
 import numpy as np
@@ -61,6 +62,8 @@ def data_conditioning(config: Config, strains):
 def _wrapper(config, strain, wdm, wdm_white):
     if isinstance(strain, pycbcTimeSeries):
         wave_array = convert_pycbc_timeseries_to_wavearray(strain)
+    elif isinstance(strain, gwpyTimeSeries):
+        wave_array = convert_timeseries_to_wavearray(strain)
     else:
         wave_array = strain
 

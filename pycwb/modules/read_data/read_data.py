@@ -115,20 +115,33 @@ def read_from_job_segment(config, job_seg: WaveSegment):
         ])
 
     merged_data = []
-    for ifo in config.ifo:
-        ifo_data = None
-        # merge data if there are more than one file for one ifo
-        for i, frame in enumerate(job_seg.frames):
-            if frame.ifo == ifo:
-                if ifo_data is None:
-                    ifo_data = data[i]
-                else:
-                    ifo_data.append(data[i], gap='raise')
+
+    ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in config.ifo]
+
+    for frames in ifo_frames:
+        if len(frames) == 1:
+            ifo_data = data[frames[0]]
+        else:
+            ifo_data = TimeSeries.from_pycbc(data[frames[0]])
+            for i in frames[1:]:
+                ifo_data.append(data[i], gap='raise')
+
+            ifo_data = ifo_data.to_pycbc()
+    # for ifo in config.ifo:
+    #     ifo_data = None
+    #     # merge data if there are more than one file for one ifo
+    #     for i, frame in enumerate(job_seg.frames):
+    #
+    #         if frame.ifo == ifo:
+    #             if ifo_data is None:
+    #                 ifo_data = data[i]
+    #             else:
+    #                 ifo_data.append(data[i], gap='raise')
 
         # check if data range match with job segment
-        if ifo_data.times[0] != job_seg.start_time or ifo_data.times[-1] != job_seg.end_time:
+        if ifo_data.start_time != job_seg.start_time - config.segEdge or ifo_data.end_time != job_seg.end_time + config.segEdge:
             logger.error(f'Job segment {job_seg} not match with data {ifo_data}, '
-                         f'the gwf data start at {ifo_data.times[0]} and end at {ifo_data.times[-1]}')
+                         f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
             raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
         
         merged_data.append(ifo_data)

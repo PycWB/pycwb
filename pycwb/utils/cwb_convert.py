@@ -24,6 +24,15 @@ if not hasattr(ROOT, "WDM"):
             # sys.exit(1)
 
 
+ROOT.gInterpreter.Declare("""
+    void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
+        for (int i = 0; i < size; i++) {
+            wave->data[i] = value[i];
+        }
+    }
+    """)
+
+
 def convert_wseries_to_wavearray(w):
     h = ROOT.wavearray(np.double)()
 
@@ -63,10 +72,9 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
     """
     h = ROOT.wavearray(np.double)(len(data.value))
 
-    data_val = data.value
-    data_val = np.round(data_val, 25)
-    for i, d in enumerate(data_val):
-        h[i] = d
+    data_val = np.round(data.value, 25)
+
+    ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.value))
 
     h.start(np.asarray(data.t0, dtype=np.double))
     h.rate(int(1. / np.asarray(data.dt, dtype=np.double)))
@@ -79,13 +87,6 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
         this is to convert timeseries to wavearray,
         if we read noise data with something else just need to make a new conversion function
     """
-    ROOT.gInterpreter.Declare("""
-    void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
-        for (int i = 0; i < size; i++) {
-            wave->data[i] = value[i];
-        }
-    }
-    """)
 
     h = ROOT.wavearray(np.double)(len(data.data))
 
