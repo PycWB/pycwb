@@ -111,7 +111,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
     with Pool(processes=len(job_seg.frames)) as pool:
         data = pool.starmap(_read_from_job_segment_wrapper, [
-            (config, frame.path, frame.ifo, job_seg) for frame in job_seg.frames
+            (config, frame, job_seg) for frame in job_seg.frames
         ])
 
     merged_data = []
@@ -138,9 +138,16 @@ def read_from_job_segment(config, job_seg: WaveSegment):
     return merged_data
 
 
-def _read_from_job_segment_wrapper(config, filename, ifo, job_seg: WaveSegment):
+def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
     start = job_seg.start_time - config.segEdge
     end = job_seg.end_time + config.segEdge
-    i = config.ifo.index(ifo)
-    return read_from_gwf(i, config, filename, config.channelNamesRaw[i], start=start, end=end)
+
+    if frame.start_time > start:
+        start = frame.start_time
+
+    if frame.end_time < end:
+        end = frame.end_time
+
+    i = config.ifo.index(frame.ifo)
+    return read_from_gwf(i, config, frame.path, config.channelNamesRaw[i], start=start, end=end)
 
