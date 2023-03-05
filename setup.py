@@ -6,6 +6,7 @@ from distutils.command.clean import clean as _clean
 
 requires = []
 install_requires = [
+    "matplotlib<3.7.0",
     "pyyaml",
     "jsonschema",
     "watchfiles",
