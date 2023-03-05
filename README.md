@@ -1,21 +1,17 @@
 # pycWB
 
-This is a project to simplify the installation of `cWB` and run `cWB` with python.
+This is python version of `cWB`
 
 ## What does this package do
 
  - [x] Generate `ini` and `yaml` configuration file with python script
  - [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
  - [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
- - [ ]️ Wrap cwb modules to pure functions 
- - [ ] Rewrite `cwb.run()` to python for better workflow control and plugin system
+ - [x]️ Wrap cwb modules to pure functions 
+ - [x] Rewrite `cwb.run()` to python for better workflow control and plugin system
  - [ ] (Optional) Supply addition event interface for event-driven architecture
 
 ## Installation
-
-### Install cWB
-
-Check [installation guide](./docs/0.installation_guide.md) to simply install `cWB` with conda
 
 ### Install pycWB from git
 
@@ -25,6 +21,22 @@ git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycwb
 python setup.py clean && python setup.py build_cwb && python setup.py sdist && pip install dist/*.tar.gz
 ```
+
+## Usage
+
+Example project can be found in [examples](./examples)
+
+```python
+from pycwb.modules.cwb_2g import cwb_2g
+
+cwb_2g('./user_parameters.yaml')
+```
+
+## Addtional steps for cWB python wrapper
+
+### Install cWB
+
+Check [installation guide](./docs/0.installation_guide.md) to simply install `cWB` with conda
 
 ## Generate config files
 
@@ -100,36 +112,3 @@ cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
 >
 > "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`
 > and converted to C code to run with `pyROOT`
-
-[//]: # (## cWB pythonize list)
-
-[//]: # ()
-[//]: # (- [x] `cwb_inet2G.c` entry point)
-
-[//]: # (- [ ] `CWB:run` final target to control the workflow)
-
-[//]: # (- [ ] `cwb_inet.c` optional: used to parse `CWB_INET_OPTIONS`)
-
-[//]: # (- [ ] `config.c` optional: better control on config)
-
-[//]: # (- [ ] `CWB2G` could be required by `CWB:run` )
-
-[//]: # ()
-[//]: # (# Advance of Event-based Architecture)
-
-[//]: # ()
-[//]: # ( - simply assemble events from pure function by configuration file )
-
-[//]: # ( - easy parallelization)
-
-[//]: # ( - each event can be recorded and traced)
-
-[//]: # ( - easy to resume from interruption)
-
-[//]: # ( - multiple handler can process same event)
-
-[//]: # ( - easy to create schedule job)
-
-[//]: # ( - assemble new handler with modules)
-
-[//]: # ( - monitor the file to trigger event)
