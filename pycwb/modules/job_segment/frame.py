@@ -20,24 +20,26 @@ def get_frame_meta(frame_list_file, ifo, label=".gwf"):
             frame_path = frame_path.replace("gsiftp://ldr.aei.uni-hannover.de:15000", "")
 
             # if frame_path contains label
-            if frame_path.find(label) != -1:
-                # test if file exists
-                if not Path(frame_path).is_file():
-                    logger.error("Frame file not found: %s", frame_path)
-                    raise FileNotFoundError("Frame file not found: {}".format(frame_path))
+            if not frame_path.find(label):
+                continue
 
-                # get the file name without the extension with pathlib
-                frame_name = Path(frame_path).stem
-                # get the gps time and duration with int type
-                gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
+            # test if file exists
+            if not Path(frame_path).is_file():
+                logger.error("Frame file not found: %s", frame_path)
+                raise FileNotFoundError("Frame file not found: {}".format(frame_path))
 
-                # if gps start smaller than the gps time 2015-01-01 or duration is smaller than 1,
-                # throw an error of bad format
-                if gps_start < 1104105616 or duration < 1:
-                    raise ValueError("Frame file name format is not correct: {}".format(frame_path))
+            # get the file name without the extension with pathlib
+            frame_name = Path(frame_path).stem
+            # get the gps time and duration with int type
+            gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
 
-                # append the frame file to the list
-                frame_list.append(FrameFile(ifo, frame_path, gps_start, duration))
+            # if gps start smaller than the gps time 2015-01-01 or duration is smaller than 1,
+            # throw an error of bad format
+            if gps_start < 1104105616 or duration < 1:
+                raise ValueError("Frame file name format is not correct: {}".format(frame_path))
+
+            # append the frame file to the list
+            frame_list.append(FrameFile(ifo, frame_path, gps_start, duration))
 
     return frame_list
 
