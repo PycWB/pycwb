@@ -30,7 +30,7 @@ add_compile_options(-Wno-deprecated -fexceptions -mavx)
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
+set(CMAKE_INSTALL_LIBDIR lib)
 #Turn the install path to an absolute path
 get_filename_component(CMAKE_INSTALL_PREFIX
         ${CMAKE_INSTALL_PREFIX}
@@ -138,7 +138,11 @@ endif()
 list(APPEND WAT_HDRS watversion.hh watfun.hh constants.hh wat.hh skycoord.hh watsse.hh watsse4.hh)
 
 #Add the watasm_elf64.o to the list of src
-list(APPEND WAT_SRC watasm.S)
+if(APPLE)
+    list(APPEND WAT_SRC watasm.S)
+else()
+   list(APPEND WAT_SRC watasm_elf64.o)
+endif()
 
 #Create the library
 add_library(${PROJECT_NAME} SHARED ${WAT_SRC})
