@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Read data from GWF file
     if start or end:
-        logger.info(f'Reading data from {filename} from {channel} from {start} to {end}')
+        logger.info(f'Reading data from {filename} ({channel}) from {start} to {end}')
     else:
-        logger.info(f'Reading data from {filename} from {channel}')
+        logger.info(f'Reading data from {filename} ({channel})')
 
-    # TODO: read directly with pycbc?
+    # Read gwf file
     data = TimeSeries.read(filename, channel, start, end)
 
     # TODO: Check data
@@ -110,6 +110,7 @@ def _read_from_config_wrapper(config, i):
 def read_from_job_segment(config, job_seg: WaveSegment):
     timer_start = time.perf_counter()
 
+    # read data from the files in parallel
     with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
         data = pool.starmap(_read_from_job_segment_wrapper, [
             (config, frame, job_seg) for frame in job_seg.frames
@@ -117,26 +118,36 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
     merged_data = []
 
+    # split data by ifo for next step of merging
     ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in config.ifo]
 
     for frames in ifo_frames:
         if len(frames) == 1:
+            # if there is only one frame, no need to merge
             ifo_data = data[frames[0]]
         else:
+            # merge gw frames
             ifo_data = TimeSeries.from_pycbc(data[frames[0]])
-            del data[frames[0]]
-            for i in frames[1:]:
-                ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
-                del data[i]
+            # free memory
+            data[frames[0]] = None
 
+            for i in frames[1:]:
+                # use append method from gwpy, raise error if there is a gap
+                ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
+                # free memory
+                data[i] = None
+
+            # convert back to pycbc
             ifo_data = ifo_data.to_pycbc()
 
         # check if data range match with job segment
-        if ifo_data.start_time != job_seg.start_time - config.segEdge or ifo_data.end_time != job_seg.end_time + config.segEdge:
+        if ifo_data.start_time != job_seg.start_time - config.segEdge or \
+                ifo_data.end_time != job_seg.end_time + config.segEdge:
             logger.error(f'Job segment {job_seg} not match with data {ifo_data}, '
                          f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
             raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
-        
+
+        # append to final data
         merged_data.append(ifo_data)
 
     timer_end = time.perf_counter()
@@ -145,12 +156,15 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
 
 def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
+    # should read data with segment edge
     start = job_seg.start_time - config.segEdge
     end = job_seg.end_time + config.segEdge
 
+    # for each frame, if the frame start time is later than the job segment start time, use the frame start time
     if frame.start_time > start:
         start = frame.start_time
 
+    # for each frame, if the frame end time is earlier than the job segment end time, use the frame end time
     if frame.end_time < end:
         end = frame.end_time
 
