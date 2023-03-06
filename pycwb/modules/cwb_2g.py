@@ -97,6 +97,8 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
             except:
                 pass
 
+        del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
+
         # calculate the performance
         end_time = time.perf_counter()
         logger.info("-" * 80)
