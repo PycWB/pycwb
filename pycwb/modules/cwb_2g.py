@@ -1,4 +1,6 @@
 import os, time
+from concurrent.futures import ProcessPoolExecutor as Pool
+import multiprocessing
 import pycwb
 from pycwb import logger_init
 from pycwb.config import Config, CWBConfig
@@ -13,6 +15,73 @@ from pycwb.modules.job_segment import select_job_segment
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def analyze_job_segment(config, job_seg):
+    # config, job_seg = args
+    start_time = time.perf_counter()
+
+    job_id = job_seg.index
+    # log job info
+    logger.info(f"Job ID: {job_id}")
+    logger.info(f"Start time: {job_seg.start_time}")
+    logger.info(f"End time: {job_seg.end_time}")
+    logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
+
+    data = read_from_job_segment(config, job_seg)
+
+    # data conditioning
+    tf_maps, nRMS_list = data_conditioning(config, data)
+
+    # initialize network
+    net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
+
+    # calculate coherence
+    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
+
+    # supercluster
+    pwc_list = supercluster(config, net, cluster_list, sparse_table_list)
+
+    # likelihood
+    events = likelihood(config, net, sparse_table_list, pwc_list, wdm_list)
+
+    # save events to pickle
+    # import pickle
+    # with open(f'{config.outputDir}/events_{job_id}.pkl', 'wb') as f:
+    #     pickle.dump(events, f)
+
+    import matplotlib.pyplot as plt
+    plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
+
+    # plot boxes on the plot
+    i = 0
+    boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
+
+    for box in boxes:
+        ax = plot.gca()
+        ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False,
+                                   color='red'))
+
+    # save to png
+    plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
+
+    # save event to txt
+    for i, event in enumerate(events):
+        try:
+            output = event.json()
+            with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'a') as f:
+                f.write(output)
+        except:
+            pass
+
+    del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
+
+    # calculate the performance
+    end_time = time.perf_counter()
+    logger.info("-" * 80)
+    logger.info(f"Job {job_id} finished in {round(end_time - start_time, 1)} seconds")
+    logger.info(f"Speed factor: {round((job_seg.end_time - job_seg.start_time) / (end_time - start_time), 1)}X")
+    logger.info("-" * 80)
 
 
 def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO'):
@@ -41,70 +110,13 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     logger.info("-" * 80)
 
     for job_seg in job_segments:
-        # timer
-        start_time = time.perf_counter()
-
-        job_id = job_seg.index
-        # log job info
-        logger.info(f"Job ID: {job_id}")
-        logger.info(f"Start time: {job_seg.start_time}")
-        logger.info(f"End time: {job_seg.end_time}")
-        logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
-
-        data = read_from_job_segment(config, job_seg)
-
-        # data conditioning
-        tf_maps, nRMS_list = data_conditioning(config, data)
-
-        # initialize network
-        net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
-
-        # calculate coherence
-        sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
-
-        # supercluster
-        pwc_list = supercluster(config, net, cluster_list, sparse_table_list)
-
-        # likelihood
-        events = likelihood(config, net, sparse_table_list, pwc_list, wdm_list)
-
-        # save events to pickle
-        import pickle
-        with open(f'{config.outputDir}/events_{job_id}.pkl', 'wb') as f:
-            pickle.dump(events, f)
-
-        import matplotlib.pyplot as plt
-        plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
-
-        # plot boxes on the plot
-        i = 0
-        boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
-
-        for box in boxes:
-            ax = plot.gca()
-            ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False,
-                                       color='red'))
-
-        # save to png
-        plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
-
-        # save event to txt
-        for i, event in enumerate(events):
-            try:
-                output = event.json()
-                with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'a') as f:
-                    f.write(output)
-            except:
-                pass
-
-        del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
-
-        # calculate the performance
-        end_time = time.perf_counter()
-        logger.info("-" * 80)
-        logger.info(f"Job {job_id} finished in {round(end_time - start_time, 1)} seconds")
-        logger.info(f"Speed factor: {round((job_seg.end_time - job_seg.start_time) / (end_time - start_time), 1)}X")
-        logger.info("-" * 80)
+        # analyze_job_segment(config, job_seg)
+        # gc.collect()
+        process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
+        process.start()
+        process.join()
+        # with Pool(max_workers=1) as pool:
+        #     pool.map(analyze_job_segment, [(config, job_seg)])
 
 
 def generate_injected(config):
