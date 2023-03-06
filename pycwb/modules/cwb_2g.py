@@ -91,8 +91,8 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
         # save event to txt
         for i, event in enumerate(events):
             try:
-                output = event.dump()
-                with open(f'{config.outputDir}/event_{job_id}_{i + 1}.txt', 'a') as f:
+                output = event.json()
+                with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'a') as f:
                     f.write(output)
             except:
                 pass

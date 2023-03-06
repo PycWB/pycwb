@@ -1,5 +1,6 @@
 # read cluster parameters
 import numpy as np
+import json
 
 
 class Event:
@@ -195,6 +196,9 @@ class Event:
         else:  # (XGB.rho0)
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
+
+    def json(self):
+        return json.dumps(self.__dict__)
 
     def dump(self):
         return f"""
