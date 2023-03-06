@@ -29,7 +29,7 @@ def coherence_parallel(config: Config, net: ROOT.network,
     pwc_list = []
     m_tau = net.getDelay('MAX')
 
-    with Pool() as pool:
+    with Pool(processes=min(config.nproc, config.nRES)) as pool:
         tasks = []
         for i in range(config.nRES):
             tasks.append((i, config, copy.deepcopy(net),tf_maps, wdm_list[i], m_tau, up_n))

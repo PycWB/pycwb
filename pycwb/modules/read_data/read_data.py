@@ -91,7 +91,7 @@ def read_from_config(config):
     timer_start = time.perf_counter()
 
     # data = []
-    with Pool(processes=len(config.ifo)) as pool:
+    with Pool(processes=min(config.nproc, config.nIFO)) as pool:
         data = pool.starmap(_read_from_config_wrapper, [(config, i) for i in range(len(config.ifo))])
 
     # timer
@@ -110,7 +110,7 @@ def _read_from_config_wrapper(config, i):
 def read_from_job_segment(config, job_seg: WaveSegment):
     timer_start = time.perf_counter()
 
-    with Pool(processes=len(job_seg.frames)) as pool:
+    with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
         data = pool.starmap(_read_from_job_segment_wrapper, [
             (config, frame, job_seg) for frame in job_seg.frames
         ])
@@ -124,8 +124,10 @@ def read_from_job_segment(config, job_seg: WaveSegment):
             ifo_data = data[frames[0]]
         else:
             ifo_data = TimeSeries.from_pycbc(data[frames[0]])
+            del data[frames[0]]
             for i in frames[1:]:
                 ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
+                del data[i]
 
             ifo_data = ifo_data.to_pycbc()
 

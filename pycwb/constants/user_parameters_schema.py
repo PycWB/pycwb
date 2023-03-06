@@ -16,6 +16,12 @@ schema = {
             "default": "log",
             "cwb": False
         },
+        "nproc": {
+            "type": "integer",
+            "description": "number of processes",
+            "default": 4,
+            "cwb": False
+        },
         "analysis": {
             "enum": ["1G", "2G"],
             "description": "true/false -> online/offline",
