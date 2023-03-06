@@ -216,12 +216,12 @@ def get_job_list(dq_list, seg_len, seg_mls, seg_edge):
         half = int(remainder / 2)
         if half >= seg_mls:
             seg_index += 1
-            job_list.append(WaveSegment(i, job_list[-1].end_time, job_list[-1].end_time + half))
+            job_list.append(WaveSegment(seg_index, job_list[-1].end_time, job_list[-1].end_time + half))
             seg_index += 1
-            job_list.append(WaveSegment(i, job_list[-1].end_time, stop))
+            job_list.append(WaveSegment(seg_index, job_list[-1].end_time, stop))
         else:
             seg_index += 1
-            job_list.append(WaveSegment(i, job_list[-1].end_time, job_list[-1].end_time + seg_len))
+            job_list.append(WaveSegment(seg_index, job_list[-1].end_time, job_list[-1].end_time + seg_len))
 
     logger.info('lost livetime after building of the standard job list = %d sec' % lostlivetime)
 
