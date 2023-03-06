@@ -36,7 +36,6 @@ def likelihood(config: Config, net: ROOT.network,
     for n in range(config.nIFO):
         pD = net.getifo(n)
         pD.sclear()
-        # for(int i=0; i<nRES; i++) {
         for i in range(config.nRES):
             pD.vSS.push_back(sparse_table_list[i][n])
 
@@ -64,53 +63,15 @@ def likelihood(config: Config, net: ROOT.network,
         nrejected_weak_pixels = 0  # remove weak glitches
         nrejected_loud_pixels = 0  # remove loud glitches
         for k in range(pwc_list[j].cList.size()):  # loop over the cluster list
-            # Decoupling: copy_metadata(pwc, pwc_list[j])
+            # Decoupling:
+            # TODO: parallelize this loop
+            # new_net = copy.deepcopy(net)
+            # pwc = new_net.getwc(j)
+            copy_metadata(pwc, pwc_list[j])
             select_clusters(pwc, pwc_list[j], k)
-            cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
-            if not cid.size():
-                continue
 
-            id = int(cid.data[cid.size() - 1] + 0.1)
-            pwc.setcore(False, id)
-            pwc.loadTDampSSE(net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
-
-            lag = j
-
-            ID = 0
-            if net.pattern > 0:
-                selected_core_pixels = net.likelihoodWP(config.search, lag, ID, ROOT.nullptr, config.Search)
-            else:
-                selected_core_pixels = net.likelihood2G(config.search, lag, ID, ROOT.nullptr)
-            logger.info("Selected core pixels: %d" % selected_core_pixels)
-
-            event = Event()
-            event.output(net, k + 1, 0)
+            event = _likelihood(config, net, j, pwc, k + 1)
             events.append(event)
-
-            rejected_weak_pixels = 0
-            rejected_loud_pixels = 0
-
-            detected = (net.getwc(j).sCuts[k] == -1)
-            # Decoupling: detected = (net.getwc(j).sCuts[0] == -1)
-
-            # print reconstructed event
-            logger.info("   cluster-id|pixels: %5d|%d" % (k + 1, int(pwc.size() - npixels)))
-            if detected:
-                logger.info("\t -> SELECTED !!!")
-                # print("-------------------------------------------------------")
-                # print(event.dump())
-                # print("-------------------------------------------------------")
-            else:
-                logger.info("\t <- rejected    ")
-
-            # if(detected) nevents++
-            # npixels=pwc->size();
-            if detected:
-                nevents += 1
-            npixels = pwc.size()
-            # Decoupling: remove above line
-
-            pwc.clean(k+1)
         n_events += nevents
 
     # timer
@@ -121,5 +82,51 @@ def likelihood(config: Config, net: ROOT.network,
     logger.info("-------------------------------------------------------")
 
     return events
+
+
+def _likelihood(config, net, lag, pwc, cluster_id):
+    k = 0
+    cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
+    if not cid.size():
+        return None
+
+    id = int(cid.data[cid.size() - 1] + 0.1)
+    pwc.setcore(False, id)
+    pwc.loadTDampSSE(net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
+
+    ID = 0
+    if net.pattern > 0:
+        selected_core_pixels = net.likelihoodWP(config.search, lag, ID, ROOT.nullptr, config.Search)
+    else:
+        selected_core_pixels = net.likelihood2G(config.search, lag, ID, ROOT.nullptr)
+    logger.info("Selected core pixels: %d" % selected_core_pixels)
+
+    event = Event()
+    event.output(net, k+1, 0)
+
+    rejected_weak_pixels = 0
+    rejected_loud_pixels = 0
+
+    detected = (net.getwc(lag).sCuts[k] == -1)
+    # Decoupling: detected = (net.getwc(j).sCuts[0] == -1)
+
+    # print reconstructed event
+    logger.info("   cluster-id|pixels: %5d|%d" % (cluster_id, int(pwc.size())))
+    if detected:
+        logger.info("\t -> SELECTED !!!")
+        # print("-------------------------------------------------------")
+        # print(event.dump())
+        # print("-------------------------------------------------------")
+    else:
+        logger.info("\t <- rejected    ")
+
+    # if detected:
+    #     nevents += 1
+    # npixels = pwc.size()
+    # Decoupling: remove above line
+
+    pwc.clean(1)
+
+    return event
 
 
