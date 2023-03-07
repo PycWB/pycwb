@@ -200,8 +200,10 @@ class Event:
     def json(self):
         return json.dumps(self.__dict__)
 
-    def summary(self):
+    def summary(self, job_id, id):
         return {
+            "job_id": job_id,
+            "id": id,
             "nevent": self.nevent,
             "rho": self.rho[0],
             "start": self.start,

@@ -70,12 +70,12 @@ def analyze_job_segment(config, job_seg):
     for i, event in enumerate(events):
         try:
             output = event.json()
-            with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'a') as f:
+            with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'w') as f:
                 f.write(output)
         except Exception as e:
             logger.error(e)
 
-    event_summary = [event.summary() for event in events]
+    event_summary = [event.summary(job_id, i+1) for i, event in enumerate(events)]
     try:
         add_events_to_catalog(f"{config.outputDir}/catalog.json", event_summary)
     except Exception as e:
