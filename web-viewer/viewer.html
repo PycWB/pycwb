@@ -28,12 +28,8 @@
                 <ul class="pure-menu-list">
                     <li class="pure-menu-item"><a href="#summary" class="pure-menu-link">Summary</a></li>
                     <li class="pure-menu-item"><a href="#job" class="pure-menu-link">Jobs</a></li>
-
-                    <li class="pure-menu-item menu-item-divided pure-menu-selected">
-                        <a href="#" class="pure-menu-link">Events</a>
-                    </li>
-
-                    <li class="pure-menu-item"><a href="#event" class="pure-menu-link">Help</a></li>
+                    <li class="pure-menu-item"><a href="#event" class="pure-menu-link">Events</a></li>
+                    <li class="pure-menu-item"><a href="#help" class="pure-menu-link">Help</a></li>
                 </ul>
             </div>
         </div>
@@ -73,6 +69,7 @@
                 <table class="pure-table  pure-table-bordered">
                     <thead>
                     <tr>
+                        <th>ID</th>
                         <th>Rho</th>
                         <th>Start</th>
                         <th>Stop</th>
@@ -83,11 +80,13 @@
                         <th>Phi</th>
                         <th>Theta</th>
                         <th>Psi</th>
+                        <th>Details</th>
                     </tr>
                     </thead>
                     <tbody>
                     <template v-for="event in catalog.events">
                         <tr>
+                            <td :rowspan="event.start.length" style="min-width: 50px">{{event.job_id}}-{{event.id}}</td>
                             <td :rowspan="event.start.length">{{event.rho.toFixed(2)}}</td>
                             <td>{{event.start[0].toFixed(1)}}</td>
                             <td>{{event.stop[0].toFixed(1)}}</td>
@@ -98,6 +97,9 @@
                             <td>{{event.phi[0].toFixed(1)}}</td>
                             <td>{{event.theta[0].toFixed(1)}}</td>
                             <td :rowspan="event.start.length">{{event.psi[0].toFixed(1)}}</td>
+                            <td :rowspan="event.start.length">
+                                <a class="pure-button pure-button-primary" :href="`./event_dump.html?job_id=${event.job_id}&id=${event.id}`">View</a>
+                            </td>
                         </tr>
                         <tr v-for="[index, value] of event.start.slice(1).entries()">
                             <td>{{event.start[index + 1].toFixed(1)}}</td>
@@ -112,6 +114,9 @@
                     </template>
                     </tbody>
                 </table>
+
+                <h2 class="content-subhead" id="help">Help</h2>
+                No help yet.
             </div>
         </div>
     </div>
@@ -137,11 +142,10 @@
         },
         methods: {
             getCatalog() {
-                fetch('../tests/catalog.json')
+                fetch('./output/catalog.json')
                     .then(response => response.json())
                     .then(data => {
                         this.catalog = data
-                        console.log(data)
                         this.catalog.events = data.events.filter(event => event.nevent > 0)
                     })
             }

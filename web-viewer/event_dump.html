@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title><!DOCTYPE html>
+      <html lang="en">
+      <head>
+      <meta charset="UTF-8">
+      <title>Event Viewer</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- Import style -->
+  <!-- import CSS -->
+  <!--    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">-->
+  <!-- import JavaScript -->
+  <!--    <script src="https://unpkg.com/element-ui/lib/index.js"></script>-->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css" integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div id="app">
+  <div id="layout">
+    <!-- Menu toggle -->
+    <a href="#menu" id="menuLink" class="menu-link">
+      <!-- Hamburger icon -->
+      <span></span>
+    </a>
+
+    <div id="menu">
+      <div class="pure-menu">
+        <a class="pure-menu-heading" href="#">PyBurst</a>
+
+        <ul class="pure-menu-list">
+          <li class="pure-menu-item"><a href="#summary" class="pure-menu-link">Summary</a></li>
+          <li class="pure-menu-item"><a href="#job" class="pure-menu-link">Jobs</a></li>
+          <li class="pure-menu-item"><a href="#event" class="pure-menu-link">Events</a></li>
+          <li class="pure-menu-item"><a href="#help" class="pure-menu-link">Help</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="main">
+      <div class="header">
+        <h1>PyBurst Results</h1>
+      </div>
+
+      <div class="content">
+        <h2 class="content-subhead" id="summary">Summary</h2>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+<!-- import Vue before Element -->
+<script src="https://unpkg.com/vue@2/dist/vue.js"></script>
+<!-- import JavaScript -->
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script>
+  new Vue({
+    el: '#app',
+    data: function() {
+      return {
+        query: null,
+        event: {}
+      }
+    },
+    methods: {
+      getId() {
+        let uri = window.location.href.split('?');
+        if(uri.length == 2) {
+          let vars = uri[1].split('&');
+          let getVars = {};
+          let tmp = '';
+          vars.forEach(function(v) {
+            tmp = v.split('=');
+            if(tmp.length == 2)
+              getVars[tmp[0]] = tmp[1];
+          });
+          console.log(getVars);
+          this.query = getVars;
+        }
+      },
+      getEvent(url) {
+        fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                  this.event = data
+                  console.log(data)
+                })
+      }
+    },
+    beforeMount() {
+      this.getId()
+    },
+    watch: {
+      query: function() {
+        this.getEvent(`./output/event_${this.query.job_id}_${this.query.id}.json`)
+      }
+    }
+  })
+</script>
+</html>
