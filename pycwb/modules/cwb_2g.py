@@ -71,8 +71,8 @@ def analyze_job_segment(config, job_seg):
             output = event.json()
             with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'a') as f:
                 f.write(output)
-        except:
-            pass
+        except Exception as e:
+            logger.error(e)
 
     del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
 

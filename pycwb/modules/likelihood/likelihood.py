@@ -53,7 +53,7 @@ def likelihood(config: Config, net: ROOT.network,
         # print header
 
         logger.info("-------------------------------------------------------")
-        logger.info("-> Processing %d clusters in lag=%d" % (pwc.cList.size(), cycle))
+        logger.info("-> Processing %d clusters in lag=%d" % (pwc_list[j].cList.size(), cycle))
         logger.info("   ----------------------------------------------------")
 
         nmax = -1  # load all tdAmp
