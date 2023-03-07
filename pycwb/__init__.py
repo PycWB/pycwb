@@ -6,6 +6,7 @@ from .cwb_interface import cwb_root_logon
 from .config import user_parameters
 from .constants.cwb_dict import CWB_STAGE
 from .config import CWBConfig
+from ._version import __version__
 
 logger = logging.getLogger(__name__)
 

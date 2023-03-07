@@ -117,5 +117,4 @@ setup(
     scripts=["bin/pycwb_gen_config"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,
-    python_requires='>=3.8'
 )
