@@ -1,4 +1,4 @@
-from filelock import Timeout, FileLock
+from filelock import SoftFileLock
 import json
 from pycwb import __version__
 
@@ -11,13 +11,13 @@ def create_catalog(filename, config, jobs):
         "events": []
     }
 
-    with FileLock(filename + ".lock", timeout=10):
+    with SoftFileLock(filename + ".lock", timeout=10):
         with open(filename, 'w') as f:
             json.dump(output, f, default=vars)
 
 
 def add_events_to_catalog(filename, events):
-    with FileLock(filename + ".lock", timeout=10):
+    with SoftFileLock(filename + ".lock", timeout=10):
         # read the json file
         with open(filename, 'r+') as f:
             catalog = json.load(f)

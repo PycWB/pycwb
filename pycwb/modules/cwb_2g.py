@@ -115,7 +115,7 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
 
-    create_catalog("catalog.json", config, job_segments)
+    create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
 
     for job_seg in job_segments:
         if no_subprocess:
