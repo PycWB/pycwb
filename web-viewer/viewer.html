@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Event Viewer</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Import style -->
+    <!-- import CSS -->
+<!--    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">-->
+    <!-- import JavaScript -->
+<!--    <script src="https://unpkg.com/element-ui/lib/index.js"></script>-->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css" integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div id="app">
+    <div id="layout">
+        <!-- Menu toggle -->
+        <a href="#menu" id="menuLink" class="menu-link">
+            <!-- Hamburger icon -->
+            <span></span>
+        </a>
+
+        <div id="menu">
+            <div class="pure-menu">
+                <a class="pure-menu-heading" href="#">PyBurst</a>
+
+                <ul class="pure-menu-list">
+                    <li class="pure-menu-item"><a href="#summary" class="pure-menu-link">Summary</a></li>
+                    <li class="pure-menu-item"><a href="#job" class="pure-menu-link">Jobs</a></li>
+
+                    <li class="pure-menu-item menu-item-divided pure-menu-selected">
+                        <a href="#" class="pure-menu-link">Events</a>
+                    </li>
+
+                    <li class="pure-menu-item"><a href="#event" class="pure-menu-link">Help</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="main">
+            <div class="header">
+                <h1>PyBurst Results</h1>
+            </div>
+
+            <div class="content">
+                <h2 class="content-subhead" id="summary">Summary</h2>
+                <p>Version: {{catalog.version}}</p>
+                <p>Number of events: {{catalog.events.length}}</p>
+
+                <h2 class="content-subhead" id="job">Jobs</h2>
+
+                <table class="pure-table">
+                    <thead>
+                    <tr>
+                        <th>Job ID</th>
+                        <th>Start time</th>
+                        <th>End time</th>
+                        <th>Frames</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr v-for="job in catalog.jobs">
+                        <td>{{job.index}}</td>
+                        <td>{{job.start_time}}</td>
+                        <td>{{job.end_time}}</td>
+                        <td>{{job.frames.length}}</td>
+                    </tr>
+                    </tbody>
+                </table>
+
+                <h2 class="content-subhead" id="event">Events</h2>
+                <table class="pure-table  pure-table-bordered">
+                    <thead>
+                    <tr>
+                        <th>Rho</th>
+                        <th>Start</th>
+                        <th>Stop</th>
+                        <th>Low</th>
+                        <th>High</th>
+                        <th>sSNR</th>
+                        <th>hrss</th>
+                        <th>Phi</th>
+                        <th>Theta</th>
+                        <th>Psi</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <template v-for="event in catalog.events">
+                        <tr>
+                            <td :rowspan="event.start.length">{{event.rho.toFixed(2)}}</td>
+                            <td>{{event.start[0].toFixed(1)}}</td>
+                            <td>{{event.stop[0].toFixed(1)}}</td>
+                            <td>{{event.low[0].toFixed(1)}}</td>
+                            <td>{{event.high[0].toFixed(1)}}</td>
+                            <td>{{event.sSNR[0].toFixed(1)}}</td>
+                            <td>{{event.hrss[0].toFixed(1)}}</td>
+                            <td>{{event.phi[0].toFixed(1)}}</td>
+                            <td>{{event.theta[0].toFixed(1)}}</td>
+                            <td :rowspan="event.start.length">{{event.psi[0].toFixed(1)}}</td>
+                        </tr>
+                        <tr v-for="[index, value] of event.start.slice(1).entries()">
+                            <td>{{event.start[index + 1].toFixed(1)}}</td>
+                            <td>{{event.stop[index + 1].toFixed(1)}}</td>
+                            <td>{{event.low[index + 1].toFixed(1)}}</td>
+                            <td>{{event.high[index + 1].toFixed(1)}}</td>
+                            <td>{{event.sSNR[index + 1].toFixed(1)}}</td>
+                            <td>{{event.hrss[index + 1].toFixed(1)}}</td>
+                            <td>{{event.phi[index + 1].toFixed(1)}}</td>
+                            <td>{{event.theta[index + 1].toFixed(1)}}</td>
+                        </tr>
+                    </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+<!-- import Vue before Element -->
+<script src="https://unpkg.com/vue@2/dist/vue.js"></script>
+<!-- import JavaScript -->
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script>
+    new Vue({
+        el: '#app',
+        data: function() {
+            return {
+                visible: false,
+                catalog: {
+                    config: {},
+                    jobs: [],
+                    events: []
+                },
+                tableData: []
+            }
+        },
+        methods: {
+            getCatalog() {
+                fetch('../tests/catalog.json')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.catalog = data
+                        console.log(data)
+                        this.catalog.events = data.events.filter(event => event.nevent > 0)
+                    })
+            }
+        },
+        beforeMount() {
+            this.getCatalog()
+        }
+    })
+</script>
+</html>
