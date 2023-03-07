@@ -1,3 +1,6 @@
+import json
+
+
 class WaveSegment:
     __slots__ = ('index', 'start_time', 'end_time', 'frames')
 
@@ -10,6 +13,19 @@ class WaveSegment:
     def __repr__(self):
         return f"WaveSegment(index={self.index}, start_time={self.start_time}, " \
                f"end_time={self.end_time}, frames={len(self.frames)})"
+
+    def to_dict(self):
+        return {
+            'index': self.index,
+            'start_time': self.start_time,
+            'end_time': self.end_time,
+            'frames': [{
+                'ifo': frame.ifo,
+                'path': frame.path,
+                'start_time': frame.start_time,
+                'duration': frame.duration
+            } for frame in self.frames]
+        }
 
 
 class DQFile:

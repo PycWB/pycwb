@@ -200,6 +200,21 @@ class Event:
     def json(self):
         return json.dumps(self.__dict__)
 
+    def summary(self):
+        return {
+            "nevent": self.nevent,
+            "rho": self.rho[0],
+            "start": self.start,
+            "stop": self.stop,
+            "low": self.low,
+            "high": self.high,
+            "sSNR": self.sSNR,
+            "hrss": self.hrss,
+            "phi": self.phi,
+            "theta": self.theta,
+            "psi": self.psi,
+        }
+
     def dump(self):
         return f"""
 nevent: \t\t {self.nevent}

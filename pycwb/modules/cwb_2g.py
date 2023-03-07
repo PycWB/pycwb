@@ -12,6 +12,7 @@ from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.job_segment import select_job_segment
+from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 import logging
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,12 @@ def analyze_job_segment(config, job_seg):
         except Exception as e:
             logger.error(e)
 
+    event_summary = [event.summary() for event in events]
+    try:
+        add_events_to_catalog("catalog.json", event_summary)
+    except Exception as e:
+        logger.error(e)
+
     del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
 
     # calculate the performance
@@ -84,7 +91,7 @@ def analyze_job_segment(config, job_seg):
     logger.info("-" * 80)
 
 
-def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO'):
+def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO', no_subprocess=False):
     logger_init(log_file, log_level)
 
     # set env HOME_WAT_FILTERS
@@ -109,12 +116,17 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
 
+    create_catalog("catalog.json", config, job_segments)
+
     for job_seg in job_segments:
         # analyze_job_segment(config, job_seg)
         # gc.collect()
-        process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
-        process.start()
-        process.join()
+        if no_subprocess:
+            analyze_job_segment(config, job_seg)
+        else:
+            process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
+            process.start()
+            process.join()
         # with Pool(max_workers=1) as pool:
         #     pool.map(analyze_job_segment, [(config, job_seg)])
 

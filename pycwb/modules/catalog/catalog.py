@@ -3,16 +3,17 @@ import json
 from pycwb import __version__
 
 
-def create_catalog(filename, config):
+def create_catalog(filename, config, jobs):
     output = {
-        "config": json.dumps(config.__dict__),
+        "config": config.__dict__,
         "version": __version__,
+        "jobs": [job.to_dict() for job in jobs],
         "events": []
     }
 
     with FileLock(filename + ".lock", timeout=10):
         with open(filename, 'w') as f:
-            json.dump(output, f)
+            json.dump(output, f, default=vars)
 
 
 def add_events_to_catalog(filename, events):
