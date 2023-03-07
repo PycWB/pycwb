@@ -77,7 +77,7 @@ def analyze_job_segment(config, job_seg):
 
     event_summary = [event.summary() for event in events]
     try:
-        add_events_to_catalog("catalog.json", event_summary)
+        add_events_to_catalog(f"{config.outputDir}/catalog.json", event_summary)
     except Exception as e:
         logger.error(e)
 
@@ -111,7 +111,6 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
                                       config.segLen, config.segMLS, config.segEdge, config.segOverlap,
                                       config.rateANA, config.l_high)
 
-    # data = read_from_config(config)
     # log number of segments
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
@@ -119,44 +118,10 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     create_catalog("catalog.json", config, job_segments)
 
     for job_seg in job_segments:
-        # analyze_job_segment(config, job_seg)
-        # gc.collect()
         if no_subprocess:
             analyze_job_segment(config, job_seg)
+            # gc.collect()
         else:
             process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
             process.start()
             process.join()
-        # with Pool(max_workers=1) as pool:
-        #     pool.map(analyze_job_segment, [(config, job_seg)])
-
-
-def generate_injected(config):
-    # load noise
-    start_time = 931158100
-    noise = [generate_noise(f_low=30.0, sample_rate=1024.0, duration=600, start_time=start_time, seed=i)
-             for i, ifo in enumerate(config.ifo)]
-
-    # generate injection from pycbc
-    from pycbc.waveform import get_td_waveform
-    hp, hc = get_td_waveform(approximant="IMRPhenomPv3",
-                             mass1=20,
-                             mass2=20,
-                             spin1z=0.9,
-                             spin2z=0.4,
-                             inclination=1.23,
-                             coa_phase=2.45,
-                             distance=500,
-                             delta_t=1.0 / noise[0].sample_rate,
-                             f_lower=20)
-    declination = 0.65
-    right_ascension = 4.67
-    polarization = 2.34
-    gps_end_time = 931158400
-    from pycwb.modules.read_data import project_to_detector
-    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, config.ifo, gps_end_time)
-
-    # inject signal into noise and convert to wavearray
-    injected = [noise[i].add_into(strain[i]) for i in range(len(config.ifo))]
-
-    return injected

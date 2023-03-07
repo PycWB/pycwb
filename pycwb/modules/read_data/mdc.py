@@ -98,3 +98,34 @@ def save_to_gwf(signals, detectors, channel_name, out_dir, start_time, duration,
         strain.channel = f'{detector}:{channel_name}'
         strain.name = strain.channel
         strain.write(f'{out_dir}/{detector}-{label}-{int(start_time)}-{int(duration)}.gwf')
+
+
+def generate_injection_from_config(config):
+    # load noise
+    start_time = 931158100
+    noise = [generate_noise(f_low=30.0, sample_rate=1024.0, duration=600, start_time=start_time, seed=i)
+             for i, ifo in enumerate(config.ifo)]
+
+    # generate injection from pycbc
+    from pycbc.waveform import get_td_waveform
+    hp, hc = get_td_waveform(approximant="IMRPhenomPv3",
+                             mass1=20,
+                             mass2=20,
+                             spin1z=0.9,
+                             spin2z=0.4,
+                             inclination=1.23,
+                             coa_phase=2.45,
+                             distance=500,
+                             delta_t=1.0 / noise[0].sample_rate,
+                             f_lower=20)
+    declination = 0.65
+    right_ascension = 4.67
+    polarization = 2.34
+    gps_end_time = 931158400
+    from pycwb.modules.read_data import project_to_detector
+    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, config.ifo, gps_end_time)
+
+    # inject signal into noise and convert to wavearray
+    injected = [noise[i].add_into(strain[i]) for i in range(len(config.ifo))]
+
+    return injected
