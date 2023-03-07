@@ -17,7 +17,7 @@ This is python version of `cWB`
 
 ```bash
 conda create -n pyburst python
-conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite
+conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycwb
 bash ./install.sh
