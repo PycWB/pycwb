@@ -142,7 +142,7 @@
         },
         methods: {
             getCatalog() {
-                fetch('./output/catalog.json')
+                fetch('../tests/output/catalog.json')
                     .then(response => response.json())
                     .then(data => {
                         this.catalog = data
@@ -152,7 +152,12 @@
         },
         beforeMount() {
             this.getCatalog()
-        }
+        },
+        // mounted: function () {
+        //     this.timer = setInterval(() => {
+        //         this.getCatalog()
+        //     }, 5000)
+        // },
     })
 </script>
 </html>

@@ -30,10 +30,7 @@
         <a class="pure-menu-heading" href="#">PyBurst</a>
 
         <ul class="pure-menu-list">
-          <li class="pure-menu-item"><a href="#summary" class="pure-menu-link">Summary</a></li>
-          <li class="pure-menu-item"><a href="#job" class="pure-menu-link">Jobs</a></li>
-          <li class="pure-menu-item"><a href="#event" class="pure-menu-link">Events</a></li>
-          <li class="pure-menu-item"><a href="#help" class="pure-menu-link">Help</a></li>
+          <li class="pure-menu-item"><a href="./viewer.html" class="pure-menu-link">Event List</a></li>
         </ul>
       </div>
     </div>
@@ -44,8 +41,39 @@
       </div>
 
       <div class="content">
-        <h2 class="content-subhead" id="summary">Summary</h2>
+        <h2 class="content-subhead">All events in this job segment</h2>
+        <img style="width: 100%" :src="`./output/events_${query.job_id}_all.png`"/>
 
+        <h2 class="content-subhead" id="summary">Summary</h2>
+        <table class="pure-table  pure-table-bordered">
+          <tbody>
+            <tr>
+                <td>Job ID</td>
+                <td>{{query.job_id}}</td>
+            </tr>
+            <tr>
+                <td>Event ID</td>
+                <td>{{query.id}}</td>
+            </tr>
+            <tr>
+                <td>Network snr (rho)</td>
+                <td>{{event_dump.rho && event_dump.rho[0]}}</td>
+            </tr>
+            <tr>
+                <td>Start time (ref)</td>
+                <td>{{event_dump.start && event_dump.start[0].toFixed(1)}}</td>
+            </tr>
+            <tr>
+              <td>End time (ref)</td>
+              <td>{{event_dump.stop && event_dump.stop[0].toFixed(1)}}</td>
+            </tr>
+            <tr>
+                <td>Event Duration</td>
+                <td>{{event_dump.duration && event_dump.duration[0]}}</td>
+            </tr>
+          </tbody>
+        </table>
+        working...
       </div>
     </div>
   </div>
@@ -61,7 +89,7 @@
     data: function() {
       return {
         query: null,
-        event: {}
+        event_dump: {}
       }
     },
     methods: {
@@ -84,7 +112,7 @@
         fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                  this.event = data
+                  this.event_dump = data
                   console.log(data)
                 })
       }
