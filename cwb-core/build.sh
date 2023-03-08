@@ -21,8 +21,8 @@ else
    dir_name="_$1"
 fi 
 if [ "$EUID" -ne 0 ]; then
-   echo "Installing under ../../pycwb/vendor${dir_name}"
-   CMAKE_ARGS="-DCMAKE_INSTALL_PREFIX:PATH=../../pycwb/vendor${dir_name} ${CMAKE_ARGS}"
+   echo "Installing under ../../pyburst/vendor${dir_name}"
+   CMAKE_ARGS="-DCMAKE_INSTALL_PREFIX:PATH=../../pyburst/vendor${dir_name} ${CMAKE_ARGS}"
   
 fi
 if [ ${_USE_ICC} ]; then

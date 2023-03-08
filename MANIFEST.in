@@ -1,6 +1,6 @@
 include bin/*
-include pycwb/vendor/*
-include pycwb/vendor/wdmXTalk/*
-include pycwb/vendor/lib/*
-include pycwb/web-viewer/*
+include pyburst/vendor/*
+include pyburst/vendor/wdmXTalk/*
+include pyburst/vendor/lib/*
+include pyburst/web-viewer/*
 include README.md

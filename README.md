@@ -20,7 +20,7 @@ conda create -n pyburst python
 conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycwb
-bash ./install.sh
+make install
 # or python setup.py clean && python setup.py build_cwb && python setup.py sdist && pip install dist/*.tar.gz
 ```
 

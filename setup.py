@@ -83,9 +83,9 @@ class BuildCWB(Command):
 class Clean(_clean):
     def finalize_options(self):
         _clean.finalize_options(self)
-        self.clean_files = ["pycwb/vendor/lib/libWAT_rdict.pcm", 'pycwb/vendor/lib/libwavelet.so',
-                            'pycwb/vendor/lib/wavelet.so', 'pycwb/vendor/lib/wavelet-4x.dylib']
-        self.clean_folders = ['cwb-core/build', 'dist', 'pycwb.egg-info']
+        self.clean_files = ["pyburst/vendor/lib/libWAT_rdict.pcm", 'pyburst/vendor/lib/libwavelet.so',
+                            'pyburst/vendor/lib/wavelet.so', 'pyburst/vendor/lib/wavelet-4x.dylib']
+        self.clean_folders = ['cwb-core/build', 'dist', 'pyburst.egg-info']
 
     def run(self):
         _clean.run(self)
@@ -102,20 +102,20 @@ class Clean(_clean):
 
 
 setup(
-    name="pycwb",
+    name="pyburst",
     author="Yumeng Xu",
     author_email="xusmailbox@gmail.com",
     description=("This is a project to simplify the installation of `cWB` and run `cWB` with python."),
     long_description=read('README.md'),
     long_description_content_type="text/markdown",
     keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst'],
-    url="https://git.ligo.org/yumeng.xu/pycwb",
+    url="https://git.ligo.org/yumeng.xu/pyburst",
     install_requires=install_requires,
     cmdclass={
         'build_cwb': BuildCWB,
         'clean': Clean
     },
-    scripts=["bin/pycwb_gen_config"],  # find_files('bin', relpath='./'),
+    scripts=["bin/pyburst_gen_config"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,
 )
