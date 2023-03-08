@@ -5,6 +5,11 @@ __pycache__
 build
 dist
 messenger_test/data
+docs/source/*.rst
+!docs/source/index.rst
+docs/make.bat
+docs/Makefile
+
 tests/*
 .pytest_cache
 !tests/*_test.py
@@ -12,6 +17,7 @@ tests/*
 !tests/*.yaml
 
 cwb-core/install
+cwb-core/cmake-build-debug
 */vendor/lib/*
 !*/vendor/lib/*.py
 
