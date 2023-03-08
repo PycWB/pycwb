@@ -1,15 +1,6 @@
-# pycWB
+# pyBurst
 
-This is python version of `cWB`
-
-## What does this package do
-
- - [x] Generate `ini` and `yaml` configuration file with python script
- - [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
- - [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
- - [x] Wrap cwb modules to pure functions 
- - [x] Rewrite `cwb.run()` to python for better workflow control and plugin system
- - [ ] (Optional) Supply addition event interface for event-driven architecture
+This project uses the core function of cWB for burst analysis
 
 ## Installation
 
@@ -34,9 +25,17 @@ from pycwb.modules.cwb_2g import cwb_2g
 cwb_2g('./user_parameters.yaml')
 ```
 
-## Addtional steps for cWB python wrapper
+# pycWB
 
-### Install cWB
+This is python wrapper of `cWB`
+
+## What does this package do
+
+- [x] Generate `ini` and `yaml` configuration file with python script
+- [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
+- [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
+
+## Install cWB
 
 Check [installation guide](./docs/0.installation_guide.md) to simply install `cWB` with conda
 
