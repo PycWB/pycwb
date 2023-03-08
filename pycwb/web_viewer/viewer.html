@@ -142,7 +142,7 @@
         },
         methods: {
             getCatalog() {
-                fetch('../tests/output/catalog.json')
+                fetch('./catalog.json')
                     .then(response => response.json())
                     .then(data => {
                         this.catalog = data
