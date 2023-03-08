@@ -24,4 +24,5 @@ cwb-core/cmake-build-debug
 messenger-web-interface/node_modules
 messenger-web-interface/dist
 
+pyburst/_version.py
 pycwb/_version.py
