@@ -204,6 +204,7 @@ class Event:
         return {
             "job_id": job_id,
             "id": id,
+            "ifo": self.ifo_list,
             "nevent": self.nevent,
             "rho": self.rho[0],
             "start": self.start,

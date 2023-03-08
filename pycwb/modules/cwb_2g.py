@@ -44,12 +44,7 @@ def analyze_job_segment(config, job_seg):
     pwc_list = supercluster(config, net, cluster_list, sparse_table_list)
 
     # likelihood
-    events = likelihood(config, net, sparse_table_list, pwc_list, wdm_list)
-
-    # save events to pickle
-    # import pickle
-    # with open(f'{config.outputDir}/events_{job_id}.pkl', 'wb') as f:
-    #     pickle.dump(events, f)
+    events = likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list)
 
     import matplotlib.pyplot as plt
     plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
@@ -66,22 +61,23 @@ def analyze_job_segment(config, job_seg):
     # save to png
     plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
 
-    # save event to txt
-    for i, event in enumerate(events):
-        try:
-            output = event.json()
-            with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'w') as f:
-                f.write(output)
-        except Exception as e:
-            logger.error(e)
+    # save event to json
+    # for i, event in enumerate(events):
+    #     try:
+    #         output = event.json()
+    #         with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'w') as f:
+    #             f.write(output)
+    #     except Exception as e:
+    #         logger.error(e)
 
-    event_summary = [event.summary(job_id, i+1) for i, event in enumerate(events)]
-    try:
-        add_events_to_catalog(f"{config.outputDir}/catalog.json", event_summary)
-    except Exception as e:
-        logger.error(e)
+    # save event to catalog
+    # event_summary = [event.summary(job_id, i+1) for i, event in enumerate(events)]
+    # try:
+    #     add_events_to_catalog(f"{config.outputDir}/catalog.json", event_summary)
+    # except Exception as e:
+    #     logger.error(e)
 
-    del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
+    # del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
 
     # calculate the performance
     end_time = time.perf_counter()
@@ -93,20 +89,30 @@ def analyze_job_segment(config, job_seg):
 
 def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO', no_subprocess=False):
     logger_init(log_file, log_level)
+    logger.info("Logging initialized")
+    logger.info("Logging level: " + log_level)
+    logger.info("Logging file: " + str(log_file))
 
     # set env HOME_WAT_FILTERS
     if not os.environ.get('HOME_WAT_FILTERS'):
         pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
         os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
+        logger.info(f"Set HOME_WAT_FILTERS to {os.environ['HOME_WAT_FILTERS']}")
 
+    # read config
+    logger.info("Reading user parameters")
     config = Config(user_parameters)
 
     # create folder for output and log
+    logger.info(f"Output folder: {config.outputDir}")
+    logger.info(f"Log folder: {config.logDir}")
     if not os.path.exists(config.outputDir):
         os.makedirs(config.outputDir)
     if not os.path.exists(config.logDir):
         os.makedirs(config.logDir)
 
+    logger.info("-" * 80)
+    logger.info("Initializing job segments")
     job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
                                       config.segLen, config.segMLS, config.segEdge, config.segOverlap,
                                       config.rateANA, config.l_high)
@@ -115,8 +121,19 @@ def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
 
+    # create catalog
+    logger.info("Creating catalog file")
     create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
 
+    # copy all files in web_viewer to output folder
+    logger.info("Copying web_viewer files to output folder")
+    import shutil
+    web_viewer_path = os.path.dirname(os.path.abspath(pycwb.__file__)) + '/web_viewer'
+    for file in os.listdir(web_viewer_path):
+        shutil.copy(f'{web_viewer_path}/{file}', config.outputDir)
+
+    # analyze job segments
+    logger.info("Start analyzing job segments")
     for job_seg in job_segments:
         if no_subprocess:
             analyze_job_segment(config, job_seg)

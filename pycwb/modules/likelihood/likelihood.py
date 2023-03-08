@@ -6,11 +6,12 @@ import logging
 from pycwb.config import Config
 from pycwb.modules.netcluster import select_clusters, copy_metadata
 from pycwb.modules.netevent import Event
+from pycwb.modules.catalog import add_events_to_catalog
 
 logger = logging.getLogger(__name__)
 
 
-def likelihood(config: Config, net: ROOT.network,
+def likelihood(job_id, config: Config, net: ROOT.network,
                sparse_table_list: list,
                pwc_list: list,
                wdm_list: list[ROOT.WDM(np.double)]):
@@ -70,7 +71,7 @@ def likelihood(config: Config, net: ROOT.network,
             copy_metadata(pwc, pwc_list[j])
             select_clusters(pwc, pwc_list[j], k)
 
-            event = _likelihood(config, net, j, pwc, k + 1)
+            event = _likelihood(job_id, config, net, j, pwc, k + 1)
             events.append(event)
         n_events += nevents
 
@@ -84,7 +85,7 @@ def likelihood(config: Config, net: ROOT.network,
     return events
 
 
-def _likelihood(config, net, lag, pwc, cluster_id):
+def _likelihood(job_id, config, net, lag, pwc, cluster_id):
     k = 0
     cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
     if not cid.size():
@@ -124,6 +125,14 @@ def _likelihood(config, net, lag, pwc, cluster_id):
     #     nevents += 1
     # npixels = pwc.size()
     # Decoupling: remove above line
+
+    try:
+        output = event.json()
+        with open(f'{config.outputDir}/event_{job_id}_{cluster_id}.json', 'w') as f:
+            f.write(output)
+        add_events_to_catalog(f"{config.outputDir}/catalog.json", [event.summary(job_id, cluster_id)])
+    except Exception as e:
+        logger.error(e)
 
     pwc.clean(1)
 
