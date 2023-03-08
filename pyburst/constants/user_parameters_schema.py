@@ -1,3 +1,8 @@
+"""
+JSON schema for validating and completing user parameters,
+and will also be used to generate the documentation
+"""
+
 NIFO_MAX = 8
 
 # todo: split object into sections, and flatten them before validation

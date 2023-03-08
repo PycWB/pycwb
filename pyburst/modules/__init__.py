@@ -1,7 +1,6 @@
 import ROOT
 import os, logging
 import pyburst
-from .cwb_2g import cwb_2g
 logger = logging.getLogger(__name__)
 
 if not hasattr(ROOT, "WDM"):

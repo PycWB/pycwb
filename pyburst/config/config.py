@@ -1,3 +1,7 @@
+"""
+Class to store user parameters, load parameters from yaml file and check parameters
+"""
+
 from .user_parameters import load_yaml
 import os.path
 import logging
@@ -6,7 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 class DQFile:
-    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
+    """
+    Class to store data quality file information
+
+    :param ifo: ifo name
+    :type ifo: str
+    :param file: data quality file path
+    :type file: str
+    :param dq_cat: data quality category
+    :type dq_cat: str
+    :param shift: shift in seconds
+    :type shift: float
+    :param invert: flag for inversion
+    :type invert: bool
+    :param c4: flag for 4 column data
+    :type c4: bool
+    """
+
+    def __init__(self, ifo, file, dq_cat, shift, invert: bool, c4):
         self.ifo = ifo
         self.file = file
         self.dq_cat = dq_cat
@@ -16,6 +37,13 @@ class DQFile:
 
 
 class Config:
+    """
+    Class to store user parameters
+
+    :param file_name: user parameters file path
+    :type file_name: str
+    """
+
     def __init__(self, file_name):
         self.outputDir = None
         self.logDir = None
@@ -52,9 +80,8 @@ class Config:
     def add_derived_key(self):
         """
         Add derived key to the user parameters
-        :param params:
-        :return:
         """
+
         self.gamma = self.cfg_gamma
         self.search = self.cfg_search
 
@@ -90,8 +117,11 @@ class Config:
     def check_file(file_name):
         """
         Check if file exists
-        :param file_name:
-        :return:
+
+        :param file_name: file path
+        :type file_name: str
+
+        :raises FileNotFoundError: if file does not exist
         """
         if not os.path.isfile(file_name):
             raise FileNotFoundError(f"File {file_name} does not exist")
@@ -100,13 +130,9 @@ class Config:
         """
         Check if lagStep compatible with WDM parity
 
-        his condition is necessary to avoid mixing between odd
+        this condition is necessary to avoid mixing between odd
         and even pixels when circular buffer is used for lag shift
         The MRAcatalog distinguish odd and even pixels
-
-        :param config:
-        :param net:
-        :return:
         """
         rate_min = self.rateANA >> self.l_high
         dt_max = 1. / rate_min

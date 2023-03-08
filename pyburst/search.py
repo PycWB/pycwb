@@ -2,23 +2,41 @@ import os, time
 from concurrent.futures import ProcessPoolExecutor as Pool
 import multiprocessing
 import pyburst
-from pyburst import logger_init
+from pyburst.utils import logger_init
 from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram
-from pyburst.modules.read_data import read_from_gwf, generate_noise, read_from_config, read_from_job_segment
+from pyburst.modules.read_data import read_from_job_segment
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.coherence import create_network
 from pyburst.modules.coherence import coherence
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
 from pyburst.modules.job_segment import select_job_segment
-from pyburst.modules.catalog import create_catalog, add_events_to_catalog
+from pyburst.modules.catalog import create_catalog
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 def analyze_job_segment(config, job_seg):
+    """Analyze one job segment with the given configuration
+
+    This function includes the following stages:
+
+    1. Read data from job segment (pyburst.modules.read_data.read_from_job_segment) \n
+    2. Data conditioning (pyburst.modules.data_conditioning.data_conditioning) \n
+    3. Create network (pyburst.modules.coherence.create_network) \n
+    4. Coherence (pyburst.modules.coherence.coherence) \n
+    5. Supercluster (pyburst.modules.super_cluster.supercluster) \n
+    6. Likelihood (pyburst.modules.likelihood.likelihood) \n
+
+    The results will be saved to the output directory in json format on likelihood stage
+
+    :param config: configuration
+    :type config: pyburst.config.Config
+    :param job_seg: job segment
+    :type job_seg: pyburst.modules.job_segment.JobSegment
+    """
     # config, job_seg = args
     start_time = time.perf_counter()
 
@@ -87,7 +105,21 @@ def analyze_job_segment(config, job_seg):
     logger.info("-" * 80)
 
 
-def cwb_2g(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO', no_subprocess=False):
+def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO', no_subprocess=False):
+    """Main function to run the search
+
+    This function will read the user parameters, select the job segments, create the catalog,
+    copy the html and css files and run the search in subprocesses by default to avoid memory leak.
+
+    :param user_parameters: path to user parameters file
+    :type user_parameters: str
+    :param log_file: path to log file, defaults to None
+    :type log_file: str, optional
+    :param log_level: log level, defaults to 'INFO'
+    :type log_level: str, optional
+    :param no_subprocess: run the search in the main process, defaults to False (Set to True for macOS development)
+    :type no_subprocess: bool, optional
+    """
     logger_init(log_file, log_level)
     logger.info("Logging initialized")
     logger.info("Logging level: " + log_level)
