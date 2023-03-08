@@ -2,4 +2,5 @@ include bin/*
 include pycwb/vendor/*
 include pycwb/vendor/wdmXTalk/*
 include pycwb/vendor/lib/*
+include pycwb/web-viewer/*
 include README.md
