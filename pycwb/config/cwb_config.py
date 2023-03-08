@@ -1,6 +1,6 @@
 from configparser import ConfigParser, ExtendedInterpolation
 import logging
-import pyburst
+import pycwb
 from os import path, environ
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class CWBConfig:
     def export_to_envs(self):
         config = self.config
 
-        pyburst_path = path.dirname(path.abspath(pyburst.__file__))
+        pycwb_path = path.dirname(path.abspath(pycwb.__file__))
 
         envs = {
             'LALINSPINJ_EXEC': 'lalapps_inspinj'
@@ -81,7 +81,7 @@ class CWBConfig:
         envs['HOME_FRDISPLAY'] = f"{self.cwb_install}/bin"
         envs['HOME_CWB'] = f"{self.cwb_install}/etc/cwb"
 
-        envs['CWB_ROOTLOGON_FILE'] = f"{pyburst_path}/vendor/dumb.c"
+        envs['CWB_ROOTLOGON_FILE'] = f"{pycwb_path}/vendor/dumb.c"
         envs['CWB_MACROS'] = self.cwb_macros
         envs['CWB_NETC_FILE'] = f"{self.cwb_macros}/cwb_net.C"
         envs['CWB_ANALYSIS'] = self.cwb_analysis

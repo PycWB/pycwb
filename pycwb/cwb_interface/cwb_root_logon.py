@@ -1,7 +1,7 @@
 import platform
 import os
-from pyburst.config import CWBConfig
-import pyburst
+from pycwb.config import CWBConfig
+import pycwb
 import logging
 
 logger = logging.getLogger(__name__)

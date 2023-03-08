@@ -3,7 +3,7 @@ from concurrent.futures import ProcessPoolExecutor as Pool
 import multiprocessing
 import pyburst
 from pyburst import logger_init
-from pyburst.config import Config, CWBConfig
+from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram
 from pyburst.modules.read_data import read_from_gwf, generate_noise, read_from_config, read_from_job_segment
 from pyburst.modules.data_conditioning import data_conditioning

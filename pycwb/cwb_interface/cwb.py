@@ -1,7 +1,7 @@
 import logging, os
 import time
 from pathlib import Path
-from pyburst.cwb_interface import update_global_var
+from pycwb.cwb_interface import update_global_var
 
 logger = logging.getLogger(__name__)
 

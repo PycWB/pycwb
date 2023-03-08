@@ -1,5 +1,5 @@
 import os
-from pyburst.config import CWBConfig
+from pycwb.config import CWBConfig
 import logging
 from ROOT import gROOT
 import ROOT
