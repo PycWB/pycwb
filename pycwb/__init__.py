@@ -56,7 +56,7 @@ class pycWB:
         if ext.lower() == '.c':
             file_name = f_name
         elif ext.lower() == '.yaml':
-            user_parameters.load_yaml(f_name)
+            user_parameters.load_yaml(f_name, load_to_root=True)
         else:
             logger.error(f"Unknown file extension {ext}")
             raise ValueError(f"Unknown file extension {ext}")
