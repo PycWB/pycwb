@@ -12,7 +12,6 @@ conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nd
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycwb
 make install
-# or python setup.py clean && python setup.py build_cwb && python setup.py sdist && pip install dist/*.tar.gz
 ```
 
 ## Usage
@@ -20,7 +19,7 @@ make install
 Example project can be found in [examples](./examples)
 
 ```python
-from pycwb.modules.cwb_2g import cwb_2g
+from pyburst.modules.cwb_2g import cwb_2g
 
 cwb_2g('./user_parameters.yaml')
 ```
