@@ -1,5 +1,4 @@
 import logging
-from .types import DQFile
 from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
@@ -7,13 +6,42 @@ from .frame import get_frame_meta, select_frame_list
 logger = logging.getLogger(__name__)
 
 
-def select_job_segment(dq_file_list: list[DQFile], ifos, fr_files,
-                       seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high,
+def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high,
                        slag_size=0, slag_off=0, slag_min=0, slag_max=0, slag_site=0, slag_file=0):
     """Select a job segment from the database.
 
-    Returns:
-        A list of job segments.
+    :param dq_file_list: The list of DQ files.
+    :type dq_file_list: list[DQFile]
+    :param ifos: The list of interferometers.
+    :type ifos: list[str]
+    :param fr_files: The list of frame files.
+    :type fr_files: list[FrameFile]
+    :param seg_len: The segment length.
+    :type seg_len: int
+    :param seg_mls: The minimum segment length after DQ_CAT1.
+    :type seg_mls: int
+    :param seg_edge: The wavelet boundary offset.
+    :type seg_edge: int
+    :param seg_overlap: The segment overlap.
+    :type seg_overlap: int
+    :param rateANA: The rate of the analysis.
+    :type rateANA: int
+    :param l_high: The high frequency cutoff.
+    :type l_high: int
+    :param slag_size: The super lag size.
+    :type slag_size: int, optional
+    :param slag_off: The super lag offset.
+    :type slag_off: int, optional
+    :param slag_min: The super lag minimum.
+    :type slag_min: int, optional
+    :param slag_max: The super lag maximum.
+    :type slag_max: int, optional
+    :param slag_site: The super lag site.
+    :type slag_site: int, optional
+    :param slag_file: The super lag file.
+    :type slag_file: int, optional
+    :return: The job segment.
+    :rtype: WaveSegment
     """
     if slag_size > 0:
         # TODO: not finished

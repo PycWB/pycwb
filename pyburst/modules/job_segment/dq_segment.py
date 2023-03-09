@@ -1,20 +1,21 @@
 import logging
 import numpy as np
 import csv, math
-from .types import DQFile, WaveSegment
+from .types import WaveSegment
 
 logger = logging.getLogger(__name__)
 
 
-def read_seg_list(dq_file_list: list[DQFile], dq_cat):
-    """Read the segment list from the database.
+def read_seg_list(dq_file_list, dq_cat):
+    """Load the files contains segment list from the data quality files below the data quality category (load_dq_file).
+    Then merge the segment list (merge_seg_list) and return the merged segment list.
 
-    Args:
-        dq_file_list (str): The data quality files.
-        dq_cat (str): The data quality category.
-
-    Returns:
-        A list of segments.
+    :param dq_file_list: The data quality files.
+    :type dq_file_list: list[DQFile]
+    :param dq_cat: The data quality category.
+    :type dq_cat: str
+    :return: A list of segments.
+    :rtype: list[WaveSegment]
     """
     seg_list = []
     for dq_file in dq_file_list:
@@ -33,7 +34,15 @@ def read_seg_list(dq_file_list: list[DQFile], dq_cat):
     return merged_seg_list
 
 
-def load_dq_file(dq_file: DQFile):
+def load_dq_file(dq_file):
+    """
+    Load and process the data quality file.
+
+    :param dq_file: The data quality file.
+    :type dq_file: DQFile
+    :return: a list of start and end times (start, end)
+    :rtype: tuple[np.ndarray, np.ndarray]
+    """
     start = []
     stop = []
     # read the file in dq_file
@@ -94,16 +103,15 @@ def load_dq_file(dq_file: DQFile):
     return start, stop
 
 
-def merge_seg_list(seg_list_1: tuple[np.ndarray | list, np.ndarray | list],
-                   seg_list_2: tuple[np.ndarray | list, np.ndarray | list]):
+def merge_seg_list(seg_list_1, seg_list_2):
     """Merge the segment list.
 
-    Args:
-        seg_list_1 (list): The first segment list.
-        seg_list_2 (list): The second segment list.
-
-    Returns:
-        A list of merged segments.
+    :param seg_list_1: The first segment list.
+    :type seg_list_1: tuple[np.ndarray | list, np.ndarray | list]
+    :param seg_list_2: The second segment list.
+    :type seg_list_2: tuple[np.ndarray | list, np.ndarray | list]
+    :return: A list of merged segments (start, end)
+    :rtype: tuple[list, list]
     """
     merged_start = []
     merged_stop = []
@@ -141,6 +149,15 @@ def merge_seg_list(seg_list_1: tuple[np.ndarray | list, np.ndarray | list],
 
 
 def get_seg_list(dq_list, seg_len, seg_mls, seg_edge):
+    """
+    Not implemented yet.
+
+    :param dq_list:
+    :param seg_len:
+    :param seg_mls:
+    :param seg_edge:
+    :return:
+    """
     job_list = get_job_list(dq_list, seg_len, seg_mls, seg_edge)
     return []
 
@@ -149,22 +166,27 @@ def get_job_list(dq_list, seg_len, seg_mls, seg_edge):
     """
     Build the job segment list.
 
-    The job segments are builded starting from the input ilist
-    each segment must have a minimum length of segMLS+2segEdge and a maximum length of segLen+2*segEdge
-    in order to maximize the input live time each segment with lenght<2*(segLen+segEdge) is
-    divided in 2 segments with length<segLen+2*segEdge
-    segEdge     : xxx
-    segMLS      : -------
-    segLen      : ---------------
-    input seg   : ----------------------------
-    output segA : xxx---------xxx
-    output segB :             xxx----------xxx
+    The job segments are builded starting from the input ilist, each segment must have a minimum length
+    of segMLS+2segEdge and a maximum length of segLen+2*segEdge in order to maximize the input live time
+    each segment with lenght<2*(segLen+segEdge) is divided in 2 segments with length<segLen+2*segEdge
+
+    segEdge     : xxx \n
+    segMLS      : ------- \n
+    segLen      : --------------- \n
+    input seg   : ---------------------------- \n
+    output segA : xxx---------xxx \n
+    output segB :             xxx----------xxx \n
 
     :param dq_list:  number of detectors
+    :type dq_list:  list[DQFile]
     :param seg_len:  Segment length [sec]
+    :type seg_len:  int
     :param seg_mls:  Minimum Segment Length after DQ_CAT1 [sec]
+    :type seg_mls:  int
     :param seg_edge:  wavelet boundary offset [sec]
+    :type seg_edge:  int
     :return:  Return the job segment list
+    :rtype:  list[WaveSegment]
     """
     if seg_mls > seg_len:
         logger.error('seg_mls must be <= seg_len')

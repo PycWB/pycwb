@@ -28,22 +28,6 @@ class WaveSegment:
         }
 
 
-class DQFile:
-    __slots__ = ('ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4')
-
-    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
-        self.ifo = ifo
-        self.file = file
-        self.dq_cat = dq_cat
-        self.shift = shift
-        self.invert = invert
-        self.c4 = c4
-
-    def __repr__(self):
-        return f"DQFile(ifo={self.ifo}, file={self.file}, dq_cat={self.dq_cat}, " \
-               f"shift={self.shift}, invert={self.invert}, c4={self.c4})"
-
-
 class SLag:
     __slots__ = ('job_id', 'slag_id', 'seg_id')
 

@@ -33,50 +33,17 @@ def declare_function():
         for (int i = 0; i < size; i++) {
             wave->data[i] = value[i];
         }
-    }
+    };
+    
+    std::vector<double> _get_wavearray_data(wavearray<double> *wave) {
+        std::vector<double> data;
+        for (int i = 0; i < wave->size(); i++) {
+            data.push_back(wave->data[i]);
+        }
+        
+        return data;
+    };
     """)
-
-
-def convert_wseries_to_wavearray(w):
-    """
-    Python fuction to convert wseries to wavearray. This is a slow function, should be replaced by c++ function
-
-    :param w: ROOT.WSeries
-    :return: Converted ROOT.wavearray
-    :rtype: ROOT.wavearray
-    """
-    h = ROOT.wavearray(np.double)()
-
-    for i in range(w.size()):
-        h.append(w.data[i])
-
-    h.start(w.start())
-    h.rate(w.rate())
-
-    return h
-
-
-def convert_wavearray_to_wseries(data):
-    """
-    This is to convert wavearray to wseries, it substituted the wseries.Forward(wavearray) that is not working.
-    Maybe we can understand why
-
-    :param data: ROOT.wavearray
-    :return: Converted ROOT.WSeries
-    :rtype: ROOT.WSeries
-    """
-    w = ROOT.WSeries(np.double)()
-
-    for d in data:
-        w.append(d)
-
-    w.start(data.start())
-    w.rate(data.rate())
-    w.wrate(0.)
-    w.f_high = data.rate() / 2.
-    w.pWavelet.allocate(w.size(),
-                        w.data)
-    return w
 
 
 def convert_timeseries_to_wavearray(data: TimeSeries):
@@ -126,7 +93,88 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
     return h
 
 
-def convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double, rate: int):
+def WSeries_to_matrix(w):
+    """
+    Convert WSeries to numpy matrix
+
+    :param w: ROOT.WSeries
+    :type w: ROOT.WSeries
+    :return: Converted matrix
+    :rtype: np.array
+    """
+    matrix = list()
+    for n in range(w.maxLayer()):
+        a = ROOT.wavearray(np.double)()
+        w.getLayer(a, n)
+        matrix.append(np.asarray(a))
+    matrix = np.asarray(matrix, dtype=float)
+
+    return matrix
+
+
+def convert_wavearray_to_timeseries(h):
+    """
+    Convert wavearray to gwpy timeseries (get 3 times faster with c++ function)
+
+    :param h: ROOT.wavearray
+    :type h: ROOT.wavearray
+    :return: Converted gwpy timeseries
+    :rtype: gwpy.timeseries.TimeSeries
+    """
+
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
+
+    ar = np.array(ROOT._get_wavearray_data(h))
+
+    ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
+
+    return ar
+
+
+def _convert_wseries_to_wavearray(w):
+    """
+    Python fuction to convert wseries to wavearray. This is a slow function, should be replaced by c++ function
+
+    :param w: ROOT.WSeries
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
+    """
+    h = ROOT.wavearray(np.double)()
+
+    for i in range(w.size()):
+        h.append(w.data[i])
+
+    h.start(w.start())
+    h.rate(w.rate())
+
+    return h
+
+
+def _convert_wavearray_to_wseries(data):
+    """
+    This is to convert wavearray to wseries, it substituted the wseries.Forward(wavearray) that is not working.
+    Maybe we can understand why
+
+    :param data: ROOT.wavearray
+    :return: Converted ROOT.WSeries
+    :rtype: ROOT.WSeries
+    """
+    w = ROOT.WSeries(np.double)()
+
+    for d in data:
+        w.append(d)
+
+    w.start(data.start())
+    w.rate(data.rate())
+    w.wrate(0.)
+    w.f_high = data.rate() / 2.
+    w.pWavelet.allocate(w.size(),
+                        w.data)
+    return w
+
+
+def _convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double, rate: int):
     """
     Convert numpy array to wavearray with python loop
 
@@ -153,7 +201,7 @@ def convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double
     return h
 
 
-def data_to_TFmap(h):
+def _data_to_TFmap(h):
     # TODO: write something
     lev = int(h.rate() / 2)  # TFmap and wavearray should have the same rate?
     wdtf = ROOT.WDM(np.double)(lev, 2 * lev, 6, 10)  # what is this? there is a problem with this function
@@ -163,36 +211,8 @@ def data_to_TFmap(h):
     return w
 
 
-def WSeries_to_matrix(w):
-    """
-    Convert WSeries to numpy matrix
 
-    :param w: ROOT.WSeries
-    :type w: ROOT.WSeries
-    :return: Converted matrix
-    :rtype: np.array
-    """
-    matrix = list()
-    for n in range(w.maxLayer()):
-        a = ROOT.wavearray(np.double)()
-        w.getLayer(a, n)
-        matrix.append(np.asarray(a))
-    matrix = np.asarray(matrix, dtype=float)
-
-    return matrix
-
-
-def convert_wavearray_to_timeseries(h):
-    ar = []
-    for i in range(h.size()):
-        ar.append(h.data[i])
-
-    ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
-
-    return ar
-
-
-def transform(h, time_layer, freq_layer):
+def _transform(h, time_layer, freq_layer):
     # Edge here is not defined
     # fLow and fHigh not defined
     """
@@ -213,7 +233,7 @@ def transform(h, time_layer, freq_layer):
     return w
 
 
-def crop_wavearray(data, rate, totalscratch):
+def _crop_wavearray(data, rate, totalscratch):
     """
     Crop wavearray according to desired totalscratch
 
@@ -242,7 +262,7 @@ def crop_wavearray(data, rate, totalscratch):
     return data_crop
 
 
-def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bins):
+def _get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bins):
     """
     Returns Z-histogram as numpy matrix
 
@@ -273,7 +293,7 @@ def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bin
     return time_arr, freq_arr, z_arr
 
 
-def scaling(x):
+def _scaling(x):
     """
     This function returns Marco's scaling. Used in previous papers.
     """

@@ -1,27 +1,24 @@
-from gwpy.timeseries import TimeSeries
 from pyburst.constants import REGRESSION_FILTER_LENGTH, \
     REGRESSION_MATRIX_FRACTION, \
     REGRESSION_SOLVE_EIGEN_THR, REGRESSION_SOLVE_EIGEN_NUM, \
-    REGRESSION_SOLVE_REGULATOR, REGRESSION_APPLY_THR, \
-    WDM_BETAORDER, WDM_PRECISION
+    REGRESSION_SOLVE_REGULATOR, REGRESSION_APPLY_THR
 from pyburst.config import Config
 import ROOT
 import numpy as np
 
 
-def regression(config: Config, wdm: ROOT.WDM, h: TimeSeries):
+def regression(config, wdm, h):
     """
-        Clean data with cWB regression method.
-    Input
-    ------
-    
-    config: (dict) configuration dictionary
-    h: (TimeSeries) data
-    
-    Output
-    ------
-    hh: (ROOT wavearray) cleaned data 
-    
+    Clean data with cWB regression method.
+
+    :param config: config object
+    :type config: Config
+    :param wdm: WDM object
+    :type wdm: ROOT.WDM
+    :param h: data to be cleaned
+    :type h: ROOT.wavearray(np.double)
+    :return: cleaned data
+    :rtype: ROOT.wavearray(np.double)
     """
     tf_map = ROOT.WSeries(np.double)(h, wdm)
     tf_map.Forward()

@@ -108,10 +108,8 @@ def create_wdm(config, net):
 
 def check_layers_with_MRAcatalog(config, net):
     """
-    check if analysis layers are contained in the MRAcatalog
-
-    level : is the decomposition level \n
-    layers : are the number of layers along the frequency axis rateANA/(rateANA>>level)
+    check if analysis layers are contained in the MRAcatalog.
+    The layers are the number of layers along the frequency axis rateANA/(rateANA>>level)
 
     :param config: user configuration
     :type config: Config
@@ -121,7 +119,9 @@ def check_layers_with_MRAcatalog(config, net):
     """
     check_layers = 0
     for i in range(config.l_low, config.l_high + 1):
+        # the decomposition level
         level = config.l_high + config.l_low - i
+        # number of layers along the frequency axis rateANA/(rateANA>>level)
         layers = 2 ** level if level > 0 else 0
         for j in range(net.wdmMRA.nRes):
             if layers == net.wdmMRA.layers[j]:

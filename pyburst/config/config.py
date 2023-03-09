@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class DQFile:
+    __slots__ = ['ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4']
     """
     Class to store data quality file information
 
@@ -34,6 +35,10 @@ class DQFile:
         self.shift = shift
         self.invert = invert
         self.c4 = c4
+
+    def __repr__(self):
+        return f"DQFile(ifo={self.ifo}, file={self.file}, dq_cat={self.dq_cat}, " \
+               f"shift={self.shift}, invert={self.invert}, c4={self.c4})"
 
 
 class Config:
