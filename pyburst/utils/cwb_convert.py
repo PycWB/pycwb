@@ -6,6 +6,8 @@ from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 import logging
 import ctypes
 
+from pyburst.types import TimeFrequencySeries, WDM
+
 c_double_p = ctypes.POINTER(ctypes.c_double)
 
 logger = logging.getLogger(__name__)
@@ -44,7 +46,34 @@ def declare_function():
         
         return data;
     };
+    
+    std::vector<double> _get_wseries_data(WSeries<double> *wave) {
+        std::vector<double> data;
+        for (int i = 0; i < wave->size(); i++) {
+            data.push_back(wave->data[i]);
+        }
+        
+        return data;
+    };
     """)
+
+
+def convert_to_wseries(data):
+    """
+    Convert all known types to wseries
+    :param data: input data
+    :return: wseries
+    """
+    if isinstance(data, TimeFrequencySeries):
+        logger.info("Converting TimeFrequencySeries to ROOT.WSeries")
+        output = convert_time_frequency_series_to_wseries(data)
+    elif isinstance(data, pycbcTimeSeries):
+        logger.info("Converting pycbc TimeSeries to ROOT.WSeries")
+        output = convert_pycbc_timeseries_to_wavearray(data)
+    else:
+        output = data
+
+    return output
 
 
 def convert_timeseries_to_wavearray(data: TimeSeries):
@@ -132,6 +161,78 @@ def convert_wavearray_to_timeseries(h):
 
     return ar
 
+
+def convert_wseries_to_timeseries(h):
+    """
+    Convert wavearray to gwpy timeseries (get 3 times faster with c++ function)
+
+    :param h: ROOT.WSeries
+    :type h: ROOT.WSeries
+    :return: Converted gwpy timeseries
+    :rtype: gwpy.timeseries.TimeSeries
+    """
+
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
+
+    ar = np.array(ROOT._get_wseries_data(h))
+
+    ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
+
+    return ar
+
+
+def convert_wseries_to_pycbc_timeseries(h):
+    """
+    Convert wavearray to pycbc timeseries (get 3 times faster with c++ function)
+
+    :param h: ROOT.WSeries
+    :type h: ROOT.WSeries
+    :return: Converted gwpy timeseries
+    :rtype: gwpy.timeseries.TimeSeries
+    """
+
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
+
+    ar = np.array(ROOT._get_wseries_data(h))
+
+    ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
+
+    return ar
+
+
+def convert_wseries_to_time_frequency_series(h):
+    """
+    Convert wavearray to time frequency series
+
+    :param h: ROOT.WSeries
+    :type h: ROOT.WSeries
+    :return: Time frequency series
+    :rtype: TimeFrequencySeries
+    """
+
+    data = convert_wseries_to_pycbc_timeseries(h)
+
+    return TimeFrequencySeries(data=data, wavelet=WDM(h.pWavelet), whiten_mode=h.w_mode)
+
+
+def convert_time_frequency_series_to_wseries(h):
+    """
+    Convert time frequency series to wseries
+
+    :param h: Time frequency series
+    :type h: TimeFrequencySeries
+    :return: Converted wseries
+    :rtype: WSeries
+    """
+
+    data = convert_pycbc_timeseries_to_wavearray(h.data)
+    w = ROOT.WSeries(np.double)(data, h.wavelet.wavelet)
+
+    w.w_mode = h.whiten_mode
+
+    return w
 
 def _convert_wseries_to_wavearray(w):
     """

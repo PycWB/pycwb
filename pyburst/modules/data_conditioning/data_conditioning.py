@@ -5,8 +5,10 @@ from .whitening import whitening
 from pyburst.config import Config
 from gwpy.timeseries import TimeSeries as gwpyTimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
-from pyburst.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray, convert_timeseries_to_wavearray
+from pyburst.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray, convert_timeseries_to_wavearray, \
+    convert_wseries_to_pycbc_timeseries, convert_wseries_to_time_frequency_series
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
+from pyburst.types import TimeFrequencySeries, WDM
 import ROOT
 import numpy as np
 from multiprocessing import Pool
@@ -22,8 +24,8 @@ def data_conditioning(config, strains):
     :type config: Config
     :param strains: list of strain data
     :type strains: list[pycbc.types.timeseries.TimeSeries] or list[gwpy.timeseries.TimeSeries] or list[ROOT.wavearray(np.double)]
-    :return: (tf_maps, nRMS_list)
-    :rtype: tuple[list[ROOT.wavearray(np.double)], list[float]]
+    :return: (conditioned_strains, nRMS_list)
+    :rtype: tuple[list[pycbc.types.timeseries.TimeSeries], list[float]]
     """
     # timer
     timer_start = time.perf_counter()
@@ -39,7 +41,7 @@ def data_conditioning(config, strains):
     with Pool(processes=min(config.nproc, config.nIFO)) as p:
         res = p.starmap(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))])
 
-    tf_maps, nRMS_list = zip(*res)
+    conditioned_strains, nRMS_list = zip(*res)
 
     # timer
     timer_end = time.perf_counter()
@@ -47,7 +49,7 @@ def data_conditioning(config, strains):
     logger.info(f"Data Conditioning Time: {timer_end - timer_start:.2f} seconds")
     logger.info("-------------------------------------------------------")
 
-    return tf_maps, nRMS_list
+    return conditioned_strains, nRMS_list
 
 
 def _wrapper(config, strain, wdm, wdm_white):
@@ -62,4 +64,4 @@ def _wrapper(config, strain, wdm, wdm_white):
     data_reg = regression(config, wdm, wave_array)
     tf_map, nRMS = whitening(config, wdm_white, data_reg)
 
-    return tf_map, nRMS
+    return convert_wseries_to_time_frequency_series(tf_map), nRMS

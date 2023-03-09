@@ -4,7 +4,10 @@ from multiprocessing import Pool
 import numpy as np
 import ROOT
 import logging
+from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 from pyburst.config import Config
+from pyburst.types import TimeFrequencySeries
+from pyburst.utils import convert_pycbc_timeseries_to_wavearray, convert_time_frequency_series_to_wseries, convert_to_wseries
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,8 @@ def coherence(config, net, tf_maps, wdm_list):
     :return: (sparse_table_list, pwc_list)
     :rtype: (list[ROOT.SparseTable], list[ROOT.PWC])
     """
+    tf_maps = [convert_to_wseries(tf) for tf in tf_maps]
+
     # calculate upsample factor
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024

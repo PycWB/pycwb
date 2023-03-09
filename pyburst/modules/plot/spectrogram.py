@@ -1,4 +1,7 @@
 from gwpy.timeseries import TimeSeries
+from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
+
+from pyburst.types import TimeFrequencySeries
 from pyburst.utils import WSeries_to_matrix, convert_wavearray_to_timeseries
 from gwpy.spectrogram import Spectrogram
 import numpy as np
@@ -24,7 +27,14 @@ def plot_spectrogram(wavearray, xmin=None, xmax=None, figsize=(24, 6), gwpy_plot
     """
 
     if gwpy_plot:
-        wavearray = convert_wavearray_to_timeseries(wavearray)
+        if isinstance(wavearray, TimeFrequencySeries):
+            wavearray = TimeSeries.from_pycbc(wavearray.data)
+        elif isinstance(wavearray, pycbcTimeSeries):
+            wavearray = TimeSeries.from_pycbc(wavearray)
+        elif isinstance(wavearray, TimeSeries):
+            pass
+        else:
+            wavearray = convert_wavearray_to_timeseries(wavearray)
 
     if isinstance(wavearray, TimeSeries):
         wavearray = wavearray.crop(xmin, xmax)

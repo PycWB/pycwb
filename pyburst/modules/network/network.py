@@ -2,13 +2,16 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
+from pyburst.types import TimeFrequencySeries
+from pyburst.utils import convert_to_wseries, convert_time_frequency_series_to_wseries
+from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 import numpy as np
 import argparse, shlex
 
 logger = logging.getLogger(__name__)
 
 
-def create_network(run_id, config, tf_maps, nRMS_list):
+def create_network(run_id, config, tf_list, nRMS_list):
     """
     Initialize a network and check the configuration
 
@@ -16,13 +19,18 @@ def create_network(run_id, config, tf_maps, nRMS_list):
     :type run_id: int
     :param config: user configuration
     :type config: Config
-    :param tf_maps: list of strain data
-    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :param tf_list: list of strain data
+    :type tf_list: list[TimeFrequencySeries]
     :param nRMS_list: list of noise RMS values
-    :type nRMS_list: list[float]
+    :type nRMS_list: list[TimeFrequencySeries]
     :return: (net, wdm_list)
     :rtype: (ROOT.network, list[ROOT.WDM(np.double)])
     """
+
+    # convert to ROOT.WSeries
+    tf_maps = [convert_to_wseries(tf) for tf in tf_list]
+    nRMS_list = [convert_to_wseries(nRMS) for nRMS in nRMS_list]
+
     net = ROOT.network()
 
     # load MRA catalog
