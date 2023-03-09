@@ -7,7 +7,7 @@ from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram
 from pyburst.modules.read_data import read_from_job_segment
 from pyburst.modules.data_conditioning import data_conditioning
-from pyburst.modules.coherence import create_network
+from pyburst.modules.network import create_network
 from pyburst.modules.coherence import coherence
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
@@ -33,9 +33,9 @@ def analyze_job_segment(config, job_seg):
     The results will be saved to the output directory in json format on likelihood stage
 
     :param config: configuration
-    :type config: pyburst.config.Config
+    :type config: Config
     :param job_seg: job segment
-    :type job_seg: pyburst.modules.job_segment.JobSegment
+    :type job_seg: WaveSegment
     """
     # config, job_seg = args
     start_time = time.perf_counter()

@@ -1,4 +1,15 @@
 def append_cluster(cluster, c, n_max):
+    """
+    Append cluster to another cluster
+
+    :param cluster: target cluster
+    :type cluster: ROOT.netcluster
+    :param c: source cluster
+    :type c: ROOT.netcluster
+    :param n_max: if -2, skip cleaning
+    :type n_max: int
+    :return: None
+    """
     skip = n_max == -2
 
     for c_id, clist in enumerate(c.cList):
@@ -24,10 +35,31 @@ def append_cluster(cluster, c, n_max):
 
 
 def copy_metadata(cluster, c):
+    """
+    Copy metadata from c to cluster
+
+    :param cluster: target cluster
+    :type cluster: ROOT.netcluster
+    :param c: source cluster
+    :type c: ROOT.netcluster
+    :return: None
+    """
     cluster.cpf(c, False, 0)
     cluster.clear()
 
+
 def select_clusters(cluster, c, cluster_id):
+    """
+    Select cluster by cluster_id from c and append to cluster
+
+    :param cluster: target cluster
+    :type cluster: ROOT.netcluster
+    :param c: source cluster
+    :type c: ROOT.netcluster
+    :param cluster_id: cluster id
+    :type cluster_id: int
+    :return: None
+    """
     # Remember to copy cluster metadata (cData)
     new_cluster_id = cluster.cList.size() + 1
     new_pixel_id = cluster.pList.size()

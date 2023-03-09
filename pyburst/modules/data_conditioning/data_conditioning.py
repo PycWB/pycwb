@@ -14,7 +14,18 @@ from multiprocessing import Pool
 logger = logging.getLogger(__name__)
 
 
-def data_conditioning(config: Config, strains):
+def data_conditioning(config, strains):
+    """
+    Performs data conditioning on the given strain data, including regression and whitening
+
+    :param config: config object
+    :type config: Config
+    :param strains: list of strain data
+    :type strains: list[pycbc.types.timeseries.TimeSeries] or list[gwpy.timeseries.TimeSeries]
+    or list[ROOT.wavearray(np.double)]
+    :return: (tf_maps, nRMS_list)
+    :rtype: tuple[list[ROOT.wavearray(np.double)], list[float]]
+    """
     # timer
     timer_start = time.perf_counter()
 

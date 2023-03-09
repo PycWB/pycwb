@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
-from pyburst.modules.coherence.network import update_sky_map, update_sky_mask, restore_skymap
+from pyburst.modules.network import update_sky_map, update_sky_mask, restore_skymap
 from pyburst.modules.netcluster import append_cluster, copy_metadata
 logger = logging.getLogger(__name__)
 

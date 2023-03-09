@@ -8,8 +8,21 @@ import argparse, shlex
 logger = logging.getLogger(__name__)
 
 
-def create_network(run_id, config: Config,
-                   tf_maps: list, nRMS_list: list):
+def create_network(run_id, config, tf_maps, nRMS_list):
+    """
+    Initialize a network and check the configuration
+
+    :param run_id: job id
+    :type run_id: int
+    :param config: user configuration
+    :type config: Config
+    :param tf_maps: list of strain data
+    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :param nRMS_list: list of noise RMS values
+    :type nRMS_list: list[float]
+    :return: (net, wdm_list)
+    :rtype: (ROOT.network, list[ROOT.WDM(np.double)])
+    """
     net = ROOT.network()
 
     # load MRA catalog
@@ -29,12 +42,31 @@ def create_network(run_id, config: Config,
     return net, wdm_list
 
 
-def load_MRA(config: Config, net: ROOT.network):
+def load_MRA(config, net):
+    """
+    Load MRA catalog
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :return: None
+    """
     logger.info("Loading catalog of WDM cross-talk coefficients")
     net.setMRAcatalog(config.MRAcatalog)
 
 
-def create_wdm(config: Config, net: ROOT.network):
+def create_wdm(config, net):
+    """
+    Create WDM
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :return: list of WDM
+    :rtype: list[ROOT.WDM(np.double)]
+    """
     beta_order = WDM_BETAORDER  # beta function order for Meyer
     precision = WDM_PRECISION  # wavelet precision
 
@@ -74,15 +106,18 @@ def create_wdm(config: Config, net: ROOT.network):
     return wdm_list
 
 
-def check_layers_with_MRAcatalog(config: Config, net: ROOT.network):
+def check_layers_with_MRAcatalog(config, net):
     """
     check if analysis layers are contained in the MRAcatalog
 
-    level : is the decomposition level
+    level : is the decomposition level \n
     layers : are the number of layers along the frequency axis rateANA/(rateANA>>level)
-    :param config:
-    :param net:
-    :return:
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :return: None
     """
     check_layers = 0
     for i in range(config.l_low, config.l_high + 1):
@@ -105,9 +140,23 @@ def check_layers_with_MRAcatalog(config: Config, net: ROOT.network):
         raise ValueError("analysis layers do not match the MRA catalog")
 
 
-def init_network(config: Config, net: ROOT.network,
-                 tf_maps: list, nRMS_list: list,
-                 run_id):
+def init_network(config, net, tf_maps, nRMS_list, run_id):
+    """
+    Initialize network with strain data and other parameters
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :param tf_maps: list of strain data
+    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :param nRMS_list: list of noise RMS
+    :type nRMS_list: list[float]
+    :param run_id: run id
+    :type run_id: int
+    :return: network object
+    :rtype: ROOT.network
+    """
     logger.info("Initializing network")
 
     for i, ifo in enumerate(config.ifo):
@@ -148,7 +197,18 @@ def init_network(config: Config, net: ROOT.network,
     return net
 
 
-def restore_skymap(config: Config, net: ROOT.network, skyres):
+def restore_skymap(config, net, skyres = None):
+    """
+    Restore skymap from configuration, if sky resolution is not specified, use the one in configuration
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :param skyres: sky resolution
+    :type skyres: int, optional
+    :return:
+    """
     if skyres:
         if config.healpix:
             net.setSkyMaps(int(config.healpix))
@@ -226,21 +286,21 @@ def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str,
     that are analyzed by default all sky is used
     :param config: Config object
     :param net: network object
-    :param options: used to define the earth/celestial SkyMap
-                    option A :
-                    skycoord='e'
-                    --theta THETA --phi PHI --radius RADIUS
-                    define a circle centered in (THETA,PHI) and radius=RADIUS
-                    THETA : [-90,90], PHI : [0,360], RADIUS : degrees
-                    skycoord='c'
-                    --theta DEC --phi RA --radius RADIUS
-                    define a circle centered in (DEC,RA) and radius=RADIUS
-                    DEC : [-90,90], RA : [0,360], RADIUS : degrees
-                    option B:
-                    file name
-                    format : two columns ascii file -> [sky_index	value]
-                    sky_index : is the sky grid index
-                    value     : if !=0 the index sky location is used for the analysis
+    :param options: used to define the earth/celestial SkyMap \n
+
+    option A : \n
+    skycoord='e'  \n
+      --theta THETA --phi PHI --radius RADIUS \n
+      define a circle centered in (THETA,PHI) and radius=RADIUS (THETA : [-90,90], PHI : [0,360], RADIUS : degrees) \n
+    skycoord='c' \n
+      --theta DEC --phi RA --radius RADIUS \n
+      define a circle centered in (DEC,RA) and radius=RADIUS (DEC : [-90,90], RA : [0,360], RADIUS : degrees) \n
+
+    option B: \n
+    file name \n
+      format : two columns ascii file -> [sky_index	value] \n
+      sky_index : is the sky grid index \n
+      value     : if !=0 the index sky location is used for the analysis \n
     :param skycoord: sky coordinates : 'e'=earth, 'c'=celestial
     :param skyres: sky resolution : def=-1 -> use the value defined in parameters (angle,healpix)
     :return:

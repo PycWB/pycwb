@@ -25,6 +25,9 @@ if not hasattr(ROOT, "WDM"):
 
 
 def declare_function():
+    """
+    This is to declare a c++ function to copy numpy array to wavearray (copying with python loop is too slow)
+    """
     ROOT.gInterpreter.Declare("""
     void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
         for (int i = 0; i < size; i++) {
@@ -35,6 +38,13 @@ def declare_function():
 
 
 def convert_wseries_to_wavearray(w):
+    """
+    Python fuction to convert wseries to wavearray. This is a slow function, should be replaced by c++ function
+
+    :param w: ROOT.WSeries
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
+    """
     h = ROOT.wavearray(np.double)()
 
     for i in range(w.size()):
@@ -48,9 +58,12 @@ def convert_wseries_to_wavearray(w):
 
 def convert_wavearray_to_wseries(data):
     """
-        This is to convert wavearray to wseries,
-        it substituted the wseries.Forward(wavearray) that is not working.
-        Maybe we can understand why
+    This is to convert wavearray to wseries, it substituted the wseries.Forward(wavearray) that is not working.
+    Maybe we can understand why
+
+    :param data: ROOT.wavearray
+    :return: Converted ROOT.WSeries
+    :rtype: ROOT.WSeries
     """
     w = ROOT.WSeries(np.double)()
 
@@ -68,8 +81,11 @@ def convert_wavearray_to_wseries(data):
 
 def convert_timeseries_to_wavearray(data: TimeSeries):
     """
-        this is to convert timeseries to wavearray,
-        if we read noise data with something else just need to make a new conversion function
+    Convert gwpy timeseries to wavearray with c++ function
+
+    :param data: gwpy timeseries
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
     """
     h = ROOT.wavearray(np.double)(len(data.value))
 
@@ -88,8 +104,11 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
 
 def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
     """
-        this is to convert timeseries to wavearray,
-        if we read noise data with something else just need to make a new conversion function
+    Convert pycbc timeseries to wavearray with c++ function
+
+    :param data: pycbc timeseries
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
     """
 
     h = ROOT.wavearray(np.double)(len(data.data))
@@ -109,7 +128,18 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
 
 def convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double, rate: int):
     """
-        this is to convert numpy to wavearray.
+    Convert numpy array to wavearray with python loop
+
+    :param data: numpy array
+    :type data: np.array
+    :param start: start time
+    :type start: np.double
+    :param stop: stop time
+    :type stop: np.double
+    :param rate: sample rate
+    :type rate: int
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
     """
     data = np.asarray(data, dtype=float)
     h = ROOT.wavearray(np.double)()
@@ -123,35 +153,6 @@ def convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.double
     return h
 
 
-def gettimeseriesfromfiles(filelist, channelname, START, END, rate):
-    """
-        read time series from a bunch of files and resample to needed sample rate
-        CAREFULE RESAMPLE SEEMS NOT REALLY GOOD
-    """
-    filenames = open(filelist).readlines()
-    filenames = list(map(lambda x: x.replace("\n", ""), filenames))
-    data = TimeSeries.read(filenames,
-                           channelname,
-                           start=START,
-                           end=END)
-
-    if rate > 0:
-        data = data.resample(rate)  # TODO: improve this
-
-    return data
-
-
-def fill_wavearray(filelist, channelname, START, END, rate=-1):
-    data = gettimeseriesfromfiles(filelist,
-                                  channelname,
-                                  START,
-                                  END,
-                                  rate)
-    data = convert_timeseries_to_wavearray(data)
-
-    return data
-
-
 def data_to_TFmap(h):
     # TODO: write something
     lev = int(h.rate() / 2)  # TFmap and wavearray should have the same rate?
@@ -163,7 +164,14 @@ def data_to_TFmap(h):
 
 
 def WSeries_to_matrix(w):
-    # TODO: write something
+    """
+    Convert WSeries to numpy matrix
+
+    :param w: ROOT.WSeries
+    :type w: ROOT.WSeries
+    :return: Converted matrix
+    :rtype: np.array
+    """
     matrix = list()
     for n in range(w.maxLayer()):
         a = ROOT.wavearray(np.double)()
@@ -207,7 +215,8 @@ def transform(h, time_layer, freq_layer):
 
 def crop_wavearray(data, rate, totalscratch):
     """
-        Crop wavearray according to desired totalscratch
+    Crop wavearray according to desired totalscratch
+
     Input
     -----
     data: (wavearray) data to crop
@@ -235,7 +244,8 @@ def crop_wavearray(data, rate, totalscratch):
 
 def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bins):
     """
-        Returns Z-histogram as numpy matrix
+    Returns Z-histogram as numpy matrix
+
     Input
     -----
     histogram: (WSeries) Z-values of heatmap from cWB
@@ -265,7 +275,7 @@ def get_histogram_as_matrix(histogram, t0, duration, time_bins, F1, F2, freq_bin
 
 def scaling(x):
     """
-        This function returns Marco's scaling. Used in previous papers.
+    This function returns Marco's scaling. Used in previous papers.
     """
     y = 1 - np.exp(- x)
     return y

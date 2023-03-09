@@ -4,6 +4,19 @@ from pyburst import __version__
 
 
 def create_catalog(filename, config, jobs):
+    """
+    Create a catalog file with config, version, jobs
+
+    A soft lock is used (default filelock does not work on CIT)
+
+    :param filename: filename of the catalog
+    :type filename: str
+    :param config: config object
+    :type config: pyburst.config.Config
+    :param jobs: list of jobs
+    :type jobs: list[pyburst.module.job_segment.Job]
+    :return: None
+    """
     output = {
         "config": config.__dict__,
         "version": __version__,
@@ -17,6 +30,17 @@ def create_catalog(filename, config, jobs):
 
 
 def add_events_to_catalog(filename, events):
+    """
+    Add events to catalog
+
+    A soft lock is used (default filelock does not work on CIT)
+
+    :param filename: filename of the catalog to update
+    :type filename: str
+    :param events: list of events
+    :type events: list[pyburst.module.netevent.Event]
+    :return: None
+    """
     with SoftFileLock(filename + ".lock", timeout=10):
         # read the json file
         with open(filename, 'r+') as f:

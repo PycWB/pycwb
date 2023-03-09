@@ -9,15 +9,18 @@ from pyburst.config import Config
 logger = logging.getLogger(__name__)
 
 
-def coherence_parallel(config: Config, net: ROOT.network,
-                       tf_maps: list[ROOT.wavearray(np.double)],
-                       wdm_list: list[ROOT.WDM(np.double)]):
+def coherence_parallel(config, net, tf_maps, wdm_list):
     """
+    Calculate the coherence parallelly (Not working for now)
 
-    :param config:
-    :param net:
-    :param strain_l ist:
-    :param wdm_list:
+    :param config: config
+    :type config: Config
+    :param net: network
+    :type net: ROOT.network
+    :param tf_maps: list of strain
+    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :param wdm_list: list of wdm
+    :type wdm_list: list[ROOT.WDM(np.double)]
     :return:
     """
     timer_start = time.perf_counter()
@@ -41,17 +44,22 @@ def coherence_parallel(config: Config, net: ROOT.network,
     return sparse_table_list, pwc_list
 
 
-def coherence(config: Config, net: ROOT.network,
-              tf_maps: list[ROOT.wavearray(np.double)],
-              wdm_list: list[ROOT.WDM(np.double)]):
+def coherence(config, net, tf_maps, wdm_list):
     """
-    select pixels
+    select coherent pixels
+
     :param config: config
+    :type config: Config
     :param net: network
+    :type net: ROOT.network
     :param tf_maps: list of strain
+    :type tf_maps: list[ROOT.wavearray(np.double)]
     :param wdm_list: list of wdm
+    :type wdm_list: list[ROOT.WDM(np.double)]
     :param threshold_list: list of threshold
-    :return:
+    :type threshold_list: list[float]
+    :return: (sparse_table_list, pwc_list)
+    :rtype: (list[ROOT.SparseTable], list[ROOT.PWC])
     """
     # calculate upsample factor
     timer_start = time.perf_counter()
@@ -76,7 +84,26 @@ def coherence(config: Config, net: ROOT.network,
 
 
 def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
-    # print start time
+    """
+    Calculate the coherence for a single resolution
+
+    :param i: index of resolution
+    :type i: int
+    :param config: configuration object
+    :type config: Config
+    :param net: network
+    :type net: ROOT.network
+    :param tf_maps: list of strain
+    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :param wdm: wdm used for current resolution
+    :type wdm: ROOT.WDM(np.double)
+    :param m_tau: maximum delay
+    :type m_tau: float
+    :param up_n: upsample factor
+    :type up_n: int
+    :return: (sparse_table, pwc_list)
+    :rtype: (ROOT.SparseTable, list[ROOT.PWC])
+    """
 
     wc = ROOT.netcluster()
 

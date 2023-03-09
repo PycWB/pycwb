@@ -1,9 +1,11 @@
-# read cluster parameters
 import numpy as np
 import json
 
 
 class Event:
+    """
+    This class is used to store the results of an event.
+    """
     def __init__(self):
         self.nevent = 0  # number of events
         self.ndim = None  # number of dimensions
@@ -70,6 +72,17 @@ class Event:
         self.Deff = []
 
     def output(self, net, ID, LAG):
+        """
+        Generate event parameters from ROOT.network object
+
+        :param net: network containing the event
+        :type net: ROOT.network
+        :param ID: cluster ID
+        :type ID: int
+        :param LAG: lag of the analysis
+        :type LAG: int
+        :return:
+        """
         pwc = net.getwc(LAG)
         inRate = net.getifo(0).rate
         pat0 = True if net.pattern == 0 else False
@@ -198,9 +211,23 @@ class Event:
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
     def json(self):
+        """
+        Return a JSON representation of the event
+
+        :return: JSON format of the instance
+        :rtype: str
+        """
         return json.dumps(self.__dict__)
 
     def summary(self, job_id, id):
+        """
+        Return a summary of the event for building the catalog
+
+        :param job_id: Job ID
+        :param id: Event ID
+        :return: Summary of the event
+        :rtype: dict
+        """
         return {
             "job_id": job_id,
             "id": id,
@@ -219,6 +246,12 @@ class Event:
         }
 
     def dump(self):
+        """
+        Return a string representation of the event
+
+        :return: String representation of the instance
+        :rtype: str
+        """
         return f"""
 nevent: \t\t {self.nevent}
 ndim: \t\t {self.ndim}
