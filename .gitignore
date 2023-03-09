@@ -5,8 +5,8 @@ __pycache__
 build
 dist
 messenger_test/data
-docs/source/*.rst
-!docs/source/index.rst
+docs/source/pyburst*.rst
+docs/source/modules.rst
 
 tests/*
 .pytest_cache

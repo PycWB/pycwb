@@ -6,12 +6,60 @@
 Welcome to PyBurst's documentation!
 ===================================
 
+PyBurst is a Python package for gravitational wave burst search based on the core function of cWB.
+
+...
+
 .. toctree::
+   :hidden:
    :maxdepth: 2
-   :caption: Contents:
 
-   modules
+   install
+   credit
+   Modules <modules>
+   genindex
 
+.. toctree::
+   :hidden:
+   :caption: User Guides
+   :maxdepth: 1
+
+   tutorials
+
+
+Getting Started
+===============
+
+Installation
+------------
+
+.. code-block:: bash
+
+    conda create -n pyburst python
+    conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
+    git clone git@git.ligo.org:yumeng.xu/pycwb.git
+    cd pycwb
+    make install
+
+
+Run your first burst search
+---------------------------
+
+Generate a user parameter file
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    pyburst_gen_config -o user_parameters.yaml
+
+Start searching!
+~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pyburst.search import search
+
+   search('./user_parameters.yaml')
 
 
 Indices and tables
