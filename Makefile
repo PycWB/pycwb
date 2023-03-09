@@ -21,3 +21,6 @@ clean_doc:
 
 quick_update: sdist_clean sdist
 	pip install dist/*.tar.gz
+
+install_doc_deps:
+	pip install sphinx sphinx_rtd_theme

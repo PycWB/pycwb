@@ -7,8 +7,6 @@ dist
 messenger_test/data
 docs/source/*.rst
 !docs/source/index.rst
-docs/make.bat
-docs/Makefile
 
 tests/*
 .pytest_cache

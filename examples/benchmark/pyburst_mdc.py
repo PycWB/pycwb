@@ -1,3 +1,3 @@
-from pyburst.modules.cwb_2g import cwb_2g
+from pyburst.search import search
 
-cwb_2g('./user_parameters_mdc.yaml')
+search('./user_parameters_mdc.yaml')

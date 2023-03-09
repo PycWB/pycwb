@@ -28,3 +28,11 @@ exclude_patterns = ["pyburst/vendor/*", ".DS_Store"]
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+
+# -- external links ----------------------------------------------------------
+
+intersphinx_mapping = {
+    'gwpy': ('https://gwpy.github.io/docs/stable/', None),
+    'numpy': ('https://docs.scipy.org/doc/numpy/', None),
+    'pycbc': ('https://pycbc.org/pycbc/latest/html/', None),
+}
