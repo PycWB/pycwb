@@ -1,6 +1,6 @@
 from filelock import SoftFileLock
 import json
-from pyburst import __version__
+import pyburst
 
 
 def create_catalog(filename, config, jobs):
@@ -19,7 +19,7 @@ def create_catalog(filename, config, jobs):
     """
     output = {
         "config": config.__dict__,
-        "version": __version__,
+        "version": pyburst.__version__,
         "jobs": [job.to_dict() for job in jobs],
         "events": []
     }

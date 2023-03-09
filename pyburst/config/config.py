@@ -40,6 +40,17 @@ class DQFile:
         return f"DQFile(ifo={self.ifo}, file={self.file}, dq_cat={self.dq_cat}, " \
                f"shift={self.shift}, invert={self.invert}, c4={self.c4})"
 
+    @property
+    def __dict__(self):
+        return {
+            "ifo": self.ifo,
+            "file": self.file,
+            "dq_cat": self.dq_cat,
+            "shift": self.shift,
+            "invert": self.invert,
+            "c4": self.c4
+        }
+
 
 class Config:
     """
