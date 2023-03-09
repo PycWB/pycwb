@@ -19,9 +19,9 @@ make install
 Example project can be found in [examples](./examples)
 
 ```python
-from pyburst.modules.cwb_2g import cwb_2g
+from pyburst.search import search
 
-cwb_2g('./user_parameters.yaml')
+search('./user_parameters.yaml')
 ```
 
 # pycWB
@@ -44,7 +44,7 @@ Run the following script to generate `config.ini` and the sample `user_parameter
 in your working directory
 
 ```bash
-pycwb_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>
+pyburst_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>
 ```
 
 edit these two files to fit your environment and your job
