@@ -1,10 +1,21 @@
+"""
+Module for Super Lag, not yet implemented
+"""
 import numpy as np
 import logging
 from .types import SLag
 
 logger = logging.getLogger(__name__)
 
+
 def get_slag_job_list(seg: tuple[np.ndarray | list, np.ndarray | list], seg_len):
+    """
+    Get the job list for SLag
+
+    :param seg:
+    :param seg_len:
+    :return:
+    """
     if len(seg[0]) == 0:
         logger.error("Error ilist size=0")
         raise Exception("Error ilist size=0")
@@ -28,8 +39,10 @@ def get_slag_job_list(seg: tuple[np.ndarray | list, np.ndarray | list], seg_len)
 
 def get_slag_list(slag_list, ifos, seg_len, seg_min, seg_edge, nDQF, iDQF, dqcat):
     """
-    if dqcat=CWB_CAT1 -> return the list of slags with dq len > segMin+2*segEdge
+    Get the list of slags \n
+    if dqcat=CWB_CAT1 -> return the list of slags with dq len > segMin+2*segEdge \n
     if dqcat=CWB_CAT2 -> return the list of slags with dq len > segMin
+
     :param slag_list:  vector list of slag structures
     :param ifos:  vector list of ifo names
     :param seg_len:  Segment length [sec]
@@ -48,6 +61,15 @@ def get_slag_list(slag_list, ifos, seg_len, seg_min, seg_edge, nDQF, iDQF, dqcat
 
 
 def add_slag_shifts(slag, ifos, seg_len, dq_files):
+    """
+    Add the shift to the dq files
+
+    :param slag:
+    :param ifos:
+    :param seg_len:
+    :param dq_files:
+    :return:
+    """
     for dq_file in dq_files:
         ifo_id = ifos.indexof(dq_file.ifo)
         if ifo_id:

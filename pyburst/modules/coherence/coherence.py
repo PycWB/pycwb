@@ -46,7 +46,18 @@ def coherence_parallel(config, net, tf_maps, wdm_list):
 
 def coherence(config, net, tf_maps, wdm_list):
     """
-    select coherent pixels
+    Select the significant pixels
+
+    Loop over resolution levels (nRES)
+
+    * Loop over detectors (cwb::nIFO)
+
+      * Compute the maximum energy of TF pixels (WSeries<double>::maxEnergy)
+    * Set pixel energy selection threshold (network::THRESHOLD)
+    * Loop over time lags (network::nLag)
+
+      * Select the significant pixels (network::getNetworkPixels)
+      * Single resolution clustering (network::cluster)
 
     :param config: config
     :type config: Config

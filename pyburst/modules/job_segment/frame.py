@@ -6,6 +6,19 @@ logger = logging.getLogger(__name__)
 
 
 def get_frame_meta(frame_list_file, ifo, label=".gwf"):
+    """
+    Get the frame metadata (start time, duration) from a frame list file.
+    The metadata will be extracted from the filename and stored in a FrameFile object.
+
+    :param frame_list_file: file containing the frame list
+    :type frame_list_file: str
+    :param ifo: name of the interferometer
+    :type ifo: str
+    :param label: label of the frame file for filtering, default is ".gwf" which will select all frame files
+    :type label: str
+    :return: list of frame metadata
+    :rtype: list[FrameFile]
+    """
     # read the frame list file
     frame_list = []
 
@@ -46,6 +59,20 @@ def get_frame_meta(frame_list_file, ifo, label=".gwf"):
 
 
 def select_frame_list(frame_list, start, stop, seg_edge):
+    """
+    Select the frame files that are within the segment (start, stop) with a buffer of seg_edge seconds.
+
+    :param frame_list: list of frame metadata
+    :type frame_list: list[FrameFile]
+    :param start: start time of the segment
+    :type start: int
+    :param stop: stop time of the segment
+    :type stop: int
+    :param seg_edge: buffer of the segment
+    :type seg_edge: int or float
+    :return: list of frame
+    :rtype: list[FrameFile]
+    """
     seg_start = start - seg_edge
     seg_stop = stop + seg_edge
 

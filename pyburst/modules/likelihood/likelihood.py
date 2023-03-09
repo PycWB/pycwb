@@ -11,17 +11,24 @@ from pyburst.modules.catalog import add_events_to_catalog
 logger = logging.getLogger(__name__)
 
 
-def likelihood(job_id, config: Config, net: ROOT.network,
-               sparse_table_list: list,
-               pwc_list: list,
-               wdm_list: list[ROOT.WDM(np.double)]):
+def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
     """
     calculate likelihood
-    :param config:
-    :param net:
-    :param strain_list:
-    :param wdm_list:
-    :return:
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network
+    :type net: ROOT.network
+    :param strain_list: list of strain data
+    :type strain_list: list[ROOT.wavearray(np.double)]
+    :param sparse_table_list: list of sparse tables
+    :type sparse_table_list: list[ROOT.WSeries(np.double)]
+    :param pwc_list: list of cluster
+    :type pwc_list: list[ROOT.cluster(np.double)]
+    :param wdm_list: list of WDM
+    :type wdm_list: list[ROOT.WDM(np.double)]
+    :return: the list of events
+    :rtype: list[Event]
     """
 
     timer_start = time.perf_counter()

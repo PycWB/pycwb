@@ -26,7 +26,8 @@ if not hasattr(ROOT, "WDM"):
 
 def declare_function():
     """
-    This is to declare a c++ function to copy numpy array to wavearray (copying with python loop is too slow)
+    This is to declare a c++ function to copy numpy array to wavearray (copying with python loop is too slow) and
+    return wavearray data to float array
     """
     ROOT.gInterpreter.Declare("""
     void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {

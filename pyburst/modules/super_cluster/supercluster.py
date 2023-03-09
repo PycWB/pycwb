@@ -14,6 +14,27 @@ logger = logging.getLogger(__name__)
 def supercluster(config: Config, net: ROOT.network,
                  cluster_list: list[ROOT.netcluster],
                  sparse_table_list: list):
+    """
+    Multi resolution clustering & Rejection of the sub-threshold clusters
+
+    Loop over time lags \n
+    * Read clusters from job file (netcluster::read) \n
+    * Multi resolution clustering (netcluster::supercluster) \n
+    * Compute for each pixel the time delay amplitudes (netcluster::loadTDampSSE) \n
+    * Rejection of the sub-threshold clusters (network::subNetCut) \n
+    * Defragment clusters (netcluster::defragment) \n
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network
+    :type net: ROOT.network
+    :param cluster_list: list of clusters
+    :type cluster_list: list[ROOT.netcluster]
+    :param sparse_table_list: list of sparse tables
+    :type sparse_table_list: list[ROOT.WSeries(np.double)]
+    :return: the list of clusters
+    :rtype: list[ROOT.netcluster]
+    """
     # timer
     timer_start = time.perf_counter()
 

@@ -2,11 +2,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_seg_list(seg_list: tuple[np.ndarray | list, np.ndarray | list], merged_seg_list=None, figsize=(24, 6)):
+def plot_seg_list(seg_list, merged_seg_list=None, figsize=(24, 6)):
     """Plot the segment list.
 
-    Args:
-        seg_list (list): The segment list.
+    :param seg_list: list of segments
+    :type seg_list: tuple[np.ndarray | list, np.ndarray | list]
+    :param merged_seg_list: list of merged segments which will be analyzed
+    :type merged_seg_list: tuple[np.ndarray | list, np.ndarray | list], optional
+    :param figsize: figure size, defaults to (24, 6)
+    :type figsize: tuple[int, int], optional
     """
 
     plt.figure(figsize=figsize)

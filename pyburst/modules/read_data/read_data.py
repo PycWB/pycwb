@@ -13,6 +13,24 @@ logger = logging.getLogger(__name__)
 
 
 def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
+    """
+    Read data from GWF file
+
+    :param ifo_index: the index of the ifo in the config.ifo list for processing with user defined parameters
+    :type ifo_index: int
+    :param config: user configuration
+    :type config: Config
+    :param filename: path to the gwf file
+    :type filename: str
+    :param channel: channel name to read from the gwf file
+    :type channel: str
+    :param start: start time to read from the gwf file, defaults to reading from the beginning of the file
+    :type start: float, optional
+    :param end: end time to read from the gwf file, defaults to reading to the end of the file
+    :type end: float, optional
+    :return: strain data
+    :rtype: pycbc.types.timeseries.TimeSeries
+    """
     # Read data from GWF file
     if start or end:
         logger.info(f'Reading data from {filename} ({channel}) from {start} to {end}')
@@ -46,19 +64,22 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     return data
 
 
-def read_from_online(detector, sample_rate, channel, start, end):
-    data = segmentlist([segment(start, end)])
+def read_from_online(channels, start, end):
+    """
+    Read data from data server with gwpy
+
+    :param channels: list of channels to read
+    :type channels: list[str]
+    :param start: start time to read from the data server
+    :type start: float
+    :param end: end time to read from the data server
+    :type end: float
+    :return: list of strain data
+    :rtype: list[gwpy.timeseries.TimeSeries]
+    """
     from gwpy.timeseries import TimeSeriesDict
 
-    channels = ['H1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01',
-                'L1:DCS-CALIB_STRAIN_CLEAN_SUB60HZ_C01',
-                'V1:Hrec_hoft_16384Hz']
-
-    data_dict = TimeSeriesDict.get(
-        channels,
-        1242442967 - 300,
-        1242442967 + 300,
-    )
+    data_dict = TimeSeriesDict.get(channels, start, end)
 
     data = [data_dict[c] for c in channels]
     # Check data
@@ -72,7 +93,21 @@ def read_from_online(detector, sample_rate, channel, start, end):
     return data
 
 
-def read_from_catalog(catalog: str, event: str, detectors: list, time_slice: tuple = None):
+def read_from_catalog(catalog, event, detectors, time_slice = None):
+    """
+    Read data from catalog
+
+    :param catalog: the name of the catalog to read from
+    :type catalog: str
+    :param event: the name of the event
+    :type event: str
+    :param detectors: list of detectors
+    :type detectors: list[str]
+    :param time_slice: time slice for cropping the data, defaults to None
+    :type time_slice: tuple, optional
+    :return: (time series data, merger object)
+    :rtype: tuple[list[pycbc.types.timeseries.TimeSeries], pycbc.catalog.Merger]
+    """
     # Read data from catalog
     m = pycbc.catalog.Merger(event, source=catalog)
     data = [m.strain(ifo) for ifo in detectors]
@@ -81,33 +116,42 @@ def read_from_catalog(catalog: str, event: str, detectors: list, time_slice: tup
         for i in range(len(data)):
             data[i] = data[i].crop(time_slice[0], time_slice[1])
 
-    wavearray = [convert_pycbc_timeseries_to_wavearray(d) for d in data]
-
-    return data, m, wavearray
+    return data, m
 
 
-def read_from_config(config):
-    # timer
-    timer_start = time.perf_counter()
-
-    # data = []
-    with Pool(processes=min(config.nproc, config.nIFO)) as pool:
-        data = pool.starmap(_read_from_config_wrapper, [(config, i) for i in range(len(config.ifo))])
-
-    # timer
-    timer_end = time.perf_counter()
-    logger.info(f'Read data from config in {timer_end - timer_start} seconds')
-    return data
-
-
-def _read_from_config_wrapper(config, i):
-    with open(config.frFiles[i], 'r') as f:
-        filenames = f.read()
-    # read data from the files
-    return read_from_gwf(i, config, filenames, config.channelNamesRaw[i])
+# def _read_from_config(config):
+#     # timer
+#     timer_start = time.perf_counter()
+#
+#     # data = []
+#     with Pool(processes=min(config.nproc, config.nIFO)) as pool:
+#         data = pool.starmap(_read_from_config_wrapper, [(config, i) for i in range(len(config.ifo))])
+#
+#     # timer
+#     timer_end = time.perf_counter()
+#     logger.info(f'Read data from config in {timer_end - timer_start} seconds')
+#     return data
+#
+#
+# def _read_from_config_wrapper(config, i):
+#     with open(config.frFiles[i], 'r') as f:
+#         filenames = f.read()
+#     # read data from the files
+#     return read_from_gwf(i, config, filenames, config.channelNamesRaw[i])
 
 
 def read_from_job_segment(config, job_seg: WaveSegment):
+    """
+    Read data from the frame files in job segment in parallel
+    and merge them if there are more than one frame files for each ifo
+
+    :param config: user configuration
+    :type config: Config
+    :param job_seg: job segment
+    :type job_seg: WaveSegment
+    :return: list of strain data
+    :rtype: list[pycbc.types.timeseries.TimeSeries]
+    """
     timer_start = time.perf_counter()
 
     # read data from the files in parallel
@@ -170,4 +214,3 @@ def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
 
     i = config.ifo.index(frame.ifo)
     return read_from_gwf(i, config, frame.path, config.channelNamesRaw[i], start=start, end=end)
-

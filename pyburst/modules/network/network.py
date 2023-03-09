@@ -197,7 +197,7 @@ def init_network(config, net, tf_maps, nRMS_list, run_id):
     return net
 
 
-def restore_skymap(config, net, skyres = None):
+def restore_skymap(config, net, skyres=None):
     """
     Restore skymap from configuration, if sky resolution is not specified, use the one in configuration
 
@@ -207,7 +207,7 @@ def restore_skymap(config, net, skyres = None):
     :type net: ROOT.network
     :param skyres: sky resolution
     :type skyres: int, optional
-    :return:
+    :return: None
     """
     if skyres:
         if config.healpix:
@@ -222,7 +222,17 @@ def restore_skymap(config, net, skyres = None):
         set_sky_mask(net, config, config.skyMaskCCFile, 'c')
 
 
-def update_sky_map(config: Config, net: ROOT.network, skyres: int = None):
+def update_sky_map(config, net, skyres=None):
+    """
+    Update skymap from configuration, if sky resolution is not specified, use the one in configuration
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :param skyres: sky resolution
+    :type skyres: int, optional
+    """
     logger.info("Setting skymaps")
     if skyres:
         net.setSkyMaps(int(skyres))
@@ -237,6 +247,16 @@ def update_sky_map(config: Config, net: ROOT.network, skyres: int = None):
 
 
 def update_sky_mask(config: Config, net: ROOT.network, skyres: int = None):
+    """
+    Update sky mask from configuration, if sky resolution is not specified, use the one in configuration
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network object
+    :type net: ROOT.network
+    :param skyres: sky resolution
+    :type skyres: int, optional
+    """
     logger.info("Setting sky mask")
 
     if skyres:
@@ -254,7 +274,21 @@ def update_sky_mask(config: Config, net: ROOT.network, skyres: int = None):
             set_sky_mask(net, config, config.skyMaskCCFile, 'c')
 
 
-def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str):
+def set_liv_time(config, net, lagBuffer, lagMode):
+    """
+    Set time shift for network
+
+    :param config: user configuration
+    :type config: Config
+    :param net: network
+    :type net: ROOT.network
+    :param lagBuffer: lag buffer
+    :type lagBuffer: str
+    :param lagMode: lag mode
+    :type lagMode: str
+    :return: updated network
+    :rtype: ROOT.network
+    """
     if lagBuffer:
         lags = net.setTimeShifts(config.lagSize, config.lagStep, config.lagOff, config.lagMax,
                                  lagBuffer,
@@ -269,6 +303,14 @@ def set_liv_time(config: Config, net: ROOT.network, lagBuffer: str, lagMode: str
 
 
 def get_lag_buffer(config: Config):
+    """
+    Get lag buffer from configuration
+
+    :param config: user configuration
+    :type config: Config
+    :return: lag buffer and lag mode
+    :rtype: str, str
+    """
     if config.lagMode == "r":
         with open(config.lagFile, "r") as f:
             lagBuffer = f.read()
@@ -284,9 +326,6 @@ def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str,
     """
     set earth/celestial sky mask is used to define what are the sky locations
     that are analyzed by default all sky is used
-    :param config: Config object
-    :param net: network object
-    :param options: used to define the earth/celestial SkyMap \n
 
     option A : \n
     skycoord='e'  \n
@@ -301,6 +340,10 @@ def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str,
       format : two columns ascii file -> [sky_index	value] \n
       sky_index : is the sky grid index \n
       value     : if !=0 the index sky location is used for the analysis \n
+
+    :param config: Config object
+    :param net: network object
+    :param options: used to define the earth/celestial SkyMap \n
     :param skycoord: sky coordinates : 'e'=earth, 'c'=celestial
     :param skyres: sky resolution : def=-1 -> use the value defined in parameters (angle,healpix)
     :return:
@@ -360,17 +403,18 @@ def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str,
 
 def make_sky_mask(sky_mask: ROOT.skymap, theta: float, phi: float, radius: float):
     """
-    make a sky mask
-    is used to define what are the sky locations that are analyzed
+    sky mask is used to define what are the sky locations that are analyzed
 
-    theta,phi,radius : used to define the Celestial SkyMap
-                       define a circle centered in (theta,phi) and radius=radius
-                       theta : [-90,90], phi : [0,360], radius : degrees
+    theta,phi,radius are used to define the Celestial SkyMap, define a circle centered in (theta,phi) and radius=radius
 
-    SkyMask          : output sky celestial mask
-                       inside the circle is filled with 1 otherwise with 0
-    :param
-    :return:
+    :param sky_mask: output sky celestial mask inside the circle is filled with 1 otherwise with 0
+    :type sky_mask: ROOT.skymap
+    :param theta: theta, [-90,90]
+    :type theta: float
+    :param phi: phi, [0,360]
+    :type phi: float
+    :param radius: radius, degrees
+    :type radius: float
     """
     l = sky_mask.size()
     healpix = sky_mask.getOrder()
