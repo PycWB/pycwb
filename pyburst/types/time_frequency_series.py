@@ -34,3 +34,10 @@ class TimeFrequencySeries:
         self.f_low = f_low
         #: high frequency cutoff
         self.f_high = f_high
+
+
+class SparseTable(TimeFrequencySeries):
+    def __init__(self, data, wavelet, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
+        super().__init__(data, wavelet, whiten_mode, bpp, w_rate, f_low, f_high)
+        #: List of significant pixels
+        self.pixels = []
