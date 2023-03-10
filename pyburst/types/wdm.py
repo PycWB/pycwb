@@ -58,6 +58,24 @@ class WDM:
         """
         self.wavelet.setTDFilter(coeff_factor, upsample_factor)
 
+    def allocate(self, data=None):
+        """
+        allocate memory for the WDM sliced array
+
+        :param size: size of the WDM sliced array
+        :type size: int
+        :param data: data to be stored in the WDM sliced array
+        :type data: pycbc.types.timeseries.TimeSeries
+        """
+        from pyburst.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray
+
+
+        if data is None:
+            return self.wavelet.allocate()
+
+        return self.wavelet.allocate(len(data), data.data)
+
+
     @property
     def m_H(self):
         """
@@ -71,3 +89,31 @@ class WDM:
         number of lowpass wavelet filter coefficients
         """
         return self.wavelet.m_L
+
+    @property
+    def nWWS(self):
+        """
+        number of time delay filters
+        """
+        return self.wavelet.nWWS
+
+    @property
+    def nSTS(self):
+        """
+        number of time delay filters
+        """
+        return self.wavelet.nSTS
+
+    @nSTS.setter
+    def nSTS(self, value):
+        self.wavelet.nSTS = value
+
+    def t2w(self, k):
+        """
+        direct transform.
+
+        :param k: param: -1 - orthonormal, 0 - power map, >0 - upsampled map. k = 0 requests power map of combined quadratures (not amplitudes for both)
+        :type k: int
+        """
+        self.wavelet.t2w(k)
+

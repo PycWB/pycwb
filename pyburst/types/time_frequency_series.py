@@ -35,18 +35,20 @@ class TimeFrequencySeries:
         #: high frequency cutoff
         self.f_high = f_high
 
-    # def forward(self, k=-1):
-    #     """
-    #     Performs forward wavelet transform on data
-    #     """
-    #     if self.wavelet.allocate():
-    #         self.wavelet.nSTS = self.wavelet.nWWS
-    #         self.wavelet.t2w(k)
-    #         if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
-    #             self.data = self.wavelet.pWWS
-    #             self.Size = self.wavelet.nWWS
-    #             self.Slice = slice(0, self.wavelet.nWWS, 1)
-    #         self.wrate = self.Slice.size() / (self.stop() - self.start())
+    def forward(self, k=-1):
+        """
+        Performs forward wavelet transform on data (Not working yet)
+        """
+        if self.wavelet.allocate(self.data):
+            self.wavelet.nSTS = self.wavelet.nWWS
+            self.wavelet.t2w(k)
+            # if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
+            #     self.data = self.wavelet.pWWS
+            #     self.Size = self.wavelet.nWWS
+            #     self.Slice = slice(0, self.wavelet.nWWS, 1)
+            # self.wrate = self.Slice.size() / (self.stop() - self.start())
+        else:
+            raise ValueError('Wavelet transform failed')
 
 
 class SparseTable(TimeFrequencySeries):
