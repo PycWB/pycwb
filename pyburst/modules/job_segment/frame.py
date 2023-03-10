@@ -1,5 +1,5 @@
 from pathlib import Path
-from .types import FrameFile
+from pyburst.types import FrameFile
 import logging
 
 logger = logging.getLogger(__name__)

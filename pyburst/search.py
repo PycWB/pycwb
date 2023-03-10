@@ -1,5 +1,4 @@
 import os, time
-from concurrent.futures import ProcessPoolExecutor as Pool
 import multiprocessing
 import pyburst
 from pyburst.utils import logger_init
@@ -78,24 +77,6 @@ def analyze_job_segment(config, job_seg):
 
     # save to png
     plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
-
-    # save event to json
-    # for i, event in enumerate(events):
-    #     try:
-    #         output = event.json()
-    #         with open(f'{config.outputDir}/event_{job_id}_{i + 1}.json', 'w') as f:
-    #             f.write(output)
-    #     except Exception as e:
-    #         logger.error(e)
-
-    # save event to catalog
-    # event_summary = [event.summary(job_id, i+1) for i, event in enumerate(events)]
-    # try:
-    #     add_events_to_catalog(f"{config.outputDir}/catalog.json", event_summary)
-    # except Exception as e:
-    #     logger.error(e)
-
-    # del data, tf_maps, nRMS_list, net, wdm_list, sparse_table_list, cluster_list, pwc_list, events
 
     # calculate the performance
     end_time = time.perf_counter()

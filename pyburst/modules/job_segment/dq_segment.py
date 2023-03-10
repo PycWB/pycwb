@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import csv, math
-from .types import WaveSegment
+from pyburst.types import WaveSegment
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ Module for Super Lag, not yet implemented
 """
 import numpy as np
 import logging
-from .types import SLag
+from pyburst.types import SLag
 
 logger = logging.getLogger(__name__)
 
