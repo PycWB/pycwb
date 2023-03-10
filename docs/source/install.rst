@@ -41,7 +41,7 @@ then run the ``make doc`` command.
     pip install sphinx sphinx_rtd_theme
     make doc
 
-The documentation will be built in the ``docs/_build/html`` directory.
+The documentation will be built in the ``docs/build/html`` directory.
 
 
 .. caution::

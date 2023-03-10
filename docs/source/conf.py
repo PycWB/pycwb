@@ -5,11 +5,12 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from pyburst import __version__
 
 project = 'PyBurst'
 copyright = '2023, Yumeng Xu'
 author = 'Yumeng Xu'
-release = '0.10.0'
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

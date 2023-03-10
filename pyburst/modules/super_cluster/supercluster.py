@@ -11,9 +11,7 @@ from pyburst.modules.netcluster import append_cluster, copy_metadata
 logger = logging.getLogger(__name__)
 
 
-def supercluster(config: Config, net: ROOT.network,
-                 cluster_list: list[ROOT.netcluster],
-                 sparse_table_list: list):
+def supercluster(config, net, cluster_list, sparse_table_list):
     """
     Multi resolution clustering & Rejection of the sub-threshold clusters
 

@@ -19,10 +19,8 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
     :type config: Config
     :param net: network
     :type net: ROOT.network
-    :param strain_list: list of strain data
-    :type strain_list: list[ROOT.wavearray(np.double)]
     :param sparse_table_list: list of sparse tables
-    :type sparse_table_list: list[ROOT.WSeries(np.double)]
+    :type sparse_table_list: list[ROOT.SSeries(np.double)]
     :param pwc_list: list of cluster
     :type pwc_list: list[ROOT.cluster(np.double)]
     :param wdm_list: list of WDM
