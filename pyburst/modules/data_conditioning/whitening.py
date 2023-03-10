@@ -13,14 +13,14 @@ def whitening(config, wdm_white, h):
     :param config: config object
     :type config: Config
     :param wdm_white: WDM used for whitening
-    :type wdm_white: ROOT.WDM
+    :type wdm_white: WDM
     :param h: strain data
     :type h: ROOT.wavearray(np.double)
     :return: (whitened strain, nRMS)
     :rtype: tuple[ROOT.wavearray(np.double), float]
     """
 
-    tf_map = ROOT.WSeries(np.double)(h, wdm_white)
+    tf_map = ROOT.WSeries(np.double)(h, wdm_white.wavelet)
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)

@@ -1,16 +1,5 @@
 import ROOT
-import os, logging
-import pyburst
-logger = logging.getLogger(__name__)
+from pyburst.utils.check_ROOT import check_and_load_wavelet
 
-if not hasattr(ROOT, "WDM"):
-    try:
-        pyburst_path = os.path.dirname(pyburst.__file__)
-        logger.info("Loading wavelet library from " + f"{pyburst_path}/vendor/lib/wavelet")
-        ROOT.gSystem.Load(f"{pyburst_path}/vendor/lib/wavelet")
-    except:
-        logger.error("Cannot find wavelet library in pyburst, trying to load from system")
-        try:
-            ROOT.gSystem.Load("wavelet")
-        except:
-            logger.error("Cannot load wavelet library")
+# load wavelet library if not loaded
+check_and_load_wavelet(ROOT)

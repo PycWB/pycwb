@@ -1,5 +1,4 @@
 import ROOT
-import pyburst, os
 import numpy as np
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
@@ -11,19 +10,6 @@ from pyburst.types import TimeFrequencySeries, WDM
 c_double_p = ctypes.POINTER(ctypes.c_double)
 
 logger = logging.getLogger(__name__)
-
-if not hasattr(ROOT, "WDM"):
-    logger.info("Loading wavelet library")
-    try:
-        pyburst_path = os.path.dirname(pyburst.__file__)
-        ROOT.gSystem.Load(f"{pyburst_path}/vendor/lib/wavelet")
-    except:
-        logger.error("Cannot find wavelet library in pycwb, trying to load from system")
-        try:
-            ROOT.gSystem.Load("wavelet")
-        except:
-            logger.error("Cannot find wavelet library")
-            raise Exception("Cannot find wavelet library")
 
 
 def declare_function():
@@ -216,7 +202,7 @@ def convert_wseries_to_time_frequency_series(h):
     data = convert_wseries_to_pycbc_timeseries(h)
 
     # create a new time frequency series with the pycbc timeseries and the wavelet
-    return TimeFrequencySeries(data=data, wavelet=WDM(h.pWavelet), whiten_mode=h.w_mode,
+    return TimeFrequencySeries(data=data, wavelet=WDM(wavelet=h.pWavelet), whiten_mode=h.w_mode,
                                bpp=h.bpp, w_rate=h.wRate, f_low=h.f_low, f_high=h.f_high)
 
 

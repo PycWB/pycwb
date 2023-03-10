@@ -35,8 +35,18 @@ def create_network(run_id, config, tf_list, nRMS_list):
     # load MRA catalog
     load_MRA(config, net)
 
+    beta_order = WDM_BETAORDER  # beta function order for Meyer
+    precision = WDM_PRECISION  # wavelet precision
+
+    if net.wdmMRA.tag != 0:
+        beta_order = net.wdmMRA.BetaOrder
+        precision = net.wdmMRA.precision
+
     # create WDM
-    wdm_list = create_wdm(config, net)
+    wdm_list = create_wdm(config, beta_order, precision)
+
+    for wdm in wdm_list:
+        net.add(wdm.wavelet)
 
     # check layers
     check_layers_with_MRAcatalog(config, net)
@@ -46,7 +56,7 @@ def create_network(run_id, config, tf_list, nRMS_list):
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
-    return net, [WDM(wdm) for wdm in wdm_list]
+    return net, wdm_list
 
 
 def load_MRA(config, net):
@@ -63,29 +73,23 @@ def load_MRA(config, net):
     net.setMRAcatalog(config.MRAcatalog)
 
 
-def create_wdm(config, net):
+def create_wdm(config, beta_order, precision):
     """
     Create WDM
 
     :param config: user configuration
     :type config: Config
-    :param net: network object
-    :type net: ROOT.network
-    :return: list of WDM
-    :rtype: list[ROOT.WDM(np.double)]
+    :param beta_order: beta function order for Meyer
+    :type beta_order: int
+    :param precision: wavelet precision
+    :type precision: int
     """
-    beta_order = WDM_BETAORDER  # beta function order for Meyer
-    precision = WDM_PRECISION  # wavelet precision
-
-    if net.wdmMRA.tag != 0:
-        beta_order = net.wdmMRA.BetaOrder
-        precision = net.wdmMRA.precision
 
     wdm_list = []
     for i in range(config.l_low, config.l_high + 1):
         level = config.l_high + config.l_low - i
         layers = 2 ** level if level > 0 else 0
-        wdm = ROOT.WDM(np.double)(layers, layers, beta_order, precision)
+        wdm = WDM(layers, layers, beta_order, precision)
         wdmFLen = wdm.m_H / config.rateANA
 
         if wdmFLen > config.segEdge + 0.001:
@@ -108,7 +112,6 @@ def create_wdm(config, net):
             raise ValueError("segEdge must be > 1.5x the length for time delay amplitudes!!!")
 
         wdm_list.append(wdm)
-        net.add(wdm)
 
     return wdm_list
 

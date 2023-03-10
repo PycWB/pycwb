@@ -32,11 +32,10 @@ def data_conditioning(config, strains):
 
     # initialize WDM
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
-    wdm_white = ROOT.WDM(np.double)(layers_white,
-                                    layers_white, WDM_BETAORDER, WDM_PRECISION)
+    wdm_white = WDM(layers_white, layers_white, WDM_BETAORDER, WDM_PRECISION)
 
     layers = int(config.rateANA / 8)
-    wdm = ROOT.WDM(np.double)(layers, layers, WDM_BETAORDER, WDM_PRECISION)
+    wdm = WDM(layers, layers, WDM_BETAORDER, WDM_PRECISION)
 
     with Pool(processes=min(config.nproc, config.nIFO)) as p:
         res = p.starmap(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))])

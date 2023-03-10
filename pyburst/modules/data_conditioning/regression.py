@@ -13,14 +13,14 @@ def regression(config, wdm, h):
 
     :param config: config object
     :type config: Config
-    :param wdm: WDM object
-    :type wdm: ROOT.WDM
+    :param wdm: WDM transform for regression
+    :type wdm: WDM
     :param h: data to be cleaned
     :type h: ROOT.wavearray(np.double)
     :return: cleaned data
     :rtype: ROOT.wavearray(np.double)
     """
-    tf_map = ROOT.WSeries(np.double)(h, wdm)
+    tf_map = ROOT.WSeries(np.double)(h, wdm.wavelet)
     tf_map.Forward()
 
     # Construct regression from WSeries, add target channel, set low and high frequencies

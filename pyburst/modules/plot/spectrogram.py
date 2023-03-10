@@ -1,7 +1,7 @@
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 
-from pyburst.types import TimeFrequencySeries
+from pyburst.types import TimeFrequencySeries, WDM
 from pyburst.utils import WSeries_to_matrix, convert_wavearray_to_timeseries
 from gwpy.spectrogram import Spectrogram
 import numpy as np
@@ -43,8 +43,8 @@ def plot_spectrogram(wavearray, xmin=None, xmax=None, figsize=(24, 6), gwpy_plot
         ax = plot.gca()
         ax.set_ylim(15, 1000)
     else:
-        wdm = ROOT.WDM(np.double)(32, 64, 4, 8)
-        tf_map = ROOT.WSeries(np.double)(wavearray, wdm)
+        wdm = WDM(32, 64, 4, 8)
+        tf_map = ROOT.WSeries(np.double)(wavearray, wdm.wavelet)
         tf_map.Forward()
 
         plot = Spectrogram(WSeries_to_matrix(tf_map).T,
