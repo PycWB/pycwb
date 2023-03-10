@@ -23,7 +23,7 @@ def coherence_parallel(config, net, tf_maps, wdm_list):
     :param tf_maps: list of strain
     :type tf_maps: list[ROOT.wavearray(np.double)]
     :param wdm_list: list of wdm
-    :type wdm_list: list[ROOT.WDM(np.double)]
+    :type wdm_list: list[WDM]
     :return:
     """
     timer_start = time.perf_counter()
@@ -69,7 +69,7 @@ def coherence(config, net, tf_maps, wdm_list):
     :param tf_maps: list of strain
     :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wdm
-    :type wdm_list: list[TimeFrequencySeries]
+    :type wdm_list: list[WDM]
     :return: (sparse_table_list, pwc_list)
     :rtype: (list[ROOT.SparseTable], list[ROOT.PWC])
     """
@@ -137,7 +137,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
         # alp += tf_map.maxEnergy(ts, wdm, m_tau, up_n, net.pattern)
         # tf_map.setlow(config.fLow)
         # tf_map.sethigh(config.fHigh)
-        alp += net.getifo(n).getTFmap().maxEnergy(ts, wdm,
+        alp += net.getifo(n).getTFmap().maxEnergy(ts, wdm.wavelet,
                                                   m_tau, up_n,
                                                   net.pattern)
         net.getifo(n).getTFmap().setlow(config.fLow)
@@ -159,9 +159,9 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
 
     # init sparse table (used in supercluster stage : set the TD filter size)
     sparse_table = []
-    wdm.setTDFilter(config.TDSize, 1)
+    wdm.set_td_filter(config.TDSize, 1)
     for n in range(config.nIFO):
-        ws = ROOT.WSeries(np.double)(tf_maps[n], wdm)
+        ws = ROOT.WSeries(np.double)(tf_maps[n], wdm.wavelet)
         ws.Forward()
         ss = ROOT.SSeries(np.double)()
         ss.SetMap(ws)

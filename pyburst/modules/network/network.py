@@ -2,9 +2,8 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
-from pyburst.types import TimeFrequencySeries
-from pyburst.utils import convert_to_wseries, convert_time_frequency_series_to_wseries
-from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
+from pyburst.types import TimeFrequencySeries, WDM
+from pyburst.utils import convert_to_wseries
 import numpy as np
 import argparse, shlex
 
@@ -23,8 +22,8 @@ def create_network(run_id, config, tf_list, nRMS_list):
     :type tf_list: list[TimeFrequencySeries]
     :param nRMS_list: list of noise RMS values
     :type nRMS_list: list[TimeFrequencySeries]
-    :return: (net, wdm_list)
-    :rtype: (ROOT.network, list[ROOT.WDM(np.double)])
+    :return: (net, list of WDM for each layer)
+    :rtype: (ROOT.network, list[WDM])
     """
 
     # convert to ROOT.WSeries
@@ -47,7 +46,7 @@ def create_network(run_id, config, tf_list, nRMS_list):
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
-    return net, wdm_list
+    return net, [WDM(wdm) for wdm in wdm_list]
 
 
 def load_MRA(config, net):

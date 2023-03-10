@@ -26,7 +26,7 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
     :param pwc_list: list of cluster
     :type pwc_list: list[ROOT.cluster(np.double)]
     :param wdm_list: list of WDM
-    :type wdm_list: list[ROOT.WDM(np.double)]
+    :type wdm_list: list[WDM]
     :return: the list of events
     :rtype: list[Event]
     """
@@ -35,11 +35,10 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
 
     # set low-rate TD filters
     for k in range(config.nRES):
-        wdm_list[k].setTDFilter(config.TDSize, config.upTDF)
+        wdm_list[k].set_td_filter(config.TDSize, config.upTDF)
     net.setDelayIndex(config.TDRate)
 
     # load sparse table
-    # cout << "Loading sparse TF map ... " << endl;
     logger.info("Loading sparse TF map ... ")
     for n in range(config.nIFO):
         pD = net.getifo(n)
