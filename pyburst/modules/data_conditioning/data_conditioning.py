@@ -25,7 +25,7 @@ def data_conditioning(config, strains):
     :param strains: list of strain data
     :type strains: list[pycbc.types.timeseries.TimeSeries] or list[gwpy.timeseries.TimeSeries] or list[ROOT.wavearray(np.double)]
     :return: (conditioned_strains, nRMS_list)
-    :rtype: tuple[list[pycbc.types.timeseries.TimeSeries], list[float]]
+    :rtype: tuple[list[TimeFrequencySeries], list[ROOT.WSeries(np.double)]]
     """
     # timer
     timer_start = time.perf_counter()
@@ -64,4 +64,4 @@ def _wrapper(config, strain, wdm, wdm_white):
     data_reg = regression(config, wdm, wave_array)
     tf_map, nRMS = whitening(config, wdm_white, data_reg)
 
-    return convert_wseries_to_time_frequency_series(tf_map), nRMS
+    return convert_wseries_to_time_frequency_series(tf_map), convert_wseries_to_time_frequency_series(nRMS)

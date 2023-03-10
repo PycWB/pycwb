@@ -212,9 +212,12 @@ def convert_wseries_to_time_frequency_series(h):
     :rtype: TimeFrequencySeries
     """
 
+    # convert wseries to pycbc timeseries
     data = convert_wseries_to_pycbc_timeseries(h)
 
-    return TimeFrequencySeries(data=data, wavelet=WDM(h.pWavelet), whiten_mode=h.w_mode)
+    # create a new time frequency series with the pycbc timeseries and the wavelet
+    return TimeFrequencySeries(data=data, wavelet=WDM(h.pWavelet), whiten_mode=h.w_mode,
+                               bpp=h.bpp, w_rate=h.wRate, f_low=h.f_low, f_high=h.f_high)
 
 
 def convert_time_frequency_series_to_wseries(h):
@@ -227,10 +230,20 @@ def convert_time_frequency_series_to_wseries(h):
     :rtype: WSeries
     """
 
+    # conver pycbc timeseries to wavearray
     data = convert_pycbc_timeseries_to_wavearray(h.data)
+    # create a new wseries with the wavearray and the wavelet
     w = ROOT.WSeries(np.double)(data, h.wavelet.wavelet)
-
+    # set the whitening mode
     w.w_mode = h.whiten_mode
+    # set the bpp
+    w.bpp = h.bpp
+    # set the wavelet zero layer rate
+    w.wRate = h.w_rate
+    # set the low frequency
+    w.f_low = h.f_low
+    # set the high frequency
+    w.f_high = h.f_high
 
     return w
 

@@ -7,7 +7,7 @@ import logging
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 from pyburst.config import Config
 from pyburst.types import TimeFrequencySeries
-from pyburst.utils import convert_pycbc_timeseries_to_wavearray, convert_time_frequency_series_to_wseries, convert_to_wseries
+from pyburst.utils import convert_wseries_to_time_frequency_series, convert_to_wseries
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +67,9 @@ def coherence(config, net, tf_maps, wdm_list):
     :param net: network
     :type net: ROOT.network
     :param tf_maps: list of strain
-    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wdm
-    :type wdm_list: list[ROOT.WDM(np.double)]
-    :param threshold_list: list of threshold
-    :type threshold_list: list[float]
+    :type wdm_list: list[TimeFrequencySeries]
     :return: (sparse_table_list, pwc_list)
     :rtype: (list[ROOT.SparseTable], list[ROOT.PWC])
     """
@@ -193,7 +191,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
             pwc.cpf(wc, False)
         else:
             net.cluster(1, 1)
-        # TODO: test if deepcopy works
+
         pwc_list.append(copy.deepcopy(pwc))
         # store cluster into temporary job file
         csize_tot += pwc.csize()
