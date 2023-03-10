@@ -25,7 +25,7 @@ def data_conditioning(config, strains):
     :param strains: list of strain data
     :type strains: list[pycbc.types.timeseries.TimeSeries] or list[gwpy.timeseries.TimeSeries] or list[ROOT.wavearray(np.double)]
     :return: (conditioned_strains, nRMS_list)
-    :rtype: tuple[list[TimeFrequencySeries], list[ROOT.WSeries(np.double)]]
+    :rtype: tuple[list[TimeFrequencySeries], list[TimeFrequencySeries]]
     """
     # timer
     timer_start = time.perf_counter()
