@@ -6,6 +6,8 @@ from pyburst.config import Config
 import ROOT
 import numpy as np
 
+from pyburst.utils import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+
 
 def regression(config, wdm, h):
     """
@@ -16,10 +18,12 @@ def regression(config, wdm, h):
     :param wdm: WDM transform for regression
     :type wdm: WDM
     :param h: data to be cleaned
-    :type h: ROOT.wavearray(np.double)
+    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: cleaned data
-    :rtype: ROOT.wavearray(np.double)
+    :rtype: pycbc.types.timeseries.TimeSeries
     """
+    h = convert_to_wavearray(h)
+
     tf_map = ROOT.WSeries(np.double)(h, wdm.wavelet)
     tf_map.Forward()
 
@@ -44,4 +48,4 @@ def regression(config, wdm, h):
     # cleaned data
     hh = r.getClean()
 
-    return hh
+    return convert_wavearray_to_pycbc_timeseries(hh)

@@ -7,7 +7,7 @@ import logging
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 from pyburst.config import Config
 from pyburst.types import TimeFrequencySeries
-from pyburst.utils import convert_wseries_to_time_frequency_series, convert_to_wseries
+from pyburst.utils import convert_to_wavearray, convert_to_wseries
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def coherence_parallel(config, net, tf_maps, wdm_list):
     :param net: network
     :type net: ROOT.network
     :param tf_maps: list of strain
-    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wdm
     :type wdm_list: list[WDM]
     :return:
@@ -71,10 +71,8 @@ def coherence(config, net, tf_maps, wdm_list):
     :param wdm_list: list of wdm
     :type wdm_list: list[WDM]
     :return: (sparse_table_list, pwc_list)
-    :rtype: (list[ROOT.SparseTable], list[ROOT.PWC])
+    :rtype: (list[ROOT.SSeries], list[ROOT.PWC])
     """
-    tf_maps = [convert_to_wseries(tf) for tf in tf_maps]
-
     # calculate upsample factor
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024
@@ -108,15 +106,15 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     :param net: network
     :type net: ROOT.network
     :param tf_maps: list of strain
-    :type tf_maps: list[ROOT.wavearray(np.double)]
+    :type tf_maps: list[TimeFrequencySeries]
     :param wdm: wdm used for current resolution
-    :type wdm: ROOT.WDM(np.double)
+    :type wdm: WDM
     :param m_tau: maximum delay
     :type m_tau: float
     :param up_n: upsample factor
     :type up_n: int
     :return: (sparse_table, pwc_list)
-    :rtype: (ROOT.SparseTable, list[ROOT.PWC])
+    :rtype: (ROOT.SSeries, list[ROOT.netcluster])
     """
 
     wc = ROOT.netcluster()
@@ -133,7 +131,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     alp = 0.0
     for n in range(len(config.ifo)):
         # tf_map = ROOT.WSeries(np.double)(tf_maps[n])
-        ts = ROOT.wavearray(np.double)(tf_maps[n])
+        ts = convert_to_wavearray(tf_maps[n])
         # alp += tf_map.maxEnergy(ts, wdm, m_tau, up_n, net.pattern)
         # tf_map.setlow(config.fLow)
         # tf_map.sethigh(config.fHigh)
@@ -161,7 +159,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     sparse_table = []
     wdm.set_td_filter(config.TDSize, 1)
     for n in range(config.nIFO):
-        ws = ROOT.WSeries(np.double)(tf_maps[n], wdm.wavelet)
+        ws = ROOT.WSeries(np.double)(convert_to_wavearray(tf_maps[n]), wdm.wavelet)
         ws.Forward()
         ss = ROOT.SSeries(np.double)()
         ss.SetMap(ws)

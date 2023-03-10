@@ -22,7 +22,7 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
     :param sparse_table_list: list of sparse tables
     :type sparse_table_list: list[ROOT.SSeries(np.double)]
     :param pwc_list: list of cluster
-    :type pwc_list: list[ROOT.cluster(np.double)]
+    :type pwc_list: list[ROOT.netcluster(np.double)]
     :param wdm_list: list of WDM
     :type wdm_list: list[WDM]
     :return: the list of events

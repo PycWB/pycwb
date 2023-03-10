@@ -51,15 +51,35 @@ def convert_to_wseries(data):
     :return: wseries
     """
     if isinstance(data, TimeFrequencySeries):
-        logger.info("Converting TimeFrequencySeries to ROOT.WSeries")
+        logger.debug("Converting TimeFrequencySeries to ROOT.WSeries")
         output = convert_time_frequency_series_to_wseries(data)
-    elif isinstance(data, pycbcTimeSeries):
-        logger.info("Converting pycbc TimeSeries to ROOT.WSeries")
-        output = convert_pycbc_timeseries_to_wavearray(data)
     else:
         output = data
 
     return output
+
+
+def convert_to_wavearray(data):
+    """
+    Convert all known types to wavearray
+
+    :param data: input data
+    :return: wseries
+    """
+    if isinstance(data, TimeFrequencySeries):
+        logger.debug("Converting TimeFrequencySeries to ROOT.wavearray")
+        output = convert_pycbc_timeseries_to_wavearray(data.data)
+    elif isinstance(data, pycbcTimeSeries):
+        logger.debug("Converting pycbc TimeSeries to ROOT.wavearray")
+        output = convert_pycbc_timeseries_to_wavearray(data)
+    elif isinstance(data, TimeSeries):
+        logger.debug("Converting gwpy TimeSeries to ROOT.wavearray")
+        output = convert_timeseries_to_wavearray(data)
+    else:
+        output = data
+
+    return output
+
 
 
 def convert_timeseries_to_wavearray(data: TimeSeries):
@@ -144,6 +164,26 @@ def convert_wavearray_to_timeseries(h):
     ar = np.array(ROOT._get_wavearray_data(h))
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
+
+    return ar
+
+
+def convert_wavearray_to_pycbc_timeseries(h):
+    """
+    Convert wavearray to pycbc timeseries
+
+    :param h: ROOT.wavearray
+    :type h: ROOT.wavearray
+    :return: Converted gwpy timeseries
+    :rtype: gwpy.timeseries.TimeSeries
+    """
+
+    if not hasattr(ROOT, "_copy_to_wavearray"):
+        declare_function()
+
+    ar = np.array(ROOT._get_wavearray_data(h))
+
+    ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
     return ar
 

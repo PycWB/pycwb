@@ -52,15 +52,8 @@ def data_conditioning(config, strains):
 
 
 def _wrapper(config, strain, wdm, wdm_white):
-    if isinstance(strain, pycbcTimeSeries):
-        wave_array = convert_pycbc_timeseries_to_wavearray(strain)
-    elif isinstance(strain, gwpyTimeSeries):
-        wave_array = convert_timeseries_to_wavearray(strain)
-    else:
-        wave_array = strain
-
     # regression and whitening
-    data_reg = regression(config, wdm, wave_array)
+    data_reg = regression(config, wdm, strain)
     tf_map, nRMS = whitening(config, wdm_white, data_reg)
 
-    return convert_wseries_to_time_frequency_series(tf_map), convert_wseries_to_time_frequency_series(nRMS)
+    return tf_map, nRMS

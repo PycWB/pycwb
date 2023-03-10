@@ -2,6 +2,7 @@ import numpy as np
 import ROOT
 import logging
 from pyburst.config import Config
+from pyburst.utils import convert_to_wavearray, convert_wseries_to_time_frequency_series
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +16,12 @@ def whitening(config, wdm_white, h):
     :param wdm_white: WDM used for whitening
     :type wdm_white: WDM
     :param h: strain data
-    :type h: ROOT.wavearray(np.double)
+    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: (whitened strain, nRMS)
     :rtype: tuple[ROOT.wavearray(np.double), float]
     """
 
-    tf_map = ROOT.WSeries(np.double)(h, wdm_white.wavelet)
+    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h), wdm_white.wavelet)
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
@@ -47,4 +48,4 @@ def whitening(config, wdm_white, h):
 
     # hw = ut.convert_wseries_to_wavearray(tf_map)
 
-    return tf_map, nRMS
+    return convert_wseries_to_time_frequency_series(tf_map), convert_wseries_to_time_frequency_series(nRMS)
