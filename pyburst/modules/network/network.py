@@ -35,19 +35,6 @@ def create_network(run_id, config, tf_list, nRMS_list):
     # load MRA catalog
     load_MRA(config, net)
 
-    beta_order = WDM_BETAORDER  # beta function order for Meyer
-    precision = WDM_PRECISION  # wavelet precision
-
-    if net.wdmMRA.tag != 0:
-        beta_order = net.wdmMRA.BetaOrder
-        precision = net.wdmMRA.precision
-
-    # create WDM
-    wdm_list = create_wdm(config, beta_order, precision)
-
-    for wdm in wdm_list:
-        net.add(wdm.wavelet)
-
     # check layers
     check_layers_with_MRAcatalog(config, net)
 
@@ -56,7 +43,7 @@ def create_network(run_id, config, tf_list, nRMS_list):
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
-    return net, wdm_list
+    return net
 
 
 def load_MRA(config, net):

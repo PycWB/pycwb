@@ -31,9 +31,10 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
 
     timer_start = time.perf_counter()
 
-    # set low-rate TD filters
-    for k in range(config.nRES):
-        wdm_list[k].set_td_filter(config.TDSize, config.upTDF)
+    # TODO: check if this is necessary
+    # # set low-rate TD filters
+    # for k in range(config.nRES):
+    #     wdm_list[k].set_td_filter(config.TDSize, config.upTDF)
     net.setDelayIndex(config.TDRate)
 
     # load sparse table

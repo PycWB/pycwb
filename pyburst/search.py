@@ -1,13 +1,15 @@
 import os, time
 import multiprocessing
 import pyburst
+from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
 from pyburst.utils import logger_init
 from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram
 from pyburst.modules.read_data import read_from_job_segment
 from pyburst.modules.data_conditioning import data_conditioning
+from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.network import create_network
-from pyburst.modules.coherence import coherence
+from pyburst.modules.coherence import coherence, coherence_parallel
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
 from pyburst.modules.job_segment import select_job_segment
@@ -52,13 +54,20 @@ def analyze_job_segment(config, job_seg):
     tf_maps, nRMS_list = data_conditioning(config, data)
 
     # initialize network
-    net, wdm_list = create_network(1, config, tf_maps, nRMS_list)
+    net = create_network(job_id, config, tf_maps, nRMS_list)
+
+    # create WDM
+    if net.wdmMRA.tag != 0:
+        beta_order, precision = net.wdmMRA.BetaOrder, net.wdmMRA.precision
+    else:
+        beta_order, precision = WDM_BETAORDER, WDM_PRECISION
+    wdm_list = create_wdm_set(config, beta_order, precision)
 
     # calculate coherence
-    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list)
+    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list, nRMS_list)
 
     # supercluster
-    pwc_list = supercluster(config, net, cluster_list, sparse_table_list)
+    pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
 
     # likelihood
     events = likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list)

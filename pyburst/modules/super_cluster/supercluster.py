@@ -11,7 +11,7 @@ from pyburst.modules.netcluster import append_cluster, copy_metadata
 logger = logging.getLogger(__name__)
 
 
-def supercluster(config, net, cluster_list, sparse_table_list):
+def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
     """
     Multi resolution clustering & Rejection of the sub-threshold clusters
 
@@ -26,6 +26,8 @@ def supercluster(config, net, cluster_list, sparse_table_list):
     :type config: Config
     :param net: network
     :type net: ROOT.network
+    :param wdm_list: list of wavelets
+    :type wdm_list: list[WDM]
     :param cluster_list: list of clusters
     :type cluster_list: list[ROOT.netcluster]
     :param sparse_table_list: list of sparse tables
@@ -35,6 +37,11 @@ def supercluster(config, net, cluster_list, sparse_table_list):
     """
     # timer
     timer_start = time.perf_counter()
+
+    # add wavelets to network
+    # TODO: check pwc.loadTDampSSE
+    for wdm in wdm_list:
+        net.add(wdm.wavelet)
 
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
@@ -46,8 +53,8 @@ def supercluster(config, net, cluster_list, sparse_table_list):
     for n in range(config.nIFO):
         hot.append(net.getifo(n).getHoT())
     # set low-rate TD filters
-    for wdm in net.wdmList:
-        wdm.setTDFilter(config.TDSize, 1)
+    for wdm in wdm_list:
+        wdm.set_td_filter(config.TDSize, 1)
     # read sparse map to detector
     for n in range(config.nIFO):
         det = net.getifo(n)
