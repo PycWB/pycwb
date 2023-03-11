@@ -4,26 +4,28 @@ from multiprocessing import Pool
 import numpy as np
 import ROOT
 import logging
-from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 from pyburst.config import Config
+from pyburst.modules.network import create_network
 from pyburst.types import TimeFrequencySeries
-from pyburst.utils import convert_to_wavearray, convert_to_wseries
+from pyburst.utils import convert_to_wavearray
+
 
 logger = logging.getLogger(__name__)
 
 
-def coherence_parallel(config, net, tf_maps, wdm_list):
+def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     """
-    Calculate the coherence parallelly (Not working for now)
+    Calculate the coherence parallelly, a temporary network object will be created for each process to avoid conflict.
+    MRA won't be loaded for the temporary network object.
 
-    :param config: config
+    :param config: user configuration
     :type config: Config
-    :param net: network
-    :type net: ROOT.network
     :param tf_maps: list of strain
     :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wdm
     :type wdm_list: list[WDM]
+    :param nRMS_list: list of noise RMS
+    :type nRMS_list: list[TimeFrequencySeries]
     :return:
     """
     timer_start = time.perf_counter()
@@ -33,21 +35,20 @@ def coherence_parallel(config, net, tf_maps, wdm_list):
 
     sparse_table_list = []
     pwc_list = []
-    m_tau = net.getDelay('MAX')
 
     with Pool(processes=min(config.nproc, config.nRES)) as pool:
         tasks = []
         for i in range(config.nRES):
-            tasks.append((i, config, copy.deepcopy(net),tf_maps, wdm_list[i], m_tau, up_n))
+            tasks.append((i, config, tf_maps, nRMS_list, wdm_list[i], up_n))
         for sparse_table, pwc in pool.starmap(_coherence_single_res, tasks):
             sparse_table_list.append(sparse_table)
             pwc_list += pwc
 
-    logger.info("Coherence time: %f s", time.perf_counter() - timer_start)
+    logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
     return sparse_table_list, pwc_list
 
 
-def coherence(config, net, tf_maps, wdm_list):
+def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
     """
     Select the significant pixels
 
@@ -64,12 +65,14 @@ def coherence(config, net, tf_maps, wdm_list):
 
     :param config: config
     :type config: Config
-    :param net: network
-    :type net: ROOT.network
     :param tf_maps: list of strain
     :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wdm
     :type wdm_list: list[WDM]
+    :param nRMS_list: list of noise RMS
+    :type nRMS_list: list[TimeFrequencySeries]
+    :param net: network, if None, create a temporary minimum network object with wdm_list and nRMS_list
+    :type net: ROOT.network, optional
     :return: (sparse_table_list, pwc_list)
     :rtype: (list[ROOT.SSeries], list[ROOT.PWC])
     """
@@ -81,10 +84,9 @@ def coherence(config, net, tf_maps, wdm_list):
 
     sparse_table_list = []
     pwc_list = []
-    m_tau = net.getDelay('MAX')
 
     for i in range(config.nRES):
-        sparse_table, pwc_list_res = _coherence_single_res(i, config, net, tf_maps, wdm_list[i], m_tau, up_n)
+        sparse_table, pwc_list_res = _coherence_single_res(i, config, tf_maps, nRMS_list, wdm_list[i], up_n, net)
         sparse_table_list.append(sparse_table)
         pwc_list += pwc_list_res
 
@@ -95,7 +97,7 @@ def coherence(config, net, tf_maps, wdm_list):
     return sparse_table_list, pwc_list
 
 
-def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
+def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     """
     Calculate the coherence for a single resolution
 
@@ -116,6 +118,13 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     :return: (sparse_table, pwc_list)
     :rtype: (ROOT.SSeries, list[ROOT.netcluster])
     """
+    # timer
+    timer_start = time.perf_counter()
+    if net is None:
+        # for paralleling, create a new network to avoid conflict
+        net = create_network(1, config, tf_maps, nRMS_list, minimum=True)
+
+    m_tau = net.getDelay('MAX')
 
     wc = ROOT.netcluster()
 
@@ -123,9 +132,10 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
-    logger.info("level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
-                level, rate, layers, config.rateANA / 2. / (2 ** level),
-                1000. / rate)
+
+    # use string instead of directly logging to avoid messy output in parallel
+    logger_info = "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f \n" % (
+        level, rate, layers, config.rateANA / 2. / (2 ** level), 1000. / rate)
 
     # produce TF maps with max over the sky energy
     alp = 0.0
@@ -140,18 +150,23 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
                                                   net.pattern)
         net.getifo(n).getTFmap().setlow(config.fLow)
         net.getifo(n).getTFmap().sethigh(config.fHigh)
-    logger.info("max energy in units of noise variance: %g", alp)
+
+    logger_info += "max energy in units of noise variance: %g \n" % alp
+
+    # logger.info("max energy in units of noise variance: %g", alp)
     alp = alp / config.nIFO
 
     if net.pattern != 0:
         Eo = net.THRESHOLD(config.bpp, alp)
     else:
         Eo = net.THRESHOLD(config.bpp)
-    logger.info("thresholds in units of noise variance: Eo=%g Emax=%g", Eo, Eo * 2)
+
+    logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
 
     # set veto array
     TL = net.setVeto(config.iwindow)
-    logger.info("live time in zero lag: %g", TL)
+    logger_info += "live time in zero lag: %g \n" % TL
+
     if TL <= 0.:
         raise ValueError("live time is zero")
 
@@ -166,7 +181,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
         ss.SetHalo(m_tau)
         sparse_table.append(ss)
 
-    logger.info("lag | clusters | pixels ")
+    logger_info += "lag | clusters | pixels \n"
 
     csize_tot = 0
     psize_tot = 0
@@ -194,7 +209,8 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
         # store cluster into temporary job file
         csize_tot += pwc.csize()
         psize_tot += pwc.size()
-        logger.info("%3d |%9d |%7d ", j, csize_tot, psize_tot)
+        logger_info += "%3d |%9d |%7d \n" % (j, csize_tot, psize_tot)
+        # logger.info("%3d |%9d |%7d ", j, csize_tot, psize_tot)
 
         # add core pixels to sparse table
         for n in range(config.nIFO):
@@ -206,4 +222,7 @@ def _coherence_single_res(i, config, net, tf_maps, wdm, m_tau, up_n):
         sparse_table[n].UpdateSparseTable()
         sparse_table[n].Clean()
 
+    logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
+
+    logger.info(logger_info)
     return sparse_table, pwc_list

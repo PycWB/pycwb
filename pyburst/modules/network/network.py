@@ -10,7 +10,7 @@ import argparse, shlex
 logger = logging.getLogger(__name__)
 
 
-def create_network(run_id, config, tf_list, nRMS_list):
+def create_network(run_id, config, tf_list, nRMS_list, minimum=False):
     """
     Initialize a network and check the configuration
 
@@ -22,6 +22,8 @@ def create_network(run_id, config, tf_list, nRMS_list):
     :type tf_list: list[TimeFrequencySeries]
     :param nRMS_list: list of noise RMS values
     :type nRMS_list: list[TimeFrequencySeries]
+    :param minimum: if True, only initialize the network, no MRA catalog will be loaded
+    :type minimum: bool
     :return: (net, list of WDM for each layer)
     :rtype: (ROOT.network, list[WDM])
     """
@@ -32,11 +34,18 @@ def create_network(run_id, config, tf_list, nRMS_list):
 
     net = ROOT.network()
 
-    # load MRA catalog
-    load_MRA(config, net)
+    if minimum:
+        # disable logging when network is create for temporary use
+        logger.propagate = False
+    else:
+        logger.propagate = True
 
-    # check layers
-    check_layers_with_MRAcatalog(config, net)
+    if not minimum:
+        # load MRA catalog
+        load_MRA(config, net)
+
+        # check layers
+        check_layers_with_MRAcatalog(config, net)
 
     # Note: check_lagStep(config) is moved to Config
 

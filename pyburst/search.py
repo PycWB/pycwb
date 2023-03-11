@@ -64,7 +64,7 @@ def analyze_job_segment(config, job_seg):
     wdm_list = create_wdm_set(config, beta_order, precision)
 
     # calculate coherence
-    sparse_table_list, cluster_list = coherence(config, net, tf_maps, wdm_list, nRMS_list)
+    sparse_table_list, cluster_list = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
 
     # supercluster
     pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
