@@ -31,7 +31,7 @@ def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
     :param cluster_list: list of clusters
     :type cluster_list: list[ROOT.netcluster]
     :param sparse_table_list: list of sparse tables
-    :type sparse_table_list: list[ROOT.WSeries(np.double)]
+    :type sparse_table_list: list[ROOT.SSeries(np.double)]
     :return: the list of clusters
     :rtype: list[ROOT.netcluster]
     """
