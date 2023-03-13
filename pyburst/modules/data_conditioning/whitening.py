@@ -18,7 +18,7 @@ def whitening(config, wdm_white, h):
     :param h: strain data
     :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: (whitened strain, nRMS)
-    :rtype: tuple[ROOT.wavearray(np.double), float]
+    :rtype: tuple[TimeFrequencySeries, TimeFrequencySeries]
     """
 
     tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h), wdm_white.wavelet)

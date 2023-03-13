@@ -18,6 +18,17 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     Calculate the coherence parallelly, a temporary network object will be created for each process to avoid conflict.
     MRA won't be loaded for the temporary network object.
 
+    Process each resolution level in parallel
+
+    * Loop over detectors (cwb::nIFO)
+
+      * Compute the maximum energy of TF pixels (WSeries<double>::maxEnergy)
+    * Set pixel energy selection threshold (network::THRESHOLD)
+    * Loop over time lags (network::nLag)
+
+      * Select the significant pixels (network::getNetworkPixels)
+      * Single resolution clustering (network::cluster)
+
     :param config: user configuration
     :type config: Config
     :param tf_maps: list of strain
@@ -26,7 +37,8 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     :type wdm_list: list[WDM]
     :param nRMS_list: list of noise RMS
     :type nRMS_list: list[TimeFrequencySeries]
-    :return:
+    :return: (sparse_table_list, pwc_list)
+    :rtype: (list[ROOT.SSeries], list[ROOT.PWC])
     """
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024
