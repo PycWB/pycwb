@@ -61,6 +61,11 @@ Start searching!
 
    search('./user_parameters.yaml')
 
+Go deeper into PyBurst.search
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you want to know more about the search process, please refer to
+:ref:`tutorial_search`
 
 Indices and tables
 ==================
