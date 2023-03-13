@@ -19,7 +19,7 @@ set env HOME_WAT_FILTERS to the path of xdmXTalk. PyBurst contains a sample xdmX
    pyburst_path = os.path.dirname(os.path.abspath(pyburst.__file__))
    os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pyburst_path)}/vendor"
 
-read user parameters from user_parameters.yaml to a :py:class:`~pyburst.config.Config` object.
+read user parameters from user_parameters.yaml to a :py:class:`.Config` object.
 
 .. code-block:: python
 
@@ -35,7 +35,7 @@ then, create directories for output files.
     if not os.path.exists(config.logDir):
         os.makedirs(config.logDir)
 
-find the job segments from the config settings and create a :py:class:`~pyburst.types.JobSegment` object for each segment.
+find the job segments from the config settings and create a :py:class:`.WaveSegment` object for each segment.
 
 .. code-block:: python
 
