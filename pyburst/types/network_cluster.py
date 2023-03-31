@@ -113,15 +113,6 @@ class Cluster:
         self.sky_time_delay = sky_time_delay
 
 
-class Pixel:
-    __slots__ = ['pixel', 'rate']
-
-    def __init__(self, pixel):
-        #: ROOT.pixel object
-        self.pixel = pixel
-        self.rate = pixel.rate
-
-
 class ClusterMeta:
     __slots__ = ['energy', 'energy_sky', 'like_net', 'net_ecor', 'norm_cor', 'net_null', 'net_ed',
                  'g_noise', 'like_sky', 'sky_cc', 'net_cc', 'sky_chi2', 'sub_net', 'sub_net2',

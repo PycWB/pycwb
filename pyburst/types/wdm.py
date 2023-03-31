@@ -89,6 +89,27 @@ class WDM:
         return self.wavelet.getTDFsize()
 
     @property
+    def max_level(self):
+        """
+        maximum level of the wavelet transform
+        """
+        return self.wavelet.getMaxLevel()
+
+    @property
+    def size_at_zero_layer(self):
+        """
+        number of samples at zero level
+        """
+        return self.wavelet.getSlice(0).size()
+
+    @property
+    def max_index(self):
+        """
+        maximum index of the WDM sliced array
+        """
+        return self.size_at_zero_layer * (self.max_level + 1) - 1
+
+    @property
     def m_H(self):
         """
         number of highpass wavelet filter coefficients
@@ -105,20 +126,45 @@ class WDM:
     @property
     def nWWS(self):
         """
-        number of time delay filters
+        size of the wavelet work space
         """
         return self.wavelet.nWWS
 
     @property
     def nSTS(self):
         """
-        number of time delay filters
+        size of the original time series
         """
         return self.wavelet.nSTS
 
     @nSTS.setter
     def nSTS(self, value):
         self.wavelet.nSTS = value
+
+    @property
+    def pWWS(self):
+        """
+        pointer to wavelet work space
+        """
+        return self.wavelet.pWWS
+
+    def get_map_00(self, index):
+        """
+        get map00/90 value from index
+
+        :param index:
+        :return:
+        """
+        return self.wavelet.pWWS[index]
+
+    def get_map_90(self, index):
+        """
+        get map00/90 value from index
+
+        :param index:
+        :return:
+        """
+        return self.wavelet.pWWS[index + self.max_index + 1]
 
     def t2w(self, k):
         """

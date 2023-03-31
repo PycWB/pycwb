@@ -55,7 +55,7 @@ class SparseTimeFrequencySeries:
         self.stop = tf_map.stop
         self.edge = tf_map.edge
 
-    def set_halo(self, max_tau, layer_halo, time_halo):
+    def set_halo(self, max_tau=0.042, layer_halo=1, time_halo=-1):
         """Set the halo
 
         For each core pixels (if layerHalo = 1) the following pixels are saved
@@ -98,10 +98,50 @@ class SparseTimeFrequencySeries:
 
         # loop over pixels
         for pixel in cluster.pixels:
-            # skip pixel with bad rate
+            # skip pixel with bad rate, TODO: why the rate can be bad?
             if int(pixel.rate + 0.01) != r:
                 continue
 
             # store pixel index
-            self.sparse_index.append(pixel.data[ifo_id].index)
-            self.core.append(1)
+            self.core.append(pixel.data[ifo_id].index)
+
+    def update_sparse_table(self):
+        """
+        Use the core pixels and halo parameters to update the sparse maps with core+halo pixels
+
+        :return:
+        """
+        if self.time_halo == 0 and self.layer_halo == 0:
+            return
+
+        extra_halo = int(self.net_delay * self.w_rate) + 8  # init extra halo : WARNING value 8 ad hoc - to be fixed
+        h_slice = self.time_halo + extra_halo  # halo slices
+        layer_halo = self.layer_halo  # halo layers
+
+        cluster = []
+        n_layer = self.wavelet.max_level # number of WDM layers
+        n_slice = self.wavelet.size_at_zero_layer  # number of samples in wavelet layer
+
+        for core_pixel in self.core:
+            # i,j index of the core pixel
+            l = core_pixel // n_slice
+            t = core_pixel % n_slice
+
+            # Calculate the starting and ending indices for the time and layer axes
+            start_t = max(0, t - h_slice)
+            start_l = max(0, l - layer_halo)
+            end_t = min(n_slice - 1, t + h_slice)
+            end_l = min(n_layer - 1, l + layer_halo)
+
+            # Calculate the block indices in 1D array
+            cluster += [ i * n_slice + j for i in range(start_l, end_l + 1) for j in range(start_t, end_t + 1)]
+
+        cluster = sorted(set(cluster))
+        self.sparse_index = cluster
+        self.sparse_map_00 = [self.wavelet.get_map_00(i) for i in cluster]
+        self.sparse_map_90 = [self.wavelet.get_map_90(i) for i in cluster]
+
+
+
+
+
