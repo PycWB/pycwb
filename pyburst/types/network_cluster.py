@@ -62,8 +62,8 @@ class Cluster:
     """
     Class for one cluster of pixels
 
-    :param pixel_list: list of pixels
-    :type pixel_list: list[Pixel]
+    :param pixels: list of pixels
+    :type pixels: list[Pixel]
     :param cluster_meta: cluster metadata
     :type cluster_meta: ClusterMeta
     :param cluster_status: cluster selection flags (cuts)  1 - rejected, 0 - not processed / accepted,
@@ -85,14 +85,14 @@ class Cluster:
     :type sky_time_delay: list[int]
 
     """
-    __slots__ = ['pixel_list', 'cluster_meta', 'cluster_status',
+    __slots__ = ['pixels', 'cluster_meta', 'cluster_status',
                  'cluster_rate', 'cluster_time', 'cluster_freq', 'sky_area', 'sky_pixel_map',
                  'sky_pixel_index', 'sky_time_delay']
 
-    def __init__(self, pixel_list, cluster_meta, cluster_status, cluster_rate, cluster_time,
+    def __init__(self, pixels, cluster_meta, cluster_status, cluster_rate, cluster_time,
                  cluster_freq, sky_area, sky_pixel_map, sky_pixel_index, sky_time_delay):
         #: pixel list
-        self.pixel_list = pixel_list
+        self.pixels = pixels
         #: cluster metadata
         self.cluster_meta = cluster_meta
         #: cluster selection flags (cuts)
@@ -114,11 +114,12 @@ class Cluster:
 
 
 class Pixel:
-    __slots__ = ['pixel']
+    __slots__ = ['pixel', 'rate']
 
     def __init__(self, pixel):
         #: ROOT.pixel object
         self.pixel = pixel
+        self.rate = pixel.rate
 
 
 class ClusterMeta:

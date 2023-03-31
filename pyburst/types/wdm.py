@@ -29,6 +29,7 @@ class WDM:
     :param wavelet: ROOT.WDM object, if provided, other parameters are ignored and extracted from the object
     :type wavelet: ROOT.WDM, optional
     """
+
     def __init__(self, m=None, k=None, beta_order=None, precision=None, wavelet=None):
         if not wavelet:
             #: ROOT.WDM object
@@ -69,12 +70,23 @@ class WDM:
         """
         from pyburst.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray
 
-
         if data is None:
             return self.wavelet.allocate()
 
         return self.wavelet.allocate(len(data), data.data)
 
+    def lightweight_dump(self):
+        """
+        lightweight duplication of the WDM object
+        """
+        self.wavelet.Init()
+
+    @property
+    def time_delay_filter_size(self):
+        """
+        half size of time delay filter
+        """
+        return self.wavelet.getTDFsize()
 
     @property
     def m_H(self):
@@ -116,4 +128,3 @@ class WDM:
         :type k: int
         """
         self.wavelet.t2w(k)
-

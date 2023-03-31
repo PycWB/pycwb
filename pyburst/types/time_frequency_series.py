@@ -50,6 +50,27 @@ class TimeFrequencySeries:
         else:
             raise ValueError('Wavelet transform failed')
 
+    @property
+    def start(self):
+        """
+        start time
+        """
+        return self.data.start_time
+
+    @property
+    def stop(self):
+        """
+        stop time
+        """
+        return self.data.end_time
+
+    @property
+    def edge(self):
+        """
+        TODO: dummy edge
+        """
+        return 0.0
+
 
 class SparseTable(TimeFrequencySeries):
     def __init__(self, data, wavelet, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
