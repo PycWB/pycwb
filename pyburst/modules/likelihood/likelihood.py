@@ -130,6 +130,7 @@ def _likelihood(job_id, config, net, lag, pwc, cluster_id):
     #     nevents += 1
     # npixels = pwc.size()
     # Decoupling: remove above line
+    # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
 
     try:
         output = event.json()

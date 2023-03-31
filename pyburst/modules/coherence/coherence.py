@@ -209,6 +209,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
             net.cluster(2, 3)
             wc.cpf(pwc, False)
             # remove pixels below subrho
+            # TODO: keep in mind, subrho can be more flexible.
             wc.select("subrho", config.select_subrho)
             # remove pixels below subnet
             wc.select("subnet", config.select_subnet)
