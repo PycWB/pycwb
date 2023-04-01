@@ -1,3 +1,6 @@
+from pyburst.types.network_pixel import Pixel
+
+
 class FragmentCluster:
     """
     Class for clusters found in data fragment
@@ -89,8 +92,9 @@ class Cluster:
                  'cluster_rate', 'cluster_time', 'cluster_freq', 'sky_area', 'sky_pixel_map',
                  'sky_pixel_index', 'sky_time_delay']
 
-    def __init__(self, pixels, cluster_meta, cluster_status, cluster_rate, cluster_time,
-                 cluster_freq, sky_area, sky_pixel_map, sky_pixel_index, sky_time_delay):
+    def __init__(self, pixels=None, cluster_meta=None, cluster_status=None, cluster_rate=None,
+                 cluster_time=None, cluster_freq=None, sky_area=None, sky_pixel_map=None,
+                 sky_pixel_index=None, sky_time_delay=None):
         #: pixel list
         self.pixels = pixels
         #: cluster metadata
@@ -111,6 +115,25 @@ class Cluster:
         self.sky_pixel_index = sky_pixel_index
         #: sky time delay configuration for waveform backward correction
         self.sky_time_delay = sky_time_delay
+
+    def __repr__(self):
+        return self.to_dict().__repr__()
+
+    def to_dict(self):
+        return {key: getattr(self, key) for key in self.__slots__}
+
+    def from_netcluster(self, netcluster, c_id):
+        self.pixels = [Pixel().from_netpixel(netcluster.pList[pixel_id]) for pixel_id in netcluster.cList[c_id]]
+        self.cluster_meta = netcluster.cData[c_id]
+        self.cluster_status = netcluster.sCuts[c_id]
+        self.cluster_rate = list(netcluster.cRate[c_id])
+        self.cluster_time = netcluster.cTime[c_id]
+        self.cluster_freq = netcluster.cFreq[c_id]
+        self.sky_area = list(netcluster.sArea[c_id])
+        self.sky_pixel_map = list(netcluster.p_Map[c_id])
+        self.sky_pixel_index = list(netcluster.p_Ind[c_id])
+        self.sky_time_delay = list(netcluster.nTofF[c_id])
+        return self
 
 
 class ClusterMeta:
