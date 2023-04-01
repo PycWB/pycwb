@@ -6,7 +6,7 @@ from pyburst.config import Config
 import ROOT
 import numpy as np
 
-from pyburst.utils import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+from pyburst.conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
 
 
 def regression(config, wdm, h):

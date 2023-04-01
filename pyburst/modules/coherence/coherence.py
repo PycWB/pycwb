@@ -7,7 +7,7 @@ import logging
 from pyburst.config import Config
 from pyburst.modules.network import create_network
 from pyburst.types import TimeFrequencySeries
-from pyburst.utils import convert_to_wavearray
+from pyburst.conversions import convert_to_wavearray
 
 
 logger = logging.getLogger(__name__)
@@ -218,6 +218,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         else:
             net.cluster(1, 1)
 
+        # TODO: save in Cluster class
         pwc_list.append(copy.deepcopy(pwc))
         # store cluster into temporary job file
         csize_tot += pwc.csize()
@@ -232,7 +233,9 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         pwc.clear()
 
     for n in range(config.nIFO):
+        # Use the core pixels and halo parameters to update the sparse maps with core+halo pixels
         sparse_table[n].UpdateSparseTable()
+        # set to 0 all TF map pixels which do not belong to core+halo
         sparse_table[n].Clean()
 
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)

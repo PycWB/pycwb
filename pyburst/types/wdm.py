@@ -68,8 +68,6 @@ class WDM:
         :param data: data to be stored in the WDM sliced array
         :type data: pycbc.types.timeseries.TimeSeries
         """
-        from pyburst.utils.cwb_convert import convert_pycbc_timeseries_to_wavearray
-
         if data is None:
             return self.wavelet.allocate()
 

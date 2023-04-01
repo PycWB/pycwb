@@ -2,7 +2,7 @@ from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 
 from pyburst.types import TimeFrequencySeries, WDM
-from pyburst.utils import WSeries_to_matrix, convert_wavearray_to_timeseries
+from pyburst.conversions import WSeries_to_matrix, convert_wavearray_to_timeseries
 from gwpy.spectrogram import Spectrogram
 import numpy as np
 import ROOT

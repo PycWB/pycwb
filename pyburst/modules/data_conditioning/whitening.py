@@ -2,7 +2,7 @@ import numpy as np
 import ROOT
 import logging
 from pyburst.config import Config
-from pyburst.utils import convert_to_wavearray, convert_wseries_to_time_frequency_series
+from pyburst.conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series
 
 logger = logging.getLogger(__name__)
 

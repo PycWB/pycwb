@@ -1,4 +1,4 @@
-from pyburst.utils import convert_pycbc_timeseries_to_wavearray
+from pyburst.conversions import convert_pycbc_timeseries_to_wavearray
 from gwpy.timeseries import TimeSeries
 from .data_check import data_check
 from ligo.segments import segment, segmentlist
