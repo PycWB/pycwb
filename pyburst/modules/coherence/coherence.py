@@ -6,7 +6,7 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.modules.network import create_network
-from pyburst.types import TimeFrequencySeries
+from pyburst.types import TimeFrequencySeries, FragmentCluster
 from pyburst.conversions import convert_to_wavearray
 
 
@@ -37,8 +37,8 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     :type wdm_list: list[WDM]
     :param nRMS_list: list of noise RMS
     :type nRMS_list: list[TimeFrequencySeries]
-    :return: (sparse_table_list, pwc_list)
-    :rtype: (list[ROOT.SSeries], list[ROOT.PWC])
+    :return: (sparse_table_list, fragment_cluster_list)
+    :rtype: (list[ROOT.SSeries], list[FragmentCluster])
     """
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024
@@ -46,7 +46,7 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
         up_n = 1
 
     sparse_table_list = []
-    pwc_list = []
+    fragment_cluster_list = []
 
     with Pool(processes=min(config.nproc, config.nRES)) as pool:
         tasks = []
@@ -54,10 +54,10 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
             tasks.append((i, config, tf_maps, nRMS_list, wdm_list[i], up_n))
         for sparse_table, pwc in pool.starmap(_coherence_single_res, tasks):
             sparse_table_list.append(sparse_table)
-            pwc_list += pwc
+            fragment_cluster_list += pwc
 
     logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
-    return sparse_table_list, pwc_list
+    return sparse_table_list, fragment_cluster_list
 
 
 def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
@@ -218,8 +218,10 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         else:
             net.cluster(1, 1)
 
-        # TODO: save in Cluster class
-        pwc_list.append(copy.deepcopy(pwc))
+        # FIXME: why do we need to deeocopy the cluster?
+        #  If we don't, macos will crash with thread-saftey issue
+        #  Maybe because the pwc.clear() will delete the cluster?
+        pwc_list.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))
         # store cluster into temporary job file
         csize_tot += pwc.csize()
         psize_tot += pwc.size()

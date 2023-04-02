@@ -4,6 +4,7 @@ import numpy as np
 import ROOT
 import logging
 from pyburst.config import Config
+from pyburst.conversions import convert_fragment_clusters_to_netcluster
 from pyburst.modules.netcluster import select_clusters, copy_metadata
 from pyburst.modules.netevent import Event
 from pyburst.modules.catalog import add_events_to_catalog
@@ -11,7 +12,7 @@ from pyburst.modules.catalog import add_events_to_catalog
 logger = logging.getLogger(__name__)
 
 
-def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
+def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_list):
     """
     calculate likelihood
 
@@ -21,8 +22,8 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
     :type net: ROOT.network
     :param sparse_table_list: list of sparse tables
     :type sparse_table_list: list[ROOT.SSeries(np.double)]
-    :param pwc_list: list of cluster
-    :type pwc_list: list[ROOT.netcluster(np.double)]
+    :param fragment_clusters: list of cluster
+    :type fragment_clusters: list[FragmentCluster]
     :param wdm_list: list of WDM
     :type wdm_list: list[WDM]
     :return: the list of events
@@ -53,13 +54,14 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
         # pwc = copy.deepcopy(pwc_list[0])
         # pwc.clear()
         pwc.cData.clear()
-        copy_metadata(pwc, pwc_list[j])
+        pwc_temp = convert_fragment_clusters_to_netcluster(fragment_clusters[j])
+        copy_metadata(pwc, pwc_temp)
         # pwc.print()
 
         # print header
 
         logger.info("-------------------------------------------------------")
-        logger.info("-> Processing %d clusters in lag=%d" % (pwc_list[j].cList.size(), cycle))
+        logger.info("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
         logger.info("   ----------------------------------------------------")
 
         nmax = -1  # load all tdAmp
@@ -68,13 +70,13 @@ def likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list):
         nselected_core_pixels = 0
         nrejected_weak_pixels = 0  # remove weak glitches
         nrejected_loud_pixels = 0  # remove loud glitches
-        for k in range(pwc_list[j].cList.size()):  # loop over the cluster list
+        for k in range(len(fragment_clusters[j].clusters)):  # loop over the cluster list
             # Decoupling:
             # TODO: parallelize this loop
             # new_net = copy.deepcopy(net)
             # pwc = new_net.getwc(j)
-            copy_metadata(pwc, pwc_list[j])
-            select_clusters(pwc, pwc_list[j], k)
+            copy_metadata(pwc, pwc_temp)
+            select_clusters(pwc, pwc_temp, k)
 
             event = _likelihood(job_id, config, net, j, pwc, k + 1)
             events.append(event)

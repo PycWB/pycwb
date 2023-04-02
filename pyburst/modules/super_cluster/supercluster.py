@@ -6,12 +6,15 @@ import time
 import numpy as np
 from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
+from pyburst.conversions import convert_fragment_clusters_to_netcluster
 from pyburst.modules.network import update_sky_map, update_sky_mask, restore_skymap
 from pyburst.modules.netcluster import append_cluster, copy_metadata
+from pyburst.types import FragmentCluster
+
 logger = logging.getLogger(__name__)
 
 
-def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
+def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     """
     Multi resolution clustering & Rejection of the sub-threshold clusters
 
@@ -28,12 +31,12 @@ def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
     :type net: ROOT.network
     :param wdm_list: list of wavelets
     :type wdm_list: list[WDM]
-    :param cluster_list: list of clusters
-    :type cluster_list: list[ROOT.netcluster]
+    :param fragment_clusters: fragment clusters
+    :type fragment_clusters: list[FragmentCluster]
     :param sparse_table_list: list of sparse tables
     :type sparse_table_list: list[ROOT.SSeries(np.double)]
     :return: the list of clusters
-    :rtype: list[ROOT.netcluster]
+    :rtype: list[FragmentCluster]
     """
     # timer
     timer_start = time.perf_counter()
@@ -62,11 +65,11 @@ def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
         for sparse_table in sparse_table_list:
             det.vSS.push_back(sparse_table[n])
 
-    cluster = ROOT.netcluster()
-    copy_metadata(cluster, cluster_list[0])
-
-    for c in cluster_list:
-        append_cluster(cluster, c, -2)
+    cluster = copy.deepcopy(fragment_clusters[0])
+    cluster.clusters = [cluster
+                        for fragment_cluster in fragment_clusters
+                        for cluster in fragment_cluster.clusters]
+    cluster = convert_fragment_clusters_to_netcluster(cluster)
 
     nevt = 0
     nnn = 0
@@ -132,7 +135,7 @@ def supercluster(config, net, wdm_list, cluster_list, sparse_table_list):
         nevt += net.events()
         nnn += pwc.psize(-1)
         mmm += pwc.psize(1) + pwc.psize(-1)
-        pwc_list.append(copy.deepcopy(pwc))
+        pwc_list.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))
         pwc.clear()
 
     logger.info("Supercluster done")
