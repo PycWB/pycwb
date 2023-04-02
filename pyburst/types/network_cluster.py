@@ -27,14 +27,14 @@ class FragmentCluster:
     :type pair: bool
     :param n_sub: subnetwork threshold for a single network pixel
     :type n_sub: int
-    :param cluster_list: cluster list
-    :type cluster_list: list[Cluster]
+    :param clusters: cluster list
+    :type clusters: list[Cluster]
     """
     __slots__ = ['rate', 'start', 'stop', 'bpp', 'shift', 'f_low', 'f_high', 'n_pix', 'run', 'pair',
-                 'subnet_threshold', 'cluster_list']
+                 'subnet_threshold', 'clusters']
 
-    def __init__(self, rate, start, stop, bpp, shift, f_low, f_high, n_pix, run, pair, n_sub,
-                 cluster_list):
+    def __init__(self, rate=None, start=None, stop=None, bpp=None, shift=None, f_low=None, f_high=None,
+                    n_pix=None, run=None, pair=None, n_sub=None, clusters=None):
         #: original Time series rate
         self.rate = rate
         #: interval start GPS time
@@ -58,7 +58,33 @@ class FragmentCluster:
         #: subnetwork threshold for a single network pixel
         self.subnet_threshold = n_sub
         #: cluster list
-        self.cluster_list = cluster_list
+        self.clusters = clusters
+
+    def from_netcluster(self, c_cluster):
+        """
+        Create FragmentCluster from netcluster
+
+        :param c_cluster: netcluster
+        :type c_cluster: ROOT.netcluster
+        """
+        self.rate = c_cluster.rate
+        self.start = c_cluster.start
+        self.stop = c_cluster.stop
+        self.bpp = c_cluster.bpp
+        self.shift = c_cluster.shift
+        self.f_low = c_cluster.flow
+        self.f_high = c_cluster.fhigh
+        self.n_pix = c_cluster.nPIX
+        self.run = c_cluster.run
+        self.pair = c_cluster.pair
+        self.subnet_threshold = c_cluster.nSUB
+
+        cluster_list = []
+        for c_id, pixel_ids in enumerate(c_cluster.cList):
+            cluster = Cluster().from_netcluster(c_cluster, c_id)
+            cluster_list.append(cluster)
+        self.clusters = cluster_list
+        return self
 
 
 class Cluster:
@@ -115,6 +141,8 @@ class Cluster:
         self.sky_pixel_index = sky_pixel_index
         #: sky time delay configuration for waveform backward correction
         self.sky_time_delay = sky_time_delay
+
+
 
     def __repr__(self):
         return self.to_dict().__repr__()

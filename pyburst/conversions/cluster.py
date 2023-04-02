@@ -1,17 +1,20 @@
 import ROOT
 from .pixel import convert_pixel_to_netpixel
-from pyburst.types import Cluster
+from pyburst.types import Cluster, FragmentCluster
 
 
-def convert_netcluster_to_cluster(c_cluster):
-    cluster_list = []
-    for c_id, pixel_ids in enumerate(c_cluster.cList):
-        cluster = Cluster().from_netcluster(c_cluster, c_id)
-        cluster_list.append(cluster)
-    return cluster_list
+# def convert_netcluster_to_cluster(c_cluster):
+#     cluster_list = []
+#     for c_id, pixel_ids in enumerate(c_cluster.cList):
+#         cluster = Cluster().from_netcluster(c_cluster, c_id)
+#         cluster_list.append(cluster)
+#
+#     FragmentCluster(cluster_list)
+#
+#     return cluster_list
 
 
-def convert_cluster_to_netcluster(clusters):
+def convert_fragment_clusters_to_netcluster(fragment_clusters):
     """
     Convert cluster to netcluster
 
@@ -22,6 +25,19 @@ def convert_cluster_to_netcluster(clusters):
     """
     netcluster = ROOT.netcluster()
 
+    netcluster.rate = fragment_clusters.rate
+    netcluster.start = fragment_clusters.start
+    netcluster.stop = fragment_clusters.stop
+    netcluster.bpp = fragment_clusters.bpp
+    netcluster.shift = fragment_clusters.shift
+    netcluster.flow = fragment_clusters.f_low
+    netcluster.fhigh = fragment_clusters.f_high
+    netcluster.nPIX = fragment_clusters.n_pix
+    netcluster.run = fragment_clusters.run
+    netcluster.pair = fragment_clusters.pair
+    netcluster.nSUB = fragment_clusters.subnet_threshold
+
+    clusters = fragment_clusters.clusters
     # derive cList
     i = 0
     for cluster in clusters:
@@ -49,3 +65,4 @@ def convert_cluster_to_netcluster(clusters):
         netcluster.nTofF.push_back(cluster.sky_time_delay)
 
     return netcluster
+
