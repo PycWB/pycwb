@@ -65,10 +65,13 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
         for sparse_table in sparse_table_list:
             det.vSS.push_back(sparse_table[n])
 
+    # merge cluster
     cluster = copy.deepcopy(fragment_clusters[0])
-    cluster.clusters = [cluster
-                        for fragment_cluster in fragment_clusters
-                        for cluster in fragment_cluster.clusters]
+    if len(fragment_clusters) > 1:
+        for fragment_cluster in fragment_clusters[1:]:
+            cluster.clusters += fragment_cluster.clusters
+
+    # convert to netcluster
     cluster = convert_fragment_clusters_to_netcluster(cluster)
 
     nevt = 0
@@ -135,6 +138,8 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
         nevt += net.events()
         nnn += pwc.psize(-1)
         mmm += pwc.psize(1) + pwc.psize(-1)
+
+        # convert to FragmentCluster and append to list
         pwc_list.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))
         pwc.clear()
 

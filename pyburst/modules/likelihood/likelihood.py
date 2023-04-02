@@ -78,7 +78,7 @@ def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_li
             copy_metadata(pwc, pwc_temp)
             select_clusters(pwc, pwc_temp, k)
 
-            event = _likelihood(job_id, config, net, j, pwc, k + 1)
+            event = _likelihood(job_id, config, net, j, pwc, k + 1, fragment_clusters[j])
             events.append(event)
         n_events += nevents
 
@@ -92,14 +92,10 @@ def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_li
     return events
 
 
-def _likelihood(job_id, config, net, lag, pwc, cluster_id):
+def _likelihood(job_id, config, net, lag, pwc, cluster_id, fragment_cluster):
     k = 0
-    cid = pwc.get("ID", 0, 'S', 0)  # get cluster ID
-    if not cid.size():
-        return None
 
-    id = int(cid.data[cid.size() - 1] + 0.1)
-    pwc.setcore(False, id)
+    pwc.setcore(False, k+1)
     pwc.loadTDampSSE(net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
 
     ID = 0
