@@ -2,6 +2,16 @@ import copy
 
 import ROOT
 import numpy as np
+import cppyy
+
+
+def declare_function():
+    cppyy.cppdef("""
+        double* _to_double_malloc(double* data, int n) {
+            double* new_data = (double *)malloc(n*sizeof(double));
+            return new_data;
+        };
+        """)
 
 
 class WDM:
@@ -70,11 +80,14 @@ class WDM:
         :param n: size of samples
         :type n: int
         """
+        if not hasattr(cppyy.gbl, '_to_double_malloc'):
+            declare_function()
+
         if data is None:
             return self.wavelet.allocate()
 
         if not n:
-            return self.wavelet.allocate(len(data), data.data)
+            return self.wavelet.allocate(len(data), cppyy.gbl._to_double_malloc(data.data, len(data.data)))
         else:
             return self.wavelet.allocate(n, data)
 

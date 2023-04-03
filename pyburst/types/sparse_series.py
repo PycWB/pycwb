@@ -26,6 +26,20 @@ class SparseTimeFrequencySeries:
         self.layer_halo = layer_halo
         self.net_delay = net_delay
 
+    def from_fragment_cluster(self, wdm, tf_map, fragment_cluster, td_size, m_tau, ifo_id):
+        wdm.set_td_filter(td_size, 1)
+        ws = tf_map.copy()
+        ws.wavelet = wdm
+        ws.forward()
+
+        self.set_map(ws)
+        self.set_halo(m_tau)
+        for cluster in fragment_cluster.clusters:
+            self.add_core(ifo_id, cluster)
+        self.update_sparse_table()
+        self.clean()
+        return self
+
     def resize(self):
         """Resize the sparse map
 
@@ -130,7 +144,7 @@ class SparseTimeFrequencySeries:
         layer_halo = self.layer_halo  # halo layers
 
         cluster = []
-        n_layer = self.wavelet.max_level + 1 # number of WDM layers
+        n_layer = self.wavelet.max_level + 1  # number of WDM layers
         n_slice = self.wavelet.size_at_zero_layer  # number of samples in wavelet layer
 
         for core_pixel in self.core:
@@ -152,7 +166,9 @@ class SparseTimeFrequencySeries:
         self.sparse_map_00 = [self.wavelet.get_map_00(i) for i in cluster]
         self.sparse_map_90 = [self.wavelet.get_map_90(i) for i in cluster]
 
-
-
-
-
+    def clean(self):
+        """Clean the sparse map
+        """
+        # TODO: implement
+        print("Clean not implemented yet")
+        pass
