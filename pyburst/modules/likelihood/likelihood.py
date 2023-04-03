@@ -12,7 +12,7 @@ from pyburst.modules.catalog import add_events_to_catalog
 logger = logging.getLogger(__name__)
 
 
-def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_list):
+def likelihood(job_id, config, net, fragment_clusters):
     """
     calculate likelihood
 
@@ -20,12 +20,8 @@ def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_li
     :type config: Config
     :param net: network
     :type net: ROOT.network
-    :param sparse_table_list: list of sparse tables
-    :type sparse_table_list: list[ROOT.SSeries(np.double)]
     :param fragment_clusters: list of cluster
     :type fragment_clusters: list[FragmentCluster]
-    :param wdm_list: list of WDM
-    :type wdm_list: list[WDM]
     :return: the list of events
     :rtype: list[Event]
     """
@@ -39,12 +35,12 @@ def likelihood(job_id, config, net, sparse_table_list, fragment_clusters, wdm_li
     net.setDelayIndex(config.TDRate)
 
     # load sparse table
-    logger.info("Loading sparse TF map ... ")
-    for n in range(config.nIFO):
-        pD = net.getifo(n)
-        pD.sclear()
-        for i in range(config.nRES):
-            pD.vSS.push_back(sparse_table_list[i][n])
+    # logger.info("Loading sparse TF map ... ")
+    # for n in range(config.nIFO):
+    #     pD = net.getifo(n)
+    #     pD.sclear()
+    #     for i in range(config.nRES):
+    #         pD.vSS.push_back(sparse_table_list[i][n])
 
     n_events = 0
     events = []
