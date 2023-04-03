@@ -219,7 +219,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         else:
             net.cluster(1, 1)
 
-        # FIXME: why do we need to deeocopy the cluster?
+        # FIXME: why do we need to deepcopy the cluster?
         #  If we don't, macos will crash with thread-saftey issue
         #  Maybe because the pwc.clear() will delete the cluster?
         fragment_clusters.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))

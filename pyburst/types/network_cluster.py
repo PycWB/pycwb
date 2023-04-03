@@ -34,7 +34,7 @@ class FragmentCluster:
                  'subnet_threshold', 'clusters']
 
     def __init__(self, rate=None, start=None, stop=None, bpp=None, shift=None, f_low=None, f_high=None,
-                    n_pix=None, run=None, pair=None, n_sub=None, clusters=None):
+                 n_pix=None, run=None, pair=None, n_sub=None, clusters=None):
         #: original Time series rate
         self.rate = rate
         #: interval start GPS time
@@ -142,8 +142,6 @@ class Cluster:
         #: sky time delay configuration for waveform backward correction
         self.sky_time_delay = sky_time_delay
 
-
-
     def __repr__(self):
         return self.to_dict().__repr__()
 
@@ -164,6 +162,7 @@ class Cluster:
         return self
 
 
+# TODO: integrate with ClusterMeta to code
 class ClusterMeta:
     __slots__ = ['energy', 'energy_sky', 'like_net', 'net_ecor', 'norm_cor', 'net_null', 'net_ed',
                  'g_noise', 'like_sky', 'sky_cc', 'net_cc', 'sky_chi2', 'sub_net', 'sub_net2',

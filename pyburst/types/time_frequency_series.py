@@ -60,13 +60,12 @@ class TimeFrequencySeries:
         """
         if self.wavelet.allocate():
             self.wavelet.nSTS = self.wavelet.nWWS
-            # FIXME: failed every second time to copy and forward a new time series
-            #   ws = strains[0].copy()
-            #   ws.wavelet = wdm_list[0]
-            #   ws.forward()
+            # was failed every second time to copy and forward a new time series because of
+            # the pointer pWWS is not malloced, so it can not be reallocated, fixed by converting
+            # the list to malloced memory
             self.wavelet.t2w(k)
             # if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
-            #     # TODO: implement and convert
+            #     # TODO: implement and convert (or not)
             #     print(' ====== Implementation missing')
             #     #     self.data = self.wavelet.pWWS
             #     #     self.Size = self.wavelet.nWWS
