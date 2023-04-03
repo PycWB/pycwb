@@ -61,19 +61,22 @@ class WDM:
         """
         self.wavelet.setTDFilter(coeff_factor, upsample_factor)
 
-    def allocate(self, data=None):
+    def allocate(self, data=None, n=None):
         """
         allocate memory for the WDM sliced array
 
-        :param size: size of the WDM sliced array
-        :type size: int
         :param data: data to be stored in the WDM sliced array
         :type data: pycbc.types.timeseries.TimeSeries
+        :param n: size of samples
+        :type n: int
         """
         if data is None:
             return self.wavelet.allocate()
 
-        return self.wavelet.allocate(len(data), data.data)
+        if not n:
+            return self.wavelet.allocate(len(data), data.data)
+        else:
+            return self.wavelet.allocate(n, data)
 
     def release(self):
         """
@@ -85,18 +88,15 @@ class WDM:
         """
         clone the WDM object
         """
-        new_wdm = copy.deepcopy(self)
-        new_wdm.wavelet = self.wavelet.Clone()
-
-        return new_wdm
+        new_wavelet = self.wavelet.Clone()
+        return WDM(wavelet=new_wavelet, m=self.m, k=self.k, beta_order=self.beta_order, precision=self.precision)
 
     def lightweight_dump(self):
         """
         lightweight duplication of the WDM object
         """
-        new_wdm = copy.deepcopy(self)
-        new_wdm.wavelet = self.wavelet.Init()
-        return new_wdm
+        new_wavelet = self.wavelet.Init()
+        return WDM(wavelet=new_wavelet, m=self.m, k=self.k, beta_order=self.beta_order, precision=self.precision)
 
     def get_slice_size(self, level):
         """

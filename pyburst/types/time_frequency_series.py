@@ -61,13 +61,16 @@ class TimeFrequencySeries:
         if self.wavelet.allocate():
             self.wavelet.nSTS = self.wavelet.nWWS
             # FIXME: failed every second time to copy and forward a new time series
+            #   ws = strains[0].copy()
+            #   ws.wavelet = wdm_list[0]
+            #   ws.forward()
             self.wavelet.t2w(k)
-            if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
-                # TODO: implement and convert
-                print(' ====== Implementation missing')
-                #     self.data = self.wavelet.pWWS
-                #     self.Size = self.wavelet.nWWS
-                #     self.Slice = slice(0, self.wavelet.nWWS, 1)
+            # if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
+            #     # TODO: implement and convert
+            #     print(' ====== Implementation missing')
+            #     #     self.data = self.wavelet.pWWS
+            #     #     self.Size = self.wavelet.nWWS
+            #     #     self.Slice = slice(0, self.wavelet.nWWS, 1)
             self.w_rate = float(self.wavelet.get_slice_size(0) / (self.stop - self.start))
         else:
             raise ValueError('Wavelet transform failed')

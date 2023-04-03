@@ -39,21 +39,32 @@ class SparseTimeFrequencySeries:
         self.sparse_map_00 = []
         self.sparse_map_90 = []
 
-    def set_map(self, tf_map):
+    def set_map(self, tf_map, reset=True):
         """Set the map
 
         :param tf_map: time-frequency map
         :type tf_map: TimeFrequencySeries
+        :param reset: reset the sparse map
+        :type reset: bool (default: True)
         """
-        self.wavelet = tf_map.wavelet.lightweight_dump()
-        self.wavelet.allocate(tf_map.data)
-        self.time_halo = tf_map.wavelet.time_delay_filter_size
+        if reset:
+            self.resize()
 
-        self.rate = tf_map.data.sample_rate
-        self.w_rate = tf_map.w_rate
-        self.start = tf_map.start
-        self.stop = tf_map.stop
-        self.edge = tf_map.edge
+        if tf_map and reset:
+            if self.wavelet:
+                self.wavelet.release()
+
+            self.wavelet = tf_map.wavelet.lightweight_dump()
+            self.wavelet.allocate(n=tf_map.wavelet.nWWS, data=tf_map.wavelet.pWWS)
+            self.time_halo = tf_map.wavelet.time_delay_filter_size
+
+            self.rate = tf_map.data.sample_rate
+            self.w_rate = tf_map.w_rate
+            self.start = tf_map.start
+            self.stop = tf_map.stop
+            self.edge = tf_map.edge
+        elif tf_map:
+            print("Not implemented yet")
 
     def set_halo(self, max_tau=0.042, layer_halo=1, time_halo=-1):
         """Set the halo
@@ -119,13 +130,13 @@ class SparseTimeFrequencySeries:
         layer_halo = self.layer_halo  # halo layers
 
         cluster = []
-        n_layer = self.wavelet.max_level # number of WDM layers
+        n_layer = self.wavelet.max_level + 1 # number of WDM layers
         n_slice = self.wavelet.size_at_zero_layer  # number of samples in wavelet layer
 
         for core_pixel in self.core:
             # i,j index of the core pixel
-            l = core_pixel // n_slice
-            t = core_pixel % n_slice
+            t = core_pixel // n_layer  # slice
+            l = core_pixel % n_layer  # layer
 
             # Calculate the starting and ending indices for the time and layer axes
             start_t = max(0, t - h_slice)
@@ -134,7 +145,7 @@ class SparseTimeFrequencySeries:
             end_l = min(n_layer - 1, l + layer_halo)
 
             # Calculate the block indices in 1D array
-            cluster += [ i * n_slice + j for i in range(start_l, end_l + 1) for j in range(start_t, end_t + 1)]
+            cluster += [tt * n_layer + ll for ll in range(start_l, end_l + 1) for tt in range(start_t, end_t + 1)]
 
         cluster = sorted(set(cluster))
         self.sparse_index = cluster
