@@ -1,3 +1,5 @@
+import copy
+
 import ROOT
 import numpy as np
 
@@ -73,11 +75,39 @@ class WDM:
 
         return self.wavelet.allocate(len(data), data.data)
 
+    def release(self):
+        """
+        release memory of the WDM sliced array
+        """
+        self.wavelet.release()
+
+    def clone(self):
+        """
+        clone the WDM object
+        """
+        new_wdm = copy.deepcopy(self)
+        new_wdm.wavelet = self.wavelet.Clone()
+
+        return new_wdm
+
     def lightweight_dump(self):
         """
         lightweight duplication of the WDM object
         """
-        self.wavelet.Init()
+        new_wdm = copy.deepcopy(self)
+        new_wdm.wavelet = self.wavelet.Init()
+        return new_wdm
+
+    def get_slice_size(self, level):
+        """
+        get slice of the WDM sliced array
+
+        :param level: level of the wavelet transform
+        :type level: int
+        :return: slice of the WDM sliced array
+        :rtype: numpy.ndarray
+        """
+        return self.wavelet.getSlice(level).size()
 
     @property
     def time_delay_filter_size(self):

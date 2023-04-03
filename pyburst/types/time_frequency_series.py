@@ -17,9 +17,10 @@ class TimeFrequencySeries:
     :param f_high: high frequency cutoff
     :type f_high: float
     """
-    __slots__ = ['data', 'wavelet', 'whiten_mode', 'bpp', 'w_rate', 'f_low', 'f_high']
+    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', 'f_low', 'f_high']
 
-    def __init__(self, data, wavelet, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
+    def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
+        self._wavelet = None
         #: Time series data
         self.data = data
         #: Wavelet method
@@ -35,20 +36,61 @@ class TimeFrequencySeries:
         #: high frequency cutoff
         self.f_high = f_high
 
+    def __dict__(self):
+        return {key: getattr(self, key) for key in self.__slots__}
+
+    def copy(self):
+        new = TimeFrequencySeries(
+            data=self.data.copy(),
+            wavelet=self.wavelet,
+            whiten_mode=self.whiten_mode,
+            bpp=self.bpp,
+            w_rate=self.w_rate,
+            f_low=self.f_low,
+            f_high=self.f_high
+        )
+
+        return new
+
+    __copy__ = copy
+
     def forward(self, k=-1):
         """
         Performs forward wavelet transform on data (Not working yet)
         """
-        if self.wavelet.allocate(self.data):
+        if self.wavelet.allocate():
             self.wavelet.nSTS = self.wavelet.nWWS
+            # FIXME: failed every second time to copy and forward a new time series
             self.wavelet.t2w(k)
-            # if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
-            #     self.data = self.wavelet.pWWS
-            #     self.Size = self.wavelet.nWWS
-            #     self.Slice = slice(0, self.wavelet.nWWS, 1)
-            # self.wrate = self.Slice.size() / (self.stop() - self.start())
+            if self.wavelet.pWWS != self.data or self.wavelet.nWWS != len(self.data):
+                # TODO: implement and convert
+                print(' ====== Implementation missing')
+                #     self.data = self.wavelet.pWWS
+                #     self.Size = self.wavelet.nWWS
+                #     self.Slice = slice(0, self.wavelet.nWWS, 1)
+            self.w_rate = float(self.wavelet.get_slice_size(0) / (self.stop - self.start))
         else:
             raise ValueError('Wavelet transform failed')
+
+
+    @property
+    def wavelet(self):
+        """
+        ROOT.WDM object
+        """
+        return self._wavelet
+
+    @wavelet.setter
+    def wavelet(self, value):
+        if not value:
+            self._wavelet = None
+
+        if self._wavelet:
+            self._wavelet.release()
+            del self._wavelet
+
+        self._wavelet = value.clone()
+        self._wavelet.allocate(self.data)
 
     @property
     def start(self):

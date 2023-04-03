@@ -47,7 +47,7 @@ class SparseTimeFrequencySeries:
         """
         self.wavelet = tf_map.wavelet.lightweight_dump()
         self.wavelet.allocate(tf_map.data)
-        self.time_halo = tf_map.wavelet.time_delay_filter_size()
+        self.time_halo = tf_map.wavelet.time_delay_filter_size
 
         self.rate = tf_map.data.sample_rate
         self.w_rate = tf_map.w_rate
