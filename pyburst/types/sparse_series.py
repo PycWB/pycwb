@@ -14,8 +14,6 @@ class SparseTimeFrequencySeries:
                  time_halo=0, layer_halo=0, net_delay=0):
         self.wavelet = wavelet
         self.core = core
-        # self.sparse_lookup = sparse_lookup  # store the index pointer to the layers
-        # self.sparse_type = sparse_type  # store pixel type 1/0  core/halo
         self.sparse_table_00 = None
         self.sparse_table_90 = None
         if sparse_index and sparse_map_00 and sparse_map_90:
@@ -42,7 +40,6 @@ class SparseTimeFrequencySeries:
         for cluster in fragment_cluster.clusters:
             self.add_core(ifo_id, cluster)
         self.update_sparse_table()
-        self.clean()
         return self
 
     def resize(self):
@@ -52,9 +49,6 @@ class SparseTimeFrequencySeries:
         :type size: int
         """
         self.core = []
-        # self.sparse_lookup = []
-        # self.sparse_type = []
-        # self.sparse_index = []
         self.sparse_table_00 = None
         self.sparse_table_90 = None
 
@@ -190,22 +184,6 @@ class SparseTimeFrequencySeries:
         # create sparse table
         self.sparse_table_00 = coo_array((sparse_map_00, (layer, time)), shape=(n_layer, n_slice))
         self.sparse_table_90 = coo_array((sparse_map_90, (layer, time)), shape=(n_layer, n_slice))
-
-    def clean(self):
-        """Clean the sparse map
-        """
-        # FIXME: this is too slow, need to figure out a better way to do this
-        # N = self.wavelet.max_index
-        # for i in range(0, N):
-        #     if i in self.sparse_index:
-        #         continue
-        #
-        #     if i % 1000 == 0:
-        #         print("Cleaning sparse map: %d " % (i / N * 100))
-        #
-        #     self.wavelet.set_map_00(i, 0)
-        #     self.wavelet.set_map_90(i, 0)
-        pass
 
     @property
     def sparse_lookup(self):
