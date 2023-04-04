@@ -6,7 +6,7 @@ import time
 import numpy as np
 from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
-from pyburst.conversions import convert_fragment_clusters_to_netcluster
+from pyburst.conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
 from pyburst.modules.network import update_sky_map, update_sky_mask, restore_skymap
 from pyburst.modules.netcluster import append_cluster, copy_metadata
 from pyburst.types import FragmentCluster
@@ -34,7 +34,7 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     :param fragment_clusters: fragment clusters
     :type fragment_clusters: list[FragmentCluster]
     :param sparse_table_list: list of sparse tables
-    :type sparse_table_list: list[ROOT.SSeries(np.double)]
+    :type sparse_table_list: list[SparseTimeFrequencySeries]
     :return: the list of clusters
     :rtype: list[FragmentCluster]
     """
@@ -59,11 +59,12 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     for wdm in wdm_list:
         wdm.set_td_filter(config.TDSize, 1)
     # read sparse map to detector
+
     for n in range(config.nIFO):
         det = net.getifo(n)
         det.sclear()
         for sparse_table in sparse_table_list:
-            det.vSS.push_back(sparse_table[n])
+            det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
 
     # merge cluster
     cluster = copy.deepcopy(fragment_clusters[0])

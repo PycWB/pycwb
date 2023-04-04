@@ -9,13 +9,14 @@ from pyburst.modules.read_data import read_from_job_segment
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.network import create_network
-from pyburst.modules.coherence import coherence, coherence_parallel
+from pyburst.modules.coherence import coherence, coherence_parallel, sparse_table_from_fragment_clusters
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
 from pyburst.modules.job_segment import select_job_segment
 from pyburst.modules.catalog import create_catalog
+from pyburst.types.job import WaveSegment
 import logging
-
+from pyburst.conversions import convert_sparse_series_to_sseries
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +48,9 @@ def analyze_job_segment(config, job_seg):
     logger.info(f"Start time: {job_seg.start_time}")
     logger.info(f"End time: {job_seg.end_time}")
     logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
-
+    # if config.simulation != 0:
+    #     data = generate_injection(config.ifo, config.injection)
+    # else:
     data = read_from_job_segment(config, job_seg)
 
     # data conditioning
@@ -64,13 +67,17 @@ def analyze_job_segment(config, job_seg):
     wdm_list = create_wdm_set(config, beta_order, precision)
 
     # calculate coherence
-    sparse_table_list, cluster_list = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
+    fragment_clusters = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
+
+    # generate sparse table
+    sparse_table_list = sparse_table_from_fragment_clusters(config, net.getDelay('MAX'),
+                                                             tf_maps, wdm_list, fragment_clusters)
 
     # supercluster
-    pwc_list = supercluster(config, net, wdm_list, cluster_list, sparse_table_list)
+    pwc_list = supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list)
 
     # likelihood
-    events = likelihood(job_id, config, net, sparse_table_list, pwc_list, wdm_list)
+    events = likelihood(job_id, config, net, pwc_list)
 
     import matplotlib.pyplot as plt
     plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
@@ -133,15 +140,18 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     if not os.path.exists(config.logDir):
         os.makedirs(config.logDir)
 
-    logger.info("-" * 80)
-    logger.info("Initializing job segments")
-    job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
-                                      config.segLen, config.segMLS, config.segEdge, config.segOverlap,
-                                      config.rateANA, config.l_high)
+    if config.simulation == 0:
+        logger.info("-" * 80)
+        logger.info("Initializing job segments")
+        job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
+                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
+                                          config.rateANA, config.l_high)
 
-    # log number of segments
-    logger.info(f"Number of segments: {len(job_segments)}")
-    logger.info("-" * 80)
+        # log number of segments
+        logger.info(f"Number of segments: {len(job_segments)}")
+        logger.info("-" * 80)
+    else:
+        job_segments = [WaveSegment(0, config.injection['segment']['start'], config.injection['segment']['end'], None)]
 
     # create catalog
     logger.info("Creating catalog file")

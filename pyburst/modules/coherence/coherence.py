@@ -38,26 +38,24 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     :param nRMS_list: list of noise RMS
     :type nRMS_list: list[TimeFrequencySeries]
     :return: (sparse_table_list, fragment_clusters)
-    :rtype: (list[ROOT.SSeries], list[FragmentCluster])
+    :rtype: (list[SparseTimeFrequencySeries], list[FragmentCluster])
     """
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024
     if up_n < 1:
         up_n = 1
 
-    sparse_table_list = []
     fragment_clusters = []
 
     with Pool(processes=min(config.nproc, config.nRES)) as pool:
         tasks = []
         for i in range(config.nRES):
             tasks.append((i, config, tf_maps, nRMS_list, wdm_list[i], up_n))
-        for sparse_table, fragment_clusters_single_res in pool.starmap(_coherence_single_res, tasks):
-            sparse_table_list.append(sparse_table)
+        for fragment_clusters_single_res in pool.starmap(_coherence_single_res, tasks):
             fragment_clusters += fragment_clusters_single_res
 
     logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
-    return sparse_table_list, fragment_clusters
+    return fragment_clusters
 
 
 def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
@@ -86,7 +84,7 @@ def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
     :param net: network, if None, create a temporary minimum network object with wdm_list and nRMS_list
     :type net: ROOT.network, optional
     :return: (sparse_table_list, fragment_clusters)
-    :rtype: (list[ROOT.SSeries], list[FragmentCluster])
+    :rtype: (list[SparseTimeFrequencySeries], list[FragmentCluster])
     """
     # calculate upsample factor
     timer_start = time.perf_counter()
@@ -94,19 +92,17 @@ def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
     if up_n < 1:
         up_n = 1
 
-    sparse_table_list = []
     fragment_clusters = []
 
     for i in range(config.nRES):
-        sparse_table, fragment_clusters_single_res = _coherence_single_res(i, config, tf_maps, nRMS_list, wdm_list[i], up_n, net)
-        sparse_table_list.append(sparse_table)
+        fragment_clusters_single_res = _coherence_single_res(i, config, tf_maps, nRMS_list, wdm_list[i], up_n, net)
         fragment_clusters += fragment_clusters_single_res
 
     logger.info("----------------------------------------")
     logger.info("Coherence time: %f s", time.perf_counter() - timer_start)
     logger.info("----------------------------------------")
 
-    return sparse_table_list, fragment_clusters
+    return fragment_clusters
 
 
 def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
@@ -182,17 +178,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     if TL <= 0.:
         raise ValueError("live time is zero")
 
-    # init sparse table (used in supercluster stage : set the TD filter size)
-    sparse_table = []
-    wdm.set_td_filter(config.TDSize, 1)
-    for n in range(config.nIFO):
-        # TODO: replace to python type
-        ws = ROOT.WSeries(np.double)(convert_to_wavearray(tf_maps[n]), wdm.wavelet)
-        ws.Forward()
-        ss = ROOT.SSeries(np.double)()
-        ss.SetMap(ws)
-        ss.SetHalo(m_tau)
-        sparse_table.append(ss)
+    # wdm.set_td_filter(config.TDSize, 1)
 
     logger_info += "lag | clusters | pixels \n"
 
@@ -227,21 +213,10 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         csize_tot += pwc.csize()
         psize_tot += pwc.size()
         logger_info += "%3d |%9d |%7d \n" % (j, csize_tot, psize_tot)
-        # logger.info("%3d |%9d |%7d ", j, csize_tot, psize_tot)
-
-        # add core pixels to sparse table
-        for n in range(config.nIFO):
-            sparse_table[n].AddCore(n, pwc)
 
         pwc.clear()
-
-    for n in range(config.nIFO):
-        # Use the core pixels and halo parameters to update the sparse maps with core+halo pixels
-        sparse_table[n].UpdateSparseTable()
-        # set to 0 all TF map pixels which do not belong to core+halo
-        sparse_table[n].Clean()
 
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
     logger.info(logger_info)
-    return sparse_table, fragment_clusters
+    return fragment_clusters
