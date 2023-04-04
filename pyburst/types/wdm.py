@@ -114,6 +114,12 @@ class WDM:
         new_wavelet = self.wavelet.Init()
         return WDM(wavelet=new_wavelet, m=self.m, k=self.k, beta_order=self.beta_order, precision=self.precision)
 
+    def to_type_WDM(self):
+        """
+        convert the WDM object to ROOT.WDM
+        """
+        self.wavelet = ROOT.WDM(np.double)(self.wavelet)
+
     def get_slice_size(self, level):
         """
         get slice of the WDM sliced array

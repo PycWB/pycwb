@@ -223,13 +223,13 @@ class SparseTimeFrequencySeries:
     def sparse_map_00(self):
         """Get the sparse map_00
         """
-        return self.sparse_table_00.toarray().flatten()
+        return self.sparse_table_00.data
 
     @property
     def sparse_map_90(self):
         """Get the sparse map_90
         """
-        return self.sparse_table_90.toarray().flatten()
+        return self.sparse_table_90.data
 
     @property
     def sparse_index(self):
