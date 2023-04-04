@@ -199,7 +199,11 @@ class WDM:
         :param index:
         :return:
         """
-        return self.wavelet.pWWS[index]
+        # if index is a list, return a list
+        if isinstance(index, int):
+            return self.wavelet.pWWS[index]
+        else:
+            return [self.wavelet.pWWS[i] for i in index]
 
     def get_map_90(self, index):
         """
@@ -208,7 +212,11 @@ class WDM:
         :param index:
         :return:
         """
-        return self.wavelet.pWWS[index + self.max_index + 1]
+        # if index is a list, return a list
+        if isinstance(index, int):
+            return self.wavelet.pWWS[index + self.max_index + 1]
+        else:
+            return [self.wavelet.pWWS[i + self.max_index + 1] for i in index]
 
     def set_map_00(self, index, value):
         """
