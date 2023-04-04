@@ -8,14 +8,14 @@ class SparseTimeFrequencySeries:
     :param core: bool, whether to use core functions
     """
 
-    def __init__(self, core=None, wavelet=None, sparse_lookup=None,
-                 sparse_type=None, sparse_index=None, sparse_map_00=None, sparse_map_90=None,
+    def __init__(self, core=None, wavelet=None,  # sparse_lookup=None, sparse_type=None,
+                 sparse_index=None, sparse_map_00=None, sparse_map_90=None,
                  rate=0, w_rate=0, start=0, stop=0, edge=0,
                  time_halo=0, layer_halo=0, net_delay=0):
         self.wavelet = wavelet
         self.core = core
-        self.sparse_lookup = sparse_lookup  # store the index pointer to the layers
-        self.sparse_type = sparse_type  # store pixel type 1/0  core/halo
+        # self.sparse_lookup = sparse_lookup  # store the index pointer to the layers
+        # self.sparse_type = sparse_type  # store pixel type 1/0  core/halo
         self.sparse_table_00 = None
         self.sparse_table_90 = None
         if sparse_index and sparse_map_00 and sparse_map_90:
@@ -52,8 +52,8 @@ class SparseTimeFrequencySeries:
         :type size: int
         """
         self.core = []
-        self.sparse_lookup = []
-        self.sparse_type = []
+        # self.sparse_lookup = []
+        # self.sparse_type = []
         # self.sparse_index = []
         self.sparse_table_00 = None
         self.sparse_table_90 = None
