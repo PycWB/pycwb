@@ -165,14 +165,14 @@ class SparseTimeFrequencySeries:
             end_l = min(n_layer - 1, l + layer_halo)
 
             # Calculate the block indices in 1D array
-            cluster += [tt * n_layer + ll for ll in range(start_l, end_l + 1) for tt in range(start_t, end_t + 1)]
+            cluster += [(ll, tt) for ll in range(start_l, end_l + 1) for tt in range(start_t, end_t + 1)]
 
         # remove duplicates
         cluster = sorted(set(cluster))
 
         # get the sparse maps
-        sparse_map_00 = [self.wavelet.get_map_00(i) for i in cluster]
-        sparse_map_90 = [self.wavelet.get_map_90(i) for i in cluster]
+        sparse_map_00 = [self.wavelet.get_map_00(ll * n_layer + tt) for tt, ll in cluster]
+        sparse_map_90 = [self.wavelet.get_map_90(ll * n_layer + tt) for tt, ll in cluster]
 
         self.set_sparse_table(cluster, sparse_map_00, sparse_map_90)
 
@@ -180,13 +180,16 @@ class SparseTimeFrequencySeries:
         n_layer = self.wavelet.max_level + 1  # number of WDM layers
         n_slice = self.wavelet.size_at_zero_layer  # number of samples in wavelet layer
 
-        cluster = np.array(sparse_index)
-        row = cluster // n_layer
-        col = cluster % n_layer
+        # cluster = np.array(sparse_index)
+        # time = cluster // n_layer
+        # layer = cluster % n_layer
+        # list comprehension is faster than zip
+        layer = [i[0] for i in sparse_index]
+        time = [i[1] for i in sparse_index]
 
         # create sparse table
-        self.sparse_table_00 = coo_array((sparse_map_00, (row, col)), shape=(n_slice, n_layer))
-        self.sparse_table_90 = coo_array((sparse_map_90, (row, col)), shape=(n_slice, n_layer))
+        self.sparse_table_00 = coo_array((sparse_map_00, (layer, time)), shape=(n_layer, n_slice))
+        self.sparse_table_90 = coo_array((sparse_map_90, (layer, time)), shape=(n_layer, n_slice))
 
     def clean(self):
         """Clean the sparse map
@@ -205,6 +208,18 @@ class SparseTimeFrequencySeries:
         pass
 
     @property
+    def sparse_lookup(self):
+        """Get the sparse lookup
+        """
+        sparse_lookup = []
+        n = 0
+        n_layer = self.sparse_table_00.shape[0]
+        for i in range(n_layer + 1):
+            sparse_lookup.append(n)
+            n += np.count_nonzero(self.sparse_table_00.row == i)
+        return sparse_lookup
+
+    @property
     def sparse_map_00(self):
         """Get the sparse map_00
         """
@@ -220,5 +235,5 @@ class SparseTimeFrequencySeries:
     def sparse_index(self):
         """Get the sparse index
         """
-        n_layer = self.sparse_map_00.shape[1]
-        return [tt * n_layer + ll for ll in self.sparse_map_00.row for tt in self.sparse_map_00.col]
+        n_layer = self.sparse_table_00.shape[0]
+        return self.sparse_table_00.col * n_layer + self.sparse_table_00.row
