@@ -150,7 +150,7 @@ class Cluster:
 
     def from_netcluster(self, netcluster, c_id):
         self.pixels = [Pixel().from_netpixel(netcluster.pList[pixel_id]) for pixel_id in netcluster.cList[c_id]]
-        self.cluster_meta = netcluster.cData[c_id]
+        self.cluster_meta = ClusterMeta().from_cData(netcluster.cData[c_id])
         self.cluster_status = netcluster.sCuts[c_id]
         self.cluster_rate = list(netcluster.cRate[c_id])
         self.cluster_time = netcluster.cTime[c_id]
@@ -162,14 +162,13 @@ class Cluster:
         return self
 
 
-# TODO: integrate with ClusterMeta to code
 class ClusterMeta:
     __slots__ = ['energy', 'energy_sky', 'like_net', 'net_ecor', 'norm_cor', 'net_null', 'net_ed',
                  'g_noise', 'like_sky', 'sky_cc', 'net_cc', 'sky_chi2', 'sub_net', 'sub_net2',
                  'sky_stat', 'net_rho', 'net_rho2', 'theta', 'phi', 'iota', 'psi', 'ellipticity',
                  'c_time', 'c_freq', 'g_net', 'a_net', 'i_net', 'norm', 'ndof', 'tmrgr', 'tmrgrerr',
                  'mchirp', 'mchirperr', 'chi2chirp', 'chirp_efrac', 'chirp_pfrac', 'chirp_ellip',
-                 'sky_size', 'sky_index']
+                 'sky_size', 'sky_index', 'chirp', 'mchpdf']
 
     def __init__(self, energy=None, energy_sky=None, like_net=None, net_ecor=None, norm_cor=None,
                  net_null=None, net_ed=None, g_noise=None, like_sky=None, sky_cc=None, net_cc=None,
@@ -257,3 +256,54 @@ class ClusterMeta:
         self.sky_size = sky_size
         #: index in the skymap
         self.sky_index = sky_index
+
+        self.chirp = None
+        self.mchpdf = None
+
+    def __dict__(self):
+        return {k: getattr(self, k) for k in self.__slots__}
+
+    def from_cData(self, c_data):
+        self.energy = c_data.energy
+        self.energy_sky = c_data.enrgsky
+        self.like_net = c_data.likenet
+        self.net_ecor = c_data.netecor
+        self.norm_cor = c_data.normcor
+        self.net_null = c_data.netnull
+        self.net_ed = c_data.netED
+        self.g_noise = c_data.Gnoise
+        self.like_sky = c_data.likesky
+        self.sky_cc = c_data.skycc
+        self.net_cc = c_data.netcc
+        self.sky_chi2 = c_data.skyChi2
+        self.sub_net = c_data.subnet
+        self.sub_net2 = c_data.SUBNET
+        self.sky_stat = c_data.skyStat
+        self.net_rho = c_data.netRHO
+        self.net_rho2 = c_data.netrho
+        self.theta = c_data.theta
+        self.phi = c_data.phi
+        self.iota = c_data.iota
+        self.psi = c_data.psi
+        self.ellipticity = c_data.ellipticity
+        self.c_time = c_data.cTime
+        self.c_freq = c_data.cFreq
+        self.g_net = c_data.gNET
+        self.a_net = c_data.aNET
+        self.i_net = c_data.iNET
+        self.norm = c_data.norm
+        self.ndof = c_data.nDoF
+        self.tmrgr = c_data.tmrgr
+        self.tmrgrerr = c_data.tmrgrerr
+        self.mchirp = c_data.mchirp
+        self.mchirperr = c_data.mchirperr
+        self.chi2chirp = c_data.chi2chirp
+        self.chirp_efrac = c_data.chirpEfrac
+        self.chirp_pfrac = c_data.chirpPfrac
+        self.chirp_ellip = c_data.chirpEllip
+        self.sky_size = c_data.skySize
+        self.sky_index = c_data.skyIndex
+        # TODO: pythonize these
+        self.chirp = c_data.chirp
+        self.mchpdf = c_data.mchpdf
+        return self

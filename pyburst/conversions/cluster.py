@@ -1,17 +1,6 @@
 import ROOT
 from .pixel import convert_pixel_to_netpixel
-from pyburst.types import Cluster, FragmentCluster
-
-
-# def convert_netcluster_to_cluster(c_cluster):
-#     cluster_list = []
-#     for c_id, pixel_ids in enumerate(c_cluster.cList):
-#         cluster = Cluster().from_netcluster(c_cluster, c_id)
-#         cluster_list.append(cluster)
-#
-#     FragmentCluster(cluster_list)
-#
-#     return cluster_list
+from pyburst.types import Cluster
 
 
 def convert_fragment_clusters_to_netcluster(fragment_clusters):
@@ -53,7 +42,8 @@ def convert_fragment_clusters_to_netcluster(fragment_clusters):
     ]
 
     # add others
-    netcluster.cData = [cluster.cluster_meta for cluster in clusters]
+    netcluster.cData = [convert_cluster_meta_to_cData(cluster.cluster_meta)
+                        for cluster in clusters]
     netcluster.sCuts = [cluster.cluster_status for cluster in clusters]
     netcluster.cTime = [cluster.cluster_time for cluster in clusters]
     netcluster.cFreq = [cluster.cluster_freq for cluster in clusters]
@@ -65,4 +55,51 @@ def convert_fragment_clusters_to_netcluster(fragment_clusters):
         netcluster.nTofF.push_back(cluster.sky_time_delay)
 
     return netcluster
+
+
+def convert_cluster_meta_to_cData(cluster_meta):
+    c_data = ROOT.clusterdata()
+    c_data.energy = cluster_meta.energy
+    c_data.enrgsky = cluster_meta.energy_sky
+    c_data.likenet = cluster_meta.like_net
+    c_data.netecor = cluster_meta.net_ecor
+    c_data.normcor = cluster_meta.norm_cor
+    c_data.netnull = cluster_meta.net_null
+    c_data.netED = cluster_meta.net_ed
+    c_data.Gnoise = cluster_meta.g_noise
+    c_data.likesky = cluster_meta.like_sky
+    c_data.skycc = cluster_meta.sky_cc
+    c_data.netcc = cluster_meta.net_cc
+    c_data.skyChi2 = cluster_meta.sky_chi2
+    c_data.subnet = cluster_meta.sub_net
+    c_data.SUBNET = cluster_meta.sub_net2
+    c_data.skyStat = cluster_meta.sky_stat
+    c_data.netRHO = cluster_meta.net_rho
+    c_data.netrho = cluster_meta.net_rho2
+    c_data.theta = cluster_meta.theta
+    c_data.phi = cluster_meta.phi
+    c_data.iota = cluster_meta.iota
+    c_data.psi = cluster_meta.psi
+    c_data.ellipticity = cluster_meta.ellipticity
+    c_data.cTime = cluster_meta.c_time
+    c_data.cFreq = cluster_meta.c_freq
+    c_data.gNET = cluster_meta.g_net
+    c_data.aNET = cluster_meta.a_net
+    c_data.iNET = cluster_meta.i_net
+    c_data.norm = cluster_meta.norm
+    c_data.nDoF = cluster_meta.ndof
+    c_data.tmrgr = cluster_meta.tmrgr
+    c_data.tmrgrerr = cluster_meta.tmrgrerr
+    c_data.mchirp = cluster_meta.mchirp
+    c_data.mchirperr = cluster_meta.mchirperr
+    c_data.chi2chirp = cluster_meta.chi2chirp
+    c_data.chirpEfrac = cluster_meta.chirp_efrac
+    c_data.chirpPfrac = cluster_meta.chirp_pfrac
+    c_data.chirpEllip = cluster_meta.chirp_ellip
+    c_data.skySize = cluster_meta.sky_size
+    c_data.skyIndex = cluster_meta.sky_index
+    c_data.chirp = cluster_meta.chirp
+    c_data.mchpdf = cluster_meta.mchpdf
+    return c_data
+
 
