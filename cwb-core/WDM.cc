@@ -56,13 +56,13 @@ ClassImp(WDM<double>)
 
 static const double Pi = 3.14159265358979312;
 
-template<class DataType_t> double* WDM<DataType_t>::Cos[MAXBETA];
-template<class DataType_t> double* WDM<DataType_t>::Cos2[MAXBETA];
-template<class DataType_t> double* WDM<DataType_t>::SinCos[MAXBETA];
-template<class DataType_t> double  WDM<DataType_t>::CosSize[MAXBETA];
-template<class DataType_t> double  WDM<DataType_t>::Cos2Size[MAXBETA];
-template<class DataType_t> double  WDM<DataType_t>::SinCosSize[MAXBETA];
-template<class DataType_t>    int  WDM<DataType_t>::objCounter = 0;      
+//template<class DataType_t> double* WDM<DataType_t>::Cos[MAXBETA];
+//template<class DataType_t> double* WDM<DataType_t>::Cos2[MAXBETA];
+//template<class DataType_t> double* WDM<DataType_t>::SinCos[MAXBETA];
+//template<class DataType_t> double  WDM<DataType_t>::CosSize[MAXBETA];
+//template<class DataType_t> double  WDM<DataType_t>::Cos2Size[MAXBETA];
+//template<class DataType_t> double  WDM<DataType_t>::SinCosSize[MAXBETA];
+//template<class DataType_t>    int  WDM<DataType_t>::objCounter = 0;
       
 // exp^{-...} i.e. negative sign
 void FFT(double* a, double* b, int n)

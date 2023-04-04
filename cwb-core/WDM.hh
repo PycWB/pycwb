@@ -134,9 +134,9 @@ public:
    //  void transform2();
    //  double pixel(int f0, int t0);
    
-   static double *Cos[MAXBETA], *Cos2[MAXBETA], *SinCos[MAXBETA];
-   static double CosSize[MAXBETA], Cos2Size[MAXBETA], SinCosSize[MAXBETA];
-   static int objCounter;
+   static inline double *Cos[MAXBETA], *Cos2[MAXBETA], *SinCos[MAXBETA];
+   static inline double CosSize[MAXBETA], Cos2Size[MAXBETA], SinCosSize[MAXBETA];
+   static inline int objCounter;
 
    void initFourier();
 
