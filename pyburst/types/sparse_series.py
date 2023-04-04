@@ -169,6 +169,15 @@ class SparseTimeFrequencySeries:
     def clean(self):
         """Clean the sparse map
         """
-        # TODO: implement
-        print("Clean not implemented yet")
+        # FIXME: this is too slow, need to figure out a better way to do this
+        # N = self.wavelet.max_index
+        # for i in range(0, N):
+        #     if i in self.sparse_index:
+        #         continue
+        #
+        #     if i % 1000 == 0:
+        #         print("Cleaning sparse map: %d " % (i / N * 100))
+        #
+        #     self.wavelet.set_map_00(i, 0)
+        #     self.wavelet.set_map_90(i, 0)
         pass

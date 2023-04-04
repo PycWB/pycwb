@@ -9,6 +9,9 @@ def declare_function():
     cppyy.cppdef("""
         double* _to_double_malloc(double* data, int n) {
             double* new_data = (double *)malloc(n*sizeof(double));
+            for (int i=0; i<n; i++) {
+                new_data[i] = data[i];
+            }
             return new_data;
         };
         """)
@@ -206,6 +209,26 @@ class WDM:
         :return:
         """
         return self.wavelet.pWWS[index + self.max_index + 1]
+
+    def set_map_00(self, index, value):
+        """
+        set value of the WDM sliced array at index
+
+        :param index:
+        :param value:
+        :return:
+        """
+        self.wavelet.pWWS[index] = value
+
+    def set_map_90(self, index, value):
+        """
+        set value of the WDM sliced array at index
+
+        :param index:
+        :param value:
+        :return:
+        """
+        self.wavelet.pWWS[index + self.max_index + 1] = value
 
     def t2w(self, k):
         """
