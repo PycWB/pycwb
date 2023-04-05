@@ -232,9 +232,14 @@ def generate_injection(config):
 
     # load noise
     logger.info(f'Generating noise for {ifo}')
+
+    # load seeds from config, if not specified, use default seeds 0 and 1
+    seeds = injection['segment']['seeds'] if 'seeds' in injection['segment'] else [None, None]
+
+    # generate noise
     noise = [generate_noise(f_low=2.0, sample_rate=config.inRate,
                             duration=injection['segment']['end'] - injection['segment']['start'],
-                            start_time=injection['segment']['start'], seed=i)
+                            start_time=injection['segment']['start'], seed=seeds[i])
              for i, ifo in enumerate(ifo)]
 
     # generate injection from pycbc
