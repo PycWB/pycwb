@@ -6,7 +6,11 @@ def convert_sparse_series_to_sseries(sparse_series):
     ss = ROOT.SSeries(np.double)()
     ss.pWavelet = sparse_series.wavelet.lightweight_dump().wavelet
     data = np.array(sparse_series.sparse_map_00 + sparse_series.sparse_map_90, dtype=np.double)
-    ss.pWavelet.allocate(len(data), data)
+    if len(data) == 0:
+        ss.pWavelet.allocate(0, ROOT.nullptr)
+    else:
+        ss.pWavelet.allocate(len(data), data)
+
     ss.sparseLookup.resize(len(sparse_series.sparse_lookup))
     for i, v in enumerate(sparse_series.sparse_lookup):
         ss.sparseLookup[i] = v
