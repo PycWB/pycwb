@@ -1,7 +1,6 @@
 import copy
 import time
 from multiprocessing import Pool
-import numpy as np
 import ROOT
 import logging
 from pyburst.config import Config
@@ -37,8 +36,8 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     :type wdm_list: list[WDM]
     :param nRMS_list: list of noise RMS
     :type nRMS_list: list[TimeFrequencySeries]
-    :return: (sparse_table_list, fragment_clusters)
-    :rtype: (list[SparseTimeFrequencySeries], list[FragmentCluster])
+    :return: fragment_clusters
+    :rtype: list[FragmentCluster]
     """
     timer_start = time.perf_counter()
     up_n = config.rateANA // 1024
@@ -83,8 +82,8 @@ def coherence(config, tf_maps, wdm_list, nRMS_list, net=None):
     :type nRMS_list: list[TimeFrequencySeries]
     :param net: network, if None, create a temporary minimum network object with wdm_list and nRMS_list
     :type net: ROOT.network, optional
-    :return: (sparse_table_list, fragment_clusters)
-    :rtype: (list[SparseTimeFrequencySeries], list[FragmentCluster])
+    :return: fragment_clusters
+    :rtype: list[FragmentCluster]
     """
     # calculate upsample factor
     timer_start = time.perf_counter()
@@ -148,11 +147,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     # produce TF maps with max over the sky energy
     alp = 0.0
     for n in range(len(config.ifo)):
-        # tf_map = ROOT.WSeries(np.double)(tf_maps[n])
         ts = convert_to_wavearray(tf_maps[n])
-        # alp += tf_map.maxEnergy(ts, wdm, m_tau, up_n, net.pattern)
-        # tf_map.setlow(config.fLow)
-        # tf_map.sethigh(config.fHigh)
         alp += net.getifo(n).getTFmap().maxEnergy(ts, wdm.wavelet,
                                                   m_tau, up_n,
                                                   net.pattern)

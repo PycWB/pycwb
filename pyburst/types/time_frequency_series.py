@@ -7,7 +7,7 @@ class TimeFrequencySeries:
     :param wavelet: wavelet method
     :type wavelet: WDM
     :param whiten_mode: whiten mode
-    :type whiten_mode: str
+    :type whiten_mode: int
     :param bpp: black pixel probability
     :type bpp: float
     :param w_rate: wavelet zero layer rate
@@ -23,18 +23,18 @@ class TimeFrequencySeries:
         self._wavelet = None
         #: Time series data
         self.data = data
-        #: Wavelet method
+        #: Wavelet method, a new wavelet will be copied and data will be allocated automatically
         self.wavelet = wavelet
         #: Whiten mode
-        self.whiten_mode = whiten_mode
+        self.whiten_mode = 0 if whiten_mode is None else whiten_mode
         #: black pixel probability
-        self.bpp = bpp
+        self.bpp = 1. if bpp is None else bpp
         #: wavelet zero layer rate
-        self.w_rate = w_rate
+        self.w_rate = (data.sample_rate if data else 0.) if w_rate is None else w_rate
         #: low frequency cutoff
-        self.f_low = f_low
+        self.f_low = 0. if f_low is None else f_low
         #: high frequency cutoff
-        self.f_high = f_high
+        self.f_high = (data.sample_rate / 2. if data else 0.) if f_high is None else f_high
 
     def __dict__(self):
         return {key: getattr(self, key) for key in self.__slots__}
@@ -73,7 +73,6 @@ class TimeFrequencySeries:
             self.w_rate = float(self.wavelet.get_slice_size(0) / (self.stop - self.start))
         else:
             raise ValueError('Wavelet transform failed')
-
 
     @property
     def wavelet(self):
@@ -114,10 +113,3 @@ class TimeFrequencySeries:
         TODO: dummy edge
         """
         return 0.0
-
-
-class SparseTable(TimeFrequencySeries):
-    def __init__(self, data, wavelet, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
-        super().__init__(data, wavelet, whiten_mode, bpp, w_rate, f_low, f_high)
-        #: List of significant pixels
-        self.pixels = []

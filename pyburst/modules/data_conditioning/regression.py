@@ -22,13 +22,16 @@ def regression(config, wdm, h):
     :return: cleaned data
     :rtype: pycbc.types.timeseries.TimeSeries
     """
+    ##########################################
+    # cWB2G regression method
+    ##########################################
     h = convert_to_wavearray(h)
 
     tf_map = ROOT.WSeries(np.double)(h, wdm.wavelet)
     tf_map.Forward()
 
     # Construct regression from WSeries, add target channel, set low and high frequencies
-    r = ROOT.regression(tf_map, "target", 1., config.fHigh) # TODO: consideration for flow=1.?
+    r = ROOT.regression(tf_map, "target", 1., config.fHigh)  # TODO: consideration for flow=1.?
     # Add witness channel to the regression list, set low and high frequencies to 0 by default
     # using Bi-othogonal wavelet transforms?
     r.add(h, "target")
@@ -47,5 +50,7 @@ def regression(config, wdm, h):
 
     # cleaned data
     hh = r.getClean()
+    strain = convert_wavearray_to_pycbc_timeseries(hh)
+    ##########################################
 
-    return convert_wavearray_to_pycbc_timeseries(hh)
+    return strain

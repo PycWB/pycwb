@@ -8,7 +8,6 @@ from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
 from pyburst.conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
 from pyburst.modules.network import update_sky_map, update_sky_mask, restore_skymap
-from pyburst.modules.netcluster import append_cluster, copy_metadata
 from pyburst.types import FragmentCluster
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,6 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     timer_start = time.perf_counter()
 
     # add wavelets to network
-    # TODO: check pwc.loadTDampSSE
     for wdm in wdm_list:
         net.add(wdm.wavelet)
 
@@ -58,8 +56,8 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     # set low-rate TD filters
     for wdm in wdm_list:
         wdm.set_td_filter(config.TDSize, 1)
-    # read sparse map to detector
 
+    # read sparse map to detector
     for n in range(config.nIFO):
         det = net.getifo(n)
         det.sclear()

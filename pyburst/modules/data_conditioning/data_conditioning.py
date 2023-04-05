@@ -3,14 +3,8 @@ import logging
 from .regression import regression
 from .whitening import whitening
 from pyburst.config import Config
-from gwpy.timeseries import TimeSeries as gwpyTimeSeries
-from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
-from pyburst.conversions import convert_pycbc_timeseries_to_wavearray, convert_timeseries_to_wavearray, \
-    convert_wseries_to_pycbc_timeseries, convert_wseries_to_time_frequency_series
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
 from pyburst.types import TimeFrequencySeries, WDM
-import ROOT
-import numpy as np
 from multiprocessing import Pool
 
 logger = logging.getLogger(__name__)

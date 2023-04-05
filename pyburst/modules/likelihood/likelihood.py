@@ -46,16 +46,14 @@ def likelihood(job_id, config, net, fragment_clusters):
     events = []
     for j in range(int(net.nLag)):
         cycle = net.wc_List[j].shift
+
+        # add clusters to network for analysis
         pwc = net.getwc(j)
-        # pwc = copy.deepcopy(pwc_list[0])
-        # pwc.clear()
         pwc.cData.clear()
         pwc_temp = convert_fragment_clusters_to_netcluster(fragment_clusters[j])
         copy_metadata(pwc, pwc_temp)
-        # pwc.print()
 
         # print header
-
         logger.info("-------------------------------------------------------")
         logger.info("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
         logger.info("   ----------------------------------------------------")
@@ -66,11 +64,10 @@ def likelihood(job_id, config, net, fragment_clusters):
         nselected_core_pixels = 0
         nrejected_weak_pixels = 0  # remove weak glitches
         nrejected_loud_pixels = 0  # remove loud glitches
-        for k in range(len(fragment_clusters[j].clusters)):  # loop over the cluster list
-            # Decoupling:
-            # TODO: parallelize this loop
-            # new_net = copy.deepcopy(net)
-            # pwc = new_net.getwc(j)
+
+        # loop over clusters to calculate likelihood
+        for k in range(len(fragment_clusters[j].clusters)):
+            # Todo: decouple for parallelization (or not)
             copy_metadata(pwc, pwc_temp)
             select_clusters(pwc, pwc_temp, k)
 
