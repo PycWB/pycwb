@@ -16,6 +16,7 @@ install_requires = [
     "aiohttp",
     "pycbc",
     "filelock",
+    "scipy",
     # "nds2-client",
     # "python-nds2-client"
 ]
