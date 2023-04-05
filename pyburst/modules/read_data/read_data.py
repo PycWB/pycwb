@@ -1,6 +1,6 @@
 from pyburst.conversions import convert_pycbc_timeseries_to_wavearray
 from gwpy.timeseries import TimeSeries
-from .data_check import data_check
+from .data_check import check_and_resample
 from ligo.segments import segment, segmentlist
 import pycbc.catalog
 import logging
@@ -12,7 +12,7 @@ from ..job_segment import WaveSegment
 logger = logging.getLogger(__name__)
 
 
-def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
+def read_from_gwf(filename, channel, start=None, end=None):
     """
     Read data from GWF file
 
@@ -40,27 +40,6 @@ def read_from_gwf(ifo_index, config, filename, channel, start=None, end=None):
     # Read gwf file
     data = TimeSeries.read(filename, channel, start, end)
 
-    # TODO: Check data
-    data_check(data, config.inRate)
-    data = data.to_pycbc()
-    # TODO: complete the following
-    # data shift
-    # SLAG
-    # DC correction
-    if config.dcCal[ifo_index] > 0 and config.dcCal[ifo_index] != 1.0:
-        data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
-
-    # resampling
-    if config.fResample > 0:
-        data = data.resample(1.0 / config.fResample)
-
-    new_sample_rate = data.sample_rate / (1 << config.levelR)
-    data = data.resample(1.0 / new_sample_rate)
-
-    # rescaling
-    data.data *= (2 ** config.levelR) ** 0.5
-
-    # return data
     return data
 
 
@@ -82,14 +61,7 @@ def read_from_online(channels, start, end):
     data_dict = TimeSeriesDict.get(channels, start, end)
 
     data = [data_dict[c] for c in channels]
-    # Check data
 
-    # data shift
-    # SLAG
-    # DC correction
-    # resampling
-    # rescaling
-    # return data
     return data
 
 
@@ -213,4 +185,5 @@ def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
         end = frame.end_time
 
     i = config.ifo.index(frame.ifo)
-    return read_from_gwf(i, config, frame.path, config.channelNamesRaw[i], start=start, end=end)
+    data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
+    return check_and_resample(data, config, i)

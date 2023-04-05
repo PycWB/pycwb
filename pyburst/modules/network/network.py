@@ -1,7 +1,6 @@
 import ROOT
 import logging
 from pyburst.config import Config
-from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
 from pyburst.types import TimeFrequencySeries, WDM
 from pyburst.conversions import convert_to_wseries
 import numpy as np

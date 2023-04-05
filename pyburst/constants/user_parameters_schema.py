@@ -27,6 +27,12 @@ schema = {
             "default": 4,
             "cwb": False
         },
+        "injection": {
+            "type": "object",
+            "description": "injection parameters",
+            "default": {},
+            "cwb": False
+        },
         "analysis": {
             "enum": ["1G", "2G"],
             "description": "true/false -> online/offline",
@@ -107,7 +113,7 @@ schema = {
             "default": 0
         },
         "inRate": {
-            "type": "number",
+            "type": "integer",
             "description": "input data rate",
             "default": 16384
         },

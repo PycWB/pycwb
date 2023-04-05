@@ -6,6 +6,7 @@ import logging
 import ctypes
 
 from pyburst.types import TimeFrequencySeries, WDM
+from pyburst.constants import ROUNDED_DIGITS
 
 c_double_p = ctypes.POINTER(ctypes.c_double)
 
@@ -92,7 +93,7 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
     """
     h = ROOT.wavearray(np.double)(len(data.value))
 
-    data_val = np.round(data.value, 25)
+    data_val = np.round(data.value, ROUNDED_DIGITS)
 
     if not hasattr(ROOT, "_copy_to_wavearray"):
         declare_function()
@@ -116,7 +117,7 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
 
     h = ROOT.wavearray(np.double)(len(data.data))
 
-    data_val = np.round(data.data, 25)
+    data_val = np.round(data.data, ROUNDED_DIGITS)
 
     if not hasattr(ROOT, "_copy_to_wavearray"):
         declare_function()
@@ -343,7 +344,6 @@ def _convert_numpy_to_wavearray(data: np.array, start: np.double, stop: np.doubl
 
 
 def _data_to_TFmap(h):
-    # TODO: write something
     lev = int(h.rate() / 2)  # TFmap and wavearray should have the same rate?
     wdtf = ROOT.WDM(np.double)(lev, 2 * lev, 6, 10)  # what is this? there is a problem with this function
     w = ROOT.WSeries(np.double)(h, wdtf)

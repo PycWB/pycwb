@@ -5,7 +5,7 @@ from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
 from pyburst.utils import logger_init
 from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram
-from pyburst.modules.read_data import read_from_job_segment
+from pyburst.modules.read_data import read_from_job_segment, generate_injection
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.network import create_network
@@ -16,7 +16,6 @@ from pyburst.modules.job_segment import select_job_segment
 from pyburst.modules.catalog import create_catalog
 from pyburst.types.job import WaveSegment
 import logging
-from pyburst.conversions import convert_sparse_series_to_sseries
 logger = logging.getLogger(__name__)
 
 
@@ -48,10 +47,10 @@ def analyze_job_segment(config, job_seg):
     logger.info(f"Start time: {job_seg.start_time}")
     logger.info(f"End time: {job_seg.end_time}")
     logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
-    # if config.simulation != 0:
-    #     data = generate_injection(config.ifo, config.injection)
-    # else:
-    data = read_from_job_segment(config, job_seg)
+    if config.simulation != 0:
+        data = generate_injection(config)
+    else:
+        data = read_from_job_segment(config, job_seg)
 
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)

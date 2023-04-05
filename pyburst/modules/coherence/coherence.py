@@ -40,6 +40,8 @@ def coherence_parallel(config, tf_maps, wdm_list, nRMS_list):
     :rtype: list[FragmentCluster]
     """
     timer_start = time.perf_counter()
+    logger.info("Start coherence")
+
     up_n = config.rateANA // 1024
     if up_n < 1:
         up_n = 1
@@ -181,6 +183,11 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     psize_tot = 0
 
     fragment_clusters = []
+
+    # temporary storage for sparse table
+    wc = ROOT.netcluster()
+
+    # loop over time lags
     for j in range(int(net.nLag)):
         # select pixels above Eo
         net.getNetworkPixels(j, Eo)

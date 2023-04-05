@@ -3,8 +3,12 @@ import pycbc.psd
 from pycbc.detector import Detector
 from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
-import os
+import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
+
+from pyburst.modules.read_data import check_and_resample
+
+logger = logging.getLogger(__name__)
 
 
 def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 16, duration: int = 32,
@@ -30,7 +34,7 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     :rtype pycbc.types.timeseries.TimeSeries
     """
     # generate noise
-    flen = int(2048 / delta_f) + 1
+    flen = int(sample_rate / delta_f) + 1
     if psd:
         psd = pycbc.psd.from_txt(psd, flen, delta_f, f_low)
     else:
@@ -212,3 +216,50 @@ def generate_injection_from_config(config):
     injected = [noise[i].add_into(strain[i]) for i in range(len(config.ifo))]
 
     return injected
+
+
+def generate_injection(config):
+    """
+    A sample function to generate injection from pycbc and save it to gwf files
+    with the detectors specified in the config
+
+    :param config: user configuration
+    :type config: Config
+    :return: list of strains for each detector
+    :rtype: list[pycbc.types.timeseries.TimeSeries]
+    """
+    ifo, injection = config.ifo, config.injection
+
+    # load noise
+    logger.info(f'Generating noise for {ifo}')
+    noise = [generate_noise(f_low=2.0, sample_rate=config.inRate,
+                            duration=injection['segment']['end'] - injection['segment']['start'],
+                            start_time=injection['segment']['start'], seed=i)
+             for i, ifo in enumerate(ifo)]
+
+    # generate injection from pycbc
+    logger.info(f'Generating injection for {ifo}')
+    from pycbc.waveform import get_td_waveform
+    hp, hc = get_td_waveform(approximant=injection['approximant'],
+                             mass1=injection['parameters']['mass1'],
+                             mass2=injection['parameters']['mass2'],
+                             spin1z=injection['parameters']['spin1z'],
+                             spin2z=injection['parameters']['spin2z'],
+                             inclination=injection['parameters']['inclination'],
+                             coa_phase=injection['parameters']['coa_phase'],
+                             distance=injection['parameters']['distance'],
+                             delta_t=1.0 / noise[0].sample_rate,
+                             f_lower=20)
+    declination = injection['parameters']['dec']
+    right_ascension = injection['parameters']['ra']
+    polarization = injection['parameters']['polarization']
+    gps_end_time = injection['parameters']['gps_time']
+
+    from pyburst.modules.read_data import project_to_detector
+    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifo, gps_end_time)
+
+    # inject signal into noise and convert to wavearray
+    logger.info(f'Injecting injection into noise for {ifo}')
+    injected = [noise[i].add_into(strain[i]) for i in range(len(ifo))]
+
+    return [check_and_resample(injected[i], config, i) for i in range(len(ifo))]

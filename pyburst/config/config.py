@@ -83,6 +83,7 @@ class Config:
         self.TDRate = None
         self.lagStep = None
         self.dq_files = []
+        self.injection = {}
 
         params = load_yaml(file_name, load_to_root=False)
 
