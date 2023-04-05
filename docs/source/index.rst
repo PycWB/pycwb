@@ -45,12 +45,13 @@ Installation
 Run your first burst search
 ---------------------------
 
-Generate a user parameter file
+Copy the example configuration file
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-    pyburst_gen_config -o user_parameters.yaml
+    mkdir my_search
+    cp [path_to_source_code]/examples/injection/user_parameters_injection.yaml user_parameters.yaml
 
 Start searching!
 ~~~~~~~~~~~~~~~~
@@ -66,6 +67,12 @@ Go deeper into PyBurst.search
 
 If you want to know more about the search process, please refer to
 :ref:`tutorial_search`
+
+Step by step injection!
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you want to know more about the injection process step by step, please refer to
+:ref:`tutorial_injection`
 
 Indices and tables
 ==================

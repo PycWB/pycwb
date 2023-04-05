@@ -10,3 +10,4 @@ The following examples and tutorials are available:
    :maxdepth: 2
 
    tutorial_search
+   tutorial_injection
