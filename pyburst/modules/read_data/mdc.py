@@ -233,7 +233,7 @@ def generate_injection(config):
     # load noise
     logger.info(f'Generating noise for {ifo}')
 
-    # load seeds from config, if not specified, use default seeds 0 and 1
+    # load seeds from config, if not specified, use random seeds
     seeds = injection['segment']['seeds'] if 'seeds' in injection['segment'] else [None, None]
 
     # generate noise
