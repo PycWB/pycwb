@@ -106,7 +106,7 @@ Finally, calculate the likelihood for each supercluster:
 
     from pyburst.modules.likelihood import likelihood
 
-    events = likelihood(job_id, config, net, pwc_list)
+    events, clusters = likelihood(job_id, config, net, pwc_list)
 
 You can use the following code to plot the events on the spectrogram:
 

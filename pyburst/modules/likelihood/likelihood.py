@@ -23,8 +23,8 @@ def likelihood(job_id, config, net, fragment_clusters):
     :type net: ROOT.network
     :param fragment_clusters: list of cluster
     :type fragment_clusters: list[FragmentCluster]
-    :return: the list of events
-    :rtype: list[Event]
+    :return: the list of events and clusters
+    :rtype: list[Event], list[Cluster]
     """
 
     timer_start = time.perf_counter()
@@ -33,6 +33,7 @@ def likelihood(job_id, config, net, fragment_clusters):
 
     n_events = 0
     events = []
+    clusters = []
     for j in range(int(net.nLag)):
         cycle = net.wc_List[j].shift
 
@@ -41,13 +42,13 @@ def likelihood(job_id, config, net, fragment_clusters):
         logger.info("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
         logger.info("   ----------------------------------------------------")
 
-        nevents = 0  # total recontructed events per lag
-
         # loop over clusters to calculate likelihood
         for k in range(len(fragment_clusters[j].clusters)):
-            event = _likelihood(job_id, config, net, j, k + 1, fragment_clusters[j])
+            event, cluster = _likelihood(job_id, config, net, j, k + 1, fragment_clusters[j])
             events.append(event)
-        n_events += nevents
+            clusters.append(cluster)
+
+    n_events = len([c for c in clusters if c.cluster_status == -1])
 
     # timer
     timer_end = time.perf_counter()
@@ -56,7 +57,7 @@ def likelihood(job_id, config, net, fragment_clusters):
     logger.info("Total time: %.2f s" % (timer_end - timer_start))
     logger.info("-------------------------------------------------------")
 
-    return events
+    return events, clusters
 
 
 def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
@@ -117,4 +118,4 @@ def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
     except Exception as e:
         logger.error(e)
 
-    return event
+    return event, cluster
