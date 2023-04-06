@@ -4,7 +4,7 @@ import pyburst
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
 from pyburst.utils import logger_init
 from pyburst.config import Config
-from pyburst.modules.plot import plot_spectrogram
+from pyburst.modules.plot import plot_spectrogram, plot_event_on_spectrogram
 from pyburst.modules.read_data import read_from_job_segment, generate_injection
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
@@ -78,20 +78,8 @@ def analyze_job_segment(config, job_seg):
     # likelihood
     events = likelihood(job_id, config, net, pwc_list)
 
-    import matplotlib.pyplot as plt
-    plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
-
-    # plot boxes on the plot
-    i = 0
-    boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
-
-    for box in boxes:
-        ax = plot.gca()
-        ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False,
-                                   color='red'))
-
-    # save to png
-    plot.savefig(f'{config.outputDir}/events_{job_id}_all.png')
+    for i, tf_map in enumerate(tf_maps):
+        plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
