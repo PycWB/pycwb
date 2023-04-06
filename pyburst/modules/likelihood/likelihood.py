@@ -1,4 +1,4 @@
-import copy
+import copy, os
 import time
 import pickle
 import ROOT
@@ -109,7 +109,11 @@ def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
         with open(f'{config.outputDir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
             pickle.dump(cluster, f)
 
-        add_events_to_catalog(f"{config.outputDir}/catalog.json", [event.summary(job_id, cluster_id)])
+        # save event to catalog if file exists
+        if os.path.exists(f"{config.outputDir}/catalog.json"):
+            add_events_to_catalog(f"{config.outputDir}/catalog.json", [event.summary(job_id, cluster_id)])
+        else:
+            logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
     except Exception as e:
         logger.error(e)
 
