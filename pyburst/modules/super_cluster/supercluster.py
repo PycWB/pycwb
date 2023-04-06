@@ -40,10 +40,6 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     # timer
     timer_start = time.perf_counter()
 
-    # add wavelets to network
-    for wdm in wdm_list:
-        net.add(wdm.wavelet)
-
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
     if skyres > 0:
@@ -57,23 +53,31 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     for wdm in wdm_list:
         wdm.set_td_filter(config.TDSize, 1)
 
-    # read sparse map to detector
-    for n in range(config.nIFO):
-        det = net.getifo(n)
-        det.sclear()
-        for sparse_table in sparse_table_list:
-            det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
-
     # merge cluster
     cluster = copy.deepcopy(fragment_clusters[0])
     if len(fragment_clusters) > 1:
         for fragment_cluster in fragment_clusters[1:]:
             cluster.clusters += fragment_cluster.clusters
 
+    pwc_list = []
+
+    ###############################
+    # cWB2G supercluster
+    ###############################
     # convert to netcluster
     cluster = convert_fragment_clusters_to_netcluster(cluster)
 
-    pwc_list = []
+    # add wavelets to network
+    for wdm in wdm_list:
+        net.add(wdm.wavelet)
+
+    # read sparse map to detector for pwc.loadTDampSSE
+    for n in range(config.nIFO):
+        det = net.getifo(n)
+        det.sclear()
+        for sparse_table in sparse_table_list:
+            det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
+
     for j in range(int(net.nLag)):
         # cycle = cfg.simulation ? ifactor : Long_t(NET.wc_List[j].shift);
         cycle = int(net.wc_List[j].shift)
@@ -138,6 +142,7 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
         pwc_list.append(fragment_cluster)
 
         pwc.clear()
+    ###############################
 
     n_event = sum([c.event_count() for c in pwc_list])
     n_pixels = sum([c.pixel_count(-1) for c in pwc_list])

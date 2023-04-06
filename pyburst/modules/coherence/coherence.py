@@ -135,8 +135,6 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
 
     m_tau = net.getDelay('MAX')
 
-    wc = ROOT.netcluster()
-
     # print level infos
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
@@ -145,6 +143,11 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     # use string instead of directly logging to avoid messy output in parallel
     logger_info = "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f \n" % (
         level, rate, layers, config.rateANA / 2. / (2 ** level), 1000. / rate)
+
+    fragment_clusters = []
+    ###############################
+    # cWB2G coherence calculation #
+    ###############################
 
     # produce TF maps with max over the sky energy
     alp = 0.0
@@ -158,9 +161,9 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
 
     logger_info += "max energy in units of noise variance: %g \n" % alp
 
-    # logger.info("max energy in units of noise variance: %g", alp)
     alp = alp / config.nIFO
 
+    # set threshold
     if net.pattern != 0:
         Eo = net.THRESHOLD(config.bpp, alp)
     else:
@@ -175,14 +178,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     if TL <= 0.:
         raise ValueError("live time is zero")
 
-    # wdm.set_td_filter(config.TDSize, 1)
-
     logger_info += "lag | clusters | pixels \n"
-
-    # csize_tot = 0
-    # psize_tot = 0
-
-    fragment_clusters = []
 
     # temporary storage for sparse table
     wc = ROOT.netcluster()
@@ -217,6 +213,8 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         logger_info += "%3d |%9d |%7d \n" % (j, fragment_cluster.event_count(), fragment_cluster.pixel_count())
 
         pwc.clear()
+
+    ###############################
 
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
