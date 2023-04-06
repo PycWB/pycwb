@@ -80,7 +80,7 @@ injection:
     mass2: 20
     spin1z: 0
     spin2z: 0
-    distance: 100
+    distance: 500
     inclination: 0
     polarization: 0
     gps_time: 1126259462.4
