@@ -179,8 +179,8 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
 
     logger_info += "lag | clusters | pixels \n"
 
-    csize_tot = 0
-    psize_tot = 0
+    # csize_tot = 0
+    # psize_tot = 0
 
     fragment_clusters = []
 
@@ -199,6 +199,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
             wc.cpf(pwc, False)
             # remove pixels below subrho
             # TODO: keep in mind, subrho can be more flexible.
+            # TODO: pythonize this algorithm in network cluster
             wc.select("subrho", config.select_subrho)
             # remove pixels below subnet
             wc.select("subnet", config.select_subnet)
@@ -210,11 +211,10 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
         # FIXME: why do we need to deepcopy the cluster?
         #  If we don't, macos will crash with thread-saftey issue
         #  Maybe because the pwc.clear() will delete the cluster?
-        fragment_clusters.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))
-        # store cluster into temporary job file
-        csize_tot += pwc.csize()
-        psize_tot += pwc.size()
-        logger_info += "%3d |%9d |%7d \n" % (j, csize_tot, psize_tot)
+        fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+        fragment_clusters.append(fragment_cluster)
+
+        logger_info += "%3d |%9d |%7d \n" % (j, fragment_cluster.event_count(), fragment_cluster.pixel_count())
 
         pwc.clear()
 

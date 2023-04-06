@@ -169,6 +169,7 @@ def init_network(config, net, tf_maps, nRMS_list, run_id):
         det = ROOT.detector(ifo)
 
         det.rate = config.inRate if not config.fResample else config.fResample
+        # TODO: decouple network with cluster, figure out where are these tf_maps used
         det.HoT = tf_maps[i]
         det.TFmap = tf_maps[i]
         det.nRMS = nRMS_list[i]

@@ -73,9 +73,6 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
     # convert to netcluster
     cluster = convert_fragment_clusters_to_netcluster(cluster)
 
-    nevt = 0
-    nnn = 0
-    mmm = 0
     pwc_list = []
     for j in range(int(net.nLag)):
         # cycle = cfg.simulation ? ifactor : Long_t(NET.wc_List[j].shift);
@@ -115,6 +112,7 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
             pwc.setcore(False)
             psel = 0
             while True:
+                # TODO: pythonize this
                 count = pwc.loadTDampSSE(net, 'a', config.BATCH, config.LOUD)
                 # FIXME: O4 code have addtional config.subnorm
                 psel += net.subNetCut(j, config.subnet, config.subcut, config.subnorm, ROOT.nullptr)
@@ -131,22 +129,25 @@ def supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list):
                 net.netRHO = config.netRHO
 
         if net.pattern == 0:
+            # TODO: pythonize this
             pwc.defragment(config.Tgap, config.Fgap)
             logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
-        nevt += net.events()
-        nnn += pwc.psize(-1)
-        mmm += pwc.psize(1) + pwc.psize(-1)
-
         # convert to FragmentCluster and append to list
-        pwc_list.append(copy.deepcopy(FragmentCluster().from_netcluster(pwc)))
+        fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+        pwc_list.append(fragment_cluster)
+
         pwc.clear()
 
+    n_event = sum([c.event_count() for c in pwc_list])
+    n_pixels = sum([c.pixel_count(-1) for c in pwc_list])
+    frac = n_pixels / sum([c.pixel_count(1) + c.pixel_count(-1) for c in pwc_list])
+
     logger.info("Supercluster done")
-    if mmm:
-        logger.info("total  clusters|pixels|frac : %6d|%d|%f", nevt, nnn, nnn / mmm)
+    if frac:
+        logger.info("total  clusters|pixels|frac : %6d|%d|%f", n_event, n_pixels, frac)
     else:
-        logger.info("total  clusters             : %6d", nevt)
+        logger.info("total  clusters             : %6d", n_event)
 
     # restore skymap resolution
     restore_skymap(config, net, skyres)

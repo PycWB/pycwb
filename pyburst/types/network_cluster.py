@@ -86,6 +86,46 @@ class FragmentCluster:
         self.clusters = cluster_list
         return self
 
+    def event_count(self, event_status=None):
+        """
+        Count number of events in clusters
+
+        :param event_status: event status, 1 - rejected, 0 - not processed / accepted, -1 - not complete, -2 - ready for processing, None - all
+        :type event_status: int
+        :return:
+        """
+        if event_status is not None:
+            if not isinstance(event_status, int) or event_status > 1 or event_status < -2:
+                raise ValueError('event_status must be -2, -1, 0, 1 or None')
+
+        if event_status is None:
+            return len([c.cluster_status for c in self.clusters if c.cluster_status < 1])
+        else:
+            return len([c.cluster_status for c in self.clusters if c.cluster_status == event_status])
+
+    def pixel_count(self, event_status=None):
+        """
+        Count number of pixels in clusters
+
+        :param event_status: event status, 1 - rejected, 0 - not processed / accepted, -1 - not complete, -2 - ready for processing, None - all
+        :type event_status: int
+        :return:
+        """
+        if event_status is not None:
+            if not isinstance(event_status, int) or event_status > 1 or event_status < -2:
+                raise ValueError('event_status must be -2, -1, 0, 1 or None')
+
+        pixel_count = 0
+
+        for c in self.clusters:
+            if event_status is None:
+                if c.cluster_status < 1:
+                    pixel_count += len(c.pixels)
+            else:
+                if c.cluster_status == event_status:
+                    pixel_count += len(c.pixels)
+        return pixel_count
+
 
 class Cluster:
     """
