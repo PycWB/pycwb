@@ -5,7 +5,7 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.modules.network import create_network
-from pyburst.types import TimeFrequencySeries, FragmentCluster
+from pyburst.types import TimeFrequencySeries, FragmentCluster, Network
 from pyburst.conversions import convert_to_wavearray
 
 logger = logging.getLogger(__name__)
@@ -94,9 +94,9 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     timer_start = time.perf_counter()
     if net is None:
         # for paralleling, create a new network to avoid conflict
-        net = create_network(1, config, tf_maps, nRMS_list, minimum=True)
+        net = Network(config, tf_maps, nRMS_list, silent=True)
 
-    m_tau = net.getDelay('MAX')
+    m_tau = net.get_max_delay()
 
     # print level infos
     level = config.l_high - i
@@ -116,11 +116,11 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     alp = 0.0
     for n in range(len(config.ifo)):
         ts = convert_to_wavearray(tf_maps[n])
-        alp += net.getifo(n).getTFmap().maxEnergy(ts, wdm.wavelet,
+        alp += net.get_ifo(n).getTFmap().maxEnergy(ts, wdm.wavelet,
                                                   m_tau, up_n,
                                                   net.pattern)
-        net.getifo(n).getTFmap().setlow(config.fLow)
-        net.getifo(n).getTFmap().sethigh(config.fHigh)
+        net.get_ifo(n).getTFmap().setlow(config.fLow)
+        net.get_ifo(n).getTFmap().sethigh(config.fHigh)
 
     logger_info += "max energy in units of noise variance: %g \n" % alp
 
@@ -128,14 +128,14 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
 
     # set threshold
     if net.pattern != 0:
-        Eo = net.THRESHOLD(config.bpp, alp)
+        Eo = net.threshold(config.bpp, alp)
     else:
-        Eo = net.THRESHOLD(config.bpp)
+        Eo = net.threshold(config.bpp)
 
     logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
 
     # set veto array
-    TL = net.setVeto(config.iwindow)
+    TL = net.set_veto(config.iwindow)
     logger_info += "live time in zero lag: %g \n" % TL
 
     if TL <= 0.:
@@ -149,12 +149,12 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     # loop over time lags
     for j in range(int(net.nLag)):
         # select pixels above Eo
-        net.getNetworkPixels(j, Eo)
+        net.get_network_pixels(j, Eo)
         # get pixel list
-        pwc = net.getwc(j)
+        pwc = net.get_cluster(j)
         if net.pattern != 0:
             # cluster pixels
-            net.cluster(2, 3)
+            net.cluster(j, 2, 3)
             wc.cpf(pwc, False)
             # remove pixels below subrho
             # TODO: keep in mind, subrho can be more flexible.
@@ -165,7 +165,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
             # copy selected pixels back to pwc
             pwc.cpf(wc, False)
         else:
-            net.cluster(1, 1)
+            net.cluster(j, 1, 1)
 
         # FIXME: why do we need to deepcopy the cluster?
         #  If we don't, macos will crash with thread-saftey issue

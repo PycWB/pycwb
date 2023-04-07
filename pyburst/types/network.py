@@ -1,8 +1,10 @@
 import argparse, shlex
+import copy
 import logging, ROOT
 
 import numpy as np
 import pyburst
+from .network_cluster import FragmentCluster
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,52 @@ class Network:
     def add_detector(self, detector):
         ifo = ROOT.detector(detector)
         self.net.add(ifo)
+
+    def get_ifo(self, ifo):
+        return self.net.getifo(ifo)
+
+    def set_veto(self, veto):
+        return self.net.setVeto(veto)
+
+    def threshold(self, bpp, alp=None):
+        if alp:
+            return self.net.THRESHOLD(bpp, alp)
+        else:
+            return self.net.THRESHOLD(bpp)
+
+    def get_network_pixels(self, lag, threshold):
+        self.net.getNetworkPixels(lag, threshold)
+
+        # TODO: return python class?
+        pwc = self.get_cluster(lag)
+        return copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+
+    def cluster(self, lag, kt, kf):
+        self.get_cluster(lag).cluster(kt, kf)
+
+    def get_max_delay(self):
+        """
+        get the maximum delay between the two detectors
+
+        :return: maximum delay
+        :rtype: float
+        """
+        return self.net.getDelay('MAX')
+
+    def get_cluster(self, lag):
+        return self.net.getwc(lag)
+
+    @property
+    def ifo_size(self):
+        return self.net.ifoListSize()
+
+    @property
+    def pattern(self):
+        return self.net.pattern
+
+    @property
+    def nLag(self):
+        return self.net.nLag
 
     def update_sky_map(self, config, skyres=None):
         """
@@ -220,19 +268,6 @@ class Network:
                 self.net.setSkyMask(SkyMask, skycoord)
                 if skycoord == 'e':
                     self.net.setIndexMode(0)
-
-    def get_max_delay(self):
-        """
-        get the maximum delay between the two detectors
-
-        :return: maximum delay
-        :rtype: float
-        """
-        return self.net.getDelay('MAX')
-
-    @property
-    def ifo_size(self):
-        return self.net.ifoListSize()
 
 
 def make_sky_mask(sky_mask: ROOT.skymap, theta: float, phi: float, radius: float):
