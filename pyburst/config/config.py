@@ -6,6 +6,8 @@ from .user_parameters import load_yaml
 import os.path
 import logging
 
+from ..types import WDMXTalkCatalog
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +94,8 @@ class Config:
 
         self.add_derived_key()
         self.check_file(self.MRAcatalog)
+        if self.MRAcatalog:
+            self.check_MRA_catalog()
         self.check_lagStep()
 
     def add_derived_key(self):
@@ -171,3 +175,15 @@ class Config:
                          2 * dt_max)
             raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
                              2 * dt_max)
+
+    def check_MRA_catalog(self):
+        """
+        Check if MRAcatalog exists
+
+        :raises FileNotFoundError: if MRAcatalog does not exist
+        """
+        logger.info("Checking MRA catalog")
+        wdm_MRA = WDMXTalkCatalog(self.MRAcatalog)
+
+        # check layers
+        wdm_MRA.check_layers_with_MRAcatalog(self.l_low, self.l_high, self.nRES)
