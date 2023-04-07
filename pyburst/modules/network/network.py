@@ -1,7 +1,7 @@
 import ROOT
 import logging
 from pyburst.config import Config
-from pyburst.types import TimeFrequencySeries, WDM
+from pyburst.types import TimeFrequencySeries, WDM, WDMXTalkCatalog
 from pyburst.conversions import convert_to_wseries
 import numpy as np
 import argparse, shlex
@@ -41,31 +41,12 @@ def create_network(run_id, config, tf_list, nRMS_list, minimum=False):
 
     if not minimum:
         # load MRA catalog
-        load_MRA(config, net)
-
-        # check layers
-        check_layers_with_MRAcatalog(config, net)
-
-    # Note: check_lagStep(config) is moved to Config
+        net.wdmMRA = WDMXTalkCatalog(config.MRAcatalog).catalog
 
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)
     net = set_liv_time(config, net, lag_buffer, lag_mode)
     return net
-
-
-def load_MRA(config, net):
-    """
-    Load MRA catalog
-
-    :param config: user configuration
-    :type config: Config
-    :param net: network object
-    :type net: ROOT.network
-    :return: None
-    """
-    logger.info("Loading catalog of WDM cross-talk coefficients")
-    net.setMRAcatalog(config.MRAcatalog)
 
 
 def create_wdm(config, beta_order, precision):
@@ -109,40 +90,6 @@ def create_wdm(config, beta_order, precision):
         wdm_list.append(wdm)
 
     return wdm_list
-
-
-def check_layers_with_MRAcatalog(config, net):
-    """
-    check if analysis layers are contained in the MRAcatalog.
-    The layers are the number of layers along the frequency axis rateANA/(rateANA>>level)
-
-    :param config: user configuration
-    :type config: Config
-    :param net: network object
-    :type net: ROOT.network
-    :return: None
-    """
-    check_layers = 0
-    for i in range(config.l_low, config.l_high + 1):
-        # the decomposition level
-        level = config.l_high + config.l_low - i
-        # number of layers along the frequency axis rateANA/(rateANA>>level)
-        layers = 2 ** level if level > 0 else 0
-        for j in range(net.wdmMRA.nRes):
-            if layers == net.wdmMRA.layers[j]:
-                check_layers += 1
-
-    if check_layers != config.nRES:
-        logger.error("analysis layers do not match the MRA catalog")
-        logger.error("analysis layers : ")
-        for level in range(config.l_high, config.l_low - 1, -1):
-            layers = 1 << level if level > 0 else 0
-            logger.error("level : %s layers : %s", level, layers)
-
-        logger.error("MRA catalog layers : ")
-        for i in range(net.wdmMRA.nRes):
-            logger.error("layers : %s", net.wdmMRA.layers[i])
-        raise ValueError("analysis layers do not match the MRA catalog")
 
 
 def init_network(config, net, tf_maps, nRMS_list, run_id):
