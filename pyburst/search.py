@@ -2,6 +2,7 @@ import os, time
 import multiprocessing
 import pyburst
 from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
+from pyburst.types import WDMXTalkCatalog
 from pyburst.utils import logger_init
 from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram, plot_event_on_spectrogram
@@ -55,18 +56,20 @@ def analyze_job_segment(config, job_seg):
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)
 
-    # initialize network
-    net = create_network(job_id, config, tf_maps, nRMS_list)
+    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
 
     # create WDM
-    if net.wdmMRA.tag != 0:
-        beta_order, precision = net.wdmMRA.BetaOrder, net.wdmMRA.precision
+    if wdm_MRA.tag != 0:
+        beta_order, precision = wdm_MRA.beta_order, wdm_MRA.precision
     else:
         beta_order, precision = WDM_BETAORDER, WDM_PRECISION
+
     wdm_list = create_wdm_set(config, beta_order, precision)
 
     # calculate coherence
     fragment_clusters = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
+
+    net = create_network(job_id, config, tf_maps, nRMS_list)
 
     # generate sparse table
     sparse_table_list = sparse_table_from_fragment_clusters(config, net.getDelay('MAX'),
