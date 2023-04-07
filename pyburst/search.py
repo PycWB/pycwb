@@ -69,7 +69,7 @@ def analyze_job_segment(config, job_seg):
                                                              tf_maps, wdm_list, fragment_clusters)
 
     # supercluster
-    pwc_list = supercluster(config, network.net, wdm_list, fragment_clusters, sparse_table_list)
+    pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)
 
     # likelihood
     events, clusters = likelihood(job_id, config, network.net, pwc_list)

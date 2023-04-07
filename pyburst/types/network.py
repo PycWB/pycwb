@@ -81,6 +81,9 @@ class Network:
         ifo = ROOT.detector(detector)
         self.net.add(ifo)
 
+    def add_wavelet(self, wavelet):
+        self.net.add(wavelet.wavelet)
+
     def get_ifo(self, ifo):
         return self.net.getifo(ifo)
 
@@ -97,11 +100,14 @@ class Network:
         self.net.getNetworkPixels(lag, threshold)
 
         # TODO: return python class?
-        pwc = self.get_cluster(lag)
-        return copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+        # pwc = self.get_cluster(lag)
+        # return copy.deepcopy(FragmentCluster().from_netcluster(pwc))
 
     def cluster(self, lag, kt, kf):
         self.get_cluster(lag).cluster(kt, kf)
+
+    def sub_net_cut(self, lag, sub_net, sub_cut, sub_norm):
+        return self.net.subNetCut(lag, sub_net, sub_cut, sub_norm, ROOT.nullptr)
 
     def get_max_delay(self):
         """
@@ -111,6 +117,9 @@ class Network:
         :rtype: float
         """
         return self.net.getDelay('MAX')
+
+    def set_delay_index(self, rate):
+        self.net.setDelayIndex(rate)
 
     def get_cluster(self, lag):
         return self.net.getwc(lag)
@@ -126,6 +135,10 @@ class Network:
     @property
     def nLag(self):
         return self.net.nLag
+
+    @property
+    def n_events(self):
+        return self.net.events()
 
     def update_sky_map(self, config, skyres=None):
         """
