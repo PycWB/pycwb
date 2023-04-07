@@ -56,15 +56,7 @@ def analyze_job_segment(config, job_seg):
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)
 
-    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
-
-    # create WDM
-    if wdm_MRA.tag != 0:
-        beta_order, precision = wdm_MRA.beta_order, wdm_MRA.precision
-    else:
-        beta_order, precision = WDM_BETAORDER, WDM_PRECISION
-
-    wdm_list = create_wdm_set(config, beta_order, precision)
+    wdm_list = create_wdm_set(config)
 
     # calculate coherence
     fragment_clusters = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
