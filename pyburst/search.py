@@ -10,7 +10,7 @@ from pyburst.modules.read_data import read_from_job_segment, generate_injection
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.network import create_network
-from pyburst.modules.coherence import coherence, coherence_parallel, sparse_table_from_fragment_clusters
+from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
 from pyburst.modules.job_segment import select_job_segment
@@ -59,7 +59,7 @@ def analyze_job_segment(config, job_seg):
     wdm_list = create_wdm_set(config)
 
     # calculate coherence
-    fragment_clusters = coherence_parallel(config, tf_maps, wdm_list, nRMS_list)
+    fragment_clusters = coherence(config, tf_maps, wdm_list, nRMS_list)
 
     net = create_network(job_id, config, tf_maps, nRMS_list)
 
