@@ -29,13 +29,10 @@ def likelihood(job_id, config, net, fragment_clusters):
 
     timer_start = time.perf_counter()
 
-    net.setDelayIndex(config.TDRate)
-
-    n_events = 0
     events = []
     clusters = []
-    for j in range(int(net.nLag)):
-        cycle = net.wc_List[j].shift
+    for j, fragment_cluster in enumerate(fragment_clusters):
+        cycle = fragment_cluster.shift
 
         # print header
         logger.info("-------------------------------------------------------")
@@ -43,8 +40,11 @@ def likelihood(job_id, config, net, fragment_clusters):
         logger.info("   ----------------------------------------------------")
 
         # loop over clusters to calculate likelihood
-        for k in range(len(fragment_clusters[j].clusters)):
-            event, cluster = _likelihood(job_id, config, net, j, k + 1, fragment_clusters[j])
+        for k, selected_cluster in enumerate(fragment_cluster.clusters):
+            temp_cluster = copy.copy(fragment_cluster)
+            temp_cluster.clusters = [selected_cluster]
+
+            event, cluster = _likelihood(job_id, config, net, j, k + 1, temp_cluster)
             events.append(event)
             clusters.append(cluster)
 
@@ -61,21 +61,22 @@ def likelihood(job_id, config, net, fragment_clusters):
 
 
 def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
+    # dumb variables
     k = 0
-
-    temp_cluster = copy.copy(fragment_cluster)
-    temp_cluster.clusters = [fragment_cluster.clusters[cluster_id-1]]
+    ID = 0
 
     ####################
     # cWB2G likelihood #
     ####################
+    net.setDelayIndex(config.TDRate)
+
+    # load cluster to network
     pwc = net.getwc(lag)
-    pwc.cpf(convert_fragment_clusters_to_netcluster(temp_cluster), False)
+    pwc.cpf(convert_fragment_clusters_to_netcluster(fragment_cluster), False)
 
     pwc.setcore(False, k + 1)
     pwc.loadTDampSSE(net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
 
-    ID = 0
     if net.pattern > 0:
         selected_core_pixels = net.likelihoodWP(config.search, lag, ID, ROOT.nullptr, config.Search)
     else:
