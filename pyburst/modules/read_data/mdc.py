@@ -245,26 +245,44 @@ def generate_injection(config):
     # generate injection from pycbc
     logger.info(f'Generating injection for {ifo}')
     from pycbc.waveform import get_td_waveform
-    hp, hc = get_td_waveform(approximant=injection['approximant'],
-                             mass1=injection['parameters']['mass1'],
-                             mass2=injection['parameters']['mass2'],
-                             spin1z=injection['parameters']['spin1z'],
-                             spin2z=injection['parameters']['spin2z'],
-                             inclination=injection['parameters']['inclination'],
-                             coa_phase=injection['parameters']['coa_phase'],
-                             distance=injection['parameters']['distance'],
-                             delta_t=1.0 / noise[0].sample_rate,
-                             f_lower=20)
-    declination = injection['parameters']['dec']
-    right_ascension = injection['parameters']['ra']
-    polarization = injection['parameters']['polarization']
-    gps_end_time = injection['parameters']['gps_time']
 
-    from pyburst.modules.read_data import project_to_detector
-    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifo, gps_end_time)
+    if isinstance(config.injection['parameters'], list):
+        injections = config.injection['parameters']
+    else:
+        injections = [config.injection['parameters']]
 
-    # inject signal into noise and convert to wavearray
-    logger.info(f'Injecting injection into noise for {ifo}')
-    injected = [noise[i].add_into(strain[i]) for i in range(len(ifo))]
+    injected = noise
+    for injection in injections:
+        ##############################
+        # setting default values
+        ##############################
+        if 'approximant' in injection:
+            approximant = injection['approximant']
+        elif 'approximant' in config.injection:
+            approximant = config.injection['approximant']
+        else:
+            approximant = 'IMRPhenomXPHM'
+
+        injection['approximant'] = approximant
+        injection['delta_t'] = 1.0 / noise[0].sample_rate
+        injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
+
+        declination = injection['dec'] if 'dec' in injection else 0.0
+        right_ascension = injection['ra'] if 'ra' in injection else 0.0
+        polarization = injection['pol'] if 'pol' in injection else 0.0
+        gps_end_time = injection['gps_time']
+
+        logger.info(f'Generating injection for {ifo} with parameters: \n {injection} \n')
+
+        ##############################
+        # generating injection
+        ##############################
+        hp, hc = get_td_waveform(**injection)
+
+        from pyburst.modules.read_data import project_to_detector
+        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifo, gps_end_time)
+
+        # inject signal into noise and convert to wavearray
+        injected = [injected[i].add_into(strain[i]) for i in range(len(ifo))]
 
     return [check_and_resample(injected[i], config, i) for i in range(len(ifo))]
