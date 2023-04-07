@@ -9,7 +9,7 @@ import argparse, shlex
 logger = logging.getLogger(__name__)
 
 
-def create_network(run_id, config, tf_list, nRMS_list, minimum=False):
+def create_network(run_id, config, tf_list, nRMS_list, wdm_MRA=None, minimum=False):
     """
     Initialize a network and check the configuration
 
@@ -39,9 +39,14 @@ def create_network(run_id, config, tf_list, nRMS_list, minimum=False):
     else:
         logger.propagate = True
 
+    # load MRA catalog
     if not minimum:
-        # load MRA catalog
-        net.wdmMRA = WDMXTalkCatalog(config.MRAcatalog).catalog
+        # FIXME: copying from python to wdmRMA in the same code will have random values in layers
+        #   While create before and pass to the function will cause the object collected before release
+        #   Create a python network and reference wdmRMA might solve the problem
+        # w = wdm_MRA.get_wdmMRA()
+        # net.wdmMRA = w
+        net.setMRAcatalog(config.MRAcatalog)
 
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
     lag_buffer, lag_mode = get_lag_buffer(config)

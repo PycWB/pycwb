@@ -6,7 +6,7 @@ from pyburst.types import WDM, WDMXTalkCatalog
 logger = logging.getLogger(__name__)
 
 
-def create_wdm_set(config):
+def create_wdm_set(config, wdm_MRA):
     """
     Create a list of WDM objects for all levels
     :param config: user configuration
@@ -20,8 +20,6 @@ def create_wdm_set(config):
         config.l_high, config.l_low
 
     # get beta order and precision
-    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
-
     if wdm_MRA.tag != 0:
         beta_order, precision = wdm_MRA.beta_order, wdm_MRA.precision
     else:

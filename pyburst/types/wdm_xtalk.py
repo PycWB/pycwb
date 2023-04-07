@@ -40,6 +40,9 @@ class WDMXTalkCatalog:
     def layers(self):
         return self.catalog.layers
 
+    def get_wdmMRA(self):
+        return ROOT.monster(self.catalog)
+
     def check_layers_with_MRAcatalog(self, l_low, l_high, n_res):
         """
         check if analysis layers are contained in the MRAcatalog.

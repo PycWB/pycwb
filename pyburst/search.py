@@ -56,12 +56,14 @@ def analyze_job_segment(config, job_seg):
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)
 
-    wdm_list = create_wdm_set(config)
+    # create wdm set and network
+    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
+    wdm_list = create_wdm_set(config, wdm_MRA)
+    net = create_network(job_id, config, tf_maps, nRMS_list, wdm_MRA)
 
     # calculate coherence
     fragment_clusters = coherence(config, tf_maps, wdm_list, nRMS_list)
 
-    net = create_network(job_id, config, tf_maps, nRMS_list)
 
     # generate sparse table
     sparse_table_list = sparse_table_from_fragment_clusters(config, net.getDelay('MAX'),
