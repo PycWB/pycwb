@@ -16,7 +16,7 @@ def create_wdm_set(config):
     """
 
     # explicitly list all parameters used from config
-    rate_ANA, seg_edge, td_size, l_high, l_low  = config.rateANA, config.segEdge, config.td_size, \
+    rate_ANA, seg_edge, td_size, l_high, l_low  = config.rateANA, config.segEdge, config.TDSize, \
         config.l_high, config.l_low
 
     # get beta order and precision
