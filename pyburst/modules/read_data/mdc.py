@@ -243,7 +243,6 @@ def generate_injection(config):
              for i, ifo in enumerate(ifo)]
 
     # generate injection from pycbc
-    logger.info(f'Generating injection for {ifo}')
     from pycbc.waveform import get_td_waveform
 
     if isinstance(config.injection['parameters'], list):
