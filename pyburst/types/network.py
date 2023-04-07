@@ -109,6 +109,30 @@ class Network:
     def sub_net_cut(self, lag, sub_net, sub_cut, sub_norm):
         return self.net.subNetCut(lag, sub_net, sub_cut, sub_norm, ROOT.nullptr)
 
+    def likelihoodWP(self, mode, lag, search):
+        """
+        Likelihood analysis with packets
+
+        :param mode: analysis mode
+        :type mode: str
+        :param lag: lag index
+        :param search: if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
+        :return:
+        """
+        return self.net.likelihoodWP(mode, lag, 0, ROOT.nullptr, search)
+
+    def likelihood2G(self, mode, lag):
+        """
+        2G likelihood analysis
+
+        :param mode: analysis mode
+        :type mode: str
+        :param lag: lag index
+        :param search: if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
+        :return:
+        """
+        return self.net.likelihood2G(mode, lag, 0, ROOT.nullptr)
+
     def get_max_delay(self):
         """
         get the maximum delay between the two detectors

@@ -72,7 +72,7 @@ def analyze_job_segment(config, job_seg):
     pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)
 
     # likelihood
-    events, clusters = likelihood(job_id, config, network.net, pwc_list)
+    events, clusters = likelihood(job_id, config, network, pwc_list)
 
     for i, tf_map in enumerate(tf_maps):
         plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')

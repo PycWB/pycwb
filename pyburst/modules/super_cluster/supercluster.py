@@ -26,8 +26,8 @@ def supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list
 
     :param config: user configuration
     :type config: Config
-    :param net: network
-    :type net: ROOT.network
+    :param network: network
+    :type network: Network
     :param wdm_list: list of wavelets
     :type wdm_list: list[WDM]
     :param fragment_clusters: fragment clusters

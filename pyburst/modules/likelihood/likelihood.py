@@ -13,14 +13,14 @@ from pyburst.types import FragmentCluster
 logger = logging.getLogger(__name__)
 
 
-def likelihood(job_id, config, net, fragment_clusters):
+def likelihood(job_id, config, network, fragment_clusters):
     """
     calculate likelihood
 
     :param config: user configuration
     :type config: Config
-    :param net: network
-    :type net: ROOT.network
+    :param network: network
+    :type network: Network
     :param fragment_clusters: list of cluster
     :type fragment_clusters: list[FragmentCluster]
     :return: the list of events and clusters
@@ -44,7 +44,7 @@ def likelihood(job_id, config, net, fragment_clusters):
             temp_cluster = copy.copy(fragment_cluster)
             temp_cluster.clusters = [selected_cluster]
 
-            event, cluster = _likelihood(job_id, config, net, j, k + 1, temp_cluster)
+            event, cluster = _likelihood(job_id, config, network, j, k + 1, temp_cluster)
             events.append(event)
             clusters.append(cluster)
 
@@ -60,7 +60,7 @@ def likelihood(job_id, config, net, fragment_clusters):
     return events, clusters
 
 
-def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
+def _likelihood(job_id, config, network, lag, cluster_id, fragment_cluster):
     # dumb variables
     k = 0
     ID = 0
@@ -68,23 +68,23 @@ def _likelihood(job_id, config, net, lag, cluster_id, fragment_cluster):
     ####################
     # cWB2G likelihood #
     ####################
-    net.setDelayIndex(config.TDRate)
+    network.set_delay_index(config.TDRate)
 
     # load cluster to network
-    pwc = net.getwc(lag)
+    pwc = network.get_cluster(lag)
     pwc.cpf(convert_fragment_clusters_to_netcluster(fragment_cluster), False)
 
     pwc.setcore(False, k + 1)
-    pwc.loadTDampSSE(net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
+    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
 
-    if net.pattern > 0:
-        selected_core_pixels = net.likelihoodWP(config.search, lag, ID, ROOT.nullptr, config.Search)
+    if network.pattern > 0:
+        selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
     else:
-        selected_core_pixels = net.likelihood2G(config.search, lag, ID, ROOT.nullptr)
-    cluster = copy.deepcopy(FragmentCluster().from_netcluster(net.getwc(lag))).clusters[k]
+        selected_core_pixels = network.likelihood2G(config.search, lag)
+    cluster = copy.deepcopy(FragmentCluster().from_netcluster(network.get_cluster(lag))).clusters[k]
 
     event = Event()
-    event.output(net, k + 1, 0)
+    event.output(network.net, k + 1, 0)
 
     pwc.clean(1)
 
