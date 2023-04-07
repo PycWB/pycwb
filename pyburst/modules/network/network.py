@@ -49,52 +49,8 @@ def create_network(run_id, config, tf_list, nRMS_list, wdm_MRA=None, minimum=Fal
         net.setMRAcatalog(config.MRAcatalog)
 
     net = init_network(config, net, tf_maps, nRMS_list, run_id)
-    lag_buffer, lag_mode = get_lag_buffer(config)
-    net = set_liv_time(config, net, lag_buffer, lag_mode)
+    net = set_liv_time(config, net, config.lagBuffer, config.lagMode)
     return net
-
-
-def create_wdm(config, beta_order, precision):
-    """
-    Create WDM
-
-    :param config: user configuration
-    :type config: Config
-    :param beta_order: beta function order for Meyer
-    :type beta_order: int
-    :param precision: wavelet precision
-    :type precision: int
-    """
-
-    wdm_list = []
-    for i in range(config.l_low, config.l_high + 1):
-        level = config.l_high + config.l_low - i
-        layers = 2 ** level if level > 0 else 0
-        wdm = WDM(layers, layers, beta_order, precision)
-        wdmFLen = wdm.m_H / config.rateANA
-
-        if wdmFLen > config.segEdge + 0.001:
-            logger.error("Filter length must be <= segEdge !!!")
-            logger.error("filter length : %s sec", wdmFLen)
-            logger.error("cwb   scratch : %s sec", config.segEdge)
-            raise ValueError("Filter length must be <= segEdge !!!")
-        else:
-            logger.info("Filter length = %s (sec)", wdmFLen)
-
-        # check if the length for time delay amplitudes is less than cwb scratch length
-        # the factor 1.5 is used to avoid to use pixels on the border which could be distorted
-        rate = config.rateANA >> level
-
-        if config.segEdge < int(1.5 * (config.TDSize / rate) + 0.5):
-            logger.error("segEdge must be > 1.5x the length for time delay amplitudes!!!")
-            logger.error("TD length : %s sec", config.TDSize / rate)
-            logger.error("segEdge   : %s sec", config.segEdge)
-            logger.error("Select segEdge > %s", int(1.5 * (config.TDSize / rate) + 0.5))
-            raise ValueError("segEdge must be > 1.5x the length for time delay amplitudes!!!")
-
-        wdm_list.append(wdm)
-
-    return wdm_list
 
 
 def init_network(config, net, tf_maps, nRMS_list, run_id):
@@ -258,26 +214,6 @@ def set_liv_time(config, net, lagBuffer, lagMode):
     logger.info("number of time lags: %s", lags)
 
     return net
-
-
-def get_lag_buffer(config: Config):
-    """
-    Get lag buffer from configuration
-
-    :param config: user configuration
-    :type config: Config
-    :return: lag buffer and lag mode
-    :rtype: str, str
-    """
-    if config.lagMode == "r":
-        with open(config.lagFile, "r") as f:
-            lagBuffer = f.read()
-        lagMode = 's'
-    else:
-        lagBuffer = config.lagFile
-        lagMode = 'w'
-
-    return lagBuffer, lagMode
 
 
 def set_sky_mask(config: Config, net: ROOT.network, options: str, skycoord: str, skyres: float = None):

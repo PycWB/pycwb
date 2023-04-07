@@ -84,6 +84,8 @@ class Config:
         self.MRAcatalog = None
         self.TDRate = None
         self.lagStep = None
+        self.lagBuffer = None
+        self.lagMode = None
         self.dq_files = []
         self.injection = {}
 
@@ -133,6 +135,23 @@ class Config:
         # convert DQF to object
         for dqf in self.DQF:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
+
+    def get_lag_buffer(self):
+        """
+        Get lag buffer from configuration
+
+        :param config: user configuration
+        :type config: Config
+        :return: lag buffer and lag mode
+        :rtype: str, str
+        """
+        if self.lagMode == "r":
+            with open(self.lagFile, "r") as f:
+                self.lagBuffer = f.read()
+            self.lagMode = 's'
+        else:
+            self.lagBuffer = self.lagFile
+            self.lagMode = 'w'
 
     @staticmethod
     def check_file(file_name):
