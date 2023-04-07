@@ -1,15 +1,13 @@
 import os, time
 import multiprocessing
 import pyburst
-from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
-from pyburst.types import WDMXTalkCatalog
+from pyburst.types import WDMXTalkCatalog, Network
 from pyburst.utils import logger_init
 from pyburst.config import Config
 from pyburst.modules.plot import plot_spectrogram, plot_event_on_spectrogram
 from pyburst.modules.read_data import read_from_job_segment, generate_injection
 from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
-from pyburst.modules.network import create_network
 from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood
@@ -59,21 +57,22 @@ def analyze_job_segment(config, job_seg):
     # create wdm set and network
     wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
     wdm_list = create_wdm_set(config, wdm_MRA)
-    net = create_network(job_id, config, tf_maps, nRMS_list, wdm_MRA)
+
+    network = Network(config, tf_maps, nRMS_list, wdm_MRA)
 
     # calculate coherence
     fragment_clusters = coherence(config, tf_maps, wdm_list, nRMS_list)
 
 
     # generate sparse table
-    sparse_table_list = sparse_table_from_fragment_clusters(config, net.getDelay('MAX'),
+    sparse_table_list = sparse_table_from_fragment_clusters(config, network.get_max_delay(),
                                                              tf_maps, wdm_list, fragment_clusters)
 
     # supercluster
-    pwc_list = supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list)
+    pwc_list = supercluster(config, network.net, wdm_list, fragment_clusters, sparse_table_list)
 
     # likelihood
-    events, clusters = likelihood(job_id, config, net, pwc_list)
+    events, clusters = likelihood(job_id, config, network.net, pwc_list)
 
     for i, tf_map in enumerate(tf_maps):
         plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
