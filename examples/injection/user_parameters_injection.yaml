@@ -89,22 +89,3 @@ injection:
     dec: 0
   approximant: "IMRPhenomXHM"
 
-###### run configuration ######
-
-channelNamesRaw: ['L1:STRAIN_BURST_0', 'H1:STRAIN_BURST_0']
-frFiles: ["input/OPBM_L1.frames", "input/OPBM_H1.frames"]
-
-DQF: [
-  [ "L1" ,"DQ/L1_cat0.txt", CWB_CAT0, 0., False, False ],
-  [ "H1" ,"DQ/H1_cat0.txt", CWB_CAT0, 0., False, False ],
-  [ "L1" ,"DQ/L1_cat1.txt", CWB_CAT1, 0., True, False ],
-  [ "H1" ,"DQ/H1_cat1.txt", CWB_CAT1, 0., True, False ],
-  [ "L1" ,"DQ/L1_cat2.txt", CWB_CAT2, 0., True, False ],
-  [ "H1" ,"DQ/H1_cat2.txt", CWB_CAT2, 0., True, False ],
-  [ "L1" ,"DQ/L1_cat4.txt", CWB_CAT1, 0., True, False ],
-  [ "H1" ,"DQ/H1_cat4.txt", CWB_CAT1, 0., True, False ],
-  [ "L1" ,"input/inspiral_OPBM.in", CWB_CAT0, 0., False, False ],
-  [ "H1" ,"input/inspiral_OPBM.in", CWB_CAT0, 0., False, False ],
-]
-
-#plugin: "macro/CWB_Plugin_O3aConditioning_QLveto.C"
