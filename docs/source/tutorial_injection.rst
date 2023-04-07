@@ -63,32 +63,26 @@ for each resolution:
 .. code-block:: python
 
     # initialize network
-    from pyburst.modules.network import create_network
-    from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
     from pyburst.modules.wavelet import create_wdm_set
+    from pyburst.types import WDMXTalkCatalog, Network
 
-    net = create_network(job_segments[0].index, config, strains, nRMS)
+    job_id = 0
 
-    # create WDM
-    if net.wdmMRA.tag != 0:
-        beta_order, precision = net.wdmMRA.BetaOrder, net.wdmMRA.precision
-    else:
-        beta_order, precision = WDM_BETAORDER, WDM_PRECISION
-    wdm_list = create_wdm_set(config, beta_order, precision)
-
-    wdm_list
+    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
+    wdm_list = create_wdm_set(config, wdm_MRA)
+    network = Network(config, strains, nRMS, wdm_MRA)
 
 Find the coherent pixel clusters and generate the sparse table to reduce the computational cost in the following steps:
 
 .. code-block:: python
 
-    from pyburst.modules.coherence import coherence, coherence_parallel, sparse_table_from_fragment_clusters
+    from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
 
     # calculate coherence
-    fragment_clusters = coherence_parallel(config, strains, wdm_list, nRMS)
+    fragment_clusters = coherence(config, strains, wdm_list, nRMS)
 
     # generate sparse table
-    sparse_table_list = sparse_table_from_fragment_clusters(config, net.getDelay('MAX'),
+    sparse_table_list = sparse_table_from_fragment_clusters(config, network.get_max_delay(),
                                                             strains, wdm_list, fragment_clusters)
 
 Then merge the clusters to superclusters
@@ -97,7 +91,7 @@ Then merge the clusters to superclusters
 
     from pyburst.modules.super_cluster import supercluster
 
-    pwc_list = supercluster(config, net, wdm_list, fragment_clusters, sparse_table_list)
+    pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)
 
 
 Finally, calculate the likelihood for each supercluster:
@@ -106,23 +100,14 @@ Finally, calculate the likelihood for each supercluster:
 
     from pyburst.modules.likelihood import likelihood
 
-    events, clusters = likelihood(job_id, config, net, pwc_list)
+    events, clusters = likelihood(job_id, config, network, pwc_list)
 
 You can use the following code to plot the events on the spectrogram:
 
 .. code-block:: python
 
-    import matplotlib.pyplot as plt
-    plot = plot_spectrogram(tf_maps[0], figsize=(24, 6), gwpy_plot=True)
+    from pyburst.modules.plot import plot_event_on_spectrogram
 
-    # plot boxes on the plot
-    i = 0
-    boxes = [[e.start[i], e.stop[i], e.low[i], e.high[i]] for e in events if len(e.start) > 0]
-
-    for box in boxes:
-        ax = plot.gca()
-        ax.add_patch(plt.Rectangle((box[0], box[2]), box[1] - box[0], box[3] - box[2], linewidth=0.5, fill=False,
-                                   color='red'))
-
-    # save to png
-    plot.show()
+    for i, tf_map in enumerate(strains):
+        plt = plot_event_on_spectrogram(tf_map, events)
+        plt.show()
