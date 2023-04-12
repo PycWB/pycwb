@@ -5,10 +5,8 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.conversions import convert_fragment_clusters_to_netcluster
-from pyburst.modules.netcluster import select_clusters, copy_metadata
-from pyburst.modules.netevent import Event
 from pyburst.modules.catalog import add_events_to_catalog
-from pyburst.types import FragmentCluster
+from pyburst.types import FragmentCluster, Event
 
 logger = logging.getLogger(__name__)
 
