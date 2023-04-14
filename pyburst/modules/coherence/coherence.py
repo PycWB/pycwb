@@ -83,8 +83,6 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     :type tf_maps: list[TimeFrequencySeries]
     :param wdm: wdm used for current resolution
     :type wdm: WDM
-    :param m_tau: maximum delay
-    :type m_tau: float
     :param up_n: upsample factor
     :type up_n: int
     :return: (sparse_table, fragment_clusters)
@@ -95,8 +93,6 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     if net is None:
         # for paralleling, create a new network to avoid conflict
         net = Network(config, tf_maps, nRMS_list, silent=True)
-
-    m_tau = net.get_max_delay()
 
     # print level infos
     level = config.l_high - i
@@ -116,9 +112,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     alp = 0.0
     for n in range(len(config.ifo)):
         ts = convert_to_wavearray(tf_maps[n])
-        alp += net.get_ifo(n).getTFmap().maxEnergy(ts, wdm.wavelet,
-                                                  m_tau, up_n,
-                                                  net.pattern)
+        alp += net.get_ifo(n).getTFmap().maxEnergy(ts, wdm.wavelet, config.max_delay, up_n, net.pattern)
         net.get_ifo(n).getTFmap().setlow(config.fLow)
         net.get_ifo(n).getTFmap().sethigh(config.fHigh)
 

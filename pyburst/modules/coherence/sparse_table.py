@@ -12,8 +12,6 @@ def sparse_table_from_fragment_clusters(config, tf_maps, wdm_list, fragment_clus
 
     :param config: config object
     :type config: Config
-    :param m_tau: m_tau
-    :type m_tau: float
     :param tf_maps: time-frequency maps
     :type tf_maps: list[TimeFrequencySeries]
     :param wdm_list: list of wavelet-domain models
