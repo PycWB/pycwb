@@ -44,6 +44,17 @@ class Pixel:
     def to_dict(self):
         return {key: getattr(self, key) for key in self.__slots__}
 
+    @property
+    def time_in_seconds(self):
+        dt = 1. / self.rate
+        time = int(self.time / self.layers) * dt - dt / 2
+        return time
+
+    @property
+    def frequency_in_hz(self):
+        df = self.rate / 2
+        return self.frequency * df
+
 
 class PixelData:
     __slots__ = ['noise_rms', 'wave', 'w_90', 'asnr', 'a_90', 'rank', 'index']
