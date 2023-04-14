@@ -1,5 +1,4 @@
 import argparse, shlex
-import copy
 import logging, ROOT
 
 import numpy as np
@@ -104,6 +103,15 @@ class Network:
         # return copy.deepcopy(FragmentCluster().from_netcluster(pwc))
 
     def cluster(self, lag, kt, kf):
+        """
+        produce time-frequency clusters at a single TF resolution
+        any two pixels are associated if they are closer than both kt/kf
+        samples in time/frequency
+
+        :param lag: lag index
+        :param kt: time threshold
+        :param kf: frequency threshold
+        """
         self.get_cluster(lag).cluster(kt, kf)
 
     def sub_net_cut(self, lag, sub_net, sub_cut, sub_norm):
