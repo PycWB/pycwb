@@ -80,8 +80,10 @@ def analyze_job_segment(config, job_seg):
 
     # plot the likelihood map
     for i, cluster in enumerate(clusters):
-        plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i}.png')
-        plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i}.png')
+        if cluster.cluster_status == -1:
+            continue
+        plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
+        plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
