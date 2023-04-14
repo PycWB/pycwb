@@ -1,4 +1,8 @@
+import numpy as np
+from scipy.sparse import coo_array
+
 from pyburst.types.network_pixel import Pixel
+from pyburst.utils.image import resize_resolution, align_images, merge_images
 
 
 class FragmentCluster:
@@ -200,6 +204,107 @@ class Cluster:
         self.sky_pixel_index = list(netcluster.p_Ind[c_id])
         self.sky_time_delay = list(netcluster.nTofF[c_id])
         return self
+
+    def get_pixel_rates(self):
+        return [p.rate for p in self.pixels]
+
+    def get_pixels_with_rate(self, rate):
+        return [p for p in self.pixels if p.rate == rate]
+
+    def get_sparse_map_by_rate(self, key='likelihood'):
+        pixels = self.pixels
+
+        # get the sort the rates
+        rates = sorted(set([p.rate for p in pixels]))
+
+        # get the pixels for each rate
+        res_layers = []
+        for r in rates:
+            res_layers.append([p for p in pixels if p.rate == r])
+
+        # generate the sparse map for each rate
+        v_maps = []
+        dts = []
+        dfs = []
+        t_starts = []
+
+        for res in res_layers:
+            one_pixel = res[0]
+            dt = 1 / one_pixel.rate
+            df = one_pixel.rate / 2
+            times = [int(p.time / p.layers) for p in res]
+            freqs = [p.frequency for p in res]
+            values = [getattr(p, key) for p in res]
+            v_map = coo_array((values, (times, freqs)), shape=(max(times) + 1, max(freqs) + 1))
+
+            # strip the zeros
+            t_start = v_map.nonzero()[0].min()
+            d = v_map.toarray()[t_start:]
+
+            # append for each rate
+            v_maps.append(d)
+            dts.append(dt)
+            dfs.append(df)
+            t_starts.append(t_start)
+        return v_maps, t_starts, dts, dfs
+
+    def get_sparse_map(self, key='likelihood'):
+        v_maps, t_starts, dts, dfs = self.get_sparse_map_by_rate(key=key)
+
+        min_dt = min(dts)
+        min_df = min(dfs)
+
+        # resize to the same resolution
+        resized_maps = [resize_resolution(v_map, dts[i], dfs[i], min_dt, min_df) for i, v_map in enumerate(v_maps)]
+
+        # calculate shift
+        t_starts_shifted = ((np.array(t_starts) * np.array(dts) - np.array(dts) / 2) / min_dt).astype(int)
+
+        # align images
+        aligned_images = align_images(resized_maps, t_starts_shifted)
+
+        # merge images
+        merged_map = merge_images(aligned_images)
+
+        # start time
+        t_start_new = min(t_starts_shifted) * min_dt
+
+        return merged_map, t_start_new, min_dt, min_df
+
+    # def generate_multi_resolution_map(self):
+    #     pixels = self.pixels
+    #     one_pixel = pixels[0]
+    #     rate = (one_pixel.layers - 1) * one_pixel.rate
+    #
+    #     times = [p.time_in_seconds for p in pixels]
+    #     freqs = [p.frequency_in_hz for p in pixels]
+    #     dt = [1/p.rate for p in pixels]
+    #     df = [p.rate / 2 for p in pixels]
+    #     layers = [p.layers for p in pixels]
+    #     max_layers = max(layers)
+    #     min_layers = min(layers)
+    #     max_rate = rate / (min_layers - 1)
+    #     min_rate = rate / (max_layers - 1)
+    #     min_dt = 1 / max_rate
+    #     max_dt = 1 / min_rate
+    #     min_df = min_rate / 2
+    #     max_df = max_rate / 2
+    #
+    #     min_time = min(times) - max_dt
+    #     max_time = max(times) + max_dt
+    #     max_freq = max(freqs)
+    #     min_freq = min(freqs)
+    #     # max_freq = rate / 2
+    #     # min_freq = 0
+    #     n_times = int((max_time - min_time) / min_dt)
+    #     n_freqs = 2 * (max_layers - 1)
+    #
+    #     df_plot = max((max_freq - min_freq) / 10., 2 * max_df)
+    #     dt_plot = max((max_time - min_time) / 10., 2 * max_dt)
+    #     min_freq_plot = max(0, min_freq - df_plot)
+    #     max_freq_plot = min(rate / 2, max_freq + df_plot)
+    #     min_time_plot = min(times) - max(max_dt, dt_plot)
+    #     max_time_plot = max(times) + min(max_dt, dt_plot)
 
 
 class ClusterMeta:

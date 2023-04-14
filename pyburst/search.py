@@ -1,6 +1,7 @@
 import os, time
 import multiprocessing
 import pyburst
+from pyburst.modules.plot.cluster_statistics import plot_statistics
 from pyburst.types import WDMXTalkCatalog, Network
 from pyburst.utils import logger_init
 from pyburst.config import Config
@@ -76,6 +77,11 @@ def analyze_job_segment(config, job_seg):
 
     for i, tf_map in enumerate(tf_maps):
         plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
+
+    # plot the likelihood map
+    for i, cluster in enumerate(clusters):
+        plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i}.png')
+        plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
