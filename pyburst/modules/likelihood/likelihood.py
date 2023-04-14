@@ -46,7 +46,8 @@ def likelihood(job_id, config, network, fragment_clusters):
             events.append(event)
             clusters.append(cluster)
 
-    n_events = len([c for c in clusters if c.cluster_status == -1])
+    selected_clusters = [c for c in clusters if c.cluster_status == -1]
+    n_events = len(selected_clusters)
 
     # timer
     timer_end = time.perf_counter()
@@ -55,7 +56,7 @@ def likelihood(job_id, config, network, fragment_clusters):
     logger.info("Total time: %.2f s" % (timer_end - timer_start))
     logger.info("-------------------------------------------------------")
 
-    return events, clusters
+    return events, selected_clusters
 
 
 def _likelihood(job_id, config, network, lag, cluster_id, fragment_cluster):
