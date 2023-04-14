@@ -42,7 +42,15 @@
 
       <div class="content">
         <h2 class="content-subhead">All events in this job segment</h2>
-        <img style="width: 100%" :src="`./events_${query.job_id}_all.png`"/>
+        <div class="pure-g">
+          <div class="pure-u-1-2"><p><img style="width: 100%" alt="All events in this job segment for ifo 0" :src="`./events_${query.job_id}_all_0.png`"/></p></div>
+          <div class="pure-u-1-2"><p><img style="width: 100%" alt="All events in this job segment for ifo 1" :src="`./events_${query.job_id}_all_1.png`"/></p></div>
+        </div>
+        <h2 class="content-subhead">Likelihood Time-Frequency Maps</h2>
+        <div class="pure-g">
+          <div class="pure-u-1-2"><p><img style="width: 100%" alt="Likelihood Map" :src="`./likelihood_map_${query.job_id}_${query.id}.png`"/></p></div>
+          <div class="pure-u-1-2"><p><img style="width: 100%" alt="Null Map" :src="`./null_map_${query.job_id}_${query.id}.png`"/></p></div>
+        </div>
 
         <h2 class="content-subhead" id="summary">Summary</h2>
         <table class="pure-table  pure-table-bordered">
