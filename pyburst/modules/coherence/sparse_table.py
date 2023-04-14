@@ -2,11 +2,12 @@ import logging, time
 from multiprocessing import Pool
 
 from pyburst.types.sparse_series import SparseTimeFrequencySeries
+from pyburst.utils.network import max_delay
 
 logger = logging.getLogger(__name__)
 
 
-def sparse_table_from_fragment_clusters(config, m_tau, tf_maps, wdm_list, fragment_clusters):
+def sparse_table_from_fragment_clusters(config, tf_maps, wdm_list, fragment_clusters):
     """Create sparse tables from fragment clusters
 
     :param config: config object
@@ -24,16 +25,10 @@ def sparse_table_from_fragment_clusters(config, m_tau, tf_maps, wdm_list, fragme
     """
     timer_start = time.perf_counter()
 
-    # sparse_tables = []
     with Pool(processes=min(config.nproc, config.nRES)) as pool:
         sparse_tables = pool.starmap(_sparse_table_from_fragment_cluster,
-                                     [(config, m_tau, tf_maps, wdm_list[i], fragment_cluster)
+                                     [(config, tf_maps, wdm_list[i], fragment_cluster)
                                       for i, fragment_cluster in enumerate(fragment_clusters)])
-    # for i, fragment_cluster in enumerate(fragment_clusters):
-    #     sparse_tables.append([
-    #         SparseTimeFrequencySeries().from_fragment_cluster(wdm_list[i], tf_maps[n], fragment_cluster,
-    #                                                           config.TDSize, m_tau, n)
-    #         for n in range(config.nIFO)])
 
     timer_stop = time.perf_counter()
     logger.info("----------------------------------------")
@@ -43,8 +38,8 @@ def sparse_table_from_fragment_clusters(config, m_tau, tf_maps, wdm_list, fragme
     return sparse_tables
 
 
-def _sparse_table_from_fragment_cluster(config, m_tau, tf_maps, wdm, fragment_cluster):
+def _sparse_table_from_fragment_cluster(config, tf_maps, wdm, fragment_cluster):
     return [
         SparseTimeFrequencySeries().from_fragment_cluster(wdm, tf_maps[n], fragment_cluster,
-                                                          config.TDSize, m_tau, n)
+                                                          config.TDSize, config.max_delay, n)
         for n in range(config.nIFO)]

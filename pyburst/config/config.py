@@ -7,6 +7,7 @@ import os.path
 import logging
 
 from ..types import WDMXTalkCatalog
+from ..utils.network import max_delay
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ class Config:
         self.lagStep = None
         self.lagBuffer = None
         self.lagMode = None
+        self.max_delay = None
         self.dq_files = []
         self.injection = {}
 
@@ -135,6 +137,8 @@ class Config:
         # convert DQF to object
         for dqf in self.DQF:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
+
+        self.max_delay = max_delay(self.ifo)
 
     def get_lag_buffer(self):
         """
