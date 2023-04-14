@@ -17,6 +17,7 @@ install_requires = [
     "pycbc",
     "filelock",
     "scipy",
+    "pillow>=9.0.0",
     # "nds2-client",
     # "python-nds2-client"
 ]
