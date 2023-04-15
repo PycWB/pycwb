@@ -39,10 +39,10 @@ def likelihood(job_id, config, network, fragment_clusters):
 
         # loop over clusters to calculate likelihood
         for k, selected_cluster in enumerate(fragment_cluster.clusters):
-            temp_cluster = copy.copy(fragment_cluster)
-            temp_cluster.clusters = [selected_cluster]
+            cluster_id = k + 1
+            event, cluster = _likelihood(config, network, j, cluster_id, fragment_cluster.dump_cluster(k))
+            save_data(job_id, cluster_id, config.outputDir, event, cluster)
 
-            event, cluster = _likelihood(job_id, config, network, j, k + 1, temp_cluster)
             events.append(event)
             clusters.append(cluster)
 
@@ -58,10 +58,9 @@ def likelihood(job_id, config, network, fragment_clusters):
     return events, clusters
 
 
-def _likelihood(job_id, config, network, lag, cluster_id, fragment_cluster):
+def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     # dumb variables
     k = 0
-    ID = 0
 
     ####################
     # cWB2G likelihood #
@@ -99,22 +98,37 @@ def _likelihood(job_id, config, network, lag, cluster_id, fragment_cluster):
     else:
         logger.info("\t <- rejected    ")
 
-    # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
+    return event, cluster
 
+
+def save_data(job_id, cluster_id, output_dir, event, cluster):
+    """
+    save event and cluster to file
+
+    :param job_id: job id
+    :type job_id: int
+    :param cluster_id: cluster id
+    :type cluster_id: int
+    :param output_dir: output directory
+    :type output_dir: str
+    :param event: event
+    :type event: Event
+    :param cluster: cluster
+    :type cluster: Cluster
+    """
+    # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
     try:
         # save event to file
-        with open(f'{config.outputDir}/event_{job_id}_{cluster_id}.json', 'w') as f:
+        with open(f'{output_dir}/event_{job_id}_{cluster_id}.json', 'w') as f:
             f.write(event.json())
         # save cluster to pickle
-        with open(f'{config.outputDir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
+        with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
             pickle.dump(cluster, f)
 
         # save event to catalog if file exists
-        if os.path.exists(f"{config.outputDir}/catalog.json"):
-            add_events_to_catalog(f"{config.outputDir}/catalog.json", [event.summary(job_id, cluster_id)])
+        if os.path.exists(f"{output_dir}/catalog.json"):
+            add_events_to_catalog(f"{output_dir}/catalog.json", [event.summary(job_id, cluster_id)])
         else:
             logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
     except Exception as e:
         logger.error(e)
-
-    return event, cluster

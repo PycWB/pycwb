@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 from scipy.sparse import coo_array
 
@@ -129,6 +131,20 @@ class FragmentCluster:
                 if c.cluster_status == event_status:
                     pixel_count += len(c.pixels)
         return pixel_count
+
+    def dump_cluster(self, cluster_id):
+        """
+        Select cluster by id
+
+        :param cluster_id: cluster id
+        :type cluster_id: int
+        :return: cluster
+        :rtype: Cluster
+        """
+        temp_cluster = copy.copy(self)
+        temp_cluster.clusters = [self.clusters[cluster_id]]
+
+        return temp_cluster
 
 
 class Cluster:
