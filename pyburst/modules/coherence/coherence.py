@@ -5,13 +5,14 @@ import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.modules.network import create_network
+from pyburst.modules.wavelet import create_wdm_set
 from pyburst.types import TimeFrequencySeries, FragmentCluster, Network
 from pyburst.conversions import convert_to_wavearray
 
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, wdm_list, tf_maps, nRMS_list, net=None, parallel=True):
+def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     """
     Select the significant pixels
 
@@ -44,6 +45,9 @@ def coherence(config, wdm_list, tf_maps, nRMS_list, net=None, parallel=True):
     # calculate upsample factor
     timer_start = time.perf_counter()
     logger.info("Start coherence" + " in parallel" if parallel else "")
+
+    wdm_list = create_wdm_set(config)
+
     up_n = config.rateANA // 1024
     if up_n < 1:
         up_n = 1

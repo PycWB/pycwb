@@ -60,8 +60,8 @@ def create_wdm_for_level(rate_ANA, seg_edge, td_size, level, beta_order, precisi
         logger.error("filter length : %s sec", wdmFLen)
         logger.error("cwb   scratch : %s sec", seg_edge)
         raise ValueError("Filter length must be <= segEdge !!!")
-    else:
-        logger.info("Filter length = %s (sec)", wdmFLen)
+    # else:
+    #     logger.info("Filter length = %s (sec)", wdmFLen)
 
     # check if the length for time delay amplitudes is less than cwb scratch length
     # the factor 1.5 is used to avoid to use pixels on the border which could be distorted

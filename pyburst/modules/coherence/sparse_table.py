@@ -1,13 +1,14 @@
 import logging, time
 from multiprocessing import Pool
 
+from pyburst.modules.wavelet import create_wdm_set
 from pyburst.types.sparse_series import SparseTimeFrequencySeries
 from pyburst.utils.network import max_delay
 
 logger = logging.getLogger(__name__)
 
 
-def sparse_table_from_fragment_clusters(config, wdm_list, tf_maps, fragment_clusters):
+def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters):
     """Create sparse tables from fragment clusters
 
     :param config: config object
@@ -22,6 +23,8 @@ def sparse_table_from_fragment_clusters(config, wdm_list, tf_maps, fragment_clus
     :rtype: list[list[SparseTimeFrequencySeries]]
     """
     timer_start = time.perf_counter()
+
+    wdm_list = create_wdm_set(config)
 
     with Pool(processes=min(config.nproc, config.nRES)) as pool:
         sparse_tables = pool.starmap(_sparse_table_from_fragment_cluster,
