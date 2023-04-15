@@ -11,7 +11,7 @@ from pyburst.conversions import convert_to_wavearray
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, tf_maps, wdm_list, nRMS_list, net=None, parallel=True):
+def coherence(config, wdm_list, tf_maps, nRMS_list, net=None, parallel=True):
     """
     Select the significant pixels
 

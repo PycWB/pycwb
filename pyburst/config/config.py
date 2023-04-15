@@ -90,6 +90,8 @@ class Config:
         self.max_delay = None
         self.dq_files = []
         self.injection = {}
+        self.WDM_beta_order = None
+        self.WDM_precision = None
 
         params = load_yaml(file_name, load_to_root=False)
 
@@ -210,3 +212,9 @@ class Config:
 
         # check layers
         wdm_MRA.check_layers_with_MRAcatalog(self.l_low, self.l_high, self.nRES)
+
+        # update beta order and precision
+        if wdm_MRA.tag != 0:
+            logger.info(f"MRA catalog has tag {wdm_MRA.tag}, updating beta order and precision from MRA catalog")
+            self.WDM_beta_order, self.WDM_precision = wdm_MRA.beta_order, wdm_MRA.precision
+

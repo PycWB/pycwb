@@ -55,18 +55,17 @@ def analyze_job_segment(config, job_seg):
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)
 
-    # create wdm set and network
-    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
-    wdm_list = create_wdm_set(config, wdm_MRA)
+    # create wdm set
+    wdm_list = create_wdm_set(config)
 
     # calculate coherence
-    fragment_clusters = coherence(config, tf_maps, wdm_list, nRMS_list)
+    fragment_clusters = coherence(config, wdm_list, tf_maps, nRMS_list)
 
     # generate sparse table
-    sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, wdm_list, fragment_clusters)
+    sparse_table_list = sparse_table_from_fragment_clusters(config, wdm_list, tf_maps, fragment_clusters)
 
     # create network
-    network = Network(config, tf_maps, nRMS_list, wdm_MRA)
+    network = Network(config, tf_maps, nRMS_list)
 
     # supercluster
     pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)

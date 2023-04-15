@@ -18,7 +18,7 @@ class Network:
     :type ref_ifo: str
     """
 
-    def __init__(self, config, tf_list, nRMS_list, wdm_MRA=None, silent=False):
+    def __init__(self, config, tf_list, nRMS_list, silent=False):
         self.net = ROOT.network()
         self.MRA_catalog = None
 
@@ -28,10 +28,9 @@ class Network:
         else:
             logger.propagate = True
 
-        if wdm_MRA:
-            # self.MRA_catalog = copy.deepcopy(wdm_MRA)
-            # self.net.wdmMRA = self.MRA_catalog.catalog
-            self.net.setMRAcatalog(config.MRAcatalog)
+        # self.MRA_catalog = copy.deepcopy(wdm_MRA)
+        # self.net.wdmMRA = self.MRA_catalog.catalog
+        self.net.setMRAcatalog(config.MRAcatalog)
 
         for i, ifo in enumerate(config.ifo):
             self.add_detector(ifo)

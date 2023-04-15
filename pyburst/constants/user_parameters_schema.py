@@ -33,6 +33,16 @@ schema = {
             "default": {},
             "cwb": False
         },
+        "WDM_beta_order": {
+            "type": "integer",
+            "description": "WDM default parameters: beta function order for Meyer",
+            "default": 6,
+        },
+        "WDM_precision": {
+            "type": "integer",
+            "description": "WDM default parameters: wavelet precision",
+            "default": 10,
+        },
         "analysis": {
             "enum": ["1G", "2G"],
             "description": "true/false -> online/offline",

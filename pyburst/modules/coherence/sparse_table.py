@@ -7,7 +7,7 @@ from pyburst.utils.network import max_delay
 logger = logging.getLogger(__name__)
 
 
-def sparse_table_from_fragment_clusters(config, tf_maps, wdm_list, fragment_clusters):
+def sparse_table_from_fragment_clusters(config, wdm_list, tf_maps, fragment_clusters):
     """Create sparse tables from fragment clusters
 
     :param config: config object
