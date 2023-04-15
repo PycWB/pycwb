@@ -276,7 +276,8 @@ void monster::read(char* fn)
    layers = new int[this->nRes];
    for(int i=0; i<this->nRes; ++i){
       fread(&tmp, sizeof(float), 1, f);
-      printf("layers[%d] = %d\n", i, layers[i] = (int)tmp);
+      layers[i] = (int)tmp;
+//      printf("layers[%d] = %d\n", i, layers[i] = (int)tmp);
       
    }
    

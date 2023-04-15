@@ -162,7 +162,7 @@ WaveDWT<DataType_t>(1, 1, 0, B_CYCLE)
     //printf("%d %e\n", N, residual);
   } while(residual>prec || (N-1)%M2 || N/M2<3);
 
-  printf("Filter length = %d,  norm = %.16f\n", N, 1.-residual);
+//  printf("Filter length = %d,  norm = %.16f\n", N, 1.-residual);
   
   wdmFilter.resize(N);
   wdmFilter.cpf(filter,N);
