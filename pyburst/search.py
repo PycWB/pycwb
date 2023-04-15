@@ -11,7 +11,7 @@ from pyburst.modules.data_conditioning import data_conditioning
 from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
 from pyburst.modules.super_cluster import supercluster
-from pyburst.modules.likelihood import likelihood
+from pyburst.modules.likelihood import likelihood, save_likelihood_data
 from pyburst.modules.job_segment import select_job_segment
 from pyburst.modules.catalog import create_catalog
 from pyburst.types.job import WaveSegment
@@ -68,7 +68,11 @@ def analyze_job_segment(config, job_seg):
     pwc_list = supercluster(config, network, fragment_clusters, sparse_table_list)
 
     # likelihood
-    events, clusters = likelihood(job_id, config, network, pwc_list)
+    events, clusters = likelihood(config, network, pwc_list)
+
+    # save the results
+    for i, event in enumerate(events):
+        save_likelihood_data(job_id, i+1, config.outputDir, event, clusters[i])
 
     for i, tf_map in enumerate(tf_maps):
         plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')

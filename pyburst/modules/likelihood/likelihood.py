@@ -11,7 +11,7 @@ from pyburst.types import FragmentCluster, Event
 logger = logging.getLogger(__name__)
 
 
-def likelihood(job_id, config, network, fragment_clusters):
+def likelihood(config, network, fragment_clusters):
     """
     calculate likelihood
 
@@ -41,7 +41,6 @@ def likelihood(job_id, config, network, fragment_clusters):
         for k, selected_cluster in enumerate(fragment_cluster.clusters):
             cluster_id = k + 1
             event, cluster = _likelihood(config, network, j, cluster_id, fragment_cluster.dump_cluster(k))
-            save_data(job_id, cluster_id, config.outputDir, event, cluster)
 
             events.append(event)
             clusters.append(cluster)
@@ -101,7 +100,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     return event, cluster
 
 
-def save_data(job_id, cluster_id, output_dir, event, cluster):
+def save_likelihood_data(job_id, cluster_id, output_dir, event, cluster):
     """
     save event and cluster to file
 
