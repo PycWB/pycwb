@@ -4,8 +4,7 @@ from multiprocessing import Pool
 import ROOT
 import logging
 from pyburst.config import Config
-from pyburst.modules.network import create_network
-from pyburst.modules.wavelet import create_wdm_set
+from pyburst.modules.wavelet import create_wdm_for_level
 from pyburst.types import TimeFrequencySeries, FragmentCluster, Network
 from pyburst.conversions import convert_to_wavearray
 
@@ -46,8 +45,6 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     timer_start = time.perf_counter()
     logger.info("Start coherence" + " in parallel" if parallel else "")
 
-    wdm_list = create_wdm_set(config)
-
     up_n = config.rateANA // 1024
     if up_n < 1:
         up_n = 1
@@ -58,12 +55,12 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
             tasks = []
             for i in range(config.nRES):
-                tasks.append((i, config, tf_maps, nRMS_list, wdm_list[i], up_n))
+                tasks.append((i, config, tf_maps, nRMS_list, up_n))
             for fragment_clusters_single_res in pool.starmap(_coherence_single_res, tasks):
                 fragment_clusters += fragment_clusters_single_res
     else:
         for i in range(config.nRES):
-            fragment_clusters_single_res = _coherence_single_res(i, config, tf_maps, nRMS_list, wdm_list[i], up_n, net)
+            fragment_clusters_single_res = _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net)
             fragment_clusters += fragment_clusters_single_res
 
     logger.info("----------------------------------------")
@@ -73,7 +70,7 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     return fragment_clusters
 
 
-def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
+def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     """
     Calculate the coherence for a single resolution
 
@@ -94,6 +91,9 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, wdm, up_n, net=None):
     """
     # timer
     timer_start = time.perf_counter()
+
+    wdm = create_wdm_for_level(config, config.WDM_level[i])
+
     if net is None:
         # for paralleling, create a new network to avoid conflict
         net = Network(config, tf_maps, nRMS_list, silent=True)

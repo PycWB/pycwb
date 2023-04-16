@@ -1,14 +1,11 @@
 import copy
 
-import ROOT
 import logging
 import time
-import numpy as np
 from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
 from pyburst.conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
-from pyburst.modules.network import update_sky_map, update_sky_mask, restore_skymap
-from pyburst.modules.wavelet import create_wdm_set
+from pyburst.modules.wavelet import create_wdm_for_level
 from pyburst.types import FragmentCluster
 
 logger = logging.getLogger(__name__)
@@ -41,8 +38,6 @@ def supercluster(config, network, fragment_clusters, sparse_table_list):
     # timer
     timer_start = time.perf_counter()
 
-    wdm_list = create_wdm_set(config)
-
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
     if skyres > 0:
@@ -52,9 +47,13 @@ def supercluster(config, network, fragment_clusters, sparse_table_list):
     hot = []
     for n in range(config.nIFO):
         hot.append(network.get_ifo(n).getHoT())
+
     # set low-rate TD filters
-    for wdm in wdm_list:
+    for level in config.WDM_level:
+        wdm = create_wdm_for_level(config, level)
         wdm.set_td_filter(config.TDSize, 1)
+        # add wavelets to network
+        network.add_wavelet(wdm)
 
     # merge cluster
     cluster = copy.deepcopy(fragment_clusters[0])
@@ -69,10 +68,6 @@ def supercluster(config, network, fragment_clusters, sparse_table_list):
     ###############################
     # convert to netcluster
     cluster = convert_fragment_clusters_to_netcluster(cluster)
-
-    # add wavelets to network
-    for wdm in wdm_list:
-        network.add_wavelet(wdm)
 
     # read sparse map to detector for pwc.loadTDampSSE
     for n in range(config.nIFO):

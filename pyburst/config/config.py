@@ -92,6 +92,7 @@ class Config:
         self.injection = {}
         self.WDM_beta_order = None
         self.WDM_precision = None
+        self.WDM_level = []
 
         params = load_yaml(file_name, load_to_root=False)
 
@@ -141,6 +142,8 @@ class Config:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
 
         self.max_delay = max_delay(self.ifo)
+
+        self.WDM_level = [int(self.l_high + self.l_low - i) for i in range(self.l_low, self.l_high + 1)]
 
     def get_lag_buffer(self):
         """
@@ -216,5 +219,5 @@ class Config:
         # update beta order and precision
         if wdm_MRA.tag != 0:
             logger.info(f"MRA catalog has tag {wdm_MRA.tag}, updating beta order and precision from MRA catalog")
-            self.WDM_beta_order, self.WDM_precision = wdm_MRA.beta_order, wdm_MRA.precision
+            self.WDM_beta_order, self.WDM_precision = int(wdm_MRA.beta_order), int(wdm_MRA.precision)
 

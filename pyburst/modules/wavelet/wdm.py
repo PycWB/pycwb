@@ -1,7 +1,6 @@
 import logging
 
-from pyburst.constants import WDM_BETAORDER, WDM_PRECISION
-from pyburst.types import WDM, WDMXTalkCatalog
+from pyburst.types import WDM
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +26,13 @@ def create_wdm_set(config):
     for i in range(l_low, l_high + 1):
         level = l_high + l_low - i
         wdm_list.append(
-            create_wdm_for_level(rate_ANA, seg_edge, td_size, level, beta_order, precision)
+            create_wdm_for_level(config, level)
         )
 
     return wdm_list
 
 
-def create_wdm_for_level(rate_ANA, seg_edge, td_size, level, beta_order, precision):
+def create_wdm_for_level(config, level):
     """
     Create a WDM object for a given level
     :param rate_ANA: analysis rate
@@ -51,6 +50,13 @@ def create_wdm_for_level(rate_ANA, seg_edge, td_size, level, beta_order, precisi
     :return: WDM object
     :rtype: WDM
     """
+    # explicitly list all parameters used from config
+    rate_ANA, seg_edge, td_size, l_high, l_low  = config.rateANA, config.segEdge, config.TDSize, \
+        config.l_high, config.l_low
+
+    # get beta order and precision
+    beta_order, precision = config.WDM_beta_order, config.WDM_precision
+
     layers = 2 ** level if level > 0 else 0
     wdm = WDM(layers, layers, beta_order, precision)
     wdmFLen = wdm.m_H / rate_ANA
