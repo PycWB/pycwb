@@ -10,7 +10,7 @@ from multiprocessing import Pool
 logger = logging.getLogger(__name__)
 
 
-def data_conditioning(config, strains):
+def data_conditioning(config, strains, parallel=True):
     """
     Performs data conditioning on the given strain data, including regression and whitening
 
@@ -31,8 +31,12 @@ def data_conditioning(config, strains):
     layers = int(config.rateANA / 8)
     wdm = WDM(layers, layers, WDM_BETAORDER, WDM_PRECISION)
 
-    with Pool(processes=min(config.nproc, config.nIFO)) as p:
-        res = p.starmap(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))])
+    if parallel:
+        logger.info("Start data conditioning in parallel")
+        with Pool(processes=min(config.nproc, config.nIFO)) as p:
+            res = p.map(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))])
+    else:
+        res = list(map(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))]))
 
     conditioned_strains, nRMS_list = zip(*res)
 
@@ -45,7 +49,8 @@ def data_conditioning(config, strains):
     return conditioned_strains, nRMS_list
 
 
-def _wrapper(config, strain, wdm, wdm_white):
+def _wrapper(args):
+    config, strain, wdm, wdm_white = args
     # regression and whitening
     data_reg = regression(config, wdm, strain)
     tf_map, nRMS = whitening(config, wdm_white, data_reg)

@@ -52,6 +52,7 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     fragment_clusters = []
 
     if parallel:
+        logger.info("Start coherence in parallel")
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
             tasks = []
             for i in range(config.nRES):

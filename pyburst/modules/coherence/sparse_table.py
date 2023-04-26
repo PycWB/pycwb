@@ -7,7 +7,7 @@ from pyburst.types.sparse_series import SparseTimeFrequencySeries
 logger = logging.getLogger(__name__)
 
 
-def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters):
+def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters, parallel=False):
     """Create sparse tables from fragment clusters
 
     :param config: config object
@@ -23,10 +23,16 @@ def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters):
     """
     timer_start = time.perf_counter()
 
-    with Pool(processes=min(config.nproc, config.nRES)) as pool:
-        sparse_tables = pool.starmap(_sparse_table_from_fragment_cluster,
+    if parallel:
+        logger.info("Start sparse series in parallel")
+        with Pool(processes=min(config.nproc, config.nRES)) as pool:
+            sparse_tables = pool.map(_sparse_table_from_fragment_cluster,
                                      [(config, tf_maps, i, fragment_cluster)
                                       for i, fragment_cluster in enumerate(fragment_clusters)])
+    else:
+        sparse_tables = list(map(_sparse_table_from_fragment_cluster,
+                                 [(config, tf_maps, i, fragment_cluster)
+                                  for i, fragment_cluster in enumerate(fragment_clusters)]))
 
     timer_stop = time.perf_counter()
     logger.info("----------------------------------------")
@@ -36,7 +42,8 @@ def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters):
     return sparse_tables
 
 
-def _sparse_table_from_fragment_cluster(config, tf_maps, i, fragment_cluster):
+def _sparse_table_from_fragment_cluster(args):
+    config, tf_maps, i, fragment_cluster = args
     wdm = create_wdm_for_level(config, config.WDM_level[i])
 
     return [
