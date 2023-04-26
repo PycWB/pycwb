@@ -17,7 +17,7 @@ class TimeFrequencySeries:
     :param f_high: high frequency cutoff
     :type f_high: float
     """
-    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', 'f_low', 'f_high']
+    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', '_f_low', '_f_high']
 
     def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
         self._wavelet = None
@@ -32,9 +32,9 @@ class TimeFrequencySeries:
         #: wavelet zero layer rate
         self.w_rate = (data.sample_rate if data else 0.) if w_rate is None else w_rate
         #: low frequency cutoff
-        self.f_low = 0. if f_low is None else f_low
+        self._f_low = f_low
         #: high frequency cutoff
-        self.f_high = (data.sample_rate / 2. if data else 0.) if f_high is None else f_high
+        self._f_high = f_high
 
     def __dict__(self):
         return {key: getattr(self, key) for key in self.__slots__}
@@ -113,3 +113,32 @@ class TimeFrequencySeries:
         TODO: dummy edge
         """
         return 0.0
+
+    @property
+    def sample_rate(self):
+        """
+        sample rate
+        """
+        return self.data.sample_rate
+
+    @property
+    def f_high(self):
+        """
+        high frequency cutoff
+        """
+        return self.sample_rate / 2 if self._f_high is None else self._f_high
+
+    @f_high.setter
+    def f_high(self, value):
+        self._f_high = value
+
+    @property
+    def f_low(self):
+        """
+        low frequency cutoff
+        """
+        return 0.0 if self._f_low is None else self._f_low
+
+    @f_low.setter
+    def f_low(self, value):
+        self._f_low = value
