@@ -1,3 +1,5 @@
+import importlib
+
 import pycbc.noise
 import pycbc.psd
 from pycbc.detector import Detector
@@ -276,7 +278,25 @@ def generate_injection(config):
         ##############################
         # generating injection
         ##############################
-        hp, hc = get_td_waveform(**injection)
+        # check if waveform generator is specified
+        if 'generator' in injection:
+            generator = injection['generator']
+        elif 'generator' in config.injection:
+            generator = config.injection['generator']
+        else:
+            generator = None
+
+        # generate hp and hc
+        if generator:
+            logger.info(f'Using generator: {generator}')
+            # import module
+            module = importlib.import_module(generator['module'])
+            # get function
+            function = getattr(module, generator['function'])
+            # generate waveform
+            hp, hc = function(**injection)
+        else:
+            hp, hc = get_td_waveform(**injection)
 
         from pyburst.modules.read_data import project_to_detector
         strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifo, gps_end_time)
