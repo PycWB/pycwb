@@ -137,6 +137,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         # convert to FragmentCluster and append to list
+        # TODO: check if need to skip rejected clusters
         fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
         pwc_list.append(fragment_cluster)
 
@@ -145,7 +146,8 @@ def supercluster(config, network, fragment_clusters, tf_maps):
 
     n_event = sum([c.event_count() for c in pwc_list])
     n_pixels = sum([c.pixel_count(-1) for c in pwc_list])
-    frac = n_pixels / sum([c.pixel_count(1) + c.pixel_count(-1) for c in pwc_list])
+    all_pixels = sum([c.pixel_count(1) + c.pixel_count(-1) for c in pwc_list])
+    frac = n_pixels / all_pixels if all_pixels > 0 else 0
 
     logger.info("Supercluster done")
     if frac:
