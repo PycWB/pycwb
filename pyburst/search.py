@@ -56,16 +56,14 @@ def analyze_job_segment(config, job_seg):
     tf_maps, nRMS_list = data_conditioning(config, data)
 
     # calculate coherence
+    # TODO: Merge resolution here?
     fragment_clusters = coherence(config, tf_maps, nRMS_list)
-
-    # generate sparse table
-    sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 
     # create network
     network = Network(config, tf_maps, nRMS_list)
 
     # supercluster
-    pwc_list = supercluster(config, network, fragment_clusters, sparse_table_list)
+    pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
 
     # likelihood
     events, clusters = likelihood(config, network, pwc_list)

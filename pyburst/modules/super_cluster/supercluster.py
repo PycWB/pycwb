@@ -5,13 +5,14 @@ import time
 from pyburst.config import Config
 from pyburst.constants import MIN_SKYRES_HEALPIX
 from pyburst.conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
+from pyburst.modules.coherence import sparse_table_from_fragment_clusters
 from pyburst.modules.wavelet import create_wdm_for_level
 from pyburst.types import FragmentCluster
 
 logger = logging.getLogger(__name__)
 
 
-def supercluster(config, network, fragment_clusters, sparse_table_list):
+def supercluster(config, network, fragment_clusters, tf_maps):
     """
     Multi resolution clustering & Rejection of the sub-threshold clusters
 
@@ -37,6 +38,8 @@ def supercluster(config, network, fragment_clusters, sparse_table_list):
     """
     # timer
     timer_start = time.perf_counter()
+
+    sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 
     # decrease skymap resolution to improve subNetCut performances
     skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
