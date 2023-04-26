@@ -1,7 +1,9 @@
+import importlib
 import logging
 from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
+from ...types import WaveSegment
 
 logger = logging.getLogger(__name__)
 
@@ -100,3 +102,42 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
         job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
 
     return job_segments
+
+
+def create_job_segment_from_injection(simulation_mode, injection):
+    # get the injection parameters
+    if 'parameters' in injection:
+        if isinstance(injection['parameters'], list):
+            injections = injection['parameters']
+        else:
+            injections = [injection['parameters']]
+    elif 'parameters_from_python' in injection:
+        # remove the .py extension if it exists
+        module = importlib.import_module(injection['parameters_from_python']['file'].replace('.py', ''))
+        # get the injection parameters
+        injections = getattr(module, injection['parameters_from_python']['function'])()
+
+        if not isinstance(injections, list):
+            raise ValueError('The function get_injection_parameters() should return a list of injection parameters')
+    else:
+        raise ValueError('No injection parameters specified, '
+                         'please specify either parameters or parameters_from_python')
+
+    if simulation_mode == 1:
+        # inject all the parameters in one job segment
+        job_segments = [WaveSegment(0, injection['segment']['start'], injection['segment']['end'],
+                                    injections=injections)]
+    elif simulation_mode == 2:
+        # repeat the injection N times for the same job segment
+        repeat = injection['segment']['repeat']
+        if len(injections) != repeat:
+            raise ValueError(f"The number of injections ({len(injections)}) does not match the number of repeats ({repeat})")
+
+        job_segments = [WaveSegment(i, injection['segment']['start'], injection['segment']['end'],
+                                    injections=[injections[i]])
+                        for i in range(repeat)]
+    else:
+        raise ValueError(f"Invalid simulation mode: {simulation_mode}")
+
+    return job_segments
+

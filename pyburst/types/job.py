@@ -15,9 +15,9 @@ class WaveSegment:
     :param frames: list of frame files that are within the segment, defaults to None
     :type frames: list[FrameFile], optional
     """
-    __slots__ = ('index', 'start_time', 'end_time', 'frames')
+    __slots__ = ('index', 'start_time', 'end_time', 'frames', 'injections')
 
-    def __init__(self, index, start_time, end_time, frames=None):
+    def __init__(self, index, start_time, end_time, frames=None, injections=None):
         #: index of the segment
         self.index = index
         #: start time of the segment
@@ -26,10 +26,12 @@ class WaveSegment:
         self.end_time = float(end_time)
         #: list of frame files that are within the segment
         self.frames = frames or []
+        #: list of injections that are within the segment
+        self.injections = injections or []
 
     def __repr__(self):
         return f"WaveSegment(index={self.index}, start_time={self.start_time}, " \
-               f"end_time={self.end_time}, frames={len(self.frames)})"
+               f"end_time={self.end_time}, frames={len(self.frames)}, injections={self.injections})"
 
     def to_dict(self):
         """

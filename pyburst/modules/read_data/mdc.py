@@ -220,7 +220,7 @@ def generate_injection_from_config(config):
     return injected
 
 
-def generate_injection(config):
+def generate_injection(config, job_seg):
     """
     A sample function to generate injection from pycbc and save it to gwf files
     with the detectors specified in the config
@@ -244,16 +244,8 @@ def generate_injection(config):
                             start_time=injection['segment']['start'], seed=seeds[i])
              for i, ifo in enumerate(ifo)]
 
-    # generate injection from pycbc
-    from pycbc.waveform import get_td_waveform
-
-    if isinstance(config.injection['parameters'], list):
-        injections = config.injection['parameters']
-    else:
-        injections = [config.injection['parameters']]
-
     injected = noise
-    for injection in injections:
+    for injection in job_seg.injections:
         ##############################
         # setting default values
         ##############################
@@ -296,6 +288,7 @@ def generate_injection(config):
             # generate waveform
             hp, hc = function(**injection)
         else:
+            from pycbc.waveform import get_td_waveform
             hp, hc = get_td_waveform(**injection)
 
         from pyburst.modules.read_data import project_to_detector

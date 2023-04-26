@@ -12,7 +12,7 @@ from pyburst.modules.wavelet import create_wdm_set
 from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood, save_likelihood_data
-from pyburst.modules.job_segment import select_job_segment
+from pyburst.modules.job_segment import select_job_segment, create_job_segment_from_injection
 from pyburst.modules.catalog import create_catalog
 from pyburst.types.job import WaveSegment
 import logging
@@ -48,7 +48,7 @@ def analyze_job_segment(config, job_seg):
     logger.info(f"End time: {job_seg.end_time}")
     logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
     if config.simulation != 0:
-        data = generate_injection(config)
+        data = generate_injection(config, job_seg)
     else:
         data = read_from_job_segment(config, job_seg)
 
@@ -139,7 +139,16 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
         logger.info(f"Number of segments: {len(job_segments)}")
         logger.info("-" * 80)
     else:
-        job_segments = [WaveSegment(0, config.injection['segment']['start'], config.injection['segment']['end'], None)]
+        job_segments = create_job_segment_from_injection(config.simulation, config.injection)
+        for job_seg in job_segments:
+            logger.info(job_seg)
+    # elif config.simulation == 1:
+    #     job_segments = [WaveSegment(0, config.injection['segment']['start'], config.injection['segment']['end'], None)]
+    # elif config.simulation == 2:
+    #     repeat = config.injection['segment']['repeat']
+    #     # generate job segments for N times
+    #     job_segments = [WaveSegment(i, config.injection['segment']['start'], config.injection['segment']['end'], None)
+    #                     for i in range(repeat)]
 
     # create catalog
     logger.info("Creating catalog file")
