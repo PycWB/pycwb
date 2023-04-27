@@ -2,20 +2,20 @@ import os, time
 import multiprocessing
 import pyburst
 from pyburst.modules.plot.cluster_statistics import plot_statistics
-from pyburst.types import WDMXTalkCatalog, Network
+from pyburst.types import Network
 from pyburst.utils import logger_init
 from pyburst.config import Config
-from pyburst.modules.plot import plot_spectrogram, plot_event_on_spectrogram
+from pyburst.modules.plot import plot_event_on_spectrogram
 from pyburst.modules.read_data import read_from_job_segment, generate_injection
 from pyburst.modules.data_conditioning import data_conditioning
-from pyburst.modules.wavelet import create_wdm_set
-from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
+from pyburst.modules.coherence import coherence
 from pyburst.modules.super_cluster import supercluster
 from pyburst.modules.likelihood import likelihood, save_likelihood_data
 from pyburst.modules.job_segment import select_job_segment, create_job_segment_from_injection
 from pyburst.modules.catalog import create_catalog
 from pyburst.types.job import WaveSegment
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,13 +142,6 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
         job_segments = create_job_segment_from_injection(config.simulation, config.injection)
         for job_seg in job_segments:
             logger.info(job_seg)
-    # elif config.simulation == 1:
-    #     job_segments = [WaveSegment(0, config.injection['segment']['start'], config.injection['segment']['end'], None)]
-    # elif config.simulation == 2:
-    #     repeat = config.injection['segment']['repeat']
-    #     # generate job segments for N times
-    #     job_segments = [WaveSegment(i, config.injection['segment']['start'], config.injection['segment']['end'], None)
-    #                     for i in range(repeat)]
 
     # create catalog
     logger.info("Creating catalog file")

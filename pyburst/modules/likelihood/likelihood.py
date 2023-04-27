@@ -1,7 +1,6 @@
 import copy, os
 import time
 import pickle
-import ROOT
 import logging
 from pyburst.config import Config
 from pyburst.conversions import convert_fragment_clusters_to_netcluster
