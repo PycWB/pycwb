@@ -4,6 +4,7 @@ from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
 from ...types import WaveSegment
+from ...utils.module import import_helper
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,8 @@ def create_job_segment_from_injection(simulation_mode, injection):
             injections = [injection['parameters']]
     elif 'parameters_from_python' in injection:
         # remove the .py extension if it exists
-        module = importlib.import_module(injection['parameters_from_python']['file'].replace('.py', ''))
+        module = import_helper(injection['parameters_from_python']['file'], "wf_gen")
+
         # get the injection parameters
         injections = getattr(module, injection['parameters_from_python']['function'])()
 

@@ -11,6 +11,7 @@ import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from pyburst.modules.read_data import check_and_resample
+from pyburst.utils.module import import_helper
 
 logger = logging.getLogger(__name__)
 
@@ -284,14 +285,7 @@ def generate_injection(config, job_seg):
         if generator:
             logger.info(f'Using generator: {generator}')
             # import module
-            # if the module is a python file path
-            if generator['module'].endswith('.py'):
-                spec = importlib.util.spec_from_file_location("wf_generator", generator['module'])
-                module = importlib.util.module_from_spec(spec)
-                sys.modules["wf_generator"] = module
-                spec.loader.exec_module(module)
-            else:
-                module = importlib.import_module(generator['module'])
+            module = import_helper(generator['module'], "wf_gen")
             # get function
             function = getattr(module, generator['function'])
             # generate waveform
