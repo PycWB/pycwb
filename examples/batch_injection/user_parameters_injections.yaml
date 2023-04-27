@@ -81,5 +81,5 @@ injection:
     function: "get_injection_parameters"
   approximant: "IMRPhenomXPHM"
   generator:
-    module: pycbc_inject.hyperbolicTD.waveform
+    module: "pycbc_inject/hyperbolicTD/waveform.py"
     function: get_td_waveform
