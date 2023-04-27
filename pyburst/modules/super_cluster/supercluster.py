@@ -137,8 +137,10 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         # convert to FragmentCluster and append to list
-        # TODO: check if need to skip rejected clusters
         fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+
+        # remove rejected clusters as done in netcluster.cpf()
+        fragment_cluster.remove_rejected()
         pwc_list.append(fragment_cluster)
 
         pwc.clear()

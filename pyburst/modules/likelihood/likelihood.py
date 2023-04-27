@@ -39,10 +39,12 @@ def likelihood(config, network, fragment_clusters):
 
         # loop over clusters to calculate likelihood
         for k, selected_cluster in enumerate(fragment_cluster.clusters):
+            # skip if cluster is already rejected
+            if selected_cluster.cluster_status > 0:
+                continue
+
             cluster_id = k + 1
             event, cluster = _likelihood(config, network, j, cluster_id, fragment_cluster.dump_cluster(k))
-            if event is None:
-                continue
             events.append(event)
             clusters.append(cluster)
 
@@ -78,12 +80,8 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
         selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
     else:
         selected_core_pixels = network.likelihood2G(config.search, lag)
-    clusters = copy.deepcopy(FragmentCluster().from_netcluster(network.get_cluster(lag))).clusters
-    if len(clusters) == 0:
-        # TODO: proper handling of this case
-        logger.warning("No clusters found.")
-        return None, None
-    cluster = clusters[k]
+
+    cluster = copy.deepcopy(FragmentCluster().from_netcluster(network.get_cluster(lag))).clusters[0]
 
     event = Event()
     event.output(network.net, k + 1, 0)

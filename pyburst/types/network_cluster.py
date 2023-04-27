@@ -138,13 +138,19 @@ class FragmentCluster:
 
         :param cluster_id: cluster id
         :type cluster_id: int
-        :return: cluster
-        :rtype: Cluster
+        :return: fragment cluster with one cluster
+        :rtype: FragmentCluster
         """
         temp_cluster = copy.copy(self)
         temp_cluster.clusters = [self.clusters[cluster_id]]
 
         return temp_cluster
+
+    def remove_rejected(self):
+        """
+        Remove rejected clusters
+        """
+        self.clusters = [c for c in self.clusters if c.cluster_status < 1]
 
 
 class Cluster:
