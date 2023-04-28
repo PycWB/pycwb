@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 enabled = true
 
 [project]
-name = "pyburst"
+name = "pycwb"
 keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst']
 requires-python = ">=3.8"
 dynamic = ["version", "readme", "description", "authors", "dependencies"]
 
 [tool.setuptools_scm]
-write_to = "pyburst/_version.py"
+write_to = "pycwb/_version.py"

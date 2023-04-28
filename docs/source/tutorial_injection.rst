@@ -21,13 +21,13 @@ Next, load the environment and the configuration file:
 
     import os
 
-    import pyburst
-    from pyburst.config import Config
-    from pyburst.utils import logger_init
+    import pycwb
+    from pycwb.config import Config
+    from pycwb.utils import logger_init
 
     if not os.environ.get('HOME_WAT_FILTERS'):
-        pyburst_path = os.path.dirname(os.path.abspath(pyburst.__file__))
-        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pyburst_path)}/vendor"
+        pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
+        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
 
     logger_init()
 
@@ -38,7 +38,7 @@ Now, create an injection using the parameters specified in the configuration fil
 
 .. code-block:: python
 
-    from pyburst.modules.read_data import generate_injection
+    from pycwb.modules.read_data import generate_injection
 
     data = generate_injection(config)
 
@@ -49,8 +49,8 @@ and the nRMS is the noise RMS of the data:
 
 .. code-block:: python
 
-    from pyburst.modules.data_conditioning import data_conditioning
-    from pyburst.modules.plot import plot_spectrogram
+    from pycwb.modules.data_conditioning import data_conditioning
+    from pycwb.modules.plot import plot_spectrogram
 
     strains, nRMS = data_conditioning(config, data)
 
@@ -63,8 +63,8 @@ for each resolution:
 .. code-block:: python
 
     # initialize network
-    from pyburst.modules.wavelet import create_wdm_set
-    from pyburst.types import WDMXTalkCatalog, Network
+    from pycwb.modules.wavelet import create_wdm_set
+    from pycwb.types import WDMXTalkCatalog, Network
 
     job_id = 0
 
@@ -76,7 +76,7 @@ Find the coherent pixel clusters and generate the sparse table to reduce the com
 
 .. code-block:: python
 
-    from pyburst.modules.coherence import coherence, sparse_table_from_fragment_clusters
+    from pycwb.modules.coherence import coherence, sparse_table_from_fragment_clusters
 
     # calculate coherence
     fragment_clusters = coherence(config, strains, wdm_list, nRMS)
@@ -89,7 +89,7 @@ Then merge the clusters to superclusters
 
 .. code-block:: python
 
-    from pyburst.modules.super_cluster import supercluster
+    from pycwb.modules.super_cluster import supercluster
 
     pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)
 
@@ -98,7 +98,7 @@ Finally, calculate the likelihood for each supercluster:
 
 .. code-block:: python
 
-    from pyburst.modules.likelihood import likelihood
+    from pycwb.modules.likelihood import likelihood
 
     events, clusters = likelihood(job_id, config, network, pwc_list)
 
@@ -106,7 +106,7 @@ You can use the following code to plot the events on the spectrogram:
 
 .. code-block:: python
 
-    from pyburst.modules.plot import plot_event_on_spectrogram
+    from pycwb.modules.plot import plot_event_on_spectrogram
 
     for i, tf_map in enumerate(strains):
         plt = plot_event_on_spectrogram(tf_map, events)

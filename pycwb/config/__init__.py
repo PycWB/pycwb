@@ -1,1 +1,1 @@
-from .cwb_config import *
+from .config import Config

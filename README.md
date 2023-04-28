@@ -1,4 +1,4 @@
-# pyBurst
+# pycWB
 
 This project uses the core function of cWB for burst analysis
 
@@ -7,8 +7,9 @@ This project uses the core function of cWB for burst analysis
 ### Install pycWB from git
 
 ```bash
-conda create -n pyburst python
-conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
+conda create -n pycwb python
+conda activate pycwb
+conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
 git clone git@git.ligo.org:yumeng.xu/pycwb.git
 cd pycwb
 make install
@@ -19,96 +20,154 @@ make install
 Example project can be found in [examples](./examples)
 
 ```python
-from pyburst.search import search
+from pycwb.search import search
 
 search('./user_parameters.yaml')
 ```
 
-# pycWB
+[//]: # (# pycWB)
 
-This is python wrapper of `cWB`
+[//]: # ()
+[//]: # (This is python wrapper of `cWB`)
 
-## What does this package do
+[//]: # ()
+[//]: # (## What does this package do)
 
-- [x] Generate `ini` and `yaml` configuration file with python script
-- [x] Initialize `ROOT` and `cwb` with `ini` file (replacing `root_logon.c` and bash files)
-- [x] Run `inet2G` job with `yaml` file (replacing `user_parameters.c`)
+[//]: # ()
+[//]: # (- [x] Generate `ini` and `yaml` configuration file with python script)
 
-## Install cWB
+[//]: # (- [x] Initialize `ROOT` and `cwb` with `ini` file &#40;replacing `root_logon.c` and bash files&#41;)
 
-Check [installation guide](./docs/0.installation_guide.md) to simply install `cWB` with conda
+[//]: # (- [x] Run `inet2G` job with `yaml` file &#40;replacing `user_parameters.c`&#41;)
 
-## Generate config files
+[//]: # ()
+[//]: # (## Install cWB)
 
-Run the following script to generate `config.ini` and the sample `user_parameters.yaml`
-in your working directory
+[//]: # ()
+[//]: # (Check [installation guide]&#40;./docs/0.installation_guide.md&#41; to simply install `cWB` with conda)
 
-```bash
-pyburst_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>
-```
+[//]: # ()
+[//]: # (## Generate config files)
 
-edit these two files to fit your environment and your job
+[//]: # ()
+[//]: # (Run the following script to generate `config.ini` and the sample `user_parameters.yaml`)
 
-## Initialize pycWB
+[//]: # (in your working directory)
 
-The [initialisation guide](./docs/1.initialisation_guide.md) can help you understand the detail of the environment setup
-and library loading with python. This processing is coded in the class `pycWB`. If you are not interested in the detail,
-you can directly initialize the `cWB` with
+[//]: # ()
+[//]: # (```bash)
 
-```python
-from pycwb import pycWB
+[//]: # (pyburst_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>)
 
-cwb = pycWB('./config.ini')  # config file path
-ROOT = cwb.ROOT
-gROOT = cwb.gROOT
-```
+[//]: # (```)
 
-Required directories will be automatically created unless you initialize
-with `pycWB('./config.ini', create_dirs=False)`
+[//]: # ()
+[//]: # (edit these two files to fit your environment and your job)
 
-## Run analysis
+[//]: # ()
+[//]: # (## Initialize pycWB)
 
-The project can be setup with original `.c` file as well as `.yaml` config file,
-see [example](./examples/MultiStages2G/user_parameters.yaml).
+[//]: # ()
+[//]: # (The [initialisation guide]&#40;./docs/1.initialisation_guide.md&#41; can help you understand the detail of the environment setup)
 
-> The compatibility of `ROOT TBroswer` with macos still need to be fixed
-> This project is tested with macos, linux should be fine in princple.
+[//]: # (and library loading with python. This processing is coded in the class `pycWB`. If you are not interested in the detail,)
 
-### with `.c` config file
+[//]: # (you can directly initialize the `cWB` with)
 
-The [Example : interactive multistages 2G analysis](./docs/2.test_interactive_multistages_2G_analysis.md) contains a
-full example to run the `pycWB`
+[//]: # ()
+[//]: # (```python)
 
-### with `.yaml` config file (recommended)
+[//]: # (from pycwb import pycWB)
 
-If you don't want to setup a cwb run with c file `user_parameters.c`,
-you can setup an analysis with `yaml` config file.
+[//]: # ()
+[//]: # (cwb = pycWB&#40;'./config.ini'&#41;  # config file path)
 
-#### A quick example
+[//]: # (ROOT = cwb.ROOT)
 
-```python
-from pycwb import pycWB, tools
+[//]: # (gROOT = cwb.gROOT)
 
-cwb = pycWB('./config.ini')  # config file path
-ROOT = cwb.ROOT
-gROOT = cwb.gROOT
+[//]: # (```)
 
-# create frame file
+[//]: # ()
+[//]: # (Required directories will be automatically created unless you initialize)
 
-tools.create_frame_noise(gROOT, ROOT)
-tools.setup_sim_data(['H1','L1','V1'])
+[//]: # (with `pycWB&#40;'./config.ini', create_dirs=False&#41;`)
 
-# run full `cwb_inet2G` analysis
+[//]: # ()
+[//]: # (## Run analysis)
 
-job_id = 1
-job_stage = 'FULL'
-job_file = './user_parameters.yaml'
-inet_option = '--tool emax --level 8  --draw true'
-cwb.cwb_inet2G(job_id, job_file, job_stage, inet_option=inet_option)
-```
+[//]: # ()
+[//]: # (The project can be setup with original `.c` file as well as `.yaml` config file,)
 
-> The reason to choose `yaml` is that it can support more complicated types compare to `ini` and
-> much close to python compare to `json`
->
-> "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`
-> and converted to C code to run with `pyROOT`
+[//]: # (see [example]&#40;./examples/MultiStages2G/user_parameters.yaml&#41;.)
+
+[//]: # ()
+[//]: # (> The compatibility of `ROOT TBroswer` with macos still need to be fixed)
+
+[//]: # (> This project is tested with macos, linux should be fine in princple.)
+
+[//]: # ()
+[//]: # (### with `.c` config file)
+
+[//]: # ()
+[//]: # (The [Example : interactive multistages 2G analysis]&#40;./docs/2.test_interactive_multistages_2G_analysis.md&#41; contains a)
+
+[//]: # (full example to run the `pycWB`)
+
+[//]: # ()
+[//]: # (### with `.yaml` config file &#40;recommended&#41;)
+
+[//]: # ()
+[//]: # (If you don't want to setup a cwb run with c file `user_parameters.c`,)
+
+[//]: # (you can setup an analysis with `yaml` config file.)
+
+[//]: # ()
+[//]: # (#### A quick example)
+
+[//]: # ()
+[//]: # (```python)
+
+[//]: # (from pycwb import pycWB, tools)
+
+[//]: # ()
+[//]: # (cwb = pycWB&#40;'./config.ini'&#41;  # config file path)
+
+[//]: # (ROOT = cwb.ROOT)
+
+[//]: # (gROOT = cwb.gROOT)
+
+[//]: # ()
+[//]: # (# create frame file)
+
+[//]: # ()
+[//]: # (tools.create_frame_noise&#40;gROOT, ROOT&#41;)
+
+[//]: # (tools.setup_sim_data&#40;['H1','L1','V1']&#41;)
+
+[//]: # ()
+[//]: # (# run full `cwb_inet2G` analysis)
+
+[//]: # ()
+[//]: # (job_id = 1)
+
+[//]: # (job_stage = 'FULL')
+
+[//]: # (job_file = './user_parameters.yaml')
+
+[//]: # (inet_option = '--tool emax --level 8  --draw true')
+
+[//]: # (cwb.cwb_inet2G&#40;job_id, job_file, job_stage, inet_option=inet_option&#41;)
+
+[//]: # (```)
+
+[//]: # ()
+[//]: # (> The reason to choose `yaml` is that it can support more complicated types compare to `ini` and)
+
+[//]: # (> much close to python compare to `json`)
+
+[//]: # (>)
+
+[//]: # (> "YAML" will be checked by `jsonschema` with file `config/user_parameters_schema.py`)
+
+[//]: # (> and converted to C code to run with `pyROOT`)

@@ -1,4 +1,4 @@
-.. _installing_pyburst:
+.. _installing_pycwb:
 
 ####################
 Installation Guide
@@ -18,7 +18,8 @@ Installing from Source with Conda
 
 .. code-block:: bash
 
-    conda create -n pyburst python
+    conda create -n pycwb python
+    conda activate pycwb
     conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
     git clone git@git.ligo.org:yumeng.xu/pycwb.git
     cd pycwb
@@ -46,5 +47,5 @@ The documentation will be built in the ``docs/build/html`` directory.
 
 .. caution::
 
-    The rst files in the ``docs/source`` with name ``pyburst.*`` and ``modules.rst`` will be deleted when you run
+    The rst files in the ``docs/source`` with name ``pycwb.*`` and ``modules.rst`` will be deleted when you run
     ``make doc`` for preventing caches. So please do not edit them manually or name any of your rst files with the same name.

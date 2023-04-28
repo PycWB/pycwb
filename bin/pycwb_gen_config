@@ -1,0 +1,100 @@
+#!/usr/bin/env python
+import pycwb
+import os
+import shutil
+import sys, getopt
+
+
+def generate_config_ini(cwb_install, cwb_source, work_dir):
+    pyburst_path = os.path.dirname(os.path.abspath(pycwb.__file__))
+    work_dir = os.path.abspath(work_dir)
+
+    if not os.path.exists(cwb_install):
+        raise ValueError("Directory cwb_install doesn't exist")
+    if not os.path.exists(cwb_source):
+        raise ValueError("directory cwb_source doesn't exist")
+    if not os.path.exists(work_dir):
+        raise ValueError("directory work_dir doesn't exist")
+
+    return f"""[LIB]
+
+_USE_ROOT6 = true
+_USE_HEALPIX = true
+_USE_LAL = true
+
+HOME_CFITSIO =  # leave empty if installed with conda
+HOME_HEALPIX =  # leave empty if installed with conda
+HOME_LAL =  # leave empty if installed with conda
+
+_USE_ICC = false # optional
+
+_USE_EBBH = false # optional
+HOME_CVODE = 
+
+[CWB]
+
+CWB_INSTALL = {os.path.abspath(cwb_install)} # CAUTION: Do not use relative path here!
+CWB_SOURCE = {os.path.abspath(cwb_source)} # For loading macros
+# CWB_MACROS = ${{CWB:CWB_INSTALL}}/etc/cwb/macros
+# CWB_PARAMETERS_FILE = ${{CWB:CWB_INSTALL}}/etc/cwb/macros/cwb2G_parameters.C
+# CWB_ANALYSIS = 2G
+
+[TOOLS]
+
+HOME_WAT_FILTERS = {os.path.abspath(pyburst_path)}/vendor
+HOME_BAUDLINE = baudline # independent, path of software
+HOME_ALADIN = aladin # independent, path of software
+HOME_SKYMAP_LIB = path # required
+
+
+[PROJECT]
+
+WORK_DIR = {work_dir}
+CWB_USER_URL = your_url # report url
+WWW_PUBLIC_DIR = ${{WORK_DIR}}/tmp/public_html/reports
+CONDOR_LOG_DIR = ${{WORK_DIR}}/tmp/condor
+NODE_DATA_DIR = ${{WORK_DIR}}/tmp/node
+"""
+
+
+def copy_job_config(work_dir):
+    pyburst_path = os.path.dirname(os.path.abspath(pyburst.__file__))
+
+    shutil.copyfile(f"{pyburst_path}/vendor/example.yaml", f"{work_dir}/user_parameters.yaml")
+
+
+def main(argv):
+    cwb_install = ""
+    cwb_source = ""
+    work_dir = ""
+    opts, args = getopt.getopt(argv, "hi:s:w:", ["cwb_install=", "cwb_source=", "work_dir="])
+    for opt, arg in opts:
+        if opt == '-h':
+            print(
+                'pyburst_gen_config --cwb_install <path to cwb install> --cwb_source <path to cwb source> --work_dir <path to work dir>')
+            sys.exit()
+        elif opt in ("-i", "--cwb_install"):
+            cwb_install = arg
+        elif opt in ("-s", "--cwb_source"):
+            cwb_source = arg
+        elif opt in ("-w", "--work_dir"):
+            work_dir = arg
+
+    # generate config ini
+    ini = generate_config_ini(cwb_install, cwb_source, work_dir)
+
+    # write file to current path
+    with open(f'{work_dir}/config.ini', 'w') as f:
+        f.write(ini)
+    print(f"Config file wrote to {work_dir}/config.ini")
+
+    copy_job_config(work_dir)
+    print(f"User parameter config sample copied to {work_dir}/user_parameters.yaml")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
+
+# /Users/yumengxu/Project/Physics/cwb/cwb_source/tools/install
+# /Users/yumengxu/Project/Physics/cwb/cwb_source
+# /Users/yumengxu/Project/Physics/cwb/MultiStages2G

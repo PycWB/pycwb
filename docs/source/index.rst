@@ -35,7 +35,8 @@ Installation
 
 .. code-block:: bash
 
-    conda create -n pyburst python
+    conda create -n pycwb python
+    conda activate pycwb
     conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
     git clone git@git.ligo.org:yumeng.xu/pycwb.git
     cd pycwb
@@ -58,7 +59,7 @@ Start searching!
 
 .. code-block:: python
 
-   from pyburst.search import search
+   from pycwb.search import search
 
    search('./user_parameters.yaml')
 

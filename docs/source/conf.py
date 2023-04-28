@@ -5,7 +5,7 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-from pyburst import __version__
+from pycwb import __version__
 
 project = 'PyBurst'
 copyright = '2023, Yumeng Xu'
@@ -22,7 +22,7 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ["pyburst/vendor/*", ".DS_Store"]
+exclude_patterns = ["pycwb/vendor/*", ".DS_Store"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
