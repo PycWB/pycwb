@@ -13,8 +13,6 @@ from ..constants import user_parameters_schema
 logger = logging.getLogger(__name__)
 
 
-
-
 class Config:
     """
     Class to store user parameters
@@ -23,7 +21,7 @@ class Config:
     :type file_name: str
     """
 
-    def __init__(self, file_name):
+    def __init__(self, file_name, schema=user_parameters_schema):
         self.outputDir = None
         self.logDir = None
         self.nproc = None
@@ -54,7 +52,7 @@ class Config:
         self.WDM_precision = None
         self.WDM_level = []
 
-        params = load_yaml(file_name, user_parameters_schema)
+        params = load_yaml(file_name, schema)
 
         for key in params:
             setattr(self, key, params[key])
