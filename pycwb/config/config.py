@@ -1,58 +1,18 @@
 """
 Class to store user parameters, load parameters from yaml file and check parameters
 """
-
-from .user_parameters import load_yaml
 import os.path
 import logging
 
 from ..types import WDMXTalkCatalog
+from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
+from ..utils.yaml_helper import load_yaml
+from ..constants import user_parameters_schema
 
 logger = logging.getLogger(__name__)
 
 
-class DQFile:
-    __slots__ = ['ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4']
-    """
-    Class to store data quality file information
-
-    :param ifo: ifo name
-    :type ifo: str
-    :param file: data quality file path
-    :type file: str
-    :param dq_cat: data quality category
-    :type dq_cat: str
-    :param shift: shift in seconds
-    :type shift: float
-    :param invert: flag for inversion
-    :type invert: bool
-    :param c4: flag for 4 column data
-    :type c4: bool
-    """
-
-    def __init__(self, ifo, file, dq_cat, shift, invert: bool, c4):
-        self.ifo = ifo
-        self.file = file
-        self.dq_cat = dq_cat
-        self.shift = shift
-        self.invert = invert
-        self.c4 = c4
-
-    def __repr__(self):
-        return f"DQFile(ifo={self.ifo}, file={self.file}, dq_cat={self.dq_cat}, " \
-               f"shift={self.shift}, invert={self.invert}, c4={self.c4})"
-
-    @property
-    def __dict__(self):
-        return {
-            "ifo": self.ifo,
-            "file": self.file,
-            "dq_cat": self.dq_cat,
-            "shift": self.shift,
-            "invert": self.invert,
-            "c4": self.c4
-        }
 
 
 class Config:
@@ -94,7 +54,7 @@ class Config:
         self.WDM_precision = None
         self.WDM_level = []
 
-        params = load_yaml(file_name, load_to_root=False)
+        params = load_yaml(file_name, user_parameters_schema)
 
         for key in params:
             setattr(self, key, params[key])

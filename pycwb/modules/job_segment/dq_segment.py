@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def read_seg_list(dq_file_list, dq_cat):
-    """Load the files contains segment list from the data quality files below the data quality category (load_dq_file).
+    """Load the files contains segment list from the data quality files below the data quality category (dq_file.load_file)).
     Then merge the segment list (merge_seg_list) and return the merged segment list.
 
     :param dq_file_list: The data quality files.
@@ -21,7 +21,7 @@ def read_seg_list(dq_file_list, dq_cat):
     for dq_file in dq_file_list:
         if dq_file.dq_cat <= dq_cat:
             logger.info(f"Loading data quality file {dq_file.file}")
-            seg_list.append(load_dq_file(dq_file))
+            seg_list.append(dq_file.get_periods())
 
     if len(seg_list) == 0:
         logger.error("No CWB_CAT=%s files in the list", dq_cat)
@@ -32,75 +32,6 @@ def read_seg_list(dq_file_list, dq_cat):
         merged_seg_list = merge_seg_list(merged_seg_list, seg_list)
 
     return merged_seg_list
-
-
-def load_dq_file(dq_file):
-    """
-    Load and process the data quality file.
-
-    :param dq_file: The data quality file.
-    :type dq_file: DQFile
-    :return: a list of start and end times (start, end)
-    :rtype: tuple[np.ndarray, np.ndarray]
-    """
-    start = []
-    stop = []
-    # read the file in dq_file
-    with open(dq_file.file, 'r') as f:
-        lines = csv.reader(f, delimiter=" ", skipinitialspace=True)
-        for line in lines:
-            try:
-                if line[0] == '#':
-                    continue
-                if dq_file.c4:
-                    _, _start, _stop, _ = line
-                else:
-                    _start, _stop = line
-            except ValueError:
-                logger.error(f"Error to parse : {line}")
-                raise Exception("Wrong format")
-
-
-            _start = float(_start)
-            _stop = float(_stop)
-
-            if _stop <= _start:
-                raise Exception("Error Ranges : %s %s", _start, _stop)
-
-            start.append(_start + dq_file.shift)
-            stop.append(_stop + dq_file.shift)
-
-    start = np.array(start)
-    stop = np.array(stop)
-    order = start.argsort()
-    start = start[order]
-    stop = stop[order]
-
-    # check if all start > 0
-    if np.any(start < 0):
-        error_indexes = np.where(start < 0)
-        for i in error_indexes:
-            logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-        raise Exception("Error Ranges")
-
-    # check if all start < stop
-    if np.any(start > stop):
-        error_indexes = np.where(start > stop)
-        for i in error_indexes:
-            logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-        raise Exception("Error Ranges")
-
-    # check if all stop < next start
-    if np.any(stop[:-1] > start[1:]):
-        error_indexes = np.where(stop[:-1] > start[1:])
-        for i in error_indexes:
-            logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-        raise Exception("Error Ranges")
-
-    if dq_file.invert:
-        start, stop = np.append(0, stop), np.append(start, np.inf)
-
-    return start, stop
 
 
 def merge_seg_list(seg_list_1, seg_list_2):
