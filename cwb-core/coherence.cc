@@ -6,15 +6,17 @@
 
 using namespace std;
 
-std::tuple<long, double, netcluster*> getNetworkPixels(int nIFO, std::vector<WSeries<double>> tf_maps, wavearray<short> veto,
+netcluster* getNetworkPixels(int nIFO, std::vector<WSeries<double>> tf_maps, wavearray<short> veto,
                       double Edge, int LAG, double Eo, double norm, std::vector<double> lagShift)
 {
-    netcluster wc_List;
+    // create a wc_List object and return it
+    netcluster* wc_List = new netcluster;
+
 
     if(tf_maps[0].w_mode != 1) {
         printf("network::getNetworkPixels(): invalid whitening mode.");
-        return std::make_tuple(0, 0.0, &wc_List);
-//        return NULL;
+//        return std::make_tuple(0, 0.0, &wc_List);
+        return NULL;
     }
 
     WSeries<double>* pTF = &tf_maps[0]; // pointer to first TF map
@@ -36,14 +38,14 @@ std::tuple<long, double, netcluster*> getNetworkPixels(int nIFO, std::vector<WSe
 
     if(jB&1) {
         printf("getNetworkPixels(1): WDM parity violation");
-//        return NULL;
-        return std::make_tuple(0, 0.0, &wc_List);
+        return NULL;
+//        return std::make_tuple(0, 0.0, &wc_List);
     }
 
     if(jB < 3) {
         printf("network::getNetworkPixels(): insufficient data edge length.");
-//        return NULL;
-        return std::make_tuple(0, 0.0, &wc_List);
+        return NULL;
+//        return std::make_tuple(0, 0.0, &wc_List);
     }
 
     netpixel pix(nIFO);
@@ -75,9 +77,9 @@ std::tuple<long, double, netcluster*> getNetworkPixels(int nIFO, std::vector<WSe
 
     double livTime = 0.;
 
-    wc_List.clear();                    // clear netcluster structure
-    wc_List.setlow(pTF->getlow());
-    wc_List.sethigh(pTF->gethigh());
+    wc_List->clear();                    // clear netcluster structure
+    wc_List->setlow(pTF->getlow());
+    wc_List->sethigh(pTF->gethigh());
 
     a  = 1.e10; nM = 0;                            // master detector
     for(n=0; n<nIFO; n++) {
@@ -164,22 +166,24 @@ std::tuple<long, double, netcluster*> getNetworkPixels(int nIFO, std::vector<WSe
             pix.frequency = i;
             pix.likelihood = E;
             pix.phi = 1;                               // set pixel mark 1 (will be owerriden in likelihood)
-            wc_List.append(pix);	            // save pixels in wc_List
+            wc_List->append(pix);	            // save pixels in wc_List
             nPix++;
         }
         for(n=0; n<nIFO; n++) IN[n]++;                // increment IN
     }
 
 // set metadata in wc_List
-    wc_List.start = pTF->start();
-    wc_List.stop  = pTF->stop();
-    wc_List.rate  = pTF->rate();
+    wc_List->start = pTF->start();
+    wc_List->stop  = pTF->stop();
+    wc_List->rate  = pTF->rate();
     livTime = count/R;                    // live time depends on resolution
 
 //    if(nPix) this->setRMS();
 // TODO: setRMS afterwards
+    printf("%ld, %f, size = %zu", nPix, livTime, wc_List->size());
 
-    return std::make_tuple(nPix, livTime, &wc_List);
+//    return std::make_tuple(nPix, livTime, &wc_List);
+    return wc_List;
 }
 
 

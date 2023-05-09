@@ -26,7 +26,7 @@ inline std::vector<WSeries<double>> create_wseries_vector(WSeries<double> *tf_ma
 //}
 
 
-std::tuple<long, double, netcluster*> getNetworkPixels(int nIFO, std::vector<WSeries<double>> tf_maps, wavearray<short> veto,
+netcluster* getNetworkPixels(int nIFO, std::vector<WSeries<double>> tf_maps, wavearray<short> veto,
                                           double Edge, int LAG, double Eo, double norm, std::vector<double> lagShift);
 
 
