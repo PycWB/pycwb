@@ -25,9 +25,10 @@ inline std::vector<WSeries<double>> create_wseries_vector(WSeries<double> *tf_ma
 //    return v;
 //}
 
+bool setrms(netcluster* wc, WSeries<double> * nRMS, size_t I);
 
-netcluster* getNetworkPixels(int nIFO, std::vector<WSeries<double>> tf_maps, wavearray<short> veto,
-                                          double Edge, int LAG, double Eo, double norm, std::vector<double> lagShift);
+netcluster *getNetworkPixels(int nIFO, std::vector <WSeries<double>> tf_maps, std::vector <WSeries<double>*> nRMS, wavearray<short> veto,
+                             double Edge, int LAG, double Eo, double norm, std::vector<double> lagShift);
 
 
 double threshold(std::vector<WSeries<double>> tf_maps, int nIFO, double Edge, double p, double shape);

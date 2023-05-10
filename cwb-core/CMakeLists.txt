@@ -123,7 +123,7 @@ set(CWB_INCLUDE_DIRS ${CWB_INCLUDE_DIRS} PARENT_SCOPE)
 
 
 #set(WAT_SRC injection.cc wavecomplex.cc Wavelet.cc WaveDWT.cc Haar.cc Biorthogonal.cc Daubechies.cc Symlet.cc Meyer.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc watplot.cc pixel.cc cluster.cc wavecor.cc wavefft.cc waverdc.cc lossy.cc wavelinefilter.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc netevent.cc regression.cc time.cc monster.cc sseries.cc xnetwork.cc)
-set(WAT_SRC wavecomplex.cc Wavelet.cc WaveDWT.cc Biorthogonal.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc regression.cc time.cc monster.cc sseries.cc wavefft.cc )
+set(WAT_SRC wavecomplex.cc Wavelet.cc WaveDWT.cc Biorthogonal.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc regression.cc time.cc monster.cc sseries.cc wavefft.cc coherence.cc)
 
 #Get all the header files
 string(REGEX REPLACE "[.]cc" ".hh" WAT_HDRS "${WAT_SRC}")
