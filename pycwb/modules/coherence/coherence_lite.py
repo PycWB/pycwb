@@ -138,11 +138,11 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
 
     # set veto array
-    TL = net.set_veto(config.iwindow)
-    logger_info += "live time in zero lag: %g \n" % TL
-
-    if TL <= 0.:
-        raise ValueError("live time is zero")
+    # TL = net.set_veto(config.iwindow)
+    # logger_info += "live time in zero lag: %g \n" % TL
+    #
+    # if TL <= 0.:
+    #     raise ValueError("live time is zero")
 
     logger_info += "lag | clusters | pixels \n"
 
@@ -152,10 +152,9 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     # loop over time lags
     for j in range(int(net.nLag)):
         # select pixels above Eo
-        pwc = ROOT.getNetworkPixels(config.nIFO, tf_list, nRMS_ws, net.net.veto,
+        pwc = ROOT.getNetworkPixels(config.nIFO, tf_list, nRMS_ws, 1,
                                        config.segEdge, j, Eo, 1.0, [net.get_ifo(n).lagShift.data[j] for n in range(config.nIFO)])
 
-        print(f"cList size: {pwc.cList.size()}, pList size: {pwc.pList.size()}")
         if config.pattern != 0:
             # cluster pixels
             pwc.cluster(2, 3)
