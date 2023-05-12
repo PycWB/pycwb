@@ -2,6 +2,7 @@ import os, time
 import multiprocessing
 import pycwb
 from pycwb.modules.plot.cluster_statistics import plot_statistics
+from pycwb.modules.web_viewer.create import create_web_viewer
 from pycwb.types import Network
 from pycwb.utils import logger_init
 from pycwb.config import Config
@@ -11,7 +12,7 @@ from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood, save_likelihood_data
-from pycwb.modules.job_segment import select_job_segment, create_job_segment_from_injection
+from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.types.job import WaveSegment
 import logging
@@ -130,31 +131,15 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     if not os.path.exists(config.logDir):
         os.makedirs(config.logDir)
 
-    if config.simulation == 0:
-        logger.info("-" * 80)
-        logger.info("Initializing job segments")
-        job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
-                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
-                                          config.rateANA, config.l_high)
-
-        # log number of segments
-        logger.info(f"Number of segments: {len(job_segments)}")
-        logger.info("-" * 80)
-    else:
-        job_segments = create_job_segment_from_injection(config.simulation, config.injection)
-        for job_seg in job_segments:
-            logger.info(job_seg)
+    # select job segments
+    job_segments = create_job_segment_from_config(config)
 
     # create catalog
     logger.info("Creating catalog file")
     create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
 
     # copy all files in web_viewer to output folder
-    logger.info("Copying web_viewer files to output folder")
-    import shutil
-    web_viewer_path = os.path.dirname(os.path.abspath(pycwb.__file__)) + '/web_viewer'
-    for file in os.listdir(web_viewer_path):
-        shutil.copy(f'{web_viewer_path}/{file}', config.outputDir)
+    create_web_viewer(config.outputDir)
 
     # analyze job segments
     logger.info("Start analyzing job segments")

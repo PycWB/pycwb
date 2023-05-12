@@ -8,6 +8,24 @@ from ...utils.module import import_helper
 logger = logging.getLogger(__name__)
 
 
+def create_job_segment_from_config(config):
+    if config.simulation == 0:
+        logger.info("-" * 80)
+        logger.info("Initializing job segments")
+        job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
+                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
+                                          config.rateANA, config.l_high)
+
+        # log number of segments
+        logger.info(f"Number of segments: {len(job_segments)}")
+        logger.info("-" * 80)
+    else:
+        job_segments = create_job_segment_from_injection(config.simulation, config.injection)
+        for job_seg in job_segments:
+            logger.info(job_seg)
+    return job_segments
+
+
 def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high,
                        slag_size=0, slag_off=0, slag_min=0, slag_max=0, slag_site=0, slag_file=0):
     """Select a job segment from the database.
