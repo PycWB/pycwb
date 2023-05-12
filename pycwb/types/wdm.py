@@ -3,6 +3,7 @@ import copy
 import ROOT
 import numpy as np
 import cppyy
+import pycwb
 
 
 def declare_function():
@@ -146,6 +147,13 @@ class WDM:
         return self.wavelet.getMaxLevel()
 
     @property
+    def max_layer(self):
+        """
+        maximum layer of the wavelet transform
+        """
+        return self.wavelet.m_Layer
+
+    @property
     def size_at_zero_layer(self):
         """
         number of samples at zero level
@@ -243,6 +251,21 @@ class WDM:
         :return:
         """
         self.wavelet.pWWS[index + self.max_index + 1] = value
+
+    def get_base_wave(self, tf_index, quad=False):
+        """
+        get base wavelet from index
+
+        :param tf_index: time-frequency index
+        :type tf_index: int
+        :param quad: true to return Quadrature basis function
+        :type quad: bool
+        :return: indicates the time translation from origin needed by w (j in [0,M] correspond to t=0) and the wavearray
+        :rtype: (int, numpy.ndarray)
+        """
+        w = ROOT.wavearray(np.double)()
+        j = self.wavelet.getBaseWave(tf_index, w, quad)
+        return j, pycwb.conversions.convert_wavearray_to_pycbc_timeseries(w)
 
     def t2w(self, k):
         """
