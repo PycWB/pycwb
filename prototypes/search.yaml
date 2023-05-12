@@ -1,0 +1,139 @@
+UseModules:
+  - job_segment
+  - catalog
+  - read_data
+  - data_conditioning
+  - coherence
+  - super_cluster
+  - likelihood
+  - plot
+# the deps check will be preformed by the module manager,
+# import all modules to prevent loading time in the workflow
+
+UseClass:
+  - Network
+
+
+Workflow:
+  job_creation:
+    on: start
+    do: job_segment.create_job_segment_from_config
+    input:
+      config: config
+  create_catalog_file:
+    on: job_creation
+    do: catalog.create_catalog
+    input:
+      filename: "{config.outputDir}/catalog.json"
+      config: config
+      job_segments: job_creation.job_segments
+  create_web_viewer:
+    on: start
+    do: web_viewer.create_web_viewer
+    input:
+      outputDir: config.outputDir
+  job_processing_loop:
+    on: job_creation
+    type: loop_trigger
+    parallel: false
+    input:
+      job_segments: job_creation.job_segments
+    output:
+      job_segment: @job_segments
+  get_input:
+    on: job_processing_loop
+    switch: config.simulation
+    cases:
+      - False:
+          do: read_data.read_from_job_segment
+          input:
+            job_segment: job_processing_loop.job_segment
+            config: config
+      - True:
+          do: read_data.read_from_simulation
+          input:
+              job_segment: job_processing_loop.job_segment
+              config: config
+  data_conditioning:
+    on: get_input
+    do: data_conditioning.data_conditioning
+    input:
+      data: get_input.data
+      config: config
+  coherence:
+    on: data_conditioning
+    do: coherence.coherence
+    input:
+      config: config
+      tf_maps: data_conditioning.tf_maps
+      nRMS: data_conditioning.nRMS_list
+  create_network:
+    on: data_conditioning
+    do: Network
+    input:
+      config: config
+      tf_maps: data_conditioning.tf_maps
+      nRMS: data_conditioning.nRMS_list
+    output: network
+  super_cluster:
+    on: coherence
+    do: super_cluster.supercluster
+    input:
+      config: config
+      network: create_network.network
+  likelihood:
+    on: super_cluster
+    do: likelihood.likelihood
+    input:
+      config: config
+      network: create_network.network
+      pwc_list: super_cluster.pwc_list
+  post_production:
+    on: likelihood
+    type: loop_trigger
+    parallel: false
+    input:
+      events: likelihood.events
+      clusters: super_cluster.clusters
+    output:
+      event: @events
+      cluster: @clusters
+  save_post_production:
+    on: post_production
+    type: save_pkl_file
+    input:
+      event: post_production.event
+      cluster: post_production.cluster
+    output:
+      event: "file.pkl"
+      cluster: "file.pkl"
+  wave_reconstruction:
+    on:
+     - post_production
+     - create_network
+    do: reconstruction.get_network_MRA_wave
+    input:
+      config: config
+      cluster: post_production.cluster
+      rateANA: config.rateANA
+      nIFO: config.nIFO
+      rTDF: create_network.network.net.rTDF
+      a_type: 'signal'
+      mode: 0
+      tof: True
+  get_glitchness:
+    on:
+      - wave_reconstruction
+      - post_production
+    do: autoencoder.get_glitchness
+    input:
+      config: config
+      data: wave_reconstruction.data
+      sSNR: post_production.likelihood.sSNR
+      likelihood: post_production.likelihood.likelihood
+
+
+
+
+
+
