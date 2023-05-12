@@ -1,6 +1,10 @@
+import os
+import logging
 from filelock import SoftFileLock
 import json
 import pycwb
+
+logger = logging.getLogger(__name__)
 
 
 def create_catalog(filename, config, jobs):
@@ -41,13 +45,19 @@ def add_events_to_catalog(filename, events):
     :type events: list[pycwb.module.netevent.Event]
     :return: None
     """
-    with SoftFileLock(filename + ".lock", timeout=10):
-        # read the json file
-        with open(filename, 'r+') as f:
-            catalog = json.load(f)
-            # append events
-            catalog["events"].extend(events)
-            # write the json file
-            f.seek(0)
-            json.dump(catalog, f)
+    if not isinstance(events, list):
+        events = [events]
+
+    if os.path.exists(filename):
+        with SoftFileLock(filename + ".lock", timeout=10):
+            # read the json file
+            with open(filename, 'r+') as f:
+                catalog = json.load(f)
+                # append events
+                catalog["events"].extend(events)
+                # write the json file
+                f.seek(0)
+                json.dump(catalog, f)
+    else:
+        logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
 

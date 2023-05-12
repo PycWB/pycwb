@@ -1,10 +1,9 @@
-import copy, os
+import copy
 import time
 import pickle
 import logging
 from pycwb.config import Config
 from pycwb.conversions import convert_fragment_clusters_to_netcluster
-from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.types import FragmentCluster, Event
 
 logger = logging.getLogger(__name__)
@@ -127,10 +126,5 @@ def save_likelihood_data(job_id, cluster_id, output_dir, event, cluster):
         with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
             pickle.dump(cluster, f)
 
-        # save event to catalog if file exists
-        if os.path.exists(f"{output_dir}/catalog.json"):
-            add_events_to_catalog(f"{output_dir}/catalog.json", [event.summary(job_id, cluster_id)])
-        else:
-            logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
     except Exception as e:
         logger.error(e)

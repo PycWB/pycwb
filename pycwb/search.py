@@ -12,7 +12,7 @@ from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood, save_likelihood_data
 from pycwb.modules.job_segment import select_job_segment, create_job_segment_from_injection
-from pycwb.modules.catalog import create_catalog
+from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.types.job import WaveSegment
 import logging
 
@@ -71,6 +71,8 @@ def analyze_job_segment(config, job_seg):
     # save the results
     for i, event in enumerate(events):
         save_likelihood_data(job_id, i+1, config.outputDir, event, clusters[i])
+        # save event to catalog
+        add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
 
     for i, tf_map in enumerate(tf_maps):
         plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
