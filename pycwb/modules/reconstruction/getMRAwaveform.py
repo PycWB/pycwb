@@ -1,9 +1,7 @@
 import logging
 import numpy as np
 from pycbc.types import TimeSeries
-
-from pycwb.conversions import convert_to_wavearray
-from pycwb.modules.wavelet import create_wdm_set
+from pycwb.modules.multi_resolution_wdm import create_wdm_set
 
 logger = logging.getLogger(__name__)
 

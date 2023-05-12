@@ -1,7 +1,5 @@
-from pycwb.conversions import convert_pycbc_timeseries_to_wavearray
 from gwpy.timeseries import TimeSeries
 from .data_check import check_and_resample
-from ligo.segments import segment, segmentlist
 import pycbc.catalog
 import logging
 from multiprocessing import Pool

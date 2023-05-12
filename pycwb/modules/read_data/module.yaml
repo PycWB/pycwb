@@ -1,0 +1,4 @@
+name: read_data
+author: Yumeng Xu
+description: Read data module
+dependencies: ["gwpy", "numpy", "lalsimulation", "pycbc"]

@@ -1,0 +1,40 @@
+name: autoencoder
+author:
+  - Sophie Bini
+  - cwb_sthr
+description: Autoencoder module
+dependencies: ["numpy", "tensorflow"]
+entry:
+  get_glitchness:
+    input:
+      - name: config
+        type: Config
+        description: Configuration object
+        required: true
+        default: null
+      - name: data
+        type: pycbc.types.timeseries.TimeSeries
+        description: Data object
+        required: true
+        default: null
+      - name: sSNR
+        type: list[float]
+        description: Signal-to-noise ratio
+        required: true
+        default: null
+      - name: likelihood
+        type: float
+        description: Likelihood of the data
+        required: true
+        default: null
+      - name: weight_path
+        type: str
+        description: Path to the weights of the autoencoder
+        required: true
+        default: pycwb/vendor/autoencoder/cwb_autoencoder.h5
+    output:
+      - name: glitchness
+        type: float
+        description: Glitchness of the input data
+        required: true
+        default: 0.0

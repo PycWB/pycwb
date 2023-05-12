@@ -1,0 +1,4 @@
+name: catalog
+author: cwb2G
+description: Catalog module
+dependencies: ["json", "filelock""]

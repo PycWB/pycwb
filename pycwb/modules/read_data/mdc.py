@@ -10,7 +10,7 @@ import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
-from pycwb.modules.read_data import check_and_resample
+from .read_data import check_and_resample
 from pycwb.utils.module import import_helper
 
 logger = logging.getLogger(__name__)

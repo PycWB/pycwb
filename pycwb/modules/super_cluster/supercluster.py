@@ -5,8 +5,8 @@ import time
 from pycwb.config import Config
 from pycwb.constants import MIN_SKYRES_HEALPIX
 from pycwb.conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
-from pycwb.modules.coherence import sparse_table_from_fragment_clusters
-from pycwb.modules.wavelet import create_wdm_for_level
+from pycwb.modules.sparse_series import sparse_table_from_fragment_clusters
+from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types import FragmentCluster
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,4 @@
+name: reconstruction
+author: cwb2G
+description: "Reconstruction of the gravitational wave signal from the likelihood function."
+dependencies: ["gwpy", "numpy", "lalsimulation", "pycbc"]

@@ -1,7 +1,7 @@
 import logging, time
 from multiprocessing import Pool
 
-from pycwb.modules.wavelet import create_wdm_for_level
+from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types.sparse_series import SparseTimeFrequencySeries
 
 logger = logging.getLogger(__name__)

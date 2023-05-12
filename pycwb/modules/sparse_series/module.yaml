@@ -1,0 +1,4 @@
+name: sparse_series
+author: cwb2G
+description: "Sparse series representation of the time frequency map."
+dependencies: ["@wavelet", "numpy", "pycbc"]

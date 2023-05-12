@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-import csv, math
+import math
 from pycwb.types import WaveSegment
 
 logger = logging.getLogger(__name__)

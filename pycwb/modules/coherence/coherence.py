@@ -4,7 +4,7 @@ from multiprocessing import Pool
 import ROOT
 import logging
 from pycwb.config import Config
-from pycwb.modules.wavelet import create_wdm_for_level
+from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types import TimeFrequencySeries, FragmentCluster, Network
 from pycwb.conversions import convert_to_wavearray
 
