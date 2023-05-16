@@ -9,12 +9,26 @@ logger = logging.getLogger(__name__)
 def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
-    :param cluster: cluster object
-    :param wdmList: list of WDM objects
-    :param ifo: IFO id
-    :param a_type: type of waveforms, the value can be 'signal' or 'strain'
-    :param mode: -1/0/1 - return 90/mra/0 phase
-    :return:
+
+    Parameters
+    ----------
+    cluster : pycwb.types.network_cluster.Cluster
+        cluster object
+    wdmList : list of pycwb.types.wdm.WDM
+        list of WDM objects
+    rate : float
+        sampling rate
+    ifo : int
+        IFO id
+    a_type : str
+        type of waveforms, the value can be 'signal' or 'strain'
+    mode : int
+        -1/0/1 - return 90/mra/0 phase
+
+    Returns
+    -------
+    waveform : pycbc.types.timeseries.TimeSeries
+        reconstructed waveform
     """
     if not cluster.pixels:
         return None
@@ -77,12 +91,30 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode):
 def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
-    :param cluster: cluster object
-    :type cluster: Cluster
-    :param a_type: type of waveforms, the value can be 'signal' or 'strain'
-    :param mode: -1/0/1 - return 90/mra/0 phase
-    :param tof: if tof = true, apply time-of-flight corrections
-    :return: waveform arrays in the detector class
+
+    Parameters
+    ----------
+    config : pycwb.config.Config
+        configuration object
+    cluster : pycwb.types.network_cluster.Cluster
+        cluster object
+    rate : float
+        sampling rate
+    nIFO : int
+        number of IFOs
+    rTDF : float
+        effective time-delay
+    a_type : str
+        type of waveforms, the value can be 'signal' or 'strain'
+    mode : int
+        -1/0/1 - return 90/mra/0 phase
+    tof : bool
+        if tof = true, apply time-of-flight corrections
+
+    Returns
+    -------
+    waveforms : list of pycbc.types.timeseries.TimeSeries
+        reconstructed waveform
     """
     wdm_list = create_wdm_set(config)
 

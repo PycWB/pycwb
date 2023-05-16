@@ -13,13 +13,18 @@ def create_catalog(filename, config, jobs):
 
     A soft lock is used (default filelock does not work on CIT)
 
-    :param filename: filename of the catalog
-    :type filename: str
-    :param config: config object
-    :type config: pycwb.config.Config
-    :param jobs: list of jobs
-    :type jobs: list[pycwb.module.job_segment.Job]
-    :return: None
+    Parameters
+    ----------
+    filename : str
+        filename of the catalog
+    config : pycwb.config.Config
+        config object
+    jobs : list of pycwb.types.job.WaveSegment
+        list of jobs
+
+    Returns
+    -------
+    None
     """
     output = {
         "config": config.__dict__,
@@ -39,11 +44,16 @@ def add_events_to_catalog(filename, events):
 
     A soft lock is used (default filelock does not work on CIT)
 
-    :param filename: filename of the catalog to update
-    :type filename: str
-    :param events: list of events
-    :type events: list[pycwb.module.netevent.Event]
-    :return: None
+    Parameters
+    ----------
+    filename : str
+        filename of the catalog
+    events : list of pycwb.types.network_event.Event
+        list of events
+
+    Returns
+    -------
+    None
     """
     if not isinstance(events, list):
         events = [events]
