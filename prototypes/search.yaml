@@ -20,6 +20,7 @@ Workflow:
     do: job_segment.create_job_segment_from_config
     input:
       config: config
+    logger: "Job creation"
   create_catalog_file:
     on: job_creation
     do: catalog.create_catalog
@@ -36,6 +37,7 @@ Workflow:
     on: job_creation
     type: loop_trigger
     parallel: false
+    subprocess: true
     input:
       job_segments: job_creation.job_segments
     output:
