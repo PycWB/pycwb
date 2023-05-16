@@ -1,0 +1,4 @@
+name: cwb_conversions
+author: cwb2G
+description: Provides conversion functions for CWB data to pycwb classes
+dependencies: ["ROOT", "numpy", "gwpy", "pycbc", "@pycwb.constants"]

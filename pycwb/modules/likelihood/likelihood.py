@@ -3,7 +3,7 @@ import time
 import pickle
 import logging
 from pycwb.config import Config
-from pycwb.conversions import convert_fragment_clusters_to_netcluster
+from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster
 from pycwb.types import FragmentCluster, Event
 
 logger = logging.getLogger(__name__)

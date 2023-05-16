@@ -1,4 +1,4 @@
 name: data_conditioning_2G
 author: cwb2G
 description: Data conditioning module
-dependencies: ["@multi_resolution_wdm", "@pycwb.constants", "numpy", "ROOT"]
+dependencies: ["@multi_resolution_wdm", "@pycwb.constants", "@cwb_conversions", "numpy", "ROOT"]

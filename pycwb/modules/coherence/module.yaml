@@ -1,4 +1,4 @@
 name: coherence
 author: cwb2G
 description: Coherence module
-dependencies: ["@multi_resolution_wdm", "ROOT"]
+dependencies: ["@multi_resolution_wdm", "@cwb_conversions", "ROOT"]

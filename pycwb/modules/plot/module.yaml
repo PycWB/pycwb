@@ -1,4 +1,4 @@
 name: plot
 author: Yumeng Xu
 description: Plotting module for CWB
-dependencies: ["gwpy", "matplotlib", "ROOT"]
+dependencies: ["@cwb_conversions", "gwpy", "matplotlib", "ROOT"]

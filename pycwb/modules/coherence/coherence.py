@@ -6,7 +6,7 @@ import logging
 from pycwb.config import Config
 from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types import TimeFrequencySeries, FragmentCluster, Network
-from pycwb.conversions import convert_to_wavearray
+from pycwb.modules.cwb_conversions import convert_to_wavearray
 
 logger = logging.getLogger(__name__)
 

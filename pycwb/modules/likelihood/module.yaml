@@ -1,4 +1,4 @@
 name: job_segment
 author: cwb2G
 description: Job segment module
-dependencies: ["numpy", "matplotlib", "@pycwb.conversions"]
+dependencies: ["numpy", "matplotlib", "@cwb_conversions"]

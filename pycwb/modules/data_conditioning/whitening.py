@@ -2,7 +2,7 @@ import numpy as np
 import ROOT
 import logging
 from pycwb.config import Config
-from pycwb.conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series
 from pycwb.types import TimeFrequencySeries
 
 logger = logging.getLogger(__name__)

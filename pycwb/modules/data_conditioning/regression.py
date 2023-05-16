@@ -6,7 +6,7 @@ from pycwb.config import Config
 import ROOT
 import numpy as np
 
-from pycwb.conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
 
 
 def regression(config, wdm, h):
