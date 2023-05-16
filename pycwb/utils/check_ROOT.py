@@ -1,4 +1,4 @@
-import logging, os, pycwb
+import logging, os, site
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +13,8 @@ def check_and_load_wavelet(ROOT):
     if not hasattr(ROOT, "WDM"):
         logger.info("Loading wavelet library")
     try:
-        pycwb_path = os.path.dirname(pycwb.__file__)
-        wavelet_path = f"{pycwb_path}/vendor/lib/wavelet"
+        pycwb_path = site.getsitepackages()[0]
+        wavelet_path = f"{pycwb_path}/lib/wavelet"
         logger.info(f"Trying to load wavelet library from {wavelet_path}")
         ROOT.gSystem.Load(wavelet_path)
     except:
