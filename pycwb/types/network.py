@@ -2,8 +2,7 @@ import argparse, shlex
 import logging, ROOT
 
 import numpy as np
-import pycwb
-from .network_cluster import FragmentCluster
+from pycwb.modules.cwb_conversions import convert_to_wseries
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +60,8 @@ class Network:
     def load_strains(self, tf_maps, nRMS_list):
         for i in range(self.ifo_size):
             ifo = self.net.getifo(i)
-            tf_map = pycwb.conversions.convert_to_wseries(tf_maps[i])
-            nRMS = pycwb.conversions.convert_to_wseries(nRMS_list[i])
+            tf_map = convert_to_wseries(tf_maps[i])
+            nRMS = convert_to_wseries(nRMS_list[i])
             ifo.HoT = tf_map
             ifo.TFmap = tf_map
             ifo.nRMS = nRMS

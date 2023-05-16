@@ -1,6 +1,3 @@
-import json
-
-
 class WaveSegment:
     """
     Class to store the metadata of a wave segment for analysis, which contains the index of the segment,

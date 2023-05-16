@@ -1,9 +1,7 @@
-import copy
-
 import ROOT
 import numpy as np
 import cppyy
-import pycwb
+from pycwb.modules.cwb_conversions import convert_wavearray_to_pycbc_timeseries
 
 
 def declare_function():
@@ -265,7 +263,7 @@ class WDM:
         """
         w = ROOT.wavearray(np.double)()
         j = self.wavelet.getBaseWave(tf_index, w, quad)
-        return j, pycwb.conversions.convert_wavearray_to_pycbc_timeseries(w)
+        return j, convert_wavearray_to_pycbc_timeseries(w)
 
     def t2w(self, k):
         """
