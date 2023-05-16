@@ -32,14 +32,14 @@ def merge_images(images):
     return np.sum([np.array(img, dtype=np.double) for img in images], axis=0)
 
 
-def resize_resolution_cv(input, dt, df, dt_target, df_target):
-    import cv2
-
-    input_height, input_width = input.shape
-
-    output_height = int(input_height * df / df_target)
-    output_width = int(input_width * dt / dt_target)
-
-    output = cv2.resize(input, (output_width, output_height), interpolation=cv2.INTER_NEAREST)
-
-    return output
+# def resize_resolution_cv(input, dt, df, dt_target, df_target):
+#     import cv2
+#
+#     input_height, input_width = input.shape
+#
+#     output_height = int(input_height * df / df_target)
+#     output_width = int(input_width * dt / dt_target)
+#
+#     output = cv2.resize(input, (output_width, output_height), interpolation=cv2.INTER_NEAREST)
+#
+#     return output
