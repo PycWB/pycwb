@@ -2,7 +2,6 @@ import copy
 
 import logging
 import time
-from pycwb.constants import MIN_SKYRES_HEALPIX
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
 from pycwb.modules.sparse_series import sparse_table_from_fragment_clusters
 from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
@@ -41,7 +40,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
     sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 
     # decrease skymap resolution to improve subNetCut performances
-    skyres = MIN_SKYRES_HEALPIX if config.healpix > MIN_SKYRES_HEALPIX else 0
+    skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
     if skyres > 0:
         network.update_sky_map(config, skyres)
         network.update_sky_mask(config, skyres)

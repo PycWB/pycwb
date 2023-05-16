@@ -1,7 +1,3 @@
-from pycwb.constants import REGRESSION_FILTER_LENGTH, \
-    REGRESSION_MATRIX_FRACTION, \
-    REGRESSION_SOLVE_EIGEN_THR, REGRESSION_SOLVE_EIGEN_NUM, \
-    REGRESSION_SOLVE_REGULATOR, REGRESSION_APPLY_THR
 from pycwb.config import Config
 import ROOT
 import numpy as np
@@ -38,15 +34,15 @@ def regression(config, wdm, h):
 
     # Calculate prediction
     # set Wiener filter structure
-    r.setFilter(REGRESSION_FILTER_LENGTH)  # length of filter
+    r.setFilter(config.REGRESSION_FILTER_LENGTH)  # length of filter
     # set system of linear equations: M * F = V (M = matrix array, V =  vector of free coefficients, F = filters)
-    r.setMatrix(config.segEdge, REGRESSION_MATRIX_FRACTION)
+    r.setMatrix(config.segEdge, config.REGRESSION_MATRIX_FRACTION)
     # solve for eigenvalues and calculate Wiener filters
-    r.solve(REGRESSION_SOLVE_EIGEN_THR,
-            REGRESSION_SOLVE_EIGEN_NUM,
-            REGRESSION_SOLVE_REGULATOR)
+    r.solve(config.REGRESSION_SOLVE_EIGEN_THR,
+            config.REGRESSION_SOLVE_EIGEN_NUM,
+            config.REGRESSION_SOLVE_REGULATOR)
     # apply filter to target channel and produce noise TS
-    r.apply(REGRESSION_APPLY_THR)
+    r.apply(config.REGRESSION_APPLY_THR)
 
     # cleaned data
     hh = r.getClean()

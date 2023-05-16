@@ -3,7 +3,6 @@ import logging
 from .regression import regression
 from .whitening import whitening
 from pycwb.config import Config
-from pycwb.constants import WDM_BETAORDER, WDM_PRECISION
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.wdm import WDM
 from multiprocessing import Pool
@@ -27,10 +26,10 @@ def data_conditioning(config, strains, parallel=True):
 
     # initialize WDM
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
-    wdm_white = WDM(layers_white, layers_white, WDM_BETAORDER, WDM_PRECISION)
+    wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
 
     layers = int(config.rateANA / 8)
-    wdm = WDM(layers, layers, WDM_BETAORDER, WDM_PRECISION)
+    wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)
 
     if parallel:
         logger.info("Start data conditioning in parallel")

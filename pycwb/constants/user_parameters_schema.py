@@ -43,6 +43,46 @@ schema = {
             "description": "WDM default parameters: wavelet precision",
             "default": 10,
         },
+        "MIN_SKYRES_HEALPIX": {
+            "type": "integer",
+            "description": "minimun skymap resolution used for subNetCut",
+            "default": 4,
+        },
+        "MIN_SKYRES_ANGLE": {
+            "type": "integer",
+            "description": "minimun skymap resolution used for subNetCut",
+            "default": 3,
+        },
+        "REGRESSION_FILTER_LENGTH": {
+            "type": "integer",
+            "description": "regression parameters",
+            "default": 8,
+        },
+        "REGRESSION_MATRIX_FRACTION": {
+            "type": "number",
+            "description": "regression parameters",
+            "default": 0.95,
+        },
+        "REGRESSION_SOLVE_EIGEN_THR": {
+            "type": "number",
+            "description": "regression parameters",
+            "default": 0.,
+        },
+        "REGRESSION_SOLVE_EIGEN_NUM": {
+            "type": "integer",
+            "description": "regression parameters",
+            "default": 10,
+        },
+        "REGRESSION_SOLVE_REGULATOR": {
+            "type": "string",
+            "description": "regression parameters",
+            "default": "h",
+        },
+        "REGRESSION_APPLY_THR": {
+            "type": "number",
+            "description": "regression parameters",
+            "default": 0.8,
+        },
         "analysis": {
             "enum": ["1G", "2G"],
             "description": "true/false -> online/offline",
