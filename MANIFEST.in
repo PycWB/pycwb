@@ -1,8 +1,4 @@
 include bin/*
 include cwb_wrapper/vendor/*
-include pycwb/vendor/*
-include pycwb/vendor/wdmXTalk/*
-include pycwb/vendor/lib/*
-include pycwb/vendor/autoencoder/*
-include pycwb/web-viewer/*
+recursive-include pycwb/vendor *
 include README.md
