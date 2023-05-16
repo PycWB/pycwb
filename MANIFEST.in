@@ -1,5 +1,6 @@
 include bin/*
 include cwb_wrapper/vendor/*
-recursive-include cwb-core *.cc *.hh *.S *.h *.in *.cmake watasm_elf64.o CMakeLists.txt
+include cwb-core/*
+include cwb-core/cmake
 recursive-include pycwb/vendor *
 include README.md
