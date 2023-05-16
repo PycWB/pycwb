@@ -135,7 +135,7 @@
 #pragma link C++ global	NIFO_MAX;
 #pragma link C++ global	NRES_MAX;
 
-#pragma link C++ function watversion;
+//#pragma link C++ function watversion;
 #pragma link C++ function waveAssign(wavearray<int> &, wavearray<float> &);
 #pragma link C++ function waveAssign(wavearray<int> &, wavearray<double> &);
 #pragma link C++ function waveAssign(wavearray<float> &, wavearray<int> &);

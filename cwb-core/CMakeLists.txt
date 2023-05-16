@@ -135,7 +135,7 @@ endif()
 
 #include all the created header files
 #list(APPEND WAT_HDRS ${CMAKE_CURRENT_BINARY_DIR}/watversion.hh watfun.hh constants.hh wat.hh rdfr.hh readframe.hh readfrfile.hh skycoord.hh watavx.hh watsse.hh watsse4.hh WDMOverlap.hh)
-list(APPEND WAT_HDRS watversion.hh watfun.hh constants.hh wat.hh skycoord.hh watsse.hh watsse4.hh)
+list(APPEND WAT_HDRS watfun.hh constants.hh wat.hh skycoord.hh watsse.hh watsse4.hh)
 
 #Add the watasm_elf64.o to the list of src
 if(APPLE)
@@ -176,8 +176,8 @@ add_custom_command(
         COMMAND ln -sf wavelet.so libwavelet.so
         WORKING_DIRECTORY lib
 )
-#install(FILES ${WAT_HDRS}
-#        TYPE INCLUDE)
+install(FILES ${WAT_HDRS}
+        TYPE INCLUDE)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/lib/wavelet-${XIFO}x.${lib_ext}
         ${CMAKE_CURRENT_BINARY_DIR}/lib/wavelet.so
         ${CMAKE_CURRENT_BINARY_DIR}/lib/libwavelet.so
