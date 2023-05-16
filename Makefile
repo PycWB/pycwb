@@ -1,4 +1,4 @@
-install: clean build_cwb sdist
+install: clean sdist
 	pip install dist/*.tar.gz
 
 clean:
