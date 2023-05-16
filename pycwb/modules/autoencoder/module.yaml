@@ -1,7 +1,5 @@
 name: autoencoder
-author:
-  - Sophie Bini
-  - cwb_sthr
+author: pycWB
 description: Autoencoder module
 dependencies: ["numpy", "tensorflow"]
 entry:

@@ -1,4 +1,4 @@
 name: super_cluster
-author: cwb2G
+author: pycWB
 description: "Super cluster"
 dependencies: ["@multi_resolution_wdm", "@cwb_conversions", "@sparse_series", "ROOT", "matplotlib"]

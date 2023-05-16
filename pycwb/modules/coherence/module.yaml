@@ -1,4 +1,4 @@
 name: coherence
-author: cwb2G
+author: pycWB
 description: Coherence module
 dependencies: ["@multi_resolution_wdm", "@cwb_conversions", "ROOT"]

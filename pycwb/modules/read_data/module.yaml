@@ -1,4 +1,4 @@
 name: read_data
-author: Yumeng Xu
+author: pycWB
 description: Read data module
 dependencies: ["gwpy", "numpy", "lalsimulation", "pycbc"]
