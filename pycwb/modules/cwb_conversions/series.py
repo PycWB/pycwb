@@ -5,7 +5,7 @@ from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 import logging
 import ctypes
 
-from pycwb.types import TimeFrequencySeries, WDM
+from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.constants import ROUNDED_DIGITS
 
 c_double_p = ctypes.POINTER(ctypes.c_double)
@@ -240,6 +240,8 @@ def convert_wseries_to_time_frequency_series(h):
     """
 
     # convert wseries to pycbc timeseries
+    from pycwb.types.wdm import WDM
+
     data = convert_wseries_to_pycbc_timeseries(h)
 
     # create a new time frequency series with the pycbc timeseries and the wavelet

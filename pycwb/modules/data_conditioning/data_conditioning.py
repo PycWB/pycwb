@@ -4,7 +4,8 @@ from .regression import regression
 from .whitening import whitening
 from pycwb.config import Config
 from pycwb.constants import WDM_BETAORDER, WDM_PRECISION
-from pycwb.types import TimeFrequencySeries, WDM
+from pycwb.types.time_frequency_series import TimeFrequencySeries
+from pycwb.types.wdm import WDM
 from multiprocessing import Pool
 
 logger = logging.getLogger(__name__)

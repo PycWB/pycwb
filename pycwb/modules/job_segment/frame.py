@@ -1,5 +1,5 @@
 from pathlib import Path
-from pycwb.types import FrameFile
+from pycwb.types.job import FrameFile
 import logging
 
 logger = logging.getLogger(__name__)

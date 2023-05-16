@@ -1,7 +1,3 @@
-import importlib
-import importlib.util
-import sys
-
 import pycbc.noise
 import pycbc.psd
 from pycbc.detector import Detector

@@ -2,7 +2,7 @@ import logging
 from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
-from ...types import WaveSegment
+from pycwb.types.job import WaveSegment
 from ...utils.module import import_helper
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,8 @@ import pickle
 import logging
 from pycwb.config import Config
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster
-from pycwb.types import FragmentCluster, Event
+from pycwb.types.network_cluster import FragmentCluster
+from pycwb.types.network_event import Event
 
 logger = logging.getLogger(__name__)
 

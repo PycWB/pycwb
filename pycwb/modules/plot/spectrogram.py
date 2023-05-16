@@ -1,7 +1,8 @@
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 
-from pycwb.types import TimeFrequencySeries, WDM
+from pycwb.types.time_frequency_series import TimeFrequencySeries
+from pycwb.types.wdm import WDM
 from pycwb.modules.cwb_conversions import WSeries_to_matrix, convert_wavearray_to_timeseries
 from gwpy.spectrogram import Spectrogram
 import numpy as np

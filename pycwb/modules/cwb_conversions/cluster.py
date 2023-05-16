@@ -1,6 +1,6 @@
 import ROOT
 from .pixel import convert_pixel_to_netpixel
-from pycwb.types import Cluster
+from pycwb.types.network_cluster import Cluster
 
 
 def convert_fragment_clusters_to_netcluster(fragment_clusters):

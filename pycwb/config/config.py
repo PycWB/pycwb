@@ -4,7 +4,7 @@ Class to store user parameters, load parameters from yaml file and check paramet
 import os.path
 import logging
 
-from ..types import WDMXTalkCatalog
+from ..types.wdm_xtalk import WDMXTalkCatalog
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml

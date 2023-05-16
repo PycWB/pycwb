@@ -1,6 +1,6 @@
 import logging
 
-from pycwb.types import WDM
+from pycwb.types.wdm import WDM
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +17,6 @@ def create_wdm_set(config):
     # explicitly list all parameters used from config
     rate_ANA, seg_edge, td_size, l_high, l_low  = config.rateANA, config.segEdge, config.TDSize, \
         config.l_high, config.l_low
-
-    # get beta order and precision
-    beta_order, precision = config.WDM_beta_order, config.WDM_precision
 
     # create WDM
     wdm_list = []

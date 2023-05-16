@@ -3,7 +3,7 @@ import multiprocessing
 import pycwb
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.web_viewer.create import create_web_viewer
-from pycwb.types import Network
+from pycwb.types.network import Network
 from pycwb.utils import logger_init
 from pycwb.config import Config
 from pycwb.modules.plot import plot_event_on_spectrogram
@@ -109,9 +109,6 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     :type no_subprocess: bool, optional
     """
     logger_init(log_file, log_level)
-    logger.info("Logging initialized")
-    logger.info("Logging level: " + log_level)
-    logger.info("Logging file: " + str(log_file))
 
     # set env HOME_WAT_FILTERS
     if not os.environ.get('HOME_WAT_FILTERS'):

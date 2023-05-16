@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import math
-from pycwb.types import WaveSegment
+from pycwb.types.job import WaveSegment
 
 logger = logging.getLogger(__name__)
 

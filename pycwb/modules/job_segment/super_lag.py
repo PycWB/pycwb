@@ -3,7 +3,7 @@ Module for Super Lag, not yet implemented
 """
 import numpy as np
 import logging
-from pycwb.types import SLag
+from pycwb.types.job import SLag
 
 logger = logging.getLogger(__name__)
 
