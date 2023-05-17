@@ -67,14 +67,15 @@ pattern: 10
 iwindow: 100
 
 # simulation
-simulation: 1
+simulation: "all_inject_in_one_segment"
 nfactor: 1
 
 injection:
   segment:
     start: 1126258862.4
     end: 1126260062.4
-    seeds: [0, 1]
+    noise:
+      seeds: [0, 1]
   parameters:
     - mass1: 20
       mass2: 20

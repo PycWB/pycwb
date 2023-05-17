@@ -67,7 +67,7 @@ pattern: 10
 iwindow: 100
 
 # simulation
-simulation: 2
+simulation: 'one_inject_in_one_segments'
 nfactor: 1
 
 injection:
@@ -75,7 +75,8 @@ injection:
     start: 1126258862.4
     end: 1126260062.4
     repeat: 10
-    seeds: [1002, 1004]
+    noise:
+      seeds: [0, 1]
   parameters_from_python:
     file: "generate_parameters.py"
     function: "get_injection_parameters"

@@ -67,7 +67,7 @@ pattern: 10
 iwindow: 100
 
 # simulation
-simulation: 0
+simulation: False
 nfactor: 1
 
 ###### run configuration ######
