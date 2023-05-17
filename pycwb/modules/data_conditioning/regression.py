@@ -1,4 +1,3 @@
-from pycwb.config import Config
 import ROOT
 import numpy as np
 

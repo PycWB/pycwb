@@ -8,4 +8,53 @@ not intended to be a complete list of all modifications, but rather a
 list of the most important ones.
 
 
+Modifications on CMakeLists.txt
+-------------------------------
 
+Added support for macOS
+
+- support `dylib` extension for macOS
+- added ASM flag and .S source file so that the code compiles on macOS
+- removed unnecessary source file
+
+Fixed Warning
+-------------
+
+Commented out the following line in `WDM.cc`
+
+.. code-block:: c
+
+    template<class DataType_t> double* WDM<DataType_t>::Cos[MAXBETA];
+    template<class DataType_t> double* WDM<DataType_t>::Cos2[MAXBETA];
+    template<class DataType_t> double* WDM<DataType_t>::SinCos[MAXBETA];
+    template<class DataType_t> double  WDM<DataType_t>::CosSize[MAXBETA];
+    template<class DataType_t> double  WDM<DataType_t>::Cos2Size[MAXBETA];
+    template<class DataType_t> double  WDM<DataType_t>::SinCosSize[MAXBETA];
+    template<class DataType_t>    int  WDM<DataType_t>::objCounter = 0;
+
+and add inline keyword to the following lines in `WDM.hh`
+
+.. code-block:: c
+
+   static inline double *Cos[MAXBETA], *Cos2[MAXBETA], *SinCos[MAXBETA];
+   static inline double CosSize[MAXBETA], Cos2Size[MAXBETA], SinCosSize[MAXBETA];
+   static inline int objCounter;
+
+to avoid some warnings.
+
+Removed Some Printing
+---------------------
+
+Removed printing of the following lines in `WDM.cc`
+
+.. code-block:: c
+
+    printf("Filter length = %d,  norm = %.16f\n", N, 1.-residual);
+
+and `monster.cc`
+
+.. code-block:: c
+
+    printf("layers[%d] = %d\n", i, layers[i] = (int)tmp);
+
+to let the output managed by the python code.

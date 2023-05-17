@@ -1,22 +1,22 @@
-.. PyBurst documentation master file, created by
+.. pycWB documentation master file, created by
    sphinx-quickstart on Wed Mar  8 13:16:45 2023.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to PyBurst's documentation!
+Welcome to pycWB's documentation!
 ===================================
 
-PyBurst is a Python package for gravitational wave burst search based on the core function of cWB.
+pycWB is a modularized Python package for gravitational wave burst search based on the core function of cWB.
 
 ...
 
 .. toctree::
    :hidden:
-   :maxdepth: 2
+   :maxdepth: 5
 
    install
    credit
-   Modules <modules>
+   pycWB <modules>
    genindex
 
 .. toctree::
@@ -25,6 +25,13 @@ PyBurst is a Python package for gravitational wave burst search based on the cor
    :maxdepth: 1
 
    tutorials
+
+.. toctree::
+   :hidden:
+   :caption: Developer Guides
+   :maxdepth: 1
+
+   mod_cwb
 
 
 Getting Started
@@ -35,7 +42,7 @@ Installation
 
 .. code-block:: bash
 
-    conda create -n pycwb python
+    conda create -n pycwb "python<3.11"
     conda activate pycwb
     conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
     git clone git@git.ligo.org:yumeng.xu/pycwb.git
@@ -46,34 +53,31 @@ Installation
 Run your first burst search
 ---------------------------
 
-Copy the example configuration file
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Copy the example configuration folder
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
-    mkdir my_search
-    cp [path_to_source_code]/examples/injection/user_parameters_injection.yaml user_parameters.yaml
+    cp -r [path_to_source_code]/examples/injection my_search
 
 Start searching!
 ~~~~~~~~~~~~~~~~
 
-.. code-block:: python
+You can directly run the example search script in the example folder
 
-   from pycwb.search import search
+.. code-block:: bash
 
-   search('./user_parameters.yaml')
+    cd my_search
+    python pycwb_injection.py
 
-Go deeper into PyBurst.search
+Or you can open the juptyer notebook `pycwb_injection.ipynb` and run the search step by step!
+
+Go deeper into pycWB.search
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to know more about the search process, please refer to
 :ref:`tutorial_search`
 
-Step by step injection!
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If you want to know more about the injection process step by step, please refer to
-:ref:`tutorial_injection`
 
 Indices and tables
 ==================

@@ -4,11 +4,10 @@ from multiprocessing import Pool
 import ROOT
 import logging
 from pycwb.config import Config
-from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
-from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.network_cluster import FragmentCluster
 from pycwb.types.network import Network
 from pycwb.modules.cwb_conversions import convert_to_wavearray
+from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 
 logger = logging.getLogger(__name__)
 
@@ -22,26 +21,29 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     * Loop over detectors (cwb::nIFO)
 
       * Compute the maximum energy of TF pixels (WSeries<double>::maxEnergy)
-    * Set pixel energy selection threshold (network::THRESHOLD)
-    * Loop over time lags (network::nLag)
+      * Set pixel energy selection threshold (network::THRESHOLD)
+      * Loop over time lags (network::nLag)
 
       * Select the significant pixels (network::getNetworkPixels)
       * Single resolution clustering (network::cluster)
 
-    :param config: config
-    :type config: Config
-    :param tf_maps: list of strain
-    :type tf_maps: list[TimeFrequencySeries]
-    :param wdm_list: list of wdm
-    :type wdm_list: list[WDM]
-    :param nRMS_list: list of noise RMS
-    :type nRMS_list: list[TimeFrequencySeries]
-    :param net: network, if None, create a temporary minimum network object with wdm_list and nRMS_list
-    :type net: ROOT.network, optional
-    :param parallel: whether to use parallel
-    :type parallel: bool, optional
-    :return: fragment_clusters
-    :rtype: list[FragmentCluster]
+    Parameters
+    ----------
+    config : pycwb.config.Config
+        Configuration object
+    tf_maps : list of pycwb.types.time_frequency_series.TimeFrequencySeries
+        List of time-frequency maps
+    nRMS_list : list of pycwb.types.time_frequency_series.TimeFrequencySeries
+        List of noise RMS
+    net : pycwb.types.network.Network, optional
+        Network object, by default None
+    parallel : bool, optional
+        Whether to use parallel, by default True
+
+    Returns
+    -------
+    fragment_clusters: list of pycwb.types.network_cluster.FragmentCluster
+        List of fragment clusters
     """
     # calculate upsample factor
     timer_start = time.perf_counter()

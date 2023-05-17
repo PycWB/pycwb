@@ -21,7 +21,10 @@ class Config:
     :type file_name: str
     """
 
-    def __init__(self, file_name, schema=user_parameters_schema):
+    def __init__(self, file_name, schema=None):
+        if schema is None:
+            schema = user_parameters_schema
+
         self.outputDir = None
         self.logDir = None
         self.nproc = None

@@ -9,12 +9,19 @@ Installation Guide
 Installation with Conda/Pip
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The installation with conda/pip is not done yet.
+The project is not yet available on PyPI or conda-forge, but you can install it
+from source with pip.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Installing from Source with Conda
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Installing from Source with Conda and Pip
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+We recommend installing pycwb from source with conda environment,
+because all the dependencies can be installed with conda and some of them are not available in pip.
+pycWB can be installed with pip from source.
+
+The command `make install` will help you pack the source code and install
+it with pip.
 
 .. code-block:: bash
 
@@ -39,7 +46,7 @@ then run the ``make doc`` command.
 
 .. code-block:: bash
 
-    pip install sphinx sphinx_rtd_theme
+    pip install "sphinx<7.0.0" sphinx_rtd_theme
     make doc
 
 The documentation will be built in the ``docs/build/html`` directory.

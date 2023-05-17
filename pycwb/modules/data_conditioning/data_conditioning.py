@@ -2,8 +2,6 @@ import time
 import logging
 from .regression import regression
 from .whitening import whitening
-from pycwb.config import Config
-from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.wdm import WDM
 from multiprocessing import Pool
 

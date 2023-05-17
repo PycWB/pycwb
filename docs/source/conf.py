@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 from pycwb import __version__
 
-project = 'PyBurst'
+project = 'pycWB'
 copyright = '2023, Yumeng Xu'
 author = 'Yumeng Xu'
 release = __version__

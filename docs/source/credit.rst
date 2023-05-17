@@ -1,3 +1,5 @@
+.. _credits:
+
 ============================================
-Use of PyBurst in Scientific Publications
+Use of pycWB in Scientific Publications
 ============================================

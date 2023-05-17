@@ -1,3 +1,6 @@
+"""
+This module is a glitch classifier based on autoencoder neural network.
+"""
 from .cwb_autoencoder import AutoEncoder
 import pycwb, os
 
