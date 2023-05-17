@@ -158,7 +158,7 @@ The clusters and events will be saved in the output folder. The catalog file wil
         add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
 
 
-The events will be marked on the spectrogram andthe likelihood map and null map reconstructed from the clusters
+The events will be marked on the spectrogram and the likelihood map and null map reconstructed from the clusters
 will also be plotted.
 
 .. code-block:: python

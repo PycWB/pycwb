@@ -70,7 +70,7 @@ You can directly run the example search script in the example folder
     cd my_search
     python pycwb_injection.py
 
-Or you can open the juptyer notebook `pycwb_injection.ipynb` and run the search step by step!
+Or you can open the juptyer notebook `pycwb_injection.ipynb` and run the search step by step
 
 Go deeper into pycWB.search
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -78,6 +78,11 @@ Go deeper into pycWB.search
 If you want to know more about the search process, please refer to
 :ref:`tutorial_search`
 
+Step by step injection!
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you want to know more about the injection process step by step, please refer to
+:ref:`tutorial_injection` or the juptyer notebook `pycwb_injection.ipynb`
 
 Indices and tables
 ==================

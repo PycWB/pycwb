@@ -23,24 +23,28 @@ Next, load the environment and the configuration file:
 
     import pycwb
     from pycwb.config import Config
-    from pycwb.utils import logger_init
+    from pycwb.modules.logger import logger_init
 
     if not os.environ.get('HOME_WAT_FILTERS'):
-        pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
+        pyburst_path = os.path.dirname(os.path.abspath(pycwb.__file__))
+        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pyburst_path)}/vendor"
 
     logger_init()
 
     config = Config('./user_parameters_injection.yaml')
+    config.ifo, config.injection
 
 
-Now, create an injection using the parameters specified in the configuration file:
+Now, create an injection job using the parameters specified in the configuration file:
 
 .. code-block:: python
 
     from pycwb.modules.read_data import generate_injection
+    from pycwb.modules.job_segment import create_job_segment_from_injection
 
-    data = generate_injection(config)
+    job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
+
+    data = generate_injection(config, job_segments[0])
 
 A pyCBC time series is generated for each detector defined in the configuration file.
 
@@ -55,44 +59,25 @@ and the nRMS is the noise RMS of the data:
     strains, nRMS = data_conditioning(config, data)
 
 
-
-
-Create a network using the whitened data and the noise RMS, then generate a set of wavelet decomposition modules
-for each resolution:
-
-.. code-block:: python
-
-    # initialize network
-    from pycwb.modules.wavelet import create_wdm_set
-    from pycwb.types import WDMXTalkCatalog, Network
-
-    job_id = 0
-
-    wdm_MRA = WDMXTalkCatalog(config.MRAcatalog)
-    wdm_list = create_wdm_set(config, wdm_MRA)
-    network = Network(config, strains, nRMS, wdm_MRA)
-
 Find the coherent pixel clusters and generate the sparse table to reduce the computational cost in the following steps:
 
 .. code-block:: python
 
-    from pycwb.modules.coherence import coherence, sparse_table_from_fragment_clusters
+    from pycwb.modules.coherence import coherence
 
     # calculate coherence
-    fragment_clusters = coherence(config, strains, wdm_list, nRMS)
+    fragment_clusters = coherence(config, strains, nRMS)
 
-    # generate sparse table
-    sparse_table_list = sparse_table_from_fragment_clusters(config, network.get_max_delay(),
-                                                            strains, wdm_list, fragment_clusters)
-
-Then merge the clusters to superclusters
+Create a network using the whitened data and the noise RMS, then merge the clusters to superclusters
 
 .. code-block:: python
 
     from pycwb.modules.super_cluster import supercluster
+    from pycwb.types.network import Network
 
-    pwc_list = supercluster(config, network, wdm_list, fragment_clusters, sparse_table_list)
+    network = Network(config, strains, nRMS)
 
+    pwc_list = supercluster(config, network, fragment_clusters, strains)
 
 Finally, calculate the likelihood for each supercluster:
 
@@ -111,3 +96,22 @@ You can use the following code to plot the events on the spectrogram:
     for i, tf_map in enumerate(strains):
         plt = plot_event_on_spectrogram(tf_map, events)
         plt.show()
+
+the likelihood map and null map reconstructed from the clusters
+will also be plotted with
+
+.. code-block:: python
+
+    from gwpy.spectrogram import Spectrogram
+
+    for cluster in clusters:
+        merged_map, start, dt, df = cluster.get_sparse_map("likelihood")
+
+        plt = Spectrogram(merged_map, t0=start, dt=dt, f0=0, df=df).plot()
+        plt.colorbar()
+
+    for cluster in clusters:
+        merged_map, start, dt, df = cluster.get_sparse_map("null")
+
+        plt = Spectrogram(merged_map, t0=start, dt=dt, f0=0, df=df).plot()
+        plt.colorbar()
