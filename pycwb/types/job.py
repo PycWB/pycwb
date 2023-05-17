@@ -3,26 +3,38 @@ class WaveSegment:
     Class to store the metadata of a wave segment for analysis, which contains the index of the segment,
     the start and end time of the segment, and the list of frame files that are within the segment.
 
-    :param index: index of the segment
-    :type index: int
-    :param start_time: start time of the segment
-    :type start_time: float
-    :param end_time: end time of the segment
-    :type end_time: float
-    :param frames: list of frame files that are within the segment, defaults to None
-    :type frames: list[FrameFile], optional
+    Parameters
+    ----------
+    index: int
+        index of the segment
+    ifos: list of str
+        list of interferometers
+    start_time: float
+        start time of the segment
+    end_time: float
+        end time of the segment
+    frames: list, optional
+        list of frame files that are within the segment
+    noise: list, optional
+        list of noise configuration that are within the segment
+    injections: list, optional
+        list of injections that are within the segment
     """
-    __slots__ = ('index', 'start_time', 'end_time', 'frames', 'injections')
+    __slots__ = ('index', 'ifos', 'start_time', 'end_time', 'frames',  'noise', 'injections')
 
-    def __init__(self, index, start_time, end_time, frames=None, injections=None):
+    def __init__(self, index, ifos, start_time, end_time, frames=None, noise=None, injections=None):
         #: index of the segment
         self.index = index
+        #: list of interferometers
+        self.ifos = ifos
         #: start time of the segment
         self.start_time = float(start_time)
         #: end time of the segment
         self.end_time = float(end_time)
         #: list of frame files that are within the segment
         self.frames = frames or []
+        #: list of noise configuration that are within the segment
+        self.noise = noise or []
         #: list of injections that are within the segment
         self.injections = injections or []
 
@@ -48,6 +60,16 @@ class WaveSegment:
                 'duration': frame.duration
             } for frame in self.frames]
         }
+
+    @property
+    def duration(self):
+        """
+        Duration of the segment.
+
+        :return: duration of the segment
+        :rtype: float
+        """
+        return self.end_time - self.start_time
 
 
 class SLag:

@@ -470,8 +470,8 @@ schema = {
             "default": 20.
         },
         "simulation": {
-            "type": "integer",
-            "default": 0
+            "type": "string",
+            "default": None
         },
         "nfactor": {
             "type": "number",

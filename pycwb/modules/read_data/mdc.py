@@ -1,6 +1,8 @@
+import numpy as np
 import pycbc.noise
 import pycbc.psd
 from pycbc.detector import Detector
+from pycbc.types import TimeSeries
 from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
 import os, logging
@@ -17,22 +19,27 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     """
     Generate noise from a given psd file or aLIGOZeroDetHighPower psd
 
-    :param psd: path to psd file
-    :type psd: str
-    :param f_low: low frequency cutoff
-    :type f_low: float
-    :param delta_f: frequency resolution
-    :type delta_f: float
-    :param duration: duration of the noise
-    :type duration: int
-    :param sample_rate: sample rate of the noise
-    :type sample_rate: float
-    :param seed: seed for the random number generator
-    :type seed: int
-    :param start_time: start time of the noise
-    :type start_time: int
-    :return: time series of noise
-    :rtype pycbc.types.timeseries.TimeSeries
+    Parameters
+    ----------
+    psd : str
+        path to psd file
+    f_low : float
+        low frequency cutoff
+    delta_f : float
+        frequency resolution
+    duration : int
+        duration of the noise
+    sample_rate : float
+        sample rate of the noise
+    seed : int or None
+        seed for the random number generator
+    start_time : int
+        start time of the noise
+
+    Returns
+    -------
+    pycbc.types.timeseries.TimeSeries
+        time series of noise
     """
     # generate noise
     flen = int(sample_rate / delta_f) + 1
@@ -219,7 +226,7 @@ def generate_injection_from_config(config):
     return injected
 
 
-def generate_injection(config, job_seg):
+def generate_injection(config, job_seg, strain=None):
     """
     A sample function to generate injection from pycbc and save it to gwf files
     with the detectors specified in the config
@@ -229,21 +236,37 @@ def generate_injection(config, job_seg):
     :return: list of strains for each detector
     :rtype: list[pycbc.types.timeseries.TimeSeries]
     """
-    ifo, injection = config.ifo, config.injection
+    ifos = job_seg.ifos
 
     # load noise
-    logger.info(f'Generating noise for {ifo}')
+    logger.info(f'Generating noise for {ifos}')
 
-    # load seeds from config, if not specified, use random seeds
-    seeds = injection['segment']['seeds'] if 'seeds' in injection['segment'] else [None, None]
+    injected = None
 
-    # generate noise
-    noise = [generate_noise(f_low=2.0, sample_rate=config.inRate,
-                            duration=injection['segment']['end'] - injection['segment']['start'],
-                            start_time=injection['segment']['start'], seed=seeds[i])
-             for i, ifo in enumerate(ifo)]
+    if strain:
+        injected = strain
 
-    injected = noise
+    if job_seg.noise:
+        # load seeds from config, if not specified, use random seeds
+        seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None, None]
+
+        # generate noise
+        noises = [generate_noise(f_low=2.0, sample_rate=config.inRate,
+                                duration=job_seg.duration,
+                                start_time=job_seg.start_time, seed=seeds[i])
+                 for i, ifo in enumerate(ifos)]
+
+        if injected:
+            # inject signal into noise
+            injected = [noises[i].add_into(injected[i]) for i in range(len(ifos))]
+        else:
+            injected = noises
+
+    # generate zero noise if injected is None
+    if injected is None:
+        injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)), delta_t=1.0 / config.inRate)
+                    for ifo in ifos]
+
     for injection in job_seg.injections:
         ##############################
         # setting default values
@@ -256,7 +279,7 @@ def generate_injection(config, job_seg):
             approximant = 'IMRPhenomXPHM'
 
         injection['approximant'] = approximant
-        injection['delta_t'] = 1.0 / noise[0].sample_rate
+        injection['delta_t'] = 1.0 / noises[0].sample_rate
         injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
 
         declination = injection['dec'] if 'dec' in injection else 0.0
@@ -264,7 +287,7 @@ def generate_injection(config, job_seg):
         polarization = injection['pol'] if 'pol' in injection else 0.0
         gps_end_time = injection['gps_time']
 
-        logger.info(f'Generating injection for {ifo} with parameters: \n {injection} \n')
+        logger.info(f'Generating injection for {ifos} with parameters: \n {injection} \n')
 
         ##############################
         # generating injection
@@ -291,9 +314,9 @@ def generate_injection(config, job_seg):
             hp, hc = get_td_waveform(**injection)
 
         from pycwb.modules.read_data import project_to_detector
-        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifo, gps_end_time)
+        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
 
         # inject signal into noise and convert to wavearray
-        injected = [injected[i].add_into(strain[i]) for i in range(len(ifo))]
+        injected = [injected[i].add_into(strain[i]) for i in range(len(ifos))]
 
-    return [check_and_resample(injected[i], config, i) for i in range(len(ifo))]
+    return [check_and_resample(injected[i], config, i) for i in range(len(ifos))]

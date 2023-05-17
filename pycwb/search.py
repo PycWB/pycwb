@@ -48,10 +48,13 @@ def analyze_job_segment(config, job_seg):
     logger.info(f"Start time: {job_seg.start_time}")
     logger.info(f"End time: {job_seg.end_time}")
     logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
-    if config.simulation != 0:
-        data = generate_injection(config, job_seg)
-    else:
+
+    # read data
+    data = None
+    if job_seg.frames:
         data = read_from_job_segment(config, job_seg)
+    if job_seg.injections:
+        data = generate_injection(config, job_seg, data)
 
     # data conditioning
     tf_maps, nRMS_list = data_conditioning(config, data)

@@ -20,7 +20,7 @@ def create_job_segment_from_config(config):
         logger.info(f"Number of segments: {len(job_segments)}")
         logger.info("-" * 80)
     else:
-        job_segments = create_job_segment_from_injection(config.simulation, config.injection)
+        job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
         for job_seg in job_segments:
             logger.info(job_seg)
     return job_segments
@@ -90,7 +90,7 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
     else:
         cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1')
 
-        job_segments = get_job_list(cat1_list, seg_len, seg_mls, seg_edge)
+        job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge)
 
     rate_min = rateANA >> l_high
     for job_seg in job_segments:
@@ -122,7 +122,7 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
     return job_segments
 
 
-def create_job_segment_from_injection(simulation_mode, injection):
+def create_job_segment_from_injection(ifo, simulation_mode, injection):
     # get the injection parameters
     if 'parameters' in injection:
         if isinstance(injection['parameters'], list):
@@ -142,18 +142,25 @@ def create_job_segment_from_injection(simulation_mode, injection):
         raise ValueError('No injection parameters specified, '
                          'please specify either parameters or parameters_from_python')
 
-    if simulation_mode == 1:
+    # get the noise settings
+    if 'noise' in injection['segment'] and injection['segment']['noise'] is not None:
+        noise = injection['segment']['noise']
+    else:
+        noise = None
+
+    # create the job segments with specified simulation mode
+    if simulation_mode == "all_inject_in_one_segment":
         # inject all the parameters in one job segment
-        job_segments = [WaveSegment(0, injection['segment']['start'], injection['segment']['end'],
-                                    injections=injections)]
-    elif simulation_mode == 2:
+        job_segments = [WaveSegment(0, ifo, injection['segment']['start'], injection['segment']['end'],
+                                    noise=noise, injections=injections)]
+    elif simulation_mode == "one_inject_in_one_segments":
         # repeat the injection N times for the same job segment
         repeat = injection['segment']['repeat']
         if len(injections) != repeat:
             raise ValueError(f"The number of injections ({len(injections)}) does not match the number of repeats ({repeat})")
 
-        job_segments = [WaveSegment(i, injection['segment']['start'], injection['segment']['end'],
-                                    injections=[injections[i]])
+        job_segments = [WaveSegment(i, ifo, injection['segment']['start'], injection['segment']['end'],
+                                    noise=noise, injections=[injections[i]])
                         for i in range(repeat)]
     else:
         raise ValueError(f"Invalid simulation mode: {simulation_mode}")
