@@ -25,6 +25,7 @@ pycWB is a modularized Python package for gravitational wave burst search based 
    :maxdepth: 1
 
    tutorials
+   schema
 
 .. toctree::
    :hidden:
