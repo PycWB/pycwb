@@ -85,6 +85,12 @@ Step by step injection!
 If you want to know more about the injection process step by step, please refer to
 :ref:`tutorial_injection` or the juptyer notebook `pycwb_injection.ipynb`
 
+Basic Workflow
+==============
+.. image:: workflow.png
+   :width: 100%
+   :align: center
+
 Indices and tables
 ==================
 
