@@ -11,10 +11,16 @@ class Network:
     """
     Class to hold information about a network of detectors.
 
-    :param detectors: list of detectors
-    :type detectors: list[Detector]
-    :param ref_ifo: reference detector
-    :type ref_ifo: str
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+    tf_list : list of TimeFrequencySeries
+        List of time-frequency series for each detector.
+    nRMS_list : list of TimeFrequencySeries
+        List of noise RMS time-frequency series for each detector.
+    silent : bool, optional
+        If True, disable logging when network is created for temporary use.
     """
 
     def __init__(self, config, tf_list, nRMS_list, silent=False):
@@ -58,6 +64,16 @@ class Network:
                             config.lagBuffer, config.lagMode, config.lagSite)
 
     def load_strains(self, tf_maps, nRMS_list):
+        """
+        Load time-frequency maps and noise RMS time-frequency maps into cwb network.
+
+        Parameters
+        ----------
+        tf_maps : list of TimeFrequencySeries
+            List of time-frequency series for each detector.
+        nRMS_list : list of TimeFrequencySeries
+            List of noise RMS time-frequency series for each detector.
+        """
         for i in range(self.ifo_size):
             ifo = self.net.getifo(i)
             tf_map = convert_to_wseries(tf_maps[i])
@@ -67,6 +83,26 @@ class Network:
             ifo.nRMS = nRMS
 
     def set_time_shift(self, lag_size, lag_step, lag_off, lag_max, lag_buffer, lag_mode, lag_site):
+        """
+        Set time shift parameters for cwb network
+
+        Parameters
+        ----------
+        lag_size : int
+            Size of time shift.
+        lag_step : int
+            Step size of time shift.
+        lag_off : int
+            Offset of time shift.
+        lag_max : int
+            Maximum time shift.
+        lag_buffer : int
+            Buffer size of time shift.
+        lag_mode : int
+            Mode of time shift.
+        lag_site : int
+            Site of time shift.
+        """
         if lag_buffer:
             lags = self.net.setTimeShifts(lag_size, lag_step, lag_off, lag_max, lag_buffer, lag_mode, lag_site)
         else:
@@ -75,25 +111,77 @@ class Network:
         logger.info("number of time lags: %s", lags)
 
     def add_detector(self, detector):
+        """
+        Add cwb detector to cwb network.
+
+        Parameters
+        ----------
+        detector : str
+            Name of detector.
+        """
         ifo = ROOT.detector(detector)
         self.net.add(ifo)
 
     def add_wavelet(self, wavelet):
+        """
+        Add wavelet to cwb network.
+
+        Parameters
+        ----------
+        wavelet : WDM
+            Wavelet object.
+        """
         self.net.add(wavelet.wavelet)
 
     def get_ifo(self, ifo):
+        """
+        Get cwb detector from network.
+
+        Parameters
+        ----------
+        ifo : int
+            Index of detector.
+        """
         return self.net.getifo(ifo)
 
     def set_veto(self, veto):
+        """
+        Set veto for cwb network.
+
+        Parameters
+        ----------
+        veto : float
+            Time window for veto.
+        """
         return self.net.setVeto(veto)
 
     def threshold(self, bpp, alp=None):
+        """
+        Set threshold for cwb network.
+
+        Parameters
+        ----------
+        bpp : float
+            selected fraction of LTF pixels assuming Gaussian noise
+        alp : float, optional
+            Gamma distribution shape parameter
+        """
         if alp:
             return self.net.THRESHOLD(bpp, alp)
         else:
             return self.net.THRESHOLD(bpp)
 
     def get_network_pixels(self, lag, threshold):
+        """
+        Get network pixels from cwb network.
+
+        Parameters
+        ----------
+        lag : int
+            lag index
+        threshold : float
+            threshold value
+        """
         self.net.getNetworkPixels(lag, threshold)
 
         # TODO: return python class?
@@ -112,18 +200,40 @@ class Network:
         """
         self.get_cluster(lag).cluster(kt, kf)
 
-    def sub_net_cut(self, lag, sub_net, sub_cut, sub_norm):
+    def sub_net_cut(self, lag, sub_net=0.6, sub_cut=0.33, sub_norm=0.0):
+        """
+        apply subnetwork cut
+
+        Parameters
+        ----------
+        lag : int
+            lag index
+        sub_net : float
+            sub network threshold, default 0.6
+        sub_cut : float
+            sub network threshold in the skyloop, default 0.33
+        sub_norm : float
+            norm (Lo/Lt) sub network threshold, default 0.0
+
+        Returns
+        -------
+        int
+            number of processed pixels
+        """
         return self.net.subNetCut(lag, sub_net, sub_cut, sub_norm, ROOT.nullptr)
 
     def likelihoodWP(self, mode, lag, search):
         """
         Likelihood analysis with packets
 
-        :param mode: analysis mode
-        :type mode: str
-        :param lag: lag index
-        :param search: if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
-        :return:
+        Parameters
+        ----------
+        mode : str
+            analysis mode
+        lag : int
+            lag index
+        search : str
+            if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
         """
         return self.net.likelihoodWP(mode, lag, 0, ROOT.nullptr, search)
 
@@ -131,11 +241,12 @@ class Network:
         """
         2G likelihood analysis
 
-        :param mode: analysis mode
-        :type mode: str
-        :param lag: lag index
-        :param search: if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
-        :return:
+        Parameters
+        ----------
+        mode : str
+            analysis mode
+        lag : int
+            lag index
         """
         return self.net.likelihood2G(mode, lag, 0, ROOT.nullptr)
 
@@ -143,8 +254,10 @@ class Network:
         """
         get the maximum delay between the two detectors
 
-        :return: maximum delay
-        :rtype: float
+        Returns
+        -------
+        float
+            maximum delay
         """
         return self.net.getDelay('MAX')
 
@@ -152,32 +265,64 @@ class Network:
         self.net.setDelayIndex(rate)
 
     def get_cluster(self, lag):
+        """
+        get cwb netcluster from network
+
+        Parameters
+        ----------
+        lag : int
+            lag index
+
+        Returns
+        -------
+        `ROOT.netcluster`
+            cwb netcluster
+        """
         return self.net.getwc(lag)
 
     @property
     def ifo_size(self):
+        """
+        get number of detectors in network
+
+        Returns
+        -------
+        int
+            number of detectors
+        """
         return self.net.ifoListSize()
 
     @property
     def pattern(self):
+        """
+        get pattern of network
+        """
         return self.net.pattern
 
     @property
     def nLag(self):
+        """
+        get number of lags in network
+        """
         return self.net.nLag
 
     @property
     def n_events(self):
+        """
+        get number of events in network
+        """
         return self.net.events()
 
     def update_sky_map(self, config, skyres=None):
         """
         Update skymap from configuration, if sky resolution is not specified, use the one in configuration
 
-        :param config: user configuration
-        :type config: Config
-        :param skyres: sky resolution
-        :type skyres: int, optional
+        Parameters
+        ----------
+        config : Config
+            user configuration
+        skyres : int, optional
+            sky resolution
         """
         if skyres:
             self.net.setSkyMaps(int(skyres))
@@ -194,11 +339,12 @@ class Network:
         """
         Restore skymap from configuration, if sky resolution is not specified, use the one in configuration
 
-        :param config: user configuration
-        :type config: Config
-        :param skyres: sky resolution
-        :type skyres: int, optional
-        :return: None
+        Parameters
+        ----------
+        config : Config
+            user configuration
+        skyres : int, optional
+            sky resolution
         """
         if skyres:
             if config.healpix:
@@ -254,12 +400,16 @@ class Network:
           sky_index : is the sky grid index \n
           value     : if !=0 the index sky location is used for the analysis \n
 
-        :param config: Config object
-        :param net: network object
-        :param options: used to define the earth/celestial SkyMap \n
-        :param skycoord: sky coordinates : 'e'=earth, 'c'=celestial
-        :param skyres: sky resolution : def=-1 -> use the value defined in parameters (angle,healpix)
-        :return:
+        Parameters
+        ----------
+        config : Config
+            user configuration
+        options : str
+            used to define the earth/celestial SkyMap
+        skycoord : str
+            sky coordinates : 'e'=earth, 'c'=celestial
+        skyres : float, optional
+            sky resolution, default is the one in configuration
         """
         if skycoord not in ['e', 'c']:
             raise ValueError("cwb::SetSkyMask - Error : wrong input sky coordinates "

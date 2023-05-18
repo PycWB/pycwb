@@ -5,8 +5,10 @@ class Detector(PyCBCDetector):
     """
     Class for storing detector information.
 
-    :param name: detector name
-    :type name: str
+    Parameters
+    ----------
+    name : str
+        detector name
     """
     def __init__(self, name):
         super().__init__(name)

@@ -66,8 +66,10 @@ class WaveSegment:
         """
         Duration of the segment.
 
-        :return: duration of the segment
-        :rtype: float
+        Returns
+        -------
+        duration: float
+            duration of the segment
         """
         return self.end_time - self.start_time
 
@@ -101,14 +103,16 @@ class FrameFile:
     """
     Class to store the metadata of a frame file, which contains the ifo, the path, the start time, and the duration.
 
-    :param ifo: name of the interferometer
-    :type ifo: str
-    :param path: path of the frame file
-    :type path: str
-    :param start_time: start time of the frame file
-    :type start_time: float
-    :param duration: duration of the frame file
-    :type duration: float
+    Parameters
+    ----------
+    ifo: str
+        name of the interferometer
+    path: str
+        path of the frame file
+    start_time: float
+        start time of the frame file
+    duration: float
+        duration of the frame file
     """
     __slots__ = ('ifo', 'path', 'start_time', 'duration')
 
@@ -130,7 +134,10 @@ class FrameFile:
     def end_time(self):
         """
         Get the end time of the frame file.
-        :return: end time of the frame file
-        :rtype: float
+
+        Returns
+        -------
+        end_time: float
+            end time of the frame file
         """
         return self.start_time + self.duration

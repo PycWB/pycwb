@@ -11,30 +11,32 @@ class FragmentCluster:
     """
     Class for clusters found in data fragment
 
-    :param rate: original Time series rate
-    :type rate: float
-    :param start: interval start GPS time
-    :type start: float
-    :param stop: interval stop  GPS time
-    :type stop: float
-    :param bpp: black pixel probability
-    :type bpp: float
-    :param shift: time shift
-    :type shift: float
-    :param f_low: low frequency boundary
-    :type f_low: float
-    :param f_high: high frequency boundary
-    :type f_high: float
-    :param n_pix: minimum number of pixels at all resolutions
-    :type n_pix: int
-    :param run: run ID
-    :type run: int
-    :param pair: true - 2 resolutions, false - 1 resolution
-    :type pair: bool
-    :param n_sub: subnetwork threshold for a single network pixel
-    :type n_sub: int
-    :param clusters: cluster list
-    :type clusters: list[Cluster]
+    Parameters
+    ----------
+    rate : float
+        original Time series rate
+    start : float
+        interval start GPS time
+    stop : float
+        interval stop  GPS time
+    bpp : float
+        black pixel probability
+    shift : float
+        time shift
+    f_low : float
+        low frequency boundary
+    f_high : float
+        high frequency boundary
+    n_pix : int
+        minimum number of pixels at all resolutions
+    run : int
+        run ID
+    pair : bool
+        true - 2 resolutions, false - 1 resolution
+    n_sub : int
+        subnetwork threshold for a single network pixel
+    clusters : list of Cluster
+        cluster list
     """
     __slots__ = ['rate', 'start', 'stop', 'bpp', 'shift', 'f_low', 'f_high', 'n_pix', 'run', 'pair',
                  'subnet_threshold', 'clusters']
@@ -136,10 +138,15 @@ class FragmentCluster:
         """
         Select cluster by id
 
-        :param cluster_id: cluster id
-        :type cluster_id: int
-        :return: fragment cluster with one cluster
-        :rtype: FragmentCluster
+        Parameters
+        ----------
+        cluster_id : int
+            cluster id
+
+        Returns
+        -------
+        FragmentCluster
+            fragment cluster with one cluster
         """
         temp_cluster = copy.copy(self)
         temp_cluster.clusters = [self.clusters[cluster_id]]
@@ -157,28 +164,28 @@ class Cluster:
     """
     Class for one cluster of pixels
 
-    :param pixels: list of pixels
-    :type pixels: list[Pixel]
-    :param cluster_meta: cluster metadata
-    :type cluster_meta: ClusterMeta
-    :param cluster_status: cluster selection flags (cuts)  1 - rejected, 0 - not processed / accepted,
-     -1 - not complete, -2 - ready for processing
-    :type cluster_status: int
-    :param cluster_rate: cluster type defined by rate
-    :type cluster_rate: list[int]
-    :param cluster_time: supercluster central time
-    :type cluster_time: float
-    :param cluster_freq: supercluster central frequency
-    :type cluster_freq: float
-    :param sky_area: sky error area
-    :type sky_area: list[float]
-    :param sky_pixel_map: sky pixel map
-    :type sky_pixel_map: list[float]
-    :param sky_pixel_index: sky pixel index
-    :type sky_pixel_index: list[int]
-    :param sky_time_delay: sky time delay
-    :type sky_time_delay: list[int]
-
+    Parameters
+    ----------
+    pixels : list of Pixel
+        list of pixels
+    cluster_meta : ClusterMeta
+        cluster metadata
+    cluster_status : int
+        cluster selection flags (cuts)  1 - rejected, 0 - not processed / accepted, -1 - not complete, -2 - ready for processing
+    cluster_rate : list of int
+        cluster type defined by rate
+    cluster_time : float
+        supercluster central time
+    cluster_freq : float
+        supercluster central frequency
+    sky_area : list of float
+        sky error area
+    sky_pixel_map : list of float
+        sky pixel map
+    sky_pixel_index : list of int
+        sky pixel index
+    sky_time_delay : list of float
+        sky time delay
     """
     __slots__ = ['pixels', 'cluster_meta', 'cluster_status',
                  'cluster_rate', 'cluster_time', 'cluster_freq', 'sky_area', 'sky_pixel_map',
@@ -212,9 +219,32 @@ class Cluster:
         return self.to_dict().__repr__()
 
     def to_dict(self):
+        """
+        Convert Cluster to dict
+
+        Returns
+        -------
+        dict
+            dict with Cluster attributes
+        """
         return {key: getattr(self, key) for key in self.__slots__}
 
     def from_netcluster(self, netcluster, c_id):
+        """
+        Convert ROOT.netcluster to Cluster
+
+        Parameters
+        ----------
+        netcluster : ROOT.netcluster
+            ROOT.netcluster object
+        c_id : int
+            cluster id to convert
+
+        Returns
+        -------
+        Cluster
+            converted Cluster
+        """
         self.pixels = [Pixel().from_netpixel(netcluster.pList[pixel_id]) for pixel_id in netcluster.cList[c_id]]
         self.cluster_meta = ClusterMeta().from_cData(netcluster.cData[c_id])
         self.cluster_status = netcluster.sCuts[c_id]
@@ -228,12 +258,47 @@ class Cluster:
         return self
 
     def get_pixel_rates(self):
+        """
+        Get all pixel rates
+
+        Returns
+        -------
+        list of int
+            list of pixel rates
+        """
         return [p.rate for p in self.pixels]
 
     def get_pixels_with_rate(self, rate):
+        """
+        Get pixels with rate
+
+        Parameters
+        ----------
+        rate : int
+            pixel rate to select
+
+        Returns
+        -------
+        list of Pixel
+            list of pixels with selected rate
+        """
         return [p for p in self.pixels if p.rate == rate]
 
     def get_sparse_map_by_rate(self, key='likelihood'):
+        """
+        Get sparse map for selected key
+
+        Returns
+        -------
+        v_maps: scipy.sparse.coo_matrix
+            sparse map
+        t_starts: list of int
+            list of start times
+        dts: list of float
+            list of time steps
+        dfs: list of float
+            list of frequency steps
+        """
         pixels = self.pixels
 
         # get the sort the rates
@@ -271,6 +336,25 @@ class Cluster:
         return v_maps, t_starts, dts, dfs
 
     def get_sparse_map(self, key='likelihood'):
+        """
+        Get sparse map for selected key
+
+        Parameters
+        ----------
+        key : str
+            key to select
+
+        Returns
+        -------
+        mergerd_map: np.ndarray
+            merged sparse map for all resoltions
+        t_start: int
+            start time
+        dt: float
+            time step
+        df: float
+            frequency step
+        """
         v_maps, t_starts, dts, dfs = self.get_sparse_map_by_rate(key=key)
 
         min_dt = min(dts)
@@ -330,6 +414,9 @@ class Cluster:
 
 
 class ClusterMeta:
+    """
+    Cluster meta data
+    """
     __slots__ = ['energy', 'energy_sky', 'like_net', 'net_ecor', 'norm_cor', 'net_null', 'net_ed',
                  'g_noise', 'like_sky', 'sky_cc', 'net_cc', 'sky_chi2', 'sub_net', 'sub_net2',
                  'sky_stat', 'net_rho', 'net_rho2', 'theta', 'phi', 'iota', 'psi', 'ellipticity',

@@ -6,30 +6,39 @@ logger = logging.getLogger(__name__)
 
 
 class DQFile:
-    __slots__ = ['ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4']
     """
     Class to store data quality file information
 
-    :param ifo: ifo name
-    :type ifo: str
-    :param file: data quality file path
-    :type file: str
-    :param dq_cat: data quality category
-    :type dq_cat: str
-    :param shift: shift in seconds
-    :type shift: float
-    :param invert: flag for inversion
-    :type invert: bool
-    :param c4: flag for 4 column data
-    :type c4: bool
+    Parameters
+    ----------
+    ifo : str
+        ifo name
+    file : str
+        data quality file path
+    dq_cat : str
+        data quality category
+    shift : float
+        shift in seconds
+    invert : bool
+        flag for inversion
+    c4 : bool
+        flag for 4 column data
     """
 
-    def __init__(self, ifo, file, dq_cat, shift, invert: bool, c4):
+    __slots__ = ['ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4']
+
+    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
+        #: str: ifo name
         self.ifo = ifo
+        #: str: data quality file path
         self.file = file
+        #: str: data quality category
         self.dq_cat = dq_cat
+        #: float: shift in seconds
         self.shift = shift
+        #: bool: flag for inversion
         self.invert = invert
+        #: bool: flag for 4 column data
         self.c4 = c4
 
     def __repr__(self):
@@ -49,12 +58,14 @@ class DQFile:
 
     def get_periods(self):
         """
-        Load and process the data quality file.
+        Get the periods from the data quality file.
 
-        :param self: The data quality file.
-        :type self: DQFile
-        :return: a list of start and end times (start, end)
-        :rtype: tuple[np.ndarray, np.ndarray]
+        Returns
+        -------
+        start : np.ndarray
+            start times
+        stop : np.ndarray
+            stop times
         """
         start = []
         stop = []

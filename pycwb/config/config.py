@@ -1,5 +1,7 @@
 """
-Class to store user parameters, load parameters from yaml file and check parameters
+Class to store all user parameters, load parameters from yaml file and check parameters. The supported parameters and their
+default values are defined in the provided schema. By default, the schema is the schema defined in
+pycwb.constants.user_parameters_schema.
 """
 import os.path
 import logging
@@ -17,8 +19,12 @@ class Config:
     """
     Class to store user parameters
 
-    :param file_name: user parameters file path
-    :type file_name: str
+    Parameters
+    ----------
+    file_name : str
+        Path to the yaml file containing the user parameters
+    schema : dict
+        Schema to validate the user parameters, default is the schema defined in pycwb.constants.user_parameters_schema
     """
 
     def __init__(self, file_name, schema=None):
@@ -68,7 +74,7 @@ class Config:
 
     def add_derived_key(self):
         """
-        Add derived key to the user parameters
+        Add derived key to the user parameters, this method is called after loading the user parameters
         """
 
         self.gamma = self.cfg_gamma
@@ -108,12 +114,7 @@ class Config:
 
     def get_lag_buffer(self):
         """
-        Get lag buffer from configuration
-
-        :param config: user configuration
-        :type config: Config
-        :return: lag buffer and lag mode
-        :rtype: str, str
+        Get lag buffer from configuration and update lag mode
         """
         if self.lagMode == "r":
             with open(self.lagFile, "r") as f:
@@ -126,12 +127,16 @@ class Config:
     @staticmethod
     def check_file(file_name):
         """
-        Check if file exists
+        Helper function to check if file exists
 
-        :param file_name: file path
-        :type file_name: str
+        Parameters
+        ----------
+        file_name : str
+            Path to the file
 
-        :raises FileNotFoundError: if file does not exist
+        Raises
+        ------
+        FileNotFoundError
         """
         if not os.path.isfile(file_name):
             raise FileNotFoundError(f"File {file_name} does not exist")
@@ -169,7 +174,9 @@ class Config:
         """
         Check if MRAcatalog exists
 
-        :raises FileNotFoundError: if MRAcatalog does not exist
+        Raises
+        ------
+        FileNotFoundError: if MRAcatalog does not exist
         """
         logger.info("Checking MRA catalog")
         wdm_MRA = WDMXTalkCatalog(self.MRAcatalog)
