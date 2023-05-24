@@ -12,9 +12,6 @@ docs/source/modules.rst
 
 tests/*
 .pytest_cache
-!tests/*_test.py
-!tests/*.ipynb
-!tests/*.yaml
 
 cwb-core/install
 cwb-core/cmake-build-debug
