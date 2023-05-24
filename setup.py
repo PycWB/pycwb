@@ -150,13 +150,8 @@ class CMakeBuild(build_ext):
 
 
 setup(
-    name="pycwb",
-    author="Yumeng Xu",
-    author_email="xusmailbox@gmail.com",
-    description=("This is a project to simplify the installation of `cWB` and run `cWB` with python."),
     long_description=read('README.md'),
     long_description_content_type="text/markdown",
-    keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst'],
     url="https://git.ligo.org/yumeng.xu/pycwb",
     install_requires=install_requires,
     cmdclass={
