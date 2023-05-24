@@ -1,4 +1,5 @@
-import logging, os, pycwb, site
+import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,10 @@ def check_and_load_wavelet(ROOT):
     if not hasattr(ROOT, "WDM"):
         logger.info("Loading wavelet library")
     try:
-        pycwb_path = site.getsitepackages()[0]
-        wavelet_path = f"{pycwb_path}/lib/wavelet"
+        site_packages = next(p for p in sys.path if 'site-packages' in p)
+        wavelet_path = f"{site_packages}/lib/wavelet"
         logger.info(f"Trying to load wavelet library from {wavelet_path}")
-        ROOT.gInterpreter.AddIncludePath(f"{pycwb_path}/include")
+        ROOT.gInterpreter.AddIncludePath(f"{site_packages}/include")
         ROOT.gSystem.Load(wavelet_path)
     except:
         logger.error("Cannot find wavelet library in PyBurst, trying to load from system")

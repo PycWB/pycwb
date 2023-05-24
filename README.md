@@ -18,7 +18,7 @@ The easiest way is to install them with conda.
 conda create -n pycwb "python>=3.9,<3.11"
 conda activate pycwb
 conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
-python3 -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --no-deps pycwb
+python3 -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ pycwb
 ```
 
 ### Install pycWB from source
