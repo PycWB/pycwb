@@ -25,7 +25,7 @@ stages:          # List of stages for jobs, and their order of execution
 build-job:       # This job runs in the build stage, which runs first.
   stage: build
   script:
-    - pip install build twine
+    - pip install build
     - python -m build --sdist
 
 unit-test-job:   # This job runs in the test stage.
@@ -38,4 +38,5 @@ deploy-job:      # This job runs in the deploy stage.
   environment: testing
   script:
     - echo "Deploying to TestPyPI..."
+    - pip install twine
     - TWINE_PASSWORD=${PYPI_TEST_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --repository testpypi dist/*
