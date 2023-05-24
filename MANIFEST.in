@@ -4,3 +4,4 @@ include cwb-core/*
 include cwb-core/cmake
 recursive-include pycwb/vendor *
 include README.md
+include LICENSE
