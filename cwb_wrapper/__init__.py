@@ -3,7 +3,7 @@ import os
 import logging, sys
 from . import cwb_interface
 from .cwb_interface import cwb_root_logon
-from pycwb.config import user_parameters
+from .config import user_parameters
 from .constants.cwb_dict import CWB_STAGE
 from .config import CWBConfig
 
