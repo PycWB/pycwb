@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_job_segment_from_config(config):
-    if config.simulation == 0:
+    if not config.simulation:
         logger.info("-" * 80)
         logger.info("Initializing job segments")
         job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,

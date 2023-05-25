@@ -184,4 +184,7 @@ def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
 
     i = config.ifo.index(frame.ifo)
     data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
+    if int(data.sample_rate.value) != int(config.inRate):
+        data = data.resample(config.inRate)
+        logger.info(f'Resample data from {data.sample_rate.value} to {config.inRate}')
     return check_and_resample(data, config, i)

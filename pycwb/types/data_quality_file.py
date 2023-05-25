@@ -71,8 +71,11 @@ class DQFile:
         stop = []
         # read the file in dq_file
         with open(self.file, 'r') as f:
-            lines = csv.reader(f, delimiter=" ", skipinitialspace=True)
-            for line in lines:
+            # remove the spaces at the end of each line
+            lines = (line.rstrip() for line in f)
+            # read the file as csv
+            reader = csv.reader(lines, delimiter=" ", skipinitialspace=True)
+            for line in reader:
                 try:
                     if line[0] == '#':
                         continue
