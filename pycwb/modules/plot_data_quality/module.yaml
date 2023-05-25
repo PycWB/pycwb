@@ -1,0 +1,4 @@
+name: plot_data_quality
+author: pycWB
+description: Plotting module for CWB
+dependencies: ["numpy", "matplotlib"]
