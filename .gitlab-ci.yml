@@ -45,3 +45,13 @@ deploy-job:      # This job runs in the deploy stage.
     - echo "Deploying to TestPyPI..."
     - pip install twine
     - TWINE_PASSWORD=${PYPI_TEST_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --repository testpypi dist/*
+
+publish:
+  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
+  environment: production
+  only:
+    - tags
+  script:
+    - echo "Deploying to PyPI..."
+    - pip install twine
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*
