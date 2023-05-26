@@ -13,6 +13,7 @@ from distutils.version import LooseVersion
 requires = []
 install_requires = [
     "matplotlib<3.7.0",
+    "astropy<5.3",
     "pyyaml",
     "jsonschema",
     "watchfiles",
