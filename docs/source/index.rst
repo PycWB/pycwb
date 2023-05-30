@@ -43,12 +43,10 @@ Installation
 
 .. code-block:: bash
 
-    conda create -n pycwb "python<3.11"
-    conda activate pycwb
-    conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
-    git clone git@git.ligo.org:yumeng.xu/pycwb.git
-    cd pycwb
-    make install
+   conda create -n pycwb "python>=3.9,<3.11"
+   conda activate pycwb
+   conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+   python3 -m pip install pycwb
 
 
 Run your first burst search

@@ -9,8 +9,14 @@ Installation Guide
 Installation with Conda/Pip
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The project is not yet available on PyPI or conda-forge, but you can install it
-from source with pip.
+The project is available on PyPI
+
+.. code-block:: bash
+
+   conda create -n pycwb "python>=3.9,<3.11"
+   conda activate pycwb
+   conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+   python3 -m pip install pycwb
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Installing from Source with Conda and Pip

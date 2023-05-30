@@ -85,12 +85,13 @@ Finally, calculate the likelihood for each supercluster:
 
     from pycwb.modules.likelihood import likelihood
 
-    events, clusters = likelihood(job_id, config, network, pwc_list)
+    events, clusters = likelihood(config, network, pwc_list)
 
 You can use the following code to plot the events on the spectrogram:
 
 .. code-block:: python
 
+    %matplotlib inline
     from pycwb.modules.plot import plot_event_on_spectrogram
 
     for i, tf_map in enumerate(strains):
@@ -102,6 +103,7 @@ will also be plotted with
 
 .. code-block:: python
 
+    %matplotlib inline
     from gwpy.spectrogram import Spectrogram
 
     for cluster in clusters:

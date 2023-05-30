@@ -37,7 +37,7 @@ read user parameters from user_parameters.yaml to a :py:class:`.Config` object.
 .. code-block:: python
 
    from pycwb.config import Config
-   user_parameters = Config('./user_parameters.yaml')
+   config = Config('./user_parameters.yaml')
 
 then, it will create directories for output files.
 
