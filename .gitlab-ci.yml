@@ -31,12 +31,20 @@ build-job:       # This job runs in the build stage, which runs first.
     paths:
       - dist/*
 
-unit-test-job:   # This job runs in the test stage.
-  stage: test    # It only starts when the job in the build stage completes successfully.
-  script:
-    - echo "No Unit test yet"
+#unit-test-job:   # This job runs in the test stage.
+#  image: continuumio/miniconda:4.7.10
+#  stage: test    # It only starts when the job in the build stage completes successfully.
+#  script:
+#    - conda create --name pycwb
+#    - conda init bash
+#    - source ~/.bashrc
+#    - conda activate pycwb
+#    - git clone git@git.ligo.org:yumeng.xu/pycwb.git
+#    - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+#    - cd pycwb
+#    - make install
 
-deploy-job:      # This job runs in the deploy stage.
+deploy-testPyPi:      # This job runs in the deploy stage.
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
   environment: testing
   only:
@@ -55,3 +63,26 @@ publish:
     - echo "Deploying to PyPI..."
     - pip install twine
     - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*
+
+pages:
+  stage: post-deploy
+#  only:
+#    - tags
+  rules:
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+  image: continuumio/miniconda:4.7.10
+  script:
+    - conda create --name pycwb
+    - conda init bash
+    - source ~/.bashrc
+    - conda activate pycwb
+    - git clone git@git.ligo.org:yumeng.xu/pycwb.git
+    - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+    - cd pycwb
+    - make install
+    - make doc
+    - mkdir public
+    - cp -r docs/build/html/* public/
+  artifacts:
+    paths:
+      - public
