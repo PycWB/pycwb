@@ -77,7 +77,6 @@ pages:
     - conda init bash
     - source ~/.bashrc
     - conda activate pycwb
-    - git clone git@git.ligo.org:yumeng.xu/pycwb.git
     - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
     - cd pycwb
     - make install
