@@ -21,6 +21,7 @@ stages:          # List of stages for jobs, and their order of execution
   - build
   - test
   - deploy
+  - post-deploy
 
 build-job:       # This job runs in the build stage, which runs first.
   stage: build
