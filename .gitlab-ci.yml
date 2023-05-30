@@ -79,6 +79,7 @@ pages:
     - conda activate pycwb
     - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
     - pip install pycwb
+    - pip install "sphinx<7.0.0" sphinx_rtd_theme
     - make doc
     - mkdir public
     - cp -r docs/build/html/* public/
