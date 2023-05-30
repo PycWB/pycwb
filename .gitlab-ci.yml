@@ -78,7 +78,7 @@ pages:
     - source ~/.bashrc
     - conda activate pycwb
     - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
-    - pip install dist/*.tar.gz
+    - pip install pycwb
     - make doc
     - mkdir public
     - cp -r docs/build/html/* public/
