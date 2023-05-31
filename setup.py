@@ -161,7 +161,7 @@ setup(
         'clean': Clean
     },
     ext_modules=[CMakeExtension('wavelet', 'cwb-core')],
-    # scripts=["bin/pycwb_gen_config"],  # find_files('bin', relpath='./'),
+    scripts=["bin/pycwb_search"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,
 )

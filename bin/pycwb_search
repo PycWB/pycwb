@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+import argparse
+
+# Create the parser
+parser = argparse.ArgumentParser(description='User parameter YAML file.')
+
+# Add the arguments
+parser.add_argument('user_parameter_file',
+                    metavar='file_path',
+                    type=str,
+                    help='the path to the user parameter file')
+
+parser.add_argument('--submit',
+                    '-s',
+                    metavar='job_submission_system',
+                    type=str,
+                    choices=['condor', 'slurm'],
+                    help='the submit option, the available options are condor and slurm')
+
+# Parse the arguments
+args = parser.parse_args()
+
+from pycwb.search import search
+
+if args.submit:
+    print(f"Submitting the search on {args.submit}.")
+    # create a dictionary with the submit option
+    # TODO: submit job
+    print("Job submission is not implemented yet.")
+    exit(1)
+else:
+    print("Running the search locally.")
+    # Run the search function with the specified user parameter file
+    search(args.user_parameter_file)
