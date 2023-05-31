@@ -27,7 +27,7 @@ export HOME_WAT_FILTERS={os.environ.get('HOME_WAT_FILTERS')}
 
 cd {working_dir}
 
-pycwb_search {user_parameter_file} --work-dir {working_dir} --overwrite -n {threads}
+pycwb_search {user_parameter_file} --work-dir {working_dir} --overwrite -n {threads} | tee run.log
 """
     f.write(script)
     f.close()
