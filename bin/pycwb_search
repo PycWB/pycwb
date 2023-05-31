@@ -54,8 +54,8 @@ parser.add_argument('--threads',
                     '-n',
                     metavar='threads',
                     type=int,
-                    default=6,
-                    help='the number of threads')
+                    default=0,
+                    help='the number of threads, if it set to 0, it will use the value from the user parameter file')
 
 # Parse the arguments
 args = parser.parse_args()
@@ -67,7 +67,7 @@ if args.submit:
     print(f"Submitting the search on {args.submit}.")
     # create a dictionary with the submit option
     if args.submit == 'condor':
-        generate_job_script(args.user_parameter_file, args.conda_env, args.work_dir)
+        generate_job_script(args.user_parameter_file, args.conda_env, args.work_dir, args.threads)
         generate_condor_sub(args.work_dir, args.accounting_group, args.threads)
         submit(args.work_dir)
     elif args.submit == 'slurm':
@@ -76,4 +76,4 @@ if args.submit:
 else:
     print("Running the search locally.")
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, working_dir=args.work_dir, overwrite=args.overwrite)
+    search(args.user_parameter_file, working_dir=args.work_dir, overwrite=args.overwrite, nproc=args.threads)

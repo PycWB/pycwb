@@ -100,7 +100,7 @@ def analyze_job_segment(config, job_seg):
 
 
 def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=None, log_level='INFO',
-           no_subprocess=False, overwrite=False):
+           no_subprocess=False, overwrite=False, nproc=None):
     """Main function to run the search
 
     This function will read the user parameters, select the job segments, create the catalog,
@@ -120,6 +120,8 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
         run the search in the main process, by default False (Set to True for macOS development)
     overwrite : bool, optional
         overwrite the existing results, by default False
+    nproc : int, optional
+        number of threads to use, by default None (use the value in user parameters)
     """
     # create working directory
     working_dir = os.path.abspath(working_dir)
@@ -140,6 +142,10 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     # read config
     logger.info("Reading user parameters")
     config = Config(user_parameters)
+
+    # overwrite threads if it is set
+    if nproc:
+        config.nproc = nproc
 
     # Safety Check: if output is not empty, ask for confirmation
     if os.path.exists(config.outputDir) and os.listdir(config.outputDir):

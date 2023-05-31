@@ -2,7 +2,7 @@ import os
 import subprocess
 
 
-def generate_job_script(user_parameter_file, conda_env, working_dir):
+def generate_job_script(user_parameter_file, conda_env, working_dir, threads=0):
     """Generate the submission file for the search.
 
     Parameters
@@ -27,7 +27,7 @@ export HOME_WAT_FILTERS={os.environ.get('HOME_WAT_FILTERS')}
 
 cd {working_dir}
 
-pycwb_search {user_parameter_file} --work-dir {working_dir} --overwrite
+pycwb_search {user_parameter_file} --work-dir {working_dir} --overwrite -n {threads}
 """
     f.write(script)
     f.close()
