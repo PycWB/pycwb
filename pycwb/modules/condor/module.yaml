@@ -1,0 +1,4 @@
+name: condor
+author: pycWB
+description: "Condor module for pycWB"
+dependencies: []

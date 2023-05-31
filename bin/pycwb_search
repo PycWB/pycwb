@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 
 # Create the parser
 parser = argparse.ArgumentParser(description='User parameter YAML file.')
@@ -19,7 +20,7 @@ parser.add_argument('--submit',
 
 # working dir
 parser.add_argument('--work-dir',
-                    '-w',
+                    '-d',
                     metavar='work_dir',
                     type=str,
                     default='.',
@@ -32,17 +33,46 @@ parser.add_argument('--overwrite',
                     default=False,
                     help='overwrite the existing results')
 
+# conda env, default is current env
+parser.add_argument('--conda-env',
+                    '-e',
+                    metavar='conda_env',
+                    type=str,
+                    default=os.environ.get('CONDA_DEFAULT_ENV'),
+                    help='the conda environment')
+
+# accounting_group
+parser.add_argument('--accounting-group',
+                    '-g',
+                    metavar='accounting_group',
+                    type=str,
+                    default='ligo.sim.o4.burst.allsky.cwboffline',
+                    help='the condor accounting group')
+
+# threads
+parser.add_argument('--threads',
+                    '-n',
+                    metavar='threads',
+                    type=int,
+                    default=6,
+                    help='the number of threads')
+
 # Parse the arguments
 args = parser.parse_args()
 
 from pycwb.search import search
+from pycwb.modules.condor.condor import generate_job_script, generate_condor_sub, submit
 
 if args.submit:
     print(f"Submitting the search on {args.submit}.")
     # create a dictionary with the submit option
-    # TODO: submit job
-    print("Job submission is not implemented yet.")
-    exit(1)
+    if args.submit == 'condor':
+        generate_job_script(args.user_parameter_file, args.conda_env, args.work_dir)
+        generate_condor_sub(args.work_dir, args.accounting_group, args.threads)
+        submit(args.work_dir)
+    elif args.submit == 'slurm':
+        print("Not implemented yet.")
+
 else:
     print("Running the search locally.")
     # Run the search function with the specified user parameter file

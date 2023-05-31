@@ -123,7 +123,6 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     """
     # create working directory
     working_dir = os.path.abspath(working_dir)
-    user_parameters = os.path.abspath(user_parameters)
     if not os.path.exists(working_dir):
         os.makedirs(working_dir)
     os.chdir(working_dir)
