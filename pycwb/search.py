@@ -1,6 +1,9 @@
 import os, time
 import multiprocessing
 import logging
+import shutil
+
+import click
 
 import pycwb
 from pycwb.config import Config
@@ -96,22 +99,38 @@ def analyze_job_segment(config, job_seg):
     logger.info("-" * 80)
 
 
-def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='INFO', no_subprocess=False):
+def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=None, log_level='INFO',
+           no_subprocess=False, overwrite=False):
     """Main function to run the search
 
     This function will read the user parameters, select the job segments, create the catalog,
     copy the html and css files and run the search in subprocesses by default to avoid memory leak.
 
-    :param user_parameters: path to user parameters file
-    :type user_parameters: str
-    :param log_file: path to log file, defaults to None
-    :type log_file: str, optional
-    :param log_level: log level, defaults to 'INFO'
-    :type log_level: str, optional
-    :param no_subprocess: run the search in the main process, defaults to False (Set to True for macOS development)
-    :type no_subprocess: bool, optional
+    Parameters
+    ----------
+    user_parameters : str, optional
+        path to user parameters file, by default './user_parameters.yaml'
+    working_dir : str, optional
+        working directory, by default "."
+    log_file : str, optional
+        path to log file, by default None
+    log_level : str, optional
+        log level, by default 'INFO'
+    no_subprocess : bool, optional
+        run the search in the main process, by default False (Set to True for macOS development)
+    overwrite : bool, optional
+        overwrite the existing results, by default False
     """
+    # create working directory
+    working_dir = os.path.abspath(working_dir)
+    user_parameters = os.path.abspath(user_parameters)
+    if not os.path.exists(working_dir):
+        os.makedirs(working_dir)
+    os.chdir(working_dir)
+
+    # initialize logger
     logger_init(log_file, log_level)
+    logger.info(f"Working directory: {os.path.abspath(working_dir)}")
 
     # set env HOME_WAT_FILTERS
     if not os.environ.get('HOME_WAT_FILTERS'):
@@ -123,13 +142,27 @@ def search(user_parameters='./user_parameters.yaml', log_file=None, log_level='I
     logger.info("Reading user parameters")
     config = Config(user_parameters)
 
+    # Safety Check: if output is not empty, ask for confirmation
+    if os.path.exists(config.outputDir) and os.listdir(config.outputDir):
+        if overwrite:
+            logger.info(f"Overwrite output directory {config.outputDir}")
+        elif not click.confirm(f"Output directory {config.outputDir} is not empty, do you want to continue?"):
+            logger.info("Search stopped")
+            return
+
     # create folder for output and log
-    logger.info(f"Output folder: {config.outputDir}")
-    logger.info(f"Log folder: {config.logDir}")
+    logger.info(f"Output folder: {working_dir}/{config.outputDir}")
+    logger.info(f"Log folder: {working_dir}/{config.logDir}")
     if not os.path.exists(config.outputDir):
         os.makedirs(config.outputDir)
     if not os.path.exists(config.logDir):
         os.makedirs(config.logDir)
+
+    # copy user parameters to output folder if it is not there
+    if not os.path.exists(f"{config.outputDir}/user_parameters.yaml"):
+        shutil.copyfile(user_parameters, f"{config.outputDir}/user_parameters.yaml")
+    else:
+        logger.warning(f"User parameters file already exists in {working_dir}/{config.outputDir}")
 
     # select job segments
     job_segments = create_job_segment_from_config(config)

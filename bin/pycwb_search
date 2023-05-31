@@ -17,6 +17,21 @@ parser.add_argument('--submit',
                     choices=['condor', 'slurm'],
                     help='the submit option, the available options are condor and slurm')
 
+# working dir
+parser.add_argument('--work-dir',
+                    '-w',
+                    metavar='work_dir',
+                    type=str,
+                    default='.',
+                    help='the working directory')
+
+# force overwrite
+parser.add_argument('--overwrite',
+                    '-o',
+                    action='store_true',
+                    default=False,
+                    help='overwrite the existing results')
+
 # Parse the arguments
 args = parser.parse_args()
 
@@ -31,4 +46,4 @@ if args.submit:
 else:
     print("Running the search locally.")
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file)
+    search(args.user_parameter_file, working_dir=args.work_dir, overwrite=args.overwrite)
