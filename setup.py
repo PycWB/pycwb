@@ -25,6 +25,7 @@ install_requires = [
     "filelock",
     "scipy",
     "pillow>=9.0.0",
+    "click",
     # "nds2-client",
     # "python-nds2-client"
 ]
