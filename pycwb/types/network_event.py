@@ -123,6 +123,7 @@ class Event:
         ind = vI[0]
 
         for i in range(0, n_ifo):
+            # FIXME: the gps and some other parameters are same for all ifos
             self.gps.append(pwc.start + (self.slag[i] - self.slag[0]))
         pcd = pwc.cData[ID - 1]
         self.ndim = n_ifo
