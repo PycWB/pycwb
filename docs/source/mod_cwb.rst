@@ -51,10 +51,14 @@ Removed printing of the following lines in `WDM.cc`
 
     printf("Filter length = %d,  norm = %.16f\n", N, 1.-residual);
 
-and `monster.cc`
+Replace the following in `monster.cc`
 
 .. code-block:: c
 
+    // comment out to avoid printing
     printf("layers[%d] = %d\n", i, layers[i] = (int)tmp);
+    // add
+    layers[i] = (int)tmp;
+
 
 to let the output managed by the python code.
