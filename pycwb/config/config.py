@@ -99,6 +99,7 @@ class Config:
             self.TDRate = (self.fResample >> self.levelR) * self.upTDF
         else:
             self.TDRate = (self.inRate >> self.levelR) * self.upTDF
+        self.TDRate = float(self.TDRate)
 
         # derive number of IFOs and DQFs
         self.nIFO = len(self.ifo)
