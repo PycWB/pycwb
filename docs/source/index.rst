@@ -67,7 +67,13 @@ You can directly run the example search script in the example folder
 .. code-block:: bash
 
     cd my_search
-    python pycwb_injection.py
+    pycwb_search user_parameters_injection.yaml
+
+If you are on a cluster, you can submit the job to the cluster
+
+.. code-block:: bash
+
+    pycwb_search user_parameters_injection.yaml --submit condor
 
 Or you can open the juptyer notebook `pycwb_injection.ipynb` and run the search step by step
 
