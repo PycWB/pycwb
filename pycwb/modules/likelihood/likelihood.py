@@ -66,7 +66,21 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     ####################
     # cWB2G likelihood #
     ####################
+
+    # set low-rate TD filters
+    wdm_list = network.get_wdm_list()
+    for wdm in wdm_list:
+        wdm.setTDFilter(config.TDSize, config.upTDF)
+
     network.set_delay_index(config.TDRate)
+
+    # sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, [fragment_cluster])
+    # for n in range(config.nIFO):
+    #     det = network.get_ifo(n)
+    #     det.sclear()
+    #     for sparse_table in sparse_table_list:
+    #         det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
+    #     print("vss Size", det.vSS.size())
 
     # load cluster to network
     pwc = network.get_cluster(lag)

@@ -144,6 +144,12 @@ class Network:
         """
         return self.net.getifo(ifo)
 
+    def get_wdm_list(self):
+        """
+        Get list of wavelets in network.
+        """
+        return self.net.wdmList
+
     def set_veto(self, veto):
         """
         Set veto for cwb network.
