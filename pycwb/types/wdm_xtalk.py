@@ -17,7 +17,7 @@ class WDMXTalkCatalog:
             raise ValueError("catalog must be a string or a ROOT.monster object")
 
     def load_MRA(self, file):
-        logger.info("Loading catalog of WDM cross-talk coefficients")
+        logger.info("Loading catalog of WDM cross-talk coefficients: %s", file)
         self.catalog.read(file)
 
     @property
