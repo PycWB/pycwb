@@ -79,12 +79,23 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode):
         s00 += a00*a00
         s90 += a90*a90
 
-        # TODO: optimize with numpy
-        for i in range(len(x00)):
-            if j00+i < 0 or j00+i >= len(z.data):
-                continue
-            z.data[j00+i] += x00[i]*a00
-            z.data[j90+i] += x90[i]*a90
+        # Calculate the valid range of indices
+        indices_00 = np.arange(len(x00)) + j00
+        indices_90 = np.arange(len(x90)) + j90
+
+        valid_indices_00 = np.logical_and(indices_00 >= 0, indices_00 < len(z.data))
+        valid_indices_90 = np.logical_and(indices_90 >= 0, indices_90 < len(z.data))
+
+        # Filter the valid indices and corresponding values in x00 and x90
+        valid_indices_values_00 = indices_00[valid_indices_00]
+        valid_indices_values_90 = indices_90[valid_indices_90]
+        valid_x00 = x00[valid_indices_00]
+        valid_x90 = x90[valid_indices_90]
+
+        # Perform the addition operation
+        z.data[valid_indices_values_00] += valid_x00 * a00
+        z.data[valid_indices_values_90] += valid_x90 * a90
+
     return z
 
 
