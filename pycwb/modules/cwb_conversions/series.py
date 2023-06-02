@@ -13,36 +13,36 @@ c_double_p = ctypes.POINTER(ctypes.c_double)
 logger = logging.getLogger(__name__)
 
 
-def declare_function():
-    """
-    This is to declare a c++ function to copy numpy array to wavearray (copying with python loop is too slow) and
-    return wavearray data to float array
-    """
-    ROOT.gInterpreter.Declare("""
-    void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
-        for (int i = 0; i < size; i++) {
-            wave->data[i] = value[i];
-        }
-    };
-    
-    std::vector<double> _get_wavearray_data(wavearray<double> *wave) {
-        std::vector<double> data;
-        for (int i = 0; i < wave->size(); i++) {
-            data.push_back(wave->data[i]);
-        }
-        
-        return data;
-    };
-    
-    std::vector<double> _get_wseries_data(WSeries<double> *wave) {
-        std::vector<double> data;
-        for (int i = 0; i < wave->size(); i++) {
-            data.push_back(wave->data[i]);
-        }
-        
-        return data;
-    };
-    """)
+# def declare_function():
+#     """
+#     This is to declare a c++ function to copy numpy array to wavearray (copying with python loop is too slow) and
+#     return wavearray data to float array
+#     """
+#     ROOT.gInterpreter.Declare("""
+#     void _copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
+#         for (int i = 0; i < size; i++) {
+#             wave->data[i] = value[i];
+#         }
+#     };
+#
+#     std::vector<double> _get_wavearray_data(wavearray<double> *wave) {
+#         std::vector<double> data;
+#         for (int i = 0; i < wave->size(); i++) {
+#             data.push_back(wave->data[i]);
+#         }
+#
+#         return data;
+#     };
+#
+#     std::vector<double> _get_wseries_data(WSeries<double> *wave) {
+#         std::vector<double> data;
+#         for (int i = 0; i < wave->size(); i++) {
+#             data.push_back(wave->data[i]);
+#         }
+#
+#         return data;
+#     };
+#     """)
 
 
 def convert_to_wseries(data):
@@ -95,10 +95,10 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
 
     data_val = np.round(data.value, ROUNDED_DIGITS)
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.value))
+    ROOT.pycwb_copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.value))
 
     h.start(np.asarray(data.t0, dtype=np.double))
     h.rate(int(1. / np.asarray(data.dt, dtype=np.double)))
@@ -119,10 +119,10 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
 
     data_val = np.round(data.data, ROUNDED_DIGITS)
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ROOT._copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.data))
+    ROOT.pycwb_copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.data))
 
     h.start(np.asarray(data.start_time, dtype=np.double))
     h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
@@ -159,10 +159,10 @@ def convert_wavearray_to_timeseries(h):
     :rtype: gwpy.timeseries.TimeSeries
     """
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ar = np.array(ROOT._get_wavearray_data(h))
+    ar = np.array(ROOT.pycwb_get_wavearray_data(h))
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
@@ -179,10 +179,10 @@ def convert_wavearray_to_pycbc_timeseries(h):
     :rtype: gwpy.timeseries.TimeSeries
     """
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ar = np.array(ROOT._get_wavearray_data(h))
+    ar = np.array(ROOT.pycwb_get_wavearray_data(h))
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
@@ -199,10 +199,10 @@ def convert_wseries_to_timeseries(h):
     :rtype: gwpy.timeseries.TimeSeries
     """
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ar = np.array(ROOT._get_wseries_data(h))
+    ar = np.array(ROOT.pycwb_get_wseries_data(h))
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
@@ -219,10 +219,10 @@ def convert_wseries_to_pycbc_timeseries(h):
     :rtype: gwpy.timeseries.TimeSeries
     """
 
-    if not hasattr(ROOT, "_copy_to_wavearray"):
-        declare_function()
+    # if not hasattr(ROOT, "_copy_to_wavearray"):
+    #     declare_function()
 
-    ar = np.array(ROOT._get_wseries_data(h))
+    ar = np.array(ROOT.pycwb_get_wseries_data(h))
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
