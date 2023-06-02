@@ -261,9 +261,12 @@ class WDM:
         :return: indicates the time translation from origin needed by w (j in [0,M] correspond to t=0) and the wavearray
         :rtype: (int, numpy.ndarray)
         """
-        w = ROOT.wavearray(np.double)()
-        j = self.wavelet.getBaseWave(tf_index, w, quad)
-        return j, convert_wavearray_to_pycbc_timeseries(w)
+        j, w = ROOT.pycwb_get_base_wave(self.wavelet, tf_index, quad)
+        return j, np.array(w)
+
+        # w = ROOT.wavearray(np.double)()
+        # j = self.wavelet.getBaseWave(tf_index, w, quad)
+        # return j, np.array(ROOT.pycwb_get_wavearray_data(w))
 
     def t2w(self, k):
         """

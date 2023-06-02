@@ -2,6 +2,8 @@
 #define PYCWB_H
 
 #include "wavearray.hh"
+#include "wseries.hh"
+#include "WDM.hh"
 using namespace std;
 
 void inline pycwb_copy_to_wavearray(double *value, wavearray<double> *wave, int size) {
@@ -26,6 +28,13 @@ std::vector<double> inline pycwb_get_wseries_data(WSeries<double> *wave) {
     }
 
     return data;
+};
+
+std::pair<int, std::vector<double>> inline pycwb_get_base_wave(WDM<double> *pwdm, int tf_index, bool Quad) {
+    wavearray<double> wave;
+    int j = pwdm->getBaseWave(tf_index, wave, Quad);
+
+    return {j ,pycwb_get_wavearray_data(&wave)};
 };
 
 #endif //PYCWB_H
