@@ -2,11 +2,12 @@ import logging
 import numpy as np
 from pycbc.types import TimeSeries
 from pycwb.modules.multi_resolution_wdm import create_wdm_set
+from multiprocessing import Pool
 
 logger = logging.getLogger(__name__)
 
 
-def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode):
+def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
 
@@ -33,68 +34,45 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode):
     if not cluster.pixels:
         return None
 
-    max_f_len = max([wdm.m_H/rate for wdm in wdmList])
+    max_f_len = max([wdm.m_H / rate for wdm in wdmList])
 
     # find event time interval, fill in amplitudes
     tmin = 1e20
     tmax = 0
     for pix in cluster.pixels:
-        T = int(pix.time/pix.layers) # get time index
-        T = T/pix.rate # time in seconds from the start
+        T = int(pix.time / pix.layers)  # get time index
+        T = T / pix.rate  # time in seconds from the start
         tmin = min(tmin, T)
         tmax = max(tmax, T)
 
-    tmin = int(tmin - max_f_len) - 1 # start event time in sec
-    tmax = int(tmax + max_f_len) + 1 # end event time in sec
+    tmin = int(tmin - max_f_len) - 1  # start event time in sec
+    tmax = int(tmax + max_f_len) + 1  # end event time in sec
 
     # create a time series with np.zeros(int(rate*(tmax-tmin)+0.1))
-    z = TimeSeries(np.zeros(int(rate*(tmax-tmin)+0.1)), delta_t=1/rate, epoch=tmin)
+    z = TimeSeries(np.zeros(int(rate * (tmax - tmin) + 0.1)), delta_t=1 / rate, epoch=tmin)
 
-    io = int(tmin/z.delta_t+0.01) # index offset of z-array
+    io = int(tmin / z.delta_t + 0.01)  # index offset of z-array
 
     s00 = 0
     s90 = 0
 
-    for pix in cluster.pixels:
-        if not pix.core:
+    z_len = len(z.data)
+
+    if min(nproc, len(cluster.pixels)) == 1:
+        results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
+    else:
+        with Pool(processes=min(nproc, len(cluster.pixels))) as pool:
+            results = pool.starmap(_process_pixels,
+                                   [(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels])
+
+    for result in results:
+        if result is None:
             continue
-
-        rms = pix.data[ifo].noise_rms
-        a00 = pix.data[ifo].asnr if a_type == 'signal' else pix.data[ifo].wave
-        a90 = pix.data[ifo].a_90 if a_type == 'signal' else pix.data[ifo].w_90
-        a00 *= rms if a_type == 'strain' else 1
-        a90 *= rms if a_type == 'strain' else 1
-
-        # find the object which pix.layers == wdm.max_layers + 1
-        wdm = [w for w in wdmList if w.max_layer + 1 == pix.layers][0]
-        j00, x00 = wdm.get_base_wave(pix.time, False)
-        j90, x90 = wdm.get_base_wave(pix.time, True)
-        j00 -= io
-        j90 -= io
-        if mode < 0:
-            a00 = 0
-        if mode > 0:
-            a90 = 0
-
-        s00 += a00*a00
-        s90 += a90*a90
-
-        # Calculate the valid range of indices
-        indices_00 = np.arange(len(x00)) + j00
-        indices_90 = np.arange(len(x90)) + j90
-
-        valid_indices_00 = np.logical_and(indices_00 >= 0, indices_00 < len(z.data))
-        valid_indices_90 = np.logical_and(indices_90 >= 0, indices_90 < len(z.data))
-
-        # Filter the valid indices and corresponding values in x00 and x90
-        valid_indices_values_00 = indices_00[valid_indices_00]
-        valid_indices_values_90 = indices_90[valid_indices_90]
-        valid_x00 = x00[valid_indices_00]
-        valid_x90 = x90[valid_indices_90]
-
-        # Perform the addition operation
-        z.data[valid_indices_values_00] += valid_x00 * a00
-        z.data[valid_indices_values_90] += valid_x90 * a90
+        valid_indices_values_00, val00, valid_indices_values_90, val90, s00_val, s90_val = result
+        z.data[valid_indices_values_00] += val00
+        z.data[valid_indices_values_90] += val90
+        s00 += s00_val
+        s90 += s90_val
 
     return z
 
@@ -134,7 +112,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
     # time-of-flight backward correction for reconstructed waveforms
     waveforms = []
     for i in range(nIFO):
-        x = get_MRA_wave(cluster, wdm_list, rate, i, a_type, mode)
+        x = get_MRA_wave(cluster, wdm_list, rate, i, a_type, mode, nproc=config.nproc)
         if len(x.data) == 0:
             logger.warning("zero length")
             return False
@@ -150,3 +128,44 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
         waveforms.append(x)
 
     return waveforms
+
+
+def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len):
+    if not pix.core:
+        return
+
+    rms = pix.data[ifo].noise_rms
+    a00 = pix.data[ifo].asnr if a_type == 'signal' else pix.data[ifo].wave
+    a90 = pix.data[ifo].a_90 if a_type == 'signal' else pix.data[ifo].w_90
+    a00 *= rms if a_type == 'strain' else 1
+    a90 *= rms if a_type == 'strain' else 1
+
+    # find the object which pix.layers == wdm.max_layers + 1
+    wdm = [w for w in wdmList if w.max_layer + 1 == pix.layers][0]
+    j00, x00 = wdm.get_base_wave(pix.time, False)
+    j90, x90 = wdm.get_base_wave(pix.time, True)
+    j00 -= io
+    j90 -= io
+    if mode < 0:
+        a00 = 0
+    if mode > 0:
+        a90 = 0
+
+    s00 = a00 * a00
+    s90 = a90 * a90
+
+    # Calculate the valid range of indices
+    indices_00 = np.arange(len(x00)) + j00
+    indices_90 = np.arange(len(x90)) + j90
+
+    valid_indices_00 = np.logical_and(indices_00 >= 0, indices_00 < z_len)
+    valid_indices_90 = np.logical_and(indices_90 >= 0, indices_90 < z_len)
+
+    # Filter the valid indices and corresponding values in x00 and x90
+    valid_indices_values_00 = indices_00[valid_indices_00]
+    valid_indices_values_90 = indices_90[valid_indices_90]
+    valid_x00 = x00[valid_indices_00]
+    valid_x90 = x90[valid_indices_90]
+
+    # Perform the addition operation
+    return valid_indices_values_00, valid_x00 * a00, valid_indices_values_90, valid_x90 * a90, s00, s90
