@@ -1,4 +1,4 @@
 name: catalog
 author: pycWB
 description: Catalog module
-dependencies: ["json", "filelock""]
+dependencies: ["filelock"]

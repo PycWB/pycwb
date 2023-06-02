@@ -2,14 +2,21 @@ import os, time
 import multiprocessing
 import logging
 import shutil
-
 import click
-
 import pycwb
+import matplotlib.pyplot as plt
+
+from pycwb.utils.dep_check import check_dependencies
+
+if check_dependencies(['autoencoder', 'reconstruction', 'logger', 'read_data', 'data_conditioning', 'coherence',
+                       'super_cluster', 'likelihood', 'job_segment', 'catalog', 'plot', 'web_viewer']):
+    exit(1)
+
 from pycwb.config import Config
 from pycwb.types.network import Network
+from pycwb.modules.autoencoder import get_glitchness
+from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.modules.logger import logger_init
-from pycwb.modules.plot import plot_event_on_spectrogram
 from pycwb.modules.read_data import read_from_job_segment, generate_injection
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import coherence
@@ -81,8 +88,24 @@ def analyze_job_segment(config, job_seg):
         # save event to catalog
         add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
 
-    for i, tf_map in enumerate(tf_maps):
-        plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
+    # for i, tf_map in enumerate(tf_maps):
+    #     plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
+
+    # reconstruct the waveforms
+    for i, cluster in enumerate(clusters):
+        if cluster.cluster_status != -1:
+            continue
+        reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, network.net.rTDF,
+                                                  'signal', 0, True)
+        # plot the reconstructed wave
+        for j, reconstructed_wave in enumerate(reconstructed_waves):
+            plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
+            plt.savefig(f'{config.outputDir}/reconstructed_wave_job_{job_id}_cluster_{i+1}_ifo_{j+1}.png')
+            plt.clf()
+
+        # calculate the glitchness
+        glitchness = get_glitchness(config, reconstructed_waves, events[i].sSNR, events[i].likelihood)
+        print(f"Glitchness: {glitchness}")
 
     # plot the likelihood map
     for i, cluster in enumerate(clusters):

@@ -13,7 +13,7 @@ def get_glitchness(config, data, sSNR, likelihood, weight_path=None):
     ----------
     config : pycwb.Config
         Configuration object
-    data : list of numpy.ndarray or pycbc.types.timeseries.TimeSeries
+    data : list of numpy.ndarray or list of pycbc.types.timeseries.TimeSeries
         Reconstructed waveform
     sSNR : list of float
         Signal-to-noise ratio of the cluster
