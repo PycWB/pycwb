@@ -167,9 +167,8 @@ class Event:
             self.sSNR.append(pd.sSNR)
             self.time.append(pcd.cTime + self.gps[i])
 
-            if i == 0:
-                psm = net.getifo(i).tau
-                self.time[i] += psm.get(self.theta[0], self.phi[0]) - TAU
+            if i > 0:
+                self.time[i] += net.getifo(i).tau.get(self.theta[0], self.phi[0]) - TAU
             # print("start_net size = %d" % len(start_net[i]))
             # print("pwc size = %d" % len(pwc.get("ID", 0, 'S', 0)))
             # print("indexes i = %d, kid = %d" % (i, kid))
