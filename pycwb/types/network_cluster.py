@@ -371,7 +371,7 @@ class Cluster:
 
         # merge images
         merged_map = merge_images(aligned_images)
-
+        merged_map[merged_map == 0] = np.nan
         # start time
         t_start_new = min(t_starts_shifted) * min_dt
 
