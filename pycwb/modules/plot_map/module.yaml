@@ -1,0 +1,4 @@
+name: plot_map
+author: pycWB
+description: Plotting module for CWB
+dependencies: ["healpy", "matplotlib", "numpy", "basemap"]

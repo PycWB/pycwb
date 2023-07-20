@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from pycwb.utils.dep_check import check_dependencies
 
 if check_dependencies(['autoencoder', 'reconstruction', 'logger', 'read_data', 'data_conditioning', 'coherence',
-                       'super_cluster', 'likelihood', 'job_segment', 'catalog', 'plot', 'web_viewer']):
+                       'super_cluster', 'likelihood', 'job_segment', 'catalog', 'plot', 'plot_map', 'web_viewer']):
     exit(1)
 
 from pycwb.config import Config
@@ -26,6 +26,7 @@ from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.web_viewer.create import create_web_viewer
+from pycwb.modules.plot_map.world_map import plot_world_map, plot_contour
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,11 @@ def analyze_job_segment(config, job_seg):
             continue
         plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
         plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
+
+    for i, event in enumerate(events):
+        plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+
+    # plot_contour(network, filename=f'{config.outputDir}/nlikelihood_{job_id}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
