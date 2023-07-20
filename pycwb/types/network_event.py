@@ -200,6 +200,10 @@ class Event:
             # gC += Aa * Aa.conj()
 
             # psm.gps = pcd.cTime + self.gps[0]
+            self.duration[0] = duration_net.data[kid]
+            self.bandwidth[0] = bandwidth_net.data[kid]
+            self.frequency[0] = pcd.cFreq
+
 
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
