@@ -100,11 +100,13 @@ def analyze_job_segment(config, job_seg):
         # plot the reconstructed wave
         for j, reconstructed_wave in enumerate(reconstructed_waves):
             plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
+            plt.xlim(events[i].left[0], events[i].left[0] + events[i].stop[0] - events[i].start[0])
             plt.savefig(f'{config.outputDir}/reconstructed_wave_job_{job_id}_cluster_{i+1}_ifo_{j+1}.png')
             plt.clf()
 
         # calculate the glitchness
         glitchness = get_glitchness(config, reconstructed_waves, events[i].sSNR, events[i].likelihood)
+        # TODO: save to event file
         print(f"Glitchness: {glitchness}")
 
     # plot the likelihood map
@@ -158,6 +160,8 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
 
     # set env HOME_WAT_FILTERS
     if not os.environ.get('HOME_WAT_FILTERS'):
+        logger.warning("HOME_WAT_FILTERS is not set, default to pycwb/vendor")
+        logger.warning("Please download the latest version of cwb config and set HOME_WAT_FILTERS to the path of folder XTALKS")
         pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
         os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
         logger.info(f"Set HOME_WAT_FILTERS to {os.environ['HOME_WAT_FILTERS']}")
