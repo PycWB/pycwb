@@ -10,6 +10,7 @@ from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from .read_data import check_and_resample
 from pycwb.utils.module import import_helper
+from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +310,9 @@ def generate_injection(config, job_seg, strain=None):
             function = getattr(module, generator['function'])
             # generate waveform
             hp, hc = function(**injection)
+
+            hp = convert_to_pycbc_timeseries(hp)
+            hc = convert_to_pycbc_timeseries(hc)
         else:
             from pycbc.waveform import get_td_waveform
             hp, hc = get_td_waveform(**injection)
