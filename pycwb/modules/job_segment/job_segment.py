@@ -155,9 +155,9 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
                                     noise=noise, injections=injections)]
     elif simulation_mode == "one_inject_in_one_segments":
         # repeat the injection N times for the same job segment
-        repeat = injection['segment']['repeat']
-        if len(injections) != repeat:
-            raise ValueError(f"The number of injections ({len(injections)}) does not match the number of repeats ({repeat})")
+        repeat = len(injections) #injection['segment']['repeat']
+        # if len(injections) != repeat:
+        #     raise ValueError(f"The number of injections ({len(injections)}) does not match the number of repeats ({repeat})")
 
         job_segments = [WaveSegment(i, ifo, injection['segment']['start'], injection['segment']['end'],
                                     noise=noise, injections=[injections[i]])
