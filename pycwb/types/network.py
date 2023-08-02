@@ -241,7 +241,7 @@ class Network:
         search : str
             if Search = ""/cbc/bbh/imbhb then mchirp is reconstructed
         """
-        return self.net.likelihoodWP(mode, lag, 0, ROOT.nullptr, search)
+        return self.net.likelihoodWP(mode, lag, 1, ROOT.nullptr, search)
 
     def likelihood2G(self, mode, lag):
         """
@@ -254,7 +254,7 @@ class Network:
         lag : int
             lag index
         """
-        return self.net.likelihood2G(mode, lag, 0, ROOT.nullptr)
+        return self.net.likelihood2G(mode, lag, 1, ROOT.nullptr)
 
     def get_max_delay(self):
         """
