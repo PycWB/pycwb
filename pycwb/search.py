@@ -1,6 +1,7 @@
 import os, time
 import multiprocessing
 import logging
+import pickle
 import shutil
 import click
 import pycwb
@@ -129,6 +130,9 @@ def analyze_job_segment(config, job_seg):
                                 detector_loc=(event.phi[3], event.theta[3]),
                                 resolution=1,
                                 filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
+        # save the skymap statistics as pickle file
+        with open(f'{config.outputDir}/skymap_statistics_{job_id}_{i+1}.pkl', 'wb') as f:
+            pickle.dump(skymap_statistics[i], f)
 
     # calculate the performance
     end_time = time.perf_counter()
