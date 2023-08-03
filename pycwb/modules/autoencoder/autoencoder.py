@@ -5,7 +5,7 @@ from .cwb_autoencoder import AutoEncoder
 import pycwb, os
 
 
-def get_glitchness(config, data, sSNR, likelihood, weight_path=None):
+def get_glitchness(config, reconstructed_waveform, sSNR, likelihood, weight_path=None):
     """
     Get glitchness of reconstructed waveform with autoencoder
 
@@ -13,7 +13,7 @@ def get_glitchness(config, data, sSNR, likelihood, weight_path=None):
     ----------
     config : pycwb.Config
         Configuration object
-    data : list of numpy.ndarray or list of pycbc.types.timeseries.TimeSeries
+    reconstructed_waveform : list of numpy.ndarray or list of pycbc.types.timeseries.TimeSeries
         Reconstructed waveform
     sSNR : list of float
         Signal-to-noise ratio of the cluster
@@ -35,6 +35,6 @@ def get_glitchness(config, data, sSNR, likelihood, weight_path=None):
     ae.set_weights(weight_path)
     glitchness = 0
     for i in range(config.nIFO):
-        glitchness += sSNR[i] * ae.get_glness(data[i], 0)
+        glitchness += sSNR[i] * ae.get_glness(reconstructed_waveform[i], 0)
 
     return glitchness / likelihood
