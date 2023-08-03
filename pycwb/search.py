@@ -26,7 +26,7 @@ from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.web_viewer.create import create_web_viewer
-from pycwb.modules.plot_map.world_map import plot_world_map, plot_contour
+from pycwb.modules.plot_map.world_map import plot_world_map, plot_skymap_contour
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +118,20 @@ def analyze_job_segment(config, job_seg):
         plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
 
     for i, event in enumerate(events):
+        if event.nevent == 0:
+            continue
         plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-
-    # plot_contour(network, filename=f'{config.outputDir}/nlikelihood_{job_id}.png')
+        # TODO: why skymap likelihood is attached to network instead of cluster?
+        plot_skymap_contour(network,
+                            key="nProbability",
+                            reconstructed_loc=(event.phi[0], event.theta[0]),
+                            detector_loc=(event.phi[3], event.theta[3]),
+                            filename=f'{config.outputDir}/nProbability_{job_id}_{i+1}.png')
+        plot_skymap_contour(network,
+                            key="nLikelihood",
+                            reconstructed_loc=(event.phi[0], event.theta[0]),
+                            detector_loc=(event.phi[3], event.theta[3]),
+                            filename=f'{config.outputDir}/nLikelihood_{job_id}_{i+1}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
