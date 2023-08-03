@@ -121,16 +121,14 @@ def analyze_job_segment(config, job_seg):
         if event.nevent == 0:
             continue
         # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-        plot_skymap_contour(skymap_statistics[i],
-                            key="nProbability",
-                            reconstructed_loc=(event.phi[0], event.theta[0]),
-                            detector_loc=(event.phi[3], event.theta[3]),
-                            filename=f'{config.outputDir}/nProbability_{job_id}_{i+1}.png')
-        plot_skymap_contour(skymap_statistics[i],
-                            key="nLikelihood",
-                            reconstructed_loc=(event.phi[0], event.theta[0]),
-                            detector_loc=(event.phi[3], event.theta[3]),
-                            filename=f'{config.outputDir}/nLikelihood_{job_id}_{i+1}.png')
+        # TODO: plot in parallel
+        for key in skymap_statistics[i].keys():
+            plot_skymap_contour(skymap_statistics[i],
+                                key=key,
+                                reconstructed_loc=(event.phi[0], event.theta[0]),
+                                detector_loc=(event.phi[3], event.theta[3]),
+                                resolution=1,
+                                filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
 
     # calculate the performance
     end_time = time.perf_counter()
