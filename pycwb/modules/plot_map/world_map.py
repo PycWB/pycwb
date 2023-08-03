@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import healpy as hp
 
+from pycwb.utils.skymap_coord import convert_cwb_to_geo
+
 
 def plot_world_map(phi, theta, filename=None):
     plt.figure(figsize=(12, 8))
@@ -28,30 +30,71 @@ def plot_world_map(phi, theta, filename=None):
         return plt
 
 
-def plot_contour(network, filename=None):
-    L = network.net.nLikelihood.size()
-    nLikelihood = [network.net.nLikelihood.get(l) for l in range(L)]
+def plot_skymap_contour(network, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None, resolution=2):
+    # get the [key] property from the network
+    var = getattr(network.net, key)
+    L = var.size()
 
-    # create a 20 x 10 map
-    theta = np.linspace(0, np.pi, 10)
-    phi = np.linspace(0, 2 * np.pi, 20)
+    # convert all values in skymap to numpy array
+    skymap = [var.get(l) for l in range(L)]
+
+    # create theta and phi, add one extra point and remove it to make sure
+    # the last point is not overlapped with the first point
+    theta = np.linspace(0, np.pi, 180 * resolution + 1)[:-1]
+    phi = np.linspace(0, 2 * np.pi, 360 * resolution + 1)[:-1]
 
     # create mesh
     theta, phi = np.meshgrid(theta, phi)
     flatten_theta = theta.flatten()
     flatten_phi = phi.flatten()
 
-    # convert to HEALPix indices
+    # convert to HEALPix indices and get the values for each point
     healpix_indices = [hp.ang2pix(2 ** 7, flatten_theta[i], flatten_phi[i]) for i in range(len(flatten_theta))]
-    values = [nLikelihood[i] for i in healpix_indices]
+    values = [skymap[i] for i in healpix_indices]
 
     # reshape to 2D map
     values = np.reshape(values, theta.shape)
 
-    # contour plot
-    import matplotlib.pyplot as plt
-    plt.contourf(phi, theta, values)
+    # convert to degrees
+    theta_deg = np.rad2deg(theta)
+    phi_deg = np.rad2deg(phi)
 
+    # transform coordinates
+    phi_deg, theta_deg = convert_cwb_to_geo(phi_deg, theta_deg)
+
+    # phi_deg[phi_deg < -180] += 360
+    # phi_deg[phi_deg > 180] -= 360
+    # theta_deg[theta_deg < -90] += 180
+    # theta_deg[theta_deg > 90] -= 180
+    # phi_deg += 180
+    # theta_deg += 90
+
+    # set the value of the point to nan to prevent plotting 0 value
+    values[values == 0] = np.nan
+
+    #################
+    # plot histogram
+    #################
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 6))
+    plt.hist2d(phi_deg.ravel(), theta_deg.ravel(), weights=values.ravel(), bins=(360*resolution, 180*resolution))
+
+    if reconstructed_loc:
+        rec_x, rec_y = convert_cwb_to_geo(reconstructed_loc[0], reconstructed_loc[1])
+        plt.scatter(rec_x, rec_y, marker='*', color='red', label='reconstructed position')
+
+    if detector_loc:
+        det_x, det_y = convert_cwb_to_geo(detector_loc[0], detector_loc[1])
+        plt.scatter(det_x, det_y, marker='.', color='blue', label='detector position')
+    # plt the ticks at the edge of the map
+    plt.xticks([-180, -90, 0, 90, 180])
+    plt.yticks([-90, -45, 0, 45, 90])
+
+    plt.colorbar()
+    plt.xlabel('RA (deg)')
+    plt.ylabel('Dec (deg)')
+    plt.title(f'{key} skymap')
+    plt.legend()
     if filename:
         plt.savefig(filename)
         plt.clf()
