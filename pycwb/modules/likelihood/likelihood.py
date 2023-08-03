@@ -28,6 +28,8 @@ def likelihood(config, network, fragment_clusters):
 
     events = []
     clusters = []
+
+    skymap_statistics = []
     for j, fragment_cluster in enumerate(fragment_clusters):
         cycle = fragment_cluster.shift
 
@@ -47,6 +49,34 @@ def likelihood(config, network, fragment_clusters):
             events.append(event)
             clusters.append(cluster)
 
+            # skip saving skymap_statistic if cluster is already rejected
+            if cluster.cluster_status != -1:
+                skymap_statistics.append(None)
+                continue
+
+            # save skymap statistic
+            skymap_statistic = {
+                "nSensitivity": [],
+                "nAlignment": [],
+                "nLikelihood": [],
+                "nNullEnergy": [],
+                "nCorrEnergy": [],
+                "nCorrelation": [],
+                "nSkyStat": [],
+                "nProbability": [],
+                "nDisbalance": [],
+                "nNetIndex": [],
+                "nEllipticity": [],
+                "nPolarisation": []
+            }
+
+            for key in skymap_statistic:
+                var = getattr(network.net, key)
+                L = var.size()
+                skymap_statistic[key] = [var.get(l) for l in range(L)]
+
+            skymap_statistics.append(skymap_statistic)
+
     n_events = len([c for c in clusters if c.cluster_status == -1])
 
     # timer
@@ -56,7 +86,7 @@ def likelihood(config, network, fragment_clusters):
     logger.info("Total time: %.2f s" % (timer_end - timer_start))
     logger.info("-------------------------------------------------------")
 
-    return events, clusters
+    return events, clusters, skymap_statistics
 
 
 def _likelihood(config, network, lag, cluster_id, fragment_cluster):

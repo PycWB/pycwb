@@ -30,13 +30,9 @@ def plot_world_map(phi, theta, filename=None):
         return plt
 
 
-def plot_skymap_contour(network, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None, resolution=2):
-    # get the [key] property from the network
-    var = getattr(network.net, key)
-    L = var.size()
-
-    # convert all values in skymap to numpy array
-    skymap = [var.get(l) for l in range(L)]
+def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None, resolution=2):
+    # get the [key] property from the skymap
+    skymap = skymap_statistic[key]
 
     # create theta and phi, add one extra point and remove it to make sure
     # the last point is not overlapped with the first point

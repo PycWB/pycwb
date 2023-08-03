@@ -81,7 +81,7 @@ def analyze_job_segment(config, job_seg):
     pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
 
     # likelihood
-    events, clusters = likelihood(config, network, pwc_list)
+    events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
     # save the results
     for i, event in enumerate(events):
@@ -120,14 +120,13 @@ def analyze_job_segment(config, job_seg):
     for i, event in enumerate(events):
         if event.nevent == 0:
             continue
-        plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-        # TODO: why skymap likelihood is attached to network instead of cluster?
-        plot_skymap_contour(network,
+        # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+        plot_skymap_contour(skymap_statistics[i],
                             key="nProbability",
                             reconstructed_loc=(event.phi[0], event.theta[0]),
                             detector_loc=(event.phi[3], event.theta[3]),
                             filename=f'{config.outputDir}/nProbability_{job_id}_{i+1}.png')
-        plot_skymap_contour(network,
+        plot_skymap_contour(skymap_statistics[i],
                             key="nLikelihood",
                             reconstructed_loc=(event.phi[0], event.theta[0]),
                             detector_loc=(event.phi[3], event.theta[3]),
