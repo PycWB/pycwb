@@ -41,11 +41,11 @@ test-job:   # This job runs in the test stage.
   image: continuumio/miniconda3
   stage: test    # It only starts when the job in the build stage completes successfully.
   script:
-    - conda create --name pycwb
+    - conda create --name pycwb root=6.26.10
     - conda init bash
     - source ~/.bashrc
     - conda activate pycwb
-    - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
+    - conda install -c conda-forge healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
     - make install
     - python -c "import pycwb; print(pycwb.__version__)"
 
