@@ -41,7 +41,7 @@ test-job:   # This job runs in the test stage.
   image: continuumio/miniconda3
   stage: test    # It only starts when the job in the build stage completes successfully.
   script:
-    - conda create --name pycwb root=6.26.10
+    - conda create -c conda-forge --name pycwb root=6.26.10
     - conda init bash
     - source ~/.bashrc
     - conda activate pycwb
