@@ -23,8 +23,8 @@
 
 #define DETECTOR_CC
 #include "detector.hh"
-//#include "Meyer.hh"
-//#include "Symlet.hh"
+#include "Meyer.hh"
+#include "Symlet.hh"
 
 #include "TVector3.h"
 #include "TRotation.h"
@@ -117,6 +117,7 @@ detector::detector()
    this->null  = 0.;
    this->sSNR  = 0.;
    this->xSNR  = 0.;
+   this->ekXk  = 0.;
    this->ifoID = 0;
    this->rate  = 16384.;
    this->TFmap.rate(4096);
@@ -170,6 +171,7 @@ detector::detector(char* name, double t)
    this->null  = 0.;
    this->sSNR  = 0.;
    this->xSNR  = 0.;
+   this->ekXk  = 0.;
    this->ifoID = 0;
    this->rate  = 16384.;
    this->TFmap.rate(4096);
@@ -204,6 +206,7 @@ detector::detector(detectorParams dP, double t)
    this->null  = 0.;
    this->sSNR  = 0.;
    this->xSNR  = 0.;
+   this->ekXk  = 0.;
    this->ifoID = 0;
    this->rate  = 16384.;
    this->TFmap.rate(4096);
@@ -644,6 +647,28 @@ double detector::getwave(int ID, netcluster& wc, char atype, size_t index)
 }
 
 
+//**************************************************************************
+// set time delays  
+// time delay convention: t_detector-tau - arrival time at the center of Earth
+//**************************************************************************
+void detector::setTau(double sms,double t1,double t2,double p1,double p2)
+{
+   size_t i;
+   skymap SM(sms,t1,t2,p1,p2); 
+   size_t n = SM.size();
+   double x,y,z;
+
+   for(i=0; i<n; i++) {
+      x = SM.getTheta(i)*PI/180.;
+      y = SM.getPhi(i)*PI/180.;
+      z = Rv[0]*sin(x)*cos(y) + Rv[1]*sin(x)*sin(y) + Rv[2]*cos(x);
+      SM.set(i,-z/speedlight);
+   }
+
+   tau = SM;
+   return;
+}
+
 
 //**************************************************************************
 // set time delays
@@ -678,6 +703,30 @@ double detector::getTau(double theta, double phi)
    return -z/speedlight;
 }
 
+//**************************************************************************
+// set antenna patterns
+//**************************************************************************
+void detector::setFpFx(double sms,double t1,double t2,double p1,double p2)
+{
+   size_t i;
+   skymap Sp(sms,t1,t2,p1,p2); 
+   skymap Sx(sms,t1,t2,p1,p2); 
+   size_t n = Sp.size();
+   double x,y;
+   wavecomplex a;
+
+   for(i=0; i<n; i++) {
+      x = Sp.getTheta(i);
+      y = Sp.getPhi(i);
+      a = antenna(x,y);
+      Sp.set(i,a.real());
+      Sx.set(i,a.imag());
+   }
+
+   mFp = Sp;
+   mFx = Sx;
+   return;
+}
 
 //**************************************************************************
 // set antenna patterns
@@ -704,9 +753,379 @@ void detector::setFpFx(int order)
    return;
 }
    
+//: initialize delay filter  
+//  delay index n:  0  1  2  3  4  5  6 ... M-3  M-2  M-1  M
+//  sample delay:   0 -1 -2 -3 -4 -5 -6       3    2    1  0
+size_t detector::setFilter(size_t K, double phase, size_t upL)
+{
+  if(TFmap.isWDM()) {
+     cout<<"wseries::setFilter(): not applicable to WDM TFmaps\n";
+     return 0;
+  } 
+  size_t i,j,k,n,ii,jj;
+  size_t M = TFmap.maxLayer()+1;      // number of wavelet layers
+  size_t L = TFmap.getLevel();        // wavelet decomposition depth
+  size_t m = M*TFmap.pWavelet->m_H;   // buffer length  
+  size_t N = M*(1<<upL);              // number of time delays
+
+// K - total length of the delay filter
+  std::vector<delayFilter> F;  // delay filter buffer
+  delayFilter v; v.index.resize(K); v.value.resize(K);
+  for(i=0; i<K; i++) v.value[i] = 0.; 
+  for(i=0; i<M; i++) F.push_back(v); 
+  slice S; 
+  size_t s;
+  short inDex;
+  float vaLue;
+  int offst;
+  
+
+// set wavelet buffer
+
+  Wavelet* pW = TFmap.pWavelet->Clone();    // wavelet used to calculate delay filter
+  Meyer<double> wM(1024,1);                 // up-sample wavelet
+  WSeries<double> w(*pW);  
+  WSeries<double> W(wM);                    // up-sampled wavelet series 
+
+  cout<<"w.pWavelet->m_H "<<w.pWavelet->m_H<<"  level "<<w.pWavelet->m_Level<<" ";
+
+  w.resize(1024);
+  while(int(L)>w.getMaxLevel() || w.size()<m) w.resize(w.size()*2); 
+  w.setLevel(L);
+  W.resize(w.size()*N/M);
+  W.setLevel(upL);
+
+  cout<<"wsize: "<<w.size()<<endl;
+
+  S = w.getSlice(0);
+  j = M*S.size()/2;
+  
+  double*  pb = (double * )malloc(m*sizeof(double));
+  double** pp = (double **)malloc(m*sizeof(double*));
+  for(i=0; i<m; i++) pp[i] = w.data + i + (int(j) - int(m/2));
+  double* p0 = pp[0];
+  double* p;
+  double sum;
+  wavecomplex Z(cos(phase*PI/180.),sin(phase*PI/180.));        // phase shift
+  wavecomplex z;
+
+  filter.clear();
+  this->nDFS = N;           // store number of Delay Filter Samples
+  this->nDFL = M;           // store number of Delay Filter Layers
+
+  for(n=0; n<N; n++) {      // loop over delays
+
+    for(i=0; i<M; i++) {    // loop over wavelet layers
+
+      w = 0.;
+      S = w.getSlice(i);
+      p = w.data+S.start()+j;
+      s = S.start();
+      *p = 1.;
+      w.Inverse();
+
+// up-sample
+
+      W = 0.;
+      W.putLayer(w,0);
+      W.Inverse();
+
+// phase shift
+      if(phase != 0.) {
+	W.FFTW(1);
+	for(k=2; k<W.size(); k+=2) {
+	  z.set(W.data[k],W.data[k+1]);  // complex amplitude
+	  z *= Z;
+	  W.data[k] = z.real();
+	  W.data[k+1] = z.imag();
+	}
+	W.FFTW(-1);
+      }
+
+// time shift by integer number of samples
+
+      W.cpf(W,W.size()-n,n);
+
+// down-sample
+
+      W.Forward(upL);
+      W.getLayer(w,0);
+
+// get filter coefficients
+
+      w.Forward(L);
+      if(n >= N/2) p -= M;   // positive shift
+
+      for(k=0; k<m; k++) { 
+	*(pb+k)  = *(p0+k);  // save data in the buffer
+	*(p0+k) *= *(p0+k);  // square
+      } 
+
+      w.waveSort(pp,0,m-1);
+
+      for(k=m-1; k>=0; k--) {
+        offst = pp[k]-p;
+	if(abs(offst) >32767) continue;
+	inDex = short(offst);
+	vaLue = float(pb[pp[k]-p0]);
+	if(fabs(vaLue)<1.e-4) break;
+	offst += s;
+	offst -= (offst/M)*M;
+	if(offst<0) offst += M;       // calculate offset
+	ii = pW->convertO2F(L,offst); // convert offset into frequency index
+
+	if(offst !=  pW->getOffset(L,pW->convertF2L(L,ii))) cout<<"setFilter error 1\n";
+	offst -= inDex;
+	offst -= (offst/M)*M;
+	if(offst<0) offst += M;       // calculate offset
+	if(offst != int(s)) cout<<"setFilter error 2: "<<offst<<" "<<s<<endl;
+	
+	jj = minDFindex(F[ii])-1;     // index of least significant element in F[ii]
+
+	for(size_t kk=0; kk<K; kk++) 
+	   if(fabs(F[ii].value[jj])>fabs(F[ii].value[kk])) cout<<"setFilter error 3:\n";
+
+	if(jj>=K) {cout<<jj<<endl; continue;}
+	if(fabs(F[ii].value[jj]) < fabs(vaLue)){
+	   F[ii].value[jj] =  vaLue;
+	   F[ii].index[jj] = -inDex;
+	}
+      }
+
+    }
+
+    for(i=0; i<M; i++) {
+       filter.push_back(F[i]);
+
+//       if(n==3) {
+//       S = w.getSlice(i);
+//       printf("%3d %3d %1d %7.5f %7.5f %7.5f %7.5f %7.5f %7.5f %7.5f %7.5f %7.5f %7.5f\n",
+//	      S.start(),i,n,F[i].value[0],F[i].value[1],F[i].value[2],F[i].value[3],F[i].value[4],
+//	      F[i].value[5],F[i].value[6],F[i].value[7],F[i].value[8],F[i].value[9]);
+//       printf("%3d %3d %1d %7d %7d %7d %7d %7d %7d %7d %7d %7d %7d\n",
+//	      S.start(),i,n,F[i].index[0],F[i].index[1],F[i].index[2],F[i].index[3],F[i].index[4],
+//	      F[i].index[5],F[i].index[6],F[i].index[7],F[i].index[8],F[i].index[9]);  
+//       }
+
+       sum = 0;
+       v = filter[n*M+i];
+       for(k=0; k<K; k++) { 
+	  sum += F[i].value[k]*F[i].value[k];
+	  if(n && F[i].value[k] == 0.) printf("%4d %4d %d4 \n",int(n),int(i),int(k));
+	  if(v.value[k] !=  F[i].value[k] || 
+	     v.index[k] !=  F[i].index[k]) cout<<"setFilter error 4\n";
+	  F[i].value[k] = 0.;
+       }
+       if(sum<0.97) printf("%4d %4d %8.5f \n",int(n),int(i),sum);
+	  
+    }
+
+  }
+
+  delete pW;
+  free(pp);
+  free(pb);
+  return filter.size();
+}
+
+
+//: initialize delay filter from another detector 
+size_t detector::setFilter(detector &d) {  
+  size_t K = d.filter.size();
+  filter.clear(); 
+  std::vector<delayFilter>().swap(filter);
+  filter.reserve(K);
+
+  for(size_t k=0; k<K; k++) {
+    filter.push_back(d.filter[k]);
+  }
+  return filter.size();
+}
+
+
+//: Dumps filters to file *fname in binary format.
+void detector::writeFilter(const char *fname)
+{
+  size_t i,j,k;
+  FILE *fp;
+
+  if ( (fp=fopen(fname, "wb")) == NULL ) {
+     cout << " DumpBinary() error : cannot open file " << fname <<". \n";
+     exit(1);
+  }
+
+  size_t M = size_t(TFmap.maxLayer()+1);           // number of wavelet layers
+  size_t K = size_t(filter[0].index.size());       // delay filter length
+  size_t N = this->nDFS;                           // number of delays
+  size_t n = K * sizeof(float);
+  size_t m = K * sizeof(short);
+
+  wavearray<float> value(K);
+  wavearray<short> index(K);
+
+  fwrite(&K, sizeof(size_t), 1, fp);  // write filter length
+  fwrite(&M, sizeof(size_t), 1, fp);  // number of layers
+  fwrite(&N, sizeof(size_t), 1, fp);  // number of delays
+  
+  for(i=0; i<N; i++) {         // loop over delays
+    for(j=0; j<M; j++) {       // loop over wavelet layers
+       for(k=0; k<K; k++) {    // loop over filter coefficients
+	  value.data[k] = filter[i*M+j].value[k];
+	  index.data[k] = filter[i*M+j].index[k];
+       }
+       fwrite(value.data, n, 1, fp);
+       fwrite(index.data, m, 1, fp);
+    }
+  }
+  fclose(fp);
+}
+
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//: Read filters from file *fname.
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+void detector::readFilter(const char *fname)
+{
+  size_t i,j,k;
+  FILE *fp;
+
+  if ( (fp=fopen(fname, "rb")) == NULL ) {
+     cout << " DumpBinary() error : cannot open file " << fname <<". \n";
+     exit(1);
+  }
+
+  size_t M;           // number of wavelet layers
+  size_t K;           // delay filter length
+  size_t N;           // number of delays
+
+  fread(&K, sizeof(size_t), 1, fp);  // read filter length
+  fread(&M, sizeof(size_t), 1, fp);  // read number of layers
+  fread(&N, sizeof(size_t), 1, fp);  // read number of delays
+  
+  size_t n = K * sizeof(float);
+  size_t m = K * sizeof(short);
+  wavearray<float> value(K);
+  wavearray<short> index(K);
+  delayFilter v;
+
+  v.value.clear(); v.value.reserve(K);
+  v.index.clear(); v.index.reserve(K);
+  this->clearFilter(); filter.reserve(N*M);
+  this->nDFS = N;         // set number of delay samples
+  this->nDFL = M;         // set number of delay layers
+
+  for(k=0; k<K; k++) {    // loop over filter coefficients
+     v.value.push_back(0.);
+     v.index.push_back(0);
+  }
+
+  for(i=0; i<N; i++) {         // loop over delays
+    for(j=0; j<M; j++) {       // loop over wavelet layers
+       fread(value.data, n, 1, fp);
+       fread(index.data, m, 1, fp);
+       for(k=0; k<K; k++) {    // loop over filter coefficients
+	  v.value[k] = value.data[k];
+	  v.index[k] = index.data[k];
+       }
+
+//       if(i<3){
+//       printf("%6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f %6.5f \n",
+//	      v.value[0],v.value[1],v.value[2],v.value[3],v.value[4],
+//	      v.value[5],v.value[6],v.value[7],v.value[8],v.value[9]);
+//       printf("%4d %4d %4d %4d %4d %4d %4d %4d %4d %4d \n",
+//	      v.index[0],v.index[1],v.index[2],v.index[3],v.index[4],
+//	      v.index[5],v.index[6],v.index[7],v.index[8],v.index[9]);
+//       }
+
+       filter.push_back(v);
+    }
+  }
+  fclose(fp);
+}
+
+
+//: apply delay filter to input WSeries and put result in TFmap  
+void detector::delay(double t, WSeries<double> &w)
+{
+  int i,j,jb,je;
+
+  int k;
+  double* p;
+  double* q;
+
+  if(TFmap.isWDM()) {
+     cout<<"wseries::delay(): not applicable to WDM TFmaps\n";
+     return;
+  } 
+
+  slice S; 
+  delayFilter v = filter[0];         // delay filter
+
+  int M = this->nDFL;                // number of wavelet layers
+  int N = this->nDFS;                // number of delay samples per pixel
+  int K = int(v.index.size());       // delay filter length
+  int n = int(t*TFmap.wavearray<double>::rate());
+  int m = n>0 ? (n+N/2-1)/N : (n-N/2)/N; // delay in wavelet pixels
+  int l = TFmap.pWavelet->m_H/4+2;
+
+  n = n - m*N;                       // n - delay in samples
+  if(n <= 0) n = -n;                 // filter index for negative delays
+  else       n = N-n;                // filter index for positive delays
+
+  cout<<"delay="<<t<<" m="<<m<<" n="<<n<<"  M="<<M<<"  K="<<K<<"  N="<<N<<endl;
+
+  int mM = m*M;
+  double* A = (double*)malloc(K*sizeof(double));
+     int* I = (int*)malloc(K*sizeof(int));
+
+  for(i=0; i<M; i++) {
+
+    S  = w.getSlice(i);
+    v  = filter[n*M+i];
+    jb = m>0 ? S.start()+(l+m)*M : S.start()+l*M;
+    je = m<0 ? w.size() +(m-l)*M : w.size() -l*M;
+
+    for(k=0; k<K; k++) { A[k]=double(v.value[k]); I[k]=int(v.index[k]); }
+
+    if(K==16){
+    for(j=jb; j<je; j+=M) {
+      p = w.data+j-mM;
+      TFmap.data[j] = A[0]*p[I[0]]   + A[1]*p[I[1]]   + A[2]*p[I[2]]   + A[3]*p[I[3]]   
+	            + A[4]*p[I[4]]   + A[5]*p[I[5]]   + A[6]*p[I[6]]   + A[7]*p[I[7]]   
+                    + A[8]*p[I[8]]   + A[9]*p[I[9]]   + A[10]*p[I[10]] + A[11]*p[I[11]] 
+                    + A[12]*p[I[12]] + A[13]*p[I[13]] + A[14]*p[I[14]] + A[15]*p[I[15]];
+    }
+    }
+
+    else if(K==32){
+    for(j=jb; j<je; j+=M) {
+      p = w.data+j-mM;
+      TFmap.data[j] = A[0]*p[I[0]]   + A[1]*p[I[1]]   + A[2]*p[I[2]]   + A[3]*p[I[3]]   
+	            + A[4]*p[I[4]]   + A[5]*p[I[5]]   + A[6]*p[I[6]]   + A[7]*p[I[7]]   
+                    + A[8]*p[I[8]]   + A[9]*p[I[9]]   + A[10]*p[I[10]] + A[11]*p[I[11]] 
+                    + A[12]*p[I[12]] + A[13]*p[I[13]] + A[14]*p[I[14]] + A[15]*p[I[15]]
+                    + A[16]*p[I[16]] + A[17]*p[I[17]] + A[18]*p[I[18]] + A[19]*p[I[19]]
+                    + A[20]*p[I[20]] + A[21]*p[I[21]] + A[22]*p[I[22]] + A[23]*p[I[23]]
+                    + A[24]*p[I[24]] + A[25]*p[I[25]] + A[26]*p[I[26]] + A[27]*p[I[27]]
+                    + A[28]*p[I[28]] + A[29]*p[I[29]] + A[30]*p[I[30]] + A[31]*p[I[31]];
+    }
+    }
+
+    else {
+    for(j=jb; j<je; j+=M) {
+      p = w.data+j-mM;
+      q = TFmap.data+j;
+      k = K; *q = 0.;
+      while(k-- > 0) { *q += *(A++) * p[*(I++)]; }
+      A -= K; I -= K;
+    }
+    }
+
+  }
+  free(A);
+  free(I);
+}
 
 //: return noise variance for selected wavelet layer or pixel
-//: 2G analysis with WDM
 double detector::getNoise(size_t I, int J)
 {
   if(!nRMS.size()) return 0.;
@@ -885,91 +1304,71 @@ bool detector::setrms(netcluster* wc, size_t I)
    return true;
 }
 
-//bool detector::getrms(scanslice &ss)
-//{
-//// get noise rms for a wavescan slice, which has higher F resolution than nRMS
-//// when ss.layers = ss.fsize extract all, but the first and last layers
-//// ss - scan slice
-//
-//   size_t n, m, nB, nE;
-//
-//   if(!nRMS.size()) return false;
-//   int M     = ss.fsize;
-//   int L     = ss.layers;                           // number of slice layers
-//   int N     = nRMS.maxLayer();                     // layers-1 in nRMS
-//   int K     = nRMS.size()/(N+1);                   // number of RMS measurements per layer
-//   //cout<<M<<" "<<N<<" "<<HoT.rate()<<" getrms warning: \n";
-//   for(int l=0; l<L; l++){
-//      if(L==M) n = l;                               // full wavescan slice
-//      else n = l+L*ss.index;                        // partial wavescan slice
-//      if(n>=M) cout<<n<<" "<<M<<endl;
-//      nB = int((n*N*1.)/M);
-//      if(nB==0) nB++;
-//      nE = int(((n+1)*N*1.)/M)-1;
-//      if(nE>N)  nE=N;
-//      if(nE<nB) nE=nB;                                // closest top layer in nRMS
-//      double rr = 0.;
-//      double RR = 0;
-//      for(n=nB; n<=nE; n++){
-//	 slice  S = nRMS.getSlice(n);
-//	 rr = 0;
-//	 for(int k=1; k<K-1; k++) {
-//	    double r = nRMS.data[S.start()+k*S.stride()];
-//	    r *= 1.e20; rr += r*r;
-//	 }
-//	 rr = rr/(K-2);
-//	 RR += rr>0. ? 1./rr : 0.;
-//      }
-//      ss.rms[l] = RR/(nE-nB+1);
-//   }
-//   return true;
-//}
-//if(std::isnan(rms[m])) cout<<"rmsisnan "<<m<<" "<<rms[m]<<endl;
-//if(std::isinf(rms[m])) cout<<"rmsisinf "<<m<<" "<<rms[m]<<endl;
+//**************************************************************************
+// apply band pass filter with cut-offs specified by parameters (used by 1G)
+//**************************************************************************
+void detector::bandPass1G(double f1, double f2)
+{
+   int i;
+   double dF = TFmap.frequency(1)-TFmap.frequency(0);              // frequency resolution
+   double fl = fabs(f1)>0. ? fabs(f1) : this->TFmap.getlow();
+   double fh = fabs(f2)>0. ? fabs(f2) : this->TFmap.gethigh();
+   size_t n  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fl+dF/2.)/dF+0.1) : size_t(fl/dF+0.1);
+   size_t m  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fh+dF/2.)/dF+0.1)-1 : size_t(fh/dF+0.1)-1;
+   size_t M  = this->TFmap.maxLayer()+1;
+   wavearray<double> w;
 
-//double detector::getrms(wavecluster* wc, size_t pid)
-//{
-//// get noise rms for pixel pid in wavecluster structure wc
-//// use wavescan data
-//   int M = wc->sizeF;                            // wavescan layers
-//   int L = wc->lag;
-//   int N = nRMS.maxLayer();                      // number of nRMS layers -1
-//
-//   wavepixel* p = &(wc->pList[pid]);             // pointer to pixel structure
-//
-//   double Rn = nRMS.wrate();                     // nRMS rate
-//   double Fo = nRMS.frequency(0);                // central frequency of zero layer
-//   double dF = nRMS.frequency(1)-Fo;             // nRMS frequency resolution
-//   double Rw = wc->srate;                        // wavescan rate
-//   double Ro = wc->rate;                         // data rate
-//   double  f = p->pix.frequency*Ro/2./M;         // frequency in Hz
-//   double  t = p->pix.timeindex/M;               // time index
-//   double To = nRMS.start()-wc->start;           // time offset in nRMS
-//
-//   int r = int(p->pix.resolution+0.1);           // resolution index
-//   int k = int(Rw*wc->edge+0.01);                // edge
-//   int K = wc->sizeT-k;                          // last index in wavescan
-//   int l = int(Rw*this->lagShift.data[L]+0.1);   // lag shift for wavescan pixel
-//   t += l; if(t>=K) t -= K-k;                    // actual wavescan time index
-//   k = int((t/Rw-To)*Rn+0.01);                   // time index in nRMS
-//   K = nRMS.size()/(N+1);                        // number of RMS measurements per layer
-//
-//   if(k<0 || k>=K) {cout<<"detector:getrms error\n"; exit(1);}
-//
-//   int nF = int((f-Ro/(1<<r))/dF)+1;             // first ferquency index in nRMS
-//   int nL = int((f+Ro/(1<<r))/dF)-1;             // first ferquency index in nRMS
-//   if(nF>nL) nL=nF;
-//   if(nF<=0) nF=1;
-//   if(nL>=N) nL=N;
-//   double rms=0;
-//   for(int n=nF; n<=nL; n++) {
-//      slice S = nRMS.getSlice(n);
-//      double x = nRMS.data[S.start()+k*S.stride()];
-//      rms += x>0 ? 1./x/x : 0.;
-//   }
-//   return sqrt((nL-nF+1.)/rms);
-//}
+   if(n>m) return;
 
+   for(i=0; i<int(M); i++) {                            // ......f1......f2......
+
+     if((f1>=0 && i>=n) && (f2>=0 && i<=m)) continue;   // zzzzzz..........zzzzzz       band pass
+     if((f1<0 && i<n) || (f2<0 && i>m))     continue;   // ......zzzzzzzzzz......       band cut
+     if((f1<0 && f2>=0 && i<n))             continue;   // ......zzzzzzzzzzzzzzzz       low  pass
+     if((f1>=0 && f2<0 && i>=m))            continue;   // zzzzzzzzzzzzzzzz......       high pass
+
+     this->TFmap.getLayer(w,i+0.01); w=0.; this->TFmap.putLayer(w,i+0.01);
+     this->TFmap.getLayer(w,-i-0.01); w=0.; this->TFmap.putLayer(w,-i-0.01);
+   }
+   return;
+}
+
+//**************************************************************************
+// apply band pass filter with cut-offs specified by parameters
+//**************************************************************************
+/*
+void detector::bandPass(double f1, double f2, double a)
+{
+// assign constant value a to wseries layer coefficients 
+// 0utside of the band defined by frequencies f1 and f2
+// f1>0, f2>0 -  zzzzzz..........zzzzzz 	band pass
+// f1<0, f2<0 -  ......zzzzzzzzzz...... 	band cut 
+// f1<0, f2>0 -  ......zzzzzzzzzzzzzzzz 	low  pass
+// f1>0, f2<0 -  zzzzzzzzzzzzzzzz...... 	high pass
+   int i;
+   double dF = TFmap.frequency(1)-TFmap.frequency(0);              // frequency resolution
+   double fl = fabs(f1)>0. ? fabs(f1) : this->TFmap.getlow();
+   double fh = fabs(f2)>0. ? fabs(f2) : this->TFmap.gethigh();
+   size_t n  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fl+dF/2.)/dF+0.1) : size_t(fl/dF+0.1);
+   size_t m  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fh+dF/2.)/dF+0.1)-1 : size_t(fh/dF+0.1)-1;
+   size_t M  = this->TFmap.maxLayer()+1;
+   wavearray<double> w;
+
+   if(n>m) return;
+
+   for(i=0; i<int(M); i++) {                          	// ......f1......f2......
+
+     if((f1>=0 && i>=n) && (f2>=0 && i<=m)) continue; 	// zzzzzz..........zzzzzz 	band pass
+     if((f1<0 && i<n) || (f2<0 && i>m))     continue; 	// ......zzzzzzzzzz...... 	band cut 
+     if((f1<0 && f2>=0 && i<n))             continue; 	// ......zzzzzzzzzzzzzzzz 	low  pass
+     if((f1>=0 && f2<0 && i>=m))            continue; 	// zzzzzzzzzzzzzzzz...... 	high pass
+
+     this->TFmap.getLayer(w,i+0.01); w=a; this->TFmap.putLayer(w,i+0.01);
+     this->TFmap.getLayer(w,-i-0.01); w=a; this->TFmap.putLayer(w,-i-0.01);
+   }
+   return;
+}
+*/
 //**************************************************************************
 // calculate hrss of injected responses
 // returns number of eligible injections
@@ -1306,6 +1705,62 @@ size_t detector::setsnr(wavearray<double> &wi, std::vector<double>* pT, std::vec
 }
 
 
+//**************************************************************************    
+// apply sample shift to time series in TFmap                 
+//**************************************************************************    
+void detector::delay(double theta, double phi)                                   
+{                                                                               
+  if(!TFmap.size()) return;
+  double R = this->TFmap.wavearray<double>::rate();
+  double T = this->getTau(theta,phi);   // time delay: +/- increase/decrease gps  
+  size_t n = size_t(fabs(T)*R);         // shift in samples
+  size_t m = this->TFmap.size(); 
+  wavearray<double> w; 
+  w = this->TFmap;
+  TFmap = 0.;
+
+  if(T<0) TFmap.cpf(w,m-n,0,n);       // shift forward
+  else    TFmap.cpf(w,m-n,n,0);       // shift backward
+  return;                                                                      
+}                                                                               
+
+//**************************************************************************    
+// apply sample shift to input time series                 
+//**************************************************************************    
+void detector::delay(wavearray<double> &x, double theta, double phi)                                   
+{                                                                               
+  if(!x.size()) return;
+  double R = x.rate();
+  double T = this->getTau(theta,phi);   // time delay: +/- increase/decrease gps  
+  size_t n = size_t(fabs(T)*R);         // shift in samples
+  size_t m = x.size(); 
+  wavearray<double> w; 
+  w = x;
+  x = 0.;
+
+  if(T<0) x.cpf(w,m-n,0,n);       // shift forward
+  else    x.cpf(w,m-n,n,0);       // shift backward
+  return;                                                                      
+}                                                                               
+
+//**************************************************************************    
+// apply time shift T to input time series                 
+//**************************************************************************    
+void detector::delay(wavearray<double> &x, double T)                                   
+{                                                                               
+  if(!x.size()) return;
+  double R = x.rate();
+  size_t n = size_t(fabs(T)*R+0.5);     // shift in samples
+  size_t m = x.size(); 
+  wavearray<double> w; 
+  w = x;
+  x = 0.;
+
+  if(T<0) x.cpf(w,m-n,0,n);       // shift forward
+  else    x.cpf(w,m-n,n,0);       // shift backward
+  return;                                                                      
+}                                                                               
+
 double detector::getWFtime(char atype) 
 {
 // returns central time of reconstructed waveform
@@ -1499,7 +1954,7 @@ void detector::Streamer(TBuffer &R__b)
         if(wfSAVE==1||wfSAVE==3) {
           { 
             vector<int> &R__stl =  IWFID;
-            int R__n=int(R__stl.size());
+            int R__n=(&R__stl) ? int(R__stl.size()) : 0;
             R__b << R__n;
             if(R__n) {
               vector<int>::iterator R__k;
@@ -1512,7 +1967,7 @@ void detector::Streamer(TBuffer &R__b)
             vector<wavearray<double> >  IWF(IWFP.size());
             for(int i=0;i<IWFP.size();i++) IWF[i] = *IWFP[i];
             vector<wavearray<double> > &R__stl =  IWF;
-            int R__n=int(R__stl.size());
+            int R__n=(&R__stl) ? int(R__stl.size()) : 0;
             R__b << R__n;
             if(R__n) {
               vector<wavearray<double> >::iterator R__k;
@@ -1525,7 +1980,7 @@ void detector::Streamer(TBuffer &R__b)
         if(wfSAVE==2||wfSAVE==3) {
           { 
             vector<int> &R__stl =  RWFID;
-            int R__n=int(R__stl.size());
+            int R__n=(&R__stl) ? int(R__stl.size()) : 0;
             R__b << R__n;
             if(R__n) {
               vector<int>::iterator R__k;
@@ -1538,7 +1993,7 @@ void detector::Streamer(TBuffer &R__b)
             vector<wavearray<double> >  RWF(RWFP.size());
             for(int i=0;i<RWFP.size();i++) RWF[i] = *RWFP[i];
             vector<wavearray<double> > &R__stl =  RWF;
-            int R__n=int(R__stl.size());
+            int R__n=(&R__stl) ? int(R__stl.size()) : 0;
             R__b << R__n;
             if(R__n) {
               vector<wavearray<double> >::iterator R__k;
@@ -1554,70 +2009,3 @@ void detector::Streamer(TBuffer &R__b)
    }
 }
 
-/*  NOT USED
-
-//**************************************************************************
-// apply band pass filter with cut-offs specified by parameters (used by 1G)
-//**************************************************************************
-void detector::bandPass1G(double f1, double f2)
-{
-   int i;
-   double dF = TFmap.frequency(1)-TFmap.frequency(0);              // frequency resolution
-   double fl = fabs(f1)>0. ? fabs(f1) : this->TFmap.getlow();
-   double fh = fabs(f2)>0. ? fabs(f2) : this->TFmap.gethigh();
-   size_t n  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fl+dF/2.)/dF+0.1) : size_t(fl/dF+0.1);
-   size_t m  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fh+dF/2.)/dF+0.1)-1 : size_t(fh/dF+0.1)-1;
-   size_t M  = this->TFmap.maxLayer()+1;
-   wavearray<double> w;
-
-   if(n>m) return;
-
-   for(i=0; i<int(M); i++) {                            // ......f1......f2......
-
-     if((f1>=0 && i>=n) && (f2>=0 && i<=m)) continue;   // zzzzzz..........zzzzzz       band pass
-     if((f1<0 && i<n) || (f2<0 && i>m))     continue;   // ......zzzzzzzzzz......       band cut
-     if((f1<0 && f2>=0 && i<n))             continue;   // ......zzzzzzzzzzzzzzzz       low  pass
-     if((f1>=0 && f2<0 && i>=m))            continue;   // zzzzzzzzzzzzzzzz......       high pass
-
-     this->TFmap.getLayer(w,i+0.01); w=0.; this->TFmap.putLayer(w,i+0.01);
-     this->TFmap.getLayer(w,-i-0.01); w=0.; this->TFmap.putLayer(w,-i-0.01);
-   }
-   return;
-}
-
-//**************************************************************************
-// apply band pass filter with cut-offs specified by parameters
-//**************************************************************************
-
-void detector::bandPass(double f1, double f2, double a)
-{
-// assign constant value a to wseries layer coefficients 
-// 0utside of the band defined by frequencies f1 and f2
-// f1>0, f2>0 -  zzzzzz..........zzzzzz 	band pass
-// f1<0, f2<0 -  ......zzzzzzzzzz...... 	band cut 
-// f1<0, f2>0 -  ......zzzzzzzzzzzzzzzz 	low  pass
-// f1>0, f2<0 -  zzzzzzzzzzzzzzzz...... 	high pass
-   int i;
-   double dF = TFmap.frequency(1)-TFmap.frequency(0);              // frequency resolution
-   double fl = fabs(f1)>0. ? fabs(f1) : this->TFmap.getlow();
-   double fh = fabs(f2)>0. ? fabs(f2) : this->TFmap.gethigh();
-   size_t n  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fl+dF/2.)/dF+0.1) : size_t(fl/dF+0.1);
-   size_t m  = TFmap.pWavelet->m_WaveType==WDMT ? size_t((fh+dF/2.)/dF+0.1)-1 : size_t(fh/dF+0.1)-1;
-   size_t M  = this->TFmap.maxLayer()+1;
-   wavearray<double> w;
-
-   if(n>m) return;
-
-   for(i=0; i<int(M); i++) {                          	// ......f1......f2......
-
-     if((f1>=0 && i>=n) && (f2>=0 && i<=m)) continue; 	// zzzzzz..........zzzzzz 	band pass
-     if((f1<0 && i<n) || (f2<0 && i>m))     continue; 	// ......zzzzzzzzzz...... 	band cut 
-     if((f1<0 && f2>=0 && i<n))             continue; 	// ......zzzzzzzzzzzzzzzz 	low  pass
-     if((f1>=0 && f2<0 && i>=m))            continue; 	// zzzzzzzzzzzzzzzz...... 	high pass
-
-     this->TFmap.getLayer(w,i+0.01); w=a; this->TFmap.putLayer(w,i+0.01);
-     this->TFmap.getLayer(w,-i-0.01); w=a; this->TFmap.putLayer(w,-i-0.01);
-   }
-   return;
-}
-*/

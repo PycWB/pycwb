@@ -262,6 +262,13 @@ class WSeries : public wavearray<DataType_t>
       double wdmPacket(int pattern, char opt='L', TH1F* = NULL);    
       double Gamma2Gauss(TH1F* = NULL);    
 
+      // create a wavescan object
+      // produce multi-resolution TF series of input time series x
+      // pws   - array of pointers to input  time-frequency series
+      // N     - number of resolutions
+      // hist  - diagnostic histogram
+      void wavescan(WSeries<DataType_t>**, int, TH1F* = NULL);
+
 //++++++++++++++ wavelet data conditioning +++++++++++++++++++++++++++
 
       //: calculate running medians with window of t seconds

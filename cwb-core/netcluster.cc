@@ -31,7 +31,6 @@
 #include "detector.hh"
 #include "network.hh"
 #include "constants.hh"
-#include "watfun.hh"
 
 #include "TCanvas.h"
 #include "TH2F.h"
@@ -72,16 +71,17 @@ int compareLIKE(const void *x, const void *y){
    return 0;
 }
 
+
 // structure and comparison function needed for optimizing mchirp
-/*
 typedef struct{ double value; int type;} EndPoint;
+
 int compEndP(const void* p, const void* q)
 {  EndPoint* a = (EndPoint*)p;
    EndPoint* b = (EndPoint*)q;
    if(a->value  > b->value)return 1;
    return -1;
 }
-*/
+
 // constructors
 
 netcluster::netcluster()
@@ -800,6 +800,227 @@ size_t netcluster::append(netcluster& w)
 
    return pList.size();
 }
+
+
+//**************************************************************************
+// construct super clusters  (used in 1G pipeline)                                               
+//**************************************************************************
+size_t netcluster::supercluster(char atype, double S, bool core)            
+{                                                                           
+   size_t i,j,k,m,M;                                                        
+   size_t n = pList.size();                                                 
+   int l;                                                                   
+                                                                            
+   if(!n) return 0;                                                         
+
+   netpixel* p = NULL;                 // pointer to pixel structure
+   netpixel* q = NULL;                 // pointer to pixel structure
+   std::vector<int>* v;                                             
+   float eps;                                                       
+   double E;                                                        
+   bool insert;                                                     
+   double ptime, pfreq;                                             
+   double qtime, qfreq;                                             
+
+   netpixel** pp = (netpixel**)malloc(n*sizeof(netpixel*));
+   netpixel** ppo = pp;                                    
+   netpixel*  g;                                           
+
+// sort pixels
+
+   for(i=0; i<n; i++) { pp[i] = &(pList[i]);} 
+   g = pp[0];                                 
+   qsort(pp, n, sizeof(netpixel*), &compare_PIX);         // sort pixels
+                                                                        
+// update neighbors                                                     
+
+   for(i=0; i<n; i++) {
+      p = pp[i];       
+      M = size_t(this->rate/p->rate+0.5);     // number of frequency layers
+      ptime = (p->time/M+0.5)/p->rate;        // extract time              
+      pfreq = (p->frequency+0.5)*p->rate;                                  
+                                                                           
+      for(j=i+1; j<n; j++){                                                
+         q = pp[j];                                                        
+
+         eps = 0.55/p->rate + 0.55/q->rate;
+         M = size_t(this->rate/q->rate+0.5);     // number of frequency layers
+         qtime = (q->time/M+0.5)/q->rate;                                     
+
+         if(qtime<ptime-eps) cout<<"netcluster::merge() error"<<endl;
+
+         if(qtime-ptime > 1.) break;
+         if(fabs(qtime-ptime) > eps) continue;
+         if(p->rate==q->rate) continue;       
+         if(!(p->rate==2*q->rate || q->rate==2*p->rate)) continue;
+
+         eps = 0.55*(p->rate+q->rate);
+         qfreq = (q->frequency+0.5)*q->rate;
+         if(fabs(pfreq-qfreq) > eps) continue;
+
+// insert in p
+
+         l = q-p;
+                 
+         insert = true;
+         v = &(p->neighbors);
+         m = v->size();      
+         for(k=0; k<m; k++) {
+            if((*v)[k] == l) {insert=false; break;} 
+         }                                          
+         if(insert) p->append(l);   // add new neighbor 
+
+// insert in q
+
+         l = p-q;
+
+         insert = true;
+         v = &(q->neighbors);
+         m = v->size();      
+         for(k=0; k<m; k++) {
+            if((*v)[k] == l) {insert=false; break;} 
+         }                                          
+         if(insert) q->append(l);   // add new neighbor  
+
+      }
+   }   
+
+   if(ppo==pp) free(pp);
+   else {cout<<"netcluster::cluster() free()\n"; exit(1);}
+
+//***************
+   cluster();    
+//***************
+
+   std::vector<vector_int>::iterator it;
+   netpixel* pix = NULL;                
+   std::vector<int> rate;               
+   std::vector<int> temp;               
+   std::vector<int> sIZe;               
+   std::vector<bool> cuts;              
+   std::vector<double> ampl;            
+   std::vector<double> powr;            
+   std::vector<double> like;            
+
+   double a,L,e,tt,cT,cF,nT,nF;
+   size_t ID,mm;               
+   size_t max = 0;             
+   size_t min = 0;             
+   size_t count=0;             
+   bool   cut;                 
+   bool   oEo = atype=='E' || atype=='P';
+
+   for(it=cList.begin(); it != cList.end(); it++) {
+      k = it->size();                              
+      if(!k) cout<<"netcluster::supercluster() error: empty cluster.\n";
+
+// fill cluster statistics
+
+      m = 0; E = 0;
+      cT=cF=nT=nF=0.;
+      rate.clear();  
+      ampl.clear();  
+      powr.clear();  
+      like.clear();  
+      cuts.clear();  
+      sIZe.clear();  
+      temp.clear();  
+
+      ID = pList[((*it)[0])].clusterID;
+
+      for(i=0; i<k; i++) {            
+         pix = &(pList[((*it)[i])]);  
+         if(!pix->core && core) continue;
+         L = pix->likelihood;            
+         e = 0.;                         
+         for(j=0; j<pix->size(); j++) {  
+           a = pix->data[j].asnr;        
+           e+= fabs(a)>1. ? a*a-1 : 0.;  
+         }                               
+
+         a   = atype=='L' ? L : e;
+         tt  = 1./pix->rate;                    // wavelet time resolution
+         mm  = size_t(this->rate*tt+0.1);       // number of wavelet layers
+         cT += (pix->time/mm + 0.5)*a;          // pixel time sum          
+         nT += a/tt;                            // use weight L/t          
+         cF += (pix->frequency+0.5)*a;          // pixel frequency sum     
+         nF += a*2.*tt;                         // use weight L*2t         
+
+         insert = true;
+         for(j=0; j<rate.size(); j++) {
+            if(rate[j] == int(pix->rate+0.1)) {
+               insert=false;                   
+               ampl[j] += e;                   
+               sIZe[j] += 1;                   
+               like[j] += L;                   
+            }                                  
+         }                                     
+
+         if(insert) {
+            rate.push_back(int(pix->rate+0.1));
+            ampl.push_back(e);                 
+            powr.push_back(0.);                
+            sIZe.push_back(1);                 
+            cuts.push_back(true);              
+            like.push_back(L);                 
+         }                                     
+
+         m++; E += e;
+
+         if(ID != pix->clusterID) 
+            cout<<"netcluster::merge() error: cluster ID mismatch.\n";
+      }                                                               
+
+// cut off single level clusters
+// coincidence between levels   
+                                
+      if(rate.size()<size_t(1+this->pair) || m<nPIX){ sCuts[ID-1] = true; continue; }
+                                                                                     
+      cut = true;                                                                    
+      for(i=0; i<rate.size(); i++) {                                                 
+        if((atype=='L' && like[i]<S) || (oEo && ampl[i]<S)) continue;                
+        if(!pair) { cuts[i] = cut = false; continue; }                               
+        for(j=0; j<rate.size(); j++) {                                               
+          if((atype=='L' && like[j]<S) || (oEo && ampl[j]<S)) continue;              
+          if(rate[i]/2==rate[j] || rate[j]/2==rate[i]) {                             
+            cuts[i] = cuts[j] = cut = false;                                         
+          }                                                                          
+        }                                                                            
+      }                                                                              
+      if(cut || sCuts[ID-1]) { sCuts[ID-1] = true; continue; }                       
+
+// select optimal resolution
+
+      a = -1.e99;
+      for(j=0; j<rate.size(); j++) {  // select max excess power or likelihood
+         powr[j] = ampl[j]/sIZe[j];                                           
+         if(atype=='E' && ampl[j]>a && !cuts[j]) {max=j; a=ampl[j];}          
+         if(atype=='L' && like[j]>a && !cuts[j]) {max=j; a=like[j];}          
+         if(atype=='P' && powr[j]>a && !cuts[j]) {max=j; a=powr[j];}          
+      }
+
+      if(a<S) { sCuts[ID-1] = true; continue; }
+
+      a = -1.e99;
+      for(j=0; j<rate.size(); j++) {
+         if(max==j) continue;
+         if(atype=='E' && ampl[j]>a && !cuts[j]) {min=j; a=ampl[j];}
+         if(atype=='L' && like[j]>a && !cuts[j]) {min=j; a=like[j];}
+         if(atype=='P' && powr[j]>a && !cuts[j]) {max=j; a=powr[j];}
+      }
+
+      temp.push_back(rate[max]);
+      temp.push_back(rate[min]);
+      cTime[ID-1] = cT/nT;
+      cFreq[ID-1] = cF/nF;
+      cRate[ID-1] = temp;
+      count++;
+
+   }
+
+   return count;
+}
+
 
 //**************************************************************************
 // construct super clusters for 2G analysis
@@ -3787,169 +4008,169 @@ minLayers = 1+1;
   return vupix;
 }
 
-//void netcluster::drawupixels(int ID, std::vector<upixel> vupix, TString ofname)
-//{
-//
-//  double RATE = this->rate;                      	// original rate
-//
-//  std::vector<int>* vint = &(this->cList[ID-1]); 	// pixel list
-//
-//  int V = vint->size();                         	// cluster size
-//  if(!V) return;
-//
-//  int minLayers=1000;
-//  int maxLayers=0;
-//  double minTime=1e20;
-//  double maxTime=0.;
-//  double minFreq=1e20;
-//  double maxFreq=0.;
-//  for(int j=0; j<V; j++) {                      // loop over the pixels
-//    netpixel* pix = this->getPixel(ID,j);
-//    if(!pix->core) continue;
-//
-//    if(pix->layers<minLayers) minLayers=pix->layers;
-//    if(pix->layers>maxLayers) maxLayers=pix->layers;
-//
-//    double dt = 1./pix->rate;
-//    double time = int(pix->time/pix->layers)/double(pix->rate); 	// central bin time
-//    time -= dt/2.; 							// begin bin time
-//    if(time<minTime) minTime=time;
-//    if(time+dt>maxTime) maxTime=time+dt;
-//
-//    double freq = pix->frequency*pix->rate/2.;
-//    if(freq<minFreq) minFreq=freq;
-//    if(freq>maxFreq) maxFreq=freq;
-//  }
-//
-//minLayers = 1+1;
-////minLayers = 4+1;
-////maxLayers = 128+1;
-//
-//  int minRate=RATE/(maxLayers-1);
-//  int maxRate=RATE/(minLayers-1);
-//
-//  int upix_scale = 2*maxRate/minRate;
-//
-//  double mindt = 1./maxRate;
-//  double maxdt = 1./minRate;
-//  double mindf = minRate/2.;
-//  double maxdf = maxRate/2.;
-///*
-//  cout << "minRate : " << minRate << "\t\t\t maxRate : " << maxRate << endl;
-//  cout << "minTime : " << minTime << "\t\t\t maxTime : " << maxTime << endl;
-//  cout << "minFreq : " << minFreq << "\t\t\t maxFreq : " << maxFreq << endl;
-//  cout << "mindt   : " << mindt   << "\t\t\t maxdt   : " << maxdt << endl;
-//  cout << "mindf   : " << mindf   << "\t\t\t maxdf   : " << maxdf << endl;
-//*/
-//  double iminTime = minTime-maxdt;
-//  double imaxTime = maxTime+maxdt;
-//  int nTime = (imaxTime-iminTime)*maxRate;
-//
-//  TH2F h2("upix", "upix", nTime, iminTime, imaxTime, 2*(maxLayers-1), 0, RATE/2);
-//  h2.SetStats(kFALSE);
-//
-//  double dFreq = (maxFreq-minFreq)/10.>2*maxdf ? (maxFreq-minFreq)/10. : 2*maxdf ;
-//  double mFreq = minFreq-dFreq<0 ? 0 : minFreq-dFreq;
-//  double MFreq = maxFreq+dFreq>RATE/2 ? RATE/2 : maxFreq+dFreq;
-//  h2.GetYaxis()->SetRangeUser(mFreq, MFreq);
-//
-//  double dTime = (maxTime-minTime)/10.>2*maxdt ? (maxTime-minTime)/10. : 2*maxdt ;
-//  double mTime = minTime-dTime<iminTime ? iminTime : minTime-dTime;
-//  double MTime = maxTime+dTime>imaxTime ? imaxTime : maxTime+dTime;
-//  h2.GetXaxis()->SetRangeUser(mTime,MTime);
-//
-//  int npix=0;
-//  double Likelihood=0;
-//  for(int n=0; n<V; n++) {
-//    netpixel* pix = this->getPixel(ID,n);
-//    if(!pix->core) continue;
-//
-//    double like=0;
-//    double null=0;
-//    like = pix->likelihood>0. ? pix->likelihood : 0.;
-//    null = pix->null>0. ? pix->null : 0.;
-//
-//    int iRATE = int(pix->rate+0.5);
-//    int M=maxRate/iRATE;
-//    int K=2*(maxLayers-1)/(pix->layers-1);
-//    double dt = 1./pix->rate;
-//    double itime = int(pix->time/pix->layers)/double(pix->rate); 	// central bin time
-//    itime -= dt/2.;							// begin bin time
-//    int i=(itime-iminTime)*maxRate;
-//    int j=pix->frequency*K;
-//    Likelihood+=like;
-//    int L=0;int R=1;while (R < iRATE) {R*=2;L++;}
-//    for(int m=0;m<M;m++) {
-//      for(int k=0;k<K;k++) {
-//        if(null<0) null=0;
-//        double A = h2.GetBinContent(i+1+m,j+1+k-K/2);
-//        h2.SetBinContent(i+1+m,j+1+k-K/2,like+A);
-//      }
-//    }
-//
-//    npix++;
-//  }
-//
-//  double like_tot=0;
-//  int nupix=0;
-//  for(int i=0;i<=h2.GetNbinsX();i++) {
-//    for(int j=0;j<=h2.GetNbinsY();j++) {
-//      double time = h2.GetXaxis()->GetBinCenter(i);
-//      double freq = h2.GetYaxis()->GetBinCenter(j);
-//      double like = h2.GetBinContent(i,j);
-//      h2.SetBinContent(i,j,0);
-//      if(like>0) {
-//        like_tot+=vupix[nupix].likelihood;
-//        h2.SetBinContent(i,j,vupix[nupix++].likelihood);
-//      }
-//    }
-//  }
-//
-//#define DRAW_H2
-//#ifdef DRAW_H2
-//
-//  bool batch = gROOT->IsBatch();
-//  gROOT->SetBatch(true);
-//
-//  TCanvas* canvas;
-//  canvas= new TCanvas("h2", "h2", 200, 20, 800, 600);
-//  canvas->Clear();
-//  canvas->ToggleEventStatus();
-//  canvas->SetGridx();
-//  canvas->SetGridy();
-//  canvas->SetFillColor(kWhite);
-//  canvas->SetRightMargin(0.10);
-//  canvas->SetLeftMargin(0.10);
-//  canvas->SetBottomMargin(0.13);
-//  canvas->SetBorderMode(0);
-//
-//  // remove the red box around canvas
-//  gStyle->SetFrameBorderMode(0);
-//  gROOT->ForceStyle();
-//
-//  gStyle->SetTitleH(0.050);
-//  gStyle->SetTitleW(0.95);
-//  gStyle->SetTitleY(0.98);
-//  gStyle->SetTitleFont(12,"D");
-//  gStyle->SetTitleColor(kBlue,"D");
-//  gStyle->SetTextFont(12);
-//  gStyle->SetTitleFillColor(kWhite);
-//  gStyle->SetLineColor(kWhite);
-//  gStyle->SetNumberContours(256);
-//  gStyle->SetCanvasColor(kWhite);
-//  gStyle->SetStatBorderSize(1);
-//
-//  h2.SetTitle(TString::Format("likelihood=%g",like_tot).Data());
-//  h2.Draw("colz");
-//
-//  canvas->Print(ofname);
-//
-//  delete canvas;
-//
-//  gROOT->SetBatch(batch);  // restore batch status
-//
-//#endif
-//
-//  return;
-//}
+void netcluster::drawupixels(int ID, std::vector<upixel> vupix, TString ofname)
+{                       
+
+  double RATE = this->rate;                      	// original rate
+
+  std::vector<int>* vint = &(this->cList[ID-1]); 	// pixel list
+
+  int V = vint->size();                         	// cluster size
+  if(!V) return;                                               
+
+  int minLayers=1000;
+  int maxLayers=0;   
+  double minTime=1e20;
+  double maxTime=0.;  
+  double minFreq=1e20;
+  double maxFreq=0.;  
+  for(int j=0; j<V; j++) {                      // loop over the pixels
+    netpixel* pix = this->getPixel(ID,j);                               
+    if(!pix->core) continue;                                           
+
+    if(pix->layers<minLayers) minLayers=pix->layers;
+    if(pix->layers>maxLayers) maxLayers=pix->layers;
+
+    double dt = 1./pix->rate;
+    double time = int(pix->time/pix->layers)/double(pix->rate); 	// central bin time
+    time -= dt/2.; 							// begin bin time
+    if(time<minTime) minTime=time;                   
+    if(time+dt>maxTime) maxTime=time+dt;                   
+
+    double freq = pix->frequency*pix->rate/2.; 
+    if(freq<minFreq) minFreq=freq;     
+    if(freq>maxFreq) maxFreq=freq;     
+  }                                    
+
+minLayers = 1+1;
+//minLayers = 4+1;
+//maxLayers = 128+1;
+
+  int minRate=RATE/(maxLayers-1);
+  int maxRate=RATE/(minLayers-1);
+
+  int upix_scale = 2*maxRate/minRate;
+
+  double mindt = 1./maxRate;
+  double maxdt = 1./minRate;
+  double mindf = minRate/2.;
+  double maxdf = maxRate/2.;
+/*
+  cout << "minRate : " << minRate << "\t\t\t maxRate : " << maxRate << endl;
+  cout << "minTime : " << minTime << "\t\t\t maxTime : " << maxTime << endl;
+  cout << "minFreq : " << minFreq << "\t\t\t maxFreq : " << maxFreq << endl;
+  cout << "mindt   : " << mindt   << "\t\t\t maxdt   : " << maxdt << endl;
+  cout << "mindf   : " << mindf   << "\t\t\t maxdf   : " << maxdf << endl;
+*/
+  double iminTime = minTime-maxdt;
+  double imaxTime = maxTime+maxdt;
+  int nTime = (imaxTime-iminTime)*maxRate;
+
+  TH2F h2("upix", "upix", nTime, iminTime, imaxTime, 2*(maxLayers-1), 0, RATE/2);
+  h2.SetStats(kFALSE);
+
+  double dFreq = (maxFreq-minFreq)/10.>2*maxdf ? (maxFreq-minFreq)/10. : 2*maxdf ;
+  double mFreq = minFreq-dFreq<0 ? 0 : minFreq-dFreq;
+  double MFreq = maxFreq+dFreq>RATE/2 ? RATE/2 : maxFreq+dFreq;
+  h2.GetYaxis()->SetRangeUser(mFreq, MFreq);              
+
+  double dTime = (maxTime-minTime)/10.>2*maxdt ? (maxTime-minTime)/10. : 2*maxdt ;
+  double mTime = minTime-dTime<iminTime ? iminTime : minTime-dTime;
+  double MTime = maxTime+dTime>imaxTime ? imaxTime : maxTime+dTime;
+  h2.GetXaxis()->SetRangeUser(mTime,MTime);
+
+  int npix=0;
+  double Likelihood=0;
+  for(int n=0; n<V; n++) {
+    netpixel* pix = this->getPixel(ID,n);
+    if(!pix->core) continue;            
+
+    double like=0;
+    double null=0;
+    like = pix->likelihood>0. ? pix->likelihood : 0.;
+    null = pix->null>0. ? pix->null : 0.;
+
+    int iRATE = int(pix->rate+0.5); 
+    int M=maxRate/iRATE;              
+    int K=2*(maxLayers-1)/(pix->layers-1);
+    double dt = 1./pix->rate;
+    double itime = int(pix->time/pix->layers)/double(pix->rate); 	// central bin time
+    itime -= dt/2.;							// begin bin time
+    int i=(itime-iminTime)*maxRate;                            
+    int j=pix->frequency*K;                                    
+    Likelihood+=like;                               
+    int L=0;int R=1;while (R < iRATE) {R*=2;L++;}
+    for(int m=0;m<M;m++) {                                     
+      for(int k=0;k<K;k++) {
+        if(null<0) null=0; 
+        double A = h2.GetBinContent(i+1+m,j+1+k-K/2);
+        h2.SetBinContent(i+1+m,j+1+k-K/2,like+A);
+      }                                                               
+    }                                                                 
+
+    npix++;
+  }                                                                   
+
+  double like_tot=0;
+  int nupix=0;
+  for(int i=0;i<=h2.GetNbinsX();i++) {
+    for(int j=0;j<=h2.GetNbinsY();j++) {
+      double time = h2.GetXaxis()->GetBinCenter(i);
+      double freq = h2.GetYaxis()->GetBinCenter(j);
+      double like = h2.GetBinContent(i,j);
+      h2.SetBinContent(i,j,0);
+      if(like>0) {
+        like_tot+=vupix[nupix].likelihood;
+        h2.SetBinContent(i,j,vupix[nupix++].likelihood);
+      }
+    }
+  }
+
+#define DRAW_H2
+#ifdef DRAW_H2
+
+  bool batch = gROOT->IsBatch();
+  gROOT->SetBatch(true);
+
+  TCanvas* canvas;
+  canvas= new TCanvas("h2", "h2", 200, 20, 800, 600);
+  canvas->Clear();
+  canvas->ToggleEventStatus();
+  canvas->SetGridx();
+  canvas->SetGridy();
+  canvas->SetFillColor(kWhite);
+  canvas->SetRightMargin(0.10);
+  canvas->SetLeftMargin(0.10);
+  canvas->SetBottomMargin(0.13);
+  canvas->SetBorderMode(0);
+
+  // remove the red box around canvas
+  gStyle->SetFrameBorderMode(0);
+  gROOT->ForceStyle();
+
+  gStyle->SetTitleH(0.050);
+  gStyle->SetTitleW(0.95);
+  gStyle->SetTitleY(0.98);
+  gStyle->SetTitleFont(12,"D");
+  gStyle->SetTitleColor(kBlue,"D");
+  gStyle->SetTextFont(12);
+  gStyle->SetTitleFillColor(kWhite);
+  gStyle->SetLineColor(kWhite);
+  gStyle->SetNumberContours(256);
+  gStyle->SetCanvasColor(kWhite);
+  gStyle->SetStatBorderSize(1);
+
+  h2.SetTitle(TString::Format("likelihood=%g",like_tot).Data());
+  h2.Draw("colz");
+ 
+  canvas->Print(ofname);
+
+  delete canvas;
+
+  gROOT->SetBatch(batch);  // restore batch status
+
+#endif
+
+  return;
+}
 

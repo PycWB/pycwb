@@ -109,17 +109,66 @@ class detector : public TNamed
 
       //: set detector radius vector  
       //!param: Rx,Ry,Rz in ECEF frame
-      // void setRV(double, double, double);
+//      void setRV(double, double, double);
       //: set detector x-arm unit vector  
       //!param: Ex,Ey,Ez in ECEF frame
-      //void setEx(double, double, double);
+//      void setEx(double, double, double);
       //: set detector y-arm unit vector  
       //!param: Ex,Ey,Ez in ECEF frame
-      //void setEy(double, double, double);
+//      void setEy(double, double, double);
 
       //: initialize detector tensor  
       //!param: no parameters
       void init();
+
+      //: initialize delay filter for non-heterodine wavelet
+      //!param: filter length
+      //!param: filter phase delay in degrees
+      //!param: number of up-sample layers
+      //!return filter size
+      size_t setFilter(size_t, double=0., size_t=0);
+
+      //: initialize delay filter from another detector 
+      //!param: detector
+      //!return filter size
+      size_t setFilter(detector&); 
+
+      //: write/read delay filter to file in the format:
+      //: first string: wavelet filter length, number of wavelet layers  
+      //!param: file name
+      void writeFilter(const char*);
+      void readFilter(const char*);
+
+      // clear filter and release memory (need for vector class)
+      inline void clearFilter() {
+	filter.clear();
+	std::vector<delayFilter>().swap(filter);   // release memory
+      }
+
+      //: apply sample delay to timeseries stored in TFmap to adjast
+      //  timing for a given theta and phy sky location.
+      //!param: theta
+      //!param: phi
+      void delay(double, double);
+ 
+      //: apply sample delay to input timeseries to adjast
+      //  timing for a given theta and phy sky location. Do not store in the TFmap
+      //!param: input TS
+      //!param: theta
+      //!param: phi
+     void delay(wavearray<double> &, double, double);
+
+      //: apply delay T to input timeseries.
+      //!param: input TS
+      //!param: time delay T
+     void delay(wavearray<double> &, double);
+
+      //: apply non-heterodine delay filter to input WSeries and put result in TFmap  
+      // time delay convention: + - shift TS right
+      //                        - - shift TS left
+      //!param: time delay in seconds
+      //!param: WSeries which should be delayed
+      void delay(double, WSeries<double> &);
 
       //: get pointer to time series data   
       //!param: no parameters
@@ -155,8 +204,25 @@ class detector : public TNamed
 
       //: set tau array
       // time delay convention: t_detector-tau - arrival time at the center of Earth
+      //!param - step on phi and theta
+      //!param - theta begin
+      //!param - theta end
+      //!param - phi begin
+      //!param - phi end
+      void setTau(double,double=0.,double=180.,double=0.,double=360.);
+
+      //: set tau array
+      // time delay convention: t_detector-tau - arrival time at the center of Earth
       //!param - healpix order
       void setTau(int); 
+
+      //: set antenna patterns
+      //!param - step on phi and theta
+      //!param - theta begin
+      //!param - theta end
+      //!param - phi begin
+      //!param - phi end
+      void setFpFx(double,double=0.,double=180.,double=0.,double=360.);
 
       //: set antenna patterns
       //!param - healpix order
@@ -170,11 +236,15 @@ class detector : public TNamed
       //!if param 2 is not specified - return rms averaged over the layer  
       double getNoise(size_t,int=-1);
 
-      // calculate and save average noise rms for each pixel in netcluster wc and detector I 
-      bool setrms(netcluster* wc, size_t I=0);
+      /* calculate and save average noise rms for each pixel in netcluster wc 
+       * @memo save pixel noise rms 
+       * @param input netcluster 
+       * @param detector index in tne netcluster
+       */
+      bool setrms(netcluster*, size_t=0);
 
-//      bool   getrms(scanslice &ss);
-//      double getrms(wavecluster* wc, size_t pid);
+      //: return pointer to noise array
+//      WSeries<double>* getNoise();
 
       //: whiten data in TFmap and save noise RMS in nRMS
       // param 1 - time window dT. if = 0 - dT=T, where T is wavearray duration
@@ -209,7 +279,7 @@ class detector : public TNamed
       // f1>=0 && f2<0  : high pass 
       // f1==0          : f1 = TFmap.getlow()
       // f2==0          : f2 = TFmap.gethigh()
-      //void bandPass1G(double f1=0.,double f2=0.);	// used by 1G
+      void bandPass1G(double f1=0.,double f2=0.);	// used by 1G
       void bandPass(double f1,double f2, double a=0.){
 	 this->TFmap.bandpass(f1,f2,a);
       }; 
@@ -236,10 +306,10 @@ class detector : public TNamed
       void setPolarization(POLARIZATION polarization=TENSOR) {this->polarization=polarization;}
       POLARIZATION getPolarization() {return this->polarization;}
 
-     inline double get_SS(){double nrm=waveForm.norm(); return nrm*nrm;} 
-     inline double get_XX(){double nrm=waveBand.norm(); return nrm*nrm;} 
-     inline double get_NN(){double nrm=waveNull.norm(); return nrm*nrm;} 
-     inline double get_XS(){double nrn=waveBand.norm(); double nrs=waveForm.norm(); return nrn*nrs;} 
+     inline double get_SS(){double rms=waveForm.rms(); return rms*rms*waveForm.size();} 
+     inline double get_XX(){double rms=waveBand.rms(); return rms*rms*waveBand.size();} 
+     inline double get_NN(){double rms=waveNull.rms(); return rms*rms*waveNull.size();} 
+     inline double get_XS(){double rmx=waveBand.rms(); double rms=waveForm.rms(); return rmx*rms*waveBand.size();} 
      double getWFfreq(char atype='S');
      double getWFtime(char atype='S');
 
@@ -267,7 +337,10 @@ class detector : public TNamed
       double enrg;        // total energy of PC components   
       double sSNR;        // reconstructed response s-SNR  
       double xSNR;        // reconstructed response x-SNR  
+      double ekXk;        // mean of reconstructed detector response  
       double rate;        // original data rate (before downsampling)  
+      size_t nDFS;        // number of Delay Filter Samples
+      size_t nDFL;        // number of Delay Filter Layers
       int    wfSAVE; 	  // used in streamer method to save waveforms stuff
 
       skymap tau;         // detector delay with respect to ECEF
@@ -285,11 +358,13 @@ class detector : public TNamed
       WSeries<double> nRMS;         // noise RMS
       WSeries<float>  nVAR;         // noise variability
 
-      wavearray<double> fp;         // F+ pattern
-      wavearray<double> fx;         // Fx pattern
-      wavearray<double> ffp;        // F+ * F+ + Fx * Fx
-      wavearray<double> ffm;        // F+ * F+ - Fx * Fx
-      wavearray<double> fpx;        // F+ * Fx * 2
+      std::vector<delayFilter> filter;  // delay filter 
+
+      wavearray<double> fp;         // sorted F+ pattern
+      wavearray<double> fx;         // sorted Fx pattern
+      wavearray<double> ffp;        // sorted F+ * F+ + Fx * Fx
+      wavearray<double> ffm;        // sorted F+ * F+ - Fx * Fx
+      wavearray<double> fpx;        // sorted F+ * Fx * 2
       wavearray<short>  index;      // index array for delayed amplitude (network)
       wavearray<double> lagShift;   // time shifts for background analysis
 
@@ -320,6 +395,17 @@ inline void detector::addSTFmap(netcluster* pwc, double mTau){
    vSS[j].SetHalo(mTau);
    vSS[j].AddCore(ifoID,pwc);
    vSS[j].UpdateSparseTable();
+}
+
+inline size_t minDFindex(delayFilter &F){
+   size_t n = F.value.size();
+   if(!n) return 0;
+   size_t j = 0;
+   double x = 1.e13;
+   for(size_t i=0; i<n; i++){
+      if(x>fabs(F.value[i])) { x = fabs(F.value[i]); j=i; }
+   }
+   return j+1;
 }
 
 #endif // DETECTOR_HH

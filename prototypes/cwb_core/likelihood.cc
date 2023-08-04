@@ -490,6 +490,8 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
     lm = 0;
     Em = Lm = ff = FF = 0;
 
+    // Notes: MM, FF, aa are all temporary variables
+    // TODO: This section is to set REG? Here can be one function
     skyMMcc = 0;
     for (l = lb; l <= le; l++) {                            // loop over sky locations
         if (!mm[l]) continue;                           // skip delay configurations
@@ -509,6 +511,7 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
     }
     REG[1] = (FF * FF / (ff * ff + 1.e-9) - 1) * En;              // setup x regulator
 
+    // TODO: what's the use of the do-while loop?
     do {
         AA = 0.;                                          // initialize sky statistic
         for (l = lb; l <= le; l++) {                            // loop over sky locations
@@ -672,6 +675,7 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
         pix = pwc->getPixel(id, pI[j]);
         if (pMSK[j] > 0) {                                 // Mo - EP pixels: stored in size[0]
             pix->core = true;
+            // TODO: p_ee and p_EE are not initialized anywhere? Ans: set in _avx_ort_ps
             pix->likelihood = -(p_ee[j] + p_EE[j]) / 2;      // negative total pixel energy
         }
 

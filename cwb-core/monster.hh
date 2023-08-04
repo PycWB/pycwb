@@ -15,17 +15,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+
 #ifndef MONSTER_HH
 #define MONSTER_HH
 
 #include "WDM.hh"
 #include "netcluster.hh"
 #include "wavearray.hh"
-#include "watfun.hh"
 #include <algorithm>
 #include "stdint.h"
 
 using namespace std;
+
+struct xtalk{int index;  float CC[4];};   // AA, AQ, QA, QQ
 
 struct xtalkArray{struct xtalk* data; int size;};
 
@@ -121,7 +123,7 @@ public:
    std::vector<int>     sizeCC;         // size of the vector for cluster coupling coefficients
    
    // used by THtml doc
-   ClassDef(monster,4)			
+   ClassDef(monster,3)			
 };
 
 

@@ -1,5 +1,5 @@
 /*
-# Copyright (C) 2019 Sergey Klimenko
+# Copyright (C) 2019 Sergey Klimenko, Gabriele Vedovato
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -101,7 +101,7 @@ static inline float _avx_dpf_ps(double** Fp, double** Fx, int l,
    static const __m128 _1 = _mm_set1_ps(1);
    static const __m128 _2 = _mm_set1_ps(2);
    static const __m128 _o = _mm_set1_ps(0.0001);
-   //static const __m128 sm = _mm_set1_ps(-0.f);          // -0.f = 1 << 31
+   static const __m128 sm = _mm_set1_ps(-0.f);          // -0.f = 1 << 31
                 __m128 _NI= _mm_setzero_ps();
                 __m128 _NN= _mm_setzero_ps();
 

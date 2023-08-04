@@ -124,7 +124,7 @@ operator=(const wavearray<DataType_t>& a)
 
       if(a.rate()>0.) {
 	 start(a.start() + a.Slice.start()/a.rate());
-	 stop(a.start()+N*m/a.rate());
+         stop(start()+N*m/a.rate());
       }
       else {         
 	 start(a.start());
@@ -339,7 +339,7 @@ void wavearray<DataType_t>::Dump(const char *fname, int app)
     double dt = 1./this->rate();
     for (int i = 0; i < n; i++) {
       double time = this->start()+i*dt;
-      fprintf( fp,"%14f %e\n", time, (double)data[i]);
+      fprintf( fp,"%14f %e\n", time, data[i]);
     }
   } else {
     for (int i = 0; i < n; i++) fprintf( fp,"%e ", (float)data[i]);
@@ -484,6 +484,7 @@ void wavearray<DataType_t>::resize(unsigned int n)
       cout<<"wavearray::resize(): memory allocation failed.\n";
       exit(0);
    }
+
    resetFFTW();
 }
 
@@ -575,20 +576,20 @@ void wavearray<DataType_t>::Resample(double f)
       exit(1);
    }
 
-   double rsize = (f/this->rate())*this->size(); // new size
+   double rsize = f/this->rate()*this->size();	// new size
 
    if(fmod(rsize,2)!=0) {
       cout<<"wavearray::Resample(): error - resample frequency (" << f << ") not allowed\n";
       exit(1);
    }
 
-   int size = this->size();			 // old size
+   int size = this->size();			// old size
 
-   this->rate(f);
    this->FFTW(1);
-   this->resize((int)(rsize+0.01));
+   this->resize((int)rsize);
    for(int i=size;i<rsize;i++) this->data[i]=0;
    this->FFTW(-1);
+   this->rate(f);
 }
 
 template<class DataType_t> 
@@ -784,26 +785,6 @@ sub(const wavearray<DataType_t> &a, int length, int a_pos, int pos)
       data[i + pos] -= a.data[i + a_pos];
 }
 
-template<class DataType_t> wavearray<DataType_t>
-wavearray<DataType_t>::pad(int npad) {
-// pad with npad 0 samples on each side
-   int pad = abs(npad);                             // positive pads only
-   int   I = this->size();                          // this array size
-   int   J = I;                                     // array max size
-   
-   if(!pad) {return *this;}
-
-   J=I+2*pad;
-   DataType_t* p = this->data;                      // pointer to data
-   wavearray<DataType_t> w(J); w=0;
-   for(int i=0; i<I; i++) w.data[pad+i] = p[i];
-   w.rate(this->rate());
-   w.start(-pad/w.rate());
-   w.stop(w.start()+J/w.rate());
-   return w;
-}
-
-
 /*****************************************************************
  * append two wavearrays with the same rate ignoring start time 
  * of input array.
@@ -874,11 +855,11 @@ void wavearray<DataType_t>::FFT(int direction)
 
 // data[1] is not occupied because imag(F[0]) is always zero and we
 // store in data[1] the value of F[N/2] which is pure real for even "N"
-    data[1] = (DataType_t)a[n2]/N;
+      data[1] = (DataType_t)a[n2]/N;
 
 // in the case of odd number of data points we store imag(F[N/2])
 // in the last element of array data[N]
-    if ((N&1) == 1) data[N-1] = (DataType_t)b[n2]/N;
+      if ((N&1) == 1) data[N-1] = (DataType_t)b[n2]/N;
 
       break;
 
@@ -973,12 +954,12 @@ void wavearray<DataType_t>::FFTW(int direction)
 
       a[0]=data[0];
       b[0]=0.;
-      
+
       if ((N&1) == 1)
         { a[n2]=data[1]; b[n2]=data[N-1]; }  // for odd n
       else
         { a[n2]=data[1]; b[n2]=0.; }
-      
+
       ifftw->SetPointsComplex(a,b);
       ifftw->Transform();
       ifftw->GetPoints(a);
@@ -1239,34 +1220,6 @@ double wavearray<DataType_t>::rms()
    }
    x /= size();
    return sqrt(y/size()-x*x);
-}
-
-template<class DataType_t>
-double wavearray<DataType_t>::norm() 
-{
-   size_t i;
-   size_t N = this->size();
-   double x = 0.;
-   if(!size()) return 0.;
-   for(i=0; i<size(); i++) {x += data[i]*data[i]; }
-   return sqrt(x);
-}
-
-template<class DataType_t>
-double wavearray<DataType_t>::cross(wavearray<DataType_t>* x) 
-{
-   double t = fmin(this->stop(),x->stop())-fmax(this->start(),x->start());
-   if(!this->size() || !x->size()) return 0.;
-   if((this->rate() != x->rate()) || t<=0) return 0.;
-   double T = this->start()-x->start();
-   double R = this->rate();
-   DataType_t* p = this->data;
-   DataType_t* q = x->data;
-   if(T>0) {p += int( T*R+0.1);}
-   else    {q += int(-T*R+0.1);}
-   double s = 0.;
-   for(int i=0; i<int(t*R+0.1); i++) {s += double(p[i]*q[i]); }
-   return s;
 }
 
 // running 50% percentile rms
@@ -2100,13 +2053,11 @@ wavearray<DataType_t>::white(double t, int mode, double oFFset, double stride) c
 
    meDIan.rate(rate()/k);
    meDIan.start(start()+jL/rate());
-   meDIan.stop(start()+(N-jL)/rate());
-   meDIan.edge(0.);
+   meDIan.stop(start()+(N-offset)/rate());
 
    norm50.rate(rate()/k);
    norm50.start(start()+jL/rate()); 
-   norm50.stop(start()+(N-jL)/rate());
-   norm50.edge(0.);
+   norm50.stop(start()+(N-offset)/rate());
 
    mode = abs(mode);
 

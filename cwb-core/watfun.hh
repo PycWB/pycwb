@@ -32,68 +32,6 @@
 #define PI 3.141592653589793
 #define speedlight 299792458.0
 
-struct scanslice {
-   int size;                       // slice size
-   int tsize;                      // scan time size
-   int fsize;                      // scan frequency size
-   int layers;                     // number of slice layers
-   int index;                      // slice index
-   int levFirst;                   // first resolution level
-   int levLast;                    // last resolution level
-   float mean00;                   // distribution mean scale
-   float mean90;                   // distribution mean scale
-   float norm00;                   // distribution normalization parameter
-   float norm90;                   // distribution normalization parameter
-   float* v00;
-   float* v90;
-   float* rin;
-   float* rms;
-};
-
-struct pixar {
-   double  noise;                   // noise rms
-   double  dat00;                   // 00-phase data amplitude
-   double  dat90;                   // 90-phase data amplitude
-   double  amp00;                   // 00-phase signal amplitude
-   double  amp90;                   // 90-phase signal amplitude
-   int     index;                   // time lag index
-};
-
-struct pixel { 
-   unsigned int timeindex;          // wavescan index 
-   int    clusterID;                // cluster ID
-   float  excespower;               // excess power
-   float  crosspower;               // cross power
-   short  frequency;                // frequency index (layer)
-   short  resolution;               // pixel resolution
-   short  sizeOFtdar;               // size of tdAmp array
-   short  core;                     // pixel type, also used to store lag
-};
-
-struct pixis {
-   unsigned int index;              // wavescan index 
-   float  excespower;               // excess power
-   float  crosspower;               // cross power
-   short  resolution;               // resolution
-   unsigned short pixelID;          // pixel ID (lag or clusterID)
-};
-
-struct skyToF{double tau; int isky; int itau[NIFO];}; // used by setDelayIndex function 
-struct xtalk{int index;float CC[4];};// cc, cC, Cc, CC used by WDM and wavescan 
-
-// structure and comparison function needed for optimizing mchirp
-struct EndPoint {
-   double value;
-   int type;
-};
-
-inline int compEndP(const void* p, const void* q)
-{  EndPoint* a = (EndPoint*)p;
-   EndPoint* b = (EndPoint*)q;
-   if(a->value  > b->value)return 1;
-   return -1;
-}
-
 // WAT functions
 
 // Calculates polynomial interpolation coefficient using Lagrange formula.

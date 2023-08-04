@@ -552,7 +552,6 @@ void SSeries<DataType_t>::Streamer(TBuffer &R__b)
       R__b << wdm_nSTS;
       R__b.SetByteCount(R__c, kTRUE);
    }
-   return;
 }
 
 

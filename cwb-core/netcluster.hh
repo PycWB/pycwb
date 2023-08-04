@@ -56,54 +56,55 @@ class network;
 
 class clusterdata : public TNamed {
 public:
-    clusterdata(){}
-    ~clusterdata(){}
-    float energy;                   // total cluster energy
-    float enrgsky;                  // cluster energy in all resolutions
-    float likenet;                  // signal energy
-    float netecor;                  // network coherent energy
-    float normcor;                  // normalized coherent energy
-    float netnull;                  // null energy in the sky loop with Gauss correction
-    float netED;                    // energy disbalance
-    float Gnoise;                   // estimated contribution of Gaussian noise
-    float likesky;                  // likelihood at all resolutions
-    float skycc;                    // network cc from the sky loop (all resolutions)
-    float netcc;                    // network cc for MRA or SRA analysis
-    float skyChi2;                  // chi2 stat from the sky loop (all resolutions)
-    float subnet;                   // first subNetCut statistic
-    float SUBNET;                   // second subNetCut statistic
-    float skyStat;                  // localization statistic
-    float netRHO;                   // coherent SNR per detector
-    float netrho;                   // reduced coherent SNR per detector
-    float theta;                    // source angle theta index
-    float phi;                      // source angle phi index
-    float iota;                     // inclination angle
-    float psi;                      // polarisation angle
-    float ellipticity;              // waveform ellipticity
-    float cTime;                    // supercluster central time
-    float cFreq;                    // supercluster central frequency
-    float gNET;                     // network acceptance
-    float aNET;                     // network alignment
-    float iNET;                     // network index
-    float norm;                     // packet norm
-    float nDoF;                     // cluster degrees of freedom
-    float tmrgr;                    // merger time
-    float tmrgrerr;                 // merger time error
-    float mchirp;                   // chirp mass
-    float mchirperr;                // chirp mass error
-    float chi2chirp;                // chi2 over NDF
-    float chirpEfrac;               // chirp energy fraction
-    float chirpPfrac;               // chirp pixel fraction
-    float chirpEllip;               // chirp ellipticity
-    int skySize;                    // number of sky pixels
-    int skyIndex;                   // index in the skymap
-    TF1 fit;                        //! chirp fit parameters (don't remove ! fix crash when exit from CINT)
-    TGraphErrors chirp;             // chirp graph
-    wavearray<float> mchpdf;        // chirp mass PDF
-    ClassDef(clusterdata,3)
+   clusterdata(){}
+   ~clusterdata(){}
+   float energy;                   // total cluster energy
+   float enrgsky;                  // cluster energy in all resolutions
+   float likenet;                  // signal energy
+   float netecor;                  // network coherent energy
+   float normcor;                  // normalized coherent energy
+   float netnull;                  // null energy in the sky loop with Gauss correction
+   float netED;                    // energy disbalance
+   float Gnoise;                   // estimated contribution of Gaussian noise
+   float likesky;                  // likelihood at all resolutions
+   float skycc;                    // network cc from the sky loop (all resolutions)
+   float netcc;                    // network cc for MRA or SRA analysis
+   float skyChi2;                  // chi2 stat from the sky loop (all resolutions)
+   float subnet;                   // first subNetCut statistic
+   float SUBNET;                   // second subNetCut statistic
+   float skyStat;                  // localization statistic
+   float netRHO;                   // coherent SNR per detector
+   float netrho;                   // reduced coherent SNR per detector
+   float theta;                    // source angle theta index
+   float phi;                      // source angle phi index
+   float iota;                     // inclination angle 
+   float psi;                      // polarisation angle
+   float ellipticity;              // waveform ellipticity
+   float cTime;                    // supercluster central time
+   float cFreq;                    // supercluster central frequency
+   float gNET;                     // network acceptance
+   float aNET;                     // network alignment
+   float iNET;                     // network index
+   float norm;                     // packet norm
+   float nDoF;                     // cluster degrees of freedom
+   float tmrgr;                    // merger time
+   float tmrgrerr;                 // merger time error
+   float mchirp;                   // chirp mass
+   float mchirperr;                // chirp mass error
+   float chi2chirp;                // chi2 over NDF
+   float chirpEfrac;               // chirp energy fraction
+   float chirpPfrac;               // chirp pixel fraction
+   float chirpEllip;               // chirp ellipticity
+   int skySize;                    // number of sky pixels
+   int skyIndex;                   // index in the skymap
+   TF1 fit;                        //! chirp fit parameters (don't remove ! fix crash when exit from CINT)
+   TGraphErrors chirp;             // chirp graph 
+   wavearray<float> mchpdf;        // chirp mass PDF
+   ClassDef(clusterdata,3)
 };
 
 ClassImp(clusterdata)
+
 
 class netcluster : public TNamed
 {
@@ -240,6 +241,7 @@ public:
    //!       in a superclusters.
    //!param: true - use only core pixels, false - use core & halo pixels
    //!return size of pixel list of selected superclusters.
+   virtual size_t supercluster(char atype, double S, bool core);  // used in 1G pipeline
    virtual size_t supercluster(char atype, double S, double gap, bool core, TH1F* = NULL);
 
    //:merge clusters if they are close to each other
@@ -372,7 +374,7 @@ public:
    // get micropixels
    std::vector<upixel> getupixels(int ID, double& mindt, double& mindf);
    // draw micropixels
-//   void drawupixels(int ID, std::vector<upixel> vupix, TString ofile);
+   void drawupixels(int ID, std::vector<upixel> vupix, TString ofile);
 
    // mchirp micropixel version
    double mchirp_upix(int ID, double seed);

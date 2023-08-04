@@ -24,11 +24,11 @@
 #include <stdexcept>
 #include "wseries.hh"
 
-//#include "Haar.hh"
+#include "Haar.hh"
 #include "Biorthogonal.hh"
-//#include "Daubechies.hh"
-//#include "Symlet.hh"
-//#include "Meyer.hh"
+#include "Daubechies.hh"
+#include "Symlet.hh"
+#include "Meyer.hh"
 #include "WDM.hh"
 
 ClassImp(WSeries<double>)
@@ -616,6 +616,85 @@ double WSeries<DataType_t>::Gamma2Gauss(TH1F* hist)
    }
    return ALP;
 }
+
+
+template<class DataType_t> 
+void WSeries<DataType_t>::wavescan(WSeries<DataType_t>** pws, int N, TH1F* hist)
+{
+// create a wavescan object
+// produce multi-resolution TF series of input time series x
+// pws   - array of pointers to input  time-frequency series
+// N     - number of resolutions
+// hist  - diagnostic histogram
+
+   std::vector<int> vM;                             // vector to store number of layers
+   std::vector<int> vJ;                             // vector to store TF map size
+   std::vector<double> vR;                          // vector to store number of layers
+   std::vector<double> vF;                          // vector to store resolutions
+   int mBand, mRate, level;
+   int nn,j,J;
+   double time, freq, a,A,ee,EE,ss,cc,gg,b,B;
+   double mean  = 2.*N-1;                          // Gamma distribution mean
+   double shape = N-log(N)/N;                      // Gamma distribution shape parameter
+
+   mBand = 0; mRate = 0;
+   for(int n=0; n<N; n++) {                        // get all TF data
+      vF.push_back(pws[n]->resolution());         // save frequency resolution
+      vR.push_back(pws[n]->wrate());               // save frequency resolution
+      vM.push_back(pws[n]->maxLayer()+1);
+      vJ.push_back(pws[n]->size()/2);
+      if(vM[n]>mBand) {mBand = vM[n]; nn=n;}
+      if(pws[n]->wrate()>mRate) mRate = pws[n]->wrate();
+   }
+
+// set super TF map
+
+   time = pws[nn]->size()/pws[nn]->wrate()/2;        // number of ticks
+   J = mRate*int(time+0.1);
+   cout<<"debug1: "<<mBand<<" "<<mRate<<" "<<J<<" "<<pws[nn]->size()<<endl;
+   level = 0;
+   *this = *pws[nn];
+   this->resize(J);
+   this->setLevel(mBand-1);
+   this->wrate(mRate);
+   //this->rate(mRate*(mBand-1));
+   this->pWavelet->nWWS = J;
+   this->pWavelet->nSTS = (J/mBand)*(mBand-1);
+
+   int nL = int(this->Edge*mRate*mBand);              // left boundary
+   int nR = this->size()-nL-1;                        // right boundary
+
+   for(int i=0; i<this->size(); i++) {                // loop over super-TF-map
+      time = double(i/mBand)/mRate;                   // discrete time in seconds
+      freq = (i%mBand)*vF[nn];                        // discrete frequency
+      ss=ee=EE=0.;
+      for(int n=1; n<N; n++) {                        // loop over TF-maps
+	 j = int(time*vR[n-1]+0.1)*vM[n-1];           // pixel tick index in TF map
+	 j+= int(freq/vF[n-1]+0.1);                   // add pixel frequency index
+	 a = pws[n]->data[j];                         // 00 phase amplitude 
+	 A = pws[n]->data[j+vJ[n-1]];                 // 90 phase amplitude 
+	 j = int(time*vR[n]+0.1)*vM[n];               // pixel tick index in TF map
+	 j+= int(freq/vF[n]+0.1);                     // add pixel frequency index
+	 b = pws[n]->data[j];                         // 00 phase amplitude 
+	 B = pws[n]->data[j+vJ[n]];                   // 90 phase amplitude 
+	 ss = 2*(a*A+b*B);
+	 ee = 2*(a*a+b*b); 
+	 EE = 2*(a*a+b*b); 
+EE+=A*A;
+      cc = ee-EE;
+      gg = sqrt(cc*cc+4*ss*ss);
+      a = sqrt((ee+EE+gg)/2);
+      A = sqrt((ee+EE-gg)/2);
+      }
+
+
+      this->data[i] = (a+A)*(a+A)/mean/2.;
+      if(hist && i>nL && i<nR) hist->Fill(this->data[i]);
+   }
+   //this->Gamma2Gauss(shape,hist);
+   return;
+}
+
 
 //: operators =
 
@@ -2298,22 +2377,22 @@ void WSeries<DataType_t>::Streamer(TBuffer &R__b)
       R__b >> bWWS;
       if(!bWWS) m_WaveType=-1;
       WaveDWT<DataType_t> *pW;
-      switch(m_WaveType) {
-//      case HAAR :
-//        pW = (WaveDWT<DataType_t>*)(new Haar<DataType_t>);
-//        break;
-      case BIORTHOGONAL :
+      switch(m_WaveType) {                                          
+      case HAAR :                                                   
+        pW = (WaveDWT<DataType_t>*)(new Haar<DataType_t>);    
+        break;                                                      
+      case BIORTHOGONAL :                                           
         pW = (WaveDWT<DataType_t>*)(new Biorthogonal<DataType_t>);
-        break;
-//      case DAUBECHIES :
-//        pW = (WaveDWT<DataType_t>*)(new Daubechies<DataType_t>);
-//        break;
-//      case SYMLET :
-//        pW = (WaveDWT<DataType_t>*)(new Symlet<DataType_t>);
-//        break;
-//      case MEYER :
-//        pW = (WaveDWT<DataType_t>*)(new Meyer<DataType_t>);
-//        break;
+        break;                                                          
+      case DAUBECHIES :                                                 
+        pW = (WaveDWT<DataType_t>*)(new Daubechies<DataType_t>);  
+        break;                                                          
+      case SYMLET :                                                     
+        pW = (WaveDWT<DataType_t>*)(new Symlet<DataType_t>);      
+        break;                                                          
+      case MEYER :                                                      
+        pW = (WaveDWT<DataType_t>*)(new Meyer<DataType_t>);       
+        break;                                                          
       case WDMT :                                                       
         pW = (WaveDWT<DataType_t>*)(new WDM<DataType_t>);         
         break;                                                          

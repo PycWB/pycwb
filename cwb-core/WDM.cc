@@ -128,15 +128,6 @@ WaveDWT<DataType_t>(1, 1, 0, B_CYCLE)
 
   if(++objCounter==1) initFourier(); 
 
-  if(iNu<2){
-    printf("iNu too small, reset to 2\n");
-    iNu = 2;
-  }
-  if(iNu>7){
-    printf("iNu too large, reset to 7\n");
-    iNu = 7;
-  }
-  
   this->m_WaveType = WDMT;
   this->m_Heterodine = 1;
   this->BetaOrder = iNu;
@@ -145,6 +136,15 @@ WaveDWT<DataType_t>(1, 1, 0, B_CYCLE)
   this->m_Layer = M;
   this->KWDM = K; 
   this->LWDM = 0; 
+  
+  if(iNu<2){
+    printf("iNu too small, reset to 2\n");
+    iNu = 2;
+  }
+  if(iNu>7){
+    printf("iNu too large, reset to 7\n");
+    iNu = 7;
+  }
   
   int nMax = 3e5;
   int M2 = M*2; 
@@ -1399,7 +1399,7 @@ void WDM<DataType_t>::t2w(int MM)
    int KK = MM;
    
    if(MM<=0) MM = M;
-
+   
    // adjust nWWS
    this->nWWS += this->nWWS%MM ? MM-this->nWWS%MM : 0;      
    
@@ -1541,8 +1541,8 @@ void WDM<DataType_t>::w2t(int flag)
 // inverse transform
 // flag = -2 indicates that the Quadrature coefficients will be used
 
-   if(flag==-2 || flag==2){
-      w2tQ(flag);
+   if(flag==-2){
+      w2tQ(0);
       return;
    }
   int n, j;
@@ -1575,11 +1575,10 @@ void WDM<DataType_t>::w2t(int flag)
   //           if fftw    is used than reX/imX must be divided    by sqrt(2)  
   for(n=0; n<N; ++n){
     for(j = 0; j<M2; ++j) reX[j] = imX[j] = 0;
-    for(j=1; j<M; ++j) {
+    for(j=1; j<M; ++j)
       if( (n+j) & 1 ) imX[j] = TFmap[j]/sqrt2;
       else  if(j&1) reX[j] = - TFmap[j]/sqrt2;
       else reX[j] = TFmap[j]/sqrt2;
-    }
     
     /* works only for EVEN M now
     if(n & 1);  
@@ -1590,10 +1589,9 @@ void WDM<DataType_t>::w2t(int flag)
     */
     
     if( (n & 1) == 0 )reX[0] = TFmap[0];
-    if( ((n+M) & 1) == 0 ) {
+    if( ((n+M) & 1) == 0 )
       if(M&1) reX[M] = -TFmap[M];
       else  reX[M] = TFmap[M];
-    }
 
     ifft.SetPointsComplex(reX,imX);
     ifft.Transform();
@@ -1630,7 +1628,7 @@ void WDM<DataType_t>::w2t(int flag)
 // extra -i in C_k...
 
 template<class DataType_t>
-void WDM<DataType_t>::w2tQ(int flag)
+void WDM<DataType_t>::w2tQ(int)
 {  
 // inverse transform using the quadrature coefficients
 
@@ -1648,7 +1646,7 @@ void WDM<DataType_t>::w2tQ(int flag)
   double* wdm = wdmFilter.data;
   //Data ype_t* TFmap = this->pWWS;	
 	
-  DataType_t* map90 = this->pWWS + (flag<0?N*M1:0);
+  DataType_t* map90 = this->pWWS + N*M1;
   
   if(M*N/this->nSTS!=1) {
     printf("WDM<DataType_t>::w2tQ: Inverse is not defined for the up-sampled map\n");
@@ -1667,22 +1665,21 @@ void WDM<DataType_t>::w2tQ(int flag)
   //           if fftw    is used than reX/imX must be divided    by sqrt(2)  
   for(n=0; n<N; ++n){
     for(j = 0; j<M2; ++j) reX[j] = imX[j] = 0;
-    for(j=1; j<M; ++j) {
+    for(j=1; j<M; ++j)
       if( (n+j) & 1 ) reX[j] = map90[j]/sqrt2;
       else  if(j&1) imX[j] = map90[j]/sqrt2;
       else imX[j] = -map90[j]/sqrt2;
-    }
     
-    /* works only for EVEN M now 
+    /* works only for EVEN M now
     if(n & 1){
       reX[0] = map90[0];
       reX[M] = map90[M];
     }
     */
     
-    if((n+M)&1)  reX[M] = map90[M];    // this case does not work properly for w2tQ(2)
-    if(n & 1)    reX[0] = map90[0];
-    
+    if((n+M) & 1)reX[M] = map90[M];
+    if(n & 1)reX[0] = map90[0];
+
     ifft.SetPointsComplex(reX,imX);
     ifft.Transform();
     ifft.GetPoints(reX);

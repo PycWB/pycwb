@@ -56,6 +56,7 @@
 #pragma link C++ class Meyer<double>+;
 #pragma link C++ class WDM<float>+;
 #pragma link C++ class WDM<double>+;
+//#pragma link C++ class WDMOverlap<double>;
 #pragma link C++ class monster+;
 #pragma link C++ class SymmArray<int>+;
 #pragma link C++ class SymmArray<float>+;
@@ -80,7 +81,6 @@
 #pragma link C++ class skymap-;
 #pragma link C++ class detector-;
 #pragma link C++ class network+;
-#pragma link C++ class xnetwork+;
 #pragma link C++ class netevent;
 #pragma link C++ class injection;
 #pragma link C++ class watplot;
@@ -98,8 +98,6 @@
 #pragma link C++ struct waveSegment+;
 #pragma link C++ struct pixdata+;
 #pragma link C++ struct xtalk+;
-#pragma link C++ struct pixar+;
-#pragma link C++ struct pixel+;
 
 #pragma link C++ nestedtypedef;
 #pragma link C++ typedef vectorD;
@@ -126,6 +124,8 @@
 #pragma link C++ class watconstants;
 #pragma link C++ class wat::Time;
 
+//#pragma link C++ function unCompress(int*, wavearray<double>&);
+
 #ifdef _USE_FR
 #pragma link C++ function ReadFrFile;
 #pragma link C++ function ReadFrame;
@@ -135,7 +135,7 @@
 #pragma link C++ global	NIFO_MAX;
 #pragma link C++ global	NRES_MAX;
 
-//#pragma link C++ function watversion;
+#pragma link C++ function watversion;
 #pragma link C++ function waveAssign(wavearray<int> &, wavearray<float> &);
 #pragma link C++ function waveAssign(wavearray<int> &, wavearray<double> &);
 #pragma link C++ function waveAssign(wavearray<float> &, wavearray<int> &);
@@ -172,8 +172,6 @@
 #pragma link C++ function operator>>(wavearray<double>&,watplot&);
 #pragma link C++ function operator>>(watplot&, TString&);
 #pragma link C++ function operator>>(watplot&, char*&);
-
-#pragma link C++ function xtalk(int,int,int,int,int);
 
 #pragma link C++ class WAT;
 

@@ -16,11 +16,11 @@
 */
 
 
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++++++++++++++++++++++
 // S. Klimenko, University of Florida, Gainesville, FL
 // G.Vedovato,  INFN,  Sezione  di  Padova, Italy
 // WAT network class
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++++++++++++++++++++++
 
 #define NETWORK_CC
 #include <time.h>
@@ -31,9 +31,10 @@
 #include "TRandom3.h"
 #include "TMath.h" 
 #include <fstream>
-//#include "Meyer.hh"
-//#include "injection.hh"
+#include "Meyer.hh"
+#include "injection.hh"
 #include "network.hh"
+#include "watplot.hh"       // remove
 #include "TComplex.h"
 
 using namespace std;
@@ -44,9 +45,9 @@ ClassImp(network)
 
 network::network() : 
    nRun(0), nLag(1), nSky(0), mIFO(0), rTDF(0), Step(0.), Edge(0.), gNET(0.), aNET(0.), iNET(0), 
-   eCOR(0.), norm(1.), e2or(0.), acor(sqrt(2.)), pOUT(false), EFEC(true), local(true), optim(true), 
-   delta(0.), gamma(0.), precision(0.02), pSigma(4.), penalty(1.), netCC(-1.), netRHO(0.), 
-   wfsave(false), pattern(1), _WDM(false) 
+  eCOR(0.), norm(1.), e2or(0.), acor(sqrt(2.)), pOUT(false), EFEC(true), local(true), optim(true), 
+  delta(0.), gamma(0.), precision(0.02), pSigma(4.), penalty(1.), netCC(-1.), netRHO(0.), 
+   eDisbalance(true), MRA(false), wfsave(false), pattern(1), _WDM(false), _LIKE(' ')  
 {
    this->ifoList.clear();
    this->ifoName.clear();
@@ -251,6 +252,44 @@ long network::getNetworkPixels(int LAG, double Eo, double norm, TH1F* hist)
    return nPix;
 }
 
+
+void network::test_sse(int n, int m) {
+   wavearray<float> a(n*4);
+   wavearray<float> b(n*4);
+   wavearray<float> x(n*4);
+   float qq[4];
+   float rq[4];
+   float sq[4];
+   float* pa = a.data;
+   float* pb = b.data;
+   float* px = x.data;
+   __m128* _pa = (__m128*) pa;
+   __m128* _pb = (__m128*) pb;
+   __m128* _px = (__m128*) px;
+
+   for(int i=0; i<n*4; i++) {
+      a.data[i]=i/float(n*4*m);
+      b.data[i]=i/float(n*4*m);
+      x.data[i]=i*float(m)/float(n*4);
+   }
+
+   for(int i=0; i<n; i++) {
+      *(_pa+i) = _mm_sqrt_ps(*(_px+i));
+      *(_pa+i) = _mm_div_ps(_mm_set1_ps(1.),*(_pa+i));
+      *(_pb+i) = _mm_rsqrt_ps(*(_px+i));
+      _mm_storeu_ps(qq,*(_px+i));
+      _mm_storeu_ps(sq,*(_pa+i));
+      _mm_storeu_ps(rq,*(_pb+i));
+      printf("%d  %9.7f  %9.7f  %9.7f \n",i,qq[0],sq[0],rq[0]);
+      printf("%d  %9.7f  %9.7f  %9.7f \n",i,qq[1],sq[1],rq[1]);
+      printf("%d  %9.7f  %9.7f  %9.7f \n",i,qq[2],sq[2],rq[2]);
+      printf("%d  %9.7f  %9.7f  %9.7f \n",i,qq[3],sq[3],rq[3]);
+   }
+
+   return;
+}
+
+
 long network::likelihoodWP(char mode, int lag, int iID, TH2F* hist, char* Search)
 {
 //  Likelihood analysis with packets
@@ -274,6 +313,7 @@ long network::likelihoodWP(char mode, int lag, int iID, TH2F* hist, char* Search
 
    if(!this->wc_List[lag].size()) return 0;
 
+   this->like('2');
    this->wdm(true);
    this->tYPe = mode;
 
@@ -927,10 +967,10 @@ long network::likelihoodWP(char mode, int lag, int iID, TH2F* hist, char* Search
 	 cout<<" N: |"; for(i=1; i<nIFO+1; i++) {printf("%5.1f|",N_snr[i]);}
 	 cout<<endl<<" dof|G|G+R "; printf("%5.1f|%5.1f|%5.1f r[1]=%4.1f",N,Gn,Nw+Gn,REG[1]);
 	 printf(" norm=%3.1f chi2 %3.2f|%3.2f Rc=%3.2f, Dc=%4.1f\n",norm,ch,CH,Rc,Dc);
-	 //     cout<<" r1="<<REG[1]<<" norm="<<norm<<" chi2="<<ch<<"|"<<CH<<" Rc="<<Rc<<" Dc="<<Dc<<endl;
+		     //     cout<<" r1="<<REG[1]<<" norm="<<norm<<" chi2="<<ch<<"|"<<CH<<" Rc="<<Rc<<" Dc="<<Dc<<endl;
 	 //hist->Fill(pwc->cData[id-1].subnet,pwc->cData[id-1].SUBNET);
       }
-      count++;
+      count++;                                                        
 
 // calculation of error regions
 
@@ -941,11 +981,10 @@ long network::likelihoodWP(char mode, int lag, int iID, TH2F* hist, char* Search
       pwc->p_Map.push_back(sArea);
 
       double var = norm*Rc*sqrt(Mo)*(1+fabs(1-CH)); 
-
+      
       if(iID<=0 || ID==id) { 
-	 network::getSkyArea(id,lag,T,var);       // calculate error regions
+	 getSkyArea(id,lag,T,var);       // calculate error regions
       }
-
 // calculation of chirp mass
 
       pwc->cData[id-1].mchirp = 0;
@@ -999,6 +1038,8 @@ long network::likelihoodWP(char mode, int lag, int iID, TH2F* hist, char* Search
   
    return count;
 }
+
+
 
 long network::subNetCut(int lag, float subnet, float subcut, float subnorm, TH2F* hist)
 {
@@ -1091,8 +1132,6 @@ long network::subNetCut(int lag, float subnet, float subcut, float subnorm, TH2F
       V = vint->size();                                   // pixel list size
       if(!V) continue;
 
-      //cout<<"subnetcut "<<V<<" "<<id<<" "<<wdmMRA.clusterCC.size()<<" "<<wdmMRA.sizeCC.size()<<endl;
-      
       pI = wdmMRA.getXTalk(pwc, id);
 
       V = pI.size();                                      // number of loaded pixels
@@ -1352,7 +1391,7 @@ long network::subNetCut(int lag, float subnet, float subcut, float subnorm, TH2F
       if(hist && rHo>fabs(this->netRHO)) 
 	 for(j=0;j<vint->size();j++) hist->Fill(suball,submra);
 
-      if(fmin(suball,submra)>subnet && rHo>fabs(this->netRHO) && Lt>subnorm*Lo) {
+      if(fmin(suball,submra)>subnet && rHo>fabs(this->netRHO) && Em>subnorm*Eo) {
          count += vint->size();	
 	 if(hist) {
 	    printf("lag|id %3d|%3d rho=%5.2f To=%5.1f stat: %5.3f|%5.3f|%5.3f ",
@@ -1403,6 +1442,7 @@ long network::likelihood2G(char mode, int lag, int iID, TH2F* hist)
 
    if(!this->wc_List[lag].size()) return 0;
 
+   this->like('2');
    this->wdm(true);
    this->tYPe = mode;
 
@@ -1660,8 +1700,7 @@ long network::likelihood2G(char mode, int lag, int iID, TH2F* hist)
       __m128* _AA  = (__m128*) this->a_90.data;         // set pointer to 90 array
 
 
-      this->pList.clear();
-      pRate.clear();
+      this->pList.clear(); pRate.clear();
       for(j=0; j<V; j++) {                             // loop over selected pixels 
          pix = pwc->getPixel(id,pI[j]);
 	 this->pList.push_back(pix);                   // store pixel pointers for MRA
@@ -2503,6 +2542,7 @@ long network::likelihood2G(char mode, int lag, int iID, TH2F* hist)
 network& network::operator=(const network& value)
 {
    this->wfsave  = value.wfsave;
+   this->MRA     = value.MRA;
    this->nRun    = value.nRun;
    this->nLag    = value.nLag;
    this->nSky    = value.nSky;
@@ -2529,6 +2569,7 @@ network& network::operator=(const network& value)
    this->ifoList = value.ifoList;
    this->precision=value.precision;
 
+   this->NDM.clear();     this->NDM=value.NDM;
    this->ifoList.clear(); this->ifoList=value.ifoList;
    this->ifoName.clear(); this->ifoName=value.ifoName;
    this->wc_List.clear(); this->wc_List=value.wc_List;
@@ -2557,6 +2598,16 @@ size_t network::add(detector* d) {
    vectorD v; v.clear();
    this->ifoList.push_back(d); 
    this->ifoName.push_back(d->Name);
+
+   n = ifoList.size();
+   d->ifoID = n-1;
+   for(i=0; i<n; i++) {
+      v.push_back(0.);
+      if(i<n-1) this->NDM[i].push_back(0);
+      else      this->NDM.push_back(v);
+   }
+
+//   cout<<"size="<<NDM.size()<<" size_0="<<NDM[0].size()<<endl;
    return ifoList.size();
 }
 
@@ -2613,14 +2664,31 @@ double network::THRESHOLD(double p) {
    if(m>1) m -= 0.01;
    printf("\nm\tM\tbpp\t0.2(D)\t0.2(G)\t0.01(D)\t0.01(G)\tbpp(D)\tbpp(G)\tN*log(m)\tfff\n");
    printf("%g\t%d\t%g\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t\t%.3f\n\n",
-	  m,(int)M,p,med,iGamma(N*m,0.2),v10,iGamma(N*m,p10),val,iGamma(N*m,p),N*log(m),fff);
+           m,M,p,med,iGamma(N*m,0.2),v10,iGamma(N*m,p10),val,iGamma(N*m,p),N*log(m),fff);
    return (iGamma(N*m,p)+val)*0.3+N*log(m);
 }
 
 
+//**************************************************************************
+// calculate WaveBurst threshold as a function of resolution and maximum delay (used by 1G)
+//**************************************************************************
+double network::threshold(double p, double t)
+{
+  size_t I;
+  size_t K = ifoListSize();
+  double n = 1.;
+  if(getifo(0) && t>0. && K) {
+    I = getifo(0)->TFmap.maxLayer()+1;  // number of wavelet layers
+    n = 2*t*getifo(0)->TFmap.rate()/I + 1;
+    if(!getifo(0)->TFmap.size()) n = 1.;
+  }
+  else if(t < 0.) n = -t;               // special case: n=-t
+  return sqrt(iGamma1G(K/2.,1.-(p/2.)/pow(n,K/2.))/K);
+}
+
 void network::printwc(size_t n) { 
    netcluster* p = this->getwc(n);
-   int iTYPE = 1; 
+   int iTYPE = this->MRA ? 0 : 1; 
    wavearray<double> cid = p->get((char*)"ID",0,'S',iTYPE);
    wavearray<double> vol = p->get((char*)"volume",0,'S',iTYPE);
    wavearray<double> siz = p->get((char*)"size",0,'S',iTYPE);
@@ -2641,6 +2709,47 @@ void network::printwc(size_t n) {
       printf("sub=%3.2f rate=%4.0f time=%8.3f To=%8.3f freq=%5.0f\n",
 	     sub[i],rat[i],tim[i],T_o[i],frq[i]); 
    }
+}
+
+
+//**************************************************************************
+//: initialize network sky maps 
+//**************************************************************************
+void network::setSkyMaps(double sms,double t1,double t2,double p1,double p2)
+{
+   size_t i;
+   detector* d;
+   skymap temp(sms,t1,t2,p1,p2);
+   size_t m = temp.size();
+   size_t n = this->ifoList.size();
+    
+   nSensitivity = temp;
+   nAlignment   = temp;
+   nCorrelation = temp;
+   nLikelihood  = temp;
+   nNullEnergy  = temp;
+   nPenalty     = temp;
+   nCorrEnergy  = temp;
+   nNetIndex    = temp;
+   nDisbalance  = temp;
+   nSkyStat     = temp;
+   nEllipticity = temp;
+   nProbability = temp;
+   nPolarisation= temp;
+   nAntenaPrior = temp;
+
+   for(i=0; i<n; i++) { 
+      d = ifoList[i]; 
+      d->setTau(sms,t1,t2,p1,p2);
+      d->setFpFx(sms,t1,t2,p1,p2);
+   }
+   skyProb.resize(m);
+   skyENRG.resize(m);
+   skyMask.resize(m); skyMask = 1;
+   skyMaskCC.resize(0); 
+   skyHole.resize(m); skyHole = 1.;
+   index.resize(m);
+   for(i=0; i<m; i++) index.data[i] = i; 
 }
 
 //**************************************************************************
@@ -2691,7 +2800,7 @@ void network::setDelay(const char* frame) {
   skymap s = ifoList[0]->tau;
   size_t N = this->ifoList.size();
   double t,tm,gg;
-  
+
   if(N < 2) return;
 
   s = 0.;
@@ -2808,6 +2917,394 @@ void network::setAntenna()
     this->setAntenna(D[m]);
   }
   return;
+}
+
+//***************************************************************
+//:set index array for delayed amplitudes, used with WDM delay filters
+// time delay convention: t+tau - arrival time at the center of Earth
+// ta1-tau0 - how much det1 should be delayed to be sinchronized with det0
+///***************************************************************
+void network::setDelayIndex(double rate)
+{
+  double t;
+  int i,ii;
+  size_t n,m,l,k;
+  size_t N = ifoList.size();           // number of detectors
+
+  double tt[NIFO][NIFO];                  
+  double TT[NIFO];                  
+  int    mm[NIFO][NIFO];                  
+
+  if(N<2) {
+    cout<<"network::setDelayIndex(): invalid network\n";
+    return;
+  }
+
+  detector* dr[NIFO];
+  for(n=0; n<N; n++) dr[n] = ifoList[n];
+
+  size_t L = dr[0]->tau.size();               // skymap size  
+  this->rTDF = rate;                          // effective time-delay rate
+
+  //  if(pOUT) cout<<"filter size="<<this->filter.size()
+  //	       <<" layers="<<I<<" delays="<<K<<" samples="<<dr[0]->nDFS<<endl;
+
+  for(n=0; n<N; n++) {
+    if(dr[n]->index.size() != L) {
+       dr[n]->index.resize(L);
+    }
+  }
+
+// calculate time interval the di detector is delayed to be 
+// sinchronized with dr
+// time delay > 0 - shift di right (future) 
+// time delay < 0 - shift di left  (past)
+
+  this->nPenalty = dr[0]->tau;
+  this->nNetIndex = dr[0]->tau;
+
+  for(l=0; l<L; l++){
+
+// calculate time delay matrix
+//  0 d01 d02  
+// d10  0 d12  
+// d20 d21 0
+
+    for(n=0; n<N; n++) {
+      for(m=0; m<N; m++) {
+	t = dr[n]->tau.get(l)-dr[m]->tau.get(l);
+	i = t>0 ? int(t*rTDF+0.5) : int(t*rTDF-0.5);
+	mm[n][m] = i;
+	tt[n][m] = t*rTDF;
+      }
+    }
+
+    for(n=0; n<N; n++) {
+      TT[n] = 0.;                           // max delay for n-th configuration
+      for(m=0; m<N; m++) {
+	for(k=0; k<N; k++) {
+	  t = fabs(mm[n][k]-mm[n][m]-tt[m][k]);
+	  if(TT[n] < t) TT[n] = t; 
+	}
+      }
+    }      
+
+    t = 20.; i = N;
+    for(m=0; m<N; m++) {
+      if(t>TT[m]) { t = TT[m]; k = m; }     // first best configuration
+    }
+    this->nPenalty.set(l,double(t));
+
+    t = dr[k]->tau.get(l);
+    if(mIFO<9) i = mm[k][this->mIFO];
+    else       i = t>0 ? int(t*rTDF+0.5) : int(t*rTDF-0.5);
+        
+//  0 d01 d02      0  d01  d02 
+// d10  0 d12  ->  0 d'01 d'02 
+// d20 d21 0       0 d"01 d"02
+
+    for(m=0; m<N; m++) {
+      ii = mm[k][m]-i;                // convert to time delay with respect to master IFO
+      dr[m]->index.data[l] = ii; 
+      //if(m!=this->mIFO) this->nNetIndex.set(l,double(ii));
+    }
+  }
+  return;
+}
+
+//**************************************************************************
+//:selection of clusters based on: 
+//  'C' - network correlation coefficient with incoherent energy
+//  'c' - network correlation coefficient with null energy
+//  'r' - rho(ecor)
+//  'X' - correlated energy
+//  'x' - correlated energy - null energy (reduced corr energy)
+//  'l' - likelihood (biased)
+//  'L' - likelihood (unbiased)
+//  'A' - snr - null assymetry (double OR)
+//  'E' - snr - null energy    (double OR)
+//  'a' - snr - null assymetry (edon)
+//  'e' - snr - null energy    (edon)
+//**************************************************************************
+size_t network::netcut(double CUT, char cut, size_t core_size, int TYPE)
+{
+  size_t M = this->ifoList.size(); // number of detectors
+  if(!M) return 0; 
+
+  size_t i,j,k,n,m,K;
+  size_t count = 0;
+  size_t ID;
+  size_t I = this->ifoList[0]->TFmap.maxLayer()+1;
+  int    R = int(this->ifoList[0]->getTFmap()->rate()/I+0.5);
+  int type = this->optim ? R : TYPE; // likelihoodI
+
+  wavearray<double> cid;      // buffers for cluster ID
+  wavearray<double> siz;      // buffers for cluster size (core)
+  wavearray<double> SIZ;      // buffers for cluster size (core+halo)
+  vector<wavearray<double> > snr(M); // buffers for total normalized energy
+  vector<wavearray<double> > nul(M); // biased null stream
+
+  double xcut,xnul,xsnr,amin,emin,like,LIKE;
+  bool skip=false;
+
+  for(j=0; j<nLag; j++) {         // loop on time shifts 
+
+    if(!this->wc_List[j].size()) continue;
+    
+    cid = this->wc_List[j].get((char*)"ID",0,'S',type);           // get cluster ID
+    K = cid.size();    
+    if(!K) continue;                                       // no clusters
+
+    siz = this->wc_List[j].get((char*)"size",0,'S',type);         // get cluster C size
+    SIZ = this->wc_List[j].get((char*)"SIZE",0,'S',type);         // get cluster C+H size
+
+    for(m=0; m<M; m++) {          // loop on detectors 
+      snr[m] = this->wc_List[j].get((char*)"energy",m+1,'S',type);  // get total energy
+      nul[m] = this->wc_List[j].get((char*)"null",m+1,'W',type);    // get biased null stream
+    }
+
+    for(k=0; k<K; k++) {          // loop on clusters 
+      
+      if(siz.data[k] < core_size) continue;                  // skip small clusters
+      i = ID = size_t(cid.data[k]+0.1);
+      
+      if(tYPe=='i' || tYPe=='s' || tYPe=='g' || tYPe=='r' ||
+	 tYPe=='I' || tYPe=='S' || tYPe=='G' || tYPe=='R') { 
+	skip = !this->SETNDM(i,j,true,type);      	     // fill network data matrix
+      }
+      else if(tYPe=='b' || tYPe=='B' || tYPe=='E') {
+	skip = !this->setndm(i,j,true,type);                 // fill network data matrix
+      }
+      else {
+        skip = true;
+      }
+
+      if(skip) {
+	cout<<"network::netcut: - undefined NDM matrix"<<endl;
+	this->wc_List[j].ignore(ID);                         // reject cluster
+	count += size_t(SIZ.data[k]+0.1);                    // count rejected pixels
+	continue;        
+      }
+
+      xnul = xsnr = like = LIKE = 0;
+      emin = amin = 1.e99;
+      for(n=0; n<M; n++) {
+	xnul += this->getifo(n)->null;
+	xsnr += snr[n].data[k];
+	like += snr[n].data[k]-this->getifo(n)->null;
+	xcut  = snr[n].data[k]-this->getifo(n)->null;
+	if(xcut < emin) emin = xcut;
+	xcut  = (xcut-this->getifo(n)->null)/snr[n].data[k];
+	if(xcut < amin) amin = xcut;
+	for(m=0; m<M; m++) { 
+	  LIKE += this->getNDM(n,m); 
+	}
+      }
+
+      if(cut == 'A' || cut == 'E') {    // double OR selection
+	emin = amin = 1.e99;
+	for(n=0; n<M; n++) {
+	  xcut  = snr[n].data[k] - this->getifo(n)->null;
+	  if(like-xcut < emin) emin = like-xcut; 
+	  xcut  = 2*(like-xcut)/(xsnr-xcut) - 1.;
+	  if(xcut < amin) amin = xcut; 
+	}
+      }
+      
+      xcut = 0;
+      if(cut == 'c' || cut == 'C') xcut = this->eCOR/(xnul + fabs(this->eCOR));            // network x-correlation
+      if(cut == 'x' || cut == 'X') xcut = this->eCOR/sqrt(fabs(this->eCOR)*M);             // network correlated amplitude
+      if(cut == 'l' || cut == 'L') xcut = like;
+      if(cut == 'a' || cut == 'A') xcut = amin; 
+      if(cut == 'e' || cut == 'E') xcut = emin; 
+      if(cut == 'r' || cut == 'R') xcut = this->eCOR/sqrt((xnul + fabs(this->eCOR))*M); 
+
+      if(xcut < CUT) { 
+	this->wc_List[j].ignore(ID);          // reject cluster
+	count += size_t(SIZ.data[k]+0.1);     // count rejected pixels
+	continue;
+      }
+      else
+	if(cut=='X') cout<<xcut<<cut<<":  size="<<SIZ.data[k]<<" L="<<LIKE<<" ID="<<ID<<endl;
+
+
+      if(pOUT) { 
+	printf("%3d  %4d  %7.2e %7.2e %7.2e %7.2e %7.2e %7.2e   %7.2e\n",
+	       (int)n,(int)i,getNDM(0,0),getNDM(1,1),getNDM(2,2),getNDM(0,1),getNDM(0,2),getNDM(1,2),
+	       getNDM(0,0)+getNDM(1,1)+getNDM(2,2)+2*(getNDM(0,1)+getNDM(0,2)+getNDM(1,2)));
+      }
+    }
+  }
+  return count;
+}
+
+
+
+//**************************************************************************
+//: set rank statistic for pixels in network netcluster structure
+//**************************************************************************
+
+size_t network::setRank(double T, double F)
+{
+  size_t j,m,n,V;
+  size_t cOUNt = 0;
+
+  size_t I = this->ifoList[0]->TFmap.maxLayer()+1;
+  size_t R = size_t(this->ifoList[0]->getTFmap()->rate()/I+0.5);
+  size_t N = this->ifoList[0]->getTFmap()->size();
+  size_t M = this->ifoList.size();                        // number of detectors
+
+  int window = int(T*R+0.5)*I/2;                          // rank half-window size
+  int offset = int(this->Edge*ifoList[0]->getTFmap()->rate()+0.5);
+
+  double amp, rank;
+  int inD, frst, last, nB, nT;
+
+// pointers
+
+  double* ppp;
+  std::vector<detector*> pDet; pDet.clear();
+  std::vector<double*>   pDat; pDat.clear();
+
+  for(m=0; m<M; m++) {
+    pDet.push_back(ifoList[m]);
+    pDat.push_back(ifoList[m]->getTFmap()->data);
+  }
+
+  size_t wmode = pDet[0]->getTFmap()->w_mode; 
+  if(wmode != 1) return 0;
+
+// get index arrays for delayed amplitudes
+
+  wavearray<double> cid;   // buffers for cluster ID
+  netpixel* pix;
+
+  for(n=0; n<nLag; n++) {                  // loop over time shifts 
+     V = this->wc_List[n].pList.size();
+    nB = int(this->wc_List[n].getbpp()*2*window+0.5);
+    
+    if(!V) continue;
+      
+    for(j=0; j<V; j++) {   // loop over pixels 
+	
+      pix = &(this->wc_List[n].pList[j]);
+      if(R != size_t(pix->rate+0.5)) continue;
+	
+//      printf("lag=%2d pixel=%4d ID=%4d  ",n,j,pix->clusterID);
+
+      for(m=0; m<M; m++) {               // loop over detectors 
+
+	inD = size_t(pix->getdata('I',m)+0.1);
+	ppp = pDat[m]+inD;
+	amp = *ppp;
+	  
+	*ppp = pix->getdata('S',m);    // pixel SNR
+	if(inD-window < offset) {      // left boundary
+	  frst = offset;
+	  last = frst + 2*window;
+	}
+	else if(inD+window > int(N-offset)) {
+	  last = N-offset;
+	  frst = last - 2*window;	    
+	}
+	else {
+	  frst = inD-window;
+	  last = inD+window;
+	}
+	
+	if( inD>int(N-offset) ||  inD<offset || 
+	   frst>int(N-offset) || frst<offset ||
+	   last>int(N-offset) || last<offset) { 
+	  cout<<"network::setRank() error\n";
+	  *ppp = amp;                     // restore pixel value in the array
+	  pix->setdata(0.,'R',m);
+	  continue;
+	}
+	
+	rank = pDet[m]->getTFmap()->getSampleRankE(inD,frst,last);
+	nT = last-frst+1;
+
+	if(rank > nT-nB) rank = log(nB/double(nT+1-rank));
+	else rank = 0.;
+
+//	printf("%8.1e|%8.1e ",rank,amp);
+
+	*ppp = amp;                       // restore pixel value in the array
+	pix->setdata(rank,'R',m);
+	cOUNt++;
+	
+      }
+//      cout<<endl;
+    }
+  }
+  return cOUNt;
+}
+
+// read earth skyMask coordinates from file (1G)
+size_t network::setSkyMask(double f, char* file) {
+  int i;
+  size_t L = this->skyHole.size();
+  size_t n = 0;
+  size_t l;
+  char   str[1024];
+  FILE* in;
+  char* pc;
+  double a;
+
+  if(!L) {
+    cout<<endl<<"network::setSkyMask() - skymap size L=0"<<endl<<endl;
+    exit(1);
+  } else if(!file) {
+    cout<<endl<<"network::setSkyMask() - NULL input skymask file"<<endl<<endl;
+    exit(1);
+  } else if(!strlen(file)) {
+    cout<<endl<<"network::setSkyMask() - input skymask file not defined"<<endl<<endl;
+    exit(1);
+  } else if( (in=fopen(file,"r"))==NULL ) {
+    cout << endl << "network::setSkyMask() - input skymask file '" 
+         << file << "' not exist" << endl << endl;;
+    exit(1);
+  }
+
+  while(fgets(str,1024,in) != NULL){
+
+     if(str[0] == '#') continue;
+     if((pc = strtok(str," \t")) == NULL) continue;
+     if(pc) i = atoi(pc);                                       // sky index
+     if((pc = strtok(NULL," \t")) == NULL) continue;
+     if(pc && i>=0 && i<int(L)) {
+       this->skyHole.data[i] = atof(pc);                        // skyProb
+       this->nSkyStat.set(i, atof(pc));		 
+       n++;
+     } else {
+       cout<<endl<<"network::setSkyMask() - "
+           <<"skymask file contains index > max L="<<L<<endl<<endl;
+       exit(1);
+     }
+  }
+  if(n!=L) {
+    cout<<endl<<"network::setSkyMask() - "
+        <<"the number of indexes in the skymask file != L="<<L<<endl<<endl;
+    exit(1);
+  }
+  a = skyHole.mean()*skyHole.size();
+  skyHole *= a>0. ? 1./a : 0.;
+  if(f==0.) { skyHole = 1.; return n; }
+
+  double* p  = this->skyHole.data;
+  double** pp = (double **)malloc(L*sizeof(double*));
+  for(l=0; l<L; l++) pp[l] = p + l;
+
+  skyProb.waveSort(pp,0,L-1);
+
+  a = double(L);
+  for(l=0; l<L; l++) { 
+    a -= 1.; 
+    *pp[l] = a/L<f ? 0. : 1.; 
+    if(*pp[l] == 0.) this->nSkyStat.set(pp[l]-p,*pp[l]);		 
+  }
+  free(pp);
+  return n;
 }
 
 // read celestial/earth skyMask coordinates from file
@@ -3106,6 +3603,97 @@ double network::setVeto(double Tw) {
   return live/R;
 }
 
+// get reconstructed detector responses
+bool network::getwave(size_t ID, size_t lag, char atype)
+{ 
+  int n,m;
+  size_t i,j,k,l;
+  double R = 0;
+  size_t M = this->ifoList.size();
+  bool flag = true;
+
+  netcluster* wc = this->getwc(lag);
+  detector*   pd = this->getifo(0);
+
+  Meyer<double> Me(256,1);
+  WSeries<double> w(Me);
+  WSeries<double> W;
+  wavearray<double> x;  
+  wavearray<double> id = wc->get((char*)"ID"); 
+  std::vector<int> v;
+
+  flag = false;
+  for(j=0; j<id.size(); j++) { 
+    if(id.data[j] == ID) { flag=true; break; }
+  }  
+
+  if(!flag) return false;
+  flag = true;
+
+  v = wc->nTofF[ID-1];                  // backward time delay configuration  
+  k = pd->nDFS/pd->nDFL;                // up-sample factor
+  l = size_t(log(k*1.)/log(2.)+0.1);    // wavelet level
+
+// time-of-flight backward correction for reconstructed waveforms
+
+  for(i=0; i<M; i++) {
+    pd = this->getifo(i);
+    if(pd->getwave(ID,*wc,atype,i) == 0.) { flag=false; break; } 
+
+    R = pd->waveForm.rate();
+
+    w.rate(R*k); x.rate(R);
+    m = int(pd->waveForm.size());
+    n = m/int(R+0.1)+4;                 // integer number of seconds
+    n *= int(R+0.1);                    // total number of samples in layer 0
+    if(n!=int(x.size())) x.resize(n);
+    x = 0.; x.cpf(pd->waveForm,m,0,n/2);
+    n *= k;                             // total number of up samples
+    if(n!=int(w.size())) w.resize(n);
+    w.setLevel(l);                      // set wavelet level
+    w = 0.; w.putLayer(x,0);            // prepare for upsampling
+    w.Inverse();                        // up-sample
+    W = w; w = 0.;
+    
+    if(v[i]>0) {                        // time-shift waveform
+      w.cpf(W,w.size()-v[i],0,v[i]);    // v[i] - backward time delay 
+    }
+    else {
+      w.cpf(W,w.size()+v[i],-v[i]);
+    }
+
+    n = x.size();
+    w.Forward(l);
+    w.getLayer(x,0);
+    pd->waveForm.cpf(x,m,n/2);          // align waveforms
+
+    x  = pd->waveForm;                  // produce null stream
+    w  = pd->waveNull;
+    x *= -1.;                           
+    n  = int((x.start()-w.start())*x.rate()+0.1);
+    w.add(x,m,0,n);
+    w.Forward(pd->TFmap.getLevel());
+
+    pd->waveNull.resize(4*int(R+0.1)+x.size());
+    pd->waveNull.setLevel(pd->TFmap.getLevel());
+    pd->waveNull = 0.;
+    pd->waveNull.start(x.start()-2.);
+
+    n = int((pd->waveNull.start()-w.start())*w.rate()+0.1);
+    m = pd->waveNull.size();
+    if(n>=0) {
+      if(n+m > (int)w.size()) m = w.size()-n;
+      pd->waveNull.cpf(w,m,n,0);
+    }
+    else {
+      m += n;
+      if(m > (int)w.size()) m = w.size();
+      pd->waveNull.cpf(w,m,0,-n);    
+    }
+  }
+  return flag;
+}
+
 bool network::getMRAwave(size_t ID, size_t lag, char atype, int mode, bool tof)
 { 
 // get MRA waveforms of type atype in time domain given lag nomber and cluster ID
@@ -3163,7 +3751,6 @@ bool network::getMRAwave(size_t ID, size_t lag, char atype, int mode, bool tof)
   }
   return flag;
 }
-
 
 //**************************************************************************
 // initialize wc_List for a selected TF area
@@ -3250,6 +3837,300 @@ size_t network::initwc(double sTARt, double duration)
     this->wc_List[0].cluster();
   }
   return npix;
+}
+
+
+//**************************************************************************
+//:select TF samples by value of the network likelihood: 2-NIFO detectors
+//**************************************************************************
+long network::coherence(double Eo, double Es, double factor)
+{
+  size_t nIFO = this->ifoList.size();       // number of detectors
+
+  if(nIFO>NIFO || !this->filter.size() || this->filter[0].index.size()!=32) {
+     cout<<"network::coherence(): \n" 
+         <<"invalid number of detectors or\n"
+	 <<"delay filter is not set\n";
+    return 0;
+  }
+  if(getifo(0)->getTFmap()->w_mode != 1) {
+    cout<<"network::coherence(): invalid whitening mode.\n"; 
+    return 0;
+  } 
+
+  if(factor > 1.) factor = float(nIFO-1)/nIFO;
+  Eo = nIFO*Eo*Eo;       // lognormal threshold on total pixel energy
+  Es = nIFO*Es*Es;       // final threshold on pixel energy
+
+  size_t i,j,k,m,n,l,NN;
+  size_t jS,jj,nM,jE,LL;
+
+  double R = this->ifoList[0]->getTFmap()->rate();
+  size_t N = this->ifoList[0]->getTFmap()->size();
+  size_t I = this->ifoList[0]->TFmap.maxLayer()+1;
+  size_t M = this->filter.size()/I;                  // total number of delays 
+  size_t K = this->filter[0].index.size();           // length of delay filter 
+  size_t L = this->index.size();                     // total number of source locations 
+  size_t jB = size_t(this->Edge*R/I)*I;              // number of samples in the edges
+  double band = this->ifoList[0]->TFmap.rate()/I/2.;
+  slice S = getifo(0)->getTFmap()->getSlice(0);      // 0 wavelet slice
+
+  delayFilter* pv;
+  netpixel pix(nIFO); 
+  pix.core = true;
+  pix.rate = R/I;
+  pix.layers = I;
+  
+// pointers to data
+
+  wavearray<int>    inTF; 
+  wavearray<double> emax[NIFO]; 
+  double* pdata[NIFO];
+  double* pq;
+  for(n=0; n<NIFO; n++) {
+    emax[n].resize(S.size()); emax[n] = 0.;
+    if(n >= nIFO) continue;
+    pdata[n] = getifo(n)->getTFmap()->data;
+  }
+  inTF.resize(S.size()); inTF = 0;
+
+// allocate buffers
+  wavearray<double> eD[NIFO];       // array for delayed amplitudes^2
+  double* pe[NIFO];
+  int     in[NIFO];
+  for(n=0; n<NIFO; n++) { eD[n].resize(M); eD[n] = 0.; pe[n] = eD[n].data; }
+
+// get sky index arrays
+  wavearray<short> inDEx[NIFO];
+  short* ina;
+
+  LL = 0;
+  for(l=0; l<L; l++) if(skyMask.data[l]) LL++;
+  for(n=0; n<NIFO; n++) { 
+    inDEx[n].resize(LL);
+    if(n>=nIFO) inDEx[n] = 0;
+    else {
+      k = 0;
+      ina = this->getifo(n)->index.data;
+      for(l=0; l<L; l++) {
+	if(skyMask.data[l]) inDEx[n].data[k++] = ina[l];
+      }
+    }
+  }
+
+  NETX( 
+  short* m0 = inDEx[0].data; ,
+  short* m1 = inDEx[1].data; ,
+  short* m2 = inDEx[2].data; ,
+  short* m3 = inDEx[3].data; ,
+  short* m4 = inDEx[4].data; ,
+  short* m5 = inDEx[5].data; ,
+  short* m6 = inDEx[6].data; ,
+  short* m7 = inDEx[7].data; )
+
+// buffer for wavelet layer delay filter
+  double* pF = (double*)malloc(K*M*sizeof(double));
+  int*    pJ =    (int*)malloc(K*M*sizeof(int));
+  double* F;
+  int*    J;
+
+// sky time delays
+
+  size_t M1[NIFO];
+  size_t M2[NIFO];
+  double t1,t2;
+  size_t KK = this->filter.size()/I;         // number of time delay samples
+  for(n=0; n<nIFO; n++) { 
+    t1 = getifo(n)->tau.min()*R*getifo(0)->nDFS/I;
+    t2 = getifo(n)->tau.max()*R*getifo(0)->nDFS/I;
+    M1[n] = short(t1+KK/2+0.5)-1;
+    M2[n] = short(t2+KK/2+0.5)+1;
+  }
+
+// time shifts
+
+  long nZero = 0;
+  bool skip = false;
+  size_t Io = 0;                             // counter of number of layers  
+  double a,b,E;
+
+  this->pixeLHood = getifo(0)->TFmap;
+  this->pixeLHood = 0.;
+
+// set veto array if it is not set
+  if(this->veto.size() != N) { veto.resize(N); veto = 1; }
+
+  N -= jB;                                   // correction for left boundary
+
+  for(k=0; k<nLag; k++) { 
+    this->wc_List[k].clear();                // clear netcluster structure
+    this->livTime[k] = 0.;                   // clear live time counters
+    this->wc_List[k].setlow(getifo(0)->TFmap.getlow());
+    this->wc_List[k].sethigh(getifo(0)->TFmap.gethigh());
+  }
+
+  for(i=1; i<I; i++) {                       // loop over wavelet layers
+
+// select bandwidth
+    a = i*band;
+    if(a >= getifo(0)->TFmap.gethigh()) continue;
+    a = (i+1)*band;
+    if(a <= getifo(0)->TFmap.getlow()) continue; 
+    
+    Io++;
+    
+// set filter array for this layer
+    for(m=0; m<M; m++){                    
+      for(k=0; k<K; k++){             
+	pv = &(filter[i*M+m]);
+	pF[k+m*K] = double(pv->value[k]);
+	pJ[k+m*K] =    int(pv->index[k]);
+      }
+    }
+
+    S = getifo(0)->getTFmap()->getSlice(i);
+
+    NN = S.size();
+    for(n=0; n<NIFO; n++) {           // resize arrays for max amplitudes
+      if(emax[n].size() != NN) emax[n].resize(NN); 
+      emax[n] = 0; in[n] = 0;
+    }      
+    if(inTF.size() != NN) inTF.resize(NN); 
+
+// apply delay filters to calculate emax[]
+
+    jS = S.start()+jB;
+    NN = NN - jB/I;
+    jE = NN - jB/I;
+
+    for(n=0; n<nIFO; n++) {
+
+      jj = jB/I; 
+
+      for(j=jS; j<N; j+=I) {              // loop over samples in the layer
+
+	emax[n].data[jj] = 0.;
+	inTF.data[jj] = j;              // store index in TF map
+	
+	F  = pF+M1[n]*K; 
+	J  = pJ+M1[n]*K;
+	pq = pdata[n]+j;
+
+	b = 0.;
+	for(m=M1[n]; m<M2[n]; m++){                   
+	  a  = dot32(F,pq,J);           // delayed amplitude
+	  a *= a;
+	  if(b < a) b = a;      // max energy 
+	  F+=K; J+=K;
+	}
+	emax[n].data[jj++]  = b;
+      }
+    }
+
+// select shifted amplitudes
+// regular case:             jS.......j*********.....N
+// left boundary handling:   jS***.............j*****N shift becomes negative 
+
+    for(k=0; k<nLag; k++) {              // over lags
+      
+      a  = 1.e10;
+      nM = 0;                                     // master detector 
+
+      for(n=0; n<nIFO; n++) {
+	b = this->getifo(n)->lagShift.data[k];    // shift in seconds
+	if(a>b) { a = b; nM = n; }
+      }
+
+      for(n=0; n<nIFO; n++) {
+	b = this->getifo(n)->lagShift.data[k];    // shift in seconds
+	in[n] = (int((b-a)*R)+jB)/I - 1;          // index of first pixel in emax -1
+      }
+
+      for(jj=jB/I; jj<NN; jj++) {                 // loop over samples in the emax
+	
+	m = 0; E = 0.;
+	for(n=0; n<nIFO; n++) {
+	  if((++in[n]) >= int(NN)) in[n] -= jE;   // check boundaries
+	  m += this->veto.data[inTF.data[in[n]]]; // check data quality
+	  E += emax[n].data[in[n]]; 
+	}
+	this->livTime[k] += float(m/nIFO);        // calculate live time for each lag
+	if(E<Eo || m<nIFO) continue;
+
+	skip = false;
+	for(n=0; n<nIFO; n++) {
+	  b = E - emax[n].data[in[n]];
+	  if(b<Eo*factor) skip = true;
+	}
+	if(skip) continue;
+	
+// calculate delays again and run skyloop.
+
+	for(n=0; n<nIFO; n++) {
+	  F  = pF+M1[n]*K; 
+	  J  = pJ+M1[n]*K;
+	  pq = pdata[n]+inTF.data[in[n]];
+
+	  for(m=M1[n]; m<M2[n]; m++){                   
+	    a  = dot32(F,pq,J);              // delayed amplitude
+	    pe[n][m]  = a*a;                 // delayed energy
+	    F+=K; J+=K;
+	  }
+	}
+
+	skip = true;
+	for(l=0; l<LL; l++) {
+	  double pet = 0.;
+          NETX( 
+          pet+=pe[0][m0[l]]; ,
+          pet+=pe[1][m1[l]]; ,
+          pet+=pe[2][m2[l]]; ,
+          pet+=pe[3][m3[l]]; ,
+          pet+=pe[4][m4[l]]; ,
+          pet+=pe[5][m5[l]]; ,
+          pet+=pe[6][m6[l]]; ,
+          pet+=pe[7][m7[l]]; )
+	  if(pet > Eo)  
+	    { skip = false; break; }
+	}
+	if(skip) continue;
+
+// save pixels in wc_List
+	
+	j = inTF.data[in[nM]];                      // index in TF
+	pix.rate = float(R/I);
+	pix.time = j;
+	pix.core = E>Es ? true : false;
+	pix.frequency = i;
+	pix.likelihood = E;
+	
+	for(n=0; n<nIFO; n++) {
+	  pix.data[n].index = inTF.data[in[n]];
+	  pix.data[n].asnr = emax[n].data[in[n]];
+	}
+	
+	wc_List[k].append(pix);
+	if(!k) this->pixeLHood.data[j] = sqrt(E/nIFO);
+	nZero++;
+      }      
+    }
+  }
+
+// set metadata in wc_List
+  for(k=0; k<nLag; k++) {
+    a = getifo(0)->getTFmap()->start();
+    b = getifo(0)->getTFmap()->size()/R;
+    this->wc_List[k].start = a;  
+    this->wc_List[k].stop  = a+b;
+    this->wc_List[k].rate  = R;
+    this->livTime[k] *= double(I)/(Io*R);
+  }
+  
+  if(nZero) this->setRMS();
+  
+  free(pF); free(pJ);
+
+  return nZero;
 }
 
 // calculate sky error regions
@@ -3352,54 +4233,3117 @@ void network::getSkyArea(size_t id, size_t lag, double To, double rMs) {
 
 // set injections if there are any
 
-//  if(!M) { free(pp); return; }
-//
-//  double dT = 1.e13;
-//  double injTime = 1.e12;
-//  int injID = -1;
-//  int mdcID = -1;
-//  injection INJ(this->ifoList.size());
-//
-//  for(m=0; m<M; m++) {
-//    mdcID = this->getmdc__ID(m);
-//    dT = fabs(To - this->getmdcTime(mdcID));
-//    if(dT<injTime && INJ.fill_in(this,mdcID)) {
-//      injTime = dT;
-//      injID = mdcID;
-//      if(pOUT) printf("getSkyArea: %4d %12.4f %7.3f %f \n",int(m),To,dT,s);
-//    }
-//  }
-//
-//  if(INJ.fill_in(this,injID)) {
-//
-//    th = INJ.theta[0];
-//    ph = INJ.phi[0];
-//    i  = this->getIndex(th,ph);
-//
-//    vI->push_back(int(i));
-//    vP->push_back(float(p[i]));
-//
-//    vol = sum = 0.;
-//    for(l=L-1; l>Lm; l--){
-//      vol += s;
-//      sum += *pp[l];
-//      if(pp[l]-p == int(i)) break;
-//    }
-//    (*vf)[0]  = sqrt(vol);
-//    (*vf)[10] = sum;
-//    j = pp[L-1]-p;                                    // reference sky index at max
-//
-//    if(pOUT) {
-//      printf("getSkyArea: %5d %12.4f %6.1f %6.1f %6.1f %6.1f %6.2f %6.2f %6.2f %7.5f, %e %d \n",
-//	     int(id),INJ.time[0]-this->getifo(0)->TFmap.start(),INJ.theta[0],INJ.phi[0],
-//	     sm->getTheta(j),sm->getPhi(j),(*vf)[0],(*vf)[5],(*vf)[9],(*vf)[10],p[i],int(i));
-//    }
-//  }
+  if(!M) { free(pp); return; }
+  
+  double dT = 1.e13;
+  double injTime = 1.e12;
+  int injID = -1;
+  int mdcID = -1;
+  injection INJ(this->ifoList.size());
+
+  for(m=0; m<M; m++) {
+    mdcID = this->getmdc__ID(m);
+    dT = fabs(To - this->getmdcTime(mdcID));
+    if(dT<injTime && INJ.fill_in(this,mdcID)) { 
+      injTime = dT; 
+      injID = mdcID; 
+      if(pOUT) printf("getSkyArea: %4d %12.4f %7.3f %f \n",int(m),To,dT,s);
+    } 
+  }
+ 
+  if(INJ.fill_in(this,injID)) {
+
+    th = INJ.theta[0];
+    ph = INJ.phi[0]; 
+    i  = this->getIndex(th,ph); 
+
+    vI->push_back(int(i));
+    vP->push_back(float(p[i]));
+
+    vol = sum = 0.;
+    for(l=L-1; l>Lm; l--){
+      vol += s;
+      sum += *pp[l];
+      if(pp[l]-p == int(i)) break;
+    }
+    (*vf)[0]  = sqrt(vol);
+    (*vf)[10] = sum;
+    j = pp[L-1]-p;                                    // reference sky index at max
+
+    if(pOUT) {
+      printf("getSkyArea: %5d %12.4f %6.1f %6.1f %6.1f %6.1f %6.2f %6.2f %6.2f %7.5f, %e %d \n",
+	     int(id),INJ.time[0]-this->getifo(0)->TFmap.start(),INJ.theta[0],INJ.phi[0],
+	     sm->getTheta(j),sm->getPhi(j),(*vf)[0],(*vf)[5],(*vf)[9],(*vf)[10],p[i],int(i));
+    }
+  }
   
   free(pp);
   return;
 }
 
+
+// calculate sky error regions
+void network::getSkyArea(size_t id, size_t lag, double To) {
+  int in,im,IN,IM;
+  size_t i,j,l,m,k,K;
+  size_t N = this->wc_List[lag].csize();
+  size_t L = this->skyProb.size();
+  size_t Lm = L-int(0.9999*L); 
+  skymap* sm = &(this->nSkyStat);
+
+  if(Lm < 2) return; 
+  if(nSky > long(L-Lm)) nSky = L-Lm;
+  if(id>N) return;
+
+  double a,th,ph,st,sp;
+  double TH,PH,ST,SP,Eo;
+  double sum = 0.;
+  double vol = 0.;
+  double co1 = cos(sm->theta_1*PI/180.);
+  double co2 = cos(sm->theta_2*PI/180.);
+  double phi = sm->phi_2-sm->phi_1;
+  double s = fabs(phi*(co1-co2))*180/PI/sm->size();  // sky solid angle
+
+  std::vector<float>* vf = &(this->wc_List[lag].sArea[id-1]);  
+  size_t v[11]; 
+
+  double* p  = this->skyProb.data;
+  double** pp = (double **)malloc(L*sizeof(double*));
+  for(l=0; l<L; l++) pp[l] = p + l;
+
+  skyProb.waveSplit(pp,0,L-1,Lm);
+  skyProb.waveSort(pp,Lm,L-1);
+
+  Eo = *pp[L-1];                                    // max L
+  for(l=L-1; l>=Lm; l--) *pp[l] -= Eo;
+  for(l=0; l<Lm; l++) *pp[l] = -1.e10;
+
+// correction for sky segmentation
+
+  if(sm->getOrder()==0) {                               // is disabled for HEALPix skymap 
+    for(l=Lm; l<L; l++){                
+      j = pp[l]-p;                                      // reference sky index
+      th = sm->getTheta(j);
+      ph = sm->getPhi(j);
+      st = sm->getThetaStep(j);
+    
+      for(in=-1; in<2; in++) {
+        sp = sm->getPhiStep(getIndex(th+in*st,ph));
+        for(im=-1; im<2; im++) {
+      	  i = this->getIndex(th+in*st,ph+im*sp);        // neighbour sky index
+	  if(p[i] >= p[j] || p[i] < -1.e9) continue;
+
+	  TH = sm->getTheta(i);
+	  PH = sm->getPhi(i);
+	  ST = sm->getThetaStep(i);
+	  m = 0; a = 0.;
+	  for(IN=-1; IN<2; IN++) {
+	  SP = sm->getPhiStep(getIndex(TH+IN*ST,PH));
+	    for(IM=-1; IM<2; IM++) {
+	      k = this->getIndex(TH+IN*ST,PH+IM*SP);    // neighbour sky index
+	      if(p[i] >=p[k]) continue;
+	      m++; a += p[k];
+	    }
+	  }
+  	  if(m>3) p[i] = a/m;
+        }
+      }
+    }
+    skyProb.waveSplit(pp,0,L-1,Lm);
+    skyProb.waveSort(pp,Lm,L-1);
+  }
+
+  skyENRG = 0.;
+  Eo = *pp[L-2]*0.9;                                    // max L
+  sum = vol = 0.;
+  for(l=L-2; l>=Lm; l--) {  
+    a = (Eo - *pp[l]);
+    skyENRG.data[L-l-1] = a;
+    if(a < pSigma || vol<1.) {
+      sum += a/(L-l-1);
+      vol += 1;
+    }
+    *pp[l] -= Eo;
+  }
+
+  if(pOUT) cout<<sum/vol<<" "<<*pp[L-2]<<" "<<*pp[L-3]<<" "<<*pp[0]<<"\n";
+
+  Eo = sum/vol/2.;
+  *pp[0] = exp(-30.);
+  for(l=L-1; l>0; l--) {
+    a = l>Lm ? (L-l-1)*Eo : 30.;
+    if(a > 30.) a = 30.;
+    *pp[l] = exp(-a);             // calculate skyProb map
+  }
+
+  if(pOUT) cout<<"norm: "<<(skyProb.mean()*L)<<endl;
+  skyProb *= 1./(skyProb.mean()*L); 
+  for(l=0; l<L; l++) nProbability.set(l,log10(p[l]));        // fill in skyProb map
+
+  vf->clear();
+  for(m=0; m<11; m++) { v[m] = 0; vf->push_back(0.); }
+
+  sum = 0.;
+  for(l=L-1; l>Lm; l--){
+    for(m=size_t(sum*10.)+1; m<10; m++) v[m] += 1;
+    sum += *pp[l];
+    if(sum >= 0.9) break;
+  }
+  
+  for(m=1; m<10; m++) (*vf)[m] = sqrt(v[m]*s); 
+  
+// fill skyProb skymap 
+  
+  std::vector<float>* vP = &(this->wc_List[lag].p_Map[id-1]);
+  std::vector<int>*   vI = &(this->wc_List[lag].p_Ind[id-1]);
+  
+  K = 0;
+  sum = 0.;
+  vP->clear();
+  vI->clear();
+  double pthr=0;
+  // if nSky -> nSky is converted into a probability threshold nSky=-XYZ... -> pthr=0.XYZ... 
+  if(nSky<0) {char spthr[1024];sprintf(spthr,"0.%d",int(abs(nSky)));pthr=atof(spthr);}
+  for(l=L-1; l>Lm; l--){
+    sum += *pp[l]; 
+    if(nSky==0 && (K==1000 || sum > 0.99) && K>0) break; 
+    else if(nSky<0 && sum > pthr && K>0) break; 
+    else if(nSky>0 && K==nSky && K>0) break;
+    K++;  
+    vI->push_back(int(pp[l]-p));
+    vP->push_back(float(*pp[l]));
+  } 
+
+// set injections if there are any
+
+  size_t M = this->mdc__IDSize();
+  
+  if(!M) { free(pp); return; }
+  
+  double dT = 1.e13;
+  double injTime = 1.e12;
+  int injID = -1;
+  int mdcID = -1;
+  injection INJ(this->ifoList.size());
+
+  for(m=0; m<M; m++) {
+    mdcID = this->getmdc__ID(m);
+    dT = fabs(To - this->getmdcTime(mdcID));
+    if(dT<injTime && INJ.fill_in(this,mdcID)) { 
+      injTime = dT; 
+      injID = mdcID; 
+      if(pOUT) printf("getSkyArea: %4d %12.4f %7.3f %f \n",int(m),To,dT,s);
+    } 
+  }
+ 
+  if(INJ.fill_in(this,injID)) {
+
+    th = INJ.theta[0];
+    ph = INJ.phi[0]; 
+    i  = this->getIndex(th,ph); 
+
+    vI->push_back(int(i));
+    vP->push_back(float(p[i]));
+
+    vol = sum = 0.;
+    for(l=L-1; l>Lm; l--){
+      vol += s;
+      sum += *pp[l];
+      if(pp[l]-p == int(i)) break;
+    }
+    (*vf)[0]  = sqrt(vol);
+    (*vf)[10] = sum;
+    j = pp[L-1]-p;                                    // reference sky index at max
+
+    if(pOUT) {
+      printf("getSkyArea: %5d %12.4f %6.1f %6.1f %6.1f %6.1f %6.2f %6.2f %6.2f %7.5f, %e %d \n",
+	     int(id),INJ.time[0]-this->getifo(0)->TFmap.start(),INJ.theta[0],INJ.phi[0],
+	     sm->getTheta(j),sm->getPhi(j),(*vf)[0],(*vf)[5],(*vf)[9],(*vf)[10],p[i],int(i));
+    }
+  }
+  
+  free(pp);
+  return;
+}
+
+//**************************************************************************
+// calculate network likelihood for constructed clusters: 2-NIFO detectors
+// It is designed to replace likelihood functions for 2,3,4 and NIFO networks. 
+// If the network has less then NIFO detectors, all arrays are allocated for NIFO 
+// detectors anyway. The arrays are initialized so that the dummy detectors
+// do not contribute into calculation of the coherent statistics.
+// Both general and elliptical constraint can be executed 
+//**************************************************************************
+long network::likelihood(char type, double Ao, int ID, size_t lag, int ind, bool core)
+{
+  size_t nIFO = this->ifoList.size();
+  this->tYPe = type;
+  this->acor = Ao;
+  if(nIFO>NIFO || !this->filter.size() || this->filter[0].index.size()!=32) {
+    cout<<"network::likelihood(): invalid number of detectors or delay filter is not set.\n";
+    return false;
+  }
+  if(type=='b' || type=='B' || type=='E')         
+    return likelihoodB(type, Ao, ID, lag, ind, core);
+  else 
+    return likelihoodI(type, Ao, ID, lag, ind, core);
+}
+
+
+//**************************************************************************
+// calculate network likelihood for constructed clusters: 2-NIFO detectors
+// It is a new implementation for likelihood functions for networks of 2,3,4,NIFO 
+// detectors with improved constraints. If the network has less then NIFO detectors, 
+// all arrays are allocated for NIFO detectors anyway. The arrays are initialized 
+// so that the dummy detectors do not contribute into calculation of the coherent 
+// statistics. 
+//**************************************************************************
+long network::likelihoodB(char type, double Ao, int iID, size_t lag, int ind, bool core)
+{
+  this->like('B'); 
+
+  size_t nIFO = this->ifoList.size();
+  size_t ID = abs(iID);
+  int   N_1 = nIFO>2 ? int(nIFO)-1 : 2;
+  int   N_2 = nIFO>2 ? int(nIFO)-2 : 1;
+  if(nIFO>NIFO || !this->filter.size() || this->filter[0].index.size()!=32) {
+    cout<<"network::likelihood(): invalid number of detectors or delay filter is not set.\n";
+    return false;
+  }
+
+// regulators hard <- soft <0> weak -> hard
+//   gamma =    -1 <-       0       -> 1
+//   delta =     0  ->  1
+
+  double Eo    = nIFO*Ao*Ao;                    // energy threshold in the sky loop
+  double soft  = delta>0 ? delta : 0.;
+  double GAMMA = 1.-gamma*gamma;                // network regulator
+  
+  int  LOCAL = local ? 1 : 0;                   // ED minimization case
+  double rho = this->netRHO*this->netRHO*nIFO;  // threshold on rho
+
+  double gr,gp,gx,gR,gI,gc,gg,gP,gX,T,rm,Le,E,LPm;
+  double STAT,P,EE,Et,Lo,Lm,hh,Xp,Xx,XX,Lp,Em,Ep;
+  double S,co,si,cc,em,um,vm,uc,us,vc,vs,Co,Cp;
+  NETX(double c0;,double c1;,double c2;,double c3;,double c4;,double c5;,double c6;,double c7;)
+  double inet;  
+
+  if(type=='E' && Eo<nIFO) Eo = double(nIFO);  
+  if(!ID && ind>=0) ind = -1;  
+  this->tYPe = type;
+  this->acor = Ao;
+  
+  int    ii,II,IIm;
+  size_t i,j,k,l,m,n,V,U,K,id;
+  size_t I = this->ifoList[0]->TFmap.maxLayer()+1;
+  size_t M = this->filter.size()/I;              // total number of delays 
+  size_t L = ind<0 ? this->index.size() : ind+1; // total number of source locations 
+  int    R = int(this->ifoList[0]->getTFmap()->rate()/I+0.5);
+
+// pointers to data
+  double* pdata[NIFO];
+  double* qdata[NIFO];
+  double* pq;
+  for(n=0; n<nIFO; n++) {
+    pdata[n] = getifo(n)->getTFmap()->data;
+    qdata[n] = getifo(n)->getTFmap()->data;
+  }
+
+// buffer for wavelet layer delay filter
+  std::vector<float>* F;
+  std::vector<short>* J;
+  
+// get antenna patterns and index arrays
+  double*  fp[NIFO];                     // f+ 
+  double*  fx[NIFO];                     // fx
+  double* ffp[NIFO];                     // f+f+ + fxfx 
+  double* ffm[NIFO];                     // f+f+ - fxfx
+  double* fpx[NIFO];                     // 2*f+fx
+  wavearray<double> f00(L); f00 = 0.; // dummy zero array
+
+  for(n=0; n<NIFO; n++) {
+     fp[n] = n<nIFO ? getifo(n)->fp.data  : f00.data;
+     fx[n] = n<nIFO ? getifo(n)->fx.data  : f00.data;
+    ffp[n] = n<nIFO ? getifo(n)->ffp.data : f00.data;
+    ffm[n] = n<nIFO ? getifo(n)->ffm.data : f00.data;
+    fpx[n] = n<nIFO ? getifo(n)->fpx.data : f00.data;
+  }
+
+  short* mm = this->skyMask.data;
+  NETX( 
+  short* m0 = getifo(0)->index.data;                                  ,
+  short* m1 = nIFO>1 ? getifo(1)->index.data : getifo(1)->index.data; ,
+  short* m2 = nIFO>2 ? getifo(2)->index.data : getifo(1)->index.data; ,
+  short* m3 = nIFO>3 ? getifo(3)->index.data : getifo(1)->index.data; ,
+  short* m4 = nIFO>4 ? getifo(4)->index.data : getifo(1)->index.data; ,
+  short* m5 = nIFO>5 ? getifo(5)->index.data : getifo(1)->index.data; ,
+  short* m6 = nIFO>6 ? getifo(6)->index.data : getifo(1)->index.data; ,
+  short* m7 = nIFO>7 ? getifo(7)->index.data : getifo(1)->index.data; )
+
+// allocate buffers
+  std::vector<size_t> pI;
+
+  wavearray<double> aS[NIFO];       // single whitened amplitude
+  wavearray<double> eS[NIFO];       // energy SNR
+  wavearray<double> NV[NIFO];       // noise variance
+  wavearray<double> NR[NIFO];       // noise rms
+  wavearray<double> cid;         // buffers for cluster ID
+  wavearray<double> cTo;         // buffers for cluster time
+  wavearray<double> vol;         // buffers for cluster volume
+  wavearray<double> xi(500);     // buffers for detector responses
+  wavearray<short>  jU(2500);    // buffers for likelihood normalization factor
+  wavearray<double> Fplus(2500); // buffers for F+
+  wavearray<double> Fcros(2500); // buffers for Fx
+
+  double* px;
+  double* nv[NIFO];
+  double* nr[NIFO];
+  double* pe[NIFO];
+  double* pa[NIFO];
+  double  pp[NIFO];
+  double  qq[NIFO];
+  double  am[NIFO];
+  double  Fp[NIFO];
+  double  Fx[NIFO];
+  double  ee[NIFO];
+  double  rr[NIFO];
+  double   e[NIFO];
+  double   u[NIFO];
+  double   v[NIFO];
+  double   r[NIFO];
+
+  U = 500;
+  for(n=0; n<NIFO; n++) {
+    NV[n].resize(U);   NV[n] = 0.; nv[n] = NV[n].data; 
+    NR[n].resize(U);   NR[n] = 0.; nr[n] = NR[n].data; 
+    aS[n].resize(U*M); aS[n] = 0.; 
+    eS[n].resize(U*M); eS[n] = 0.;
+    rr[n] = 1.;
+  }
+
+  netpixel* pix;
+  std::vector<int>* vint;
+  std::vector<int>* vtof;
+
+  bool    skip;
+  double  logbpp;
+  size_t  count = 0;
+
+  S = 0.;
+  if(ID) { 
+    this->pixeLHood = getifo(0)->TFmap; 
+    this->pixeLHood = 0.; 
+    this->pixeLNull = getifo(0)->TFmap; 
+    this->pixeLNull = 0.; 
+    this->nSensitivity = 0.;
+    this->nAlignment = 0.;	
+    this->nNetIndex = 0.;		 
+    this->nDisbalance = 0.;		 
+    this->nLikelihood = 0.;		 
+    this->nNullEnergy = 0.;		 
+    this->nCorrEnergy = 0.;		 
+    this->nCorrelation = 0.;
+    this->nSkyStat = 0.;	 
+    this->nPenalty = 0.;	 
+    this->nProbability = 0.;	 
+    this->nAntenaPrior = 0.;	 
+  }
+
+//+++++++++++++++++++++++++++++++++++++++
+// liklihood calculation for clusters
+//+++++++++++++++++++++++++++++++++++++++
+
+  for(n=lag; n<nLag; n++) {                  // loop over time shifts 
+
+     if(!this->wc_List[n].size()) continue;
+     logbpp = -log(this->wc_List[n].getbpp());
+
+     cid = this->wc_List[n].get((char*)"ID",0,'S',optim ? R : -R);   // get cluster ID
+     cTo = this->wc_List[n].get((char*)"time",0,'L',optim ? R : -R); // get cluster time
+
+     K = cid.size();
+
+     for(k=0; k<K; k++) {      // loop over clusters 
+
+	id = size_t(cid.data[k]+0.1);
+
+	if(ID && id!=ID) continue;
+
+	vint = &(this->wc_List[n].cList[id-1]);           // pixel list
+	vtof = &(this->wc_List[n].nTofF[id-1]);           // TofFlight configurations
+
+	V = vint->size();
+	if(!V) continue;
+
+	pI.clear();
+
+	for(j=0; j<V; j++) {   // loop over pixels 
+
+	  pix = this->wc_List[n].getPixel(id,j);
+
+	  if(!pix) {
+	    cout<<"network::likelihood() error: NULL pointer"<<endl;
+	    exit(1);
+	  }
+
+	  if(R != int(pix->rate+0.5)) continue;           // check rate 
+	  if(!pix->core && core) continue;                // check core flag
+
+	  pI.push_back(j);                                // save pixel index
+
+	}
+
+	V = pI.size();
+	if(!V) continue;
+	
+	if(NV[0].size() < V) {                            // reallocate arrays           
+	  U = V+100;
+	  for(i=0; i<NIFO; i++) {
+	    NV[i].resize(U);   NV[i] = 0.; nv[i] = NV[i].data;
+	    NR[i].resize(U);   NR[i] = 0.; nr[i] = NR[i].data;
+	    eS[i].resize(U*M); eS[i] = 0.; 
+	    aS[i].resize(U*M); aS[i] = 0.; 
+	  }
+	  jU.resize(U); xi.resize(U*NIFO); 
+	  Fplus.resize(U*NIFO); Fcros.resize(U*NIFO);
+	}
+
+	for(j=0; j<V; j++) {   // loop over selected pixels 
+
+	  pix = this->wc_List[n].getPixel(id,pI[j]);
+
+	  cc = 0.;
+	  for(i=0; i<nIFO; i++) {
+	    ee[i] = 1./pix->data[i].noiserms;
+	    cc += ee[i]*ee[i];                          // total inverse variance
+	  }
+
+	  for(i=0; i<nIFO; i++) {
+	    nv[i][j] = ee[i]*ee[i];                     // inverse variance
+	    nr[i][j] = ee[i]/sqrt(cc);                  // normalized 1/rms
+	    qdata[i] = pdata[i] + pix->data[i].index;   // pointer to data   
+	  }
+
+// apply delay filter
+	   
+	  for(i=0; i<nIFO; i++) {
+	    pq = qdata[i];
+
+	    for(m=0; m<M; m++){          // loop over delays                   
+	      F = &(filter[pix->frequency*M+m].value); 
+	      J = &(filter[pix->frequency*M+m].index);
+	      l = m*V + j; 
+
+	      gg = dot32(F,pq,J);        // apply filter 
+
+	      eS[i].data[l] = gg*gg;
+	      aS[i].data[l] = gg;
+	    }
+	  }
+	}
+
+        STAT = -1.e64; m=IIm=0; Lm=Em=LPm= 0.;
+
+// Max Energy
+
+	if(type == 'E') {
+
+	  skip = true;
+	  l = ind<0 ? 0 : ind;              // process selected index
+	  for(; l<L; l++) {	            // loop over sky locations
+	    if(!mm[l]) continue;            // skip identical delay configurations
+
+	    NETX( 
+            pe[0] = eS[0].data + m0[l]*V; ,
+	    pe[1] = eS[1].data + m1[l]*V; ,
+	    pe[2] = eS[2].data + m2[l]*V; ,
+	    pe[3] = eS[3].data + m3[l]*V; ,
+	    pe[4] = eS[4].data + m4[l]*V; ,
+	    pe[5] = eS[5].data + m5[l]*V; ,
+	    pe[6] = eS[6].data + m6[l]*V; ,
+	    pe[7] = eS[7].data + m7[l]*V; )
+
+	    NETX(c0=0.;,c1=0.;,c2=0.;,c3=0.;,c4=0.;,c5=0.;,c6=0.;,c7=0.;) 
+            i=0;  
+	    for(j=0; j<V; j++) {            // loop over selected pixels 
+              double pet = 0.;
+              NETX( 
+              pet+=pe[0][j]; ,
+              pet+=pe[1][j]; ,
+              pet+=pe[2][j]; ,
+              pet+=pe[3][j]; ,
+              pet+=pe[4][j]; ,
+              pet+=pe[5][j]; ,
+              pet+=pe[6][j]; ,
+              pet+=pe[7][j]; )
+	      if(pet > Eo) { 
+		NETX( 
+                c0 += pe[0][j]; ,
+		c1 += pe[1][j]; ,
+		c2 += pe[2][j]; ,
+		c3 += pe[3][j]; ,
+		c4 += pe[4][j]; ,
+		c5 += pe[5][j]; ,
+		c6 += pe[6][j]; ,
+		c7 += pe[7][j]; )
+		i++;
+	      }
+	    }
+	   
+	    E = 0.; NETX(E+=c0;,E+=c1;,E+=c2;,E+=c3;,E+=c4;,E+=c5;,E+=c6;,E+=c7;) E-=i*nIFO; // correction for dummy detectors  
+	    if(E>STAT) { m = l; STAT = E; Lm = E; }  // maximize energy
+ 	    E += i;
+	    if(NETX(E-c0>e2or &&,E-c1>e2or &&,E-c2>e2or &&,E-c3>e2or &&,E-c4>e2or &&,E-c5>e2or &&,E-c6>e2or &&,E-c7>e2or  &&) true) skip = false; 
+	  }
+	  if(skip) { this->wc_List[n].ignore(id); continue; }
+	}
+
+// constraint: total (XkSk-ekSkSk)/Ek = 0 
+
+	else {
+	  
+	  l = ind<0 ? 0 : ind;                 // process selected index
+	  for(; l<L; l++) {	               // loop over sky locations
+	    
+	    skyProb.data[l] = 0.;
+
+            if(skyMaskCC.size()==L) {
+              // transform l in celestial coordinates cc_l and check the skyMaskCC
+              skymap* sm = &(this->nSkyStat);
+              double th = sm->getTheta(l);
+              double ph = sm->getPhi(l);
+              double gpsT = cTo.data[k]+getifo(0)->TFmap.start();          // trigger time
+              double ra = sm->phi2RA(ph,  gpsT);
+              int cc_l = this->getIndex(th,ra);
+              if (skyMaskCC.data[cc_l]<=0) continue;  
+            }
+
+	    if(!mm[l] && ind<0) continue;      // skip sky configurations
+
+	    NETX( 
+            pa[0] = aS[0].data + m0[l]*V; ,     // single whitening 
+	    pa[1] = aS[1].data + m1[l]*V; ,
+	    pa[2] = aS[2].data + m2[l]*V; ,
+	    pa[3] = aS[3].data + m3[l]*V; ,
+	    pa[4] = aS[4].data + m4[l]*V; ,
+	    pa[5] = aS[5].data + m5[l]*V; ,
+	    pa[6] = aS[6].data + m6[l]*V; ,
+	    pa[7] = aS[7].data + m7[l]*V; )
+
+// weak constraint 
+//  transformation to PCF, 
+//  u = [X x (f+ x fx)] x (f+ x fx)
+//  u/(|u|*|X|) is a unity vector along the projection of X
+//  u = Fp*uc + Fx*us
+	      		      			       
+	    
+	    EE=Lo=Co=Ep=Lp=Cp=inet = 0.; II=0;
+	    
+	    for(j=0; j<V; j++) {               // loop over selected pixels 
+
+	      Et = dotx(pa,j,pa,j);	       // total energy     
+	      ii = int(Et>Eo);
+	      EE+= Et*ii;
+
+	      mulx(fp,l,nr,j,Fp);
+	      mulx(fx,l,nr,j,Fx);
+
+	      gp = dotx(Fp,Fp)+1.e-12;         // fp^2
+	      gx = dotx(Fx,Fx)+1.e-12;         // fx^2
+	      gI = dotx(Fp,Fx);                // fp*fx
+	      Xp = dotx(Fp,pa,j);              // (X*f+)
+	      Xx = dotx(Fx,pa,j);              // (X*fx)       
+	      uc = Xp*gx - Xx*gI;              // u cos of rotation to PCF
+	      us = Xx*gp - Xp*gI;              // u sin of rotation to PCF
+	      um = rotx(Fp,uc,Fx,us,u);        // calculate u and return its norm
+	      hh = dotx(u,pa,j,e);             // (u*X) - not normalized         
+	      Le = hh*hh/um;
+	      cc = Le-dotx(e,e)/um;
+	      ii*= int(cc>0);
+
+	      Lp+= Le*cc*ii/(Et-Le+1+cc);     // effective likelihood	      
+	      Ep+= Et*ii;
+	      Lo+= Le*ii;                      // baseline Likelihood
+	      Co+= cc*ii;                      // coherent energy
+	      II+= ii;
+	      mulx(u,hh*ii/um,xi.data+j*NIFO);
+
+	    }
+
+	    cc = Ep>0 ? Co/(Ep-Lo+II+fabs(Co)) : 0.;
+	    if(type=='B') Lp = Lo*cc; 
+
+	    skyProb.data[l] = Lp/EE;
+
+	    if(Lp>LPm) { LPm=Lp; Em=EE; IIm=II; }
+
+	    cc = EE>0 ? Co/(EE-Lo+II+fabs(Co)) : 0.;
+	    if(cc<this->netCC || cc*Co<rho) continue;
+
+//  weak and hard regulators used for estimation of u 
+//  v = u x (f+ x fx) is a vector perpendicular to u
+//  u = Fp*uc + Fx*us, v = Fx*vc - Fp*vs
+
+	    Lo=Co=gP=gX = 0.;
+
+	    for(j=0; j<V; j++) {                // loop over selected pixels 
+
+	      NETX( 
+              am[0] = pa[0][j]; ,
+	      am[1] = pa[1][j]; ,
+	      am[2] = pa[2][j]; ,
+	      am[3] = pa[3][j]; ,
+	      am[4] = pa[4][j]; ,
+	      am[5] = pa[5][j]; ,
+	      am[6] = pa[6][j]; ,
+	      am[7] = pa[7][j]; )
+
+	      px = xi.data+j*NIFO;
+	      if(dotx(px,px)<=0) continue;
+	      Et = dotx(am,am);
+
+	      mulx(fp,l,nr,j,Fp);
+	      mulx(fx,l,nr,j,Fx);
+
+	      gp = dotx(Fp,Fp)+1.e-12;          // fp^2
+	      gx = dotx(Fx,Fx)+1.e-12;          // fx^2
+	      gI = dotx(Fp,Fx);                 // fp*fx
+	      gr = (gp+gx)/2.;                  // sensitivity
+	      gR = (gp-gx)/2.;                  // real part of gc
+	      gc = sqrt(gR*gR+gI*gI);           // norm of complex antenna pattern
+
+	      Xp = dotx(Fp,am);                 // (X*f+)
+	      Xx = dotx(Fx,am);                 // (X*fx)       
+	      uc = Xp*gx - Xx*gI;               // u cos of rotation to PCF
+	      us = Xx*gp - Xp*gI;               // u sin of rotation to PCF
+	      vc = gp*uc + gI*us;               // (u*f+)/|u|^2 - 'cos' for v
+	      vs = gx*us + gI*uc;               // (u*fx)/|u|^2 - 'sin' for v
+	      um = rotx(Fp,uc,Fx,us,u);         // calculate new response vector
+	      vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24; // calculate complementary vector
+
+// regulator
+
+	      ii = netx(u,um,v,vm,GAMMA);        // network index
+	      inet += ii*Et;
+	      if(ii<N_2 && gamma<0) continue;    // superclean selection cut
+
+	      gP+= (gr+gc)*Et;                   // + sensitivity
+	      gX+= (gr-gc)*Et;                   // x sensitivity
+	      gg = (gp+gx)*soft;
+	      uc = Xp*(gx+gg) - Xx*gI;           // u cos of rotation to PCF
+	      us = Xx*(gp+gg) - Xp*gI;           // u sin of rotation to PCF
+
+	      if(ii<N_1 && gamma!=0) { 
+		uc = Xp*(gc+gR)+Xx*gI;
+		us = Xx*(gc-gR)+Xp*gI;
+	      }
+
+	      vc = gp*uc + gI*us;                // (u*f+)/|u|^2 - 'cos' for v
+	      vs = gx*us + gI*uc;                // (u*fx)/|u|^2 - 'sin' for v
+	      um = rotx(Fp,uc,Fx,us,u);          // calculate new response vector
+	      vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;  // calculate complementary vector
+
+// energy disbalance ratio vectors
+
+	      NETX ( 
+              rr[0] = LOCAL*am[0]/(am[0]*am[0]+2.)+1-LOCAL; ,
+	      rr[1] = LOCAL*am[1]/(am[1]*am[1]+2.)+1-LOCAL; ,
+	      rr[2] = LOCAL*am[2]/(am[2]*am[2]+2.)+1-LOCAL; ,
+	      rr[3] = LOCAL*am[3]/(am[3]*am[3]+2.)+1-LOCAL; ,
+	      rr[4] = LOCAL*am[4]/(am[4]*am[4]+2.)+1-LOCAL; ,
+	      rr[5] = LOCAL*am[5]/(am[5]*am[5]+2.)+1-LOCAL; ,
+	      rr[6] = LOCAL*am[6]/(am[6]*am[6]+2.)+1-LOCAL; ,
+	      rr[7] = LOCAL*am[7]/(am[7]*am[7]+2.)+1-LOCAL; )
+
+	      hh = dotx(u,am)/um;
+              NETX (
+	      pp[0] = rr[0]*(am[0]-hh*u[0])*u[0]; ,
+	      pp[1] = rr[1]*(am[1]-hh*u[1])*u[1]; ,
+	      pp[2] = rr[2]*(am[2]-hh*u[2])*u[2]; ,
+	      pp[3] = rr[3]*(am[3]-hh*u[3])*u[3]; ,
+	      pp[4] = rr[4]*(am[4]-hh*u[4])*u[4]; ,
+	      pp[5] = rr[5]*(am[5]-hh*u[5])*u[5]; ,
+	      pp[6] = rr[6]*(am[6]-hh*u[6])*u[6]; ,
+	      pp[7] = rr[7]*(am[7]-hh*u[7])*u[7]; )
+		
+	      gg = dotx(v,am)/um;
+	      hh*= 2.;
+              NETX (
+	      qq[0] = rr[0]*((hh*u[0]-am[0])*v[0]+u[0]*u[0]*gg); ,
+	      qq[1] = rr[1]*((hh*u[1]-am[1])*v[1]+u[1]*u[1]*gg); ,
+	      qq[2] = rr[2]*((hh*u[2]-am[2])*v[2]+u[2]*u[2]*gg); ,
+	      qq[3] = rr[3]*((hh*u[3]-am[3])*v[3]+u[3]*u[3]*gg); ,
+	      qq[4] = rr[4]*((hh*u[4]-am[4])*v[4]+u[4]*u[4]*gg); ,
+	      qq[5] = rr[5]*((hh*u[5]-am[5])*v[5]+u[5]*u[5]*gg); ,
+	      qq[6] = rr[6]*((hh*u[6]-am[6])*v[6]+u[6]*u[6]*gg); ,
+	      qq[7] = rr[7]*((hh*u[7]-am[7])*v[7]+u[7]*u[7]*gg); )
+
+	      co = dotx(qq,qq)/vm+dotx(pp,pp)/um+1.e-24;     // cos term
+	      si = dotx(pp,qq);                              // sin term
+              if(!eDisbalance) {co=1.;si=0.;}  
+	      em = rotx(u,co,v,si/vm,e);                     // calculate rotated vector e
+
+// second iteration
+	      
+	      rm = rotx(v,co,u,-si/um,r)+1.e-24;      // calculate rotated vector v
+	      hh = dotx(e,am)/em;
+	     
+              NETX ( 
+	      pp[0] = rr[0]*(am[0]-hh*e[0])*e[0]; ,
+	      pp[1] = rr[1]*(am[1]-hh*e[1])*e[1]; ,
+	      pp[2] = rr[2]*(am[2]-hh*e[2])*e[2]; ,
+	      pp[3] = rr[3]*(am[3]-hh*e[3])*e[3]; ,
+	      pp[4] = rr[4]*(am[4]-hh*e[4])*e[4]; ,
+	      pp[5] = rr[5]*(am[5]-hh*e[5])*e[5]; ,
+	      pp[6] = rr[6]*(am[6]-hh*e[6])*e[6]; ,
+	      pp[7] = rr[7]*(am[7]-hh*e[7])*e[7]; )
+	      
+	      gg = dotx(r,am)/em;
+	      hh*= 2.;
+              NETX (
+	      qq[0] = rr[0]*((hh*e[0]-am[0])*r[0]+e[0]*e[0]*gg); ,
+	      qq[1] = rr[1]*((hh*e[1]-am[1])*r[1]+e[1]*e[1]*gg); ,
+	      qq[2] = rr[2]*((hh*e[2]-am[2])*r[2]+e[2]*e[2]*gg); ,
+	      qq[3] = rr[3]*((hh*e[3]-am[3])*r[3]+e[3]*e[3]*gg); ,
+	      qq[4] = rr[4]*((hh*e[4]-am[4])*r[4]+e[4]*e[4]*gg); ,
+	      qq[5] = rr[5]*((hh*e[5]-am[5])*r[5]+e[5]*e[5]*gg); ,
+	      qq[6] = rr[6]*((hh*e[6]-am[6])*r[6]+e[6]*e[6]*gg); ,
+	      qq[7] = rr[7]*((hh*e[7]-am[7])*r[7]+e[7]*e[7]*gg); )
+	      
+	      co = dotx(qq,qq)/rm+dotx(pp,pp)/em+1.e-24;     // cos term
+	      si = dotx(pp,qq);                              // sin term
+              if(!eDisbalance) {co=1.;si=0.;}  
+	      em = rotx(e,co,r,si/rm,e);                     // calculate ED vector
+	      hh = dotx(e,am,ee);                            // ee[i] = e[i]*am[i]
+	      Lo+= hh*hh/em;                                 // corrected L
+	      Co+= (hh*hh-dotx(ee,ee))/em;                   // coherent energy		
+
+	    }
+
+// <x*xi> penalty factor and asymmetry
+
+            NETX(pp[0]=0.;,pp[1]=0.;,pp[2]=0.;,pp[3]=0.;,pp[4]=0.;,pp[5]=0.;,pp[6]=0.;,pp[7]=0.;)
+            NETX(qq[0]=0.001;,qq[1]=0.001;,qq[2]=0.001;,qq[3]=0.001;,qq[4]=0.001;,qq[5]=0.001;,qq[6]=0.001;,qq[7]=0.001;)
+            NETX(ee[0]=0.;,ee[1]=0.;,ee[2]=0.;,ee[3]=0.;,ee[4]=0.;,ee[5]=0.;,ee[6]=0.;,ee[7]=0.;) 
+
+	    for(j=0; j<V; j++) {                     // loop over selected pixels 	      
+	      px = xi.data+j*NIFO;
+	      addx(px,px,qq);
+	      addx(px,pa,j,pp);
+	      addx(pa,j,pa,j,ee);
+	    }
+	    
+	    S = 0.;
+            NETX (
+            S+= fabs(pp[0]-qq[0]); ,
+	    S+= fabs(pp[1]-qq[1]); ,
+	    S+= fabs(pp[2]-qq[2]); ,
+	    S+= fabs(pp[3]-qq[3]); ,
+	    S+= fabs(pp[4]-qq[4]); ,
+	    S+= fabs(pp[5]-qq[5]); ,
+	    S+= fabs(pp[6]-qq[6]); ,
+	    S+= fabs(pp[7]-qq[7]); )
+
+	    NETX ( 
+	    pp[0] /= sqrt(qq[0]); ,
+	    pp[1] /= sqrt(qq[1]); ,
+	    pp[2] /= sqrt(qq[2]); ,
+	    pp[3] /= sqrt(qq[3]); ,
+	    pp[4] /= sqrt(qq[4]); ,
+	    pp[5] /= sqrt(qq[5]); ,
+	    pp[6] /= sqrt(qq[6]); ,
+	    pp[7] /= sqrt(qq[7]); )
+	    
+	    hh = 0.;
+            NETX (
+            hh+= pp[0]; ,
+            hh+= pp[1]; ,
+            hh+= pp[2]; ,
+            hh+= pp[3]; ,
+            hh+= pp[4]; ,
+            hh+= pp[5]; ,
+            hh+= pp[6]; ,
+            hh+= pp[7]; )
+	    gg = 0.;
+            NETX (
+            gg+= sqrt(ee[0]); ,
+            gg+= sqrt(ee[1]); ,
+            gg+= sqrt(ee[2]); ,
+            gg+= sqrt(ee[3]); ,
+            gg+= sqrt(ee[4]); ,
+            gg+= sqrt(ee[5]); ,
+            gg+= sqrt(ee[6]); ,
+            gg+= sqrt(ee[7]); )
+
+	    P  = hh/gg;                                     // Pearson's correlation penalty
+	    cc = Co/(EE-Lo+fabs(Co));                       // network correlation coefficient
+	    XX = Lo*cc/EE;                                  // sky statistic
+
+	    skyProb.data[l] *= P;
+
+	    if(XX>=STAT) { m=l; STAT=XX; Lm=Lo; }
+	    
+	    if(ID) {                            // fill in skymaps
+	      this->nAntenaPrior.set(l, gP/EE);
+	      this->nSensitivity.set(l, gP/EE);
+	      this->nAlignment.set(l, gX/EE);	
+	      this->nNetIndex.set(l, inet/EE);		 
+	      this->nDisbalance.set(l, S);		 
+	      this->nLikelihood.set(l, Lo);		 
+	      this->nNullEnergy.set(l, (EE-Lo));		 
+	      this->nCorrEnergy.set(l, Co);		 
+	      this->nCorrelation.set(l, cc);
+	      this->nSkyStat.set(l, XX);		 
+	      this->nPenalty.set(l, P);		 
+	      this->nProbability.set(l,skyProb.data[l]);		 
+	    }	    
+	  }
+
+	  if(STAT<=0.001 && ind<0) {
+	    this->wc_List[n].ignore(id);  // reject cluster
+	    continue;
+	  }
+	}
+	
+// final calculation of likelihood for selected sky location
+	
+	Lo = E = 0.;
+	l = ind<0 ? m : ind;
+
+        NETX (
+	pa[0] = aS[0].data + m0[l]*V; ,    // single whitening 
+	pa[1] = aS[1].data + m1[l]*V; ,
+	pa[2] = aS[2].data + m2[l]*V; ,
+	pa[3] = aS[3].data + m3[l]*V; ,
+	pa[4] = aS[4].data + m4[l]*V; ,
+	pa[5] = aS[5].data + m5[l]*V; ,
+	pa[6] = aS[6].data + m6[l]*V; ,
+	pa[7] = aS[7].data + m7[l]*V; )
+	    
+// initialize detector energy array
+
+	for(j=0; j<V; j++) {               // loop over selected pixels 
+
+	  Et = 0.; U = 1;
+	  for(i=0; i<nIFO; i++) {
+	    am[i] = pa[i][j];
+	    Fp[i] = fp[i][l]*nr[i][j];
+	    Fx[i] = fx[i][l]*nr[i][j];
+	    Et += am[i]*am[i];
+	    if(!j) ee[i] = 0.;
+	  }
+
+	  gp = dotx(Fp,Fp)+1.e-12;          // (fp^2)
+	  gx = dotx(Fx,Fx)+1.e-12;          // (fx^2)
+	  gI = dotx(Fp,Fx);                 // (fp*fx)
+	  Xp = dotx(Fp,am);                 // (X*f+)
+	  Xx = dotx(Fx,am);                 // (X*fx)       
+	  gR = (gp-gx)/2.;
+	  gc = sqrt(gR*gR+gI*gI);           // norm of complex antenna pattern
+	  uc = Xp*gx - Xx*gI;               // u cos
+	  us = Xx*gp - Xp*gI;               // u sin
+	  vc = gp*uc + gI*us;               // (u*f+)/|u|^2 - 'cos' for v
+	  vs = gx*us + gI*uc;               // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);         // calculate u and return its norm
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24; // calculate v and return its norm
+	  hh = dotx(u,am,e);                // GW amplitude
+
+	  if((hh*hh-dotx(e,e))/um<=0.) U=0;
+
+// regulator
+
+	  ii = 0;
+	  for(i=0; i<nIFO; i++) {
+	    if(u[i]*u[i]/um > 1-GAMMA) ii++;
+	    if(u[i]*u[i]/um+v[i]*v[i]/vm > GAMMA) ii--;
+	  }
+
+	  if(ii<N_2 && gamma<0.) U = 0;
+
+	  gg = (gp+gx)*soft;
+	  uc = Xp*(gx+gg) - Xx*gI;              // u cos of rotation to PCF
+	  us = Xx*(gp+gg) - Xp*gI;              // u sin of rotation to PCF
+
+	  if(ii<N_1 && gamma!=0) { 
+	    uc = Xp*(gc+gR)+Xx*gI;
+	    us = Xx*(gc-gR)+Xp*gI;
+	  }
+
+	  vc = (gp*uc + gI*us);                 // (u*f+)/|u|^2 - 'cos' for v
+	  vs = (gx*us + gI*uc);                 // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);             // calculate u and return its norm
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;     // calculate v and return its norm
+
+// normalize u and v vectors
+
+	  um = sqrt(um);
+	  vm = sqrt(vm);
+
+	  hh = gg = 0.;
+	  for(i=0; i<nIFO; i++) {
+	    u[i] = u[i]/um;
+	    v[i] = v[i]/vm;
+	    hh  += u[i]*am[i];                              // (u*X) - solution 
+	    gg  += v[i]*am[i];                              // (v*X) - solution 
+	  } 
+
+// calculate energy disbalance vectors
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? am[i]/(am[i]*am[i]+2.) : 1.;
+	    pp[i] = cc*(am[i]-hh*u[i])*u[i];
+	    qq[i] = cc*((2.*hh*u[i]-am[i])*v[i] + u[i]*u[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+
+// corrected likelihood
+
+	  hh=gg = 0.;
+	  for(i=0; i<nIFO; i++) {                           // solution for h(t,f)
+	    e[i] = u[i]*co + v[i]*si;                       // final projection vector
+	    r[i] = v[i]*co - u[i]*si;                       // orthogonal v vector
+	    hh += e[i]*am[i];                               // solution for hu(t,f)
+	    gg += r[i]*am[i];                               // solution for hv(t,f)
+	  }
+
+// second iteration
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? am[i]/(am[i]*am[i]+2.) : 1.;
+	    pp[i] = cc*(am[i]-hh*e[i])*e[i];
+	    qq[i] = cc*((2.*hh*e[i]-am[i])*r[i] + e[i]*e[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+	  
+	  if(type=='E') U = 0;
+	  hh = 0.; 
+	  for(i=0; i<nIFO; i++) {                           // solution for h(t,f)
+	    e[i] = e[i]*co+r[i]*si;                         // final projection vector
+	    hh  += e[i]*am[i]*U;                            // solution for h(t,f)
+	  }
+
+// fill in pix
+
+	  Lp = hh*hh;                                       // likelihood
+
+	  if(Et>Eo) {
+	    Lo += (type=='E') ? Et-nIFO : Lp;               // calculate Lc for x-check
+	    E += Et;
+	  }
+
+	  pix = this->wc_List[n].getPixel(id,pI[j]);
+	  pix->likelihood = (type=='E') ? Et-nIFO : Lp;
+	  pix->theta = nLikelihood.getTheta(l);
+	  pix->phi   = nLikelihood.getPhi(l);
+	  if(!core)  pix->core = Et<Eo ? false : true;
+	  
+	  for(i=0; i<nIFO; i++) {
+	    pix->setdata(am[i],'S',i);                      // whitened data
+	    pix->setdata(e[i]*hh/sqrt(nv[i][j]),'W',i);     // detector response  
+	  }
+	  
+	  if(ID) {
+	    this->pixeLHood.data[pix->time] = Lp;
+	    this->pixeLNull.data[pix->time] = Et-Lp+1.;
+	    if(pOUT) {
+	      cout<<j<<"  SNR="<<Et<<" ";
+	      for(i=0; i<nIFO; i++) {
+		cout<<e[i]*e[i]<<":"<<am[i]*am[i]/Et<<" ";
+	      }
+	      cout<<endl;
+	    }
+	  }
+	  count++;	  
+	}
+
+// fill in backward delay configuration
+
+	vtof->clear();
+        NETX (
+	vtof->push_back(int(M/2)-int(m0[l])); ,
+	vtof->push_back(int(M/2)-int(m1[l])); ,
+	vtof->push_back(int(M/2)-int(m2[l])); ,
+	vtof->push_back(int(M/2)-int(m3[l])); ,
+	vtof->push_back(int(M/2)-int(m4[l])); ,
+	vtof->push_back(int(M/2)-int(m5[l])); ,
+	vtof->push_back(int(M/2)-int(m6[l])); ,
+	vtof->push_back(int(M/2)-int(m7[l])); )
+
+	skyProb *= Em/IIm;
+	T = cTo.data[k]+getifo(0)->TFmap.start();          // trigger time
+	if(iID<=0 && type!='E') getSkyArea(id,n,T);        // calculate error regions
+
+	if(fabs((Lm-Lo)/Lo)>1.e-4) 
+	  cout<<"likelihood: incorrect likelihood : "<<Lm<<" "<<Lo<<" "<<Em<<endl; 
+
+	if(E>0 && ID) { 
+	  cout<<"max value: "<<STAT<<" at (theta,phi) = ("<<nLikelihood.getTheta(l)
+	      <<","<<nLikelihood.getPhi(l)<<")  Likelihood: loop: "<<Lm
+	      <<", final: "<<Lo<<", eff: "<<Em<<endl;
+	  break;
+	}
+
+	if(ID && !EFEC) {
+	  this->nSensitivity.gps = T;
+	  this->nAlignment.gps = T;	
+	  this->nNetIndex.gps = T;		 
+	  this->nDisbalance.gps = T;		 
+	  this->nLikelihood.gps = T;		 
+	  this->nNullEnergy.gps = T;		 
+	  this->nCorrEnergy.gps = T;		 
+	  this->nCorrelation.gps = T;
+	  this->nSkyStat.gps = T;	 
+	  this->nPenalty.gps = T;	 
+	  this->nProbability.gps = T;	 
+	}
+     }    // end of loop over clusters
+     if(ID) break;
+  }       // end of loop over time shifts
+  return count;
+}
+
+
+//*********************************************************************************
+// calculate network likelihood for 2-NIFO detectors assuming elliptical polarisation.
+// elliptical constraint is used in a combination with the energy disbalance constraint
+// It is designed to replace likelihood functions for 2,3,4 and NIFO networks. 
+// If the network has less then NIFO detectors, all arrays are allocated for NIFO 
+// detectors anyway. The arrays are initialized so that the dummy detectors
+// do not contribute into calculation of the coherent statistics. 
+//*********************************************************************************
+
+long network::likelihoodI(char type, double Ao, int iID, size_t lag, int ind, bool core)
+{
+  this->like('I'); 
+
+  size_t jN = 500;
+  size_t nIFO = this->ifoList.size();
+  size_t ID = abs(iID);
+  int   N_1 = nIFO>2 ? int(nIFO)-1 : 2;
+  int   N_2 = nIFO>2 ? int(nIFO)-2 : 1;
+  if(nIFO>NIFO || !this->filter.size() || this->filter[0].index.size()!=32) {
+    cout<<"network::likelihoodE(): invalid number of detectors or delay filter is not set.\n";
+    return false;
+  }
+
+// regulators hard <- soft <0> weak -> hard
+//   gamma =    -1 <-       0       -> 1
+//   delta =     0  ->  1
+
+  double Eo    = nIFO*Ao*Ao;                         // energy threshold in the sky loop
+  double soft  = delta>0 ? delta : 0.;
+  double GAMMA = 1.-gamma*gamma;                     // network regulator
+  int    LOCAL = local ? 1 : 0;                      // ED minimization case
+
+  double rho  = this->netRHO*this->netRHO*nIFO;    // threshold on rho
+  double one  = (type=='g' || type=='G') ? 0. : 1.;  // circular polarization
+  double En   = (type!='i' && type!='I') ? 1.e9 : 1.;
+  bool ISG    = false;
+  bool isgr   = false;
+
+  if(type=='I' || type=='S' || type=='G') ISG = true;
+  if(type=='i' || type=='s' || type=='g') ISG = true;
+  if(type=='i' || type=='s' || type=='g' || type=='r') isgr = true;
+
+  if(!ID && ind>=0) ind = -1;
+  this->tYPe = type;
+  this->acor = Ao;
+
+  int ii,II,IIm;
+  double gr,gg,gc,gp,gx,cc,gP,gX,gR,gI,EE,Et,T,Em,LPm,HH; 
+  double em,STAT,Lo,Lm,Lp,Co,E00,E90,L00,C00,AA,CO,SI;
+  double co,si,stat,XP,XX,L90,C90,sI,cO,aa,bb,as,ac,ap,La;
+  double xp,xx,hh,um,vm,uc,us,vc,vs,hp,hx,HP,HX,wp,wx,WP,WX;
+  size_t i,j,k,l,m,n,V,U,K,id,j5;
+
+  size_t I = this->ifoList[0]->TFmap.maxLayer()+1;
+  size_t M = this->filter.size()/I;                  // total number of delays 
+  size_t L = ind<0 ? this->index.size() : ind+1;     // total number of source locations 
+  int    R = int(this->ifoList[0]->getTFmap()->rate()/I+0.5);
+
+// pointers to data
+  double* pdata[NIFO];
+  double* qdata[NIFO];
+  double* pq;
+  for(n=0; n<nIFO; n++) {
+    pdata[n] = getifo(n)->getTFmap()->data;
+    qdata[n] = getifo(n)->getTFmap()->data;
+  }
+
+// buffer for wavelet layer delay filter
+  std::vector<float>* F00;
+  std::vector<short>* J00;
+  std::vector<float>* F90;
+  std::vector<short>* J90;
+  
+// get antenna patterns and index arrays
+  double*  fp[NIFO];                     // f+ 
+  double*  fx[NIFO];                     // fx
+  double* ffp[NIFO];                     // f+f+ + fxfx 
+  double* ffm[NIFO];                     // f+f+ - fxfx
+  double* fpx[NIFO];                     // 2*f+fx
+  wavearray<double> f00(L); f00 = 0.; // dummy zero array
+
+  for(n=0; n<NIFO; n++) {
+     fp[n] = n<nIFO ? getifo(n)->fp.data  : f00.data;
+     fx[n] = n<nIFO ? getifo(n)->fx.data  : f00.data;
+    ffp[n] = n<nIFO ? getifo(n)->ffp.data : f00.data;
+    ffm[n] = n<nIFO ? getifo(n)->ffm.data : f00.data;
+    fpx[n] = n<nIFO ? getifo(n)->fpx.data : f00.data;
+  }
+  short* mm = skyMask.data;
+  NETX (
+  short* m0 = nIFO>1 ? getifo(0)->index.data : getifo(0)->index.data; ,
+  short* m1 = nIFO>1 ? getifo(1)->index.data : getifo(1)->index.data; ,
+  short* m2 = nIFO>2 ? getifo(2)->index.data : getifo(1)->index.data; ,
+  short* m3 = nIFO>3 ? getifo(3)->index.data : getifo(1)->index.data; ,
+  short* m4 = nIFO>4 ? getifo(4)->index.data : getifo(1)->index.data; ,
+  short* m5 = nIFO>5 ? getifo(5)->index.data : getifo(1)->index.data; ,
+  short* m6 = nIFO>6 ? getifo(6)->index.data : getifo(1)->index.data; ,
+  short* m7 = nIFO>7 ? getifo(7)->index.data : getifo(1)->index.data; )
+
+// allocate buffers
+  std::vector<size_t> pI;
+  
+  wavearray<double> LL(jN);  
+  wavearray<double> GG(jN);  
+  wavearray<short>  jU(jN);  
+  wavearray<double> am00(jN*NIFO);     // buffers for 00 data
+  wavearray<double> am90(jN*NIFO);     // buffers for 90 data
+  wavearray<double> xi00(jN*NIFO);     // buffers for 00 response
+  wavearray<double> xi90(jN*NIFO);     // buffers for 90 response
+  wavearray<double> Fplus(jN*NIFO);    // buffers for F+
+  wavearray<double> Fcros(jN*NIFO);    // buffers for Fx
+
+//BM  wavearray<double> e00[NIFO];
+//BM  wavearray<double> e90[NIFO];
+  wavearray<double> a00[NIFO];
+  wavearray<double> a90[NIFO];
+  wavearray<double> NV[NIFO];          // noise variance
+  wavearray<double> NR[NIFO];          // noise rms
+  wavearray<double> cid;            // buffers for cluster ID
+  wavearray<double> cTo;            // buffers for cluster time
+  wavearray<double> vol;            // buffers for cluster volume
+
+  double   u[NIFO];
+  double   v[NIFO];
+  double   e[NIFO];
+  double  ee[NIFO];
+  double  rr[NIFO];
+  double  pp[NIFO];
+  double  qq[NIFO];
+
+  double* am;
+  double* AM;
+  double* xi;
+  double* XI;
+  double* Fp;
+  double* Fx;
+  double* nv[NIFO];
+  double* nr[NIFO];
+  double* pa00[NIFO];
+  double* pa90[NIFO];
+
+  for(n=0; n<NIFO; n++) {
+     NV[n].resize(jN);    NV[n] = 0.; nv[n] = NV[n].data; 
+     NR[n].resize(jN);    NR[n] = 0.; nr[n] = NR[n].data; 
+    a00[n].resize(jN*M); a00[n] = 0.; 
+//BM    e00[n].resize(jN*M); e00[n] = 0.;
+    a90[n].resize(jN*M); a90[n] = 0.; 
+//BM    e90[n].resize(jN*M); e90[n] = 0.;
+    rr[n] = 1.;
+  }
+
+  netpixel* pix;
+  std::vector<int>* vint;
+  std::vector<int>* vtof;
+
+  double  logbpp,inet;
+  size_t  count = 0;
+  ap = ac = as = 0.;
+
+  if(ID) { 
+    this->pixeLHood = getifo(0)->TFmap; 
+    this->pixeLHood = 0.; 
+    this->pixeLNull = getifo(0)->TFmap; 
+    this->pixeLNull = 0.; 
+    this->nSensitivity = 0.;
+    this->nAlignment = 0.;	
+    this->nNetIndex = 0.;		 
+    this->nDisbalance = 0.;		 
+    this->nLikelihood = 0.;		 
+    this->nNullEnergy = 0.;		 
+    this->nCorrEnergy = 0.;		 
+    this->nCorrelation = 0.;
+    this->nSkyStat = 0.;	 
+    this->nEllipticity = 0.;		 
+    this->nPolarisation = 0.;		 
+    this->nProbability = 0.;		 
+    this->nAntenaPrior = 0.;
+  }
+
+//+++++++++++++++++++++++++++++++++++++++
+// liklihood calculation for clusters
+//+++++++++++++++++++++++++++++++++++++++
+
+  for(n=lag; n<nLag; n++) {                  // loop over time shifts 
+
+     if(!this->wc_List[n].size()) continue;
+     logbpp = -log(this->wc_List[n].getbpp());
+
+     cid = this->wc_List[n].get((char*)"ID",0,'S',optim ? R : -R);   // get cluster ID
+     cTo = this->wc_List[n].get((char*)"time",0,'L',optim ? R : -R); // get cluster time
+
+     K = cid.size();
+
+     for(k=0; k<K; k++) {      // loop over clusters 
+
+	id = size_t(cid.data[k]+0.1);
+
+	if(ID && id!=ID) continue;
+
+	vint = &(this->wc_List[n].cList[id-1]);           // pixel list
+	vtof = &(this->wc_List[n].nTofF[id-1]);           // TofFlight configurations
+
+	V = vint->size();
+	if(!V) continue;
+
+	pI.clear();
+
+	for(j=0; j<V; j++) {   // loop over pixels 
+
+	  pix = this->wc_List[n].getPixel(id,j);
+
+	  if(!pix) {
+	    cout<<"network::likelihood() error: NULL pointer"<<endl;
+	    exit(1);
+	  }
+
+	  if(R != int(pix->rate+0.5)) continue;           // check rate 
+	  if(!pix->core && core) continue;                // check core flag
+
+	  pI.push_back(j);                                // save pixel index
+
+	}
+
+	V = pI.size();
+	if(!V) continue;
+	
+	if(NV[0].size() < V) {                            // reallocate arrays           
+	  U = V+100;
+	  for(i=0; i<NIFO; i++) {
+             NV[i].resize(U);    NV[i] = 0.;  nv[i] = NV[i].data;
+	     NR[i].resize(U);    NR[i] = 0.;  nr[i] = NR[i].data; 
+//BM            e00[i].resize(U*M); e00[i] = 0.; 
+            a00[i].resize(U*M); a00[i] = 0.; 
+//BM            e90[i].resize(U*M); e90[i] = 0.; 
+            a90[i].resize(U*M); a90[i] = 0.; 
+	  }
+	  jU.resize(U); LL.resize(U); GG.resize(U);
+	  am00.resize(U*NIFO); am90.resize(U*NIFO);
+	  xi00.resize(U*NIFO); xi90.resize(U*NIFO);
+	  Fplus.resize(U*NIFO); Fcros.resize(U*NIFO);
+	}
+
+	for(j=0; j<V; j++) {   // loop over selected pixels 
+
+	  pix = this->wc_List[n].getPixel(id,pI[j]);
+
+	  cc = 0.;
+	  for(i=0; i<nIFO; i++) {
+	    ee[i] = 1./pix->data[i].noiserms;
+	    cc += ee[i]*ee[i];                          // total inverse variance
+	  }
+
+	  GG.data[j] = sqrt(cc);
+	  for(i=0; i<nIFO; i++) {
+	    nv[i][j] = ee[i]*ee[i];                     // inverse variance
+	    ee[i]   /= sqrt(cc);
+	    nr[i][j] = ee[i];                           // normalized 1/rms
+	    qdata[i] = pdata[i] + pix->data[i].index;   // pointer to data   
+	  }
+
+// apply delay filter
+	   
+	  for(i=0; i<nIFO; i++) {
+	    pq = qdata[i];
+
+	    for(m=0; m<M; m++){          // loop over delays                   
+	      F00 = &(filter[pix->frequency*M+m].value); 
+	      J00 = &(filter[pix->frequency*M+m].index);
+	      F90 = &(filter90[pix->frequency*M+m].value); 
+	      J90 = &(filter90[pix->frequency*M+m].index);
+	      l = m*V + j; 
+
+	      gg = dot32(F00,pq,J00);        // apply filter
+//BM              e00[i].data[l] = gg*ee[i];
+              a00[i].data[l] = gg;
+
+	      gg = dot32(F90,pq,J90);        // apply filter
+//BM              e90[i].data[l] = gg*ee[i];
+              a90[i].data[l] = gg;
+	    }
+	  }
+	}
+
+        STAT = -1.e64; m=U=IIm=0; Em=Lm=LPm=AA=SI=CO=0.;
+
+//============================================================
+// weak constraint on 00 data
+//============================================================
+
+	l = ind<0 ? 0 : ind;                 // process selected index
+	for(; l<L; l++) {	             // loop over sky locations
+	  
+	  skyProb.data[l] = 0.;
+
+          if(skyMaskCC.size()==L) {
+            // transform l in celestial coordinates cc_l and check the skyMaskCC
+            skymap* sm = &(this->nSkyStat);
+            double th = sm->getTheta(l);
+            double ph = sm->getPhi(l);
+            double gpsT = cTo.data[k]+getifo(0)->TFmap.start();          // trigger time
+            double ra = sm->phi2RA(ph,  gpsT);
+            int cc_l = this->getIndex(th,ra);
+            if (!skyMaskCC.data[cc_l]) continue;
+          }
+
+	  if(!mm[l] && ind<0) continue;      // skip sky configurations
+
+          NETX (	  
+	  pa00[0] = a00[0].data + m0[l]*V; ,
+	  pa00[1] = a00[1].data + m1[l]*V; ,
+	  pa00[2] = a00[2].data + m2[l]*V; ,
+	  pa00[3] = a00[3].data + m3[l]*V; ,
+	  pa00[4] = a00[4].data + m4[l]*V; ,
+	  pa00[5] = a00[5].data + m5[l]*V; ,
+	  pa00[6] = a00[6].data + m6[l]*V; ,
+	  pa00[7] = a00[7].data + m7[l]*V; )
+
+	  EE=E00=L00=C00=Lp=0.; II=0;
+	  
+	  for(j=0; j<V; j++) {                          // 00 phase
+
+	    j5 = j*NIFO;
+	    am = am00.data+j5;
+	    inix(pa00,j,am);
+	    Et = dotx(am,am);	                        // total energy     	    
+	    ii = int(Et>Eo);
+	    E00+= Et*ii;
+
+	    Fp = Fplus.data+j5;
+	    Fx = Fcros.data+j5;
+	    mulx(fp,l,nr,j,Fp);
+	    mulx(fx,l,nr,j,Fx);
+
+	    gp = dotx(Fp,Fp)+1.e-12;                    // fp^2
+	    gx = dotx(Fx,Fx)+1.e-12;                    // fx^2
+	    gI = dotx(Fp,Fx);                           // fp*fx
+
+	    xi = xi00.data+j5;
+	    xp = dotx(Fp,am);                           // (X*f+)
+	    xx = dotx(Fx,am);                           // (X*fx)       
+	    um = rotx(Fp,xp*gx-xx*gI,
+		      Fx,xx*gp-xp*gI,xi);
+	    hh = dotx(xi,am,e);
+	    La = hh*hh/um;
+	    Co = La - dotx(e,e)/um;
+	    ii*= int(Co>0.);
+	    EE+= Et*ii;
+	    Lp+= La*Co*ii/(Et-La+1+Co);
+	    II+= ii;
+	    LL.data[j] = La*ii;
+	    L00+= La*ii; 
+	    C00+= Co*ii; 
+	    mulx(xi,hh*ii/um);
+	  }
+
+	  cc = E00>0 ? C00/(E00-L00+fabs(C00)) : 0.;
+	  if(cc<this->netCC || cc*C00<rho) continue;
+
+	  E90=L90=C90=inet=0.;
+
+          NETX (
+	  pa90[0] = a90[0].data + m0[l]*V; ,
+	  pa90[1] = a90[1].data + m1[l]*V; ,
+	  pa90[2] = a90[2].data + m2[l]*V; ,
+	  pa90[3] = a90[3].data + m3[l]*V; ,
+	  pa90[4] = a90[4].data + m4[l]*V; ,
+	  pa90[5] = a90[5].data + m5[l]*V; ,
+	  pa90[6] = a90[6].data + m6[l]*V; ,
+	  pa90[7] = a90[7].data + m7[l]*V; )
+
+	  for(j=0; j<V; j++) {                          // 90 phase 
+
+	    j5 = j*NIFO;
+	    AM = am90.data+j5;
+	    inix(pa90,j,AM);
+	    Et = dotx(AM,AM);	                        // total energy     	    
+	    ii = int(Et>Eo);
+	    E90+= Et*ii;
+
+	    Fp = Fplus.data+j5;
+	    Fx = Fcros.data+j5;
+	    gp = dotx(Fp,Fp)+1.e-12;                    // fp^2
+	    gx = dotx(Fx,Fx)+1.e-12;                    // fx^2
+	    gI = dotx(Fp,Fx);                           // fp*fx
+
+	    XI = xi90.data+j5;
+	    XP = dotx(Fp,AM);                           // (X(90)*f+)
+	    XX = dotx(Fx,AM);                           // (X(90)*fx)       
+	    vm = rotx(Fp,XP*gx-XX*gI,
+		      Fx,XX*gp-XP*gI,XI);
+	    HH = dotx(XI,AM,e);
+	    La = HH*HH/vm;
+	    Co = La - dotx(e,e)/vm;
+	    ii*= int(Co>0.);
+	    EE+= Et*ii;
+	    Lp+= La*Co*ii/(Et-La+1+Co);
+	    II+= ii;
+	    LL.data[j] += La*ii;
+	    L90+= La*ii; 
+	    C90+= Co*ii; 
+	    mulx(XI,HH*ii/vm);
+	  }
+
+	  cc = E90>0 ? C90/(E90-L90+fabs(C90)) : 0.;
+	  if(cc<this->netCC || cc*C90<rho) continue;
+
+	  Co = C00+C90;
+	  Lo = L00+L90;
+
+	  sI=cO=aa=bb=0.;
+
+//++++++++++++++++elliptical case++++++++++++++++++++++
+// find solution for polarisation angle and ellipticity
+//++++++++++++++++elliptical case++++++++++++++++++++++
+
+	  if(ISG) {
+
+	    Lo=Lp=Co=0.;
+
+	    for(j=0; j<V; j++) {               // loop over selected pixels 
+
+	      j5 = j*NIFO;
+	      Fp = Fplus.data+j5;
+	      Fx = Fcros.data+j5;
+	      gp = dotx(Fp,Fp)+1.e-12;         // fp^2
+	      gx = dotx(Fx,Fx)+1.e-12;         // fx^2
+	      gI = dotx(Fp,Fx);                // fp*fx
+	      gg = gp+gx;
+
+      	      wp = dotx(Fp,xi00.data+j5);      // +00 response
+	      wx = dotx(Fx,xi00.data+j5);      // x00 response
+	      WP = dotx(Fp,xi90.data+j5);      // +90 response
+	      WX = dotx(Fx,xi90.data+j5);      // x90 response
+	      
+	      xp = (wp*wp + WP*WP);  
+	      xx = (wx*wx + WX*WX);  
+	      La = LL.data[j];
+
+	      sI += 2*(wp*wx+WP*WX-La*gI)/gg;  // sin(4psi) 
+	      cO += (xp-xx - La*(gp-gx))/gg;   // cos(4psi)
+	      bb += La - (xp+xx)/gg;     
+	      aa += 2*(wp*WX - wx*WP)/gg;
+	    }
+
+	    gg = sqrt(cO*cO+sI*sI);
+	    cO = cO/gg; sI = sI/gg;
+	    aa/= bb+gg+V*En;                   // ellipticity
+	    if(aa> one) aa = 1.;
+	    if(aa<-one) aa =-1.;
+
+	    for(j=0; j<V; j++) {               // loop over selected pixels 
+
+	      Fp = Fplus.data+j*NIFO;
+	      Fx = Fcros.data+j*NIFO;
+	      um = rotx(Fp,1+cO,Fx, sI,u);     // rotate by 2*polarization angle
+	      vm = rotx(Fx,1+cO,Fp,-sI,v);     // rotate by 2*polarization angle
+	      gp = dotx(u,u)+1.e-12;           // fp^2
+	      gx = dotx(v,v)+1.e-12;           // fx^2
+	      gI = dotx(u,v);                  // f+fx
+	      gg = gp+aa*aa*gx;                // inverse network sensitivity
+	      
+	      am = am00.data+j*NIFO;
+	      xi = xi00.data+j*NIFO;
+	      um = dotx(xi,xi)+1.e-6;
+	      hh = dotx(xi,am,pp);
+	      xp = dotx(u,xi);
+	      xx = dotx(v,xi)*aa;
+	      bb = (xp*xp+xx*xx)/(um*gg*um);
+	      La = hh*hh*bb;
+	      cc = bb*dotx(pp,pp);
+
+	      AM = am90.data+j*NIFO;
+	      XI = xi90.data+j*NIFO;
+	      vm = dotx(XI,XI)+1.e-6;
+	      HH = dotx(XI,AM,qq);
+	      XP = dotx(u,XI);
+	      XX = dotx(v,XI)*aa;
+	      bb = (XP*XP+XX*XX)/(vm*gg*vm);
+	      La+= HH*HH*bb;
+	      cc+= bb*dotx(qq,qq);
+	      
+	      bb = 2*(xp*XX-xx*XP)/(um*gg*vm);
+	      La+= hh*HH*bb;
+	      cc+= bb*dotx(pp,qq);
+	      cc = La-cc;
+	      Lo+= La;
+	      Co+= cc;
+	      Et = dotx(am,am) + dotx(AM,AM);
+	      Lp+= La*cc/(Et-La+2+fabs(cc));
+	    }
+	  }
+
+	  cc = EE>0 ? Co/(EE-Lo+II+fabs(Co)) : 0.;
+	  EE = E00+E90;
+	  if(!isgr) Lp = Lo*cc;
+	  if(Lp>LPm) {LPm=Lp; Em=EE; IIm=II;}         // max likelihood
+
+	  skyProb.data[l]  = Lp/EE;                   // probability map
+
+	  cc = EE>0 ? Co/(EE-Lo+II+fabs(Co)) : 0.;
+	  if(cc<this->netCC || cc*Co<rho*2) continue;
+
+//=============================================================
+// zero phase data  
+//=============================================================
+
+	  Lp=Lo=Co=gP=gX=0.;
+	  
+	  for(j=0; j<V; j++) {                   // loop over selected pixels 
+
+	    xi = xi00.data+j*NIFO;	    
+
+	    if(dotx(xi,xi)<=0.) continue;        // skip insignificant pixel
+	    
+	    am = am00.data+j*NIFO;
+	    Et = dotx(am,am);
+	    Fp = Fplus.data+j*NIFO;
+	    Fx = Fcros.data+j*NIFO;
+	    gp = dotx(Fp,Fp)+1.e-12;             // fp^2
+	    gx = dotx(Fx,Fx)+1.e-12;             // fx^2
+	    gI = dotx(Fp,Fx);                    // fp*fx
+	    xp = dotx(Fp,am);                    // (X*f+)
+	    xx = dotx(Fx,am);                    // (X*fx)     
+	    uc = xp*gx - xx*gI;                  // u cos of rotation to PCF
+	    us = xx*gp - xp*gI;                  // u sin of rotation to PCF
+	    vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	    vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	    um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	    vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+
+// regulator
+
+	    ii = netx(u,um,v,vm,GAMMA); 
+	    inet += ii*Et;
+	    if(ii<N_2 && gamma<0.) {inix(xi,0); continue;}
+
+	    gg  = (gp+gx)*soft; 
+	    uc += xp*gg;                         // u cos of rotation to PCF
+	    us += xx*gg;                         // u sin of rotation to PCF
+	    
+	    if(ii<N_1 && gamma!=0) { 
+	      gR = (gp-gx)/2;
+	      gc = sqrt(gR*gR+gI*gI);            // norm of complex antenna pattern
+	      uc = xp*(gc+gR)+xx*gI;
+	      us = xx*(gc-gR)+xp*gI;
+	    }
+	    
+	    vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	    vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	    um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	    vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+
+// energy disbalance vectors
+
+            NETX (
+	    rr[0] = LOCAL*am[0]/(am[0]*am[0]+2.)+1-LOCAL; ,
+	    rr[1] = LOCAL*am[1]/(am[1]*am[1]+2.)+1-LOCAL; ,
+	    rr[2] = LOCAL*am[2]/(am[2]*am[2]+2.)+1-LOCAL; ,
+	    rr[3] = LOCAL*am[3]/(am[3]*am[3]+2.)+1-LOCAL; ,
+	    rr[4] = LOCAL*am[4]/(am[4]*am[4]+2.)+1-LOCAL; ,
+	    rr[5] = LOCAL*am[5]/(am[5]*am[5]+2.)+1-LOCAL; ,
+	    rr[6] = LOCAL*am[6]/(am[6]*am[6]+2.)+1-LOCAL; ,
+	    rr[7] = LOCAL*am[7]/(am[7]*am[7]+2.)+1-LOCAL; )
+
+	    hh = dotx(u,am)/um;
+            NETX (
+	    pp[0] = rr[0]*(am[0]-hh*u[0])*u[0]; ,
+	    pp[1] = rr[1]*(am[1]-hh*u[1])*u[1]; ,
+	    pp[2] = rr[2]*(am[2]-hh*u[2])*u[2]; ,
+	    pp[3] = rr[3]*(am[3]-hh*u[3])*u[3]; ,
+	    pp[4] = rr[4]*(am[4]-hh*u[4])*u[4]; ,
+	    pp[5] = rr[5]*(am[5]-hh*u[5])*u[5]; ,
+	    pp[6] = rr[6]*(am[6]-hh*u[6])*u[6]; ,
+	    pp[7] = rr[7]*(am[7]-hh*u[7])*u[7]; )
+	    
+	    gg = dotx(v,am)/um;
+	    hh*= 2.;
+            NETX (
+	    qq[0] = rr[0]*((hh*u[0]-am[0])*v[0]+u[0]*u[0]*gg); ,
+	    qq[1] = rr[1]*((hh*u[1]-am[1])*v[1]+u[1]*u[1]*gg); ,
+	    qq[2] = rr[2]*((hh*u[2]-am[2])*v[2]+u[2]*u[2]*gg); ,
+	    qq[3] = rr[3]*((hh*u[3]-am[3])*v[3]+u[3]*u[3]*gg); ,
+	    qq[4] = rr[4]*((hh*u[4]-am[4])*v[4]+u[4]*u[4]*gg); ,
+	    qq[5] = rr[5]*((hh*u[5]-am[5])*v[5]+u[5]*u[5]*gg); ,
+	    qq[6] = rr[6]*((hh*u[6]-am[6])*v[6]+u[6]*u[6]*gg); ,
+	    qq[7] = rr[7]*((hh*u[7]-am[7])*v[7]+u[7]*u[7]*gg); )
+	    
+	    co = dotx(qq,qq)/vm+dotx(pp,pp)/um+1.e-24;     // cos term
+	    si = dotx(pp,qq);                              // sin term
+            if(!eDisbalance) {co=1.;si=0.;} 
+	    em = rotx(u,co,v,si/vm,e);                     // calculate rotated vector e
+
+// second iteration
+	      
+	    vm = rotx(v,co,u,-si/um,v)+1.e-24;      // calculate rotated vector v
+	    hh = dotx(e,am)/em;
+	   
+            NETX ( 
+	    pp[0] = rr[0]*(am[0]-hh*e[0])*e[0]; ,
+	    pp[1] = rr[1]*(am[1]-hh*e[1])*e[1]; ,
+	    pp[2] = rr[2]*(am[2]-hh*e[2])*e[2]; ,
+	    pp[3] = rr[3]*(am[3]-hh*e[3])*e[3]; ,
+	    pp[4] = rr[4]*(am[4]-hh*e[4])*e[4]; ,
+	    pp[5] = rr[5]*(am[5]-hh*e[5])*e[5]; ,
+	    pp[6] = rr[6]*(am[6]-hh*e[6])*e[6]; ,
+	    pp[7] = rr[7]*(am[7]-hh*e[7])*e[7]; )
+	    
+	    gg = dotx(v,am)/em;
+	    hh*= 2.;
+            NETX (
+	    qq[0] = rr[0]*((hh*e[0]-am[0])*v[0]+e[0]*e[0]*gg); ,
+	    qq[1] = rr[1]*((hh*e[1]-am[1])*v[1]+e[1]*e[1]*gg); ,
+	    qq[2] = rr[2]*((hh*e[2]-am[2])*v[2]+e[2]*e[2]*gg); ,
+	    qq[3] = rr[3]*((hh*e[3]-am[3])*v[3]+e[3]*e[3]*gg); ,
+	    qq[4] = rr[4]*((hh*e[4]-am[4])*v[4]+e[4]*e[4]*gg); ,
+	    qq[5] = rr[5]*((hh*e[5]-am[5])*v[5]+e[5]*e[5]*gg); ,
+	    qq[6] = rr[6]*((hh*e[6]-am[6])*v[6]+e[6]*e[6]*gg); ,
+	    qq[7] = rr[7]*((hh*e[7]-am[7])*v[7]+e[7]*e[7]*gg); )
+	    
+	    co = dotx(qq,qq)/vm+dotx(pp,pp)/em+1.e-24;       // cos term
+	    si = dotx(pp,qq);                                // sin term
+            if(!eDisbalance) {co=1.;si=0.;}  
+	    em = rotx(e,co,v,si/vm,e);                       // calculate final vector
+	    hh = dotx(e,am,ee);                              // GW amplitude
+	    La = hh*hh/em;
+	    cc = La-dotx(ee,ee)/em;
+	    Lo+= La;
+	    Co+= cc;
+	    Lp+= La*cc*int(cc>0)/(Et-La+1+cc);
+	    mulx(e,hh/em,xi);
+	  }
+
+//=============================================================
+// 90 degrees phase energy disbalance  
+//=============================================================
+
+	  for(j=0; j<V; j++) {                   // select pixels and get dot ptoducts 
+	    
+	    XI = xi90.data+j*NIFO;
+
+	    if(dotx(XI,XI)<=0) continue;         // skip insignificant pixel
+
+	    AM = am90.data+j*NIFO;
+	    Et = dotx(AM,AM);
+	    Fp = Fplus.data+j*NIFO;
+	    Fx = Fcros.data+j*NIFO;
+	    gp = dotx(Fp,Fp)+1.e-12;             // fp^2
+	    gx = dotx(Fx,Fx)+1.e-12;             // fx^2
+	    gI = dotx(Fp,Fx);                    // fp*fx
+	    XP = dotx(Fp,AM);                    // (X*f+)
+	    XX = dotx(Fx,AM);                    // (X*fx)      
+	    uc = XP*gx - XX*gI;                  // u cos of rotation to PCF
+	    us = XX*gp - XP*gI;                  // u sin of rotation to PCF
+	    vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	    vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	    um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	    vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+
+// regulator
+
+	    ii = netx(u,um,v,vm,GAMMA); 
+	    inet += ii*Et;
+	    if(ii<N_2 && gamma<0.) {inix(XI,0.); continue;}
+
+	    gg  = (gp+gx)*soft; 
+	    uc += XP*gg;                         // u cos of rotation to PCF
+	    us += XX*gg;                         // u sin of rotation to PCF
+	    
+	    if(ii<N_1 && gamma!=0) { 
+	      gR = (gp-gx)/2;
+	      gc = sqrt(gR*gR+gI*gI);              // norm of complex antenna pattern
+	      uc = XP*(gc+gR)+XX*gI;
+	      us = XX*(gc-gR)+XP*gI;
+	    }
+
+	    vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	    vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	    um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	    vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+ 
+// energy disbalance vectors
+
+            NETX (
+	    rr[0] = LOCAL*AM[0]/(AM[0]*AM[0]+2.)+1-LOCAL; ,
+	    rr[1] = LOCAL*AM[1]/(AM[1]*AM[1]+2.)+1-LOCAL; ,
+	    rr[2] = LOCAL*AM[2]/(AM[2]*AM[2]+2.)+1-LOCAL; ,
+	    rr[3] = LOCAL*AM[3]/(AM[3]*AM[3]+2.)+1-LOCAL; ,
+	    rr[4] = LOCAL*AM[4]/(AM[4]*AM[4]+2.)+1-LOCAL; ,
+	    rr[5] = LOCAL*AM[5]/(AM[5]*AM[5]+2.)+1-LOCAL; ,
+	    rr[6] = LOCAL*AM[6]/(AM[6]*AM[6]+2.)+1-LOCAL; ,
+	    rr[7] = LOCAL*AM[7]/(AM[7]*AM[7]+2.)+1-LOCAL; )
+
+	    hh = dotx(u,AM)/um;
+            NETX (
+	    pp[0] = rr[0]*(AM[0]-hh*u[0])*u[0]; ,
+	    pp[1] = rr[1]*(AM[1]-hh*u[1])*u[1]; ,
+	    pp[2] = rr[2]*(AM[2]-hh*u[2])*u[2]; ,
+	    pp[3] = rr[3]*(AM[3]-hh*u[3])*u[3]; ,
+	    pp[4] = rr[4]*(AM[4]-hh*u[4])*u[4]; ,
+	    pp[5] = rr[5]*(AM[5]-hh*u[5])*u[5]; ,
+	    pp[6] = rr[6]*(AM[6]-hh*u[6])*u[6]; ,
+	    pp[7] = rr[7]*(AM[7]-hh*u[7])*u[7]; )
+	    
+	    gg = dotx(v,AM)/um;
+	    hh*= 2.;
+            NETX (
+	    qq[0] = rr[0]*((hh*u[0]-AM[0])*v[0]+u[0]*u[0]*gg); ,
+	    qq[1] = rr[1]*((hh*u[1]-AM[1])*v[1]+u[1]*u[1]*gg); ,
+	    qq[2] = rr[2]*((hh*u[2]-AM[2])*v[2]+u[2]*u[2]*gg); ,
+	    qq[3] = rr[3]*((hh*u[3]-AM[3])*v[3]+u[3]*u[3]*gg); ,
+	    qq[4] = rr[4]*((hh*u[4]-AM[4])*v[4]+u[4]*u[4]*gg); ,
+	    qq[5] = rr[5]*((hh*u[5]-AM[5])*v[5]+u[5]*u[5]*gg); ,
+	    qq[6] = rr[6]*((hh*u[6]-AM[6])*v[6]+u[6]*u[6]*gg); ,
+	    qq[7] = rr[7]*((hh*u[7]-AM[7])*v[7]+u[7]*u[7]*gg); )
+	    
+	    co = dotx(qq,qq)/vm+dotx(pp,pp)/um+1.e-24;     // cos term
+	    si = dotx(pp,qq);                              // sin term
+            if(!eDisbalance) {co=1.;si=0.;}  
+	    em = rotx(u,co,v,si/vm,e);                     // calculate rotated vector e
+
+// second iteration
+	      
+	    vm = rotx(v,co,u,-si/um,v)+1.e-24;      // calculate rotated vector v
+	    hh = dotx(e,AM)/em;
+	   
+            NETX ( 
+	    pp[0] = rr[0]*(AM[0]-hh*e[0])*e[0]; ,
+	    pp[1] = rr[1]*(AM[1]-hh*e[1])*e[1]; ,
+	    pp[2] = rr[2]*(AM[2]-hh*e[2])*e[2]; ,
+	    pp[3] = rr[3]*(AM[3]-hh*e[3])*e[3]; ,
+	    pp[4] = rr[4]*(AM[4]-hh*e[4])*e[4]; ,
+	    pp[5] = rr[5]*(AM[5]-hh*e[5])*e[5]; ,
+	    pp[6] = rr[6]*(AM[6]-hh*e[6])*e[6]; ,
+	    pp[7] = rr[7]*(AM[7]-hh*e[7])*e[7]; )
+	    
+	    gg = dotx(v,AM)/em;
+	    hh*= 2.;
+            NETX (
+	    qq[0] = rr[0]*((hh*e[0]-AM[0])*v[0]+e[0]*e[0]*gg); ,
+	    qq[1] = rr[1]*((hh*e[1]-AM[1])*v[1]+e[1]*e[1]*gg); ,
+	    qq[2] = rr[2]*((hh*e[2]-AM[2])*v[2]+e[2]*e[2]*gg); ,
+	    qq[3] = rr[3]*((hh*e[3]-AM[3])*v[3]+e[3]*e[3]*gg); ,
+	    qq[4] = rr[4]*((hh*e[4]-AM[4])*v[4]+e[4]*e[4]*gg); ,
+	    qq[5] = rr[5]*((hh*e[5]-AM[5])*v[5]+e[5]*e[5]*gg); ,
+	    qq[6] = rr[6]*((hh*e[6]-AM[6])*v[6]+e[6]*e[6]*gg); ,
+	    qq[7] = rr[7]*((hh*e[7]-AM[7])*v[7]+e[7]*e[7]*gg); )
+	    
+	    co = dotx(qq,qq)/vm+dotx(pp,pp)/em+1.e-24;       // cos term
+	    si = dotx(pp,qq);                                // sin term
+            if(!eDisbalance) {co=1.;si=0.;}  
+	    em = rotx(e,co,v,si/vm,e);                       // calculate final vector
+	    hh = dotx(e,AM,ee);                              // GW amplitude
+	    La = hh*hh/em;
+	    cc = La-dotx(ee,ee)/em;
+	    Lo+= La;
+	    Co+= cc;
+	    Lp+= La*cc*int(cc>0)/(Et-La+1+cc);
+	    mulx(e,hh/em,XI);
+	  }
+
+//++++++++++++++++elliptical case++++++++++++++++++++++
+// calculate elliptical likelihood and coherent energy
+//++++++++++++++++elliptical case++++++++++++++++++++++
+	  
+	  if(ISG) {
+
+	    Lp=Lo=Co=0.;
+	  
+	    for(j=0; j<V; j++) {               // loop over selected pixels 
+
+	      Fp = Fplus.data+j*NIFO;
+	      Fx = Fcros.data+j*NIFO;
+	      um = rotx(Fp,1+cO,Fx, sI,u);     // rotate by 2*polarization angle
+	      vm = rotx(Fx,1+cO,Fp,-sI,v);     // rotate by 2*polarization angle
+	      gp = dotx(u,u)+1.e-12;           // fp^2
+	      gx = dotx(v,v)+1.e-12;           // fx^2
+	      gg = gp + aa*aa*gx;              // network sensitivity
+	      
+	      am = am00.data+j*NIFO;
+	      xi = xi00.data+j*NIFO;
+	      um = dotx(xi,xi)+1.e-6;
+	      hh = dotx(xi,am,pp);
+	      xp = dotx(u,xi);
+	      xx = dotx(v,xi)*aa;
+	      bb = (xp*xp+xx*xx)/(um*gg*um);
+	      La = hh*hh*bb;
+	      cc = bb*dotx(pp,pp);
+
+	      AM = am90.data+j*NIFO;
+	      XI = xi90.data+j*NIFO;
+	      vm = dotx(XI,XI)+1.e-6;
+	      HH = dotx(XI,AM,qq);
+	      XP = dotx(u,XI);
+	      XX = dotx(v,XI)*aa;
+	      bb = (XP*XP+XX*XX)/(vm*gg*vm);
+	      La+= HH*HH*bb;
+	      cc+= bb*dotx(qq,qq);
+	      
+	      bb = 2*(xp*XX-xx*XP)/(um*gg*vm);
+	      La+= hh*HH*bb;
+	      cc+= bb*dotx(pp,qq);
+	      cc = La-cc;
+	      Co+= cc;
+	      Lo+= La;
+	      Et = dotx(am,am)+dotx(AM,AM);
+	      Lp+= La*cc*int(cc>0)/(Et-La+2+cc);
+	    }
+	  }
+
+// final detection statistics
+	  	  
+	  cc = EE>0 ? Co/(EE-Lo+II+fabs(Co)) : 0.;
+	  stat = isgr ? Lp/EE : Lo*cc/EE;
+	  inet/= EE;
+
+
+	  if(stat>=STAT) { m=l; STAT=stat; AA=aa; CO=cO; SI=sI; Lm=Lo/2.; }
+	  
+	  if(ID) {                            // fill skymaps
+	    for(j=0; j<V; j++) {               // loop over selected pixels 
+	      Fp = Fplus.data+j*NIFO;
+	      Fx = Fcros.data+j*NIFO;
+	      Et = dotx(pa00,j,pa00,j);
+	      gp = dotx(Fp,Fp)+1.e-12;             // fp^2
+	      gx = dotx(Fx,Fx)+1.e-12;             // fx^2
+	      gI = dotx(Fp,Fx);                    // fp*fx
+	      gr = (gp+gx)/2;
+	      gR = (gp-gx)/2;
+	      gc = sqrt(gR*gR+gI*gI);              // norm of complex antenna pattern
+	      gP+= (gr+gc);                        // average + sensitivity
+	      gX+= (gr-gc);                        // average x sensitivity
+	    }
+
+	    this->nAntenaPrior.set(l, gP/V);
+	    this->nSensitivity.set(l, gP/V);
+	    this->nAlignment.set(l, gX/V);	
+	    this->nLikelihood.set(l, Lo/2);		 
+	    this->nNullEnergy.set(l, (EE-Lo)/2.);		 
+	    this->nCorrEnergy.set(l, Co/2);		 
+	    this->nCorrelation.set(l, cc);
+	    this->nSkyStat.set(l, stat);		 
+	    this->nProbability.set(l, skyProb.data[l]);		 
+	    this->nDisbalance.set(l, fabs(L00-L90)/fabs(L00+L90));		 
+      	    this->nEllipticity.set(l, aa);		 
+	    this->nPolarisation.set(l, atan2(sI,cO));		 
+	    this->nNetIndex.set(l, inet);
+	  }	    
+	}          
+
+	if(STAT<0.001 && ind<0) {
+	  this->wc_List[n].ignore(id);     // reject cluster
+	  continue;
+	}
+
+//============================================================
+// final calculation of likelihood for selected sky location
+//============================================================
+
+	l = ind<0 ? m : ind;
+
+        NETX (
+	pa00[0] = a00[0].data + m0[l]*V; ,
+	pa00[1] = a00[1].data + m1[l]*V; ,
+	pa00[2] = a00[2].data + m2[l]*V; ,
+	pa00[3] = a00[3].data + m3[l]*V; ,
+	pa00[4] = a00[4].data + m4[l]*V; ,
+	pa00[5] = a00[5].data + m5[l]*V; ,
+	pa00[6] = a00[6].data + m6[l]*V; ,
+	pa00[7] = a00[7].data + m7[l]*V; )
+        NETX (
+	pa90[0] = a90[0].data + m0[l]*V; ,
+	pa90[1] = a90[1].data + m1[l]*V; ,
+	pa90[2] = a90[2].data + m2[l]*V; ,
+	pa90[3] = a90[3].data + m3[l]*V; ,
+	pa90[4] = a90[4].data + m4[l]*V; ,
+	pa90[5] = a90[5].data + m5[l]*V; ,
+	pa90[6] = a90[6].data + m6[l]*V; ,
+	pa90[7] = a90[7].data + m7[l]*V; )
+	
+	Lo=0;
+
+	for(j=0; j<V; j++) {            // select pixels and get dot ptoducts 
+	  
+	  pix = this->wc_List[n].getPixel(id,pI[j]);
+	  pix->theta = nLikelihood.getTheta(l);
+	  pix->phi   = nLikelihood.getPhi(l);
+	  pix->ellipticity = ISG ? AA : 0.;
+	  pix->polarisation = ISG ? atan2(SI,CO)/4. : 0.;
+
+	  E00=E90=gp=gx=gI=xp=xx=XP=XX = 0.;
+	  U = 1;
+
+	  
+	  Fp = Fplus.data+j*NIFO;
+	  Fx = Fcros.data+j*NIFO;
+	  am = am00.data+j*NIFO;
+	  AM = am90.data+j*NIFO;
+	  for(i=0; i<nIFO; i++) {
+	    Fp[i] = fp[i][l]*nr[i][j];
+	    Fx[i] = fx[i][l]*nr[i][j];
+	    am[i] = pa00[i][j];
+	    AM[i] = pa90[i][j];
+	    E00 += am[i]*am[i];
+	    E90 += AM[i]*AM[i];
+
+	    gp  += Fp[i]*Fp[i]+1.e-12;
+	    gx  += Fx[i]*Fx[i]+1.e-12;
+	    gI  += Fp[i]*Fx[i];
+	    xp  += Fp[i]*am[i];
+	    xx  += Fx[i]*am[i];
+	    XP  += Fp[i]*AM[i];
+	    XX  += Fx[i]*AM[i];
+
+	    pix->setdata(am[i],'S',i);  
+	    pix->setdata(AM[i],'P',i);  
+	    xi00.data[i] = 0.;
+	    xi90.data[i] = 0.;
+
+	  }
+
+	  gr = (gp+gx)*soft;
+	  gR = (gp-gx)/2.;
+	  gc = sqrt(gR*gR+gI*gI);              // norm of complex antenna pattern
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// condition 00 phase
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// find weak vector
+
+	  uc = (xp*gx - xx*gI);                // u cos of rotation to PCF
+	  us = (xx*gp - xp*gI);                // u sin of rotation to PCF
+	  vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	  vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+	  hh = dotx(u,am,e);
+	  cc = dotx(e,e);
+	  
+	  if((hh*hh-cc)/um<=0. || E00<Eo) U=0;
+  
+// regulator
+
+	  ii = netx(u,um,v,vm,GAMMA); 
+	  if(ii<N_2 && gamma<0.) U=0;       // superclean selection cut
+	  
+	  uc += xp*gr;                         // u cos of rotation to PCF
+	  us += xx*gr;                         // u sin of rotation to PCF
+	  
+	  if(ii<N_1 && gamma!=0) { 
+	    uc = xp*(gc+gR)+xx*gI;
+	    us = xx*(gc-gR)+xp*gI;
+	  }
+
+	  vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	  vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+
+// normalize u and v vectors
+
+	  um = sqrt(um);
+	  vm = sqrt(vm);
+
+	  hh = gg = 0.;
+	  for(i=0; i<nIFO; i++) {
+	    u[i] = u[i]/um;
+	    v[i] = v[i]/vm;
+	    hh += u[i]*am[i];                               // (u*X) - solution 
+	    gg += v[i]*am[i];                               // (v*X) - solution 
+	  } 
+
+// calculate energy disbalance vectors
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? am[i]/(am[i]*am[i]+2.) : 1.;
+	    pp[i] = cc*(am[i]-hh*u[i])*u[i];
+	    qq[i] = cc*((2.*hh*u[i]-am[i])*v[i] + u[i]*u[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+
+// corrected likelihood
+
+	  hh = gg = 0.;
+	  for(i=0; i<nIFO; i++) {                           // solution for h(t,f)
+	    e[i] = u[i]*co + v[i]*si;                       // final projection vector
+	    v[i] = v[i]*co - u[i]*si;                       // orthogonal v vector
+	    u[i] = e[i];
+	    hh += u[i]*am[i];                          // solution for hu(t,f)
+	    gg += v[i]*am[i];                          // solution for hv(t,f)
+	  }
+
+// second iteration
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? am[i]/(am[i]*am[i]+2.) : 1.;
+	    pp[i] = cc*(am[i]-hh*u[i])*u[i];
+	    qq[i] = cc*((2.*hh*u[i]-am[i])*v[i] + u[i]*u[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+
+	  hh = 0.;
+	  for(i=0; i<nIFO; i++) {              // corrected u vector for 00 amplitude 
+	    u[i] = u[i]*co + v[i]*si;
+	    e[i] = am[i]*u[i];
+	    hh += e[i]*U;
+	  } 
+
+	  La = hh*hh; 
+	  wp = wx = 0.;
+	  for(i=0; i<nIFO; i++) {              // detector response for 00 data
+	    pix->setdata(u[i]*hh/sqrt(nv[i][j]),'W',i);  
+	    wp += Fp[i]*u[i]*hh; 
+	    wx += Fx[i]*u[i]*hh; 
+	  }
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// condition 90 phase
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// find weak vector
+
+	  U  = 1;
+	  uc = XP*gx - XX*gI;                  // u cos of rotation to PCF
+	  us = XX*gp - XP*gI;                  // u sin of rotation to PCF
+	  vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	  vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+	  hh = dotx(u,AM,e);
+	  cc = dotx(e,e);
+	  
+	  if((hh*hh-cc)/um<=0. || E90<Eo) U=0;
+
+// sky regulator
+	    
+	  ii = netx(u,um,v,vm,GAMMA); 
+	  if(ii<N_2 && gamma<0.) U=0;       // superclean selection cut
+	  
+	  uc += XP*gr;                         // u cos of rotation to PCF
+	  us += XX*gr;                         // u sin of rotation to PCF
+	  
+	  if(ii<N_1 && gamma!=0) { 
+	    uc = XP*(gc+gR)+XX*gI;
+	    us = XX*(gc-gR)+XP*gI;
+	  }
+
+	  vc = gp*uc + gI*us;                  // (u*f+)/|u|^2 - 'cos' for v
+	  vs = gx*us + gI*uc;                  // (u*fx)/|u|^2 - 'sin' for v
+	  um = rotx(Fp,uc,Fx,us,u);            // calculate new response vector
+	  vm = rotx(Fx,-vc,Fp,vs,v)+1.e-24;    // calculate complementary vector
+
+// normalize u and v vectors
+
+	  um = sqrt(um);
+	  vm = sqrt(vm);
+
+	  hh = gg = 0.;
+	  for(i=0; i<nIFO; i++) {
+	    u[i] = u[i]/um;
+	    v[i] = v[i]/vm;
+	    hh += u[i]*AM[i];                               // (u*X) - solution 
+	    gg += v[i]*AM[i];                               // (v*X) - solution 
+	  } 
+
+// calculate energy disbalance vectors
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? AM[i]/(AM[i]*AM[i]+2.) : 1.;
+	    pp[i] = cc*(AM[i]-hh*u[i])*u[i];
+	    qq[i] = cc*((2.*hh*u[i]-AM[i])*v[i] + u[i]*u[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+
+// corrected likelihood
+
+	  hh = gg = 0.;
+	  for(i=0; i<nIFO; i++) {                           // solution for h(t,f)
+	    e[i] = u[i]*co + v[i]*si;                       // final projection vector
+	    v[i] = v[i]*co - u[i]*si;                       // orthogonal v vector
+	    u[i] = e[i];
+	    hh += u[i]*AM[i];                               // solution for hu(t,f)
+	    gg += v[i]*AM[i];                               // solution for hv(t,f)
+	  }
+
+// second iteration
+
+	  co=si=0.;
+	  for(i=0; i<nIFO; i++) {                           // disbalance vectors
+	    cc = local ? AM[i]/(AM[i]*AM[i]+2.) : 1.;
+	    pp[i] = cc*(AM[i]-hh*u[i])*u[i];
+	    qq[i] = cc*((2.*hh*u[i]-AM[i])*v[i] + u[i]*u[i]*gg);
+	    co += pp[i]*pp[i] + qq[i]*qq[i];                // cos (version 1)
+	    si += pp[i]*qq[i];                              // sin
+	  }
+	  cc = sqrt(si*si+co*co)+1.e-24;
+	  co = co/cc;
+	  si = si/cc;
+          if(!eDisbalance) {co=1.;si=0.;}  
+
+
+	  hh = 0.;
+	  for(i=0; i<nIFO; i++) {              // corrected u vector for 00 amplitude 
+	    u[i] = u[i]*co + v[i]*si;
+	    e[i] = AM[i]*u[i];
+	    hh += e[i]*U;
+	  } 
+
+	  La+= hh*hh;                                        // 90 likelihood
+	  WP = WX = 0.;
+	  for(i=0; i<nIFO; i++) {                            // detector response for 90 data
+	    pix->setdata(u[i]*hh/sqrt(nv[i][j]),'U',i);  
+	    WP += Fp[i]*u[i]*hh; 
+	    WX += Fx[i]*u[i]*hh; 
+	  }
+
+	  if(ISG) {
+	    ap = (1+AA*AA);
+	    cc = (1-AA*AA); 
+	    as = SI*cc; 
+	    ac = CO*cc;
+	    gg = (gp+gx)*ap + (gp-gx)*ac + 2*gI*as;	    
+	    hp = (wp*(ap+ac) + 2*AA*WX + wx*as)/gg;
+	    hx = (wx*(ap-ac) - 2*AA*WP + wp*as)/gg;
+	    HP = (WP*(ap+ac) - 2*AA*wx + WX*as)/gg;
+	    HX = (WX*(ap-ac) + 2*AA*wp + WP*as)/gg;
+	    La = rotx(Fp,hp,Fx,hx,e)+rotx(Fp,HP,Fx,HX,e);
+
+	    for(i=0; i<nIFO; i++) {       
+	      pix->setdata((hp*fp[i][l]+hx*fx[i][l])/GG.data[j],'W',i);  // 00 detector respose
+	      pix->setdata((HP*fp[i][l]+HX*fx[i][l])/GG.data[j],'U',i);  // 90 detector respose
+	    }
+	  }
+
+	  pix->likelihood = La/2.;
+	  Lo += La/2;
+	  	  
+	  if(!core)  pix->core = (E00<Eo && E90<Eo) ? false : true;
+	  if(ID) {
+	    this->pixeLHood.data[pix->time] = La/2.;
+	    this->pixeLNull.data[pix->time] = (E00+E90-La)/2+1.;
+	  }
+
+	  count++;
+	}
+
+// fill in backward delay configuration
+
+	vtof->clear();
+        NETX (
+	vtof->push_back(int(M/2)-int(m0[l])); ,
+	vtof->push_back(int(M/2)-int(m1[l])); ,
+	vtof->push_back(int(M/2)-int(m2[l])); ,
+	vtof->push_back(int(M/2)-int(m3[l])); ,
+	vtof->push_back(int(M/2)-int(m4[l])); ,
+	vtof->push_back(int(M/2)-int(m5[l])); ,
+	vtof->push_back(int(M/2)-int(m6[l])); ,
+	vtof->push_back(int(M/2)-int(m7[l])); )
+
+// calculation of error regions
+
+	skyProb *= Em/IIm;
+	T = cTo.data[k]+getifo(0)->TFmap.start();          // trigger time
+	if(iID<=0 && type!='E') getSkyArea(id,n,T);        // calculate error regions
+
+	if(fabs(Lm-Lo)/Lo>1.e-4)
+	  cout<<"likelihood warning: "<<Lm<<" "<<Lo<<endl;
+
+	if(Em>0 && ID) { 
+	  cout<<"max value: "<<STAT<<" at (theta,phi) = ("<<nLikelihood.getTheta(l)
+	      <<","<<nLikelihood.getPhi(l)<<")  Likelihood: loop: "
+	      <<Lm<<", final: "<<Lo<<", sky: "<<LPm/2<<", energy: "<<Em/2<<endl;
+	  break;
+	}
+
+        if (mdcListSize() && n==0) {  // only for lag=0 && simulation mode
+          if (this->getwave(id, 0, 'W')) {
+          //if (this->getwave(id, 0, 'S')) {
+            detector* pd;
+            size_t M = this->ifoList.size();
+            for(int i=0; i<(int)M; i++) {    // loop over detectors
+              pd = this->getifo(i);
+              pd->RWFID.push_back(id);  // save cluster ID
+
+              // save reconstructed waveform
+              
+              double gps = this->getifo(0)->getTFmap()->start();
+              double wfStart = gps + pd->waveForm.start();
+              //double wfRate = pd->waveForm.rate();
+              //double wfSize = pd->waveForm.size();
+              
+              WSeries<double>* wf = new WSeries<double>;
+              *wf = pd->waveForm;
+              wf->start(wfStart);
+              pd->RWFP.push_back(wf);
+            }
+          }
+        }
+
+	if(ID && !EFEC) {
+	  this->nSensitivity.gps = T;
+	  this->nAlignment.gps = T;	
+	  this->nDisbalance.gps = T;		 
+	  this->nLikelihood.gps = T;		 
+	  this->nNullEnergy.gps = T;		 
+	  this->nCorrEnergy.gps = T;		 
+	  this->nCorrelation.gps = T;
+	  this->nSkyStat.gps = T;	 
+	  this->nEllipticity.gps = T;		 
+	  this->nPolarisation.gps = T;		 
+	  this->nNetIndex.gps = T;
+	}
+     }    // end of loop over clusters
+     if(ID) break;
+  }       // end of loop over time shifts
+  return count;
+}
+
+//**************************************************************************
+//: initialize network data matrix NDM, works with likelihoodB()
+//**************************************************************************
+
+bool network::setndm(size_t ID, size_t lag, bool core, int type)
+{
+   int ii;
+   size_t j,n,m,k,K,V,id;
+   size_t N = this->ifoList.size(); // number of detectors
+   int  N_1 = N>2 ? int(N)-1 : 2;
+   int  N_2 = N>2 ? int(N)-2 : 1;
+   if(!N) return false;
+
+   wavearray<double> cid;        // cluster ID
+   wavearray<double> rat;        // cluster rate
+   wavearray<double> lik;        // likelihood
+   vector<wavearray<double> > snr(N); // data stream snr
+   vector<wavearray<double> > nul(N); // biased null stream
+   netpixel* pix;
+   wavecomplex gC;
+   detector* pd;
+
+   std::vector<int>* vi;
+   std::vector<wavecomplex> A;   // antenna patterns
+   vectorD esnr; esnr.resize(N); // SkSk snr
+   vectorD xsnr; xsnr.resize(N); // XkSk snr
+   vectorD am; am.resize(N);     // amplitude vector
+   vectorD pp; pp.resize(N);     // energy disbalance vector
+   vectorD qq; qq.resize(N);     // complementary disbalance vector
+   vectorD ee; ee.resize(N);     // temporary
+   vectorD Fp; Fp.resize(N);     // + antenna pattern
+   vectorD Fx; Fx.resize(N);     // x antenna pattern
+   vectorD u;   u.resize(N);     // PCF u vector
+   vectorD v;   v.resize(N);     // PCF v vector
+   vectorD e;   e.resize(N);     // PCF final vector
+   vectorD r;   r.resize(N);     // PCF final vector
+
+   double um,vm,cc,hh,gr,gc,gI,Et,E,Xp,Xx,gp,gx;
+   double gg,co,si,uc,us,vc,vs,gR,a,nr;
+   double S_NDM = 0.;
+   double S_NUL = 0.;
+   double S_NIL = 0.;
+   double S_SNR = 0.;
+   double x_SNR = 0.;
+   double e_SNR = 0.;
+   double bIAS  = 0.;
+   double response = 0.;
+   size_t count = 0;
+
+// regulators hard <- soft <0> weak -> hard
+//   gamma =    -1 <-       0       -> 1
+
+   double soft  = delta>0. ? delta : 0.;
+   double GAMMA = 1.-gamma*gamma;          // network regulator
+   bool status  = false;
+
+   this->gNET = this->aNET = this->eCOR = E = 0.;
+   A.resize(N);   
+
+   for(n=0; n<N; n++) {    
+     nul[n] = this->wc_List[lag].get((char*)"null",n+1,'W',type);
+     snr[n] = this->wc_List[lag].get((char*)"energy",n+1,'S',type);
+     this->getifo(n)->sSNR = 0.;
+     this->getifo(n)->xSNR = 0.;
+     this->getifo(n)->ekXk = 0.;
+     this->getifo(n)->null = 0.;
+     for(m=0; m<NIFO; m++) { this->getifo(n)->ED[m] = 0.; }
+     for(m=0; m<N; m++) { NDM[n][m] = 0.; }
+     esnr[n] = xsnr[n] = 0.;
+    }
+
+   if(!this->wc_List[lag].size()) return status;
+    
+   cid = this->wc_List[lag].get((char*)"ID",0,'S',type);
+   rat = this->wc_List[lag].get((char*)"rate",0,'S',type);
+   lik = this->wc_List[lag].get((char*)"like",0,'S',type);
+   K   = cid.size();
+    
+   for(k=0; k<K; k++) {      // loop over clusters 
+      
+     id = size_t(cid[k]+0.1);
+     if(id != ID) continue;
+      
+     vi = &(this->wc_List[lag].cList[ID-1]);
+     V = vi->size();
+     if(!V) continue;
+
+// normalization of antenna patterns
+// calculation of the rotation angles
+// calculation of the likelihood matrix
+
+     for(j=0; j<V; j++) { 
+	
+       pix = this->wc_List[lag].getPixel(ID,j);
+       if(!pix) {
+	 cout<<"network::setndm() error: NULL pointer"<<endl;
+	 exit(1);
+       }
+       if(!pix->core && core) continue;
+       if(pix->rate != rat.data[k]) continue;
+
+       count++;
+       gr=Et=gg=Xp=Xx = 0.; 
+       gC=0.;
+
+       for(n=0; n<N; n++) {                 // calculate noise normalization
+	 nr    = pix->getdata('N',n);       // noise rms
+	 gg   += 1./(nr*nr);
+       }
+       gg = sqrt(gg);
+
+       for(n=0; n<N; n++) {                 // calculate patterns
+	 am[n] = pix->getdata('S',n);       // snr amplitude
+	 nr    = pix->getdata('N',n)*gg;    // noise rms
+	 Et   += am[n]*am[n];
+	 pd    = this->getifo(n);
+	 Fp[n] = pd->mFp.get(pix->theta,pix->phi)/nr;
+	 Fx[n] = pd->mFx.get(pix->theta,pix->phi)/nr;
+
+	 A[n].set(Fp[n],Fx[n]);
+
+	 gr   += A[n].abs()/2.;
+	 gC   += A[n]*A[n];
+	 Xp   += am[n]*Fp[n];
+	 Xx   += am[n]*Fx[n];
+       }
+       E += Et;
+       gc = gC.mod()/2.;
+       gR = gC.real()/2.;
+       gI = gC.imag()/2.;
+       gp = gr+gR+1.e-12; 
+       gx = gr-gR+1.e-12;
+
+       this->gNET += (gr+gc)*Et; 
+       this->aNET += (gr-gc)*Et; 
+
+// find weak vector
+
+       uc = Xp*gx - Xx*gI;          // u cos of rotation to PCF
+       us = Xx*gp - Xp*gI;          // u sin of rotation to PCF
+       vc = gp*uc + gI*us;          // cos of rotation to PCF for v
+       vs = gx*us + gI*uc;          // sin of rotation to PCF for v
+
+       um = vm = hh = cc = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;       // u - weak vector
+	 v[n] = Fp[n]*vs - Fx[n]*vc;       // v - orthogonal to u
+	 um += u[n]*u[n];
+	 vm += v[n]*v[n];
+	 hh += u[n]*am[n];
+	 cc += u[n]*am[n]*u[n]*am[n];
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+       if((hh*hh-cc)/um <= 0.) continue;   // negative correlated energy
+
+// regulator
+
+       ii = 0;
+       for(n=0; n<N; n++) {
+	 if(u[n]*u[n]/um > 1-GAMMA) ii++;
+	 if(u[n]*u[n]/um+v[n]*v[n]/vm > GAMMA) ii--;
+       }
+       this->iNET += ii*Et; 
+
+       if(ii<N_2 && gamma<0.) continue;    // superclean set
+
+       gg = (gp+gx)*soft;
+       uc = Xp*(gx+gg) - Xx*gI;            // u cos of rotation to PCF
+       us = Xx*(gp+gg) - Xp*gI;            // u sin of rotation to PCF
+
+       if(ii<N_1 && gamma!=0) { 
+	 uc = Xp*(gc+gR)+Xx*gI;
+	 us = Xx*(gc-gR)+Xp*gI;
+       }
+
+       vc = gp*uc + gI*us;                 // (u*f+)/|u|^2 - 'cos' for v
+       vs = gx*us + gI*uc;                 // (u*fx)/|u|^2 - 'sin' for v
+       um = vm = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;
+	 v[n] = Fp[n]*vs - Fx[n]*vc;
+	 um += u[n]*u[n];                  // calculate u and return its norm
+	 vm += v[n]*v[n];                  // calculate u and return its norm
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+// calculate unity vectors in PCF
+
+       hh = gg = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] /=sqrt(um); 
+	 v[n] /=sqrt(vm);                            // unity vectors in PCF
+	 hh += u[n]*am[n];                           // (u*X) - solution 
+	 gg += v[n]*am[n];                           // (v*X) - solution 
+       } 
+       
+// calculate energy disbalance vectors
+       
+       co = si = 0.;
+       for(n=0; n<N; n++) {                          // disbalance vectors
+	 cc = local ? am[n]/(am[n]*am[n]+2.) : 1.;
+	 qq[n] = cc*((2*hh*u[n]-am[n])*v[n]+u[n]*u[n]*gg);   // complementary energy disbalance
+	 pp[n] = cc*(am[n]-hh*u[n])*u[n];                    // energy disbalance
+	 co += pp[n]*pp[n] + qq[n]*qq[n];            // cos
+	 si += pp[n]*qq[n];                          // sin
+       }
+       cc = atan2(si,co+1.e-24);                     // rotation angle
+       co = cos(cc);                                 // cos(psi)
+       si = sin(cc);                                 // sin(psi)
+       if(!eDisbalance) {co=1.;si=0.;}  
+       
+       hh = gg = 0.;
+       for(n=0; n<N; n++) {
+	 e[n] = u[n]*co+v[n]*si;                     // final projection vector
+	 r[n] = v[n]*co-u[n]*si;
+	 hh  += e[n]*am[n];
+	 gg  += r[n]*am[n];
+       }
+
+// second iteration
+       
+       co = si = 0.;
+       for(n=0; n<N; n++) {                          // disbalance vectors
+	 cc = local ? am[n]/(am[n]*am[n]+2.) : 1.;
+	 pp[n] = cc*(am[n]-hh*e[n])*e[n];                    // energy disbalance
+	 qq[n] = cc*((2*hh*e[n]-am[n])*r[n]+e[n]*e[n]*gg);   // complementary energy disbalance
+	 co += pp[n]*pp[n] + qq[n]*qq[n];            // cos (version 1)
+	 si += pp[n]*qq[n];                          // sin
+       }
+       cc = atan2(si,co+1.e-24);                     // rotation angle
+       co = cos(cc);                                 // cos(psi)
+       si = sin(cc);                                 // sin(psi)
+       if(!eDisbalance) {co=1.;si=0.;}  
+       
+       for(n=0; n<N; n++) {
+	 e[n] = e[n]*co+r[n]*si;                     // final projection vector
+       }
+
+// likelihood matrix
+
+       for(n=0; n<N; n++) {                          // loop over NDM elements 
+	 response = 0.;
+	 this->getifo(n)->null += e[n]*e[n];         // bias
+
+	 for(m=0; m<N; m++) {        
+	   gg = e[n]*am[n]*e[m]*am[m];               // en*an * em*am
+	   NDM[n][m] += gg;
+	   response  += e[n]*e[m]*am[m];             // detector response
+	   if(n!=m) this->eCOR += gg;                // correlated energy	   
+	   status = true;
+	 }
+
+	 esnr[n] += response*response;               // reconstructed SNR: Sk*Sk
+	 xsnr[n] += am[n]*response;                  // reconstructed SNR: Xk*Sk
+	 e_SNR   += response*response;               // total reconstructed SNR: sum Sk*Sk
+	 x_SNR   += am[n]*response;                  // total reconstructed SNR: sum Xk*Sk
+	 this->getifo(n)->ED[3] += fabs(response*(am[n]-response));
+	 this->getifo(n)->ED[4] += fabs(response*(am[n]-response));
+       }
+     }
+     
+// check normalization
+     
+     this->norm  = x_SNR/e_SNR;                      // norm factor
+     if(fabs(this->norm-1) > 1.e-4)
+       cout<<"network::setndm(): incorrect likelihood normalization: "<<this->norm<<endl;
+
+     for(n=0; n<N; n++) {
+       bIAS += this->getifo(n)->null;
+       this->getifo(n)->null += nul[n].data[k];      // detector unbiased null stream
+       this->getifo(n)->sSNR = esnr[n];              // s-energy of the detector response
+       this->getifo(n)->xSNR = xsnr[n];              // x-energy of the detector response
+       S_NUL += this->getifo(n)->null;               // total unbiased null stream
+       S_NIL += nul[n].data[k];                      // biased null stream
+       S_SNR += snr[n].data[k];                      // total energy 
+
+       this->getifo(n)->ED[0] = (esnr[n]-xsnr[n]); 
+       this->getifo(n)->ED[1] = fabs(esnr[n]-xsnr[n]);
+       this->getifo(n)->ED[2] = fabs(esnr[n]-xsnr[n]);
+
+       for(m=0; m<N; m++) S_NDM += NDM[n][m]; 
+
+     }
+
+     if(count) { this->gNET /= E; this->aNET /= E; this->iNET /= E;}
+
+     a = S_NDM - lik.data[k]; 
+     if(fabs(a)/S_SNR>1.e-6) 
+       cout<<"ndm-likelihood mismatch:  "<<a<<" "<<S_NDM<<" "<<lik.data[k]<<" "<<norm<<endl;
+     a = fabs(1 - (S_NDM+S_NIL)/S_SNR)/count;
+     if(a>1.e-5) 
+       cout<<"biased energy disbalance:  "<<a<<"  "<<S_SNR-S_NDM<<"  "<<S_NIL<<"  size="<<count<<endl;
+
+     if(status) break;
+   }
+   return status;
+}
+
+
+//**************************************************************************
+//: initialize network data matrix (NDM), works with likelihoodI
+//**************************************************************************
+bool network::SETNDM(size_t ID, size_t lag, bool core, int type)
+{
+   int ii;
+   size_t j,n,m,k,K,V;
+   size_t N = this->ifoList.size(); // number of detectors
+   int  N_1 = N>2 ? int(N)-1 : 2;
+   int  N_2 = N>2 ? int(N)-2 : 1;
+   if(!N) return false;
+
+   wavearray<double> cid;        // cluster ID
+   wavearray<double> rat;        // cluster rate
+   wavearray<double> lik;        // likelihood
+   vector<wavearray<double> > snr(N); // data stream snr
+   vector<wavearray<double> > nul(N); // biased null stream
+   vector<wavearray<double> > SNR(N); // data stream snr
+   vector<wavearray<double> > NUL(N); // biased null stream
+   netpixel* pix;
+   wavecomplex gC,Z;
+   detector* pd;
+
+   std::vector<int>* vint;
+   std::vector<wavecomplex> A;   // patterns in DPF
+   vectorD esnr; esnr.resize(N); // SkSk snr
+   vectorD xsnr; xsnr.resize(N); // XkSk snr
+   vectorD ssnr; ssnr.resize(N); // total energy of non shifted detector output
+   vectorD SSNR; SSNR.resize(N); // total energy of phase shifted detector output
+   vectorD h00;   h00.resize(N); // unmodeled 00 response vector
+   vectorD h90;   h90.resize(N); // unmodeled 00 response vector
+   vectorD u00;   u00.resize(N); // unmodeled 00 unit response vector
+   vectorD u90;   u90.resize(N); // unmodeled 90 unit response vector
+   vectorD am;     am.resize(N); // 00 phase response
+   vectorD AM;     AM.resize(N); // 90 phase response
+   vectorD qq;     qq.resize(N); // energy disbalance vector
+   vectorD pp;     pp.resize(N); // energy disbalance vector
+   vectorD ee;     pp.resize(N); // temporary
+   vectorD Fp;     Fp.resize(N); // + antenna pattern
+   vectorD Fx;     Fx.resize(N); // x antenna pattern
+   vectorD  u;      u.resize(N); // unity vector
+   vectorD  v;      v.resize(N); // unity vector
+   vectorD  e;      e.resize(N); // unity vector
+
+   double a,b,aa,psi,gg,gr,gc,gI,gR,E90,E00,E,fp,fx,vc,vs;
+   double xx,xp,XX,XP,uc,us,co,hh,gp,gx,xi00,xi90,o00,o90;
+   double hgw,HGW,wp,WP,wx,WX,HH,um,vm,si,cc;
+   double S_NDM = 0.;
+   double S_NUL = 0.;
+   double s_snr = 0.;
+   double S_SNR = 0.;
+   size_t count = 0;
+
+// regulator  soft <- weak -> hard
+//   gamma =    -1 <-   0  -> 1
+
+   double soft  = delta>0. ? delta : 0.;
+   double GAMMA = 1.-gamma*gamma;                // network regulator
+   double Eo = this->acor*this->acor*N;
+   
+   double nC = this->MRA ? 1. : 2.;		// NDM normalization Coefficient
+
+   bool status  = false;
+   bool ISG     = false;
+
+   if(tYPe=='I' || tYPe=='S' || tYPe=='G') ISG = true;
+   if(tYPe=='i' || tYPe=='s' || tYPe=='g') ISG = true;
+   
+   A.resize(N);   
+
+   this->gNET = 0.;
+   this->aNET = 0.;
+   this->iNET = 0.;
+   this->eCOR = 0.;
+   E = 0.;
+
+   for(n=0; n<N; n++) {    
+     nul[n] = this->wc_List[lag].get((char*)"null",n+1,'W',type);
+     NUL[n] = this->wc_List[lag].get((char*)"null",n+1,'U',type);
+     snr[n] = this->wc_List[lag].get((char*)"energy",n+1,'S',type);
+     SNR[n] = this->wc_List[lag].get((char*)"energy",n+1,'P',type);
+     this->getifo(n)->sSNR = 0.;
+     this->getifo(n)->xSNR = 0.;
+     this->getifo(n)->ekXk = 0.;
+     this->getifo(n)->null = 0.;
+     for(m=0; m<5; m++) { this->getifo(n)->ED[m] = 0.; }
+     for(m=0; m<N; m++) { NDM[n][m] = 0.; }
+     esnr[n]=xsnr[n]=ssnr[n]=SSNR[n]=0.;
+    }
+
+   if(!this->wc_List[lag].size()) return false;
+    
+   cid = this->wc_List[lag].get((char*)"ID",0,'S',type);
+   rat = this->wc_List[lag].get((char*)"rate",0,'S',type);
+   lik = this->wc_List[lag].get((char*)"like",0,'S',type);
+   K   = cid.size();
+    
+   for(k=0; k<K; k++) {      // loop over clusters 
+      
+     if(size_t(cid[k]+0.1) != ID) continue;
+      
+     vint = &(this->wc_List[lag].cList[ID-1]);
+     V = vint->size();
+     if(!V) continue;
+
+     // normalization of antenna patterns
+     // calculation of the rotation angles
+     // calculation of the likelihood matrix
+
+     for(j=0; j<V; j++) { 
+	
+       pix = this->wc_List[lag].getPixel(ID,j);
+       if(!pix) {
+	 cout<<"network::SETNDM() error: NULL pointer"<<endl;
+	 exit(1);
+       }
+       if(!pix->core && core) continue;
+       if((pix->rate != rat.data[k]) && type) continue;
+
+    
+       psi = 2*pix->polarisation;           // polarisation rotation angle
+       Z.set(cos(psi),-sin(psi));            
+
+       count++;
+       gr=gg=xp=xx=XP=XX=E00=E90 = 0.;
+       o00 = o90 = 1.;
+       gC = 0.;
+
+       for(n=0; n<N; n++) {
+	 b    = pix->getdata('N',n);        // noise rms
+	 gg  += 1./b/b;                     // noise normalization
+       }
+       gg = sqrt(gg);
+
+       for(n=0; n<N; n++) {                 // calculate patterns
+	 am[n] = pix->getdata('S',n);       // snr amplitude
+	 AM[n] = pix->getdata('P',n);       // snr 90 degrees amplitude
+	 E00  += am[n]*am[n];            
+	 E90  += AM[n]*AM[n];            
+	 b     = pix->getdata('N',n)*gg;    // noise rms
+	 pd    = this->getifo(n);
+	 fp    = pd->mFp.get(pix->theta,pix->phi);
+	 fx    = pd->mFx.get(pix->theta,pix->phi);
+	 A[n].set(fp/b,fx/b);
+	 A[n] *= Z;                         // rotate patterns
+	 Fp[n] = A[n].real();
+	 Fx[n] = A[n].imag();
+	 gr   += A[n].abs()/2.;
+	 gC   += A[n]*A[n];
+	 xp   += Fp[n]*am[n];
+	 xx   += Fx[n]*am[n];
+	 XP   += Fp[n]*AM[n];
+	 XX   += Fx[n]*AM[n];
+       }
+       
+       E += E00+E90;
+       gc = gC.mod()/2.;
+       gR = gC.real()/2.;
+       gI = gC.imag()/2.;
+       gp = gr+gR+1.e-12; 
+       gx = gr-gR+1.e-12;
+       aa = pix->ellipticity;
+
+       this->norm = aa;                               // save to store in root file as norm
+       this->gNET += (gr+gc)*(E00+E90); 
+       this->aNET += (gr-gc)*(E00+E90); 
+
+//====================================================
+// calculate unity vectors in PCF for 00 degree phase
+//====================================================
+
+// find weak vector
+
+       uc = xp*gx - xx*gI;          // u cos of rotation to PCF
+       us = xx*gp - xp*gI;          // u sin of rotation to PCF
+       vc = gp*uc + gI*us;          // cos of rotation to PCF for v
+       vs = gx*us + gI*uc;          // sin of rotation to PCF for v
+
+       um = vm = hh = cc = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;
+	 v[n] = Fp[n]*vs - Fx[n]*vc;
+	 um += u[n]*u[n];
+	 vm += v[n]*v[n];
+	 hh += u[n]*am[n];
+	 cc += u[n]*am[n]*u[n]*am[n];
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+       if((hh*hh-cc)/um<=0. || E00<Eo) o00=0.;
+
+// sky regulator
+
+       ii = 0;
+       for(n=0; n<N; n++) {
+	 if(u[n]*u[n]/um > 1-GAMMA) ii++;
+	 if(u[n]*u[n]/um+v[n]*v[n]/vm > GAMMA) ii--;
+       }
+       this->iNET += ii*E00; 
+       if(ii<N_2 && gamma<0.) o00=0.;      // superclean selection cut
+
+       gg = (gp+gx)*soft; 
+       uc = xp*(gx+gg) - xx*gI;            // u cos of rotation to PCF
+       us = xx*(gp+gg) - xp*gI;            // u sin of rotation to PCF
+
+       if(ii<N_1 && gamma!=0) { 
+	 uc = xp*(gc+gR)+xx*gI;
+	 us = xx*(gc-gR)+xp*gI;
+       }
+
+       vc = gp*uc + gI*us;                 // (u*f+)/|u|^2 - 'cos' for v
+       vs = gx*us + gI*uc;                 // (u*fx)/|u|^2 - 'sin' for v
+       um = vm = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;
+	 v[n] = Fp[n]*vs - Fx[n]*vc;
+	 um += u[n]*u[n];                  // calculate u and return its norm
+	 vm += v[n]*v[n];                  // calculate u and return its norm
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+// calculate unity vectors in PCF
+
+       hh = gg = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] /=sqrt(um); 
+	 v[n] /=sqrt(vm);                            // unity vectors in PCF
+	 hh += u[n]*am[n];                           // (u*X) - solution 
+	 gg += v[n]*am[n];                           // (v*X) - solution 
+       }        
+
+// calculate energy disbalance vectors
+
+       co=si=0.;
+       for(n=0; n<N; n++) {                              // disbalance vectors
+	 cc = local ? am[n]/(am[n]*am[n]+2.) : 1.;
+	 pp[n] = cc*(am[n]-hh*u[n])*u[n];
+	 qq[n] = cc*((2.*hh*u[n]-am[n])*v[n] + u[n]*u[n]*gg);
+	 co += pp[n]*pp[n] + qq[n]*qq[n];                // cos (version 1)
+	 si += pp[n]*qq[n];                              // sin
+       }
+       cc = sqrt(si*si+co*co)+1.e-24;
+       co = co/cc;
+       si = si/cc;
+       if(!eDisbalance) {co=1.;si=0.;}  
+
+// corrected likelihood
+
+       hh = gg = 0.;
+       for(n=0; n<N; n++) {                              // solution for h(t,f)
+	 e[n] = u[n]*co + v[n]*si;                       // final projection vector
+	 v[n] = v[n]*co - u[n]*si;                       // orthogonal v vector
+	 u[n] = e[n];
+	 hh += u[n]*am[n];                               // solution for hu(t,f)
+	 gg += v[n]*am[n];                               // solution for hv(t,f)
+       }
+
+// second iteration
+
+       co=si=0.;
+       for(n=0; n<N; n++) {                              // disbalance vectors
+	 cc = local ? am[n]/(am[n]*am[n]+2.) : 1.;
+	 pp[n] = cc*(am[n]-hh*u[n])*u[n];
+	 qq[n] = cc*((2.*hh*u[n]-am[n])*v[n] + u[n]*u[n]*gg);
+	 co += pp[n]*pp[n] + qq[n]*qq[n];                // cos (version 1)
+	 si += pp[n]*qq[n];                              // sin
+       }
+       cc = sqrt(si*si+co*co)+1.e-24;
+       co = co/cc;
+       si = si/cc;
+       if(!eDisbalance) {co=1.;si=0.;}  
+
+       hh = wp = wx = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = u[n]*co+v[n]*si;                         // final projection vector
+	 hh  += u[n]*am[n];
+	 wp  += Fp[n]*u[n];
+	 wx  += Fx[n]*u[n]*aa;
+       }
+       for(n=0; n<N; n++) {
+	 h00[n] = u[n]*am[n]*o00;
+	 u00[n] = u[n]*o00;
+	  am[n] = hh*u[n]*o00;                           // 90 detector response
+       }
+
+//==============================================
+// calculate unity vectors in PCF for 90 phase
+//==============================================
+
+// find weak vector
+
+       uc = XP*gx - XX*gI;          // u cos of rotation to PCF
+       us = XX*gp - XP*gI;          // u sin of rotation to PCF
+       vc = gp*uc + gI*us;          // cos of rotation to PCF for v
+       vs = gx*us + gI*uc;          // sin of rotation to PCF for v
+
+       um = vm = hh = cc = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;
+	 v[n] = Fp[n]*vs - Fx[n]*vc;
+	 um += u[n]*u[n];
+	 vm += v[n]*v[n];
+	 hh += u[n]*AM[n];
+	 cc += u[n]*AM[n]*u[n]*AM[n];
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+       if((hh*hh-cc)/um<=0. || E90<Eo) o90=0.;
+
+// sky regulator
+
+       ii = 0;
+       for(n=0; n<N; n++) {
+	 if(u[n]*u[n]/um > 1-GAMMA) ii++;
+	 if(u[n]*u[n]/um+v[n]*v[n]/vm > GAMMA) ii--;
+       }
+       this->iNET += ii*E90; 
+       if(ii<N_2 && gamma<0.) o90=0.;      // superclean selection cut
+
+       gg = (gp+gx)*soft; 
+       uc = XP*(gx+gg) - XX*gI;            // u cos of rotation to PCF
+       us = XX*(gp+gg) - XP*gI;            // u sin of rotation to PCF
+
+       if(ii<N_1 && gamma!=0) { 
+	 uc = XP*(gc+gR)+XX*gI;
+	 us = XX*(gc-gR)+XP*gI;
+       }
+
+       vc = gp*uc + gI*us;                 // (u*f+)/|u|^2 - 'cos' for v
+       vs = gx*us + gI*uc;                 // (u*fx)/|u|^2 - 'sin' for v
+       um = vm = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = Fp[n]*uc + Fx[n]*us;
+	 v[n] = Fp[n]*vs - Fx[n]*vc;
+	 um += u[n]*u[n];                  // calculate u and return its norm
+	 vm += v[n]*v[n];                  // calculate u and return its norm
+       }
+       vm += 1.e-24;                       // H1H2 regulator
+
+// calculate unity vectors in PCF
+
+       hh = gg = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] /=sqrt(um); 
+	 v[n] /=sqrt(vm);                            // unity vectors in PCF
+	 hh += u[n]*AM[n];                           // (u*X) - solution 
+	 gg += v[n]*AM[n];                           // (v*X) - solution 
+       }        
+
+// calculate energy disbalance vectors
+
+       co=si=0.;
+       for(n=0; n<N; n++) {                              // disbalance vectors
+	 cc = local ? AM[n]/(AM[n]*AM[n]+2.) : 1.;
+	 pp[n] = cc*(AM[n]-hh*u[n])*u[n];
+	 qq[n] = cc*((2.*hh*u[n]-AM[n])*v[n] + u[n]*u[n]*gg);
+	 co += pp[n]*pp[n] + qq[n]*qq[n];                // cos (version 1)
+	 si += pp[n]*qq[n];                              // sin
+       }
+       cc = sqrt(si*si+co*co)+1.e-24;
+       co = co/cc;
+       si = si/cc;
+       if(!eDisbalance) {co=1.;si=0.;}  
+
+// corrected likelihood
+
+       hh=gg = 0.;
+       for(n=0; n<N; n++) {                              // solution for h(t,f)
+	 e[n] = u[n]*co + v[n]*si;                       // final projection vector
+	 v[n] = v[n]*co - u[n]*si;                       // orthogonal v vector
+	 u[n] = e[n];
+	 hh += u[n]*AM[n];                               // solution for hu(t,f)
+	 gg += v[n]*AM[n];                               // solution for hv(t,f)
+       }
+
+// second iteration
+
+       co=si=0.;
+       for(n=0; n<N; n++) {                              // disbalance vectors
+	 cc = local ? AM[n]/(AM[n]*AM[n]+2.) : 1.;
+	 pp[n] = cc*(AM[n]-hh*u[n])*u[n];
+	 qq[n] = cc*((2.*hh*u[n]-AM[n])*v[n] + u[n]*u[n]*gg);
+	 co += pp[n]*pp[n] + qq[n]*qq[n];                // cos (version 1)
+	 si += pp[n]*qq[n];                              // sin
+       }
+       cc = sqrt(si*si+co*co)+1.e-24;
+       co = co/cc;
+       si = si/cc;
+       if(!eDisbalance) {co=1.;si=0.;}  
+
+       HH = WP = WX = 0.;
+       for(n=0; n<N; n++) {
+	 u[n] = u[n]*co+v[n]*si;                         // final projection vector
+	 HH  += u[n]*AM[n];
+	 WP  += Fp[n]*u[n];
+	 WX  += Fx[n]*u[n]*aa;
+       }
+       for(n=0; n<N; n++) {
+	 h90[n] = u[n]*AM[n]*o90;
+	 u90[n] = u[n]*o90;
+	  AM[n] = HH*u[n]*o90;                        // 90 detector response
+       }
+
+       gg = gp + aa*aa*gx;                            // inverse network sensitivity
+       cc = ISG ? (wp*WX-wx*WP)/gg    : 0.0;          // cross term
+       hh = ISG ? (wp*wp+wx*wx)/gg/nC : 1./nC;        // 00 L term
+       HH = ISG ? (WP*WP+WX*WX)/gg/nC : 1./nC;        // 90 L term
+
+//==============================================
+// likelihood matrix
+//==============================================
+
+       hgw = HGW = 0.;
+
+       for(n=0; n<N; n++) {
+	 hgw += (am[n]*Fp[n] + aa*AM[n]*Fx[n])/gg;    // h(0 deg)
+	 HGW += (AM[n]*Fp[n] - aa*am[n]*Fx[n])/gg;    // h(90 deg)
+       }
+
+       for(n=0; n<N; n++) {                           // loop over NDM elements 
+	 xi00 = 0.;
+	 xi90 = 0.;
+
+	 for(m=0; m<N; m++) {            
+
+	   a = h00[n]*h00[m]*hh
+	     + h90[n]*h90[m]*HH
+ 	     + h00[n]*h90[m]*cc;
+
+	   xi00 += u00[n]*h00[m];                     // unmodeled 00 response
+	   xi90 += u90[n]*h90[m];                     // unmodeled 90 response
+
+	   NDM[n][m] += a;
+	   if(n!=m) this->eCOR += a;                  // correlated energy	   	 
+
+	   a = h00[n]*h00[m] - h90[n]*h90[m];         // unmodeled diff	   
+	   this->getifo(n)->ED[3] += a;
+	   status = true;
+	 }
+
+	 a = u00[n]*u00[n]*hh + u90[n]*u90[n]*HH;     // bias
+	 this->getifo(n)->null += a;
+
+	 xx = pix->getdata('S',n);                    // 0-phase
+	 if(ISG) xi00 = hgw*Fp[n]-aa*HGW*Fx[n];       // 0-phase response
+	 esnr[n] += xi00*xi00;                        // reconstructed SNR: Sk*Sk
+	 xsnr[n] += xx*xi00;                          // reconstructed SNR: Xk*Sk
+	 ssnr[n] += xx*xx;                            // total energy of non shifted output
+	 this->getifo(n)->ED[1] += xi00*(xx-xi00);
+	 this->getifo(n)->ED[4] += fabs(xi00*(xx-xi00));
+
+	 XX = pix->getdata('P',n);                    // 90-phase
+	 if(ISG) xi90 = HGW*Fp[n]+aa*hgw*Fx[n];       // 90-phase response
+	 esnr[n] += xi90*xi90;                        // reconstructed SNR: Sk*Sk
+	 xsnr[n] += XX*xi90;                          // reconstructed SNR: Xk*Sk
+	 SSNR[n] += XX*XX;                            // total energy of phase shifted output
+	 this->getifo(n)->ED[2] += xi90*(XX-xi90);
+	 this->getifo(n)->ED[4] += fabs(xi90*(XX-xi90));
+
+       }
+     }
+
+// take into account norm-factor 
+     
+     for(n=0; n<N; n++) {   
+                         
+       b = (SSNR[n]+ssnr[n] - esnr[n])/nC;
+       this->getifo(n)->null += b;                    // detector biased null stream
+       this->getifo(n)->sSNR = esnr[n]/nC;            // s-energy of the detector response
+       this->getifo(n)->xSNR = xsnr[n]/nC;            // x-energy of the detector response
+       S_NUL += b;                                    // total biased null stream
+       s_snr += ssnr[n];                              // total energy 
+       S_SNR += SSNR[n];                              // total energy of phase shifted stream 
+
+       for(m=0; m<N; m++) S_NDM += NDM[n][m]; 
+ 
+       if(fabs(ssnr[n]-snr[n].data[k])/ssnr[n] > 1.e-6 || fabs(SSNR[n]-SNR[n].data[k])/SSNR[n]>1.e-6)
+	  cout<<"SETNDM()-likelihoodI() SNR mismatch: "<<n<<" "<<ID<<" "
+	     <<ssnr[n]<<":"<<snr[n].data[k]<<" "<<SSNR[n]<<":"<<SNR[n].data[k]<<endl;
+     }
+
+     if(count) { this->gNET /= E; this->aNET /= E; this->iNET /= E; }
+
+     a = S_NDM - lik.data[k]; 
+     if(fabs(a)/S_NDM>1.e-6) 
+       cout<<"NDM-likelihood mismatch:  "<<a<<" "<<S_NDM<<" "<<lik.data[k]<<endl;
+
+     a = fabs(1 - nC*(S_NDM+S_NUL)/(s_snr+S_SNR))/count;
+     if(a>1.e-5) 
+       cout<<"biased energy disbalance:   "<<a<<"  "<<S_NDM+S_NUL<<" "<<(s_snr+S_SNR)/nC<<endl;
+
+     if(status) break;
+   }
+   return status;
+}
 
 
 //**************************************************************************
@@ -3588,8 +7532,6 @@ int network::setTimeShifts(size_t lagSize, double lagStep,
   for(n=0; n<nIFO; n++) lagList[n] = new int[maxList];
   for(n=0; n<nIFO; n++) lagList[n][nList]=0; 
   nList++;
-  
-  //cout<<"b: "<<nList<<" "<<lagSize<<" "<<maxList<<endl;
 
   rnd.SetSeed(13);
   for (int k=0;k<maxIter;k++) {
@@ -3635,8 +7577,6 @@ final:                          // extract selected lags from the extended lag l
     for(n=0; n<nIFO; n++) lagList[n][m]-=lagMin;
   }
 
-//cout<<"c: "<<lagIDS<<" "<<lagSize<<" "<<maxList<<endl;
- 
   if(lagIDS+lagSize>nList) {
     cout << "network::setTimeShifts : lagOff+lagSize > nList of lags : " << nList << endl;
     exit(1);
@@ -3754,12 +7694,12 @@ final:                          // extract selected lags from the extended lag l
     if(fP!=NULL) fclose(fP);
   }
 
-  // free memory
+// free memory
 
   for(n=0; n<nIFO; n++) delete [] lagList[n];
 
-  // print selected lags (SK: turned it of 2/22/22) 
-/*
+// print selected lags
+
   printf("%8s ","lag");
   for(n=0; n<nIFO; n++) printf("%12.12s%2s","ifo",getifo(n)->Name);
   printf("\n");
@@ -3768,9 +7708,201 @@ final:                          // extract selected lags from the extended lag l
     for(n=0; n<nIFO; n++) printf("%14.5f",this->getifo(n)->lagShift.data[m]);
     printf("\n");
   }
-*/
+
   nLag=selSize; Step=lagStep;
   return selSize;
+}
+
+//***************************************************************
+// set delay filter for a network:  
+// time delay convention: + - shift TS right
+//                        - - shift TS left
+///***************************************************************
+size_t network::setFilter(detector* d)
+{
+  this->filter.clear();
+  std::vector<delayFilter>().swap(this->filter);   // release memory
+
+  if(!d) d = this->getifo(0);                 // reference detector
+  double rate = d->getTFmap()->rate();        // data rate
+
+  if(ifoList.size()<2 || !d || rate==0.) {
+    cout<<"network::setFilter() error: incomplete network initialization"<<endl;
+    return 0;
+  }
+
+  double T = this->getDelay((char*)"MAX")+0.002;     // maximum delay
+  delayFilter v = d->filter[0];               // delay filter
+
+  int i,j,k,n,m;
+  int M = int(d->nDFL);                       // number of wavelet layers
+  int K = int(v.index.size());                // delay filter length
+  int N = int(d->nDFS);                       // number of filter delays
+  int J = int((fabs(T)*rate*N)/M+0.5);        // total delay in samples
+
+  if(N<M) { cout<<"network::setFilter() error"<<endl; return 0; }
+  if(!K) return 0;
+
+  this->getifo(0)->nDFS = N;              // store number of filter delays in ref detector
+  this->filter.reserve((2*J-1)*M);        // allocate memory for filter
+
+  for(i=0; i<M; i++) {                    
+    for(j=-(J-1); j<J; j++) {             // loop over delays
+       m = j>0 ? (j+N/2-1)/N : (j-N/2)/N; // delay in wavelet pixels
+       n = j - m*N;                       // n - delay in samples
+       if(n <= 0) n = -n;                 // filter index for negative delays
+       else       n = N-n;                // filter index for positive delays
+       v  = d->filter[n*M+i];
+       for(k=0; k<K; k++) v.index[k] -= m*M;
+       this->filter.push_back(v);
+    }
+  }
+
+  return 2*J-1;
+}
+
+//***************************************************************
+// set 0-phase delay filter for a network from detector:  
+// used in cWB script with wat-4.7.0 and earlier
+// time delay convention: + - shift TS right
+//                        - - shift TS left
+///***************************************************************
+void network::setDelayFilters(detector* d)
+{
+  size_t N = this->ifoList.size();
+  if(N < 2) return;
+  if(d) this->getifo(0)->setFilter(*d);
+  this->setFilter(this->getifo(0));
+  this->getifo(0)->clearFilter();
+  return;
+}
+
+//***************************************************************
+// set delay filters for a network from detector filter files
+// time delay convention: + - shift TS right
+//                        - - shift TS left
+///***************************************************************
+void network::setDelayFilters(char* fname, char* gname)
+{
+  size_t N = this->ifoList.size();
+
+  if(N < 2) return;
+  if(gname) {
+    this->getifo(0)->readFilter(gname);
+    this->setFilter(this->getifo(0));
+    this->filter90.clear();
+    std::vector<delayFilter>().swap(this->filter90);   // release memory
+    this->filter90 = this->filter;
+  }
+  this->getifo(0)->readFilter(fname);
+  this->setFilter(this->getifo(0));
+  this->getifo(0)->clearFilter();
+  return;
+}
+
+//***************************************************************
+// set delay filters for a network from a network filter file 
+// gname defines the phase shifted filter 
+///***************************************************************
+void network::setFilter(char* fname, char* gname)
+{
+  size_t N = this->ifoList.size();
+  if(N < 2) return;
+  if(gname) {
+    this->readFilter(gname);
+    this->filter90 = this->filter;
+  }
+  this->readFilter(fname);
+  return;
+}
+
+//***************************************************************
+//  Dumps network filter to file *fname in binary format.
+//***************************************************************
+void network::writeFilter(const char *fname)
+{
+  size_t i,j,k;
+  FILE *fp;
+
+  if ( (fp=fopen(fname, "wb")) == NULL ) {
+     cout << " network::writeFilter() error : cannot open file " << fname <<". \n";
+     return ;
+  }
+
+  size_t M = size_t(getifo(0)->TFmap.maxLayer()+1);   // number of wavelet layers
+  size_t N = size_t(filter.size()/M);                 // number of delays
+  size_t K = size_t(filter[0].index.size());          // delay filter length
+  size_t n = K * sizeof(float);
+  size_t m = K * sizeof(short);
+
+  wavearray<float> value(K);
+  wavearray<short> index(K);
+
+  fwrite(&K, sizeof(size_t), 1, fp);  // write filter length
+  fwrite(&M, sizeof(size_t), 1, fp);  // number of layers
+  fwrite(&N, sizeof(size_t), 1, fp);  // number of delays
+  
+  for(i=0; i<M; i++) {         // loop over wavelet layers
+    for(j=0; j<N; j++) {       // loop over delays
+       for(k=0; k<K; k++) {    // loop over filter coefficients
+	  value.data[k] = filter[i*N+j].value[k];
+	  index.data[k] = filter[i*N+j].index[k];
+       }
+       fwrite(value.data, n, 1, fp);
+       fwrite(index.data, m, 1, fp);
+    }
+  }
+  fclose(fp);
+}
+
+//***************************************************************
+//  Read network filter from file *fname.
+//***************************************************************
+void network::readFilter(const char *fname)
+{
+  size_t i,j,k;
+  FILE *fp;
+
+  if ( (fp=fopen(fname, "rb")) == NULL ) {
+     cout << " network::readFilter() error : cannot open file " << fname <<". \n";
+     exit(1);
+  }
+
+  size_t M;           // number of wavelet layers
+  size_t N;           // number of delays
+  size_t K;           // delay filter length
+
+  fread(&K, sizeof(size_t), 1, fp);  // read filter length
+  fread(&M, sizeof(size_t), 1, fp);  // read number of layers
+  fread(&N, sizeof(size_t), 1, fp);  // read number of delays
+  
+  size_t n = K * sizeof(float);
+  size_t m = K * sizeof(short);
+  wavearray<float> value(K);
+  wavearray<short> index(K);
+  delayFilter v;
+
+  v.value.clear(); v.value.reserve(K);
+  v.index.clear(); v.index.reserve(K);
+  filter.clear(); filter.reserve(N*M);
+
+  for(k=0; k<K; k++) {    // loop over filter coefficients
+     v.value.push_back(0.);
+     v.index.push_back(0);
+  }
+
+  for(i=0; i<M; i++) {         // loop over wavelet layers
+    for(j=0; j<N; j++) {       // loop over delays
+       fread(value.data, n, 1, fp);
+       fread(index.data, m, 1, fp);
+       for(k=0; k<K; k++) {    // loop over filter coefficients
+	  v.value[k] = value.data[k];
+	  v.index[k] = index.data[k];
+       }
+       filter.push_back(v);
+    }
+  }
+  fclose(fp);
 }
 
 // extract accurate timr delay amplitudes for a given sky location
@@ -3823,11 +7955,86 @@ void network::updateTDamp(int l,  float** v00, float** v90) {
 }
 
 //***************************************************************
-//:set index array for delayed amplitudes, used with WDM delay filters
+// delay detectors in the network with respect to reference  
+// to match sky location theta and phi
+// index array should be setup
+///***************************************************************
+void network::delay(double theta, double phi)
+{
+  size_t m;
+  size_t N = this->ifoList.size();          // number of detectors
+  size_t k = this->getIndex(theta,phi);     // sky index
+  detector* d;
+
+  for(size_t n=1; n<N; n++){
+    d = this->getifo(n);
+    m = d->index.data[k];                   // delay index
+    this->delay(d,m); 
+  }
+  return;
+}
+
+//***************************************************************
+// delay detector in a network:  
+// m - is the delay index
+///***************************************************************
+void network::delay(detector* d, size_t m)
+{
+  double R  = d->getTFmap()->rate();
+  
+  size_t i,j,k;
+  size_t N = d->getTFmap()->size();
+  size_t I = d->TFmap.maxLayer()+1;
+  size_t M = this->filter.size()/I;         // total number of delays 
+  size_t K = this->filter[0].index.size();  // filter length
+  size_t jB = size_t(this->Edge*R/I)*I;     // number of samples in the edges
+  size_t jS;
+
+  slice S;
+  delayFilter* pv;
+
+// buffer for wavelet layer delay filter
+  double* F = (double*)malloc(K*sizeof(double));
+  int*    J =    (int*)malloc(K*sizeof(int));
+  
+  N -= jB;                                   // correction for left boundary
+
+  WSeries<double> temp = d->TFmap;
+  d->TFmap=0.;
+
+//  cout<<"m="<<m<<" N="<<N<<" R="<<R<<" I="<<I<<" M="<<M<<" K="<<K<<endl;
+  
+  double* p1 = temp.data;
+  double* b0 = temp.data;
+  
+  for(i=0; i<I; i++) {                       // loop over wavelet layers
+
+// set filter array for this layer and delay index
+    pv = &(filter[i*M+m]);
+    for(k=0; k<K; k++){             
+      F[k] = double(pv->value[k]);
+      J[k] = int(pv->index[k]);
+    }
+
+    S  = d->getTFmap()->getSlice(i);
+    jS = S.start()+jB;
+
+    for(j=jS; j<N; j+=I) {              // loop over samples in the layer
+      p1=b0+j;
+      d->TFmap.data[j] = dot32(F,p1,J); // apply delay filter
+    }
+  }
+  free(F); 
+  free(J);
+}
+
+//***************************************************************
+//:set index array for delayed amplitudes
+// used with wavelet delay filters
 // time delay convention: t+tau - arrival time at the center of Earth
 // ta1-tau0 - how much det1 should be delayed to be sinchronized with det0
 ///***************************************************************
-void network::setDelayIndex(double rate)
+void network::setDelayIndex(int mode)
 {
   double t;
   int i,ii;
@@ -3846,11 +8053,20 @@ void network::setDelayIndex(double rate)
   detector* dr[NIFO];
   for(n=0; n<N; n++) dr[n] = ifoList[n];
 
+  size_t I = dr[0]->nDFL;                     // number of wavelet layers
+  size_t K = this->filter.size()/I;           // number of delays
   size_t L = dr[0]->tau.size();               // skymap size  
-  this->rTDF = rate;                          // effective time-delay rate
 
-  //  if(pOUT) cout<<"filter size="<<this->filter.size()
-  //	       <<" layers="<<I<<" delays="<<K<<" samples="<<dr[0]->nDFS<<endl;
+  double rate = dr[0]->getTFmap()->rate();    // data rate
+  rate *= dr[0]->nDFS/I;                      // up-sample rate
+
+  if(pOUT) cout<<"filter size="<<this->filter.size()
+	       <<" layers="<<I<<" delays="<<K<<" samples="<<dr[0]->nDFS<<endl;
+
+  if(!(K&1) || rate == 0.) {
+    cout<<"network::setDelayIndex(): invalid network\n";
+    return;
+  }
 
   for(n=0; n<N; n++) {
     if(dr[n]->index.size() != L) {
@@ -3864,7 +8080,6 @@ void network::setDelayIndex(double rate)
 // time delay < 0 - shift di left  (past)
 
   this->nPenalty = dr[0]->tau;
-  this->nNetIndex = dr[0]->tau;
 
   for(l=0; l<L; l++){
 
@@ -3876,9 +8091,9 @@ void network::setDelayIndex(double rate)
     for(n=0; n<N; n++) {
       for(m=0; m<N; m++) {
 	t = dr[n]->tau.get(l)-dr[m]->tau.get(l);
-	i = t>0 ? int(t*rTDF+0.5) : int(t*rTDF-0.5);
+	i = int(t*rate+2*K+0.5) - 2*K;
 	mm[n][m] = i;
-	tt[n][m] = t*rTDF;
+	tt[n][m] = t*rate;
       }
     }
 
@@ -3899,17 +8114,16 @@ void network::setDelayIndex(double rate)
     this->nPenalty.set(l,double(t));
 
     t = dr[k]->tau.get(l);
-    if(mIFO<9) i = mm[k][this->mIFO];
-    else       i = t>0 ? int(t*rTDF+0.5) : int(t*rTDF-0.5);
+    i = mIFO<9 ? mm[k][this->mIFO] : int(t*rate+2*K+0.5)-2*K;
         
 //  0 d01 d02      0  d01  d02 
 // d10  0 d12  ->  0 d'01 d'02 
 // d20 d21 0       0 d"01 d"02
 
     for(m=0; m<N; m++) {
-      ii = mm[k][m]-i;                // convert to time delay with respect to master IFO
+      ii = (K/2+mm[k][m])-i;                // convert to time delay with respect to master IFO
       dr[m]->index.data[l] = ii; 
-      //if(m!=this->mIFO) this->nNetIndex.set(l,double(ii));
+      if(ii < 0) cout<<"network::setDelayIndex error: sky index<0: "<<k<<endl;
     }
   }
   return;
@@ -3917,6 +8131,7 @@ void network::setDelayIndex(double rate)
 
 //***************************************************************
 //:set theta, phi index array 
+//:will not work on 32 bit with the option other than 0,2,4
 //***************************************************************
 size_t network::setIndexMode(size_t mode)
 {
@@ -3930,14 +8145,14 @@ size_t network::setIndexMode(size_t mode)
   size_t i,j,n,m;
   size_t L = dr->tau.size();
   size_t N = ifoList.size(); 
-  size_t K = size_t(getDelay((char*)"MAX")*rTDF)+1;           // number of delays
+  size_t I = mode ? dr->nDFL : 1;             // number of wavelet layers
+                                              // TO BE FIXED !!! works only for 1G 
+                                              // for 2G only mode=0 works !!! 
+  size_t K = this->filter.size()/I;           // number of delays
   size_t J = 0;                               // counter for rejected locations
   size_t M = mIFO<9 ? mIFO : 0;               // reference detector
   long long ll;
 
-  //cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
-  //cout<<L<<" "<<N<<" "<<K<<endl;
-  
   if(this->index.size()!=L) this->index.resize(L);
   if(this->skyMask.size()!=L) this->skyMask.resize(L);
   if(this->skyHole.size()!=L) { this->skyHole.resize(L); this->skyHole = 1.; }
@@ -3995,7 +8210,8 @@ size_t network::setIndexMode(size_t mode)
   return J;
 }
 
-void network::print() {
+void
+network::print() {
 
   // print detector's info
   int nIFO = ifoListSize();

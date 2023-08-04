@@ -48,7 +48,6 @@ monster::monster()
    layers = 0;
    catalog = 0;
    clusterCC.clear();
-   sizeCC.clear();
 }
 
 
@@ -66,7 +65,6 @@ monster::monster(WDM<double>** wdm0, int nRes)
    this->KWDM = wdm0[0]->KWDM/wdm0[0]->m_Layer;  // WDM K - parameter K/M
 
    clusterCC.clear();
-   sizeCC.clear();
 
    if(nRes>NRES_MAX) {
       printf("monster::monster : number of resolutions gt NRES_MAX=%d, exit\n",NRES_MAX);
@@ -201,7 +199,6 @@ monster::monster(char* fn)
    this->nRes = 0;
    read(fn);
    clusterCC.clear();
-   sizeCC.clear();
 }
 
 
@@ -213,9 +210,6 @@ monster::monster(const monster& x)
       printf("monster::monster : number of resolutions gt NRES_MAX=%d, exit\n",NRES_MAX);
       exit(1);
    }
-
-   clusterCC.clear();
-   sizeCC.clear();
 
    this->tag = x.tag;                     // current catalog tag
    this->nRes = x.nRes;                   // number of resolutions
@@ -332,6 +326,8 @@ void monster::write(char* fn)
 void monster::deallocate()
 {  //
    // deallocates memory 
+   int J = this->clusterCC.size();
+   for(int j=0; j<J; j++) _mm_free(this->clusterCC[j]);
    if(nRes==0)return; 
 
    for(int i=0; i<nRes; ++i){
@@ -348,9 +344,6 @@ void monster::deallocate()
    delete [] layers;
    nRes = 0;
    layers = 0;
-   int J = (int)(this->clusterCC.size());
-   for(size_t j=0; j<this->clusterCC.size(); j++) _mm_free(this->clusterCC[j]);
-   return;
 }
 
 
@@ -425,7 +418,8 @@ float monster::getXTalk(int nLayer1, int quad1, size_t indx1, int nLayer2, int q
 }
 
 
-std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check) { 
+std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check)
+{  //
    // fill in cluster coupling coefficients into q
    // pwc - pointer to netcluster object
    // id - cluster ID
@@ -434,20 +428,14 @@ std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check) {
    
    vector<int>& pIndex = pwc->cList[id-1];
    vector<int> pI;
-   
-   //cout<<this->clusterCC.size()<<" "<<id<<" start monster\n";
 
-   if(this->clusterCC.size()) {
-      for(size_t j=0; j<this->clusterCC.size(); j++)
-	 if(this->clusterCC[j]) _mm_free(this->clusterCC[j]);
-   }
+   int J = this->clusterCC.size();
+   for(int j = 0; j<J; j++) _mm_free(this->clusterCC[j]);
    this->clusterCC.clear();
    std::vector<float*>().swap(clusterCC);
    this->sizeCC.clear();
    std::vector<int>().swap(sizeCC);
 
-   //cout<<"clear monster\n";
-   
    netpixel* pixi;
    netpixel* pixj;
 
@@ -465,7 +453,7 @@ std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check) {
       int M = 0;
       int K = 0;
 
-      // cout<<id<<" "<<i<<" "<<pixi->layers<<" ";
+//      cout<<id<<" "<<i<<" "<<pixi->layers<<" ";
          
       wavearray<float> tmp(8*V);
       for(int j = 0; j<V; j++){
@@ -475,7 +463,7 @@ std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check) {
             exit(1);
          }   
          if(check && !pixj->tdAmp.size()) continue;         // check loaded pixels
-	 // if(pixi->layers==pixj->layers && pixi->time!=pixj->time) continue;
+//         if(pixi->layers==pixj->layers && pixi->time!=pixj->time) continue;
          M++;
          struct xtalk tmpOvlp = getXTalk(pixi->layers, pixi->time, pixj->layers, pixj->time);
          if(tmpOvlp.CC[0]>2)continue;

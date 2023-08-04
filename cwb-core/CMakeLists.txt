@@ -122,8 +122,7 @@ list(APPEND CWB_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_
 set(CWB_INCLUDE_DIRS ${CWB_INCLUDE_DIRS} PARENT_SCOPE)
 
 
-#set(WAT_SRC injection.cc wavecomplex.cc Wavelet.cc WaveDWT.cc Haar.cc Biorthogonal.cc Daubechies.cc Symlet.cc Meyer.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc watplot.cc pixel.cc cluster.cc wavecor.cc wavefft.cc waverdc.cc lossy.cc wavelinefilter.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc netevent.cc regression.cc time.cc monster.cc sseries.cc xnetwork.cc)
-set(WAT_SRC wavecomplex.cc Wavelet.cc WaveDWT.cc Biorthogonal.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc regression.cc time.cc monster.cc sseries.cc wavefft.cc coherence.cc)
+set(WAT_SRC injection.cc wavecomplex.cc Wavelet.cc WaveDWT.cc Haar.cc Biorthogonal.cc Daubechies.cc Symlet.cc Meyer.cc SymmArray.cc SymmArraySSE.cc SymmObjArray.cc WDM.cc wavearray.cc wseries.cc watplot.cc cluster.cc wavecor.cc wavefft.cc waverdc.cc lossy.cc wavelinefilter.cc netpixel.cc netcluster.cc skymap.cc detector.cc network.cc netevent.cc regression.cc time.cc monster.cc sseries.cc)
 
 #Get all the header files
 string(REGEX REPLACE "[.]cc" ".hh" WAT_HDRS "${WAT_SRC}")
@@ -134,8 +133,7 @@ if(HEALPIX_FOUND)
 endif()
 
 #include all the created header files
-#list(APPEND WAT_HDRS ${CMAKE_CURRENT_BINARY_DIR}/watversion.hh watfun.hh constants.hh wat.hh rdfr.hh readframe.hh readfrfile.hh skycoord.hh watavx.hh watsse.hh watsse4.hh WDMOverlap.hh)
-list(APPEND WAT_HDRS watfun.hh constants.hh wat.hh skycoord.hh watsse.hh watsse4.hh pycwb.hh)
+list(APPEND WAT_HDRS ${CMAKE_CURRENT_BINARY_DIR}/watversion.hh watfun.hh constants.hh wat.hh rdfr.hh readframe.hh readfrfile.hh skycoord.hh watavx.hh watsse.hh WDMOverlap.hh pycwb.hh)
 
 #Add the watasm_elf64.o to the list of src
 if(APPLE)

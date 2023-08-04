@@ -119,19 +119,19 @@ class wavearray : public TNamed
           void Resample(const wavearray<DataType_t> &, double, int=6);
           void resample(const wavearray<DataType_t> &, double, int=6);
   virtual void resample(double, int=6);
-  virtual void Resample(double);	// resample with FFTW
+  virtual void Resample(double);	// resample with FFTW  
 
   //: data time shift based on FFTW 
   //: T = time shift (sec) 
   virtual void delay(double T);		
 
-  virtual void   start(double s) { Start=s; if(Rate>0.) Stop=Start+Size/Rate;};
+  virtual void   start(double s) {Start=s; if(Rate>0.) Stop=Start+Size/Rate;};
   virtual double start() const   { return Start; };
-  virtual void   stop(double s) { Stop = s; };
+  virtual void   stop(double s) {Stop = s; };
   virtual double stop() const   { return Stop; };
-  virtual void   rate(double r)  { Rate = fabs(r); if(Rate>0.) Stop=Start+Size/Rate;};
+  virtual void   rate(double r)  {Rate = fabs(r); Stop = Start+Size/Rate; };
   virtual double rate()  const   { return Rate; };
-  virtual void   edge(double s) { Edge = s; };
+  virtual void   edge(double s) {Edge = s; };
   virtual double edge() const   { return Edge; };
   virtual size_t size() const   { return Size; };
   virtual void   setSlice(const std::slice &s) { Slice=s; };
@@ -165,11 +165,8 @@ class wavearray : public TNamed
   virtual void mean(double t, wavearray<DataType_t>* in,
 		    bool fl=false, size_t n=1);
 
-  //: return sqrt(x^2-mean^2)
+  //: return sqrt<x^2>
   virtual double rms();
-  //: return sqrt(x^2)
-  virtual double norm();
-   virtual double cross(wavearray<DataType_t>* x);
 
   //: return sqrt<x^2> for wavearray slice
   virtual double rms(const std::slice&);
@@ -288,8 +285,6 @@ class wavearray : public TNamed
   void cpf(const wavearray<DataType_t> &, int=0, int=0, int=0); 
   void add(const wavearray<DataType_t> &, int=0, int=0, int=0);
   void sub(const wavearray<DataType_t> &, int=0, int=0, int=0);
-  wavearray<DataType_t> pad(int);	// pad on both sides with int zeroes   
-
 
   //: append to this *this
   size_t append(const wavearray<DataType_t> &);
