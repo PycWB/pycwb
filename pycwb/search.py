@@ -72,7 +72,6 @@ def analyze_job_segment(config, job_seg):
     tf_maps, nRMS_list = data_conditioning(config, data)
 
     # calculate coherence
-    # TODO: Merge resolution here?
     fragment_clusters = coherence(config, tf_maps, nRMS_list)
 
     # create network
@@ -81,6 +80,32 @@ def analyze_job_segment(config, job_seg):
     # supercluster
     pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
 
+    import ROOT
+    import healpy as hp
+    from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster
+
+    network.set_delay_index(config.TDRate)
+    pwc = ROOT.netcluster()
+    pwc.cpf(convert_fragment_clusters_to_netcluster(pwc_list[0].dump_cluster(0)), False)
+    pwc.setcore(False, 1)
+    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
+
+    # skymap* nSkyStat, skymap* nSensitivity, skymap* nAlignment, skymap* nDisbalance,
+    # skymap* nLikelihood, skymap* nNullEnergy, skymap* nCorrEnergy, skymap* nCorrelation,
+    # skymap* nEllipticity, skymap* nPolarisation, skymap* nNetIndex, skymap* nAntenaPrior,
+    # skymap* nProbability,
+    keys = ['nSkyStat', 'nSensitivity', 'nAlignment', 'nDisbalance', 'nLikelihood', 'nNullEnergy', 'nCorrEnergy', 'nCorrelation', 'nEllipticity', 'nPolarisation', 'nNetIndex', 'nAntenaPrior', 'nProbability']
+    skymaps = {key: ROOT.skymap(7) for key in keys}
+    ifos = [network.get_ifo(i) for i in range(len(config.ifo))]
+    skymap_index_size = hp.nside2npix(2**7)
+
+    # double netCC, bool EFEC, double precision, double gamma, bool optim, double netRHO, double delta, double acor,
+    count = ROOT.likelihoodWP(pwc, skymaps['nSkyStat'], skymaps['nSensitivity'], skymaps['nAlignment'], skymaps['nDisbalance'], skymaps['nLikelihood'], skymaps['nNullEnergy'], skymaps['nCorrEnergy'], skymaps['nCorrelation'], skymaps['nEllipticity'],
+                      skymaps['nPolarisation'], skymaps['nNetIndex'], skymaps['nAntenaPrior'], skymaps['nProbability'], len(ifos), ifos, skymap_index_size,
+                      network.net.skyMask.data, network.net.skyMaskCC.data, network.net.wdmMRA,
+                      network.net.netCC, network.net.EFEC, network.net.precision, network.net.gamma, network.net.optim, network.net.netRHO, network.net.delta, network.net.acor,
+                      config.search, 1, config.Search)
+    return count
     # likelihood
     events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
