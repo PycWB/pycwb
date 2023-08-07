@@ -22,7 +22,8 @@ from pycwb.modules.read_data import read_from_job_segment, generate_injection
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
-from pycwb.modules.likelihood import likelihood, save_likelihood_data
+from pycwb.modules.likelihoodWP import likelihood
+from pycwb.modules.likelihood import save_likelihood_data
 from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.modules.plot.cluster_statistics import plot_statistics
@@ -80,32 +81,6 @@ def analyze_job_segment(config, job_seg):
     # supercluster
     pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
 
-    import ROOT
-    import healpy as hp
-    from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster
-
-    network.set_delay_index(config.TDRate)
-    pwc = ROOT.netcluster()
-    pwc.cpf(convert_fragment_clusters_to_netcluster(pwc_list[0].dump_cluster(0)), False)
-    pwc.setcore(False, 1)
-    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
-
-    # skymap* nSkyStat, skymap* nSensitivity, skymap* nAlignment, skymap* nDisbalance,
-    # skymap* nLikelihood, skymap* nNullEnergy, skymap* nCorrEnergy, skymap* nCorrelation,
-    # skymap* nEllipticity, skymap* nPolarisation, skymap* nNetIndex, skymap* nAntenaPrior,
-    # skymap* nProbability,
-    keys = ['nSkyStat', 'nSensitivity', 'nAlignment', 'nDisbalance', 'nLikelihood', 'nNullEnergy', 'nCorrEnergy', 'nCorrelation', 'nEllipticity', 'nPolarisation', 'nNetIndex', 'nAntenaPrior', 'nProbability']
-    skymaps = {key: ROOT.skymap(7) for key in keys}
-    ifos = [network.get_ifo(i) for i in range(len(config.ifo))]
-    skymap_index_size = hp.nside2npix(2**7)
-
-    # double netCC, bool EFEC, double precision, double gamma, bool optim, double netRHO, double delta, double acor,
-    count = ROOT.likelihoodWP(pwc, skymaps['nSkyStat'], skymaps['nSensitivity'], skymaps['nAlignment'], skymaps['nDisbalance'], skymaps['nLikelihood'], skymaps['nNullEnergy'], skymaps['nCorrEnergy'], skymaps['nCorrelation'], skymaps['nEllipticity'],
-                      skymaps['nPolarisation'], skymaps['nNetIndex'], skymaps['nAntenaPrior'], skymaps['nProbability'], len(ifos), ifos, skymap_index_size,
-                      network.net.skyMask.data, network.net.skyMaskCC.data, network.net.wdmMRA,
-                      network.net.netCC, network.net.EFEC, network.net.precision, network.net.gamma, network.net.optim, network.net.netRHO, network.net.delta, network.net.acor,
-                      config.search, 1, config.Search)
-    return count
     # likelihood
     events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
@@ -127,14 +102,14 @@ def analyze_job_segment(config, job_seg):
         # plot the reconstructed wave
         for j, reconstructed_wave in enumerate(reconstructed_waves):
             plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
-            plt.xlim(events[i].left[0], events[i].left[0] + events[i].stop[0] - events[i].start[0])
+            # plt.xlim(events[i].left[0], events[i].left[0] + events[i].stop[0] - events[i].start[0])
             plt.savefig(f'{config.outputDir}/reconstructed_wave_job_{job_id}_cluster_{i+1}_ifo_{j+1}.png')
             plt.clf()
 
-        # calculate the glitchness
-        glitchness = get_glitchness(config, reconstructed_waves, events[i].sSNR, events[i].likelihood)
-        # TODO: save to event file
-        print(f"Glitchness: {glitchness}")
+        # # calculate the glitchness
+        # glitchness = get_glitchness(config, reconstructed_waves, events[i].sSNR, events[i].likelihood)
+        # # TODO: save to event file
+        # print(f"Glitchness: {glitchness}")
 
     # plot the likelihood map
     for i, cluster in enumerate(clusters):
@@ -143,16 +118,16 @@ def analyze_job_segment(config, job_seg):
         plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
         plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
 
-    for i, event in enumerate(events):
-        if event.nevent == 0:
+    for i, cluster in enumerate(clusters):
+        if cluster.cluster_status != -1:
             continue
         # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
         # TODO: plot in parallel
         for key in skymap_statistics[i].keys():
             plot_skymap_contour(skymap_statistics[i],
                                 key=key,
-                                reconstructed_loc=(event.phi[0], event.theta[0]),
-                                detector_loc=(event.phi[3], event.theta[3]),
+                                # reconstructed_loc=(event.phi[0], event.theta[0]),
+                                # detector_loc=(event.phi[3], event.theta[3]),
                                 resolution=1,
                                 filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
         # save the skymap statistics as pickle file
