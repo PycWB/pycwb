@@ -12,7 +12,7 @@ docs/source/modules.rst
 
 tests/*
 .pytest_cache
-
+*.iml
 cwb-core/install
 cwb-core/cmake-build-debug
 */vendor/lib/*
