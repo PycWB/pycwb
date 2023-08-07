@@ -64,12 +64,10 @@ inline void pnt_(float** q, float** p, short** m, int l, int n) {
 }
 
 
-inline wavearray<float> _avx_norm_ps(monster wdmMRA, float** p, float** q,
-                                              std::vector<float*> &pAVX, int I) {
+inline wavearray<float> _avx_norm_ps(std::vector<float *> clusterCC, std::vector<int> sizeCC,
+                                     float** p, float** q,std::vector<float*> &pAVX, int I) {
     wavearray<float> norm(NIFO+1);     // output array for packet norms
     float* g = norm.data+1; norm=0.;
-
-#ifndef __CINT__
 
 // return packet norm for each detector
     int i,j,k,n,m;
@@ -107,9 +105,9 @@ inline wavearray<float> _avx_norm_ps(monster wdmMRA, float** p, float** q,
     for(m=0; m<M; m++) {
         if(mk[m]<=0.) continue;
 
-        int      J = wdmMRA.size(m)*2;
+        int      J = sizeCC[m]*2;
         float   cc = 0;
-        float*   c = wdmMRA.getXTalk(m);
+        float*   c = clusterCC[m];
         __m128* _c = (__m128*)(c+4);
 
         NETX(u=p[0][m]; v=q[0][m]; _am[0]=_mm_set_ps(v,u,v,u); _x[0]=_mm_setzero_ps(); ,
@@ -182,7 +180,6 @@ inline wavearray<float> _avx_norm_ps(monster wdmMRA, float** p, float** q,
         }
         norm.data[0] += norm.data[n];                // total SNR
     }
-#endif
     return norm;
 }
 

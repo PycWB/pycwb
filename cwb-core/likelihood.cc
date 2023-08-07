@@ -49,8 +49,6 @@ long likelihoodWP(netcluster *pwc,
 
     // bool wdm = true;
     // this->tYPe = mode;
-    cout << "start likelihoodWP() for " << nIFO << "IFOs, mode=" << mode << endl;
-
     bool cirwave = mode == 'g' || mode == 'G' || mode == 'c' || mode == 'C';
     bool linwave = mode == 'l' || mode == 'L' || mode == 's' || mode == 'S';
     bool iotwave = mode == 'i' || mode == 'l' || mode == 'e' || mode == 'c' ||
@@ -181,21 +179,17 @@ long likelihoodWP(netcluster *pwc,
     //---------------------------------------------------------
 
     id = size_t(1);
-    cout << "Processing cluster " << id << " of " << K << endl;
-    cout << "status: " << pwc->sCuts[id - 1] << endl;
 //    if (pwc->sCuts[id - 1] != -2) return 0;                // skip rejected/processed clusters
 
     // check if cluster is empty
     vint = &(pwc->cList[id - 1]);                         // pixel list
     vtof = &(pwc->nTofF[id - 1]);                         // TofFlight configurations
     V = vint->size();
-    cout << "cluster size: " << V << endl;
     if (!V) return 0;
 
     // get cross-talk coefficients
     pI = wdmMRA.getXTalk(pwc, id);
     V = pI.size();
-    cout << "cross-talk size: " << V << endl;
     if (!V) return 0;
 
     bBB = (V > wdmMRA.nRes * csize) ? true : false;      // check big cluster size condition
@@ -456,8 +450,6 @@ long likelihoodWP(netcluster *pwc,
     float *p_rn = alloc_and_init(V4);
     _AVX.push_back(p_rn); // 22 + sattelite noise in TF domain
 
-    cout << "AVX memory allocation done" << endl;
-    cout << "number of pixels: " << V << endl;
     //---------------------------------------------------------
     // loop over selected pixels
     //---------------------------------------------------------
@@ -484,12 +476,10 @@ long likelihoodWP(netcluster *pwc,
             }
         }
     }
-    cout << "pixel loop done" << endl;
 
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // sky loop
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "sky loop" << endl;
     __m256 _CC;
     size_t lb = 0;
     size_t le = L - 1;
@@ -500,7 +490,6 @@ long likelihoodWP(netcluster *pwc,
 
     // Notes: MM, FF, aa are all temporary variables
     // TODO: This section is to set REG? Here can be one function
-    cout << "set REG" << endl;
     skyMMcc = 0;
     for (l = lb; l <= le; l++) {                            // loop over sky locations
         if (!mm[l]) continue;                           // skip delay configurations
@@ -518,27 +507,21 @@ long likelihoodWP(netcluster *pwc,
         if (aa > gama) ff += 1;
     }
     REG[1] = (FF * FF / (ff * ff + 1.e-9) - 1) * En;              // setup x regulator
-    cout << "REG[1] = " << REG[1] << endl;
     // TODO: what's the use of the do-while loop?
-    cout << "loop over sky locations" << endl;
+    optsky:
     AA = 0.;                                          // initialize sky statistic
     for (l = lb; l <= le; l++) {                            // loop over sky locations
-//        cout << "l = " << l << endl;
         skyProb.data[l] = -1.e12;
         if (!MM[l]) continue;                           // apply sky mask
         pnt_(v00, pa, ml, (int) l, (int) V4);            // pointers to first pixel 00 data
         pnt_(v90, pA, ml, (int) l, (int) V4);            // pointers to first pixel 90 data
         Eo = _avx_loadata_ps(v00, v90, pd, pD, En, _AVX, V4);  // calculate data stats and store in _AVX
 
-//        cout << "Eo = " << Eo << endl;
         _avx_dpf_ps(FP, FX, l, _APN, _AVX, V4);             // calculate DPF f+,fx and their norms
         _avx_cpf_ps(v00, v90, ps, pS, V4);                 // copy data for GW reconstruction
         Mo = _avx_GW_ps(ps, pS, _APN, REG, _AVX, V4);       // gw strain packet, return number of selected pixels
 
-//        cout << "Mo = " << Mo << endl;
-        // if (lb == le) _avx_saveGW_ps(ps, pS, V);            // save gw strain packet into a_00,a_90
         if (lb == le) {
-//            cout << "save GW" << endl;
             for (int i = 0; i < V; i++) {
                 for (int n = 0; n < NIFO; n++) {
                     a_00[i * NIFO + n] = ps[n][i];
@@ -547,10 +530,8 @@ long likelihoodWP(netcluster *pwc,
             }
         }
 
-//        cout << "GW done" << endl;
         Lo = _avx_ort_ps(ps, pS, _AVX, V4);              // othogonalize signal amplitudes
         _CC = _avx_stat_ps(pd, pD, ps, pS, _AVX, V4);       // coherent statistics
-//        cout << "extract coherent statistics" << endl;
         _mm256_storeu_ps(vvv, _CC);                     // extract coherent statistics
         Cr = vvv[0];                                   // cc statistics
         Ec = vvv[1];                                   // signal coherent energy in TF domain
@@ -559,7 +540,6 @@ long likelihoodWP(netcluster *pwc,
         CH = No / (nIFO * Mo + sqrt(Mo));                    // chi2 in TF domain
         cc = CH > 1 ? CH : 1;                            // noise correction factor in TF domain
         Co = Ec / (Ec + No * cc - Mo * (nIFO - 1));                // network correlation coefficient in TF
-//        cout << "Cr = " << Cr << endl;
         if (Cr < netCC) continue;
 
         aa = Eo > 0. ? Eo - No : 0.;                        // likelihood skystat
@@ -576,7 +556,6 @@ long likelihoodWP(netcluster *pwc,
         ff = ee > 0. ? ff / ee : 0.;
         FF = ee > 0. ? FF / ee : 0.;
         nAntenaPrior->set(l, sqrt(ff + FF));
-//        cout << "nAntenaPrior = " << nAntenaPrior->get(l) << endl;
 
         if (ID == id) {
             nSensitivity->set(l, sqrt(ff + FF));
@@ -599,16 +578,14 @@ long likelihoodWP(netcluster *pwc,
             Em = Eo - Eh;
         }
         if (skyProb.data[l] > sky) sky = skyProb.data[l];            // find max of skyloc stat
-//        cout << "check 1" << endl;
         if (lb != le) continue;
-
         Eo = _avx_packet_ps(pd, pD, _AVX, V4);            // get data packet
         Lo = _avx_packet_ps(ps, pS, _AVX, V4);            // get signal packet
-        D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, V4);           // data packet energy snr
+        D_snr = _avx_norm_ps(wdmMRA.clusterCC, wdmMRA.sizeCC, pd, pD, _AVX, V4);       // data packet energy snr
         S_snr = _avx_norm_ps(pS, pD, p_ec, V4);           // set signal norms, return signal SNR
         Ep = D_snr[0];
         Lp = S_snr[0];
-//        cout << "check 2" << endl;
+
         _CC = _avx_noise_ps(pS, pD, _AVX, V4);            // get G-noise correction
         _mm256_storeu_ps(vvv, _CC);                     // extract coherent statistics
         Gn = vvv[0];                                   // gaussian noise correction
@@ -616,13 +593,11 @@ long likelihoodWP(netcluster *pwc,
         Dc = vvv[2];                                   // signal-core coherent energy in TF domain
         Rc = vvv[3];                                   // EC normalization
         Eh = vvv[4];                                   // satellite energy in TF domain
-//        cout << "check 3" << endl;
         N = _avx_setAMP_ps(pd, pD, _AVX, V4) - 1;           // set data packet amplitudes
-//        cout << "check 4" << endl;
         _avx_setAMP_ps(ps, pS, _AVX, V4);                 // set signal packet amplitudes
         _avx_loadNULL_ps(pn, pN, pd, pD, ps, pS, V4);        // load noise TF domain amplitudes
-        D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, -V4);          // data packet energy snr
-        N_snr = _avx_norm_ps(wdmMRA, pn, pN, _AVX, -V4);          // noise packet energy snr
+        D_snr = _avx_norm_ps(wdmMRA.clusterCC, wdmMRA.sizeCC, pd, pD, _AVX, -V4);          // data packet energy snr
+        N_snr = _avx_norm_ps(wdmMRA.clusterCC, wdmMRA.sizeCC, pn, pN, _AVX, -V4);          // noise packet energy snr
         Np = N_snr.data[0];                            // time-domain NULL
         Em = D_snr.data[0];                            // time domain energy
         Lm = Em - Np - Gn;                                 // time domain signal energy
@@ -642,27 +617,17 @@ long likelihoodWP(netcluster *pwc,
             cc = ch > 1 ? ch : 1;                          // rho correction factor
             xrho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;          // cWB detection stat
         }
-//        cout << "check 5" << endl;
         // save projection on network plane in polar coordinates
         // The Dual Stream Transform (DSP) is applied to v00,v90
         _avx_pol_ps(v00, v90, p00_POL, p90_POL, _APN, _AVX, V4);
-//        cout << "check 6" << endl;
         // save DSP components in polar coordinates
         _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
     }
-    lb = le = lm;
+    if(le-lb) {lb=le=lm; goto optsky;}                // process all pixels at opt sky location
 
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // reject cluster if detection statistics are below threshold
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "reject cluster if detection statistics are below threshold" << endl;
-    cout << "netRHO = " << netRHO << endl;
-    cout << "Lm = " << Lm << endl;
-    cout << "Eo - Eh = " << Eo - Eh << endl;
-    cout << "Ec * Rc / cc = " << Ec * Rc / cc << endl;
-    cout << "N = " << N << endl;
-    cout << "rho = " << rho << endl;
-    cout << "fabs(netRHO) = " << fabs(netRHO) << endl;
     if (netRHO >= 0) {    // original 2G
         if (Lm <= 0. || (Eo - Eh) <= 0. || Ec * Rc / cc < netEC || N < 1) {
             pwc->sCuts[id - 1] = 1;
@@ -682,7 +647,6 @@ long likelihoodWP(netcluster *pwc,
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // detection statistics at selected sky location
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "detection statistics at selected sky location" << endl;
     vint = &(pwc->cList[id - 1]);                       // pixel list
     for (j = 0; j < vint->size(); j++) {                   // initialization for all pixels
         pix = pwc->getPixel(id, j);
@@ -694,7 +658,6 @@ long likelihoodWP(netcluster *pwc,
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // detection statistics at selected sky location
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "detection statistics at selected sky location" << endl;
     M = Mw = 0;                                        // add denoised pixels
     for (j = 0; j < V; j++) {                               // loop over pixels
         pix = pwc->getPixel(id, pI[j]);
@@ -712,7 +675,6 @@ long likelihoodWP(netcluster *pwc,
         }
     }
 
-    cout << "compute likelihood for all pixels" << endl;
     for (j = 0; j < V; j++) {                               // loop over pixels
         pix = pwc->getPixel(id, pI[j]);
         if (!pix->core) continue;
@@ -748,7 +710,6 @@ long likelihoodWP(netcluster *pwc,
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // subnetwork statistic
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "subnetwork statistic" << endl;
     double Emax = 0;
     double Nmax = 0;
     for (j = 1; j <= nIFO; j++) {                            // loop over detectors
@@ -763,9 +724,7 @@ long likelihoodWP(netcluster *pwc,
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     // fill in detection statistics, prepare output data
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    cout << "fill in detection statistics, prepare output data" << endl;
     // fill in backward delay configuration
-    cout << "fill in backward delay configuration" << endl;
     vtof->clear();
     NETX(vtof->push_back(ml[0][lm]); ,
     vtof->push_back(ml[1][lm]); ,
@@ -900,7 +859,6 @@ long likelihoodWP(netcluster *pwc,
     count++;
 
 // calculation of error regions
-    cout << "calculation of error regions" << endl;
     pwc->p_Ind[id - 1].push_back(Mo);
     double T = To + pwc->start;                          // trigger time
     std::vector<float> sArea;
@@ -915,7 +873,6 @@ long likelihoodWP(netcluster *pwc,
 //    }
 
     // calculation of chirp mass
-    cout << "calculation of chirp mass" << endl;
     pwc->cData[id - 1].mchirp = 0;
     pwc->cData[id - 1].mchirperr = 0;
     pwc->cData[id - 1].tmrgr = 0;
@@ -923,7 +880,6 @@ long likelihoodWP(netcluster *pwc,
     pwc->cData[id - 1].chi2chirp = 0;
 
     // It works only for MRA.
-    cout << "m_chirp: " << m_chirp << endl;
     if (m_chirp) {
         if (netRHO >= 0) {
             ee = pwc->mchirp(id);        // original mchirp 2G
@@ -939,7 +895,6 @@ long likelihoodWP(netcluster *pwc,
         }
     }
 
-    cout << "set gps" << endl;
     if (ID == id && !EFEC) {
         nSensitivity->gps = T;
         nAlignment->gps = T;

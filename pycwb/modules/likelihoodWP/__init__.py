@@ -1,0 +1,1 @@
+from .likelihoodWP import likelihood
