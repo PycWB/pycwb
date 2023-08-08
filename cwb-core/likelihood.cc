@@ -9,7 +9,7 @@ long likelihoodWP(netcluster *pwc,
                   skymap *nLikelihood, skymap *nNullEnergy, skymap *nCorrEnergy, skymap *nCorrelation,
                   skymap *nEllipticity, skymap *nPolarisation, skymap *nNetIndex, skymap *nAntenaPrior,
                   skymap *nProbability,
-                  size_t nIFO, std::vector <detector*> ifo,
+                  size_t nIFO, std::vector<detector *> ifo,
                   size_t skyMask_size, short *skyMask, std::vector<double> skyMaskCC,
                   monster wdmMRA, double netCC, bool EFEC,
                   double precision, double gamma, bool optim, double netRHO, double delta, double acor,
@@ -33,7 +33,10 @@ long likelihoodWP(netcluster *pwc,
 // return number of processed pixels
 // Negative gamma regulator turns on the AP prior for sky localization
 //
+    // TODO: remove this, since we only have one cluster for each run
+    size_t ID = 1;
     size_t nRun = 0;
+
     std::vector < netpixel * > pList;
     wavearray<float> a_00;         //! buffer for cluster sky 00 amplitude
     wavearray<float> a_90;         //! buffer for cluster sky 90 amplitudes
@@ -45,28 +48,30 @@ long likelihoodWP(netcluster *pwc,
     wavearray<double> r90_POL[2]; //! buffer for standard response 90 ampl
     wavearray<double> skyProb;     // sky probability
     skyProb.resize(skyMask_size);
-//    if (!wc_List[lag].size()) return 0;
+    // if (!wc_List[lag].size()) return 0;
 
+    // TODO: these are not used
     // bool wdm = true;
     // this->tYPe = mode;
-    bool cirwave = mode == 'g' || mode == 'G' || mode == 'c' || mode == 'C';
-    bool linwave = mode == 'l' || mode == 'L' || mode == 's' || mode == 'S';
-    bool iotwave = mode == 'i' || mode == 'l' || mode == 'e' || mode == 'c' ||
-                   mode == 'I' || mode == 'L' || mode == 'E' || mode == 'C';
-    bool psiwave = mode == 'l' || mode == 'e' || mode == 'p' ||
-                   mode == 'L' || mode == 'E' || mode == 'P';
+    // bool cirwave = mode == 'g' || mode == 'G' || mode == 'c' || mode == 'C';
+    // bool linwave = mode == 'l' || mode == 'L' || mode == 's' || mode == 'S';
+    // bool iotwave = mode == 'i' || mode == 'l' || mode == 'e' || mode == 'c' ||
+    //                mode == 'I' || mode == 'L' || mode == 'E' || mode == 'C';
+    // bool psiwave = mode == 'l' || mode == 'e' || mode == 'p' ||
+    //                mode == 'L' || mode == 'E' || mode == 'P';
     bool mureana = mode == 'i' || mode == 'e' || mode == 'c' ||
                    mode == 'r' || mode == 'p' || mode == 'b' ||
                    mode == 'l' || mode == 's' || mode == 'g';
-    bool rndwave = mode == 'r' || mode == 'R';
+    //    bool rndwave = mode == 'r' || mode == 'R';
 
-    bool prior = gamma < 0 ? true : false;     // gamma<0 : antenna pattern prior is used
+    // bool prior = gamma < 0 ? true : false;     // gamma<0 : antenna pattern prior is used
     bool m_chirp = optim ? false : mureana;
 
-    if (!optim) mureana = true;
+    // TODO: these are not used
+    // if (!optim) mureana = true;
 
-    size_t ID = abs(iID);
 
+    // TODO: not needed for python
     if (nIFO > NIFO) {
         cout << "network::likelihoodAVX(): invalid network.\n";
         exit(0);
@@ -80,9 +85,10 @@ long likelihoodWP(netcluster *pwc,
     REG[0] = deta * sqrt(2);
     float netEC = netRHO * netRHO * 2;                 // netEC/netRHO threshold
 
-    static const __m128 _oo = _mm_set1_ps(1.e-16);             // nusance parameter
-    static const __m128 _sm = _mm_set1_ps(-0.f);               // sign mask: -0.f = 1 << 31
-    static const __m128 _En = _mm_set1_ps(En);                 // network threshold
+    // TODO: not used in the code
+    // static const __m128 _oo = _mm_set1_ps(1.e-16);             // nusance parameter
+    // static const __m128 _sm = _mm_set1_ps(-0.f);               // sign mask: -0.f = 1 << 31
+    // static const __m128 _En = _mm_set1_ps(En);                 // network threshold
 
     float aa, AA, Lo, Eo, Co, No, Ep, Lp, Np, Cp, Ec, Dc, To, Fo, Em, Lm, Rc, Mo, Mw, Eh;
     float STAT, ee, EE, cc, ff, FF, Lw, Ew, Cw, Nw, Gn, rho, norm, ch, CH, Cr, Mp, N;
@@ -121,7 +127,7 @@ long likelihoodWP(netcluster *pwc,
     std::vector<float *> _NUL;              // vectors for packet amplitudes
     std::vector<float *> _TMP;              // temp array for _avx_norm_ps() function
 
-    // TODO: remove the dependency on variable "ifo"
+    // TODO: What's the use of ml?
     for (i = 0; i < NIFO; i++) {
         if (i < nIFO) {
             ml[i] = ifo[i]->index.data;
@@ -145,7 +151,7 @@ long likelihoodWP(netcluster *pwc,
     netpixel *pix;
     std::vector<int> *vint;
     std::vector<int> *vtof;
-//    netcluster *pwc = &wc_List[lag];
+    // netcluster *pwc = &wc_List[lag];
 
     size_t count = 0;
     size_t tsize = 0;
@@ -179,7 +185,8 @@ long likelihoodWP(netcluster *pwc,
     //---------------------------------------------------------
 
     id = size_t(1);
-//    if (pwc->sCuts[id - 1] != -2) return 0;                // skip rejected/processed clusters
+    // TODO: check before calling
+    // if (pwc->sCuts[id - 1] != -2) return 0;                // skip rejected/processed clusters
 
     // check if cluster is empty
     vint = &(pwc->cList[id - 1]);                         // pixel list
@@ -194,24 +201,6 @@ long likelihoodWP(netcluster *pwc,
 
     bBB = (V > wdmMRA.nRes * csize) ? true : false;      // check big cluster size condition
 
-    // TODO: remove the id check
-//    if (ID == id) {
-//        &nSensitivity = 0.;
-//        &nAlignment = 0.;
-//        &nNetIndex = 0.;
-//        &nDisbalance = 0.;
-//        &nLikelihood = 0.;
-//        &nNullEnergy = 0.;
-//        &nCorrEnergy = 0.;
-//        &nCorrelation = 0.;
-//        &nSkyStat = 0.;
-//        &nEllipticity = 0.;
-//        &nPolarisation = 0.;
-//        &nProbability = 0.;
-//    }
-//    nAntenaPrior = 0.;
-
-
     pix = pwc->getPixel(id, pI[0]);
     tsize = pix->tdAmp[0].size();
     if (!tsize || tsize & 1) {                       // tsize%1 = 1/0 = power/amplitude
@@ -221,45 +210,16 @@ long likelihoodWP(netcluster *pwc,
 
     tsize /= 2;
 
-    // redundant code
-    if(!(V=pI.size())) return 0;
+    // TODO: redundant code
+    // if (!(V = pI.size())) return 0;
 
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // allocate memory for vectors
+    //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     V4 = V + (V % 4 ? 4 - V % 4 : 0);
     V44 = V4 + 4;
     pJ.clear();
     for (j = 0; j < V4; j++) pJ.push_back(0);
-
-    //    float *ptmp;                                     // allocate aligned arrays
-    //    if (_vtd.size()) _avx_free_ps(_vtd);              // array for 00 amplitudes
-    //    if (_vTD.size()) _avx_free_ps(_vTD);              // array for 90 amplitudes
-    //    if (_eTD.size()) _avx_free_ps(_eTD);              // array for pixel energy
-    //    if (_APN.size()) _avx_free_ps(_APN);              // container for noise rms and antenna patterns
-    //    if (_DAT.size()) _avx_free_ps(_DAT);              // container for data packet amplitudes
-    //    if (_SIG.size()) _avx_free_ps(_SIG);              // container for signal packet amplitudes
-    //    if (_NUL.size()) _avx_free_ps(_NUL);              // container for null packet amplitudes
-    //    for (i = 0; i < NIFO; i++) {
-    //        ptmp = (float *) _mm_malloc(tsize * V4 * sizeof(float), 32);
-    //        for (j = 0; j < tsize * V4; j++) ptmp[j] = 0;
-    //        _vtd.push_back(ptmp);   // array of aligned vectors
-    //        ptmp = (float *) _mm_malloc(tsize * V4 * sizeof(float), 32);
-    //        for (j = 0; j < tsize * V4; j++) ptmp[j] = 0;
-    //        _vTD.push_back(ptmp);   // array of aligned vectors
-    //        ptmp = (float *) _mm_malloc(tsize * V4 * sizeof(float), 32);
-    //        for (j = 0; j < tsize * V4; j++) ptmp[j] = 0;
-    //        _eTD.push_back(ptmp);   // array of aligned vectors
-    //        ptmp = (float *) _mm_malloc((V4 * 3 + 16) * sizeof(float), 32);
-    //        for (j = 0; j < (V4 * 3 + 16); j++) ptmp[j] = 0;
-    //        _APN.push_back(ptmp);  // concatenated arrays {f+}{fx}{rms}{a+,A+,ax,AX}
-    //        ptmp = (float *) _mm_malloc((V4 * 3 + 8) * sizeof(float), 32);
-    //        for (j = 0; j < (V4 * 3 + 8); j++) ptmp[j] = 0;
-    //        _DAT.push_back(ptmp);   // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
-    //        ptmp = (float *) _mm_malloc((V4 * 3 + 8) * sizeof(float), 32);
-    //        for (j = 0; j < (V4 * 3 + 8); j++) ptmp[j] = 0;
-    //        _SIG.push_back(ptmp);   // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
-    //        ptmp = (float *) _mm_malloc((V4 * 3 + 8) * sizeof(float), 32);
-    //        for (j = 0; j < (V4 * 3 + 8); j++) ptmp[j] = 0;
-    //        _NUL.push_back(ptmp);   // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
-    //    }
 
     // Free previous memory allocations
     free_if_not_empty(_vtd);
@@ -315,88 +275,10 @@ long likelihoodWP(netcluster *pwc,
     pNRG.resize(V4);
     pNRG = 0.;
 
-//    __m128 *_aa = (__m128 *) a_00.data;         // set pointer to 00 array
-//    __m128 *_AA = (__m128 *) a_90.data;         // set pointer to 90 array
-//
-//    if (_AVX.size()) _avx_free_ps(_AVX);
-//    float *p_et = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 0
-//    for (j = 0; j < V4; j++) p_et[j] = 0;
-//    _AVX.push_back(p_et);
-//    float *pMSK = (float *) _mm_malloc(V44 * sizeof(float), 32);     // 1  - pixel mask
-//    for (j = 0; j < V44; j++) pMSK[j] = 0;
-//    _AVX.push_back(pMSK);
-//    pMSK[V4] = nIFO;
-//    float *p_fp = (float *) _mm_malloc(V44 * sizeof(float), 32);     // 2- |f+|^2 (0:V4), +norm (V4:V4+4)
-//    for (j = 0; j < V44; j++) p_fp[j] = 0;
-//    _AVX.push_back(p_fp);
-//    float *p_fx = (float *) _mm_malloc(V44 * sizeof(float), 32);     // 3- |fx|^2 (0:V4), xnorm (V4:V4+4)
-//    for (j = 0; j < V44; j++) p_fx[j] = 0;
-//    _AVX.push_back(p_fx);
-//    float *p_si = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 4
-//    for (j = 0; j < V4; j++) p_si[j] = 0;
-//    _AVX.push_back(p_si);
-//    float *p_co = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 5
-//    for (j = 0; j < V4; j++) p_co[j] = 0;
-//    _AVX.push_back(p_co);
-//    float *p_uu = (float *) _mm_malloc((V4 + 16) * sizeof(float),
-//                                       32); // 6 - 00+ unit vector(0:V4), norm(V4), cos(V4+4)
-//    for (j = 0; j < V4 + 16; j++) p_uu[j] = 0;
-//    _AVX.push_back(p_uu);
-//    float *p_UU = (float *) _mm_malloc((V4 + 16) * sizeof(float),
-//                                       32); // 7 - 90+ unit vector(0:V4), norm(V4), sin(V4+4)
-//    for (j = 0; j < V4 + 16; j++) p_UU[j] = 0;
-//    _AVX.push_back(p_UU);
-//    float *p_vv = (float *) _mm_malloc((V4 + 16) * sizeof(float),
-//                                       32); // 8- 00x unit vector(0:V4), norm(V4), cos(V4+4)
-//    for (j = 0; j < V4 + 16; j++) p_vv[j] = 0;
-//    _AVX.push_back(p_vv);
-//    float *p_VV = (float *) _mm_malloc((V4 + 16) * sizeof(float),
-//                                       32); // 9- 90x unit vector(0:V4), norm(V4), sin(V4+4)
-//    for (j = 0; j < V4 + 16; j++) p_VV[j] = 0;
-//    _AVX.push_back(p_VV);
-//    float *p_au = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 10
-//    for (j = 0; j < V4; j++) p_au[j] = 0;
-//    _AVX.push_back(p_au);
-//    float *p_AU = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 11
-//    for (j = 0; j < V4; j++) p_AU[j] = 0;
-//    _AVX.push_back(p_AU);
-//    float *p_av = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 12
-//    for (j = 0; j < V4; j++) p_av[j] = 0;
-//    _AVX.push_back(p_av);
-//    float *p_AV = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 13
-//    for (j = 0; j < V4; j++) p_AV[j] = 0;
-//    _AVX.push_back(p_AV);
-//    float *p_uv = (float *) _mm_malloc(V4 * 4 * sizeof(float), 32);    // 14 special array for GW norm calculation
-//    for (j = 0; j < V4 * 4; j++) p_uv[j] = 0;
-//    _AVX.push_back(p_uv);
-//    float *p_ee = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 15 + energy array
-//    for (j = 0; j < V4; j++) p_ee[j] = 0;
-//    _AVX.push_back(p_ee);
-//    float *p_EE = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 16 x energy array
-//    for (j = 0; j < V4; j++) p_EE[j] = 0;
-//    _AVX.push_back(p_EE);
-//    float *pTMP = (float *) _mm_malloc(V4 * 4 * NIFO * sizeof(float), 32); // 17 temporary array for _avx_norm_ps()
-//    for (j = 0; j < V4 * 4 * NIFO; j++) pTMP[j] = 0;
-//    _AVX.push_back(pTMP);
-//    float *p_ni = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 18 + network index
-//    for (j = 0; j < V4; j++) p_ni[j] = 0;
-//    _AVX.push_back(p_ni);
-//    float *p_ec = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 19 + coherent energy
-//    for (j = 0; j < V4; j++) p_ec[j] = 0;
-//    _AVX.push_back(p_ec);
-//    float *p_gn = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 20 + Gaussian noise correction
-//    for (j = 0; j < V4; j++) p_gn[j] = 0;
-//    _AVX.push_back(p_gn);
-//    float *p_ed = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 21 + energy disbalance
-//    for (j = 0; j < V4; j++) p_ed[j] = 0;
-//    _AVX.push_back(p_ed);
-//    float *p_rn = (float *) _mm_malloc(V4 * sizeof(float), 32);      // 22 + sattelite noise in TF domain
-//    for (j = 0; j < V4; j++) p_rn[j] = 0;
-//    _AVX.push_back(p_rn);
 
     // Set pointer to arrays
-    __m128 *_aa = (__m128 *) a_00.data;
-    __m128 *_AA = (__m128 *) a_90.data;
+    // __m128 *_aa = (__m128 *) a_00.data;
+    // __m128 *_AA = (__m128 *) a_90.data;
 
     // Free previous memory allocations
     free_if_not_empty(_AVX);
@@ -623,6 +505,7 @@ long likelihoodWP(netcluster *pwc,
         // save DSP components in polar coordinates
         _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
     }
+//    lb = le = lm;
     if(le-lb) {lb=le=lm; goto optsky;}                // process all pixels at opt sky location
 
     //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
