@@ -2,7 +2,6 @@ import time
 import logging
 from .regression import regression
 from .whitening import whitening
-from pycwb.types.wdm import WDM
 from multiprocessing import Pool
 
 logger = logging.getLogger(__name__)
@@ -22,19 +21,14 @@ def data_conditioning(config, strains, parallel=True):
     # timer
     timer_start = time.perf_counter()
 
-    # initialize WDM
-    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
-    wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
-
-    layers = int(config.rateANA / 8)
-    wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)
-
     if parallel:
         logger.info("Start data conditioning in parallel")
         with Pool(processes=min(config.nproc, config.nIFO)) as p:
-            res = p.map(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))])
+            data_regressions = p.starmap(regression, [(config, h) for h in strains])
+            res = p.starmap(whitening, [(config, d) for d in data_regressions])
     else:
-        res = list(map(_wrapper, [(config, strains[i], wdm, wdm_white) for i in range(len(config.ifo))]))
+        data_regressions = [regression(config, h) for h in strains]
+        res = [whitening(config, h) for h in data_regressions]
 
     conditioned_strains, nRMS_list = zip(*res)
 
@@ -45,12 +39,3 @@ def data_conditioning(config, strains, parallel=True):
     logger.info("-------------------------------------------------------")
 
     return conditioned_strains, nRMS_list
-
-
-def _wrapper(args):
-    config, strain, wdm, wdm_white = args
-    # regression and whitening
-    data_reg = regression(config, wdm, strain)
-    tf_map, nRMS = whitening(config, wdm_white, data_reg)
-
-    return tf_map, nRMS

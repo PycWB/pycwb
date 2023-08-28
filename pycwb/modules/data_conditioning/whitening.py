@@ -3,11 +3,12 @@ import ROOT
 import logging
 from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series
 from pycwb.types.time_frequency_series import TimeFrequencySeries
+from pycwb.types.wdm import WDM
 
 logger = logging.getLogger(__name__)
 
 
-def whitening(config, wdm_white, h):
+def whitening(config, h):
     """
     Performs whitening on the given strain data
 
@@ -20,13 +21,8 @@ def whitening(config, wdm_white, h):
     :return: (whitened strain, nRMS)
     :rtype: tuple[TimeFrequencySeries, TimeFrequencySeries]
     """
-
-    # tf_map = TimeFrequencySeries(data=h, wavelet=wdm_white)
-    # tf_map.forward()
-    # tf_map.f_low = config.fLow
-    # tf_map.f_high = config.fHigh
-    # tf_map = convert_time_frequency_series_to_wseries(tf_map)
-
+    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
+    wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
     ##########################################
     # cWB2G whitening method
     ##########################################

@@ -2,9 +2,10 @@ import ROOT
 import numpy as np
 
 from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+from pycwb.types.wdm import WDM
 
 
-def regression(config, wdm, h):
+def regression(config, h):
     """
     Clean data with cWB regression method.
 
@@ -17,6 +18,9 @@ def regression(config, wdm, h):
     :return: cleaned data
     :rtype: pycbc.types.timeseries.TimeSeries
     """
+    layers = int(config.rateANA / 8)
+    wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)
+
     ##########################################
     # cWB2G regression method
     ##########################################
