@@ -49,23 +49,22 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     timer_start = time.perf_counter()
     logger.info("Start coherence" + " in parallel" if parallel else "")
 
+    # upper sample factor
     up_n = config.rateANA // 1024
     if up_n < 1:
         up_n = 1
 
-    fragment_clusters = []
-
     if parallel:
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
-            tasks = []
-            for i in range(config.nRES):
-                tasks.append((i, config, tf_maps, nRMS_list, up_n))
-            for fragment_clusters_single_res in pool.starmap(_coherence_single_res, tasks):
-                fragment_clusters += fragment_clusters_single_res
+            fragment_clusters_multi_res = pool.starmap(_coherence_single_res,
+                                                       [(i, config, tf_maps, nRMS_list, up_n) for i in
+                                                        range(config.nRES)])
     else:
-        for i in range(config.nRES):
-            fragment_clusters_single_res = _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net)
-            fragment_clusters += fragment_clusters_single_res
+        fragment_clusters_multi_res = [_coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
+                                       range(config.nRES)]
+
+    # flat the array
+    fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
 
     logger.info("----------------------------------------")
     logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
