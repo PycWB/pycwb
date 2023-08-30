@@ -133,7 +133,7 @@ if(HEALPIX_FOUND)
 endif()
 
 #include all the created header files
-list(APPEND WAT_HDRS ${CMAKE_CURRENT_BINARY_DIR}/watversion.hh watfun.hh constants.hh wat.hh rdfr.hh readframe.hh readfrfile.hh skycoord.hh watavx.hh watsse.hh WDMOverlap.hh pycwb.hh)
+list(APPEND WAT_HDRS ${CMAKE_CURRENT_BINARY_DIR}/watversion.hh watfun.hh constants.hh wat.hh readframe.hh readfrfile.hh skycoord.hh watavx.hh watsse.hh WDMOverlap.hh pycwb.hh)
 
 #Add the watasm_elf64.o to the list of src
 if(APPLE)
