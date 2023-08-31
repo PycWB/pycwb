@@ -1,5 +1,5 @@
 import logging
-import sys
+import site
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ def check_and_load_wavelet(ROOT):
     if not hasattr(ROOT, "WDM"):
         print("Loading wavelet library")
     try:
-        site_packages = next(p for p in sys.path if 'site-packages' in p)
+        site_packages = site.getsitepackages()[0]
         wavelet_path = f"{site_packages}/lib/wavelet"
         print(f"Trying to load wavelet library from {wavelet_path}")
         ROOT.gInterpreter.AddIncludePath(f"{site_packages}/include")
