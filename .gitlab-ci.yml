@@ -15,49 +15,43 @@
 # https://docs.gitlab.com/ee/development/cicd/templates.html
 # This specific template is located at:
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
-image: python:latest
-
-cache:
-  key: "$CI_COMMIT_REF_NAME"
-  paths:
-    - /opt/conda
+image: buildpack-deps:jammy
 
 stages:          # List of stages for jobs, and their order of execution
   - build
-  - test
   - deploy
   - post-deploy
+
+.install_common: &install_common
+  - wget -q https://root.cern/download/root_v6.26.04.Linux-ubuntu22-x86_64-gcc11.2.tar.gz
+  - tar -xf root_v6.26.04.Linux-ubuntu22-x86_64-gcc11.2.tar.gz --strip-components=1 -C /usr/local/
+  - export ROOTSYS=/usr/local
+  - export PYTHONPATH=$ROOTSYS/lib:$PYTHONPATH
+  - export CLING_STANDARD_PCH=none
+  - apt-get update
+  - apt-get -y install git dpkg-dev cmake pkg-config g++ gcc binutils libx11-dev libxpm-dev libxft-dev libxext-dev tar gfortran subversion
+  - apt-get -y install libfftw3-dev libcfitsio9 libsharp0 python3-pip
+  - wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+  - dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+  - wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx3_3.80.0-5_amd64.deb
+  - wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx-dev_3.80.0-5_amd64.deb
+  - dpkg -i libhealpix-cxx3_3.80.0-5_amd64.deb
+  - dpkg -i libhealpix-cxx-dev_3.80.0-5_amd64.deb
+  - apt-get -y install python3-pip python3-venv
+  - ln -s /usr/bin/python3 /usr/bin/python
+  - python3 -m pip install pip setuptools -U
 
 build-job:       # This job runs in the build stage, which runs first.
   stage: build
   script:
-    - pip install build
-    - python -m build --sdist
+    - *install_common
+    - python3 -m pip install build
+    - python3 -m build --sdist
+    - pip install dist/*.tar.gz
+    - python3 -c "import pycwb; print(pycwb.__version__)"
   artifacts:
     paths:
       - dist/*
-
-test-job:   # This job runs in the test stage.
-  image: continuumio/miniconda3
-  stage: test    # It only starts when the job in the build stage completes successfully.
-  script:
-    - conda create -c conda-forge --name pycwb root=6.26.10
-    - conda init bash
-    - source ~/.bashrc
-    - conda activate pycwb
-    - conda install -c conda-forge healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
-    - make install
-    - python -c "import pycwb; print(pycwb.__version__)"
-
-deploy-testPyPi:      # This job runs in the deploy stage.
-  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
-  environment: testing
-  only:
-    - tags
-  script:
-    - echo "Deploying to TestPyPI..."
-    - pip install twine
-    - TWINE_PASSWORD=${PYPI_TEST_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --repository testpypi dist/*
 
 publish:
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
@@ -75,13 +69,8 @@ pages:
     - changes:
         - docs/**/*
     - if: '$CI_COMMIT_TAG'
-  image: continuumio/miniconda3
   script:
-    - conda create --name pycwb
-    - conda init bash
-    - source ~/.bashrc
-    - conda activate pycwb
-    - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
+    - *install_common
     - pip install pycwb
     - pip install "sphinx<7.0.0" sphinx_rtd_theme
     - make doc
@@ -90,3 +79,47 @@ pages:
   artifacts:
     paths:
       - public
+#test-job:   # This job runs in the test stage.
+#  image: continuumio/miniconda3
+#  stage: test    # It only starts when the job in the build stage completes successfully.
+#  script:
+#    - conda create -c conda-forge --name pycwb root=6.26.10
+#    - conda init bash
+#    - source ~/.bashrc
+#    - conda activate pycwb
+#    - conda install -c conda-forge healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
+#    - make install
+#    - python -c "import pycwb; print(pycwb.__version__)"
+
+
+#deploy-testPyPi:      # This job runs in the deploy stage.
+#  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
+#  environment: testing
+#  only:
+#    - tags
+#  script:
+#    - echo "Deploying to TestPyPI..."
+#    - pip install twine
+#    - TWINE_PASSWORD=${PYPI_TEST_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --repository testpypi dist/*
+
+#pages:
+#  stage: post-deploy
+#  rules:
+#    - changes:
+#        - docs/**/*
+#    - if: '$CI_COMMIT_TAG'
+#  image: continuumio/miniconda3
+#  script:
+#    - conda create --name pycwb
+#    - conda init bash
+#    - source ~/.bashrc
+#    - conda activate pycwb
+#    - conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config make gxx_linux-64 binutils
+#    - pip install pycwb
+#    - pip install "sphinx<7.0.0" sphinx_rtd_theme
+#    - make doc
+#    - mkdir public
+#    - cp -r docs/build/html/* public/
+#  artifacts:
+#    paths:
+#      - public
