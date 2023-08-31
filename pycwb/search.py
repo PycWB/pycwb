@@ -97,7 +97,7 @@ def analyze_job_segment(config, job_seg):
     for i, cluster in enumerate(clusters):
         if cluster.cluster_status != -1:
             continue
-        reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, network.net.rTDF,
+        reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                   'signal', 0, True)
         # plot the reconstructed wave
         for j, reconstructed_wave in enumerate(reconstructed_waves):
