@@ -3,10 +3,10 @@ requires = [ "setuptools", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pycWB"
+name = "PycWB"
 keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst']
 authors= [
-    {name = "The pycWB team", email = "xusmailbox@gmail.com"},
+    {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
 description= "A Python package for coherent gravitational wave burst analysis"
 
