@@ -73,6 +73,7 @@ pages:
   script:
     - *install_common
     - pip install pycwb
+    - ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
     - pip install "sphinx<7.0.0" sphinx_rtd_theme
     - make doc
     - mkdir public
