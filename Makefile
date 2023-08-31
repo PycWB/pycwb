@@ -14,7 +14,7 @@ sdist_clean:
 	rm -rf dist
 
 doc: clean_doc
-	sphinx-apidoc -o docs/source pycwb pycwb/vendor/* && cd docs && TZ=UTC make html
+	TZ=UTC sphinx-apidoc -o docs/source pycwb pycwb/vendor/* && cd docs && TZ=UTC make html
 
 clean_doc:
 	cd docs && make clean && rm -f source/modules.rst source/pycwb*.rst
