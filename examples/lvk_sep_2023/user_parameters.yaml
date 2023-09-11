@@ -1,0 +1,92 @@
+###### project ######
+
+outputDir: "output"
+nproc: 6
+###### search ######
+
+#calibVer: "C01"
+#channelName: "DCS-CALIB_STRAIN_CLEAN_C01" # //"DCS-CALIB_STRAIN_CLEAN_C01";  // C00 -> "GDS-CALIB_STRAIN", C01 -> "DCS-CALIB_STRAIN_C01", C02 -> "DCS-CALIB_STRAIN_C02"
+
+analysis: "2G"
+cfg_search: "r"
+
+optim: False
+
+###### network configuration ######
+ifo: ["L1","H1"]
+refIFO: "L1"
+
+# lags
+lagSize: 1
+lagStep: 1.
+lagOff: 0
+lagMax: 0
+
+# superlags
+slagSize: 1 # number of super lags (simulation=1) - if slagSize=0 -> Standard Segments
+slagMin: 0
+slagMax: 0
+slagOff: 0
+
+# job
+segLen: 1200
+segMLS: 600
+segTHR: 200
+segEdge: 10
+
+# frequency
+fLow: 16.
+fHigh: 1024.
+
+
+levelR: 3
+l_low: 4 # low frequency resolution level		// std (sthr = 2)
+l_high: 10 # high frequency resolution level	// std (sthr = 8)
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+healpix: 7
+
+###### cWB production thresholds & regulators ######
+
+bpp: 0.001
+subnet: 0.5
+subcut: -1.0
+netRHO: 5.0
+cedRHO: 5.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: -1.0
+LOUD: 300
+
+pattern: 10
+
+iwindow: 100
+
+# simulation
+simulation: "all_inject_in_one_segment"
+nfactor: 1
+
+injection:
+  segment:
+    start: 1126258862.4
+    end: 1126260062.4
+    noise:
+      seeds: [0, 1]
+  parameters:
+    mass1: 20
+    mass2: 20
+    spin1z: 0
+    spin2z: 0
+    distance: 300
+    inclination: 0
+    polarization: 0
+    gps_time: 1126259462.4
+    coa_phase: 0
+    ra: 0
+    dec: 0
+  approximant: "IMRPhenomXHM"
+
