@@ -7,6 +7,7 @@ import click
 import pycwb
 import matplotlib.pyplot as plt
 
+from pycwb.modules.plot.waveform import plot_reconstructed_waveforms
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.utils.dep_check import check_dependencies
 
@@ -85,57 +86,11 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
     # likelihood
     events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
-    # save the results
-    for i, event in enumerate(events):
-        save_dataclass_to_json(event, f'{config.outputDir}/event_{job_id}_{i+1}.json', compress_json=compress_json)
-        save_dataclass_to_json(clusters[i], f'{config.outputDir}/cluster_{job_id}_{i+1}.json', compress_json=compress_json)
-        # save event to catalog
-        add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
-
+    with multiprocessing.Pool(processes=min(config.nproc, len(events))) as pool:
+        pool.starmap(post_production, [(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
+                                       for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics)])
     # for i, tf_map in enumerate(tf_maps):
     #     plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
-
-    # reconstruct the waveforms
-    for i, cluster in enumerate(clusters):
-        if cluster.cluster_status != -1:
-            continue
-        reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                  'signal', 0, True)
-        # plot the reconstructed wave
-        for j, reconstructed_wave in enumerate(reconstructed_waves):
-            plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
-            plt.xlim(events[i].left[0], events[i].left[0] + events[i].stop[0] - events[i].start[0])
-            plt.savefig(f'{config.outputDir}/reconstructed_wave_job_{job_id}_cluster_{i+1}_ifo_{j+1}.png')
-            plt.clf()
-
-        # calculate the glitchness
-        glitchness = get_glitchness(config, reconstructed_waves, events[i].sSNR, events[i].likelihood)
-        # TODO: save to event file
-        print(f"Glitchness: {glitchness}")
-
-    if plot:
-        # plot the likelihood map
-        for i, cluster in enumerate(clusters):
-            if cluster.cluster_status != -1:
-                continue
-            plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
-            plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
-
-        for i, event in enumerate(events):
-            if event.nevent == 0:
-                continue
-            # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-            # TODO: plot in parallel
-            for key in skymap_statistics[i].keys():
-                plot_skymap_contour(skymap_statistics[i],
-                                    key=key,
-                                    reconstructed_loc=(event.phi[0], event.theta[0]),
-                                    detector_loc=(event.phi[3], event.theta[3]),
-                                    resolution=1,
-                                    filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
-            # save the skymap statistics as pickle file
-            with open(f'{config.outputDir}/skymap_statistics_{job_id}_{i+1}.pkl', 'wb') as f:
-                pickle.dump(skymap_statistics[i], f)
 
     # calculate the performance
     end_time = time.perf_counter()
@@ -143,6 +98,56 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
     logger.info(f"Job {job_id} finished in {round(end_time - start_time, 1)} seconds")
     logger.info(f"Speed factor: {round((job_seg.end_time - job_seg.start_time) / (end_time - start_time), 1)}X")
     logger.info("-" * 80)
+
+
+def post_production(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json):
+    # extra info will be saved
+    extra_info = {}
+
+    # create event folder
+    trigger_folder = f"{config.outputDir}/trigger_{job_id}_{event.stop[0]}_{event.hash_id}"
+    if not os.path.exists(trigger_folder):
+        os.makedirs(trigger_folder)
+
+    # save the results
+    save_dataclass_to_json(event, f'{trigger_folder}/event.json', compress_json=compress_json)
+    save_dataclass_to_json(cluster, f'{trigger_folder}/cluster.json', compress_json=compress_json)
+    # save the skymap statistics as json file
+    save_dataclass_to_json(event_skymap_statistics, f'{trigger_folder}/skymap_statistics.json', compress_json=compress_json)
+    # save event to catalog
+    add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, f"{event.stop[0]}_{event.hash_id}"))
+
+    # post-production only for selected events
+    if cluster.cluster_status != -1:
+        return
+
+    reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                               'signal', 0, True)
+
+    # calculate the glitchness
+    glitchness = get_glitchness(config, reconstructed_waves, event.sSNR, event.likelihood)
+    # TODO: save to event file
+    print(f"Glitchness: {glitchness}")
+    extra_info['glitchness'] = glitchness[0][0]
+
+    # save the extra info
+    save_dataclass_to_json(extra_info, f'{trigger_folder}/extra_info.json', compress_json=compress_json)
+
+    if plot:
+        plot_reconstructed_waveforms(trigger_folder, reconstructed_waves,
+                                     xlim=(event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+        # plot the likelihood map
+        plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
+        plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
+
+        # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+        for key in event_skymap_statistics.keys():
+            plot_skymap_contour(event_skymap_statistics,
+                                key=key,
+                                reconstructed_loc=(event.phi[0], event.theta[0]),
+                                detector_loc=(event.phi[3], event.theta[3]),
+                                resolution=1,
+                                filename=f'{trigger_folder}/{key}.png')
 
 
 def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=None, log_level='INFO',
