@@ -1,3 +1,6 @@
+import base64
+import hashlib
+
 import numpy as np
 import json
 from dataclasses import dataclass, field
@@ -323,6 +326,18 @@ class Event:
             "theta": self.theta,
             "psi": self.psi,
         }
+
+    @property
+    def hash_id(self):
+        """
+        Return a hash ID of the event
+
+        :return: Hash ID of the event
+        :rtype: str
+        """
+        hash_object = hashlib.md5()
+        hash_object.update(f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}".encode("utf-8"))  # Encoding the string to bytes
+        return hash_object.hexdigest()[-10:]
 
     def dump(self):
         """
