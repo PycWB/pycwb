@@ -23,7 +23,7 @@ from pycwb.modules.read_data import read_from_job_segment, generate_injection
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
-from pycwb.modules.likelihood import likelihood, save_likelihood_data
+from pycwb.modules.likelihood import likelihood
 from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
 from pycwb.modules.plot.cluster_statistics import plot_statistics
