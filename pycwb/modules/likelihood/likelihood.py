@@ -149,31 +149,31 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     return event, cluster
 
 
-def save_likelihood_data(job_id, cluster_id, output_dir, event, cluster):
-    """
-    save event and cluster to file
-
-    :param job_id: job id
-    :type job_id: int
-    :param cluster_id: cluster id
-    :type cluster_id: int
-    :param output_dir: output directory
-    :type output_dir: str
-    :param event: event
-    :type event: Event
-    :param cluster: cluster
-    :type cluster: Cluster
-    """
-    # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
-    try:
-        # save event to file
-        with open(f'{output_dir}/event_{job_id}_{cluster_id}.json', 'wb') as f:
-            f.write(orjson.dumps(event, option=orjson.OPT_SERIALIZE_NUMPY))
-        # save cluster to pickle
-        with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
-            pickle.dump(cluster, f)
-        with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.json', 'wb') as f:
-            f.write(orjson.dumps(cluster, option=orjson.OPT_SERIALIZE_NUMPY))
-
-    except Exception as e:
-        logger.error(e)
+# def save_likelihood_data(job_id, cluster_id, output_dir, event, cluster):
+#     """
+#     save event and cluster to file
+#
+#     :param job_id: job id
+#     :type job_id: int
+#     :param cluster_id: cluster id
+#     :type cluster_id: int
+#     :param output_dir: output directory
+#     :type output_dir: str
+#     :param event: event
+#     :type event: Event
+#     :param cluster: cluster
+#     :type cluster: Cluster
+#     """
+#     # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
+#     try:
+#         # save event to file
+#         with open(f'{output_dir}/event_{job_id}_{cluster_id}.json', 'wb') as f:
+#             f.write(orjson.dumps(event, option=orjson.OPT_SERIALIZE_NUMPY))
+#         # save cluster to pickle
+#         # with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
+#         #     pickle.dump(cluster, f)
+#         with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.json', 'wb') as f:
+#             f.write(orjson.dumps(cluster, option=orjson.OPT_SERIALIZE_NUMPY))
+#
+#     except Exception as e:
+#         logger.error(e)
