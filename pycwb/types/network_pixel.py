@@ -57,11 +57,11 @@ class Pixel:
     rate: float  # wavelet layer rate
     likelihood: float  # likelihood
     null: float  # null
-    theta: int  # source angle theta index
-    phi: int  # source angle phi index
+    theta: float  # source angle theta index
+    phi: float  # source angle phi index
     ellipticity: float  # waveform ellipticity
     polarisation: float  # waveform polarisation
-    core: bool  # pixel type: true - core , false - halo
+    core: int  # pixel type: true - core , false - halo
 
     data: list[PixelData]  # list of PixelData
     td_amp: list[float]  # time domain amplitude
