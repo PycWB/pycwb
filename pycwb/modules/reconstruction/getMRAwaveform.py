@@ -3,6 +3,7 @@ import numpy as np
 from pycbc.types import TimeSeries
 from pycwb.modules.multi_resolution_wdm import create_wdm_set
 from multiprocessing import Pool
+from numba import njit
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +59,13 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc):
 
     z_len = len(z.data)
 
-    if min(nproc, len(cluster.pixels)) == 1:
-        results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
-    else:
-        with Pool(processes=min(nproc, len(cluster.pixels))) as pool:
-            results = pool.starmap(_process_pixels,
-                                   [(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels])
+    results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
+    # if min(nproc, len(cluster.pixels)) == 1:
+    #     results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
+    # else:
+    #     with Pool(processes=min(nproc, len(cluster.pixels))) as pool:
+    #         results = pool.starmap(_process_pixels,
+    #                                [(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels])
 
     for result in results:
         if result is None:
@@ -142,8 +144,8 @@ def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len):
 
     # find the object which pix.layers == wdm.max_layers + 1
     wdm = [w for w in wdmList if w.max_layer + 1 == pix.layers][0]
-    j00, x00 = wdm.get_base_wave(pix.time, False)
-    j90, x90 = wdm.get_base_wave(pix.time, True)
+    j00, x00 = get_base_wave(wdm.max_layer, np.array(wdm.wavelet.wdmFilter), pix.time, False) # wdm.get_base_wave(pix.time, False)
+    j90, x90 = get_base_wave(wdm.max_layer, np.array(wdm.wavelet.wdmFilter), pix.time, True) #wdm.get_base_wave(pix.time, True)
     j00 -= io
     j90 -= io
     if mode < 0:
@@ -169,3 +171,85 @@ def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len):
 
     # Perform the addition operation
     return valid_indices_values_00, valid_x00 * a00, valid_indices_values_90, valid_x90 * a90, s00, s90
+
+
+@njit
+def _get_base_wave(wdm_filter, max_layer, m, n):
+    N = len(wdm_filter)
+    M = max_layer
+
+    if m == 0:
+        if n % 2:
+            w = np.zeros(2 * (N - 1) + 1)
+        else:
+            w = np.concatenate((np.flipud(wdm_filter), wdm_filter[1:]))
+    elif m == M:
+        if (n - M) % 2:
+            w = np.zeros(2 * (N - 1) + 1)
+        else:
+            w_pos = np.zeros(N - 1)  # symmetric array
+            s = -1 if M % 2 else 1
+            w0 = s * wdm_filter[0]
+            for i in range(1, N):
+                s = -s
+                w_pos[i - 1] = s * wdm_filter[i]
+            w = np.concatenate((np.flipud(w_pos), np.array([w0]), w_pos))
+    else:
+        ratio = m * np.pi / M
+        sign = np.sqrt(2)
+        if (m + n) % 2:
+            w_pos = -sign * np.sin(np.arange(1, N) * ratio) * wdm_filter[1:]
+            w_neg = - np.flipud(w_pos)
+            w = np.concatenate((w_neg, np.array([0]), w_pos))
+        else:
+            w_pos = sign * np.cos(np.arange(1, N) * ratio) * wdm_filter[1:]
+            w_neg = np.flipud(w_pos)
+            w = np.concatenate((w_neg, np.array([sign * wdm_filter[0]]), w_pos))
+
+    return n * M - (N-1), w
+
+
+@njit
+def _get_base_wave_quad(wdm_filter, max_layer, m, n):
+    N = len(wdm_filter)
+    M = max_layer
+
+    if m == 0:
+        if n % 2:
+            w = np.concatenate((np.flipud(wdm_filter), wdm_filter[1:]))
+        else:
+            w = np.zeros(2*(N-1) + 1)
+    elif m == M:
+        if (n-M) % 2:
+            w_pos = np.zeros(N-1) # symmetric array
+            s = 1
+            w0 = wdm_filter[0]
+            for i in range(1, N):
+                s = -s
+                w_pos[i-1] = s * wdm_filter[i]
+            w = np.concatenate((np.flipud(w_pos), np.array([w0]), w_pos))
+        else:
+            w = np.zeros(2*(N-1) + 1)
+    else:
+        ratio = m * np.pi / M
+        sign = np.sqrt(2)
+        if (m+n) % 2:
+            w0 = sign * wdm_filter[0]
+            w_pos = sign * np.cos(np.arange(1, N) * ratio) * wdm_filter[1:]
+            w = np.concatenate((np.flipud(w_pos), np.array([w0]), w_pos))
+        else:
+            w_pos = sign * np.sin(np.arange(1, N) * ratio) * wdm_filter[1:]
+            w = np.concatenate((- np.flipud(w_pos), np.array([0]), w_pos))
+
+    return n * M - (N-1), w
+
+
+@njit
+def get_base_wave(max_layer: int, wdm_filter: np.array, tf_index: int, quad: bool) -> np.array:
+    M1 = max_layer + 1
+    m = tf_index % M1
+    n = tf_index // M1
+    if quad:
+        return _get_base_wave_quad(wdm_filter, max_layer, m, n)
+    else:
+        return _get_base_wave(wdm_filter, max_layer, m, n)
