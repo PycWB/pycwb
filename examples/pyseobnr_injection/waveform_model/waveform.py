@@ -21,8 +21,8 @@ def waveform_generator(mass1, mass2, spin1x, spin1y, spin1z, spin2x, spin2y, spi
         'deltaT': delta_t,
         "approximant": "SEOBNRv5HM",
     }
-    wfm_gen = GenerateWaveform(parameters)  # We call the generator with the parameters
-    # Generate mode dictionary
+    wfm_gen = GenerateWaveform(parameters)
     hp, hc = wfm_gen.generate_td_polarizations_conditioned_2()
 
     return hp, hc
+
