@@ -35,7 +35,7 @@ make install
 
 ## Usage
 
-Example project can be found in [examples](./examples)
+Example project can be found in [examples](https://git.ligo.org/yumeng.xu/pycwb/-/tree/main/examples)
 
 ```python
 from pycwb.search import search
