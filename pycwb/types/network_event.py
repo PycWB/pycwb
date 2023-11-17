@@ -1,75 +1,142 @@
 import numpy as np
 import json
+from dataclasses import dataclass, field
 
 
+@dataclass(slots=True)
 class Event:
     """
     This class is used to store the results of an event.
     """
-    def __init__(self):
-        self.nevent = 0  # number of events
-        self.ndim = None  # number of dimensions
-        self.run = None  # run ID
-        self.rho = [0, 0, 0]  # effective correlated SNR
-        self.netcc = [0, 0, 0]  # network correlation coefficients: 0-net,1-pc,2-cc,3-net2
-        self.neted = [0, 0, 0]  # network energy disbalance: 0 - total, 1 - 00-phase, 2 - 90-phase
-        self.gnet = None  # network sensitivity
-        self.anet = None  # network alignment factor
-        self.inet = None  # network index
-        self.ecor = None  # correlated energy
-        self.norm = None  # norm Factor or ellipticity
-        self.ECOR = None  # effective correlated energy
-        self.penalty = None  # penalty factor
-        self.likelihood = None  # network likelihood
-        self.factor = None  # Multiplicative amplitude factor - simulation only
-        self.range = None  # range to source: [0/1]-rec/inj
-        self.chirp = None  # chirp array: 0-injmass,1-recmass,2-merr,3-tmrgr,4-terr,5-chi2
-        self.eBBH = None  # eBBH array
-        self.usize = None  # size of the universe
-        self.ifo_list = []  # list of ifos
-        self.eventID = [0, 0, 0]  # event ID
-        self.type = [0, 0, 0]  # event type
-        self.name = [0, 0, 0]  # event name
-        self.log = []
-        self.rate = []
-        self.volume = []
-        self.size = []
-        self.gap = []
-        self.lag = []
-        self.slag = [0, 0, 0]
-        self.strain = []
-        self.phi = []
-        self.theta = []
-        self.psi = []
-        self.iota = []
-        self.bp = []
-        self.bx = []
-        self.time = []
-        self.gps = []
-        self.right = []
-        self.left = []
-        self.duration = []
-        self.start = []
-        self.stop = []
-        self.frequency = []
-        self.low = []
-        self.high = []
-        self.bandwidth = []
-        self.hrss = []
-        self.noise = []
-        self.erA = []
-        self.Psm = []
-        self.null = []
-        self.nill = []
-        self.mass = []
-        self.spin = []
-        self.snr = []
-        self.xSNR = []
-        self.sSNR = []
-        self.iSNR = []
-        self.oSNR = []
-        self.ioSNR = []
-        self.Deff = []
+    nevent: int = 0  # number of events
+    ndim: int = field(default_factory=int)  # number of dimensions
+    run: int = field(default_factory=int)  # run ID
+    rho: list[float] = field(default_factory=list)  # effective correlated SNR
+    netcc: list[float] = field(default_factory=list)  # network correlation coefficients: 0-net,1-pc,2-cc,3-net2
+    neted: list[float] = field(default_factory=list)  # network energy disbalance: 0 - total, 1 - 00-phase, 2 - 90-phase
+    gnet: float = field(default_factory=float)  # network sensitivity
+    anet: float = field(default_factory=float)  # network alignment factor
+    inet: float = field(default_factory=float)  # network index
+    ecor: float = field(default_factory=float)  # correlated energy
+    norm: float = field(default_factory=float)  # norm Factor or ellipticity
+    ECOR: float = field(default_factory=float)  # effective correlated energy
+    penalty: float = field(default_factory=float)  # penalty factor
+    likelihood: float = field(default_factory=float) # network likelihood
+    factor: float = field(default_factory=float)  # Multiplicative amplitude factor - simulation only
+    range: list[int] = field(default_factory=list) # range to source: [0/1]-rec/inj
+    chirp: list[float] = field(default_factory=list) # chirp array: 0-injmass,1-recmass,2-merr,3-tmrgr,4-terr,5-chi2
+    eBBH: list[float] = field(default_factory=list)  # eBBH array
+    usize: float = 0.0  # size of the universe
+    ifo_list: list[str] = field(default_factory=list)  # list of ifos
+    eventID: list[int] = field(default_factory=list) # event ID
+    type: list[int] = field(default_factory=list)  # event type
+    name: list[str] = field(default_factory=list)  # event name
+    log: list[str] = field(default_factory=list)
+    rate: list[float] = field(default_factory=list)
+    volume: list[float] = field(default_factory=list)
+    size: list[float] = field(default_factory=list)
+    gap: list[float] = field(default_factory=list)
+    lag: list[float] = field(default_factory=list)
+    slag: list[float] = field(default_factory=list)
+    strain: list[float] = field(default_factory=list)
+    phi: list[float] = field(default_factory=list)
+    theta: list[float] = field(default_factory=list)
+    psi: list[float] = field(default_factory=list)
+    iota: list[float] = field(default_factory=list)
+    bp: list[float] = field(default_factory=list)
+    bx: list[float] = field(default_factory=list)
+    time: list[float] = field(default_factory=list)
+    gps: list[float] = field(default_factory=list)
+    right: list[float] = field(default_factory=list)
+    left: list[float] = field(default_factory=list)
+    duration: list[float] = field(default_factory=list)
+    start: list[float] = field(default_factory=list)
+    stop: list[float] = field(default_factory=list)
+    frequency: list[float] = field(default_factory=list)
+    low: list[float] = field(default_factory=list)
+    high: list[float] = field(default_factory=list)
+    bandwidth: list[float] = field(default_factory=list)
+    hrss: list[float] = field(default_factory=list)
+    noise: list[float] = field(default_factory=list)
+    erA: list[float] = field(default_factory=list)
+    Psm: list[float] = field(default_factory=list)
+    null: list[float] = field(default_factory=list)
+    nill: list[float] = field(default_factory=list)
+    mass: list[float] = field(default_factory=list)
+    spin: list[float] = field(default_factory=list)
+    snr: list[float] = field(default_factory=list)
+    xSNR: list[float] = field(default_factory=list)
+    sSNR: list[float] = field(default_factory=list)
+    iSNR: list[float] = field(default_factory=list)
+    oSNR: list[float] = field(default_factory=list)
+    ioSNR: list[float] = field(default_factory=list)
+    Deff: list[float] = field(default_factory=list)
+
+
+    # def __init__(self):
+    #     self.nevent = 0  # number of events
+    #     self.ndim = None  # number of dimensions
+    #     self.run = None  # run ID
+    #     self.rho = [0, 0, 0]  # effective correlated SNR
+    #     self.netcc = [0, 0, 0]  # network correlation coefficients: 0-net,1-pc,2-cc,3-net2
+    #     self.neted = [0, 0, 0]  # network energy disbalance: 0 - total, 1 - 00-phase, 2 - 90-phase
+    #     self.gnet = None  # network sensitivity
+    #     self.anet = None  # network alignment factor
+    #     self.inet = None  # network index
+    #     self.ecor = None  # correlated energy
+    #     self.norm = None  # norm Factor or ellipticity
+    #     self.ECOR = None  # effective correlated energy
+    #     self.penalty = None  # penalty factor
+    #     self.likelihood = None  # network likelihood
+    #     self.factor = None  # Multiplicative amplitude factor - simulation only
+    #     self.range = None  # range to source: [0/1]-rec/inj
+    #     self.chirp = None  # chirp array: 0-injmass,1-recmass,2-merr,3-tmrgr,4-terr,5-chi2
+    #     self.eBBH = None  # eBBH array
+    #     self.usize = None  # size of the universe
+    #     self.ifo_list = []  # list of ifos
+    #     self.eventID = [0, 0, 0]  # event ID
+    #     self.type = [0, 0, 0]  # event type
+    #     self.name = [0, 0, 0]  # event name
+    #     self.log = []
+    #     self.rate = []
+    #     self.volume = []
+    #     self.size = []
+    #     self.gap = []
+    #     self.lag = []
+    #     self.slag = [0, 0, 0]
+    #     self.strain = []
+    #     self.phi = []
+    #     self.theta = []
+    #     self.psi = []
+    #     self.iota = []
+    #     self.bp = []
+    #     self.bx = []
+    #     self.time = []
+    #     self.gps = []
+    #     self.right = []
+    #     self.left = []
+    #     self.duration = []
+    #     self.start = []
+    #     self.stop = []
+    #     self.frequency = []
+    #     self.low = []
+    #     self.high = []
+    #     self.bandwidth = []
+    #     self.hrss = []
+    #     self.noise = []
+    #     self.erA = []
+    #     self.Psm = []
+    #     self.null = []
+    #     self.nill = []
+    #     self.mass = []
+    #     self.spin = []
+    #     self.snr = []
+    #     self.xSNR = []
+    #     self.sSNR = []
+    #     self.iSNR = []
+    #     self.oSNR = []
+    #     self.ioSNR = []
+    #     self.Deff = []
 
     def output(self, net, ID, LAG):
         """
@@ -83,6 +150,14 @@ class Event:
         :type LAG: int
         :return:
         """
+        self.rho = [0, 0, 0]
+        self.netcc = [0, 0, 0]
+        self.neted = [0, 0, 0]
+        self.eventID = [0, 0, 0]
+        self.type = [0, 0, 0]
+        self.slag = [0, 0, 0]
+
+
         pwc = net.getwc(LAG)
         inRate = net.getifo(0).rate
         pat0 = True if net.pattern == 0 else False
@@ -214,14 +289,14 @@ class Event:
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
-    def json(self):
-        """
-        Return a JSON representation of the event
-
-        :return: JSON format of the instance
-        :rtype: str
-        """
-        return json.dumps(self.__dict__)
+    # def json(self):
+    #     """
+    #     Return a JSON representation of the event
+    #
+    #     :return: JSON format of the instance
+    #     :rtype: str
+    #     """
+    #     return json.dumps(self.__dict__)
 
     def summary(self, job_id, id):
         """
