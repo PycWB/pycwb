@@ -27,8 +27,8 @@ parser.add_argument('--work-dir',
                     help='the working directory')
 
 # force overwrite
-parser.add_argument('--overwrite',
-                    '-o',
+parser.add_argument('--force-overwrite',
+                    '-f',
                     action='store_true',
                     default=False,
                     help='overwrite the existing results')
@@ -57,6 +57,12 @@ parser.add_argument('--threads',
                     default=0,
                     help='the number of threads, if it set to 0, it will use the value from the user parameter file')
 
+# no subprocess
+parser.add_argument('--no-subprocess',
+                    action='store_true',
+                    default=False,
+                    help='run the search in the main process, by default False (Set to True for macOS development)')
+
 # Parse the arguments
 args = parser.parse_args()
 
@@ -76,4 +82,4 @@ if args.submit:
 else:
     print("Running the search locally.")
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, working_dir=args.work_dir, overwrite=args.overwrite, nproc=args.threads)
+    search(args.user_parameter_file, working_dir=args.work_dir, no_subprocess=args.no_subprocess, overwrite=args.force_overwrite, nproc=args.threads)
