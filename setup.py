@@ -26,6 +26,7 @@ install_requires = [
     "scipy",
     "pillow>=9.0.0",
     "click",
+    "orjson",
     # "nds2-client",
     # "python-nds2-client"
 ]
