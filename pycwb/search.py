@@ -7,6 +7,7 @@ import click
 import pycwb
 import matplotlib.pyplot as plt
 
+from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.utils.dep_check import check_dependencies
 
 if check_dependencies(['autoencoder', 'reconstruction', 'logger', 'read_data', 'data_conditioning', 'coherence',
@@ -32,7 +33,7 @@ from pycwb.modules.plot_map.world_map import plot_world_map, plot_skymap_contour
 logger = logging.getLogger(__name__)
 
 
-def analyze_job_segment(config, job_seg):
+def analyze_job_segment(config, job_seg, plot, compress_json):
     """Analyze one job segment with the given configuration
 
     This function includes the following stages:
@@ -86,7 +87,8 @@ def analyze_job_segment(config, job_seg):
 
     # save the results
     for i, event in enumerate(events):
-        save_likelihood_data(job_id, i+1, config.outputDir, event, clusters[i])
+        save_dataclass_to_json(event, f'{config.outputDir}/event_{job_id}_{i+1}.json', compress_json=compress_json)
+        save_dataclass_to_json(clusters[i], f'{config.outputDir}/cluster_{job_id}_{i+1}.json', compress_json=compress_json)
         # save event to catalog
         add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
 
@@ -111,28 +113,29 @@ def analyze_job_segment(config, job_seg):
         # TODO: save to event file
         print(f"Glitchness: {glitchness}")
 
-    # plot the likelihood map
-    for i, cluster in enumerate(clusters):
-        if cluster.cluster_status != -1:
-            continue
-        plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
-        plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
+    if plot:
+        # plot the likelihood map
+        for i, cluster in enumerate(clusters):
+            if cluster.cluster_status != -1:
+                continue
+            plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
+            plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
 
-    for i, event in enumerate(events):
-        if event.nevent == 0:
-            continue
-        # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-        # TODO: plot in parallel
-        for key in skymap_statistics[i].keys():
-            plot_skymap_contour(skymap_statistics[i],
-                                key=key,
-                                reconstructed_loc=(event.phi[0], event.theta[0]),
-                                detector_loc=(event.phi[3], event.theta[3]),
-                                resolution=1,
-                                filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
-        # save the skymap statistics as pickle file
-        with open(f'{config.outputDir}/skymap_statistics_{job_id}_{i+1}.pkl', 'wb') as f:
-            pickle.dump(skymap_statistics[i], f)
+        for i, event in enumerate(events):
+            if event.nevent == 0:
+                continue
+            # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+            # TODO: plot in parallel
+            for key in skymap_statistics[i].keys():
+                plot_skymap_contour(skymap_statistics[i],
+                                    key=key,
+                                    reconstructed_loc=(event.phi[0], event.theta[0]),
+                                    detector_loc=(event.phi[3], event.theta[3]),
+                                    resolution=1,
+                                    filename=f'{config.outputDir}/{key}_{job_id}_{i+1}.png')
+            # save the skymap statistics as pickle file
+            with open(f'{config.outputDir}/skymap_statistics_{job_id}_{i+1}.pkl', 'wb') as f:
+                pickle.dump(skymap_statistics[i], f)
 
     # calculate the performance
     end_time = time.perf_counter()
@@ -143,7 +146,7 @@ def analyze_job_segment(config, job_seg):
 
 
 def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=None, log_level='INFO',
-           no_subprocess=False, overwrite=False, nproc=None):
+           no_subprocess=False, overwrite=False, nproc=None, plot=True, compress_json=True):
     """Main function to run the search
 
     This function will read the user parameters, select the job segments, create the catalog,
@@ -165,6 +168,10 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
         overwrite the existing results, by default False
     nproc : int, optional
         number of threads to use, by default None (use the value in user parameters)
+    plot : bool, optional
+        plot the results, by default True
+    compress_json : bool, optional
+        compress the json files, by default True
     """
     # create working directory
     working_dir = os.path.abspath(working_dir)
@@ -228,9 +235,9 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     logger.info("Start analyzing job segments")
     for job_seg in job_segments:
         if no_subprocess:
-            analyze_job_segment(config, job_seg)
+            analyze_job_segment(config, job_seg, plot=plot, compress_json=compress_json)
             # gc.collect()
         else:
-            process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
+            process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg, plot, compress_json))
             process.start()
             process.join()
