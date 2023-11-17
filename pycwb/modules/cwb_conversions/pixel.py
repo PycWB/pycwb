@@ -1,5 +1,5 @@
 import ROOT
-
+from pycwb.types.network_pixel import Pixel, PixelData
 
 def convert_pixel_to_netpixel(pixel, c_id):
     """
@@ -39,3 +39,14 @@ def convert_to_pixdata(pixeldata):
     pixdata.rank = pixeldata.rank
     pixdata.index = pixeldata.index
     return pixdata
+
+
+def convert_netpixel_to_pixel(netpixel):
+    pixel = Pixel(time=netpixel.time, frequency=netpixel.frequency, layers=netpixel.layers, rate=netpixel.rate,
+                    likelihood=netpixel.likelihood, null=netpixel.null, theta=netpixel.theta, phi=netpixel.phi,
+                    ellipticity=netpixel.ellipticity, polarisation=netpixel.polarisation, core=netpixel.core,
+                    data=[PixelData(d.noiserms, d.wave, d.w_90, d.asnr, d.a_90, d.rank, d.index) for d in netpixel.data],
+                    td_amp=[t for t in netpixel.tdAmp], neighbors=list(netpixel.neighbors))
+
+    return pixel
+
