@@ -8,7 +8,8 @@ from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.network_cluster import FragmentCluster
 from pycwb.types.network import Network
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_to_wseries
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_to_wseries, \
+    convert_netcluster_to_fragment_clusters
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
         # FIXME: why do we need to deepcopy the cluster?
         #  If we don't, macos will crash with thread-saftey issue
         #  Maybe because the pwc.clear() will delete the cluster?
-        fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+        fragment_cluster = copy.deepcopy(convert_netcluster_to_fragment_clusters(pwc))
         fragment_clusters.append(fragment_cluster)
 
         logger_info += "%3d |%9d |%7d \n" % (j, fragment_cluster.event_count(), fragment_cluster.pixel_count())

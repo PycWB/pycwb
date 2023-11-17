@@ -2,7 +2,8 @@ import copy
 
 import logging
 import time
-from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries
+from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries, \
+    convert_netcluster_to_fragment_clusters
 from pycwb.modules.sparse_series import sparse_table_from_fragment_clusters
 from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.types.network_cluster import FragmentCluster
@@ -135,7 +136,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         # convert to FragmentCluster and append to list
-        fragment_cluster = copy.deepcopy(FragmentCluster().from_netcluster(pwc))
+        fragment_cluster = copy.deepcopy(convert_netcluster_to_fragment_clusters(pwc))
 
         # remove rejected clusters as done in netcluster.cpf()
         fragment_cluster.remove_rejected()

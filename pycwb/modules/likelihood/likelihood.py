@@ -2,8 +2,10 @@ import copy
 import time
 import pickle
 import logging
+import orjson
 from pycwb.config import Config
-from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster
+from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, \
+    convert_netcluster_to_fragment_clusters
 from pycwb.types.network_cluster import FragmentCluster
 from pycwb.types.network_event import Event
 
@@ -124,7 +126,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     else:
         selected_core_pixels = network.likelihood2G(config.search, lag)
 
-    cluster = copy.deepcopy(FragmentCluster().from_netcluster(network.get_cluster(lag))).clusters[0]
+    cluster = copy.deepcopy(convert_netcluster_to_fragment_clusters(network.get_cluster(lag))).clusters[0]
 
     event = Event()
     event.output(network.net, k + 1, 0)
@@ -165,11 +167,13 @@ def save_likelihood_data(job_id, cluster_id, output_dir, event, cluster):
     # TODO: sky statistics, likelihood distribution, null-hypothesis distribution, waveform, etc.
     try:
         # save event to file
-        with open(f'{output_dir}/event_{job_id}_{cluster_id}.json', 'w') as f:
-            f.write(event.json())
+        with open(f'{output_dir}/event_{job_id}_{cluster_id}.json', 'wb') as f:
+            f.write(orjson.dumps(event, option=orjson.OPT_SERIALIZE_NUMPY))
         # save cluster to pickle
         with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.pkl', 'wb') as f:
             pickle.dump(cluster, f)
+        with open(f'{output_dir}/cluster_{job_id}_{cluster_id}.json', 'wb') as f:
+            f.write(orjson.dumps(cluster, option=orjson.OPT_SERIALIZE_NUMPY))
 
     except Exception as e:
         logger.error(e)
