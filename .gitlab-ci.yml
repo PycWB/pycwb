@@ -62,7 +62,7 @@ publish:
   script:
     - echo "Deploying to PyPI..."
     - pip install twine
-    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*.tar.gz
 
 pages:
   stage: post-deploy
