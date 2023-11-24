@@ -26,6 +26,7 @@ def check_and_load_wavelet(ROOT):
                     raise Exception(f"Cannot find wavelet library in {wavelet_path} or {wavelet_path_additional}")
                 else:
                     wavelet_path = wavelet_path_additional
+                    site_packages = site_packages.replace("dist-packages", "site-packages")
         print(f"Trying to load wavelet library from {wavelet_path}")
         ROOT.gInterpreter.AddIncludePath(f"{site_packages}/include")
         ROOT.gSystem.Load(wavelet_path)
