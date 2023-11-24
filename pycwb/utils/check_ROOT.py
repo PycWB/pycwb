@@ -16,7 +16,7 @@ def check_and_load_wavelet(ROOT):
         print("Loading wavelet library")
     try:
         site_packages = site.getsitepackages()[0]
-        wavelet_path = f"{site_packages}/lib/wavelet"
+        wavelet_path = f"{site_packages}/lib/wavelet.so"
         # if wavelet_path does not exist, try the additional path
         if not os.path.exists(wavelet_path):
             # if site_packages ends with dist-packages, replace it with site-packages for a second try
