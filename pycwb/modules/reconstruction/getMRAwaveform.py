@@ -173,7 +173,6 @@ def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len):
     return valid_indices_values_00, valid_x00 * a00, valid_indices_values_90, valid_x90 * a90, s00, s90
 
 
-@njit
 def _get_base_wave(wdm_filter, max_layer, m, n):
     N = len(wdm_filter)
     M = max_layer
@@ -209,7 +208,6 @@ def _get_base_wave(wdm_filter, max_layer, m, n):
     return n * M - (N-1), w
 
 
-@njit
 def _get_base_wave_quad(wdm_filter, max_layer, m, n):
     N = len(wdm_filter)
     M = max_layer
@@ -244,7 +242,6 @@ def _get_base_wave_quad(wdm_filter, max_layer, m, n):
     return n * M - (N-1), w
 
 
-@njit
 def get_base_wave(max_layer: int, wdm_filter: np.array, tf_index: int, quad: bool) -> np.array:
     M1 = max_layer + 1
     m = tf_index % M1
