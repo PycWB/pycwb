@@ -119,7 +119,10 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     pwc.cpf(convert_fragment_clusters_to_netcluster(fragment_cluster), False)
 
     pwc.setcore(False, k + 1)
-    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)  # attach TD amp to pixels
+    # attach TD amp to pixels, which will be used in likelihood calculation to pa(_vtd, v00), pA(_vTD, v90)
+    # todo: check how this is implemented
+    # todo: why this complex amplitude is not loaded before?
+    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
 
     if network.pattern > 0:
         selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
