@@ -49,6 +49,11 @@ or run with command line
 pycwb_search ./user_parameters.yaml
 ```
 
+## Interactive tutorial
+
+ - Google Colab tutorial: [pycWB_GW150914.ipynb](https://colab.research.google.com/github/PycWB/pycwb/blob/main/examples/colab/pycWB_GW150914.ipynb)
+
+
 ## Documentation
 
 Documentation can be found in [https://yumeng.xu.docs.ligo.org/pycwb](https://yumeng.xu.docs.ligo.org/pycwb)
