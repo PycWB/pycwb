@@ -50,7 +50,7 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     logger.info("Start coherence" + " in parallel" if parallel else "")
 
     # upper sample factor
-    up_n = config.rateANA // 1024
+    up_n = int(config.rateANA / 1024)
     if up_n < 1:
         up_n = 1
 
@@ -119,6 +119,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     alp = 0.0
     for n in range(len(config.ifo)):
         ts = convert_to_wavearray(tf_maps[n])
+        ts.Edge = config.segEdge
         # TODO: WSeries.putLayer is updated internally, here requires the wave packet pattern
         # https://gwburst.gitlab.io/documentation/latest/html/running.html#wave-packet-parameters
         alp += net.get_ifo(n).getTFmap().maxEnergy(ts, wdm.wavelet, config.max_delay, up_n, net.pattern)
