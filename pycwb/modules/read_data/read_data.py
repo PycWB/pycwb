@@ -5,6 +5,7 @@ import logging
 from multiprocessing import Pool
 import time
 
+from ..cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
 from ..job_segment import WaveSegment
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
                          f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
             raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
 
+        logger.info(f'data info: start={ifo_data.start_time}, duration={ifo_data.duration}, rate={ifo_data.sample_rate}')
         # append to final data
         merged_data.append(ifo_data)
 
@@ -184,7 +186,12 @@ def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
 
     i = config.ifo.index(frame.ifo)
     data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
+    logger.info(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     if int(data.sample_rate.value) != int(config.inRate):
-        data = data.resample(config.inRate)
-        logger.info(f'Resample data from {data.sample_rate.value} to {config.inRate}')
+        sample_rate_old = data.sample_rate.value
+        w = convert_to_wavearray(data)
+        w.Resample(config.inRate)
+        data = convert_wavearray_to_timeseries(w)
+        # data = data.resample(config.inRate)
+        logger.info(f'Resample data from {sample_rate_old} to {config.inRate}')
     return check_and_resample(data, config, i)

@@ -1,5 +1,11 @@
 import numpy as np
 from gwpy.timeseries import TimeSeries
+import logging
+
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries, \
+    convert_wavearray_to_pycbc_timeseries
+
+logger = logging.getLogger(__name__)
 
 
 def data_check(data: TimeSeries, sample_rate: int):
@@ -52,10 +58,16 @@ def check_and_resample(data, config, ifo_index):
 
     # resampling
     if config.fResample > 0:
+        logger.info(f"Resampling data from {data.sample_rate} to {config.fResample}")
         data = data.resample(1.0 / config.fResample)
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
-    data = data.resample(1.0 / new_sample_rate)
+    if new_sample_rate != config.inRate:
+        logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
+        w = convert_to_wavearray(data)
+        w.Resample(new_sample_rate)
+        data = convert_wavearray_to_pycbc_timeseries(w)
+    # data = data.resample(1.0 / new_sample_rate)
 
     # rescaling
     data.data *= (2 ** config.levelR) ** 0.5
