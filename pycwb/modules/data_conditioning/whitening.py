@@ -23,6 +23,16 @@ def whitening(config, h):
     """
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
     wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
+
+    # check if whitening WDM filter lenght is less than cwb scratch
+    wdmFlen = wdm_white.m_H / config.rateANA
+    if wdmFlen > config.segEdge + 0.001:
+        logger.error("Error - filter scratch must be <= cwb scratch!!!")
+        logger.error(f"filter length : {wdmFlen} sec")
+        logger.error(f"cwb   scratch : {config.segEdge} sec")
+        raise ValueError("Filter scratch must be <= cwb scratch!!!")
+    else:
+        logger.info(f"WDM filter max length = {wdmFlen} (sec)")
     ##########################################
     # cWB2G whitening method
     ##########################################
