@@ -41,9 +41,15 @@ def supercluster(config, network, fragment_clusters, tf_maps):
     sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 
     # decrease skymap resolution to improve subNetCut performances
-    skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
+    if config.healpix > 0:
+        skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
+    else:
+        raise NotImplementedError("Only healpix is supported")
+
     if skyres > 0:
         network.update_sky_map(config, skyres)
+        network.net.setAntenna()
+        network.net.setDelay(config.refIFO)
         network.update_sky_mask(config, skyres)
 
     hot = []
@@ -88,9 +94,9 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         logger.info("    coher clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
 
         if config.l_high == config.l_low:
-            network.net.pair = False
+            cluster.pair = False
         if network.pattern != 0:
-            network.net.pair = False
+            cluster.pair = False
 
         cluster.supercluster('L',network.net.e2or,config.TFgap,False)
         logger.info("    super clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
@@ -147,14 +153,15 @@ def supercluster(config, network, fragment_clusters, tf_maps):
 
     n_event = sum([c.event_count() for c in pwc_list])
     n_pixels = sum([c.pixel_count(-1) for c in pwc_list])
-    all_pixels = sum([c.pixel_count(1) + c.pixel_count(-1) for c in pwc_list])
-    frac = n_pixels / all_pixels if all_pixels > 0 else 0
+    # Since we dropped all the rejected clusters, we can't calculate the fraction
+    # all_pixels = sum([c.pixel_count(1) + c.pixel_count(-1) for c in pwc_list])
+    # frac = n_pixels / all_pixels if all_pixels > 0 else 0
 
     logger.info("Supercluster done")
-    if frac:
-        logger.info("total  clusters|pixels|frac : %6d|%d|%f", n_event, n_pixels, frac)
-    else:
-        logger.info("total  clusters             : %6d", n_event)
+    # if frac:
+    logger.info("total  clusters|pixels : %6d|%d", n_event, n_pixels)
+    # else:
+    #     logger.info("total  clusters             : %6d", n_event)
 
     # restore skymap resolution
     network.restore_skymap(config, skyres)
