@@ -40,7 +40,7 @@ class Network:
         for i, ifo in enumerate(config.ifo):
             self.add_detector(ifo)
 
-        self.load_strains(tf_list, nRMS_list)
+        self.load_strains(tf_list, nRMS_list, config.segEdge)
 
         self.update_sky_map(config)
 
@@ -63,7 +63,7 @@ class Network:
         self.set_time_shift(config.lagSize, config.lagStep, config.lagOff, config.lagMax,
                             config.lagBuffer, config.lagMode, config.lagSite)
 
-    def load_strains(self, tf_maps, nRMS_list):
+    def load_strains(self, tf_maps, nRMS_list, segEdge):
         """
         Load time-frequency maps and noise RMS time-frequency maps into cwb network.
 
@@ -77,6 +77,7 @@ class Network:
         for i in range(self.ifo_size):
             ifo = self.net.getifo(i)
             tf_map = convert_to_wseries(tf_maps[i])
+            tf_map.Edge = segEdge
             nRMS = convert_to_wseries(nRMS_list[i])
             ifo.HoT = tf_map
             ifo.TFmap = tf_map
