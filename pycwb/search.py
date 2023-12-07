@@ -86,9 +86,13 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
     # likelihood
     events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
-    with multiprocessing.Pool(processes=min(config.nproc, len(events))) as pool:
-        pool.starmap(post_production, [(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
-                                       for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics)])
+    if config.nproc <= 1:
+        for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics):
+            post_production(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
+    else:
+        with multiprocessing.Pool(processes=min(config.nproc, len(events))) as pool:
+            pool.starmap(post_production, [(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
+                                           for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics)])
     # for i, tf_map in enumerate(tf_maps):
     #     plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
 
@@ -101,6 +105,10 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
 
 
 def post_production(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json):
+    # post-production only for selected events
+    if cluster.cluster_status != -1:
+        return
+
     # extra info will be saved
     extra_info = {}
 
@@ -116,10 +124,6 @@ def post_production(config, job_id, event, cluster, event_skymap_statistics, plo
     save_dataclass_to_json(event_skymap_statistics, f'{trigger_folder}/skymap_statistics.json', compress_json=compress_json)
     # save event to catalog
     add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, f"{event.stop[0]}_{event.hash_id}"))
-
-    # post-production only for selected events
-    if cluster.cluster_status != -1:
-        return
 
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True)

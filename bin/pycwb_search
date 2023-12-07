@@ -63,6 +63,11 @@ parser.add_argument('--no-subprocess',
                     default=False,
                     help='run the search in the main process, by default False (Set to True for macOS development)')
 
+parser.add_argument('--compress_json',
+                    action='store_true',
+                    default=False,
+                    help='compress the json files, by default False')
+
 # Parse the arguments
 args = parser.parse_args()
 
@@ -82,4 +87,5 @@ if args.submit:
 else:
     print("Running the search locally.")
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, working_dir=args.work_dir, no_subprocess=args.no_subprocess, overwrite=args.force_overwrite, nproc=args.threads)
+    search(args.user_parameter_file, working_dir=args.work_dir, no_subprocess=args.no_subprocess,
+           overwrite=args.force_overwrite, nproc=args.threads, compress_json=args.compress_json)
