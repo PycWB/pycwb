@@ -93,12 +93,12 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
     """
     h = ROOT.wavearray(np.double)(len(data.value))
 
-    data_val = np.round(data.value, ROUNDED_DIGITS)
+    # data_val = np.round(data.value, ROUNDED_DIGITS)
 
     # if not hasattr(ROOT, "_copy_to_wavearray"):
     #     declare_function()
 
-    ROOT.pycwb_copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.value))
+    ROOT.pycwb_copy_to_wavearray(data.value.ctypes.data_as(c_double_p), h, len(data.value))
 
     h.start(np.asarray(data.t0, dtype=np.double))
     h.rate(int(1. / np.asarray(data.dt, dtype=np.double)))
@@ -117,12 +117,12 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
 
     h = ROOT.wavearray(np.double)(len(data.data))
 
-    data_val = np.round(data.data, ROUNDED_DIGITS)
+    # data_val = np.round(data.data, ROUNDED_DIGITS)
 
     # if not hasattr(ROOT, "_copy_to_wavearray"):
     #     declare_function()
 
-    ROOT.pycwb_copy_to_wavearray(data_val.ctypes.data_as(c_double_p), h, len(data.data))
+    ROOT.pycwb_copy_to_wavearray(data.data.ctypes.data_as(c_double_p), h, len(data.data))
 
     h.start(np.asarray(data.start_time, dtype=np.double))
     h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
