@@ -1,4 +1,4 @@
-import os, time
+import os, time, sys
 import multiprocessing
 import logging
 import pickle
@@ -194,11 +194,13 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
 
     # set env HOME_WAT_FILTERS
     if not os.environ.get('HOME_WAT_FILTERS'):
-        logger.warning("HOME_WAT_FILTERS is not set, default to pycwb/vendor")
-        logger.warning("Please download the latest version of cwb config and set HOME_WAT_FILTERS to the path of folder XTALKS")
-        pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pycwb_path)}/vendor"
-        logger.info(f"Set HOME_WAT_FILTERS to {os.environ['HOME_WAT_FILTERS']}")
+        logger.error("HOME_WAT_FILTERS is not set.")
+        logger.info("Please download the latest version of cwb config "
+                     "and set HOME_WAT_FILTERS to the path of folder XTALKS")
+        logger.info("For example:")
+        logger.info("    git clone https://gitlab.com/gwburst/public/config_o3")
+        logger.info("    export HOME_WAT_FILTERS=$(pwd)/config_o3/XTALKS")
+        sys.exit(1)
 
     # read config
     logger.info("Reading user parameters")
