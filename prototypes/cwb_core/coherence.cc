@@ -90,6 +90,7 @@ netcluster *getNetworkPixels(int nIFO, std::vector <WSeries<double>> tf_maps, st
         }
     }
 
+    // set time lag for all detectors
     for (n = 0; n < nIFO; n++) {
         b = lagShift[n];    // shift in seconds
         K = int((b - a) * R + 0.001);                     // time shift wrt reference
@@ -109,6 +110,9 @@ netcluster *getNetworkPixels(int nIFO, std::vector <WSeries<double>> tf_maps, st
     if (ie > I - 1) ie = I - 1;                           // required by catalog
     if (ib < 1) ib = 1;                             // required by catalog
 
+    // NN = number of good samples in the layer = len(slice) - 2*jB
+    // jB = number of samples in the edges
+    // jE = last good sample in the layer
     slice S = pTF->getSlice(0);
     jE = S.size() - jB;                              // last good sample in the layer
     NN = jE - jB;                                    // #of good samples in the layer
@@ -117,6 +121,9 @@ netcluster *getNetworkPixels(int nIFO, std::vector <WSeries<double>> tf_maps, st
         exit(1);
     }
 
+    // **************************
+    // apply veto and sum energy
+    // **************************
     for (jj = 0; jj < NN; jj++) {                       // loop over time stamps
 
         double VETO = 1.;
@@ -130,7 +137,7 @@ netcluster *getNetworkPixels(int nIFO, std::vector <WSeries<double>> tf_maps, st
             for (i = 0; i < I; i++) pmap[i] += *PDATA++;    // sum energy
             in[n]++;                                 // increment index pointer
         }
-
+        // Note: Apply veto and degrade loud pixels
         for (i = 0; i < I; i++) {
             pmap[i] *= VETO;
             if (pmap[i] < Eo || i < ib) pmap[i] = 0.;       // zero sub-threshold pixels

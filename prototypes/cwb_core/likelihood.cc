@@ -273,13 +273,13 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
 
     // Allocate new memory and push to the containers
     for (int i = 0; i < NIFO; i++) {
-        _vtd.push_back(alloc_and_init(tsize * V4));
-        _vTD.push_back(alloc_and_init(tsize * V4));
-        _eTD.push_back(alloc_and_init(tsize * V4));
-        _APN.push_back(alloc_and_init(V4 * 3 + 16));
-        _DAT.push_back(alloc_and_init(V4 * 3 + 8));
-        _SIG.push_back(alloc_and_init(V4 * 3 + 8));
-        _NUL.push_back(alloc_and_init(V4 * 3 + 8));
+        _vtd.push_back(alloc_and_init(tsize * V4));  // array of aligned vectors
+        _vTD.push_back(alloc_and_init(tsize * V4));  // array of aligned vectors
+        _eTD.push_back(alloc_and_init(tsize * V4));  // array of aligned vectors
+        _APN.push_back(alloc_and_init(V4 * 3 + 16)); // concatenated arrays {f+}{fx}{rms}{a+,A+,ax,AX}
+        _DAT.push_back(alloc_and_init(V4 * 3 + 8));  // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
+        _SIG.push_back(alloc_and_init(V4 * 3 + 8));  // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
+        _NUL.push_back(alloc_and_init(V4 * 3 + 8));  // concatenated arrays {amp}{AMP}{norm}{n,N,c,s}
     }
 
     // data arrays for polar coordinates storage : [0,1] = [radius,angle]
@@ -517,6 +517,10 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
         for (l = lb; l <= le; l++) {                            // loop over sky locations
             skyProb.data[l] = -1.e12;
             if (!MM[l]) continue;                           // apply sky mask
+            // TODO: here pa(_vtd, v00), pA(_vTD, v90) these are (not) the same variables, a_00, a_90 are copied from these two variables
+            // TODO: v00 and v90 are the time delay data at position l, pa and pA are the full data
+            // TODO: ml is not zero for ifo >= 1, network.setDelayIndex
+
             pnt_(v00, pa, ml, (int) l, (int) V4);            // pointers to first pixel 00 data
             pnt_(v90, pA, ml, (int) l, (int) V4);            // pointers to first pixel 90 data
             Eo = _avx_loadata_ps(v00, v90, pd, pD, En, _AVX, V4);  // calculate data stats and store in _AVX
@@ -578,6 +582,7 @@ long likelihoodWP(std::vector <netcluster> wc_List, size_t nIFO, std::vector <de
                 nPolarisation.set(l, Mp);
             }
 
+            // TODO: find the optimal sky location
             if (AA >= STAT) {
                 STAT = AA;
                 lm = l;
