@@ -124,6 +124,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     # todo: why this complex amplitude is not loaded before?
     pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
 
+    network.net.MRA = True
     if network.pattern > 0:
         selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
     else:
