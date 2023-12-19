@@ -6,7 +6,6 @@ logger = logging.getLogger(__name__)
 
 
 def plot_reconstructed_waveforms(outputDir, reconstructed_waves, xlim):
-    logger.info('Plotting reconstructed waveforms')
     mplstyle.use('fast')
 
     for j, reconstructed_wave in enumerate(reconstructed_waves):
@@ -15,4 +14,4 @@ def plot_reconstructed_waveforms(outputDir, reconstructed_waves, xlim):
         plt.savefig(f'{outputDir}/reconstructed_wave_ifo_{j+1}.png')
         plt.close()
         # log the path to the reconstructed waveforms
-        logger.info(f'Plot saved to {outputDir}/reconstructed_wave_ifo_{j+1}.png')
+        logger.info(f'Plot reconstructed waveforms saved to {outputDir}/reconstructed_wave_ifo_{j+1}.png')

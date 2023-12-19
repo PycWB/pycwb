@@ -36,7 +36,6 @@ def plot_world_map(phi, theta, filename=None):
 
 def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None,
                         resolution=2):
-    logger.info(f'Plotting {key} skymap')
     mplstyle.use('fast')
 
     # get the [key] property from the skymap
@@ -102,6 +101,6 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
     if filename:
         plt.savefig(filename)
         plt.close()
-        logger.info(f'Plot saved to {filename}')
+        logger.info(f'Plot {key} skymap saved to {filename}')
     else:
         return plt
