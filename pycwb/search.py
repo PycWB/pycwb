@@ -132,10 +132,7 @@ def post_production(config, job_id, event, cluster, event_skymap_statistics, plo
                                                'signal', 0, True)
 
     # calculate the glitchness
-    glitchness = get_glitchness(config, reconstructed_waves, event.sSNR, event.likelihood)
-    # TODO: save to event file
-    print(f"Glitchness: {glitchness}")
-    extra_info['glitchness'] = glitchness[0][0]
+    extra_info['glitchness'] = get_glitchness(config, reconstructed_waves, event.sSNR, event.likelihood)
 
     # save the extra info
     save_dataclass_to_json(extra_info, f'{trigger_folder}/extra_info.json', compress_json=compress_json)
@@ -206,8 +203,10 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     if not os.environ.get('HOME_WAT_FILTERS'):
         logger.error("HOME_WAT_FILTERS is not set.")
         logger.info("Please download the latest version of cwb config "
-                     "and set HOME_WAT_FILTERS to the path of folder XTALKS")
+                     "and set HOME_WAT_FILTERS to the path of folder XTALKS.")
+        logger.info("Make sure you have installed git lfs before cloning the repository.")
         logger.info("For example:")
+        logger.info("    git lfs install")
         logger.info("    git clone https://gitlab.com/gwburst/public/config_o3")
         logger.info("    export HOME_WAT_FILTERS=$(pwd)/config_o3/XTALKS")
         sys.exit(1)
