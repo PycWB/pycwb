@@ -1,9 +1,13 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
+import matplotlib.style as mplstyle
 import numpy as np
 import healpy as hp
+import logging
 
 from pycwb.utils.skymap_coord import convert_cwb_to_geo
+
+logger = logging.getLogger(__name__)
 
 
 def plot_world_map(phi, theta, filename=None):
@@ -30,9 +34,13 @@ def plot_world_map(phi, theta, filename=None):
         return plt
 
 
-def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None, resolution=2):
+def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=None, detector_loc=None, filename=None,
+                        resolution=2):
+    logger.info(f'Plotting {key} skymap')
+    mplstyle.use('fast')
+
     # get the [key] property from the skymap
-    skymap = skymap_statistic[key]
+    skymap = np.array(skymap_statistic[key])
 
     # create theta and phi, add one extra point and remove it to make sure
     # the last point is not overlapped with the first point
@@ -45,8 +53,8 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
     flatten_phi = phi.flatten()
 
     # convert to HEALPix indices and get the values for each point
-    healpix_indices = [hp.ang2pix(2 ** 7, flatten_theta[i], flatten_phi[i]) for i in range(len(flatten_theta))]
-    values = [skymap[i] for i in healpix_indices]
+    healpix_indices = hp.ang2pix(2 ** 7, flatten_theta, flatten_phi)
+    values = skymap[healpix_indices]
 
     # reshape to 2D map
     values = np.reshape(values, theta.shape)
@@ -73,7 +81,7 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
     #################
     import matplotlib.pyplot as plt
     plt.figure(figsize=(12, 6))
-    plt.hist2d(phi_deg.ravel(), theta_deg.ravel(), weights=values.ravel(), bins=(360*resolution, 180*resolution))
+    plt.hist2d(phi_deg.ravel(), theta_deg.ravel(), weights=values.ravel(), bins=(360 * resolution, 180 * resolution))
 
     if reconstructed_loc:
         rec_x, rec_y = convert_cwb_to_geo(reconstructed_loc[0], reconstructed_loc[1])
@@ -93,6 +101,7 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
     plt.legend()
     if filename:
         plt.savefig(filename)
-        plt.clf()
+        plt.close()
+        logger.info(f'Plot saved to {filename}')
     else:
         return plt

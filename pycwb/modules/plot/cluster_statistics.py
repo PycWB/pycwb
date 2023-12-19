@@ -1,4 +1,8 @@
 from gwpy.spectrogram import Spectrogram
+import matplotlib.style as mplstyle
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def plot_statistics(cluster, key='likelihood', filename=None):
@@ -12,6 +16,9 @@ def plot_statistics(cluster, key='likelihood', filename=None):
     :type filename: str, optional
     """
     # plot the statistics
+    logger.info(f'Plotting {key} statistics of the event')
+    mplstyle.use('fast')
+
     merged_map, start, dt, df = cluster.get_sparse_map(key)
 
     plt = Spectrogram(merged_map, t0=start, dt=dt, f0=0, df=df).plot()
@@ -19,3 +26,5 @@ def plot_statistics(cluster, key='likelihood', filename=None):
     # save to png
     if filename is not None:
         plt.savefig(filename)
+        logger.info(f'Plot saved to {filename}')
+    plt.close()
