@@ -1,4 +1,3 @@
-import copy
 import time
 from multiprocessing import Pool
 import ROOT
@@ -171,7 +170,7 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
         # FIXME: why do we need to deepcopy the cluster?
         #  If we don't, macos will crash with thread-saftey issue
         #  Maybe because the pwc.clear() will delete the cluster?
-        fragment_cluster = copy.deepcopy(convert_netcluster_to_fragment_clusters(pwc))
+        fragment_cluster = convert_netcluster_to_fragment_clusters(pwc)
         fragment_clusters.append(fragment_cluster)
 
         logger_info += "%3d |%9d |%7d \n" % (j, fragment_cluster.event_count(), fragment_cluster.pixel_count())
