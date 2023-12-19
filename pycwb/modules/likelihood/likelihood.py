@@ -72,8 +72,14 @@ def likelihood(config, network, fragment_clusters):
 
             for key in skymap_statistic:
                 var = getattr(network.net, key)
-                L = var.size()
-                skymap_statistic[key] = [var.get(l) for l in range(L)]
+
+                layer_size = var.value.size()
+                l = []
+                for i in range(layer_size):
+                    l.extend(list(var.value[i]))
+                # L = var.size()
+                # skymap_statistic[key] = [var.get(l) for l in range(L)]
+                skymap_statistic[key] = l
 
             skymap_statistics.append(skymap_statistic)
 
