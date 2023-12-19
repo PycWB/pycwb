@@ -7,7 +7,7 @@ from multiprocessing import Pool
 logger = logging.getLogger(__name__)
 
 
-def data_conditioning(config, strains, parallel=True):
+def data_conditioning(config, strains):
     """
     Performs data conditioning on the given strain data, including regression and whitening
 
@@ -21,7 +21,7 @@ def data_conditioning(config, strains, parallel=True):
     # timer
     timer_start = time.perf_counter()
 
-    if parallel:
+    if config.nproc > 1:
         logger.info("Start data conditioning in parallel")
         with Pool(processes=min(config.nproc, config.nIFO)) as p:
             data_regressions = p.starmap(regression, [(config, h) for h in strains])

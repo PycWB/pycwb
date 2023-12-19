@@ -126,10 +126,14 @@ def read_from_job_segment(config, job_seg: WaveSegment):
     timer_start = time.perf_counter()
 
     # read data from the files in parallel
-    with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
-        data = pool.starmap(_read_from_job_segment_wrapper, [
-            (config, frame, job_seg) for frame in job_seg.frames
-        ])
+    if config.nproc > 1:
+        logger.info(f'Read data from job segment {job_seg} in parallel')
+        with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
+            data = pool.starmap(_read_from_job_segment_wrapper, [
+                (config, frame, job_seg) for frame in job_seg.frames
+            ])
+    else:
+        data = [_read_from_job_segment_wrapper(config, frame, job_seg) for frame in job_seg.frames]
 
     merged_data = []
 

@@ -11,7 +11,7 @@ from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
+def coherence(config, tf_maps, nRMS_list, net=None):
     """
     Select the significant pixels
 
@@ -36,8 +36,6 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
         List of noise RMS
     net : pycwb.types.network.Network, optional
         Network object, by default None
-    parallel : bool, optional
-        Whether to use parallel, by default True
 
     Returns
     -------
@@ -46,14 +44,14 @@ def coherence(config, tf_maps, nRMS_list, net=None, parallel=True):
     """
     # calculate upsample factor
     timer_start = time.perf_counter()
-    logger.info("Start coherence" + " in parallel" if parallel else "")
+    logger.info("Start coherence" + " in parallel" if config.nproc > 1 else "")
 
     # upper sample factor
     up_n = int(config.rateANA / 1024)
     if up_n < 1:
         up_n = 1
 
-    if parallel:
+    if config.nproc > 1:
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
             fragment_clusters_multi_res = pool.starmap(_coherence_single_res,
                                                        [(i, config, tf_maps, nRMS_list, up_n) for i in
