@@ -4,7 +4,6 @@ from multiprocessing import Pool
 import ROOT
 import logging
 from pycwb.config import Config
-from pycwb.types.network_cluster import FragmentCluster
 from pycwb.types.network import Network
 from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_netcluster_to_fragment_clusters
 from pycwb.modules.multi_resolution_wdm import create_wdm_for_level

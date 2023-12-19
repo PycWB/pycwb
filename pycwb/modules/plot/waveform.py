@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 def plot_reconstructed_waveforms(outputDir, reconstructed_waves, xlim):
     logger.info('Plotting reconstructed waveforms')
     mplstyle.use('fast')
-    print(matplotlib.get_backend())
 
     for j, reconstructed_wave in enumerate(reconstructed_waves):
         plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
