@@ -97,7 +97,7 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
     plt.xlabel('RA (deg)')
     plt.ylabel('Dec (deg)')
     plt.title(f'{key} skymap')
-    plt.legend()
+    plt.legend(loc=1)
     if filename:
         plt.savefig(filename)
         plt.close()
