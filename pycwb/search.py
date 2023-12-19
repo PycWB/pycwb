@@ -88,13 +88,16 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
 
     if config.nproc <= 1:
         for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics):
-            post_production(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
+            reconstructed_waveforms = post_production(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
     else:
         with multiprocessing.Pool(processes=min(config.nproc, len(events))) as pool:
-            pool.starmap(post_production, [(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
+            reconstructed_waveforms = pool.starmap(post_production, [(config, job_id, event, cluster, event_skymap_statistics, plot, compress_json)
                                            for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics)])
     # for i, tf_map in enumerate(tf_maps):
     #     plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
+    if plot:
+        for event, cluster, event_skymap_statistics, reconstructed_waves in zip(events, clusters, skymap_statistics, reconstructed_waveforms):
+            make_plots(config, job_id, event, cluster, event_skymap_statistics, reconstructed_waves)
 
     # calculate the performance
     end_time = time.perf_counter()
@@ -108,6 +111,9 @@ def post_production(config, job_id, event, cluster, event_skymap_statistics, plo
     # post-production only for selected events
     if cluster.cluster_status != -1:
         return
+
+    logger.info(f"Post production for event {event.hash_id}")
+    start_time = time.perf_counter()
 
     # extra info will be saved
     extra_info = {}
@@ -137,21 +143,36 @@ def post_production(config, job_id, event, cluster, event_skymap_statistics, plo
     # save the extra info
     save_dataclass_to_json(extra_info, f'{trigger_folder}/extra_info.json', compress_json=compress_json)
 
-    if plot:
-        plot_reconstructed_waveforms(trigger_folder, reconstructed_waves,
-                                     xlim=(event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-        # plot the likelihood map
-        plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
-        plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
+    # print the time of running the post production
+    logger.info(f"Post production for event {event.hash_id} finished in {round(time.perf_counter() - start_time, 1)} seconds")
+    return reconstructed_waves
 
-        # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-        for key in event_skymap_statistics.keys():
-            plot_skymap_contour(event_skymap_statistics,
-                                key=key,
-                                reconstructed_loc=(event.phi[0], event.theta[0]),
-                                detector_loc=(event.phi[3], event.theta[3]),
-                                resolution=1,
-                                filename=f'{trigger_folder}/{key}.png')
+
+def make_plots(config, job_id, event, cluster, event_skymap_statistics, reconstructed_waves):
+    if cluster.cluster_status != -1:
+        return
+
+    logger.info(f"Making plots for event {event.hash_id}")
+    start_time = time.perf_counter()
+    trigger_folder = f"{config.outputDir}/trigger_{job_id}_{event.stop[0]}_{event.hash_id}"
+
+    plot_reconstructed_waveforms(trigger_folder, reconstructed_waves,
+                                 xlim=(event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+    # plot the likelihood map
+    plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
+    plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
+
+    # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+    for key in event_skymap_statistics.keys():
+        plot_skymap_contour(event_skymap_statistics,
+                            key=key,
+                            reconstructed_loc=(event.phi[0], event.theta[0]),
+                            detector_loc=(event.phi[3], event.theta[3]),
+                            resolution=1,
+                            filename=f'{trigger_folder}/{key}.png')
+
+    # print the time of making the plots
+    logger.info(f"Making plots for event {event.hash_id} finished in {round(time.perf_counter() - start_time, 1)} seconds")
 
 
 def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=None, log_level='INFO',
