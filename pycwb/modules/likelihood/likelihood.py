@@ -134,7 +134,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     else:
         selected_core_pixels = network.likelihood2G(config.search, lag)
 
-    cluster = copy.deepcopy(convert_netcluster_to_fragment_clusters(network.get_cluster(lag))).clusters[0]
+    cluster = convert_netcluster_to_fragment_clusters(network.get_cluster(lag)).clusters[0]
 
     event = Event()
     event.output(network.net, k + 1, 0)
