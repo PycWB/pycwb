@@ -141,7 +141,7 @@ class CMakeBuild(build_ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_INSTALL_PREFIX:PATH=' + extdir]
 
-        build_args = ['--', '-j4']#['--config', cfg]
+        build_args = ['--', '-j']#['--config', cfg]
 
         env = os.environ.copy()
         # env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
