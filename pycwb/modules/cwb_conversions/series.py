@@ -189,6 +189,21 @@ def convert_wavearray_to_pycbc_timeseries(h):
     return ar
 
 
+def convert_wavearray_to_nparray(h, short=False):
+    """
+    Convert wavearray to numpy array
+
+    :param h: ROOT.wavearray
+    :type h: ROOT.wavearray
+    :return: Converted numpy array
+    :rtype: np.array
+    """
+    if short:
+        return np.array(ROOT.pycwb_get_short_wavearray_data(h))
+    else:
+        return np.array(ROOT.pycwb_get_wavearray_data(h))
+
+
 def convert_wseries_to_timeseries(h):
     """
     Convert wavearray to gwpy timeseries (get 3 times faster with c++ function)
