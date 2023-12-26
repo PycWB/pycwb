@@ -118,6 +118,8 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
         ts.Edge = config.segEdge
         # TODO: WSeries.putLayer is updated internally, here requires the wave packet pattern
         # https://gwburst.gitlab.io/documentation/latest/html/running.html#wave-packet-parameters
+        # The max function is not just calculate the max values, but also set the whole TF map to
+        # the max value over delayed time series, this is the most time consuming part in coherence
         alp += net.get_ifo(n).getTFmap().maxEnergy(ts, wdm.wavelet, config.max_delay, up_n, net.pattern)
         net.get_ifo(n).getTFmap().setlow(config.fLow)
         net.get_ifo(n).getTFmap().sethigh(config.fHigh)
@@ -167,9 +169,6 @@ def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
         else:
             net.cluster(j, 1, 1)
 
-        # FIXME: why do we need to deepcopy the cluster?
-        #  If we don't, macos will crash with thread-saftey issue
-        #  Maybe because the pwc.clear() will delete the cluster?
         fragment_cluster = convert_netcluster_to_fragment_clusters(pwc)
         fragment_clusters.append(fragment_cluster)
 
