@@ -3,6 +3,7 @@ from math import sqrt
 import numpy as np
 from numba import njit, prange
 
+from performance_test_dpf import calculate_dpf
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 
 
@@ -22,7 +23,12 @@ def likelihood(network, nIFO, cluster):
 
     REG[1] = calculate_dpf(n_sky, gamma_regulator, network_energy_threshold)
 
-    sky_statistic_by_pixel()
+    l_max = find_optimal_sky_localization()
+
+    calculate_sky_statistics(l_max)
+
+    calculate_detection_statistic()
+
     threshold_cut()
     likelihood_by_pixel()
     subnetwork_statistic()
@@ -73,87 +79,19 @@ def load_data_from_ifo(network, nIFO):
     return ml, FP, FX
 
 
-@njit(parallel=True)
-def calculate_dpf(FP, FX, rms, n_sky, gamma_regulator, network_energy_threshold):
-    MM = np.zeros(n_sky)
-    FF = 0
-    ff = 0
-    for i in prange(n_sky):
-        # todo:          if(!mm[l]) continue;           // skip delay configurations
-        # if(bBB && !BB[l]) continue;                    // skip delay configurations : big clusters
-        MM[i] = 1
-        FF += 1
-        aa, fp, fx, si, co, ni = avx_dpf_ps(FP, FX, rms, i)
+def find_optimal_sky_localization(L):
+    l_max = 0
+    for l in range(L):
+        calculate_sky_statistics(l)
 
-        if aa > gamma_regulator:
-            ff += 1
-    return (FF ** 2 / (ff ** 2 + 1.e-9) - 1) * network_energy_threshold
+    return l_max
 
 
-@njit
-def avx_dpf_ps(FP, FX, rms, sky_id):
-    Fp0 = FP[:, sky_id]
-    Fx0 = FX[:, sky_id]
-    # sign = np.sign(np.dot(Fp0, Fx0))
-
-    n_pix = len(rms[0])
-    # n_ifo = len(FP)
-
-    NI = 0
-    NN = 0
-
-    fp_array = np.zeros(n_pix)
-    fx_array = np.zeros(n_pix)
-    si_array = np.zeros(n_pix)
-    co_array = np.zeros(n_pix)
-    ni_array = np.zeros(n_pix)
-
-    rms = rms.T
-    for pid in range(n_pix):
-        f = rms[pid] * Fp0
-        F = rms[pid] * Fx0
-        ff = np.dot(f, f)
-        FF = np.dot(F, F)
-        fF = np.dot(F, f)
-
-        si = 2 * fF  # rotation 2*sin*cos*norm
-        co = ff - FF  # rotation (cos^2-sin^2)*norm
-        AP = ff + FF  # total antenna norm
-        cc = co ** 2
-        ss = si ** 2
-        nn = sqrt(cc + ss)  # co/si norm
-        fp = (AP + nn) / 2  # |f+|^2
-        cc = co / (nn + 0.0001)  # cos(2p)
-        ss = 1 if si > 0 else -1  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
-        si = sqrt((1 - cc) / 2)  # |sin(p)|
-        co = sqrt((1 + cc) / 2)  # |cos(p)|
-        co = co * ss  # cos(p)
-
-        f, F = f * co + F * si, F * co - f * si
-        _cc = f * f
-        nn = np.dot(_cc, _cc)
-        fF = np.dot(f, F)
-
-        fF = fF / (fp + 0.0001)
-
-        F -= f * fF
-        fx = np.dot(F, F)
-
-        ni = nn / (fp ** 2 + 0.0001)  # network index
-        ff = ni + 0.0001  # network index
-        NI += fx / ff  # sum of |fx|^2/2/ni
-        NN += 1 if fp > 0 else 0  # pixel count
-
-        fp_array[pid] = fp
-        fx_array[pid] = fx
-        si_array[pid] = si
-        co_array[pid] = co
-        ni_array[pid] = ni
-
-    return sqrt(NI / (NN + 0.01)), fp_array, fx_array, si_array, co_array, ni_array
+def calculate_sky_statistics(l):
+    pass
 
 
-def sky_statistic_by_pixel():
+def calculate_detection_statistic():
     pass
 
 
