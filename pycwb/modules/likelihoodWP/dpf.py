@@ -10,7 +10,7 @@ def calculate_dpf(FP, FX, rms, n_sky, gamma_regulator, network_energy_threshold)
     aa = np.zeros(n_sky)
     for i in prange(n_sky):
         MM[i] = 1
-        aa[i], fp, fx, si, co, ni = dpf_np_loops(FP[i], FX[i], rms)
+        aa[i], fp, fx, si, co, ni = dpf_np_loops_local(FP[i], FX[i], rms)
 
     FF = MM.sum()
     ff = (aa > gamma_regulator).sum()
@@ -19,12 +19,10 @@ def calculate_dpf(FP, FX, rms, n_sky, gamma_regulator, network_energy_threshold)
 
 
 @njit(cache=True)
-def avx_dpf_ps(FP, FX, rms, sky_id):
-    Fp0 = FP[:, sky_id]
-    Fx0 = FX[:, sky_id]
+def avx_dpf_ps(Fp0, Fx0, rms):
     # sign = np.sign(np.dot(Fp0, Fx0))
 
-    n_pix = len(rms[0])
+    n_pix = len(rms)
     # n_ifo = len(FP)
 
     NI = 0
@@ -36,7 +34,6 @@ def avx_dpf_ps(FP, FX, rms, sky_id):
     co_array = np.zeros(n_pix)
     ni_array = np.zeros(n_pix)
 
-    rms = rms.T
     for pid in range(n_pix):
         f = rms[pid] * Fp0
         F = rms[pid] * Fx0
@@ -79,6 +76,84 @@ def avx_dpf_ps(FP, FX, rms, sky_id):
         ni_array[pid] = ni
 
     return sqrt(NI / (NN + 0.01)), fp_array, fx_array, si_array, co_array, ni_array
+
+@njit(cache=True)
+def dpf_np_loops_local(Fp0, Fx0, rms):
+    NPIX, NIFO = rms.shape
+
+    # variables for return
+    f = np.empty((NPIX, NIFO), dtype=np.float32)
+    F = np.empty((NPIX, NIFO), dtype=np.float32)
+    si = np.empty(NPIX, dtype=np.float32)
+    co = np.empty(NPIX, dtype=np.float32)
+    fp = np.empty(NPIX, dtype=np.float32)
+    fx = np.zeros(NPIX, dtype=np.float32)
+    ni = np.zeros(NPIX, dtype=np.float32)
+
+    # Prepare constants
+    _o = np.float32(0.0001)
+    _0 = np.float32(0)
+    _2 = np.float32(2)
+    _1 = np.float32(1)
+    NI = np.float32(0.0)
+    NN = np.uint32(0)
+
+    # local variables
+    _si = np.float32(0.0)
+    _co = np.float32(0.0)
+    _AP = np.float32(0.0)
+    _nn = np.float32(0.0)
+    _cc = np.float32(0.0)
+    _ff = np.float32(0.0)
+    _FF = np.float32(0.0)
+    _fF = np.float32(0.0)
+
+    # Compute f and F
+    for i in range(NPIX):
+        for j in range(NIFO):
+            f[i, j] = rms[i, j] * Fp0[j]
+            F[i, j] = rms[i, j] * Fx0[j]
+
+    # Compute ff, FF, and fF
+    for i in range(NPIX):
+        _ff = _0
+        _FF = _0
+        _fF = _0
+        for j in range(NIFO):
+            _ff += f[i, j] * f[i, j]
+            _FF += F[i, j] * F[i, j]
+            _fF += F[i, j] * f[i, j]
+
+    # Compute si, co, AP, nn, fp, and cc
+    for i in range(NPIX):
+        _si = _2 * _fF
+        _co = _ff - _FF
+        _AP = _ff + _FF
+        _nn = sqrt(_co * _co + _si * _si)
+        _cc = _co / (_nn + _o)
+        fp[i] = (_AP + _nn) / _2
+        si[i], co[i] = sqrt((_1 - _cc) / _2), (sqrt((_1 + _cc) / _2) if _si > _0 else - sqrt((_1 + _cc) / _2))
+
+    # Compute f_new, F_new, fF_new, F_new, fx, ni
+    for i in range(NPIX):
+        fF_new = _0
+        for j in range(NIFO):
+            f[i, j], F[i, j] = f[i, j] * co[i] + F[i, j] * si[i], F[i, j] * co[i] - f[i, j] * si[i]
+            fF_new += f[i, j] * F[i, j]
+        fF_new /= (fp[i] + _o)
+
+        for j in range(NIFO):
+            F[i, j] -= f[i, j] * fF_new
+            fx[i] += F[i, j] * F[i, j]
+            ni[i] += f[i, j] ** 4
+
+    # Compute NI and NN
+    for i in range(NPIX):
+        ni[i] /= (fp[i] * fp[i] + _o)
+        NI += fx[i] / (ni[i] + _o)
+        NN += 1 if fp[i] > _0 else 0
+
+    return sqrt(NI / (NN + np.float32(0.01))), fp, fx, si, co, ni
 
 
 @njit(cache=True)

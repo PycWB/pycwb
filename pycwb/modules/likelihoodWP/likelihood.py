@@ -3,9 +3,8 @@ from math import sqrt
 import numpy as np
 from numba import njit, prange
 
-from performance_test_dpf import calculate_dpf
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
-
+from .dpf import calculate_dpf
 
 def likelihood(network, nIFO, cluster):
     acor = network.net.acor
