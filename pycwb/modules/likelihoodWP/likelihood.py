@@ -12,14 +12,15 @@ def likelihood(network, nIFO, cluster):
     network_energy_threshold = 2 * acor * acor * nIFO
     gamma_regulator = network.net.gamma * network.net.gamma * 2 / 3
     delta_regulator = abs(network.net.delta) if abs(network.net.delta) < 1 else 1
-    REG = [delta_regulator * np.sqrt(2), 0, 0]
+    REG = np.array([delta_regulator * np.sqrt(2), 0., 0.])
     netEC_threshold = network.net.netRHO * network.net.netRHO * 2
     netCC = network.net.netCC
 
     n_sky = network.net.index.size()
     n_pix = len(cluster.pixels)
-    ml, FP, FX = load_data_from_ifo(network, nIFO)
 
+    # Extract data from python object to numpy arrays for numba
+    ml, FP, FX = load_data_from_ifo(network, nIFO)
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
 
     # Transpose array and convert to float32 for speedup
@@ -102,19 +103,18 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     # for i in range(n_sky):
     #     ml_set.add(tuple(ml.T[i]))
 
-    nSensitivity = np.empty(n_sky, dtype=float32)
-    nAlignment = np.empty(n_sky, dtype=float32)
-    nLikelihood = np.empty(n_sky, dtype=float32)
-    nNullEnergy = np.empty(n_sky, dtype=float32)
-    nCorrEnergy = np.empty(n_sky, dtype=float32)
-    nCorrelation = np.empty(n_sky, dtype=float32)
-    nSkyStat = np.empty(n_sky, dtype=float32)
-    nProbability = np.empty(n_sky, dtype=float32)
-    nDisbalance = np.empty(n_sky, dtype=float32)
-    nNetIndex = np.empty(n_sky, dtype=float32)
-    nEllipticity = np.empty(n_sky, dtype=float32)
-    nPolarisation = np.empty(n_sky, dtype=float32)
-    nAntenaPrior = np.empty(n_sky, dtype=float32)
+    nAlignment = np.zeros(n_sky, dtype=float32)
+    nLikelihood = np.zeros(n_sky, dtype=float32)
+    nNullEnergy = np.zeros(n_sky, dtype=float32)
+    nCorrEnergy = np.zeros(n_sky, dtype=float32)
+    nCorrelation = np.zeros(n_sky, dtype=float32)
+    nSkyStat = np.zeros(n_sky, dtype=float32)
+    nProbability = np.zeros(n_sky, dtype=float32)
+    nDisbalance = np.zeros(n_sky, dtype=float32)
+    nNetIndex = np.zeros(n_sky, dtype=float32)
+    nEllipticity = np.zeros(n_sky, dtype=float32)
+    nPolarisation = np.zeros(n_sky, dtype=float32)
+    nAntenaPrior = np.zeros(n_sky, dtype=float32)
 
     Eh = float32(0.0)
     # sky = 0.0
@@ -124,17 +124,14 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
 
     AA_array = np.zeros(n_sky, dtype=float32)
     for l in prange(n_sky):
+        # get time delayed data slice at sky location l, make sure it is numpy float32 array
         v00 = np.empty((n_ifo, n_pix), dtype=float32)
         v90 = np.empty((n_ifo, n_pix), dtype=float32)
-        # v00 = [td00[ml[i, l] + offset, i] for i in range(n_ifo)]
-        # v90 = [td90[ml[i, l] + offset, i] for i in range(n_ifo)]
-        # v00 = np.ascontiguousarray(v00)
-        # v90 = np.ascontiguousarray(v90)
         for i in range(n_ifo):
             v00[i] = td00[ml[i, l] + offset, i]
             v90[i] = td90[ml[i, l] + offset, i]
 
-        # calculate data stats and store in _AVX
+        # calculate data stats for time delayed data slice
         Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
         # print Eo at 0, 1000, 2000
         # if l == 0 or l == 1000 or l == 2000:
@@ -142,9 +139,10 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         #     print(f"mask[{l}]: ", np.sum(mask))
         # print(f"v00[{l}]:" , np.max(v00[0]), np.max(v00[1]), f", v90[{l}]:", np.max(v90[0]), np.max(v90[1]))
         # print(f"ml[0, {l}]: {ml[0, l]}, ml[1, {l}]: {ml[1, l]}")
+
         # calculate DPF f+,fx and their norms
         _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[l], FX[l], rms)
-        #
+
         # gw strain packet, return number of selected pixels
         Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
         # print Mo at 0, 1000, 2000
@@ -153,15 +151,21 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         #     print(f"ps[{l}]: ", np.max(ps[0]), np.max(ps[1])), print(f"pS[{l}]: ", np.max(pS[0]), np.max(pS[1]))
         #     print(f"mask[{l}]: ", np.sum(mask))
         #     print(f"fp[{l}]: ", np.max(fp), f" fx[{l}]: ", np.max(fx))
+
+
+        # othogonalize signal amplitudes
         Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
         # print Lo at 0, 1000, 2000
         # if l == 0 or l == 1000 or l == 2000:
         #     print(f"Lo({l}): ", Lo)
+
+        # coherent statistics
         Cr, Ec, Mp, No = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
-        # print Cr at 0, 1000, 2000
+
         CH = No / (n_ifo * Mo + sqrt(Mo))  # chi2 in TF domain
         cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
         Co = Ec / (Ec + No * cc - Mo * (n_ifo - 1))  # network correlation coefficient in TF
+
         if Cr < netCC:
             continue
 
