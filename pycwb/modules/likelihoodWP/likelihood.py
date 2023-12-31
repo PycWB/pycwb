@@ -1,10 +1,11 @@
 from math import sqrt
 
 import numpy as np
-from numba import njit, prange
-
+from numba import njit, prange, float32
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
-from .dpf import calculate_dpf
+from .dpf import calculate_dpf, dpf_np_loops_vec
+from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
+
 
 def likelihood(network, nIFO, cluster):
     acor = network.net.acor
@@ -13,16 +14,24 @@ def likelihood(network, nIFO, cluster):
     delta_regulator = abs(network.net.delta) if abs(network.net.delta) < 1 else 1
     REG = [delta_regulator * np.sqrt(2), 0, 0]
     netEC_threshold = network.net.netRHO * network.net.netRHO * 2
+    netCC = network.net.netCC
 
     n_sky = network.net.index.size()
-
+    n_pix = len(cluster.pixels)
     ml, FP, FX = load_data_from_ifo(network, nIFO)
 
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
 
-    REG[1] = calculate_dpf(n_sky, gamma_regulator, network_energy_threshold)
+    # Transpose array and convert to float32 for speedup
+    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    FP = FP.T.astype(np.float32)
+    FX = FX.T.astype(np.float32)
+    rms = rms.T.astype(np.float32)
 
-    l_max = find_optimal_sky_localization()
+    REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
+
+    l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold)
 
     calculate_sky_statistics(l_max)
 
@@ -78,10 +87,126 @@ def load_data_from_ifo(network, nIFO):
     return ml, FP, FX
 
 
-def find_optimal_sky_localization(L):
-    l_max = 0
-    for l in range(L):
-        calculate_sky_statistics(l)
+@njit(cache=True, parallel=True)
+def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold):
+    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    FP = FP.T.astype(np.float32)
+    FX = FX.T.astype(np.float32)
+    rms = rms.T.astype(np.float32)
+    REG = REG.astype(np.float32)
+
+
+    # get unique list of ml.T for each nsky for numba
+    # ml_set = set()
+    # for i in range(n_sky):
+    #     ml_set.add(tuple(ml.T[i]))
+
+    nSensitivity = np.empty(n_sky, dtype=float32)
+    nAlignment = np.empty(n_sky, dtype=float32)
+    nLikelihood = np.empty(n_sky, dtype=float32)
+    nNullEnergy = np.empty(n_sky, dtype=float32)
+    nCorrEnergy = np.empty(n_sky, dtype=float32)
+    nCorrelation = np.empty(n_sky, dtype=float32)
+    nSkyStat = np.empty(n_sky, dtype=float32)
+    nProbability = np.empty(n_sky, dtype=float32)
+    nDisbalance = np.empty(n_sky, dtype=float32)
+    nNetIndex = np.empty(n_sky, dtype=float32)
+    nEllipticity = np.empty(n_sky, dtype=float32)
+    nPolarisation = np.empty(n_sky, dtype=float32)
+    nAntenaPrior = np.empty(n_sky, dtype=float32)
+
+    Eh = float32(0.0)
+    # sky = 0.0
+    # l_max = 0
+    # STAT=-1.e12
+    offset = int(td00.shape[0] / 2)
+
+    AA_array = np.zeros(n_sky, dtype=float32)
+    for l in prange(n_sky):
+        v00 = np.empty((n_ifo, n_pix), dtype=float32)
+        v90 = np.empty((n_ifo, n_pix), dtype=float32)
+        # v00 = [td00[ml[i, l] + offset, i] for i in range(n_ifo)]
+        # v90 = [td90[ml[i, l] + offset, i] for i in range(n_ifo)]
+        # v00 = np.ascontiguousarray(v00)
+        # v90 = np.ascontiguousarray(v90)
+        for i in range(n_ifo):
+            v00[i] = td00[ml[i, l] + offset, i]
+            v90[i] = td90[ml[i, l] + offset, i]
+
+        # calculate data stats and store in _AVX
+        Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
+        # print Eo at 0, 1000, 2000
+        # if l == 0 or l == 1000 or l == 2000:
+        #     print(f"Eo({l}): ", Eo)
+        #     print(f"mask[{l}]: ", np.sum(mask))
+        # print(f"v00[{l}]:" , np.max(v00[0]), np.max(v00[1]), f", v90[{l}]:", np.max(v90[0]), np.max(v90[1]))
+        # print(f"ml[0, {l}]: {ml[0, l]}, ml[1, {l}]: {ml[1, l]}")
+        # calculate DPF f+,fx and their norms
+        _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[l], FX[l], rms)
+        #
+        # gw strain packet, return number of selected pixels
+        Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
+        # print Mo at 0, 1000, 2000
+        # if l == 0 or l == 1000 or l == 2000:
+        #     print(f"Mo({l}): ", Mo)
+        #     print(f"ps[{l}]: ", np.max(ps[0]), np.max(ps[1])), print(f"pS[{l}]: ", np.max(pS[0]), np.max(pS[1]))
+        #     print(f"mask[{l}]: ", np.sum(mask))
+        #     print(f"fp[{l}]: ", np.max(fp), f" fx[{l}]: ", np.max(fx))
+        Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
+        # print Lo at 0, 1000, 2000
+        # if l == 0 or l == 1000 or l == 2000:
+        #     print(f"Lo({l}): ", Lo)
+        Cr, Ec, Mp, No = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
+        # print Cr at 0, 1000, 2000
+        CH = No / (n_ifo * Mo + sqrt(Mo))  # chi2 in TF domain
+        cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
+        Co = Ec / (Ec + No * cc - Mo * (n_ifo - 1))  # network correlation coefficient in TF
+        if Cr < netCC:
+            continue
+
+        aa = Eo - No if Eo > float32(0.) else float32(0.)  # likelihood skystat
+        AA = aa * Co  # x-correlation skystat
+        # if l == 0 or l == 1000 or l == 2000:
+        #     print(f"Cr({l}): ", Cr, f" Ec[{l}]: ", Ec, f" Mp[{l}]: ", Mp, f" No[{l}]: ", No)
+        #     print(f"CH({l}): ", CH, f" cc[{l}]: ", cc, f" Co[{l}]: ", Co)
+        #     print(f"aa({l}): ", aa, f" AA[{l}]: ", AA)
+        nProbability[l] = aa if delta_regulator < 0 else AA
+
+        ff, FF, ee = float32(0.), float32(0.), float32(0.)
+
+        for j in range(n_pix):
+            if mask[j] <= 0:
+                continue
+            ee += energy_total[j]  # total energy
+            ff += fp[j] * energy_total[j]  # |f+|^2
+            FF += fx[j] * energy_total[j]  # |fx|^2
+        ff = ff / ee if ee > float32(0.) else float32(0.)
+        FF = FF / ee if ee > float32(0.) else float32(0.)
+
+        nAntenaPrior[l] = sqrt(ff + FF)
+        nAlignment[l] = sqrt(FF / ff) if ff > float32(0.) else float32(0.)
+        nLikelihood[l] = Eo - No
+        nNullEnergy[l] = No
+        nCorrEnergy[l] = Ec
+        nCorrelation[l] = Co
+        nSkyStat[l] = AA
+        nDisbalance[l] = CH
+        nNetIndex[l] = cc
+        nEllipticity[l] = Cr
+        nPolarisation[l] = Mp
+
+        AA_array[l] = AA
+        # if AA >= STAT:
+        #     STAT = AA
+        #     l_max = l
+        #     Em = Eo - Eh
+        #
+        # if nProbability[l] > sky:
+        #     sky = nProbability[l]  # find max of skyloc stat
+    STAT = np.max(AA_array)
+    l_max = np.argmax(AA_array)
+    sky = np.max(nProbability)
 
     return l_max
 

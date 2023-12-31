@@ -5,12 +5,19 @@ from numba import njit, prange, guvectorize, vectorize, float32, uint32
 
 
 @njit(parallel=True, cache=True)
-def calculate_dpf(FP, FX, rms, n_sky, gamma_regulator, network_energy_threshold):
+def calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold):
+    FP = FP.astype(np.float32)
+    FX = FX.astype(np.float32)
+    rms = rms.astype(np.float32)
     MM = np.zeros(n_sky)
     aa = np.zeros(n_sky)
+
+    # check shape of FP, FX, and rms
+    if FP.shape != (n_sky, n_ifo) and FX.shape != (n_sky, n_ifo) and rms.shape[1] != n_ifo:
+        raise ValueError('FP and FX must have the shape of (n_sky, n_ifo) and rms must have the shape of (n_pix, n_ifo)')
     for i in prange(n_sky):
         MM[i] = 1
-        aa[i], fp, fx, si, co, ni = dpf_np_loops_local(FP[i], FX[i], rms)
+        aa[i], _, _, _, _, _, _, _ = dpf_np_loops_vec(FP[i], FX[i], rms)
 
     FF = MM.sum()
     ff = (aa > gamma_regulator).sum()
@@ -107,22 +114,22 @@ def dpf_np_loops_local(Fp0, Fx0, rms):
 
     for i in range(NPIX):
         # Compute ff, FF, and fF
-        _ff = np.float32(0.)
-        _FF = np.float32(0.)
-        _fF = np.float32(0.)
+        _ff = float32(0.)
+        _FF = float32(0.)
+        _fF = float32(0.)
         for j in range(NIFO):
             _ff += f[i, j] * f[i, j]
             _FF += F[i, j] * F[i, j]
             _fF += F[i, j] * f[i, j]
 
         # Compute si, co, AP, nn, fp, and cc
-        _si = _2 * _fF
+        _si = float32(2.0) * _fF
         _co = _ff - _FF
         _AP = _ff + _FF
         _nn = sqrt(_co * _co + _si * _si)
         _cc = _co / (_nn + _o)
-        fp[i] = (_AP + _nn) / _2
-        si[i], co[i] = sqrt((_1 - _cc) / _2), (sqrt((_1 + _cc) / _2) if _si > _0 else - sqrt((_1 + _cc) / _2))
+        fp[i] = (_AP + _nn) / float32(2.0)
+        si[i], co[i] = sqrt((float32(1.) - _cc) / float32(2.0)), (sqrt((float32(1.) + _cc) / float32(2.0)) if _si > float32(0.) else - sqrt((float32(1.) + _cc) / float32(2.0)))
 
     # Compute f_new, F_new, fF_new, F_new, fx, ni
     for i in range(NPIX):
@@ -141,7 +148,7 @@ def dpf_np_loops_local(Fp0, Fx0, rms):
     for i in range(NPIX):
         ni[i] /= (fp[i] * fp[i] + _o)
         NI += fx[i] / (ni[i] + _o)
-        NN += 1 if fp[i] > _0 else 0
+        NN += 1 if fp[i] > float32(0.) else 0
 
     return sqrt(NI / (NN + np.float32(0.01))), fp, fx, si, co, ni
 
@@ -402,4 +409,4 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
         NN += pos_sign_vec(fp[i])
         # NN += 1 if fp[i] > 0.0 else 0
 
-    return sqrt(NI / (NN + 0.01)), fp, fx, si, co, ni
+    return sqrt(NI / (NN + 0.01)), f, F, fp, fx, si, co, ni
