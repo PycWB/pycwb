@@ -5,6 +5,7 @@ from numba import njit, prange, float32
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
+from .utils import avx_packet_ps
 
 
 def likelihood(network, nIFO, cluster):
@@ -34,7 +35,7 @@ def likelihood(network, nIFO, cluster):
 
     l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold)
 
-    calculate_sky_statistics(l_max)
+    calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold)
 
     calculate_detection_statistic()
 
@@ -215,8 +216,30 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     return l_max
 
 
-def calculate_sky_statistics(l):
-    pass
+@njit(cache=True)
+def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold):
+    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    v00 = np.empty((n_ifo, n_pix), dtype=float32)
+    v90 = np.empty((n_ifo, n_pix), dtype=float32)
+    offset = int(td00.shape[0] / 2)
+
+    for i in range(n_ifo):
+        v00[i] = td00[ml[i, l] + offset, i]
+        v90[i] = td90[ml[i, l] + offset, i]
+
+    # calculate data stats for time delayed data slice
+    Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
+
+    # calculate DPF f+,fx and their norms
+    _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[l], FX[l], rms)
+
+    # gw strain packet, return number of selected pixels
+    Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
+
+    Eo, v00, v90, = avx_packet_ps(v00, v90, mask)[0]  # get data packet
+    Lo, ps, pS, = avx_packet_ps(ps, pS, mask)[0]  # get signal packet
+
 
 
 def calculate_detection_statistic():

@@ -1,5 +1,70 @@
+from math import sqrt
+
 import numpy as np
-from numba import njit
+from numba import njit, float32
+
+
+def avx_packet_ps(p, q, mask):
+    n_ifo = len(p)
+    n_pix = len(p[0])
+    _o = float(0.0001)
+
+    mk = np.empty(n_pix, dtype=np.float32)
+    aa = np.zeros(n_ifo, dtype=np.float32)
+    AA = np.zeros(n_ifo, dtype=np.float32)
+    aA = np.zeros(n_ifo, dtype=np.float32)
+
+    si = np.empty(n_ifo, dtype=np.float32)
+    co = np.empty(n_ifo, dtype=np.float32)
+    a = np.empty(n_ifo, dtype=np.float32)
+    A = np.empty(n_ifo, dtype=np.float32)
+
+    for i in range(n_pix):
+        mk[i] = float32(1.0) if mask[i] > 0 else float32(0.)
+
+    for j in range(n_ifo):
+        for i in range(n_pix):
+            aa[j] += mk[i] * (p[j][i] * p[j][i])
+            AA[j] += mk[i] * (q[j][i] * q[j][i])
+            aA[j] += mk[i] * (p[j][i] * q[j][i])
+
+    Ep = 0.
+    E = np.empty(n_ifo, dtype=np.float32)
+    for i in range(n_ifo):
+        _si = float32(2.) * aA[i]   # rotation 2*sin*cos*norm
+        _co = aa[i] - AA[i]   # rotation (cos^2-sin^2)*norm
+        _x = aa[i] + AA[i] + _o  # total energy
+        _cc = _co * _co   # cos^2
+        _ss = _si * _si   # sin^2
+        _nn = sqrt(_cc + _ss)   # co/si norm
+        a[i] = sqrt((_x + _nn) / float32(2.))  # first component amplitude
+        A[i] = sqrt(abs((_x - _nn) / float32(2.)))  # second component energy
+        _cc /= _nn + _o  # cos(2p)
+        _ss = float32(1.) if _si > float32(0.) else float32(-1.)  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
+        si[i] = sqrt((float32(1.) - _cc) / float32(2.))  # |sin(p)|
+        co[i] = sqrt((float32(1.) + _cc) / float32(2.)) * _ss  # cos(p)
+
+        E[i] = (a[i] + A[i]) ** 2 / float32(2.)
+        Ep += E[i]
+
+    a_sum = float32(0.)
+    A_sum = float32(0.)
+    for i in range(n_ifo):
+        a_sum += a[i] + _o
+        A_sum += A[i] + _o
+    _am = 1 - a_sum
+    _Am = 1 - A_sum
+
+    p_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
+    q_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
+    for j in range(n_ifo):
+        for i in range(n_pix):
+            _a = p[j][i] * co[j] + q[j][i] * si[j]
+            _A = q[j][i] * co[j] - p[j][i] * si[j]
+            p_updated[j][i] = mk[i] * _a * aa[j]
+            q_updated[j][i] = mk[i] * _A * AA[j]
+
+    return Ep/float32(2.), p_updated, q_updated, si, co, a, A, E
 
 
 def packet_norm(p, q, xtalks):
@@ -51,38 +116,6 @@ def packet_norm_numpy(p, q, xtalks):
         Q = np.where(e > 1, 0, e)
 
         # update halo energy
-
-
-def load_data(p, q, En, pAVX, I):
-    # Assuming p, q, u, v are lists of NumPy arrays and pAVX is a list containing NumPy arrays
-    # p, q are the input arrays; u, v are the output arrays; En is the energy threshold
-    # I is the number of elements to process
-
-    # Initialize arrays for total energy and masks
-    total_energy = np.zeros_like(pAVX[0])
-    mask = np.zeros_like(pAVX[1])
-
-    nifo = len(p)
-    # Process each set of arrays
-    for idx in range(nifo):
-        _p = p[idx][:I]
-        _q = q[idx][:I]
-
-        # Load data vectors into temporary arrays and compute energies
-        energy_p = _p ** 2
-        energy_q = _q ** 2
-        total_energy[:I] += energy_p + energy_q
-
-    # Apply energy threshold and initialize pixel mask
-    mask[:I] = np.where(total_energy[:I] > En, 1, 0)
-
-    # Calculate total energy and store in pAVX
-    pAVX[0][:I] = total_energy[:I] * mask[:I]
-    pAVX[1][:I] = mask[:I]
-
-    # Compute and return the total energy above threshold
-    total_energy_above_threshold = np.sum(pAVX[0][:I])
-    return total_energy_above_threshold / 2
 
 
 @njit
@@ -137,81 +170,3 @@ def orthogonalize_and_rotate(p, q, pAVX, length):
     pAVX[16] = second_component_energy
 
     return np.sum(energy_accumulated_first) + np.sum(energy_accumulated_second), pAVX
-
-
-@njit
-def avx_dpf_ps(Fp, Fx, l, pAPN, pAVX, I):
-    # Prepare constants
-    _0 = np.float32(0)
-    _1 = np.float32(1)
-    _2 = np.float32(2)
-    _o = np.float32(0.0001)
-
-    _NI = np.float32(0)
-    _NN = np.float32(0)
-
-    # Extract pointers
-    fp_vec = pAVX[2]
-    fx_vec = pAVX[3]
-    sin_vec = pAVX[4]
-    cos_vec = pAVX[5]
-    ni_vec = pAVX[18]
-
-    # Calculate sign
-    sign = 0
-    for k in range(8):
-        if pAPN[k][2*I] > 0:
-            sign += Fp[k][l] * Fx[k][l]
-    sign = _1 if sign > 0 else -1
-    _sign = np.full(I, sign, dtype=np.float32)
-
-    # Main loop
-    for i in range(I):
-        ff_sum, FF_sum, fF_sum = 0, 0, 0
-        for k in range(8):
-            f_val = pAPN[k][i] * Fp[k][l]
-            F_val = pAPN[k][I + i] * Fx[k][l]
-
-            ff_sum += f_val ** 2
-            FF_sum += F_val ** 2
-            fF_sum += f_val * F_val
-
-            pAPN[k][i] = f_val
-            pAPN[k][I + i] = F_val
-
-        rotation_term = 2 * fF_sum
-        rotation_diff = ff_sum - FF_sum
-        antenna_norm = ff_sum + FF_sum
-
-        cos_term = rotation_diff ** 2
-        sin_term = rotation_term ** 2
-        norm_term = np.sqrt(cos_term + sin_term)
-
-        fp_vec[i] = (antenna_norm + norm_term) / 2
-        cos_divisor = rotation_diff / (norm_term + _o)
-        sin_condition = rotation_term > _0
-
-        sin_term = np.sqrt((_1 - cos_divisor) / 2)
-        cos_term = np.sqrt((_1 + cos_divisor) / 2)
-        cos_term *= 2 * sin_condition - _1
-
-        sin_vec[i] = sin_term
-        cos_vec[i] = cos_term
-
-        for k in range(8):
-            f_val = pAPN[k][i]
-            F_val = pAPN[k][I + i]
-
-            f_plus = f_val * cos_term + F_val * sin_term
-            f_minus = F_val * cos_term - f_val * sin_term
-
-            ni_term = f_plus ** 4
-            fF_term = f_plus * f_minus
-
-            pAPN[k][i] = f_plus
-            pAPN[k][I + i] = f_minus
-
-            ni_vec[i] += ni_term
-            _NI += ni_term
-            _NN += fF_term
-    return ni_vec, _NI, _NN
