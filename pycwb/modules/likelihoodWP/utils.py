@@ -4,6 +4,7 @@ import numpy as np
 from numba import njit, float32
 
 
+@njit(cache=True)
 def avx_packet_ps(p, q, mask):
     n_ifo = len(p)
     n_pix = len(p[0])
@@ -39,7 +40,7 @@ def avx_packet_ps(p, q, mask):
         _nn = sqrt(_cc + _ss)   # co/si norm
         a[i] = sqrt((_x + _nn) / float32(2.))  # first component amplitude
         A[i] = sqrt(abs((_x - _nn) / float32(2.)))  # second component energy
-        _cc /= _nn + _o  # cos(2p)
+        _cc = _co / (_nn + _o)  # cos(2p)
         _ss = float32(1.) if _si > float32(0.) else float32(-1.)  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
         si[i] = sqrt((float32(1.) - _cc) / float32(2.))  # |sin(p)|
         co[i] = sqrt((float32(1.) + _cc) / float32(2.)) * _ss  # cos(p)
@@ -47,13 +48,8 @@ def avx_packet_ps(p, q, mask):
         E[i] = (a[i] + A[i]) ** 2 / float32(2.)
         Ep += E[i]
 
-    a_sum = float32(0.)
-    A_sum = float32(0.)
-    for i in range(n_ifo):
-        a_sum += a[i] + _o
-        A_sum += A[i] + _o
-    _am = 1 - a_sum
-    _Am = 1 - A_sum
+        a[i] = float(1.0) / (a[i] + _o)
+        A[i] = float(1.0) / (A[i] + _o)
 
     p_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
     q_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
@@ -61,17 +57,13 @@ def avx_packet_ps(p, q, mask):
         for i in range(n_pix):
             _a = p[j][i] * co[j] + q[j][i] * si[j]
             _A = q[j][i] * co[j] - p[j][i] * si[j]
-            p_updated[j][i] = mk[i] * _a * aa[j]
-            q_updated[j][i] = mk[i] * _A * AA[j]
+            p_updated[j][i] = mk[i] * _a * a[j]
+            q_updated[j][i] = mk[i] * _A * A[j]
 
     return Ep/float32(2.), p_updated, q_updated, si, co, a, A, E
 
 
-def packet_norm(p, q, xtalks):
-    pass
-
-
-def packet_norm_numpy(p, q, xtalks):
+def packet_norm_numpy(p, q, xtalks, mk):
     """Compute the norm of a packet of pixels.
 
     Parameters
@@ -86,36 +78,35 @@ def packet_norm_numpy(p, q, xtalks):
     n_pixels = len(p[0])
     n_ifos = len(p)
 
-    g = np.zeros(n_ifos)
+    q_norm = np.zeros((n_ifos, n_pixels))
+    norm = np.zeros(n_ifos)
     for i in range(n_pixels):
+        if mk[i] <= 0.:
+            continue
         xtalk = xtalks[i]
-        xtalk_indexes = xtalk[0::8]
+        xtalk_indexes = xtalk[0::8].astype(int)
         xtalk_cc = np.array([xtalk[4::8], xtalk[5::8], xtalk[6::8], xtalk[7::8]])  # 4xM matrix
-
         # Select elements from p and q based on xtalk_indexes
         p_vec = p[:, xtalk_indexes]  # N*M matrix
         q_vec = q[:, xtalk_indexes]  # N*M matrix
-
         # Compute the sums using a vectorized approach
         # x = np.sum(xtalk_cc * np.array([q_vec, p_vec, q_vec, p_vec]), axis=1)  # 4-d vector
 
         # h = x * np.array([q[:, i], p[:, i], q[:, i], p[:, i]])
-        x = np.array([np.dot(q_vec, xtalk_cc[0].T),
-                      np.dot(q_vec, xtalk_cc[1].T),
-                      np.dot(p_vec, xtalk_cc[2].T),
-                      np.dot(p_vec, xtalk_cc[3].T)])  # 4xN matrix
+        x = np.array([np.dot(p_vec, xtalk_cc[0].T),
+                      np.dot(p_vec, xtalk_cc[1].T),
+                      np.dot(q_vec, xtalk_cc[2].T),
+                      np.dot(q_vec, xtalk_cc[3].T)])  # 4xN matrix
 
         # Summing all components together
-        t = (x[0] * q[:, i]) + (x[1] * p[:, i]) + (x[2] * q[:, i]) + (x[3] * p[:, i])
-        # t = np.sum(h, axis=0)
+        t = (x[0] * p[:, i]) + (x[1] * q[:, i]) + (x[2] * p[:, i]) + (x[3] * q[:, i])
 
-        g += t
+        # set t to 0 if t < 0
+        norm += np.where(t < 0, 0, t)
 
         e = (p[:, i] ** 2 + q[:, i] ** 2) / t  # 1-d vector
-        # todo: what is Q = q[M+m]?
-        Q = np.where(e > 1, 0, e)
 
-        # update halo energy
+        q_norm[:, i] = np.where(e > 1, 0, e)
 
 
 @njit

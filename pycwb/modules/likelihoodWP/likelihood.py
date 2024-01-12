@@ -237,8 +237,8 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # gw strain packet, return number of selected pixels
     Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
 
-    Eo, v00, v90, = avx_packet_ps(v00, v90, mask)[0]  # get data packet
-    Lo, ps, pS, = avx_packet_ps(ps, pS, mask)[0]  # get signal packet
+    Eo, v00, v90, _, _, _, _, _  = avx_packet_ps(v00, v90, mask)  # get data packet
+    Lo, ps, pS, _, _, _, _, _  = avx_packet_ps(ps, pS, mask)  # get signal packet
 
 
 
