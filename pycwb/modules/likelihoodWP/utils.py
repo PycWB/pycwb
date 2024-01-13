@@ -69,7 +69,7 @@ def avx_packet_ps(p, q, mask):
     return Ep/float32(2.), p_updated, q_updated, E, si, co, a_save, A_save
 
 
-@njit(cache=True)
+# @njit(cache=True)
 def packet_norm_numpy(p, q, xtalks, mk, q_E):
     """Compute the norm of a packet of pixels.
 

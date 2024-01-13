@@ -101,11 +101,11 @@ def load_data_from_ifo(network, nIFO):
 
 @njit(cache=True, parallel=True)
 def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold):
-    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    FP = FP.T.astype(np.float32)
-    FX = FX.T.astype(np.float32)
-    rms = rms.T.astype(np.float32)
+    # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    # FP = FP.T.astype(np.float32)
+    # FX = FX.T.astype(np.float32)
+    # rms = rms.T.astype(np.float32)
     REG = REG.astype(np.float32)
 
 
@@ -226,10 +226,11 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     return l_max
 
 
-@njit(cache=True)
+# @njit(cache=True)
 def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, wdm_xtalk):
-    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    from numpy import float32
+    # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     v00 = np.empty((n_ifo, n_pix), dtype=float32)
     v90 = np.empty((n_ifo, n_pix), dtype=float32)
     td_energy = np.zeros((n_ifo, n_pix), dtype=float32)
@@ -258,9 +259,8 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # coherent statistics
     _, _, _, _, coherent_energy = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
-
-    Eo, pd, pD, pd_E, _, _, _, _  = avx_packet_ps(v00, v90, mask)  # get data packet
-    Lo, ps, pS, ps_E, _, _, _, _  = avx_packet_ps(ps, pS, mask)  # get signal packet
+    Eo, pd, pD, pd_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
+    Lo, ps, pS, ps_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
 
     detector_snr, norm, rn = packet_norm_numpy(pd, pD, wdm_xtalk, mask, pd_E)
     D_snr = np.sum(detector_snr)
