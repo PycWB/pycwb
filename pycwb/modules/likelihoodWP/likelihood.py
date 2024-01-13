@@ -5,10 +5,13 @@ from numba import njit, prange, float32
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
-from .utils import avx_packet_ps
+from .utils import avx_packet_ps, packet_norm_numpy
+from ..xtalk.monster import load_catalog, getXTalk_pixels
 
 
-def likelihood(network, nIFO, cluster):
+def likelihood(network, nIFO, cluster, MRAcatalog):
+    # load network parameters
+
     acor = network.net.acor
     network_energy_threshold = 2 * acor * acor * nIFO
     gamma_regulator = network.net.gamma * network.net.gamma * 2 / 3
@@ -19,6 +22,11 @@ def likelihood(network, nIFO, cluster):
 
     n_sky = network.net.index.size()
     n_pix = len(cluster.pixels)
+
+    # Load xtalk catalog
+
+    catalog, layers, nRes = load_catalog(MRAcatalog)
+    sizeCC, wdm_xtalk = getXTalk_pixels(cluster.pixels, True, nRes, layers, catalog)
 
     # Extract data from python object to numpy arrays for numba
     ml, FP, FX = load_data_from_ifo(network, nIFO)
@@ -33,9 +41,11 @@ def likelihood(network, nIFO, cluster):
 
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
-    l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold)
+    l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
+                                          delta_regulator, network_energy_threshold)
 
-    calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold)
+    calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
+                             wdm_xtalk)
 
     calculate_detection_statistic()
 
@@ -217,7 +227,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
 
 
 @njit(cache=True)
-def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold):
+def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, wdm_xtalk):
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     v00 = np.empty((n_ifo, n_pix), dtype=float32)
@@ -237,9 +247,11 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # gw strain packet, return number of selected pixels
     Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
 
-    Eo, v00, v90, _, _, _, _, _  = avx_packet_ps(v00, v90, mask)  # get data packet
-    Lo, ps, pS, _, _, _, _, _  = avx_packet_ps(ps, pS, mask)  # get signal packet
+    Eo, pd, pD, pd_E, _, _, _, _  = avx_packet_ps(v00, v90, mask)  # get data packet
+    Lo, ps, pS, ps_E, _, _, _, _  = avx_packet_ps(ps, pS, mask)  # get signal packet
 
+    detector_snr, norm, rn = packet_norm_numpy(pd, pD, wdm_xtalk, mask, pd_E)
+    D_snr = np.sum(detector_snr)
 
 
 def calculate_detection_statistic():

@@ -19,6 +19,8 @@ def avx_packet_ps(p, q, mask):
     co = np.empty(n_ifo, dtype=np.float32)
     a = np.empty(n_ifo, dtype=np.float32)
     A = np.empty(n_ifo, dtype=np.float32)
+    a_save = np.empty(n_ifo, dtype=np.float32)
+    A_save = np.empty(n_ifo, dtype=np.float32)
 
     for i in range(n_pix):
         mk[i] = float32(1.0) if mask[i] > 0 else float32(0.)
@@ -29,11 +31,11 @@ def avx_packet_ps(p, q, mask):
             AA[j] += mk[i] * (q[j][i] * q[j][i])
             aA[j] += mk[i] * (p[j][i] * q[j][i])
 
-    Ep = 0.
     E = np.empty(n_ifo, dtype=np.float32)
     for i in range(n_ifo):
         _si = float32(2.) * aA[i]   # rotation 2*sin*cos*norm
         _co = aa[i] - AA[i]   # rotation (cos^2-sin^2)*norm
+        print(f"_si[{i}]: ", _si, f"_co[{i}]: ", _co)
         _x = aa[i] + AA[i] + _o  # total energy
         _cc = _co * _co   # cos^2
         _ss = _si * _si   # sin^2
@@ -46,10 +48,14 @@ def avx_packet_ps(p, q, mask):
         co[i] = sqrt((float32(1.) + _cc) / float32(2.)) * _ss  # cos(p)
 
         E[i] = (a[i] + A[i]) ** 2 / float32(2.)
-        Ep += E[i]
-
+        a_save[i] = a[i]
+        A_save[i] = A[i]
         a[i] = float(1.0) / (a[i] + _o)
         A[i] = float(1.0) / (A[i] + _o)
+
+    Ep = 0.
+    for i in range(n_ifo):
+        Ep += E[i]
 
     p_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
     q_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
@@ -60,10 +66,11 @@ def avx_packet_ps(p, q, mask):
             p_updated[j][i] = mk[i] * _a * a[j]
             q_updated[j][i] = mk[i] * _A * A[j]
 
-    return Ep/float32(2.), p_updated, q_updated, si, co, a, A, E
+    return Ep/float32(2.), p_updated, q_updated, E, si, co, a_save, A_save
 
 
-def packet_norm_numpy(p, q, xtalks, mk):
+@njit(cache=True)
+def packet_norm_numpy(p, q, xtalks, mk, q_E):
     """Compute the norm of a packet of pixels.
 
     Parameters
@@ -77,9 +84,11 @@ def packet_norm_numpy(p, q, xtalks, mk):
     """
     n_pixels = len(p[0])
     n_ifos = len(p)
+    _o = float32(1.e-12)
 
     q_norm = np.zeros((n_ifos, n_pixels))
     norm = np.zeros(n_ifos)
+    rn = np.zeros(n_pixels)
     for i in range(n_pixels):
         if mk[i] <= 0.:
             continue
@@ -101,12 +110,34 @@ def packet_norm_numpy(p, q, xtalks, mk):
         # Summing all components together
         t = (x[0] * p[:, i]) + (x[1] * q[:, i]) + (x[2] * p[:, i]) + (x[3] * q[:, i])
 
+        # if i == 0:
+        #     print('xtalk_cc: ', xtalk_cc)
+        #     print('xtalk: ', xtalk[0], xtalk[4], xtalk[5], xtalk[6], xtalk[7])
+        #     print('x: ', x)
+        #     print('t: ', t)
+        #     print('p[0, i]: ', p[0, i])
+        #     print('q[0, i]: ', q[0, i])
+
+
         # set t to 0 if t < 0
         norm += np.where(t < 0, 0, t)
 
-        e = (p[:, i] ** 2 + q[:, i] ** 2) / t  # 1-d vector
+        e = (p[:, i] * p[:, i] + q[:, i] * q[:, i]) / (t + _o)  # 1-d vector
 
         q_norm[:, i] = np.where(e > 1, 0, e)
+
+        u = x[0] + x[2]
+        v = x[1] + x[3]
+        rn[i] = np.sum(u * u + v * v)
+
+    # print('q: ', norm)
+    e = q_E * 2   # TF-Domain SNR
+    norm = np.where(norm < float32(2.), float32(2.), norm)  # set norm to 2 if norm < 2
+    # print('norm: ', norm)
+    # print('e: ', e)
+    detector_snr = e / norm  # detector {0:NIFO} SNR
+
+    return detector_snr, norm, rn
 
 
 @njit
