@@ -140,6 +140,25 @@ def packet_norm_numpy(p, q, xtalks, mk, q_E):
     return detector_snr, norm, rn
 
 
+@njit(cache=True)
+def gw_norm_numpy(data_norm, q_norm, p_E, ec):
+    n_pixels = len(data_norm[0])
+    n_ifos = len(data_norm)
+
+    norm = np.zeros(n_ifos)
+    p_norm = np.zeros(n_ifos)
+
+    signal_norm = np.zeros((n_ifos, n_pixels))
+    for i in range(n_ifos):
+        norm[i] = q_norm[i]  # get data norms
+        p_norm[i] = norm[i]  # save norms
+        e = p_E[i] * 2  # TF-Domain SNR
+        norm[i] = e / norm[i]  # detector {0:NIFO} SNR
+        signal_norm[i] = np.where(ec > 0, data_norm[i], 0)  # set signal norms
+
+    return norm, signal_norm
+
+
 @njit
 def orthogonalize_and_rotate(p, q, pAVX, length):
     event_mask = pAVX[1]

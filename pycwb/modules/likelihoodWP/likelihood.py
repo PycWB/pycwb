@@ -5,7 +5,7 @@ from numba import njit, prange, float32
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
-from .utils import avx_packet_ps, packet_norm_numpy
+from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy
 from ..xtalk.monster import load_catalog, getXTalk_pixels
 
 
@@ -171,7 +171,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         #     print(f"Lo({l}): ", Lo)
 
         # coherent statistics
-        Cr, Ec, Mp, No = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
+        Cr, Ec, Mp, No, coherent_energy = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
         CH = No / (n_ifo * Mo + sqrt(Mo))  # chi2 in TF domain
         cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
@@ -232,12 +232,17 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     v00 = np.empty((n_ifo, n_pix), dtype=float32)
     v90 = np.empty((n_ifo, n_pix), dtype=float32)
+    td_energy = np.zeros((n_ifo, n_pix), dtype=float32)
+
     offset = int(td00.shape[0] / 2)
 
     for i in range(n_ifo):
         v00[i] = td00[ml[i, l] + offset, i]
         v90[i] = td90[ml[i, l] + offset, i]
 
+    for i in range(n_ifo):
+        for j in range(n_pix):
+            td_energy[i, j] = v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
     # calculate data stats for time delayed data slice
     Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
 
@@ -247,11 +252,21 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # gw strain packet, return number of selected pixels
     Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
 
+    # othogonalize signal amplitudes
+    Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
+
+    # coherent statistics
+    _, _, _, _, coherent_energy = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
+
+
     Eo, pd, pD, pd_E, _, _, _, _  = avx_packet_ps(v00, v90, mask)  # get data packet
     Lo, ps, pS, ps_E, _, _, _, _  = avx_packet_ps(ps, pS, mask)  # get signal packet
 
     detector_snr, norm, rn = packet_norm_numpy(pd, pD, wdm_xtalk, mask, pd_E)
     D_snr = np.sum(detector_snr)
+    gw_norm, signal_norm = gw_norm_numpy(td_energy, norm, ps_E, coherent_energy)
+    S_snr = np.sum(gw_norm)
+    print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
 
 
 def calculate_detection_statistic():
