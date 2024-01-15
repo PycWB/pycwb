@@ -1,27 +1,9 @@
 import struct
 import numpy as np
+from numba import njit
 
 
 def load_catalog(fn):
-    """
-    Load cross-talk catalog from file
-
-    Parameters
-    ----------
-
-    fn : str
-        filename
-
-    Returns
-    -------
-
-    catalog : list
-        cross-talk catalog
-    layers : list[int]
-        number of layers for each resolution
-    nRes : int
-        number of resolutions
-    """
     with open(fn, "rb") as f:
         data = f.read()  # Read the entire file into memory
 
@@ -42,145 +24,106 @@ def load_catalog(fn):
         tag, BetaOrder, precision, KWDM = 0, 0, 0, 0
 
     layers = [int(unpack('f')[0]) for _ in range(nRes)]
-
-    catalog = []
+    max_layers = max(layers)
+    lookup_table = np.zeros((nRes, nRes, max_layers + 1, 2, 2), dtype=np.int32)
+    xtalk_coeff = []
+    entry_index = 0
     for i in range(nRes):
-        catalog_row = []
         for j in range(i + 1):
-            layer_data = []
             for k in range(layers[i] + 1):
-                xtalk_arrays = []
                 for l in range(2):
                     oa_size = int(unpack('f')[0])
                     oa_data = np.frombuffer(data, dtype=np.dtype([('index', 'i'), ('CC', '4f')]), count=oa_size,
                                             offset=offset).tolist()
                     offset += oa_size * struct.calcsize('i4f')
-                    xtalk_arrays.append(oa_data)
-                layer_data.append(xtalk_arrays)
-            catalog_row.append(layer_data)
-        catalog.append(catalog_row)
+                    lookup_table[i, j, k, l, 0] = entry_index
+                    for entry in oa_data:
+                        xtalk_coeff.append(
+                            np.array([entry[0], entry[1][0], entry[1][1], entry[1][2], entry[1][3]], dtype=np.float32))
+                        entry_index += 1
+                    lookup_table[i, j, k, l, 1] = entry_index
 
-    return catalog, layers, nRes
+    return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes
 
 
-def getXTalk(nLayer1, indx1, nLayer2, indx2, nRes, layers, catalog):
-    # Assuming ret is a dictionary representing the struct xtalk
-    ret = {'index': 1, 'CC': [3.0, 3.0, 3.0, 3.0]}
-
-    r1, r2 = None, None
+@njit(cache=True)
+def getXTalk(nLayer1, indx1, nLayer2, indx2, layers, xtalk_coeff, xtalk_lookup_table):
+    r1, r2 = -1, -1  # Default values if the condition is not met
     for i, layer in enumerate(layers):
-        if nLayer1 == layer + 1:
+        if layer == nLayer1 - 1:
             r1 = i
-            break
-
-    for i, layer in enumerate(layers):
-        if nLayer2 == layer + 1:
+        if layer == nLayer2 - 1:
             r2 = i
-            break
 
-    if r1 is None or r2 is None:
-        print(f"monster::getXTalk : resolution not found {nRes} {nLayer1} {nLayer2} {r1} {r2} {layers[0]} {layers[6]}")
-        exit(1)
+    if r1 == -1 or r2 == -1:
+        raise ValueError(f"Resolution not found: {nLayer1} {nLayer2} in layers")
 
-    swap = False
-    if r1 < r2:
-        r1, r2 = r2, r1
-        indx1, indx2 = indx2, indx1
-        swap = True
+    # Simplify swapping logic
+    swap = r1 < r2
+    if swap:
+        r1, r2, indx1, indx2 = r2, r1, indx2, indx1
 
-    time1 = indx1 // (layers[r1] + 1)
-    freq1 = indx1 % (layers[r1] + 1)
-
+    # Compute index values
+    layer1 = layers[r1]
+    time1, freq1 = divmod(indx1, layer1 + 1)
     odd = time1 & 1
+    index = indx2 - (time1 - odd) * (layer1 // layers[r2]) * (layers[r2] + 1)
 
-    index = indx2 - (time1 - odd) * (layers[r1] // layers[r2]) * (layers[r2] + 1)
+    # Vector retrieval and processing
+    ret = np.array([3.0, 3.0, 3.0, 3.0], dtype=np.float32)  # Preset array
+    entry_index = xtalk_lookup_table[r1][r2][freq1][odd]
+    for item in xtalk_coeff[entry_index[0]:entry_index[1]]:
+        if index == int(item[0]):
+            ret[0] = item[1]
+            ret[1] = item[2]
+            ret[2] = item[3]
+            ret[3] = item[4]
 
-    vector = catalog[r1][r2][freq1][odd]
-    for item in vector:
-        if index == item[0]:
-            ret['CC'] = item[1].copy()
             if swap:
-                ret['CC'][1], ret['CC'][2] = ret['CC'][2], ret['CC'][1]
+                ret[1], ret[2] = ret[2], ret[1]
             break
 
     return ret
 
 
-def getXTalk_pixels(pixels, check, nRes, layers, catalog):
-    """
-    Get cross-talk for each pixel in the given pixel list
+@njit(cache=True)
+def getXTalk_pixels_np(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
+    n_pix = len(pixels)
 
-    Parameters
-    ----------
+    clusterCC = np.empty((n_pix * n_pix, 8), dtype=np.float32)
+    clusterCC_lookup = np.empty((n_pix, 2), dtype=np.int32)
 
-    pixels : list[Pixel]
-        list of pixels
-    check : bool
-        if True, check if pixel has time-delay data
-    nRes : int
-        number of resolutions
-    layers : list[int]
-        number of layers for each resolution
-    catalog : list
-        cross-talk catalog
-
-    Returns
-    -------
-
-    sizeCC : list[int]
-        number of cross-talk elements for each pixel
-    clusterCC : list[np.ndarray]
-        cross-talk elements for each pixel
-    """
-    pI = []
-    sizeCC = []
-    clusterCC = []
-
+    index_counter = 0
     for i, pixi in enumerate(pixels):
-        if pixi is None:
-            print("monster::netcluster error: NULL pointer")
-            exit(1)
-        if check and len(pixi.td_amp) == 0:
-            continue
-        pI.append(i)
-
-        N = M = K = 0
-        tmp_data = np.zeros(8 * len(pixels), dtype=np.float32)
-
+        # tmp_data = []
+        clusterCC_lookup[i, 0] = index_counter
         for j, pixj in enumerate(pixels):
-            if pixj is None:
-                print("monster::netcluster error: NULL pointer")
-                exit(1)
-            if check and len(pixj.td_amp) == 0:
-                continue
-            M += 1
-            tmpOvlp = getXTalk(pixi.layers, pixi.time, pixj.layers, pixj.time, nRes, layers, catalog)
-            if tmpOvlp['CC'][0] > 2:
+            tmpOvlp = getXTalk(pixi[0], pixi[1], pixj[0], pixj[1], layers, xtalk_coeff, xtalk_lookup_table)
+            if tmpOvlp[0] > 2:
                 continue
 
-            N = 0 if i == j else K + 1
-            K += 1 if i != j else 0
+            M = j + 1
+            # N = 0 if i == j else len(tmp_data) // 8 + 1
+            clusterCC[index_counter][0] = float(M - 1)
+            clusterCC[index_counter][1] = tmpOvlp[0] ** 2 + tmpOvlp[1] ** 2
+            clusterCC[index_counter][2] = tmpOvlp[2] ** 2 + tmpOvlp[3] ** 2
+            clusterCC[index_counter][3] = clusterCC[i * n_pix + j][1] + clusterCC[i * n_pix + j][2]
+            clusterCC[index_counter][4] = tmpOvlp[0]
+            clusterCC[index_counter][5] = tmpOvlp[2]
+            clusterCC[index_counter][6] = tmpOvlp[1]
+            clusterCC[index_counter][7] = tmpOvlp[3]
+            index_counter += 1
 
-            index = N * 8
-            tmp_data[index:index+8] = [
-                float(M - 1),
-                tmpOvlp['CC'][0]**2 + tmpOvlp['CC'][1]**2,
-                tmpOvlp['CC'][2]**2 + tmpOvlp['CC'][3]**2,
-                tmp_data[index + 1] + tmp_data[index + 2],
-                tmpOvlp['CC'][0],
-                tmpOvlp['CC'][2],
-                tmpOvlp['CC'][1],
-                tmpOvlp['CC'][3]
-            ]
+        clusterCC_lookup[i, 1] = index_counter
 
-        N += 1
-        p8 = tmp_data[:N * 8]
-        sizeCC.append(N)
-        clusterCC.append(p8)
-
-    return sizeCC, clusterCC
+        # sizeCC.append(len(tmp_data) // 8)
+        # clusterCC.append(np.array(tmp_data, dtype=np.float32))
+    return clusterCC_lookup, clusterCC[0:index_counter]
 
 
+def getXTalk_pixels(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
+    pixels_np = np.array([[pix.layers, pix.time] for pix in pixels])
 
-# catalog, layers, nRes = load_catalog(fn)
-# getXTalk_pixels(pixels, True, nRes, layers, catalog)
+    clusterCC_lookup, clusterCC = getXTalk_pixels_np(pixels_np, check, layers, xtalk_coeff, xtalk_lookup_table)
+
+    return clusterCC_lookup, clusterCC
