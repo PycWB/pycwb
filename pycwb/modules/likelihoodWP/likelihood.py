@@ -2,6 +2,7 @@ from math import sqrt
 
 import numpy as np
 from numba import njit, prange, float32
+from numba.typed import List
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
@@ -26,7 +27,7 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     # Load xtalk catalog
 
     catalog, layers, nRes = load_catalog(MRAcatalog)
-    sizeCC, wdm_xtalk = getXTalk_pixels(cluster.pixels, True, nRes, layers, catalog)
+    sizeCC, wdm_xtalk = getXTalk_pixels(cluster.pixels, True, layers, catalog)
 
     # Extract data from python object to numpy arrays for numba
     ml, FP, FX = load_data_from_ifo(network, nIFO)
@@ -38,6 +39,8 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     FP = FP.T.astype(np.float32)
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
+    wdm_xtalk = List(wdm_xtalk)
+
 
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
@@ -226,9 +229,9 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     return l_max
 
 
-# @njit(cache=True)
-def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, wdm_xtalk):
-    from numpy import float32
+@njit(cache=True)
+def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk, cluster_xtalk_lookup_table):
+    # from numpy import float32
     # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     v00 = np.empty((n_ifo, n_pix), dtype=float32)
@@ -244,6 +247,7 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     for i in range(n_ifo):
         for j in range(n_pix):
             td_energy[i, j] = v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
+
     # calculate data stats for time delayed data slice
     Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
 
@@ -262,11 +266,12 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     Eo, pd, pD, pd_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
     Lo, ps, pS, ps_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
 
-    detector_snr, norm, rn = packet_norm_numpy(pd, pD, wdm_xtalk, mask, pd_E)
+    detector_snr, norm, rn = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
     D_snr = np.sum(detector_snr)
     gw_norm, signal_norm = gw_norm_numpy(td_energy, norm, ps_E, coherent_energy)
     S_snr = np.sum(gw_norm)
-    print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
+    # print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
+    print("Eo = ", Eo, ", Lo = ", Lo, ", Ep = ", D_snr, ", Lp = ", S_snr)
 
 
 def calculate_detection_statistic():

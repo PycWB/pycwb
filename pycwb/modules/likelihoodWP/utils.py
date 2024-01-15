@@ -35,7 +35,7 @@ def avx_packet_ps(p, q, mask):
     for i in range(n_ifo):
         _si = float32(2.) * aA[i]   # rotation 2*sin*cos*norm
         _co = aa[i] - AA[i]   # rotation (cos^2-sin^2)*norm
-        print(f"_si[{i}]: ", _si, f"_co[{i}]: ", _co)
+        # print(f"_si[{i}]: ", _si, f"_co[{i}]: ", _co)
         _x = aa[i] + AA[i] + _o  # total energy
         _cc = _co * _co   # cos^2
         _ss = _si * _si   # sin^2
@@ -69,8 +69,8 @@ def avx_packet_ps(p, q, mask):
     return Ep/float32(2.), p_updated, q_updated, E, si, co, a_save, A_save
 
 
-# @njit(cache=True)
-def packet_norm_numpy(p, q, xtalks, mk, q_E):
+@njit(cache=True)
+def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     """Compute the norm of a packet of pixels.
 
     Parameters
@@ -92,9 +92,10 @@ def packet_norm_numpy(p, q, xtalks, mk, q_E):
     for i in range(n_pixels):
         if mk[i] <= 0.:
             continue
-        xtalk = xtalks[i]
-        xtalk_indexes = xtalk[0::8].astype(int)
-        xtalk_cc = np.array([xtalk[4::8], xtalk[5::8], xtalk[6::8], xtalk[7::8]])  # 4xM matrix
+        xtalk_range = xtalks_lookup[i]
+        xtalk = xtalks[xtalk_range[0]:xtalk_range[1]]
+        xtalk_indexes = xtalk[:,0].astype(np.int32)
+        xtalk_cc = np.vstack((xtalk[:,4], xtalk[:,5], xtalk[:,6], xtalk[:,7]))  # 4xM matrix
         # Select elements from p and q based on xtalk_indexes
         p_vec = p[:, xtalk_indexes]  # N*M matrix
         q_vec = q[:, xtalk_indexes]  # N*M matrix
@@ -102,10 +103,10 @@ def packet_norm_numpy(p, q, xtalks, mk, q_E):
         # x = np.sum(xtalk_cc * np.array([q_vec, p_vec, q_vec, p_vec]), axis=1)  # 4-d vector
 
         # h = x * np.array([q[:, i], p[:, i], q[:, i], p[:, i]])
-        x = np.array([np.dot(p_vec, xtalk_cc[0].T),
+        x = np.vstack((np.dot(p_vec, xtalk_cc[0].T),
                       np.dot(p_vec, xtalk_cc[1].T),
                       np.dot(q_vec, xtalk_cc[2].T),
-                      np.dot(q_vec, xtalk_cc[3].T)])  # 4xN matrix
+                      np.dot(q_vec, xtalk_cc[3].T)))  # 4xN matrix
 
         # Summing all components together
         t = (x[0] * p[:, i]) + (x[1] * q[:, i]) + (x[2] * p[:, i]) + (x[3] * q[:, i])
