@@ -4,7 +4,8 @@ from pycwb.config import Config
 from pycwb.modules.logger import logger_init
 
 if not os.environ.get('HOME_WAT_FILTERS'):
-    os.environ['HOME_WAT_FILTERS'] = "/Users/yumengxu/Project/Physics/cwb/config_o3/XTALKS"
+    print('Please set HOME_WAT_FILTERS to the directory of WAT filters')
+    exit(1)
 
 logger_init()
 

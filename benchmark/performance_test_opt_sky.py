@@ -1,5 +1,5 @@
 # add .. to path[0]
-import sys
+import sys, os
 sys.path.insert(0, '..')
 
 import pickle
@@ -34,7 +34,11 @@ n_pix = rms.shape[1]
 #####################
 # Load xtalk catalog
 #####################
-fn = '/Users/yumengxu/Project/Physics/cwb/config_o3/XTALKS/wdmXTalk/OverlapCatalog16-1024.bin'
+if not os.environ.get('HOME_WAT_FILTERS'):
+    print('Please set HOME_WAT_FILTERS to the directory of WAT filters')
+    exit(1)
+
+fn = f"{os.environ.get('HOME_WAT_FILTERS')}/wdmXTalk/OverlapCatalog16-1024.bin"
 
 start_time = time.time()
 xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(fn)
