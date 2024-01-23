@@ -23,3 +23,5 @@ messenger-web-interface/dist
 
 cwb_wrapper/_version.py
 pycwb/_version.py
+
+benchmark/*.pkl
