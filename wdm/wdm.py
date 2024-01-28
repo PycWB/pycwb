@@ -33,6 +33,16 @@ class WDM:
         self.filter = filter[:N]
         self.m_H = N
 
+    def t2w(self, strain, MM=0):
+        """
+        Transform time series to WDM
+
+        :param WWS: time series
+        :param MM:  MM = 0 requests power map of combined quadratures (not amplitudes for both)
+        :return:
+        """
+        return t2w(self.M, self.m_H, strain, self.filter, MM)
+
 
 @njit(cache=True)
 def get_filter(M, K, BetaOrder, n, Cos, CosSize):
