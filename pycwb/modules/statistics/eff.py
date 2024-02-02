@@ -158,26 +158,92 @@ def read_hrss_for_mdc(run_dir, pp_factor2distance=0.):
     return imdc_set_hrss10, imdc_set_hrss50, imdc_set_hrss90, imdc_set_hrss50_err
 
 
-def plot_hrss_from_mdc(run_dir):
+def plot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
     import matplotlib.pyplot as plt
+    import seaborn as sns
 
-    injections = read_inj_type(run_dir + 'injectionList.txt')
+    color = sns.color_palette("Paired")
+    plt.figure(figsize=(10,8))
 
-    imdc_set_hrss10, imdc_set_hrss50, imdc_set_hrss90, imdc_set_hrss50_err = read_hrss_for_mdc(run_dir)
+    i = 0
+    for run_dir, tag in zip(run_dirs, tags):
+        injections = read_inj_type(run_dir + 'injectionList.txt')
 
-    for inj_set_name in imdc_set_hrss50.keys():
-        wf_names = list(imdc_set_hrss50[inj_set_name].keys())
-        central_freqs = [float(inj['fcentral']) for inj in injections if
-                         inj['set'] == inj_set_name and inj['name'] in wf_names]
-        hrss50s = [imdc_set_hrss50[inj_set_name][wf_name] for wf_name in wf_names]
-        hrss50_errs = np.array([imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names]) - hrss50s
-        line, = plt.loglog(central_freqs, hrss50s, label=inj_set_name, marker='o')
-        line_color = line.get_color()
-        plt.errorbar(central_freqs, hrss50s, yerr=hrss50_errs, fmt='none', capsize=3, color=line_color)
+        imdc_set_hrss10, imdc_set_hrss50, imdc_set_hrss90, imdc_set_hrss50_err = read_hrss_for_mdc(run_dir)
+
+        for j, inj_set_name in enumerate(imdc_set_hrss50.keys()):
+            wf_names = list(imdc_set_hrss50[inj_set_name].keys())
+            central_freqs = [float(inj['fcentral']) for inj in injections if
+                             inj['set'] == inj_set_name and inj['name'] in wf_names]
+            hrss50s = [imdc_set_hrss50[inj_set_name][wf_name] for wf_name in wf_names]
+            hrss50_errs = np.array([imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names]) - hrss50s
+            line, = plt.loglog(central_freqs, hrss50s, label=f"{tag}_{inj_set_name}", marker='.', color=color[j*2 + i])
+            line_color = line.get_color()
+            plt.errorbar(central_freqs, hrss50s, yerr=hrss50_errs, fmt='none', capsize=3, color=line_color)
+        i += 1
+
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Hrss (1/Hz^{-1/2})')
     # show more x ticks
     plt.title('Hrss50')
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)
     plt.legend()
-    plt.savefig(run_dir + 'hrss50.png')
+    plt.savefig(f'{output_dir}/hrss50.png')
+
+
+def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+
+    color = sns.color_palette("Paired")
+    bar_width = 0.8 / len(run_dirs)
+    opacity = 0.8
+
+    data_sets = []
+    for i, (run_dir, tag) in enumerate(zip(run_dirs, tags)):
+        injections = read_inj_type(run_dir + 'injectionList.txt')
+        imdc_set_hrss10, imdc_set_hrss50, imdc_set_hrss90, imdc_set_hrss50_err = read_hrss_for_mdc(run_dir)
+        wf_names_all = []
+        central_freqs = []
+        hrss50s_all = []
+        hrss50_errs_all = []
+        for j, inj_set_name in enumerate(imdc_set_hrss50.keys()):
+            wf_names = list(imdc_set_hrss50[inj_set_name].keys())
+            hrss50s = [imdc_set_hrss50[inj_set_name][wf_name] for wf_name in wf_names]
+            hrss50_errs = np.array([imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names]) - hrss50s
+
+            wf_names_all += wf_names
+            hrss50s_all += list(hrss50s)
+            hrss50_errs_all += list(hrss50_errs)
+
+        # Sort by central frequency
+        # sorted_indices = np.argsort(central_freqs)
+        # central_freqs = np.array(central_freqs)[sorted_indices]
+        # hrss50s_all = np.array(hrss50s_all)[sorted_indices]
+        # hrss50_errs_all = np.array(hrss50_errs_all)[sorted_indices]
+        # wf_names_sorted = np.array(wf_names_all)[sorted_indices]
+
+        data_sets.append((wf_names_all, hrss50s_all, hrss50_errs_all, tag))
+
+    # Plot the data
+    # figure size (10, 5)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    len_data_sets = len(data_sets)
+    for i, (wf_names, hrss50s, hrss50_errs, label) in enumerate(data_sets):
+        index = np.arange(len(wf_names))
+        bars = ax.bar(index + i*bar_width, hrss50s, bar_width, alpha=opacity, color=color[i], yerr=hrss50_errs, label=label,
+                      error_kw=dict(lw=1, capsize=1.5, capthick=1, alpha=0.7))
+    wf_names = data_sets[0][0]
+    index = np.arange(len(wf_names))
+    ax.set_yscale('log')
+    ax.set_xlabel('Waveform Names')
+    ax.set_ylabel('hrss50 values')
+    ax.set_title('Comparison of hrss50 values')
+    ax.set_xticks(index + bar_width*(len_data_sets-1)/2)
+    ax.set_xticklabels(wf_names, rotation=45, ha='right')  # Rotate x-labels 45 degrees
+    ax.legend()
+
+    plt.tight_layout()
+    plt.savefig(f'{output_dir}/hrss50_barplot.png')
