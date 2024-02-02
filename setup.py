@@ -29,7 +29,6 @@ install_requires = [
     "orjson",
     "dacite",
     "lalsuite>=7.0.0",
-    "rocket-fft",
     # "nds2-client",
     # "python-nds2-client"
 ]
