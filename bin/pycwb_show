@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import pycwb.cli.server as server
-
+import warnings
 
 if __name__ == "__main__":
+    # deprecation warning
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
     parser = argparse.ArgumentParser(description='Python HTTP Server')
     server.init_parser(parser)
     args = parser.parse_args()

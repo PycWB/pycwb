@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+
 import argparse
 import pycwb.cli.run as run
-
+import warnings
 if __name__ == '__main__':
+    # deprecation warning
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
     main_parser = argparse.ArgumentParser(description='User parameter YAML file.')
     run.init_parser(main_parser)
     args = main_parser.parse_args()

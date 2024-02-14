@@ -28,6 +28,10 @@ def main():
     else:
         parser.print_help()
 
+    # if no command is given, print help
+    if len(vars(args)) == 0:
+        parser.print_help()
+
 
 if __name__ == '__main__':
     main()
