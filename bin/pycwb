@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+# This is a command-line interface to the pycwb package. It provides options like
+# pycwb create, pycwb run, pycwb server, etc. It is a wrapper around the pycwb package
+
+import argparse
+import pycwb.cli.server as server
+import pycwb.cli.run as run
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='pycwb')
+    subparsers = parser.add_subparsers(help='commands')
+
+    # Create subcommand
+    create_parser = subparsers.add_parser('server', help='Run a simple server to show the results')
+    server.init_parser(create_parser)
+    create_parser.set_defaults(func=server.command)
+
+    # Run subcommand
+    run_parser = subparsers.add_parser('run', help='Run search')
+    run.init_parser(run_parser)
+    run_parser.set_defaults(func=run.command)
+
+    args = parser.parse_args()
+    if hasattr(args, 'func'):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()
