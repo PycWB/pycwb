@@ -60,7 +60,7 @@ def aggregate_clusters(links):
     return filtered_clusters
 
 
-@njit
+@njit(cache=True)
 def remove_duplicates_sorted(arr):
     # Assuming arr is a sorted 2D numpy array of shape (n, 2)
     n = len(arr)
@@ -82,7 +82,7 @@ def remove_duplicates_sorted(arr):
     return unique[:count]
 
 
-@njit
+@njit(cache=True)
 def get_cluster_links(pixels, gap, n_ifo):
     """
 
@@ -140,4 +140,121 @@ def get_cluster_links(pixels, gap, n_ifo):
                     cluster_links.append(link)
 
         # remove redundant links with numpy
-    return np.array(cluster_links)
+    return np.array(cluster_links), dF
+
+
+@njit(cache=True)
+def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
+    oEo = atype == 'E' or atype == 'P'
+    cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
+    max_size = len(pixels)
+    rate = np.zeros(max_size, dtype=np.float64)
+    ampl = np.zeros(max_size, dtype=np.float64)
+    powr = np.zeros(max_size, dtype=np.float64)
+    sIZe = np.zeros(max_size, dtype=np.int32)
+    cuts = np.zeros(max_size, dtype=np.bool_)
+    like = np.zeros(max_size, dtype=np.float64)
+    rate_counter = 0
+
+    for i in range(len(pixels)):
+        pix = pixels[i]
+        if not pix[0] and core:
+            continue
+        L = pix[5]  # Assuming likelihood is another property, adjust as needed.
+        e = 0.0
+        for a in pix[6:]:  # Assuming data values start from the 6th column
+            e += abs(a) if abs(a) > 1.0 else 0.0
+
+        a = L if atype == 'L' else e
+        tt = 1.0 / pix[3]  # wavelet time resolution
+        mm = pix[4]  # number of wavelet layers
+        cT += int(pix[1] / mm) * a
+        nT += a / tt
+        cF += (pix[2] + dF) * a
+        nF += a * 2.0 * tt
+
+        insert = True
+        for j in range(rate_counter):
+            if rate[j] == int(pix[3] + 0.1):
+                insert = False
+                ampl[j] += e
+                sIZe[j] += 1
+                like[j] += L
+                break
+
+        if insert:
+            rate[rate_counter] = int(pix[3] + 0.1)
+            ampl[rate_counter] = e
+            powr[rate_counter] = 0.0  # Adjust as needed
+            sIZe[rate_counter] = 1
+            cuts[rate_counter] = True  # Adjust as needed
+            like[rate_counter] = L
+            rate_counter += 1
+
+        E += e
+
+    # Trim the arrays to the actual size used
+    rate = rate[:rate_counter]
+    ampl = ampl[:rate_counter]
+    powr = powr[:rate_counter]
+    sIZe = sIZe[:rate_counter]
+    cuts = cuts[:rate_counter]
+    like = like[:rate_counter]
+
+    # cut off single level clusters coincidence between levels
+    if len(rate) < pair + 1 or E < nPIX:
+        return None
+
+    cut = True
+    for i in range(len(rate)):
+        if (atype == 'L' and like[i] < S) or (oEo and ampl[i] < S):
+            continue
+        if not pair:
+            cuts[i] = cut = False
+            continue
+        for j in range(len(rate)):
+            if (atype == 'L' and like[j] < S) or (oEo and ampl[j] < S):
+                continue
+            if rate[i] / 2 == rate[j] or rate[j] / 2 == rate[i]:
+                cuts[i] = cuts[j] = cut = False
+
+    if cut:
+        return None
+
+    # Select the optimal resolution
+    a = -1.e99
+    max = -1
+    for j in range(len(rate)):
+        powr[j] = ampl[j] / sIZe[j]
+        if atype == 'E' and ampl[j] > a and not cuts[j]:
+            max = j
+            a = ampl[j]
+        if atype == 'L' and like[j] > a and not cuts[j]:
+            max = j
+            a = like[j]
+        if atype == 'P' and powr[j] > a and not cuts[j]:
+            max = j
+            a = powr[j]
+
+    if a < S:
+        return None
+
+    min = -1
+    a = -1.e99
+    for j in range(len(rate)):
+        if max == j:
+            continue
+        if atype == 'E' and ampl[j] < a and not cuts[j]:
+            min = j
+            a = ampl[j]
+        if atype == 'L' and like[j] < a and not cuts[j]:
+            min = j
+            a = like[j]
+        if atype == 'P' and powr[j] < a and not cuts[j]:
+            min = j
+            a = powr[j]
+
+    cTime = cT / nT
+    cFreq = cF / nF
+
+    return [cTime, cFreq, rate[max], rate[min], E]

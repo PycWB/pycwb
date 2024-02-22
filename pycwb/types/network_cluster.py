@@ -1,5 +1,5 @@
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.sparse import coo_array
@@ -76,37 +76,37 @@ class ClusterMeta:
     sky_index: float
         index in the skymap
     """
-    energy: float
-    energy_sky: float
-    like_net: float
-    net_ecor: float
-    norm_cor: float
-    net_null: float
-    net_ed: float
-    g_noise: float
-    like_sky: float
-    sky_cc: float
-    net_cc: float
-    sky_chi2: float
-    sub_net: float
-    sub_net2: float
-    sky_stat: float
-    net_rho: float
-    net_rho2: float
-    theta: float
-    phi: float
-    iota: float
-    psi: float
-    ellipticity: float
-    c_time: float
-    c_freq: float
-    g_net: float
-    a_net: float
-    i_net: float
-    norm: float
-    ndof: float
-    sky_size: float
-    sky_index: float
+    energy: float = 0.
+    energy_sky: float = 0.
+    like_net: float = 0.
+    net_ecor: float = 0.
+    norm_cor: float = 0.
+    net_null: float = 0.
+    net_ed: float = 0.
+    g_noise: float = 0.
+    like_sky: float = 0.
+    sky_cc: float = 0.
+    net_cc: float = 0.
+    sky_chi2: float = 0.
+    sub_net: float = 0.
+    sub_net2: float = 0.
+    sky_stat: float = 0.
+    net_rho: float = 0.
+    net_rho2: float = 0.
+    theta: float = 0.
+    phi: float = 0.
+    iota: float = 0.
+    psi: float = 0.
+    ellipticity: float = 0.
+    c_time: float = 0.
+    c_freq: float = 0.
+    g_net: float = 0.
+    a_net: float = 0.
+    i_net: float = 0.
+    norm: float = 0.
+    ndof: float = 0.
+    sky_size: float = 0.
+    sky_index: float = 0.
 
 
 @dataclass
@@ -139,14 +139,14 @@ class Cluster:
     """
     pixels: list[Pixel]
     cluster_meta: ClusterMeta
-    cluster_status: int
-    cluster_rate: list[int]
-    cluster_time: float
-    cluster_freq: float
-    sky_area: list[float]
-    sky_pixel_map: list[float]
-    sky_pixel_index: list[int]
-    sky_time_delay: list[float]
+    cluster_status: int = 0
+    cluster_rate: list[int] = field(default_factory=list)
+    cluster_time: float = 0.0
+    cluster_freq: float = 0.0
+    sky_area: list[float] = field(default_factory=list)
+    sky_pixel_map: list[float] = field(default_factory=list)
+    sky_pixel_index: list[int] = field(default_factory=list)
+    sky_time_delay: list[float] = field(default_factory=list)
 
     def get_pixel_rates(self):
         """
