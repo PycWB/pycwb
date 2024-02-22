@@ -1,5 +1,5 @@
 import numpy as np
-from .utils import get_cluster_links, aggregate_clusters
+from .utils import get_cluster_links, aggregate_clusters, calculate_statistics
 from ...types.network_cluster import Cluster, ClusterMeta
 
 
