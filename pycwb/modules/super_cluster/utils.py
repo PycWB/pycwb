@@ -49,7 +49,7 @@ def aggregate_clusters(links):
     # Aggregate clusters
     for i in range(n):
         root = find(parent, i)
-        clusters[root].append(i)
+        clusters[root].append(np.int32(i))
 
     # Filter out single-element clusters
     filtered_clusters = List()
@@ -140,7 +140,7 @@ def get_cluster_links(pixels, gap, n_ifo):
                     cluster_links.append(link)
 
         # remove redundant links with numpy
-    return np.array(cluster_links), dF
+    return np.array(cluster_links, dtype=np.int32), dF
 
 
 @njit(cache=True)
