@@ -58,3 +58,26 @@ def aggregate_clusters(links):
             filtered_clusters.append(cluster)
 
     return filtered_clusters
+
+
+
+@njit
+def remove_duplicates_sorted(arr):
+    # Assuming arr is a sorted 2D numpy array of shape (n, 2)
+    n = len(arr)
+    if n == 0:
+        return arr  # Early return for empty array
+
+    # Preallocate an array of the same size to store unique elements
+    unique = np.empty_like(arr)
+    unique[0] = arr[0]
+    count = 1  # Initialize count with 1 as the first element is always unique
+
+    for i in range(1, n):
+        # Since arr is sorted, just check if the current element is different from the last unique element added
+        if not np.array_equal(arr[i], unique[count-1]):
+            unique[count] = arr[i]
+            count += 1
+
+    # Trim the unique array to the correct number of unique elements found
+    return unique[:count]
