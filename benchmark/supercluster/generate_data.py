@@ -87,13 +87,17 @@ pwc_list = []
 import time
 
 start_time = time.time()
+start_time_1 = time.time()
 cluster = convert_fragment_clusters_to_netcluster(cluster)
+print(f"Time taken for convert_fragment_clusters_to_netcluster: {time.time() - start_time_1}")
 
+start_time_1 = time.time()
 for n in range(config.nIFO):
     det = network.get_ifo(n)
     det.sclear()
     for sparse_table in sparse_table_list:
         det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
+print(f"Time taken for convert_sparse_series_to_sseries: {time.time() - start_time_1}")
 
 j = 0
 
@@ -102,15 +106,18 @@ if config.l_high == config.l_low:
 if network.pattern != 0:
     cluster.pair = False
 
+start_time_1 = time.time()
 cluster.supercluster('L',network.net.e2or,config.TFgap,False)
+print(f"Time taken for supercluster stage1: {time.time() - start_time_1}")
 
-print(f"Time taken for supercluster stage1: {time.time() - start_time}")
+print(f"Time taken for supercluster: {time.time() - start_time}")
 fragment_cluster_test1 = convert_netcluster_to_fragment_clusters(cluster)
 
 
 test_data = {
     'strains': strains,
     'nRMS': nRMS,
+    'e2or': network.net.e2or,
     'config': config,
     'fragment_clusters': fragment_clusters,
     'fragment_cluster_stage1': fragment_cluster_test1
