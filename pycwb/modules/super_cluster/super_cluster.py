@@ -68,7 +68,7 @@ def supercluster(cluster, gap, n_ifo):
     pixels = []
     for c_id, c in enumerate(cluster.clusters):
         for p in c.pixels:
-            pixels.append([p.time / p.rate / p.layers, p.frequency / p.rate, 1 / p.rate, p.rate / 2, c_id] + [
+            pixels.append([p.time / p.rate / p.layers, p.frequency * p.rate, 1 / p.rate, p.rate / 2, c_id] + [
                 d.index / p.rate / p.layers for d in p.data])
     pixels = np.array(pixels)
 
