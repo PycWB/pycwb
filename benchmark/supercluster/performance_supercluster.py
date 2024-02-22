@@ -7,15 +7,16 @@ import copy
 
 fragment_clusters = data['fragment_clusters']
 
-cluster = copy.deepcopy(fragment_clusters[0])
-if len(fragment_clusters) > 1:
-    for fragment_cluster in fragment_clusters[1:]:
-        cluster.clusters += fragment_cluster.clusters
+clusters = []
+
+for fragment_cluster in fragment_clusters:
+    clusters += fragment_cluster.clusters
 
 
-from pycwb.modules.super_cluster.super_cluster import supercluster
+from pycwb.modules.super_cluster.super_cluster import supercluster, defragment
+from timeit import timeit
 
-superclusters = supercluster(cluster, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)
+superclusters = supercluster(clusters, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)
 
 print(f"Total number of superclusters: {len(superclusters)}")
 for i, c in enumerate(superclusters):
@@ -23,10 +24,20 @@ for i, c in enumerate(superclusters):
     print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
 
 # timeit, print one call in seconds
-from timeit import timeit
-time = timeit("supercluster(cluster, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)", globals=globals(), number=100)
+time = timeit("supercluster(clusters, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)", globals=globals(), number=100)
 print(f"Time: {time/100} seconds per call")
 
 # profiler
-import cProfile
-cProfile.run("supercluster(cluster, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)", sort='cumtime')
+# import cProfile
+# cProfile.run("supercluster(clusters, 'L', data['config'].gap, data['e2or'], data['config'].nIFO)", sort='cumtime')
+
+new_superclusters = defragment([sc for sc in superclusters if sc.cluster_status == 0],
+                               data['config'].Tgap, data['config'].Fgap, data['config'].nIFO)
+
+print(f"Total number of new superclusters: {len(new_superclusters)}")
+for i, c in enumerate(new_superclusters):
+    n_pix = len(c.pixels)
+    print(f'supercluster {i} has {n_pix} pixels')
+
+time = timeit("defragment([sc for sc in superclusters if sc.cluster_status == 0], data['config'].Tgap, data['config'].Fgap, data['config'].nIFO)", globals=globals(), number=100)
+print(f"Time: {time/100} seconds per call")

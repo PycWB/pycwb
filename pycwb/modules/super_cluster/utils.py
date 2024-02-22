@@ -144,6 +144,59 @@ def get_cluster_links(pixels, gap, n_ifo):
 
 
 @njit(cache=True)
+def get_defragment_link(pixels, t_gap, f_gap, n_ifo):
+    pixels = pixels[pixels[:, 0].argsort()]
+
+    Tgap = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
+    # Update Tgap based on your gap factor.
+    if Tgap < t_gap:
+        Tgap = t_gap
+
+    cluster_links = []
+    n_pixels = len(pixels)
+    for i in range(n_pixels):
+        p = pixels[i]
+        for j in range(i + 1, n_pixels):
+            q = pixels[j]
+
+            # Check if time difference is too large, indicating no further potential neighbors.
+            if q[0] - p[0] > Tgap:
+                break
+
+            # Check if they're from the same cluster or if the rate ratio is beyond threshold.
+            if p[4] == q[4] or max(p[2] / q[2], q[2] / p[2]) > 3:
+                continue
+
+            # Calculate dT
+            # R = p->rate + q->rate;
+            R = 1 / p[2] + 1 / q[2]
+            T = p[2] + q[2]
+            dT = 0
+            for k in range(n_ifo):
+                aa = p[5 + k] - q[5 + k]
+                if abs(aa) > dT:
+                    dT = abs(aa)
+            dT -= 0.5 * T
+
+            # Calculate dF using half the rate difference.
+            dF = abs(p[1] - q[1]) - 0.5 * R
+
+            if dT < t_gap and dF < f_gap:
+                if p[4] < q[4]:
+                    link = (int(p[4]), int(q[4]))
+                else:
+                    link = (int(q[4]), int(p[4]))
+
+                if link not in cluster_links:
+                    cluster_links.append(link)
+
+    if len(cluster_links) == 0:
+        return np.empty((0, 2), dtype=np.int32)
+    else:
+        return np.array(cluster_links, dtype=np.int32)
+
+
+@njit(cache=True)
 def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
     oEo = atype == 'E' or atype == 'P'
     cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -155,7 +208,7 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
     cuts = np.zeros(max_size, dtype=np.bool_)
     like = np.zeros(max_size, dtype=np.float64)
     rate_counter = 0
-
+    pixel_counter = 0
     for i in range(len(pixels)):
         pix = pixels[i]
         if not pix[0] and core:
@@ -191,6 +244,7 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
             like[rate_counter] = L
             rate_counter += 1
 
+        pixel_counter += 1
         E += e
 
     # Trim the arrays to the actual size used
@@ -202,7 +256,7 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
     like = like[:rate_counter]
 
     # cut off single level clusters coincidence between levels
-    if len(rate) < pair + 1 or E < nPIX:
+    if len(rate) < pair + 1 or pixel_counter < nPIX:
         return None
 
     cut = True
@@ -258,3 +312,17 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
     cFreq = cF / nF
 
     return [cTime, cFreq, rate[max], rate[min], E]
+
+
+def aggregate_clusters_from_links(cluster_ids, cluster_links):
+    # aggregate clusters
+    aggregated_clusters = aggregate_clusters(cluster_links)
+    aggregated_clusters = np.array([list(cluster) for cluster in aggregated_clusters])
+
+    # find the standalone clusters
+    standalone_clusters = np.array([c for c in cluster_ids if c not in aggregated_clusters])
+
+    # add standalone clusters
+    aggregated_clusters = [list(c) for c in aggregated_clusters] + [[c] for c in standalone_clusters]
+
+    return aggregated_clusters

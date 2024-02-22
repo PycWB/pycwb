@@ -108,9 +108,13 @@ if network.pattern != 0:
 
 start_time_1 = time.time()
 cluster.supercluster('L',network.net.e2or,config.TFgap,False)
-print(f"Time taken for supercluster stage1: {time.time() - start_time_1}")
+print(f"Time taken for supercluster: {time.time() - start_time_1}")
 
-print(f"Time taken for supercluster: {time.time() - start_time}")
+start_time_1 = time.time()
+cluster.defragment(config.Tgap, config.Fgap)
+print(f"Time taken for defragment: {time.time() - start_time_1}")
+
+print(f"Time taken for full supercluster: {time.time() - start_time}")
 fragment_cluster_test1 = convert_netcluster_to_fragment_clusters(cluster)
 
 
