@@ -1,17 +1,31 @@
 import numpy as np
 from numba.typed import List
-from numba import njit, types
+from numba import jit, njit, types
 
 
-@njit(cache=True)
+# @njit
+# def find(parent, x):
+#     """Path compression find."""
+#     if parent[x] != x:
+#         parent[x] = find(parent, parent[x])
+#     return parent[x]
+
+@njit
 def find(parent, x):
-    """Path compression find."""
-    if parent[x] != x:
-        parent[x] = find(parent, parent[x])
-    return parent[x]
+    root = x
+    # Find the root of the tree
+    while parent[root] != root:
+        root = parent[root]
 
+    # Path compression: update the parent pointers of all ancestors to point directly to the root
+    while x != root:
+        next = parent[x]
+        parent[x] = root
+        x = next
 
-@njit(cache=True)
+    return root
+
+@njit
 def union(parent, rank, x, y):
     """Union by rank."""
     rootX = find(parent, x)
