@@ -243,7 +243,7 @@ schema = {
         },
         "subrho": {
             "type": "number",
-            "description": "sub network threshold in the skyloop subNetCuts, if<=0 then subacor=netRHO (supercluster) ",
+            "description": "sub network threshold in the skyloop subNetCuts, if <=0 then subrho=netRHO (supercluster) ",
             "default": 0.0
         },
         "subacor": {
