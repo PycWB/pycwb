@@ -122,6 +122,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             pwc.setcore(False)
 
             psel = 0
+            # TODO: why is there a while loop here? the count is normally smaller than 10000
             while True:
                 # TODO: pythonize this
                 count = pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
