@@ -1,9 +1,14 @@
-import asyncio
 import shutil
+import os
+from prefect import flow, task, get_run_logger
+from prefect_dask.task_runners import DaskTaskRunner
+import matplotlib
+matplotlib.use('agg')
+
+# import dask
+# dask.config.set({"multiprocessing.context": "fork"})
 
 from gwpy.timeseries import TimeSeries
-from prefect.task_runners import ConcurrentTaskRunner
-from prefect.utilities.annotations import quote
 
 from pycwb.modules.coherence.coherence import _coherence_single_res
 from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
@@ -24,12 +29,6 @@ from pycwb.modules.plot_map.world_map import plot_world_map, plot_skymap_contour
 from pycwb.modules.plot.waveform import plot_reconstructed_waveforms
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.config import Config
-from prefect import flow, task, get_run_logger
-from prefect_dask.task_runners import DaskTaskRunner
-import os
-import time
-
-from dask.distributed import Client
 
 
 @task
@@ -235,20 +234,21 @@ def create_network(config, conditioned_data):
 
 
 @task
-def supercluster_wrapper(config, fragment_clusters_multi_res, network, conditioned_data):
+def supercluster_and_likelihood_wrapper(config, fragment_clusters_multi_res, network, conditioned_data):
     fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
     tf_maps, nRMS_list = zip(*conditioned_data)
-    return supercluster(config, network, fragment_clusters, tf_maps)
+    super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
+    return likelihood(config, network, super_fragment_clusters)
 
 
-@task
-def likelihood_wrapper(config, network, fragment_clusters):
-    return likelihood(config, network, fragment_clusters)
+# @task
+# def likelihood_wrapper(config, network, fragment_clusters):
+#     return likelihood(config, network, fragment_clusters)
 
 
 @task
 def create_trigger_directory(config, job_seg, event):
-    trigger_folder = f"{config.outputDir}/trigger_{job_seg.job_id}_{event.stop[0]}_{event.hash_id}"
+    trigger_folder = f"{config.outputDir}/trigger_{job_seg.id}_{event.stop[0]}_{event.hash_id}"
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
     return trigger_folder
@@ -259,9 +259,10 @@ def save_dataclass_to_json_wrapper(data, file_name):
     save_dataclass_to_json(data, file_name)
 
 
-@flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 6, "processes": True, "threads_per_worker": 1}),
+
+@flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 4, "processes": True, "threads_per_worker": 1}),
       log_prints=True, retries=1)
-def analysis(file_name, working_dir='.', overwrite=False, ):
+def pycwb_search(file_name, working_dir='.', overwrite=False, ):
     create_working_directory(working_dir)
     check_env()
     config = read_config(file_name)
@@ -280,8 +281,8 @@ def analysis(file_name, working_dir='.', overwrite=False, ):
         conditioned_data = [data_conditioning.submit(config, strain) for strain in data_merged]
         fragment_clusters_multi_res = [coherence.submit(config, conditioned_data, res) for res in range(config.nRES)]
         network = create_network.submit(config, conditioned_data)
-        fragment_clusters = supercluster_wrapper.submit(config, fragment_clusters_multi_res, network, conditioned_data)
-        events, clusters, skymap_statistics = likelihood_wrapper.submit(config, network, fragment_clusters).result()
+        events, clusters, skymap_statistics = supercluster_and_likelihood_wrapper.submit(config, fragment_clusters_multi_res, network, conditioned_data)
+        # events, clusters, skymap_statistics = likelihood_wrapper.submit(config, network, fragment_clusters).result()
         for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics):
             if cluster.cluster_status != -1:
                 continue
@@ -293,6 +294,20 @@ def analysis(file_name, working_dir='.', overwrite=False, ):
 
 
 if __name__ == "__main__":
-    analysis('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml',
-             working_dir="/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
-             overwrite=True)
+    # analysis('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml',
+    #          working_dir="/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
+    #          overwrite=True)
+    pycwb_search.serve(name="PycWB-search")
+
+
+# {
+#     "file_name": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml",
+#     "working_dir": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
+#     "overwrite": true
+# }
+#
+# {
+#     "file_name": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml",
+#     "working_dir": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB-tmp",
+#     "overwrite": true
+# }
