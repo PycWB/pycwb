@@ -280,7 +280,7 @@ def generate_injection(config, job_seg, strain=None):
             approximant = 'IMRPhenomXPHM'
 
         injection['approximant'] = approximant
-        injection['delta_t'] = 1.0 / noises[0].sample_rate
+        injection['delta_t'] = 1.0 / injected[0].sample_rate
         injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
 
         declination = injection['dec'] if 'dec' in injection else 0.0
