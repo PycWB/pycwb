@@ -175,6 +175,7 @@ n_sky = network.net.index.size()
 subnet = config.subnet
 subcut = config.subcut
 subnorm = config.subnorm
+subrho = config.subrho
 MRAcatalog = config.MRAcatalog
 ml, FP, FX = load_data_from_ifo(network, config.nIFO)
 
@@ -194,6 +195,7 @@ test_data = {
     'subnet': subnet,
     'subcut': subcut,
     'subnorm': subnorm,
+    'subrho': subrho,
     'n_loudest': config.LOUD,
     'xtalk_coeff': xtalk_coeff,
     'xtalk_lookup_table': xtalk_lookup_table,

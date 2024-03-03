@@ -19,7 +19,7 @@ lag = 0
 subnet = data['subnet']
 subcut = data['subcut']
 subnorm = data['subnorm']
-subrho = 5.0
+subrho = data['subrho']
 xtalk_coeff = data['xtalk_coeff']
 xtalk_lookup_table = data['xtalk_lookup_table']
 layers = data['layers']
@@ -42,7 +42,7 @@ from time import perf_counter
 # import cProfile
 #
 # cProfile.run("supercluster(clusters, 'L', data['gap'], data['e2or'], data['n_ifo'])", sort='cumtime')
-
+start_time_all = perf_counter()
 start_time = perf_counter()
 superclusters = supercluster(clusters, 'L', gap, e2or, n_ifo)
 print(f"Time taken for full supercluster: {perf_counter() - start_time}")
@@ -71,6 +71,7 @@ for i, c in enumerate(new_superclusters):
 
 print(f"Time taken for sub_net_cut: {perf_counter() - start_time_1}")
 
+print(f"Total time taken: {perf_counter() - start_time_all}")
 
 # profiler
 # import cProfile
