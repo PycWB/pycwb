@@ -1,7 +1,7 @@
 import numpy as np
-# from numba import float32
+from numba import float32
 from numba import njit
-from numpy import float32
+# from numpy import float32, float64
 from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
 from pycwb.modules.xtalk.monster import getXTalk_pixels
 from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
@@ -12,7 +12,7 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, lag, subnet, subcu
     """
     This function is used to cut the subnet from the lag and return the new lag
     """
-    network_energy_threshold = 2 * acor * acor * n_ifo
+    network_energy_threshold = np.float32(2 * acor * acor * n_ifo)
     n_pix = len(pixels)
 
     rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
@@ -36,6 +36,113 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, lag, subnet, subcu
 @njit(cache=True)
 def optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml, network_energy_threshold, e2or, subcut,
                     xtalks, xtalks_lookup, mra):
+    Es = float32(2 * e2or)
+    network_energy_threshold = float32(network_energy_threshold)
+    offset = int(td00.shape[0] / 2)
+    print("offset: ", offset, td00.shape, ml.shape, td_energy.shape)
+
+    rNRG = np.zeros(n_pix, dtype=float32)  # _rE
+    pNRG = np.zeros(n_pix, dtype=float32)  # _pE
+    print("En = ", network_energy_threshold, ', Es = ', Es, ", n_pix = ", n_pix, ", n_sky = ", n_sky)
+    # AA_array = np.zeros(n_sky, dtype=float64)
+    l_max = 0
+    AA_max = float32(0.0)
+    for l in range(n_sky):
+        # TODO: sky sky mask
+        # get time delayed data slice at sky location l, make sure it is numpy float32 array
+        v_energy = np.zeros((n_ifo, n_pix), dtype=float32)  # pe
+        v00 = np.zeros((n_ifo, n_pix), dtype=float32)  # pa
+        v90 = np.zeros((n_ifo, n_pix), dtype=float32)  # pA
+
+        for i in range(n_ifo):
+            v_energy[i] = td_energy[ml[i, l] + offset, i]
+
+        m = float32(0)  # pixels above threshold
+        Eo = float32(0)  # total network energy
+        Ls = float32(0)  # subnetwork energy
+        Ln = float32(0)  # network energy above subnet threshold
+        for j in range(n_pix):
+            _rE = 0
+            for i in range(n_ifo):  # get pixel energy
+                _rE += v_energy[i, j]
+            rNRG[j] = _rE  # store pixel energy
+            _msk = float32(1.0) if rNRG[j] > network_energy_threshold else float32(0.0)  # E>En  0/1 mask
+            m += _msk  # count pixels above threshold
+            pNRG[j] = rNRG[j] * _msk  # zero sub-threshold pixels
+            Eo += pNRG[j]
+            for i in range(n_ifo):
+                pNRG[j] = min(rNRG[j] - v_energy[i, j], pNRG[j])  # subnetwork energy
+            Ls += pNRG[j]  # subnetwork energy
+            _msk = float32(1.0) if pNRG[j] > Es else float32(0.0)  # subnet energy > Es 0/1 mask
+            Ln += rNRG[j] * _msk  # network energy
+
+        Eo = Eo + float32(0.01)
+        m = int(2 * m)
+        aa = float32(Ls * Ln / (Eo - Ls))
+        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("l = ", l); print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
+        if subcut >= 0 and (aa - m) / (aa + m) < subcut:
+            continue
+
+        for i in range(n_ifo):
+            v00[i] = td00[ml[i, l] + offset, i]
+            v90[i] = td90[ml[i, l] + offset, i]
+
+        m = 0
+        Ls = Ln = Eo = float32(0.0)
+        reduced_rms = np.zeros((n_pix, n_ifo), dtype=float32)
+        reduced_v00 = np.zeros((n_ifo, n_pix), dtype=float32)
+        reduced_v90 = np.zeros((n_ifo, n_pix), dtype=float32)
+        for j in range(n_pix):
+            ee = float32(0.)
+            for i in range(n_ifo):
+                ee += v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
+            if ee < network_energy_threshold:
+                continue
+
+            for i in range(n_ifo):
+                reduced_rms[m, i] = rms[j, i]
+                reduced_v00[i, m] = v00[i, j]
+                reduced_v90[i, m] = v90[i, j]
+            m += 1
+
+            # dominant pixel energy
+            em = float32(0.0)
+            for i in range(n_ifo):
+                _em = v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
+                if _em > em:
+                    em = _em
+
+            Ls += ee - em
+            Eo += ee  # subnetwork energy, network energy
+            if ee - em > Es:
+                Ln += ee  # network energy above subnet threshold
+
+
+        if Eo <= 0:
+            continue
+
+        Lo = 0
+        # calculate dpf
+        # TODO: check if the dpf is the same as the one in the likelihood module
+        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l], FX[l], reduced_rms[:m, :])
+
+        for j in range(m):
+            # calculate likelihood
+            Lo += sse_like_ps(f[j], F[j], reduced_v00[:, j], reduced_v90[:, j])
+        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", Lo = ", Lo, ", m = ", m)
+
+        AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)  # subnet stat with threshold
+        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("AA = ", AA, ", aa = ", aa, ", l = ", l)
+
+        if AA > AA_max:
+            AA_max = AA
+            l_max = l
+
+    return l_max
+
+
+def statistics(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml, network_energy_threshold, e2or, subcut,
+               xtalks, xtalks_lookup, l_max):
     Es = 2 * e2or
     offset = int(td00.shape[0] / 2)
     print("offset: ", offset, td00.shape, ml.shape, td_energy.shape)
@@ -44,113 +151,114 @@ def optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml,
     pNRG = np.zeros(n_pix, dtype=float32)  # _pE
     print("En = ", network_energy_threshold, ', Es = ', Es, ", n_pix = ", n_pix, ", n_sky = ", n_sky)
     AA_array = np.zeros(n_sky, dtype=float32)
-    for l in range(n_sky):
-        # TODO: sky sky mask
-        # get time delayed data slice at sky location l, make sure it is numpy float32 array
-        v_energy = np.empty((n_ifo, n_pix), dtype=float32)  # pe
-        v00 = np.empty((n_ifo, n_pix), dtype=float32)  # pa
-        v90 = np.empty((n_ifo, n_pix), dtype=float32)  # pA
-        Fp = np.empty((n_ifo, n_pix), dtype=float32)
-        Fx = np.empty((n_ifo, n_pix), dtype=float32)
-        fp = np.empty(n_ifo, dtype=float32)
-        fx = np.empty(n_ifo, dtype=float32)
 
+    mra = True
+
+    l = l_max
+    # TODO: sky sky mask
+    # get time delayed data slice at sky location l, make sure it is numpy float32 array
+    v_energy = np.empty((n_ifo, n_pix), dtype=float32)  # pe
+    v00 = np.empty((n_ifo, n_pix), dtype=float32)  # pa
+    v90 = np.empty((n_ifo, n_pix), dtype=float32)  # pA
+    Fp = np.empty((n_ifo, n_pix), dtype=float32)
+    Fx = np.empty((n_ifo, n_pix), dtype=float32)
+    fp = np.empty(n_ifo, dtype=float32)
+    fx = np.empty(n_ifo, dtype=float32)
+
+    for i in range(n_ifo):
+        v_energy[i] = td_energy[ml[i, l] + offset, i]
+
+    m = 0  # pixels above threshold
+    Eo = 0  # total network energy
+    Ls = 0  # subnetwork energy
+    Ln = 0  # network energy above subnet threshold
+    for j in range(n_pix):
+        _rE = 0
+        for i in range(n_ifo):  # get pixel energy
+            _rE += v_energy[i, j]
+        rNRG[j] = _rE  # store pixel energy
+        _msk = 1.0 if rNRG[j] > network_energy_threshold else 0.0  # E>En  0/1 mask
+        m += _msk  # count pixels above threshold
+        pNRG[j] = rNRG[j] * _msk  # zero sub-threshold pixels
+        Eo += pNRG[j]
         for i in range(n_ifo):
-            v_energy[i] = td_energy[ml[i, l] + offset, i]
+            pNRG[j] = min(rNRG[j] - v_energy[i, j], pNRG[j])  # subnetwork energy
+        Ls += pNRG[j]  # subnetwork energy
+        _msk = 1.0 if pNRG[j] > Es else 0.0  # subnet energy > Es 0/1 mask
+        Ln += rNRG[j] * _msk  # network energy
 
-        m = 0  # pixels above threshold
-        Eo = 0  # total network energy
-        Ls = 0  # subnetwork energy
-        Ln = 0  # network energy above subnet threshold
-        for j in range(n_pix):
-            _rE = 0
-            for i in range(n_ifo):  # get pixel energy
-                _rE += v_energy[i, j]
-            rNRG[j] = _rE  # store pixel energy
-            _msk = 1.0 # if rNRG[j] > network_energy_threshold else 0.0  # E>En  0/1 mask
-            m += _msk  # count pixels above threshold
-            pNRG[j] = rNRG[j] * _msk  # zero sub-threshold pixels
-            Eo += pNRG[j]
-            for i in range(n_ifo):
-                pNRG[j] = min(rNRG[j] - v_energy[i, j], pNRG[j])  # subnetwork energy
-            Ls += pNRG[j]  # subnetwork energy
-            _msk = 1.0 if pNRG[j] > Es else 0.0  # subnet energy > Es 0/1 mask
-            Ln += rNRG[j] * _msk  # network energy
+    Eo = Eo + 0.01
+    m = int(2 * m)
+    aa = Ls * Ln / (Eo - Ls)
+    if l in [0, 1000, 2000]:
+        print("l = ", l)
+        print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
+    # if subcut >= 0 and (aa - m) / (aa + m) < subcut:
+    #     continue
 
-        Eo = Eo + 0.01
-        m = int(2 * m + 0.01)
-        aa = Ls * Ln / (Eo - Ls)
-        if l in [0, 1000, 2000]:
-            print("l = ", l)
-            print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
-        if subcut >= 0 and (aa - m) / (aa + m) < subcut:
+    for i in range(n_ifo):
+        v00[i] = td00[ml[i, l] + offset, i]
+        v90[i] = td90[ml[i, l] + offset, i]
+
+    # if mra:
+    #     xi, XI, rNRG, pNRG = sse_MRA_ps(network_energy_threshold, m, rNRG,
+    #                                     v00, v90, xtalks, xtalks_lookup, DEBUG=True if l in [0] else False)
+    # else:
+    # TODO: check if copy is necessary
+    xi, XI = v00, v90  # pp, PP
+
+    if l == 0:
+        print("xi: ", xi)
+        print("v00: ", v00)
+    mask = np.zeros(n_pix, dtype=float32)
+    Ls = Ln = Eo = 0
+    for i in range(n_ifo):
+        fp[i] = FP[l, i]
+        fx[i] = FX[l, i]
+
+    for j in range(n_pix):
+        ee = 0
+        for i in range(n_ifo):
+            ee += xi[i, j] * xi[i, j] + XI[i, j] * XI[i, j]
+        if ee < network_energy_threshold:
             continue
-
+        mask[j] = 1.0
+        # normalize f+ by rms
         for i in range(n_ifo):
-            v00[i] = td00[ml[i, l] + offset, i]
-            v90[i] = td90[ml[i, l] + offset, i]
+            Fp[i, j] = fp[i] * rms[j, i]
+            Fx[i, j] = fx[i] * rms[j, i]
 
-        if mra:
-            xi, XI, rNRG, pNRG = sse_MRA_ps(Eo, m, rNRG, v00, v90, xtalks, xtalks_lookup)
-        else:
-            # TODO: check if copy is necessary
-            xi, XI = v00, v90  # pp, PP
-
-        mask = np.zeros(n_pix, dtype=float32)
-        Ls = Ln = Eo = 0
+        # dominant pixel energy
+        em = 0
         for i in range(n_ifo):
-            fp[i] = FP[l, i]
-            fx[i] = FX[l, i]
+            _em = xi[i, j] * xi[i, j] + XI[i, j] * XI[i, j]
+            if _em > em:
+                em = _em
 
-        for j in range(n_pix):
-            ee = 0
-            for i in range(n_ifo):
-                ee += xi[i, j] * xi[i, j] + XI[i, j] * XI[i, j]
-            if ee < Eo:
-                continue
-            mask[j] = 1.0
-            # normalize f+ by rms
-            for i in range(n_ifo):
-                Fp[i, j] = fp[i] * rms[j, i]
-                Fx[i, j] = fx[i] * rms[j, i]
+        Ls += ee - em
+        Eo += ee  # subnetwork energy, network energy
+        if ee - em > Es:
+            Ln += ee  # network energy above subnet threshold
 
-            # dominant pixel energy
-            em = 0
-            for i in range(n_ifo):
-                _em = xi[i, j] * xi[i, j] + XI[i, j] * XI[i, j]
-                if _em > em:
-                    em = _em
+    if l in [0, 1000, 2000]: print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
 
-            Ls += ee - em
-            Eo += ee  # subnetwork energy, network energy
-            if ee - em > Ls:
-                Ln += ee  # network energy above subnet threshold
-
-        if l in [0, 1000, 2000]: print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
-
-        if Eo <= 0:
+    Lo = 0
+    for j in range(n_pix):
+        if mask[j] == 0.0:
             continue
+        # calculate dpf
+        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l], FX[l], rms)
+        # calculate likelihood
+        Lo += sse_like_ps(f[j], F[j], xi[:, j], XI[:, j])
 
-        Lo = 0
-        for j in range(n_pix):
-            if mask[j] == 0.0:
-                continue
-            # calculate dpf
-            _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[l], FX[l], rms)
-            # calculate likelihood
-            Es = sse_like_ps(f[j], F[j], xi[:, j], XI[:, j])
-            Lo += Es
-
-        AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)  # subnet stat with threshold
-        AA_array[l] = AA
-        ee = Ls * Eo / (Eo - Ls)
-        em = abs(Eo - Lo) + 2 * m  # suball NULL
-        ee = ee / (ee + em)  # subnet stat without threshold
-        aa = (aa - m) / (aa + m)
-        if not mra:
-            Lt = Lo  # store total coherent energy for all resolution levels
-    l_max = np.argmax(AA_array)
-    return l_max
+    AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)  # subnet stat with threshold
+    ee = Ls * Eo / (Eo - Ls)
+    em = abs(Eo - Lo) + 2 * m  # suball NULL
+    ee = ee / (ee + em)  # subnet stat without threshold
+    aa = (aa - m) / (aa + m)
+    if not mra:
+        Lt = Lo  # store total coherent energy for all resolution levels
+    return 0
 
 
 @njit(cache=True)
@@ -164,19 +272,21 @@ def sse_like_ps(fp, fx, am, AM):
     XP = np.dot(fp, AM)  # fp*AM
     xx = np.dot(fx, am)  # fx*am
     XX = np.dot(fx, AM)  # fx*AM
-    gp = np.dot(fp, fp) + 1.e-12  # fx*fx + epsilon
-    gx = np.dot(fx, fx) + 1.e-12  # fx*fx + epsilon
+    gp = np.dot(fp, fp) + float32(1.e-12)  # fx*fx + epsilon
+    gx = np.dot(fx, fx) + float32(1.e-12)  # fx*fx + epsilon
     xp = xp * xp + XP * XP  # xp=xp*xp+XP*XP
     xx = xx * xx + XX * XX  # xx=xx*xx+XX*XX
     return xp / gp + xx / gx  # regularized projected energy
 
 
 @njit(cache=True)
-def sse_MRA_ps(Eo, K, rNRG, a_00, a_90, xtalks, xtalks_lookup):
+def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
     """
     fast multi-resolution analysis inside sky loop
     select max E pixel and either scale or skip it based on the value of residual
     """
+    a_00 = v_00.copy()
+    a_90 = v_90.copy()
 
     n_ifo, n_pix = a_00.shape
 
@@ -198,7 +308,10 @@ def sse_MRA_ps(Eo, K, rNRG, a_00, a_90, xtalks, xtalks_lookup):
 
     while k < K:
         m = np.argmax(rNRG)  # find max pixel
+        if DEBUG:
+            print("m = ", m)
         if rNRG[m] <= Eo:
+            if DEBUG: print("!!!!! rNRG[m] <= Eo: ", rNRG[m], Eo, k)
             break
 
         # get PC energy
@@ -208,6 +321,8 @@ def sse_MRA_ps(Eo, K, rNRG, a_00, a_90, xtalks, xtalks_lookup):
         EE += E
 
         if E / EE < 0.01:  # ignore small PC
+            if DEBUG:
+                print("E / EE < 0.01: ", E, EE, k)
             break
 
         for i in range(n_ifo):
@@ -230,10 +345,11 @@ def sse_MRA_ps(Eo, K, rNRG, a_00, a_90, xtalks, xtalks_lookup):
                 #  calculate a -= u*c + v*s and return a*a
                 # _sse_rotsub_ps(_m00,c[4],_m90,c[5],_a00+n*f)
                 # _sse_rotsub_ps(_m00,c[6],_m90,c[7],_a90+n*f)
+                rNRG[n] = 0
                 for i in range(n_ifo):
                     a_00[i][n] -= mam[i] * xtalk_cc[0][j] + mAM[i] * xtalk_cc[1][j]
                     a_90[i][n] -= mam[i] * xtalk_cc[2][j] + mAM[i] * xtalk_cc[3][j]
-                    rNRG[n] = a_00[i][n] * a_00[i][n] + a_90[i][n] * a_90[i][n]
+                    rNRG[n] += a_00[i][n] * a_00[i][n] + a_90[i][n] * a_90[i][n]
 
         # store PC energy
         pp = 0
@@ -242,5 +358,7 @@ def sse_MRA_ps(Eo, K, rNRG, a_00, a_90, xtalks, xtalks_lookup):
         pNRG[m] = pp
 
         k += 1
+    if DEBUG:
+        print("k = ", k, ", K = ", K)
 
     return amp, AMP, rNRG, pNRG
