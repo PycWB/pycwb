@@ -105,8 +105,8 @@ class ClusterMeta:
     i_net: float = 0.
     norm: float = 0.
     ndof: float = 0.
-    sky_size: float = 0.
-    sky_index: float = 0.
+    sky_size: int = 0
+    sky_index: int = 0
 
 
 @dataclass
