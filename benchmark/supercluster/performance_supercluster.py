@@ -19,6 +19,7 @@ lag = 0
 subnet = data['subnet']
 subcut = data['subcut']
 subnorm = data['subnorm']
+subrho = 5.0
 xtalk_coeff = data['xtalk_coeff']
 xtalk_lookup_table = data['xtalk_lookup_table']
 layers = data['layers']
@@ -65,8 +66,8 @@ for i, c in enumerate(new_superclusters):
     c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
     # downselect config.loud pixels
     c.pixels = c.pixels[:n_loudest]
-    sub_net_cut(c.pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, lag, subnet, subcut, subnorm,
-                xtalk_coeff, xtalk_lookup_table, layers, nRes)
+    sub_net_cut(c.pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho,
+                xtalk_coeff, xtalk_lookup_table, layers)
 
 print(f"Time taken for sub_net_cut: {perf_counter() - start_time_1}")
 
