@@ -35,18 +35,15 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     subnet_pass = min(suball, submra) > subnet
     subrho_pass = rHo > subrho
     subthr_pass = Em > subnorm * network_energy_threshold
-    if subnet_pass and subrho_pass and subthr_pass:
-        return True
-    else:
-        if not subnet_pass:
-            print(f"Cluster failed subnet cut, "
-                  f"min(suball = {suball:.4f}, submra = {submra:.4f}) <= subnet = {subnet:.4f}")
-        if not subrho_pass:
-            print(f"Cluster failed subrho cut, "
-                  f"rho = {rHo:.4f} <= subrho = {subrho:.4f}")
-        if not subthr_pass:
-            print(f"Cluster failed subthr cut, "
-                  f"Em = {Em:.4f} <= subnorm = {subnorm:.4f} * network_energy_threshold = {network_energy_threshold:.4f}")
+
+    return {
+        'subnet_passed': subnet_pass,
+        'subrho_passed': subrho_pass,
+        'subthr_passed': subthr_pass,
+        'subnet_condition': f"min(suball = {suball:.4f}, submra = {submra:.4f}) > subnet = {subnet:.4f}",
+        'subrho_condition': f"rho = {rHo:.4f} > subrho = {subrho:.4f}",
+        'subthr_condition': f"Em = {Em:.4f} > subnorm = {subnorm:.4f} * network_energy_threshold = {network_energy_threshold:.4f}"
+    }
 
 
 @njit(cache=True)

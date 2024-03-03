@@ -1,6 +1,15 @@
+import copy
+
 import numpy as np
+
+from .sub_net_cut import sub_net_cut
 from .utils import get_cluster_links, calculate_statistics, get_defragment_link, \
     aggregate_clusters_from_links
+from ..cwb_conversions import convert_fragment_clusters_to_netcluster, convert_sparse_series_to_sseries, \
+    convert_netcluster_to_fragment_clusters
+from ..likelihoodWP.likelihood import load_data_from_ifo
+from ..multi_resolution_wdm import create_wdm_for_level
+from ..sparse_series import sparse_table_from_fragment_clusters
 from ...types.network_cluster import Cluster, ClusterMeta
 
 
@@ -88,7 +97,7 @@ def calculate_supercluster_data(clusters, atype, core, pair, nPIX, S, dF):
             cluster_status=0,
             cluster_time=stat[0],
             cluster_freq=stat[1],
-            cluster_rate=stat[2:],
+            cluster_rate=[int(d+0.01) for d in stat[2:]],
             cluster_meta=ClusterMeta(c_time=stat[0], c_freq=stat[1], like_net=stat[4], energy=stat[4])
         )
     return new_supercluster
@@ -144,5 +153,115 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
         superclusters.append(sc)
 
     return superclusters
+
+
+def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coeff, xtalk_lookup_table, layers):
+    sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
+
+    skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
+
+    if skyres > 0:
+        network.update_sky_map(config, skyres)
+        network.net.setAntenna()
+        network.net.setDelay(config.refIFO)
+        network.update_sky_mask(config, skyres)
+
+    hot = []
+    for n in range(config.nIFO):
+        hot.append(network.get_ifo(n).getHoT())
+
+    # set low-rate TD filters
+    for level in config.WDM_level:
+        wdm = create_wdm_for_level(config, level)
+        wdm.set_td_filter(config.TDSize, 1)
+        # add wavelets to network
+        network.add_wavelet(wdm)
+
+    # merge cluster
+    cluster = copy.deepcopy(fragment_clusters[0])
+    if len(fragment_clusters) > 1:
+        for fragment_cluster in fragment_clusters[1:]:
+            cluster.clusters += fragment_cluster.clusters
+
+    # pwc_list = []
+    # Load tdamp and convert to fragment cluster for testing
+    net_cluster = convert_fragment_clusters_to_netcluster(cluster)
+
+    for n in range(config.nIFO):
+        det = network.get_ifo(n)
+        det.sclear()
+        for sparse_table in sparse_table_list:
+            det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
+
+    pwc = network.get_cluster(0)
+    pwc.cpf(net_cluster, False)
+
+    if config.subacor > 0:
+        network.net.acor = config.subacor
+    if config.subrho > 0:
+        network.net.netRHO = config.subrho
+
+    network.set_delay_index(hot[0].rate())
+    pwc.setcore(False)
+
+    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
+
+    fragment_clusters = convert_netcluster_to_fragment_clusters(pwc)
+
+    # prepare user parameters
+    acor = network.net.acor
+    network_energy_threshold = 2 * acor * acor * config.nIFO
+    n_sky = network.net.index.size()
+    n_ifo = config.nIFO
+    n_loudest = config.LOUD
+    gap = config.gap
+    Tgap = config.Tgap
+    Fgap = config.Fgap
+    e2or = network.net.e2or
+    subnet = config.subnet
+    subcut = config.subcut
+    subnorm = config.subnorm
+    subrho = config.subrho if config.subrho > 0 else network.net.netRHO
+    ml, FP, FX = load_data_from_ifo(network, config.nIFO)
+
+    clusters = fragment_clusters.clusters
+
+    superclusters = supercluster(clusters, 'L', gap, e2or, n_ifo)
+    print(f"Total number of superclusters: {len(superclusters)}")
+    for i, c in enumerate(superclusters):
+        n_pix = len(c.pixels)
+        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+
+    new_superclusters = defragment([sc for sc in superclusters if sc.cluster_status == 0],
+                                   Tgap, Fgap, n_ifo)
+    print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
+    for i, c in enumerate(superclusters):
+        n_pix = len(c.pixels)
+        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+
+    for i, c in enumerate(new_superclusters):
+        # sort pixels by likelihood for down selection
+        c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
+        # down select config.loud pixels and apply sub_net_cut
+        results = sub_net_cut(c.pixels[:n_loudest], ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho,
+                    xtalk_coeff, xtalk_lookup_table, layers)
+
+        # update cluster status and print results
+        if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
+            print(f"Cluster passed subnet, subrho, and subthr cut")
+            c.cluster_status = 1
+        else:
+            if not results['subnet_passed']:
+                print(f"Cluster failed subnet cut condition: {results['subnet_condition']}")
+            if not results['subrho_passed']:
+                print(f"Cluster failed subrho cut condition: {results['subrho_condition']}")
+            if not results['subthr_passed']:
+                print(f"Cluster failed subthr cut condition: {results['subthr_condition']}")
+
+            c.cluster_status = 0
+
+    fragment_clusters.clusters = new_superclusters
+
+    return fragment_clusters
 
 
