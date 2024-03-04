@@ -2,8 +2,11 @@ import shutil
 import os
 from prefect import flow, task, get_run_logger
 from prefect_dask.task_runners import DaskTaskRunner
-import matplotlib
-matplotlib.use('agg')
+# import matplotlib
+# matplotlib.use('agg')
+
+from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
+from pycwb.modules.xtalk.monster import load_catalog
 
 # import dask
 # dask.config.set({"multiprocessing.context": "fork"})
@@ -61,8 +64,9 @@ def create_working_directory(working_dir):
 
 
 @task
-def check_if_output_exists(output_dir, overwrite=False):
+def check_if_output_exists(working_dir, output_dir, overwrite=False):
     logger = get_run_logger()
+    output_dir = f"{working_dir}/{output_dir}"
     if os.path.exists(output_dir) and os.listdir(output_dir):
         if overwrite:
             logger.info(f"Overwrite output directory {output_dir}")
@@ -95,17 +99,21 @@ def create_job_segment(config):
 
 
 @task
-def create_catalog_file(config, job_segments):
+def create_catalog_file(working_dir, config, job_segments):
     logger = get_run_logger()
     logger.info("Creating catalog file")
-    create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
-
+    create_catalog(f"{working_dir}/{config.outputDir}/catalog.json", config, job_segments)
 
 @task
-def create_web_dir(config):
+def load_xtalk_catalog(MRAcatalog):
+    xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(MRAcatalog)
+    return xtalk_coeff, xtalk_lookup_table, layers, nRes
+
+@task
+def create_web_dir(working_dir, output_dir):
     logger = get_run_logger()
     logger.info("Creating web directory")
-    create_web_viewer(config.outputDir)
+    create_web_viewer(f"{working_dir}/{output_dir}")
 
 
 @task
@@ -234,44 +242,62 @@ def create_network(config, conditioned_data):
 
 
 @task
-def supercluster_and_likelihood_wrapper(config, fragment_clusters_multi_res, network, conditioned_data):
+def supercluster_and_likelihood_wrapper(config, fragment_clusters_multi_res, conditioned_data,
+                                        xtalk_catalog):
+    xtalk_coeff, xtalk_lookup_table, layers, nRes = xtalk_catalog
     fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
     tf_maps, nRMS_list = zip(*conditioned_data)
-    super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
-    return likelihood(config, network, super_fragment_clusters)
+    network = Network(config, tf_maps, nRMS_list)
+    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
+                                                   xtalk_coeff, xtalk_lookup_table, layers)
+    return likelihood(config, network, [super_fragment_clusters])
 
 
 # @task
 # def likelihood_wrapper(config, network, fragment_clusters):
 #     return likelihood(config, network, fragment_clusters)
 
+#
+# @task
+# def create_trigger_directory(working_dir, config, job_seg, event):
+#     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+#     print(f"Creating trigger folder: {trigger_folder}")
+#     if not os.path.exists(trigger_folder):
+#         os.makedirs(trigger_folder)
+#     else:
+#         print(f"Trigger folder {trigger_folder} already exists, skip")
+#     return trigger_folder
+#
 
 @task
-def create_trigger_directory(config, job_seg, event):
-    trigger_folder = f"{config.outputDir}/trigger_{job_seg.id}_{event.stop[0]}_{event.hash_id}"
+def save_trigger(working_dir, config, job_seg, event, cluster, event_skymap_statistics):
+    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+    print(f"Creating trigger folder: {trigger_folder}")
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
-    return trigger_folder
+    else:
+        print(f"Trigger folder {trigger_folder} already exists, skip")
 
+    save_dataclass_to_json(event, f"{trigger_folder}/event.json")
+    save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
+    save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
-@task
-def save_dataclass_to_json_wrapper(data, file_name):
-    save_dataclass_to_json(data, file_name)
 
 
 
 @flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 4, "processes": True, "threads_per_worker": 1}),
-      log_prints=True, retries=1)
+      log_prints=True, retries=0)
 def pycwb_search(file_name, working_dir='.', overwrite=False, ):
     create_working_directory(working_dir)
     check_env()
     config = read_config(file_name)
-    check_if_output_exists(config.outputDir, overwrite)
+    check_if_output_exists(working_dir, config.outputDir, overwrite)
     create_output_directory(working_dir, config.outputDir, config.logDir, file_name)
 
     job_segments = create_job_segment(config)
-    create_catalog_file(config, job_segments)
-    create_web_dir(config)
+    create_catalog_file(working_dir, config, job_segments)
+    create_web_dir(working_dir, config.outputDir)
+    xtalk_catalog = load_xtalk_catalog.submit(config.MRAcatalog)
     # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
 
     for job_seg in job_segments:
@@ -280,24 +306,27 @@ def pycwb_search(file_name, working_dir='.', overwrite=False, ):
         data_merged = merge_frame_files.submit(config, job_seg, data).result()
         conditioned_data = [data_conditioning.submit(config, strain) for strain in data_merged]
         fragment_clusters_multi_res = [coherence.submit(config, conditioned_data, res) for res in range(config.nRES)]
-        network = create_network.submit(config, conditioned_data)
-        events, clusters, skymap_statistics = supercluster_and_likelihood_wrapper.submit(config, fragment_clusters_multi_res, network, conditioned_data)
-        # events, clusters, skymap_statistics = likelihood_wrapper.submit(config, network, fragment_clusters).result()
+
+        events, clusters, skymap_statistics = supercluster_and_likelihood_wrapper.submit(
+            config, fragment_clusters_multi_res, conditioned_data, xtalk_catalog).result()
+
         for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics):
+            print(f"cluster")
             if cluster.cluster_status != -1:
                 continue
+            print(f"Saving trigger {event.hash_id}")
             extra_info = {}
-            trigger_folder = create_trigger_directory.submit(config, job_seg, event)
-            save_dataclass_to_json_wrapper.submit(event, f"{trigger_folder}/event.json")
-            save_dataclass_to_json_wrapper.submit(cluster, f"{trigger_folder}/cluster.json")
-            save_dataclass_to_json_wrapper.submit(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
+            save_trigger.submit(working_dir, config, job_seg, event, cluster, event_skymap_statistics)
 
 
 if __name__ == "__main__":
-    # analysis('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml',
-    #          working_dir="/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
-    #          overwrite=True)
-    pycwb_search.serve(name="PycWB-search")
+    pycwb_search('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml',
+             working_dir="/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
+             overwrite=True)
+    # pycwb_search('/Users/yumengxu/Project/Physics/cwb/pyBurst/benchmark/supercluster/user_parameters_injection.yaml',
+    #              working_dir="/Users/yumengxu/Project/Physics/cwb/pyBurst/benchmark/supercluster",
+    #              overwrite=True)
+    # pycwb_search.serve(name="PycWB-search")
 
 
 # {
