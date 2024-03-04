@@ -265,8 +265,11 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
 
             c.cluster_status = 1
 
-    fragment_clusters.clusters = new_superclusters
-
+    fragment_clusters.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
+    for c in fragment_clusters.clusters:
+        for p in c.pixels:
+            p.core = 1
+            p.td_amp = None
     return fragment_clusters
 
 
