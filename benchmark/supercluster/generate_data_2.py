@@ -14,8 +14,8 @@ if not os.environ.get('HOME_WAT_FILTERS'):
 
 logger_init()
 
-config = Config('./user_parameters_injection.yaml')
-
+config = Config('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml')
+os.chdir('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB')
 #%%
 # load xtalk
 
@@ -25,12 +25,16 @@ xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(config.MRAcatalog)
 #%% md
 ## generate injected data for each detector with given parameters in config
 #%%
-from pycwb.modules.read_data import generate_injection
-from pycwb.modules.job_segment import create_job_segment_from_injection
+from pycwb.modules.read_data import generate_injection, read_from_job_segment
+from pycwb.modules.job_segment import create_job_segment_from_injection, create_job_segment_from_config
 
-job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
+job_segments = create_job_segment_from_config(config)
 
-data = generate_injection(config, job_segments[0])
+job_seg = job_segments[0]
+if job_seg.frames:
+    data = read_from_job_segment(config, job_seg)
+if job_seg.injections:
+    data = generate_injection(config, job_seg, data)
 
 #%% md
 ## apply data conditioning to the data
@@ -126,59 +130,6 @@ fragment_clusters = convert_netcluster_to_fragment_clusters(pwc)
 print(f"Time taken for convert_fragment_clusters_to_netcluster: {time.time() - start_time_1}")
 
 
-###############################
-# cWB2G supercluster
-###############################
-# convert to netcluster
-
-start_time = time.time()
-
-cluster = convert_fragment_clusters_to_netcluster(cluster)
-
-
-j = 0
-
-if config.l_high == config.l_low:
-    cluster.pair = False
-if network.pattern != 0:
-    cluster.pair = False
-
-start_time_1 = time.time()
-cluster.supercluster('L',network.net.e2or,config.TFgap,False)
-print(f"Time taken for supercluster: {time.time() - start_time_1}")
-
-start_time_1 = time.time()
-cluster.defragment(config.Tgap, config.Fgap)
-print(f"Time taken for defragment: {time.time() - start_time_1}")
-
-start_time_1 = time.time()
-pwc = network.get_cluster(j)
-pwc.cpf(cluster, False)
-
-# apply subNetCut() only for pattern=0 || cfg.subnet>0 || cfg.subcut>0 || cfg.subnorm>0 || cfg.subrho>=0
-if network.pattern == 0 or config.subnet > 0 or config.subcut > 0 or config.subnorm > 0 or config.subrho >= 0:
-    # set Acore and netRHO
-    if config.subacor > 0:
-        network.net.acor = config.subacor
-    if config.subrho > 0:
-        network.net.netRHO = config.subrho
-
-    network.set_delay_index(hot[0].rate())
-    pwc.setcore(False)
-
-    psel = 0
-    while True:
-        # TODO: pythonize this
-        count = pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
-        print("WTF is this: ", count)
-        psel += network.sub_net_cut(j, config.subnet, config.subcut, config.subnorm)
-        if count < 10000:
-            break
-print(f"Time taken for sub_net_cut: {time.time() - start_time_1}")
-print(f"Time taken for full supercluster: {time.time() - start_time}")
-fragment_cluster_test1 = convert_netcluster_to_fragment_clusters(pwc)
-
-
 acor = network.net.acor
 network_energy_threshold = 2 * acor * acor * config.nIFO
 n_sky = network.net.index.size()
@@ -214,13 +165,12 @@ test_data = {
     'layers': layers,
     'nRes': nRes,
     'fragment_clusters': fragment_clusters,
-    'fragment_cluster_stage1': fragment_cluster_test1,
     'network': network,
     'config': config
 }
 
 import pickle
-with open('test_data.pkl', 'wb') as f:
+with open('test_data_1.pkl', 'wb') as f:
     pickle.dump(test_data, f)
 
-
+print("Data generated")
