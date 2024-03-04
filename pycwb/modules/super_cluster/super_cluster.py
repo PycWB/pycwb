@@ -230,9 +230,14 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     print(f"Total number of superclusters: {len(superclusters)}")
     for i, c in enumerate(superclusters):
         n_pix = len(c.pixels)
-        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status > 0 else "accepted"}')
 
-    new_superclusters = defragment([sc for sc in superclusters if sc.cluster_status == 0],
+    accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
+
+    if len(accepted_superclusters) == 0:
+        return None
+
+    new_superclusters = defragment(accepted_superclusters,
                                    Tgap, Fgap, n_ifo)
     print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
     for i, c in enumerate(superclusters):
@@ -249,7 +254,7 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
         # update cluster status and print results
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
             print(f"Cluster passed subnet, subrho, and subthr cut")
-            c.cluster_status = 1
+            c.cluster_status = -1
         else:
             if not results['subnet_passed']:
                 print(f"Cluster failed subnet cut condition: {results['subnet_condition']}")
@@ -258,7 +263,7 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
             if not results['subthr_passed']:
                 print(f"Cluster failed subthr cut condition: {results['subthr_condition']}")
 
-            c.cluster_status = 0
+            c.cluster_status = 1
 
     fragment_clusters.clusters = new_superclusters
 
