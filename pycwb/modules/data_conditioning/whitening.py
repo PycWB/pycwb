@@ -55,6 +55,7 @@ def whitening(config, h):
     tf_map.white(nRMS, -1)
 
     wtmp = ROOT.WSeries(np.double)(tf_map)
+    # average 00 and 90 phase
     tf_map.Inverse()
     wtmp.Inverse(-2)
     tf_map += wtmp
