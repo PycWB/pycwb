@@ -56,7 +56,7 @@ for i, c in enumerate(superclusters):
     print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
 
 start_time = perf_counter()
-new_superclusters = defragment([sc for sc in superclusters if sc.cluster_status == 0],
+new_superclusters = defragment([sc for sc in superclusters if sc.cluster_status <= 0],
                                Tgap, Fgap, n_ifo)
 print(f"Time taken for defragment: {perf_counter() - start_time}")
 
@@ -68,8 +68,22 @@ for i, c in enumerate(new_superclusters):
     c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
     # downselect config.loud pixels
     c.pixels = c.pixels[:n_loudest]
-    sub_net_cut(c.pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho if subrho > 0 else netrho,
+    results = sub_net_cut(c.pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho if subrho > 0 else netrho,
                 xtalk_coeff, xtalk_lookup_table, layers)
+    # update cluster status and print results
+    if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
+        print(f"Cluster passed subnet, subrho, and subthr cut")
+        c.cluster_status = -1
+    else:
+        if not results['subnet_passed']:
+            print(f"Cluster failed subnet cut condition: {results['subnet_condition']}")
+        if not results['subrho_passed']:
+            print(f"Cluster failed subrho cut condition: {results['subrho_condition']}")
+        if not results['subthr_passed']:
+            print(f"Cluster failed subthr cut condition: {results['subthr_condition']}")
+        c.cluster_status = 1
+
+# fragment_clusters.clusters = new_superclusters
 
 print(f"Time taken for sub_net_cut: {perf_counter() - start_time_1}")
 
@@ -82,5 +96,5 @@ print(f"Total time taken: {perf_counter() - start_time_all}")
 time = timeit("supercluster(clusters, 'L', gap, e2or, n_ifo)", globals=globals(), number=100)
 print(f"Time supercluster: {time/100} seconds per call")
 
-time = timeit("defragment([sc for sc in superclusters if sc.cluster_status == 0],data['Tgap'], data['Fgap'], data['n_ifo'])", globals=globals(), number=100)
+time = timeit("defragment([sc for sc in superclusters if sc.cluster_status <= 0], Tgap, Fgap, n_ifo)", globals=globals(), number=100)
 print(f"Time defragment: {time/100} seconds per call")
