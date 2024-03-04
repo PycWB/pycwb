@@ -331,10 +331,11 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
 def aggregate_clusters_from_links(cluster_ids, cluster_links):
     # aggregate clusters
     aggregated_clusters = aggregate_clusters(cluster_links)
-    aggregated_clusters = np.array([list(cluster) for cluster in aggregated_clusters])
+    aggregated_clusters = [list(cluster) for cluster in aggregated_clusters]
 
+    flattened_aggregated_clusters = [c for cluster in aggregated_clusters for c in cluster]
     # find the standalone clusters
-    standalone_clusters = np.array([c for c in cluster_ids if c not in aggregated_clusters])
+    standalone_clusters = np.array([c for c in cluster_ids if c not in flattened_aggregated_clusters])
 
     # add standalone clusters
     aggregated_clusters = [list(c) for c in aggregated_clusters] + [[c] for c in standalone_clusters]

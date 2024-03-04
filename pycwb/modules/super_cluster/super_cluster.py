@@ -227,22 +227,32 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     clusters = fragment_clusters.clusters
 
     superclusters = supercluster(clusters, 'L', gap, e2or, n_ifo)
-    print(f"Total number of superclusters: {len(superclusters)}")
+
+    # get the total number of pixels
+    total_pixels = 0
     for i, c in enumerate(superclusters):
-        n_pix = len(c.pixels)
-        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status > 0 else "accepted"}')
+        total_pixels += len(c.pixels)
+        # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status > 0 else "accepted"}')
 
+    # filter out the rejected superclusters
     accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
+    print(f"Total number of superclusters: {len(superclusters)}, total pixels: {total_pixels}, "
+          f"accepted clusters: {len(accepted_superclusters)}")
 
+    # if there are no accepted superclusters, return None
     if len(accepted_superclusters) == 0:
         return None
 
-    new_superclusters = defragment(accepted_superclusters,
-                                   Tgap, Fgap, n_ifo)
-    print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
+    # defragment the superclusters
+    new_superclusters = defragment(accepted_superclusters, Tgap, Fgap, n_ifo)
+    # print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
+
+    # get the total number of pixels
+    total_pixels = 0
     for i, c in enumerate(superclusters):
-        n_pix = len(c.pixels)
-        print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+        total_pixels += len(c.pixels)
+        # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+    print(f"Total number of superclusters after defragment: {len(new_superclusters)}, total pixels: {total_pixels}")
 
     for i, c in enumerate(new_superclusters):
         # sort pixels by likelihood for down selection
@@ -253,19 +263,26 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
 
         # update cluster status and print results
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
-            print(f"Cluster passed subnet, subrho, and subthr cut")
+            print(f"Cluster {i} passed subnet, subrho, and subthr cut")
             c.cluster_status = -1
         else:
+            log_output = f"Cluster {i} failed "
             if not results['subnet_passed']:
-                print(f"Cluster failed subnet cut condition: {results['subnet_condition']}")
+                log_output += f"subnet cut condition: {results['subnet_condition']}, "
             if not results['subrho_passed']:
-                print(f"Cluster failed subrho cut condition: {results['subrho_condition']}")
+                log_output += f"subrho cut condition: {results['subrho_condition']}, "
             if not results['subthr_passed']:
-                print(f"Cluster failed subthr cut condition: {results['subthr_condition']}")
-
+                log_output += f"subthr cut condition: {results['subthr_condition']}, "
+            # print(log_output)
             c.cluster_status = 1
 
     fragment_clusters.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
+
+    total_pixels = 0
+    for i, c in enumerate(fragment_clusters.clusters):
+        total_pixels += len(c.pixels)
+    print(f"Total number of superclusters after sub_net_cut: {len(fragment_clusters.clusters)}, total pixels: {total_pixels}")
+
     for c in fragment_clusters.clusters:
         for p in c.pixels:
             p.core = 1

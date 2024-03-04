@@ -1,7 +1,7 @@
 import numpy as np
-from numba import float32
+# from numba import float32
 from numba import njit
-# from numpy import float32, float64
+from numpy import float32, float64
 from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
 from pycwb.modules.xtalk.monster import getXTalk_pixels
 from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
@@ -97,10 +97,10 @@ def optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml,
             Ln += rNRG[j] * _msk  # network energy
 
         Eo = Eo + float32(0.01)
-        m = int(2 * m)
+        m = int(2 * m + 0.01)
         aa = float32(Ls * Ln / (Eo - Ls))
         # if l in [0, 22, 1000, 1860, 1967, 2000]: print("l = ", l); print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
-        if subcut >= 0 and (aa - m) / (aa + m) < subcut:
+        if subcut >= 0 and (aa - m) / (aa + m + float32(1e-16)) < subcut:
             continue
 
         for i in range(n_ifo):
@@ -264,9 +264,9 @@ def mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
     # ee = ee / (ee + em)  # subnet stat without threshold
     # aa = (aa - m) / (aa + m)
 
-    submra = Ls * Eo / (Eo - Ls)  # MRA subnet statistic
+    submra = Ls * Eo / (Eo - Ls + float32(1e-16))  # MRA subnet statistic
     submra /= abs(submra) + abs(Eo - Lo) + 2 * (m + 6)  # MRA subnet coefficient
-    rHo = np.sqrt(Lo * Lo / (Eo + 2 * m) / 2) # MRA subnet residual
+    rHo = np.sqrt(Lo * Lo / (Eo + 2 * m + float32(1e-16)) / 2) # MRA subnet residual
     return submra, rHo, Eo, Lo, Ls, m
 
 
@@ -318,10 +318,10 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
 
     while k < K:
         m = np.argmax(rNRG)  # find max pixel
-        if DEBUG:
-            print("m = ", m)
+        # if DEBUG:
+        #     print("m = ", m)
         if rNRG[m] <= Eo:
-            if DEBUG: print("!!!!! rNRG[m] <= Eo: ", rNRG[m], Eo, k)
+            # if DEBUG: print("!!!!! rNRG[m] <= Eo: ", rNRG[m], Eo, k)
             break
 
         # get PC energy
@@ -331,8 +331,8 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
         EE += E
 
         if E / EE < 0.01:  # ignore small PC
-            if DEBUG:
-                print("E / EE < 0.01: ", E, EE, k)
+            # if DEBUG:
+            #     print("E / EE < 0.01: ", E, EE, k)
             break
 
         for i in range(n_ifo):
@@ -368,7 +368,7 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
         pNRG[m] = pp
 
         k += 1
-    if DEBUG:
-        print("k = ", k, ", K = ", K)
+    # if DEBUG:
+    #     print("k = ", k, ", K = ", K)
 
     return amp, AMP, rNRG, pNRG
