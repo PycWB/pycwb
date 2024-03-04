@@ -34,9 +34,9 @@ def likelihood(config, network, fragment_clusters):
         cycle = fragment_cluster.shift
 
         # print header
-        logger.info("-------------------------------------------------------")
-        logger.info("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
-        logger.info("   ----------------------------------------------------")
+        print("-------------------------------------------------------")
+        print("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
+        print("   ----------------------------------------------------")
 
         # loop over clusters to calculate likelihood
         for k, selected_cluster in enumerate(fragment_cluster.clusters):
@@ -87,10 +87,10 @@ def likelihood(config, network, fragment_clusters):
 
     # timer
     timer_end = time.perf_counter()
-    logger.info("-------------------------------------------------------")
-    logger.info("Total events: %d" % n_events)
-    logger.info("Total time: %.2f s" % (timer_end - timer_start))
-    logger.info("-------------------------------------------------------")
+    print("-------------------------------------------------------")
+    print("Total events: %d" % n_events)
+    print("Total time: %.2f s" % (timer_end - timer_start))
+    print("-------------------------------------------------------")
 
     return events, clusters, skymap_statistics
 
@@ -143,16 +143,16 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
 
     ####################
 
-    logger.info("Selected core pixels: %d" % selected_core_pixels)
+    print("Selected core pixels: %d" % selected_core_pixels)
 
     detected = cluster.cluster_status == -1
 
     # print reconstructed event
-    logger.info("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixels)))
+    print("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixels)))
     if detected:
-        logger.info("\t -> SELECTED !!!")
+        print("\t -> SELECTED !!!")
     else:
-        logger.info("\t <- rejected    ")
+        print("\t <- rejected    ")
 
     return event, cluster
 
