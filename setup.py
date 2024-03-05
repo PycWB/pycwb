@@ -18,6 +18,7 @@ install_requires = [
     "jsonschema",
     "watchfiles",
     "numpy",
+    "numba",
     "gwpy",
     "ligo-segments",
     "aiohttp",
@@ -29,6 +30,9 @@ install_requires = [
     "orjson",
     "dacite",
     "lalsuite>=7.0.0",
+    "prefect",
+    "prefect-dask",
+    "dask"
     # "nds2-client",
     # "python-nds2-client"
 ]
