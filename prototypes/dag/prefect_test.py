@@ -1,11 +1,9 @@
 import shutil
 import os
-from prefect import flow, task, get_run_logger
+from prefect import flow, task, get_run_logger, unmapped
 from prefect_dask.task_runners import DaskTaskRunner
 from prefect_dask import get_dask_client
-import matplotlib
-
-matplotlib.use('agg')
+from dask.distributed import Client, LocalCluster
 
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
@@ -13,19 +11,14 @@ from pycwb.modules.xtalk.monster import load_catalog
 # import dask
 # dask.config.set({"multiprocessing.context": "fork"})
 
-from gwpy.timeseries import TimeSeries
-
+import pycbc
 from pycwb.modules.coherence.coherence import _coherence_single_res
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
 from pycwb.modules.superlag import generate_slags
 from pycwb.types.network import Network
-from pycwb.modules.autoencoder import get_glitchness
 from pycwb.modules.reconstruction import get_network_MRA_wave
-from pycwb.modules.read_data import read_from_job_segment, generate_injection, read_from_gwf, check_and_resample, \
-    merge_frames, read_single_frame_from_job_segment
+from pycwb.modules.read_data import read_from_job_segment, generate_injection, merge_frames, read_single_frame_from_job_segment
 from pycwb.modules.data_conditioning import data_conditioning, regression, whitening
 from pycwb.modules.coherence import coherence
-from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
@@ -148,15 +141,15 @@ def read_in_data(config, job_seg):
 
 @task
 def read_file_from_job_segment(config, job_seg, frame):
-    return read_single_frame_from_job_segment(config, frame, job_seg)
-
+    single_frame = read_single_frame_from_job_segment(config, frame, job_seg)
+    return single_frame
 
 @task
 def merge_frame_task(job_seg, data, seg_edge) -> list:
     merged_data = merge_frames(job_seg, data, seg_edge)
 
     # with get_dask_client() as client:
-    #     merged_data = client.scatter(merged_data)
+    #     merged_data = client.scatter(merged_data, hash=False)
 
     return merged_data
 
@@ -221,8 +214,7 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
     save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
 
-@flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 4, "processes": True, "threads_per_worker": 1}),
-      log_prints=True, retries=0)
+@flow
 def pycwb_search(file_name, working_dir='.', overwrite=False, ):
     create_working_directory(working_dir)
     check_env()
@@ -241,12 +233,21 @@ def pycwb_search(file_name, working_dir='.', overwrite=False, ):
         data = read_file_from_job_segment.map(config, job_seg, job_seg.frames)
         data_merged = merge_frame_task.submit(job_seg, data, config.segEdge)
         conditioned_data = data_conditioning.map(config, data_merged)
-        fragment_clusters_multi_res = coherence.map(config, conditioned_data, range(config.nRES))
+        fragment_clusters_multi_res = coherence.map(config, unmapped(conditioned_data), range(config.nRES))
 
         triggers_data = supercluster_and_likelihood_wrapper.submit(config, fragment_clusters_multi_res,
                                                                    conditioned_data, xtalk_catalog)
 
         save_trigger.map(working_dir, config, job_seg, triggers_data)
+
+
+# Only initialize the Dask cluster in the worker processes
+if __name__ != "__main__":
+    cluster = LocalCluster(n_workers=4, processes=True, threads_per_worker=1)
+    cluster.scale(4)
+    client = Client(cluster)
+    address = client.scheduler.address
+    pycwb_search = pycwb_search.with_options(task_runner=DaskTaskRunner(address=address), log_prints=True, retries=0)
 
 
 if __name__ == "__main__":
