@@ -64,7 +64,7 @@ def read_from_online(channels, start, end):
     return data
 
 
-def read_from_catalog(catalog, event, detectors, time_slice = None):
+def read_from_catalog(catalog, event, detectors, time_slice=None):
     """
     Read data from catalog
 
@@ -129,16 +129,25 @@ def read_from_job_segment(config, job_seg: WaveSegment):
     if config.nproc > 1:
         logger.info(f'Read data from job segment {job_seg} in parallel')
         with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
-            data = pool.starmap(_read_from_job_segment_wrapper, [
+            data = pool.starmap(read_single_frame_from_job_segment, [
                 (config, frame, job_seg) for frame in job_seg.frames
             ])
     else:
-        data = [_read_from_job_segment_wrapper(config, frame, job_seg) for frame in job_seg.frames]
+        data = [read_single_frame_from_job_segment(config, frame, job_seg) for frame in job_seg.frames]
 
+    # merge the data
+    merged_data = merge_frames(job_seg, data, config.segEdge)
+
+    timer_end = time.perf_counter()
+    logger.info(f'Read data from job segment in {timer_end - timer_start} seconds')
+    return merged_data
+
+
+def merge_frames(job_seg, data, seg_edge):
     merged_data = []
 
     # split data by ifo for next step of merging
-    ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in config.ifo]
+    ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in job_seg.ifos]
 
     for frames in ifo_frames:
         if len(frames) == 1:
@@ -160,22 +169,20 @@ def read_from_job_segment(config, job_seg: WaveSegment):
             ifo_data = ifo_data.to_pycbc()
 
         # check if data range match with job segment
-        if ifo_data.start_time != job_seg.start_time - config.segEdge or \
-                ifo_data.end_time != job_seg.end_time + config.segEdge:
-            logger.error(f'Job segment {job_seg} not match with data {ifo_data}, '
-                         f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
-            raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
+        if ifo_data.start_time != job_seg.start_time - seg_edge or \
+                ifo_data.end_time != job_seg.end_time + seg_edge:
+            raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}, '
+                             f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
 
-        logger.info(f'data info: start={ifo_data.start_time}, duration={ifo_data.duration}, rate={ifo_data.sample_rate}')
+        print(
+            f'data info: start={ifo_data.start_time}, duration={ifo_data.duration}, rate={ifo_data.sample_rate}')
         # append to final data
         merged_data.append(ifo_data)
 
-    timer_end = time.perf_counter()
-    logger.info(f'Read data from job segment in {timer_end - timer_start} seconds')
     return merged_data
 
 
-def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
+def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     # should read data with segment edge
     start = job_seg.start_time - config.segEdge
     end = job_seg.end_time + config.segEdge
@@ -190,12 +197,12 @@ def _read_from_job_segment_wrapper(config, frame, job_seg: WaveSegment):
 
     i = config.ifo.index(frame.ifo)
     data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
-    logger.info(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
+    print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     if int(data.sample_rate.value) != int(config.inRate):
         sample_rate_old = data.sample_rate.value
         w = convert_to_wavearray(data)
         w.Resample(config.inRate)
         data = convert_wavearray_to_timeseries(w)
         # data = data.resample(config.inRate)
-        logger.info(f'Resample data from {sample_rate_old} to {config.inRate}')
+        print(f'Resample data from {sample_rate_old} to {config.inRate}')
     return check_and_resample(data, config, i)
