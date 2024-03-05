@@ -2,8 +2,10 @@ import shutil
 import os
 from prefect import flow, task, get_run_logger
 from prefect_dask.task_runners import DaskTaskRunner
-# import matplotlib
-# matplotlib.use('agg')
+from prefect_dask import get_dask_client
+import matplotlib
+
+matplotlib.use('agg')
 
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
@@ -19,17 +21,15 @@ from pycwb.modules.superlag import generate_slags
 from pycwb.types.network import Network
 from pycwb.modules.autoencoder import get_glitchness
 from pycwb.modules.reconstruction import get_network_MRA_wave
-from pycwb.modules.read_data import read_from_job_segment, generate_injection, read_from_gwf, check_and_resample
+from pycwb.modules.read_data import read_from_job_segment, generate_injection, read_from_gwf, check_and_resample, \
+    merge_frames, read_single_frame_from_job_segment
 from pycwb.modules.data_conditioning import data_conditioning, regression, whitening
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.catalog import create_catalog, add_events_to_catalog
-from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.web_viewer.create import create_web_viewer
-from pycwb.modules.plot_map.world_map import plot_world_map, plot_skymap_contour
-from pycwb.modules.plot.waveform import plot_reconstructed_waveforms
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.config import Config
 
@@ -42,14 +42,6 @@ def read_config(file_name):
 @task
 def job_generator(nifo, slag_min, slag_max, slag_off, slag_size):
     return generate_slags(nifo, slag_min, slag_max, slag_off, slag_size)
-
-
-@task
-def job_runner(config, slag):
-    import time
-    time.sleep(3)
-    print(slag)
-    return 0
 
 
 @task
@@ -104,10 +96,12 @@ def create_catalog_file(working_dir, config, job_segments):
     logger.info("Creating catalog file")
     create_catalog(f"{working_dir}/{config.outputDir}/catalog.json", config, job_segments)
 
+
 @task
 def load_xtalk_catalog(MRAcatalog):
     xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(MRAcatalog)
     return xtalk_coeff, xtalk_lookup_table, layers, nRes
+
 
 @task
 def create_web_dir(working_dir, output_dir):
@@ -153,72 +147,23 @@ def read_in_data(config, job_seg):
 
 
 @task
-def read_file_from_job_segment(config, frame, job_seg):
-    # should read data with segment edge
-    start = job_seg.start_time - config.segEdge
-    end = job_seg.end_time + config.segEdge
-    print(f"Reading data from {frame.path} from {start} to {end}")
-
-    # for each frame, if the frame start time is later than the job segment start time, use the frame start time
-    if frame.start_time > start:  start = frame.start_time
-
-    # for each frame, if the frame end time is earlier than the job segment end time, use the frame end time
-    if frame.end_time < end: end = frame.end_time
-
-    i = config.ifo.index(frame.ifo)
-    data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
-    print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
-    if int(data.sample_rate.value) != int(config.inRate):
-        sample_rate_old = data.sample_rate.value
-        w = convert_to_wavearray(data)
-        w.Resample(config.inRate)
-        data = convert_wavearray_to_timeseries(w)
-        # data = data.resample(config.inRate)
-        print(f'Resample data from {sample_rate_old} to {config.inRate}')
-    return check_and_resample(data, config, i)
+def read_file_from_job_segment(config, job_seg, frame):
+    return read_single_frame_from_job_segment(config, frame, job_seg)
 
 
 @task
-def merge_frame_files(config, job_seg, data) -> list:
-    merged_data = []
+def merge_frame_task(job_seg, data, seg_edge) -> list:
+    merged_data = merge_frames(job_seg, data, seg_edge)
 
-    # split data by ifo for next step of merging
-    ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in config.ifo]
+    # with get_dask_client() as client:
+    #     merged_data = client.scatter(merged_data)
 
-    for frames in ifo_frames:
-        if len(frames) == 1:
-            # if there is only one frame, no need to merge
-            ifo_data = data[frames[0]]
-        else:
-            # merge gw frames
-            ifo_data = TimeSeries.from_pycbc(data[frames[0]])
-            # free memory
-            data[frames[0]] = None
-
-            for i in frames[1:]:
-                # use append method from gwpy, raise error if there is a gap
-                ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
-                # free memory
-                data[i] = None
-
-            # convert back to pycbc
-            ifo_data = ifo_data.to_pycbc()
-
-        # check if data range match with job segment
-        if ifo_data.start_time != job_seg.start_time - config.segEdge or \
-                ifo_data.end_time != job_seg.end_time + config.segEdge:
-            print(f'Job segment {job_seg} not match with data {ifo_data}, '
-                  f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
-            raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}')
-
-        print(f'data info: start={ifo_data.start_time}, duration={ifo_data.duration}, rate={ifo_data.sample_rate}')
-        # append to final data
-        merged_data.append(ifo_data)
     return merged_data
 
 
 @task
 def data_conditioning(config, strain):
+    print(f"Data conditioning for strain {strain}")
     data_regression = regression(config, strain)
     return whitening(config, data_regression)
 
@@ -236,12 +181,6 @@ def coherence(config, conditioned_data, res):
 
 
 @task
-def create_network(config, conditioned_data):
-    tf_maps, nRMS_list = zip(*conditioned_data)
-    return Network(config, tf_maps, nRMS_list)
-
-
-@task
 def supercluster_and_likelihood_wrapper(config, fragment_clusters_multi_res, conditioned_data,
                                         xtalk_catalog):
     xtalk_coeff, xtalk_lookup_table, layers, nRes = xtalk_catalog
@@ -250,27 +189,26 @@ def supercluster_and_likelihood_wrapper(config, fragment_clusters_multi_res, con
     network = Network(config, tf_maps, nRMS_list)
     super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
                                                    xtalk_coeff, xtalk_lookup_table, layers)
-    return likelihood(config, network, [super_fragment_clusters])
+    events, clusters, skymap_statistics = likelihood(config, network, [super_fragment_clusters])
 
+    events_data = zip(events, clusters, skymap_statistics)
 
-# @task
-# def likelihood_wrapper(config, network, fragment_clusters):
-#     return likelihood(config, network, fragment_clusters)
+    # with get_dask_client() as client:
+    #     events_data = client.scatter(events_data)
 
-#
-# @task
-# def create_trigger_directory(working_dir, config, job_seg, event):
-#     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
-#     print(f"Creating trigger folder: {trigger_folder}")
-#     if not os.path.exists(trigger_folder):
-#         os.makedirs(trigger_folder)
-#     else:
-#         print(f"Trigger folder {trigger_folder} already exists, skip")
-#     return trigger_folder
-#
+    return events_data
+
 
 @task
-def save_trigger(working_dir, config, job_seg, event, cluster, event_skymap_statistics):
+def save_trigger(working_dir, config, job_seg, trigger_data):
+    event, cluster, event_skymap_statistics = trigger_data
+
+    if cluster.cluster_status != -1:
+        return 0
+
+    print(f"Saving trigger {event.hash_id}")
+    extra_info = {}
+
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
     print(f"Creating trigger folder: {trigger_folder}")
     if not os.path.exists(trigger_folder):
@@ -281,8 +219,6 @@ def save_trigger(working_dir, config, job_seg, event, cluster, event_skymap_stat
     save_dataclass_to_json(event, f"{trigger_folder}/event.json")
     save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
     save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
-
-
 
 
 @flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 4, "processes": True, "threads_per_worker": 1}),
@@ -302,41 +238,22 @@ def pycwb_search(file_name, working_dir='.', overwrite=False, ):
 
     for job_seg in job_segments:
         print_job_info(job_seg)
-        data = [read_file_from_job_segment.submit(config, frame, job_seg) for frame in job_seg.frames]
-        data_merged = merge_frame_files.submit(config, job_seg, data).result()
-        conditioned_data = [data_conditioning.submit(config, strain) for strain in data_merged]
-        fragment_clusters_multi_res = [coherence.submit(config, conditioned_data, res) for res in range(config.nRES)]
+        data = read_file_from_job_segment.map(config, job_seg, job_seg.frames)
+        data_merged = merge_frame_task.submit(job_seg, data, config.segEdge)
+        conditioned_data = data_conditioning.map(config, data_merged)
+        fragment_clusters_multi_res = coherence.map(config, conditioned_data, range(config.nRES))
 
-        events, clusters, skymap_statistics = supercluster_and_likelihood_wrapper.submit(
-            config, fragment_clusters_multi_res, conditioned_data, xtalk_catalog).result()
+        triggers_data = supercluster_and_likelihood_wrapper.submit(config, fragment_clusters_multi_res,
+                                                                   conditioned_data, xtalk_catalog)
 
-        for event, cluster, event_skymap_statistics in zip(events, clusters, skymap_statistics):
-            print(f"cluster")
-            if cluster.cluster_status != -1:
-                continue
-            print(f"Saving trigger {event.hash_id}")
-            extra_info = {}
-            save_trigger.submit(working_dir, config, job_seg, event, cluster, event_skymap_statistics)
+        save_trigger.map(working_dir, config, job_seg, triggers_data)
 
 
 if __name__ == "__main__":
-    pycwb_search('/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml',
-             working_dir="/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
-             overwrite=True)
-    # pycwb_search('/Users/yumengxu/Project/Physics/cwb/pyBurst/benchmark/supercluster/user_parameters_injection.yaml',
-    #              working_dir="/Users/yumengxu/Project/Physics/cwb/pyBurst/benchmark/supercluster",
-    #              overwrite=True)
-    # pycwb_search.serve(name="PycWB-search")
-
+    pycwb_search.serve(name="PycWB-search")
 
 # {
 #     "file_name": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml",
 #     "working_dir": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB",
-#     "overwrite": true
-# }
-#
-# {
-#     "file_name": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB/user_parameters_injection.yaml",
-#     "working_dir": "/Users/yumengxu/GWOSC/catalog/GWTC-1-confident/GW150914/pycWB-tmp",
 #     "overwrite": true
 # }
