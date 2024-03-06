@@ -69,7 +69,7 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     return fragment_clusters
 
 
-def coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
+def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     """
     Calculate the coherence for a single resolution
 
@@ -90,6 +90,12 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     """
     # timer
     timer_start = time.perf_counter()
+
+    if up_n is None:
+        # upper sample factor
+        up_n = int(config.rateANA / 1024)
+        if up_n < 1:
+            up_n = 1
 
     wdm = create_wdm_for_level(config, config.WDM_level[i])
 
