@@ -52,11 +52,11 @@ def coherence(config, tf_maps, nRMS_list, net=None):
 
     if config.nproc > 1:
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
-            fragment_clusters_multi_res = pool.starmap(_coherence_single_res,
+            fragment_clusters_multi_res = pool.starmap(coherence_single_res,
                                                        [(i, config, tf_maps, nRMS_list, up_n) for i in
                                                         range(config.nRES)])
     else:
-        fragment_clusters_multi_res = [_coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
+        fragment_clusters_multi_res = [coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
                                        range(config.nRES)]
 
     # flat the array
@@ -69,7 +69,7 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     return fragment_clusters
 
 
-def _coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
+def coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net=None):
     """
     Calculate the coherence for a single resolution
 
