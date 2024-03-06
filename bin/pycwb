@@ -6,6 +6,7 @@
 import argparse
 import pycwb.cli.server as server
 import pycwb.cli.run as run
+import pycwb.cli.flow as flow
 
 
 def main():
@@ -21,6 +22,10 @@ def main():
     run_parser = subparsers.add_parser('run', help='Run search')
     run.init_parser(run_parser)
     run_parser.set_defaults(func=run.command)
+
+    flow_parser = subparsers.add_parser('flow', help='Run search')
+    flow.init_parser(flow_parser)
+    flow_parser.set_defaults(func=flow.command)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):
