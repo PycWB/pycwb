@@ -6,6 +6,7 @@ import shutil
 import click
 import pycwb
 import matplotlib.pyplot as plt
+import warnings
 
 from pycwb.modules.plot.waveform import plot_reconstructed_waveforms
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
@@ -124,7 +125,8 @@ def post_production(config, job_id, event, cluster, event_skymap_statistics, plo
     save_dataclass_to_json(event, f'{trigger_folder}/event.json', compress_json=compress_json)
     save_dataclass_to_json(cluster, f'{trigger_folder}/cluster.json', compress_json=compress_json)
     # save the skymap statistics as json file
-    save_dataclass_to_json(event_skymap_statistics, f'{trigger_folder}/skymap_statistics.json', compress_json=compress_json)
+    save_dataclass_to_json(event_skymap_statistics, f'{trigger_folder}/skymap_statistics.json',
+                           compress_json=compress_json)
     # save event to catalog
     add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, f"{event.stop[0]}_{event.hash_id}"))
 
@@ -189,6 +191,11 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     compress_json : bool, optional
         compress the json files, by default True
     """
+
+    # will be deprecated warning
+    warnings.warn("This function will be deprecated in the future, please use prefect version instead.",
+                  DeprecationWarning)
+
     # create working directory
     working_dir = os.path.abspath(working_dir)
     if not os.path.exists(working_dir):
@@ -203,7 +210,7 @@ def search(user_parameters='./user_parameters.yaml', working_dir=".", log_file=N
     if not os.environ.get('HOME_WAT_FILTERS'):
         logger.error("HOME_WAT_FILTERS is not set.")
         logger.info("Please download the latest version of cwb config "
-                     "and set HOME_WAT_FILTERS to the path of folder XTALKS.")
+                    "and set HOME_WAT_FILTERS to the path of folder XTALKS.")
         logger.info("Make sure you have installed git lfs before cloning the repository.")
         logger.info("For example:")
         logger.info("    git lfs install")
