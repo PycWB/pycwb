@@ -12,7 +12,7 @@ from pycwb.modules.xtalk.monster import load_catalog
 # dask.config.set({"multiprocessing.context": "fork"})
 
 import pycbc
-from pycwb.modules.coherence.coherence import _coherence_single_res
+from pycwb.modules.coherence.coherence import coherence_single_res
 from pycwb.modules.superlag import generate_slags
 from pycwb.types.network import Network
 from pycwb.modules.reconstruction import get_network_MRA_wave
@@ -170,7 +170,7 @@ def coherence(config, conditioned_data, res):
     if up_n < 1:
         up_n = 1
 
-    return _coherence_single_res(res, config, tf_maps, nRMS_list, up_n)
+    return coherence_single_res(res, config, tf_maps, nRMS_list, up_n)
 
 
 @task
@@ -212,6 +212,21 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
     save_dataclass_to_json(event, f"{trigger_folder}/event.json")
     save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
     save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
+
+
+@flow
+def process_job_segment(working_dir, config, job_seg, xtalk_catalog):
+    print_job_info(job_seg)
+    data = read_file_from_job_segment.map(config, job_seg, job_seg.frames)
+    data_merged = merge_frame_task.submit(job_seg, data, config.segEdge)
+    conditioned_data = data_conditioning.map(config, data_merged)
+    fragment_clusters_multi_res = coherence.map(config, unmapped(conditioned_data), range(config.nRES))
+
+    triggers_data = supercluster_and_likelihood_wrapper.submit(config, fragment_clusters_multi_res,
+                                                               conditioned_data, xtalk_catalog)
+
+    save_trigger.map(working_dir, config, job_seg, triggers_data)
+
 
 
 @flow
