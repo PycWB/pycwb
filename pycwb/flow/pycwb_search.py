@@ -12,11 +12,6 @@ from .tasks.builtin import check_env, read_config, create_working_directory, pri
     coherence_task, supercluster_and_likelihood_task, load_xtalk_catalog, reconstruct_waveform, plot_triggers
 
 
-@task
-def scatter_list(data):
-    with get_dask_client() as client:
-        return [client.scatter(d) for d in data]
-
 @flow
 def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
                         plot=False, compress_json=True):
@@ -35,9 +30,11 @@ def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
     if job_seg.injections:
         data = generate_injection_task.submit(config, job_seg, data)
 
-    conditioned_data = data_conditioning_task.map(config, data)
+    conditioned_data = data_conditioning_task.map(config, unmapped(data), range(len(job_seg.ifos)))
     fragment_clusters_multi_res = coherence_task.map(config, unmapped(conditioned_data), range(config.nRES))
 
+    # TODO: maybe need to save trigger first, then for each post-production task,
+    #  load the trigger to avoid the head-node bottleneck
     triggers_data = supercluster_and_likelihood_task.submit(config, fragment_clusters_multi_res,
                                                             conditioned_data, xtalk_catalog)
 

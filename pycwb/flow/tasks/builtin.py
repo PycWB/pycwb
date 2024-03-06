@@ -167,7 +167,8 @@ def generate_noise_for_job_seg_task(job_seg, sample_rate, f_low=2.0, data=None):
 
 
 @task
-def data_conditioning_task(config, strain):
+def data_conditioning_task(config, strains, ifo):
+    strain = strains[ifo]
     print(f"Data conditioning for strain {strain}")
     data_regression = regression(config, strain)
     whitened_data = whitening(config, data_regression)
