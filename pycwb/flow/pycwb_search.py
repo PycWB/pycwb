@@ -1,30 +1,57 @@
-from prefect import flow, unmapped
+import os
+
+from prefect import flow, unmapped, task
+from prefect_dask import get_dask_client
 from prefect_dask.task_runners import DaskTaskRunner
 from dask.distributed import Client, LocalCluster
 from .tasks.builtin import check_env, read_config, create_working_directory, print_job_info, \
-                        check_if_output_exists, create_output_directory, create_job_segment, \
-                        create_catalog_file, create_web_dir, save_trigger, \
-                        read_file_from_job_segment, merge_frame_task, data_conditioning_task, \
-                        coherence_task, supercluster_and_likelihood_task, load_xtalk_catalog
+    check_if_output_exists, create_output_directory, create_job_segment, \
+    generate_noise_for_job_seg_task, \
+    create_catalog_file, create_web_dir, save_trigger, generate_injection_task, \
+    read_file_from_job_segment, merge_frame_task, data_conditioning_task, \
+    coherence_task, supercluster_and_likelihood_task, load_xtalk_catalog, reconstruct_waveform, plot_triggers
 
+
+@task
+def scatter_list(data):
+    with get_dask_client() as client:
+        return [client.scatter(d) for d in data]
 
 @flow
-def process_job_segment(working_dir, config, job_seg, xtalk_catalog):
+def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
+                        plot=False, compress_json=True):
     print_job_info(job_seg)
-    data = read_file_from_job_segment.map(config, job_seg, job_seg.frames)
-    data_merged = merge_frame_task.submit(job_seg, data, config.segEdge)
-    conditioned_data = data_conditioning_task.map(config, data_merged)
+    data = []
+
+    # Data retrieval or generation
+    if not job_seg.frames and not job_seg.noise and not job_seg.injections:
+        raise ValueError("No data to process")
+
+    if job_seg.frames:
+        frame_data = read_file_from_job_segment.map(config, job_seg, job_seg.frames)
+        data = merge_frame_task.submit(job_seg, frame_data, config.segEdge)
+    if job_seg.noise:
+        data = generate_noise_for_job_seg_task.submit(job_seg, config.inRate, data=data)
+    if job_seg.injections:
+        data = generate_injection_task.submit(config, job_seg, data)
+
+    conditioned_data = data_conditioning_task.map(config, data)
     fragment_clusters_multi_res = coherence_task.map(config, unmapped(conditioned_data), range(config.nRES))
 
     triggers_data = supercluster_and_likelihood_task.submit(config, fragment_clusters_multi_res,
                                                             conditioned_data, xtalk_catalog)
 
     save_trigger.map(working_dir, config, job_seg, triggers_data)
+    reconstructed_waves = reconstruct_waveform.map(working_dir, config, job_seg, triggers_data)
+
+    if plot:
+        plot_triggers.map(working_dir, config, job_seg, triggers_data, reconstructed_waves)
 
 
 @flow
 def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
            n_proc=1, plot=False, compress_json=True):
+    working_dir = os.path.abspath(working_dir)
     create_working_directory(working_dir)
     check_env()
     config = read_config(file_name)
@@ -60,6 +87,6 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
 
     for job_seg in job_segments:
         # TODO: customize the name
-        subflow(working_dir, config, job_seg, xtalk_catalog)
+        subflow(working_dir, config, job_seg, xtalk_catalog, plot, compress_json)
 
 

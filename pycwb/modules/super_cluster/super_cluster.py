@@ -160,6 +160,8 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
 
     skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
 
+    ########################
+    # ROOT code start
     if skyres > 0:
         network.update_sky_map(config, skyres)
         network.net.setAntenna()
@@ -207,6 +209,8 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
 
     fragment_clusters = convert_netcluster_to_fragment_clusters(pwc)
+
+    ########################
 
     # prepare user parameters
     acor = network.net.acor
@@ -287,6 +291,13 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
         for p in c.pixels:
             p.core = 1
             p.td_amp = None
+
+    ###############################
+    # ROOT code start
+
+    network.restore_skymap(config, skyres)
+
+    ###############################
     return fragment_clusters
 
 

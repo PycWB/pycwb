@@ -1,14 +1,19 @@
 from prefect import task, get_run_logger
 import shutil
 import os
+from prefect.utilities.annotations import quote
 
+
+from pycwb.modules.plot.cluster_statistics import plot_statistics
+from pycwb.modules.plot.waveform import plot_reconstructed_waveforms
+from pycwb.modules.plot_map.world_map import plot_skymap_contour
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence_single_res
 from pycwb.modules.superlag import generate_slags
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.modules.read_data import read_from_job_segment, generate_injection, merge_frames, \
-    read_single_frame_from_job_segment
+    read_single_frame_from_job_segment, generate_noise, generate_noise_for_job_seg
 from pycwb.modules.data_conditioning import regression, whitening
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.job_segment import create_job_segment_from_config
@@ -123,15 +128,17 @@ def print_job_info(job_seg):
     logger.info(f"Start time: {job_seg.start_time}")
     logger.info(f"End time: {job_seg.end_time}")
     logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
+    logger.info(f"Frames: {job_seg.frames}")
+    logger.info(f"Noise: {job_seg.noise}")
+    logger.info(f"Injections: {job_seg.injections}")
 
 
 @task
-def read_in_data(config, job_seg):
-    data = None
-    if job_seg.frames:
-        data = read_from_job_segment(config, job_seg)
-    if job_seg.injections:
-        data = generate_injection(config, job_seg, data)
+def generate_injection_task(config, job_seg, data=None):
+    data = generate_injection(config, job_seg, data)
+
+    # avoid prefect inspect the internal data
+    # return [quote(d) for d in data]
     return data
 
 
@@ -144,22 +151,35 @@ def read_file_from_job_segment(config, job_seg, frame):
 @task
 def merge_frame_task(job_seg, data, seg_edge) -> list:
     merged_data = merge_frames(job_seg, data, seg_edge)
-
     return merged_data
+
+
+@task
+def generate_noise_for_job_seg_task(job_seg, sample_rate, f_low=2.0, data=None):
+    print(f"Generating noise for job segment {job_seg.index}")
+    if 'seeds' in job_seg.noise:
+        print(f"Using seeds {job_seg.noise['seeds']}")
+    print(f"Sample rate: {sample_rate}")
+    print(f"Low frequency: {f_low}")
+    data = generate_noise_for_job_seg(job_seg, sample_rate, f_low, data)
+
+    return data
 
 
 @task
 def data_conditioning_task(config, strain):
     print(f"Data conditioning for strain {strain}")
     data_regression = regression(config, strain)
-    return whitening(config, data_regression)
+    whitened_data = whitening(config, data_regression)
+    return whitened_data
 
 
 @task
 def coherence_task(config, conditioned_data, res):
     tf_maps, nRMS_list = zip(*conditioned_data)
 
-    return coherence_single_res(res, config, tf_maps, nRMS_list)
+    clusters = coherence_single_res(res, config, tf_maps, nRMS_list)
+    return clusters
 
 
 @task
@@ -191,7 +211,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
             continue
         event = events[i]
         event_skymap_statistics = skymap_statistics[i]
-        events_data.append((event, cluster, event_skymap_statistics))
+        events_data.append(quote((event, cluster, event_skymap_statistics)))
 
     return events_data
 
@@ -204,7 +224,6 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
         return 0
 
     print(f"Saving trigger {event.hash_id}")
-    extra_info = {}
 
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
     print(f"Creating trigger folder: {trigger_folder}")
@@ -213,6 +232,54 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
     else:
         print(f"Trigger folder {trigger_folder} already exists, skip")
 
+    print(f"Saving trigger data")
     save_dataclass_to_json(event, f"{trigger_folder}/event.json")
     save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
     save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
+
+    print(f"Adding event to catalog")
+    add_events_to_catalog(f"{working_dir}/{config.outputDir}/catalog.json",
+                          event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
+
+
+@task
+def reconstruct_waveform(working_dir, config, job_seg, trigger_data):
+    event, cluster, event_skymap_statistics = trigger_data
+
+    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+
+    reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                               'signal', 0, True)
+
+    if not os.path.exists(trigger_folder):
+        os.makedirs(trigger_folder)
+        print(f"Creating trigger folder: {trigger_folder}")
+
+    for i, ts in enumerate(reconstructed_waves):
+        print(f"Saving reconstructed waveform for {job_seg.ifos[i]}")
+        ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}.txt")
+
+    return [quote(d) for d in reconstructed_waves]
+
+
+@task
+def plot_triggers(working_dir, config, job_seg, trigger_data, reconstructed_waves):
+    event, cluster, event_skymap_statistics = trigger_data
+
+    print(f"Making plots for event {event.hash_id}")
+    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+
+    plot_reconstructed_waveforms(trigger_folder, reconstructed_waves,
+                                 xlim=(event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+    # plot the likelihood map
+    plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
+    plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
+
+    # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
+    for key in event_skymap_statistics.keys():
+        plot_skymap_contour(event_skymap_statistics,
+                            key=key,
+                            reconstructed_loc=(event.phi[0], event.theta[0]),
+                            detector_loc=(event.phi[3], event.theta[3]),
+                            resolution=1,
+                            filename=f'{trigger_folder}/{key}.png')

@@ -60,6 +60,24 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     return noise
 
 
+def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
+    # if seeds is not provided, use None for all ifos
+    seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
+
+    # generate noise for each ifo
+    noises = [generate_noise(f_low=f_low, sample_rate=sample_rate,
+                             duration=job_seg.duration,
+                             start_time=job_seg.start_time, seed=seed) for i, seed in enumerate(seeds)]
+
+    # if there are upstream data, add noise into the data
+    if data:
+        data = [noises[i].add_into(data[i]) for i in range(len(seeds))]
+    else:
+        data = noises
+
+    return data
+
+
 def generate_from_pycbc(m1, m2, inclination, distance, sample_rate,
                         ra, dec, polarization, detectors, geocent_end_time,
                         spin1=[0, 0, 0], spin2=[0, 0, 0], f_ref=20.0, f_lower=20.0,
@@ -242,29 +260,10 @@ def generate_injection(config, job_seg, strain=None):
     # load noise
     logger.info(f'Generating noise for {ifos}')
 
-    injected = None
-
-    if strain:
-        injected = strain
-
-    if job_seg.noise:
-        # load seeds from config, if not specified, use random seeds
-        seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None, None]
-
-        # generate noise
-        noises = [generate_noise(f_low=2.0, sample_rate=config.inRate,
-                                duration=job_seg.duration,
-                                start_time=job_seg.start_time, seed=seeds[i])
-                 for i, ifo in enumerate(ifos)]
-
-        if injected:
-            # inject signal into noise
-            injected = [noises[i].add_into(injected[i]) for i in range(len(ifos))]
-        else:
-            injected = noises
+    injected = strain
 
     # generate zero noise if injected is None
-    if injected is None:
+    if not injected:
         injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)), delta_t=1.0 / config.inRate)
                     for ifo in ifos]
 

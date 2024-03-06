@@ -21,7 +21,7 @@ from pycwb.types.network import Network
 from pycwb.modules.autoencoder import get_glitchness
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.modules.logger import logger_init
-from pycwb.modules.read_data import read_from_job_segment, generate_injection
+from pycwb.modules.read_data import read_from_job_segment, generate_injection, generate_noise_for_job_seg
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.coherence import coherence
 from pycwb.modules.super_cluster import supercluster
@@ -68,6 +68,8 @@ def analyze_job_segment(config, job_seg, plot, compress_json):
     data = None
     if job_seg.frames:
         data = read_from_job_segment(config, job_seg)
+    if job_seg.noise:
+        data = generate_noise_for_job_seg(job_seg, config.inRate, data=data)
     if job_seg.injections:
         data = generate_injection(config, job_seg, data)
 

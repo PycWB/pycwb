@@ -1,6 +1,4 @@
 import os
-from dask.distributed import Client, LocalCluster
-from prefect_dask.task_runners import DaskTaskRunner
 
 
 def init_parser(parser):
@@ -57,6 +55,13 @@ def init_parser(parser):
                         help='the number of cpu to use, if it set to 0, '
                              'it will use the value from the user parameter file.')
 
+    # generate plot
+    parser.add_argument('--plot',
+                        action='store_true',
+                        default=False,
+                        help='generate the plot, by default False')
+
+    # compress json
     parser.add_argument('--compress_json',
                         action='store_true',
                         default=False,
@@ -69,7 +74,7 @@ def init_parser(parser):
                         help='Run prefect flow in serve mode')
 
     # serve name
-    parser.add_argument('-name',
+    parser.add_argument('--name',
                         metavar='name',
                         type=str,
                         default='pycwb',
@@ -84,4 +89,4 @@ def command(args):
     else:
         # Run the search function with the specified user parameter file
         search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
-               overwrite=args.force_overwrite, compress_json=args.compress_json)
+               overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)

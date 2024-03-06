@@ -1,4 +1,3 @@
-from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
 import numpy as np
@@ -11,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 def plot_world_map(phi, theta, filename=None):
+    from mpl_toolkits.basemap import Basemap
+
     plt.figure(figsize=(12, 8))
     phi -= 360 if phi > 180 else 0
     theta = -(theta - 90)
@@ -53,6 +54,9 @@ def plot_skymap_contour(skymap_statistic, key="nProbability", reconstructed_loc=
 
     # convert to HEALPix indices and get the values for each point
     healpix_indices = hp.ang2pix(2 ** 7, flatten_theta, flatten_phi)
+    if len(skymap) < len(healpix_indices):
+        raise ValueError('The length of the skymap is smaller than the length of the healpix indices')
+
     values = skymap[healpix_indices]
 
     # reshape to 2D map
