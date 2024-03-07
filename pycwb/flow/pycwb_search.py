@@ -47,7 +47,7 @@ def process_job_segment(working_dir, config, job_seg,
         plot_triggers.map(working_dir, config, job_seg, triggers_data, reconstructed_waves)
 
 
-@flow
+@flow(log_prints=True)
 def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
            n_proc=1, plot=False, compress_json=True, dry_run=False):
     working_dir = os.path.abspath(working_dir)
