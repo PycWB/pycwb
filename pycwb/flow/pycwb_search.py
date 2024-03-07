@@ -79,10 +79,30 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
         else:
             raise ValueError("Cannot run with n_proc < 0")
     else:
+        # create workers for job submission system
+        import getpass
+
         if submit == 'condor':
-            raise NotImplementedError
+            job_script_prologue = [f'cd {working_dir}', f'source {working_dir}/start.sh']
+            # TODO: customize the account group
+            cluster = HTCondorCluster(cores=n_proc, memory=f"{int(3*n_proc)}GB", disk="1GB",
+                                      job_extra_directives={
+                                          'universe': 'vanilla',
+                                          'accounting_group': 'ligo.dev.o4.burst.ebbh.cwbonline',
+                                          'accounting_group_user': getpass.getuser()
+                                      },
+                                      log_directory='logs', python='python3',
+                                      job_script_prologue=job_script_prologue)
+            print(cluster.job_script())
+            cluster.scale(1)
+            client = Client(cluster)
+            address = client.scheduler.address
+            subflow = process_job_segment.with_options(task_runner=DaskTaskRunner(address=address),
+                                                       log_prints=True, retries=0)
         elif submit == 'slurm':
             raise NotImplementedError
+        else:
+            raise ValueError("Unknown submit option, only support 'condor' and 'slurm'")
 
     check_if_output_exists(working_dir, config.outputDir, overwrite)
     create_output_directory(working_dir, config.outputDir, config.logDir, file_name)
