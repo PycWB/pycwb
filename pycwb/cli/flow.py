@@ -1,5 +1,5 @@
 import os
-
+import click
 
 def init_parser(parser):
     # Add the arguments
@@ -80,10 +80,37 @@ def init_parser(parser):
                         default='pycwb',
                         help='the name of the serve')
 
+    # list number of jobs
+    parser.add_argument('--list-n-jobs',
+                        action='store_true',
+                        default=False,
+                        help='list number of the jobs in the flow')
+
+    # list jobs
+    parser.add_argument('--list-jobs',
+                        action='store_true',
+                        default=False,
+                        help='list all jobs in the flow')
+
 
 def command(args):
     from pycwb.flow.pycwb_search import search
 
+    if args.list_n_jobs or args.list_jobs:
+        jobs = search(args.user_parameter_file, working_dir=args.work_dir, n_proc=1, dry_run=True)
+
+        print(f"Number of jobs: {len(jobs)}")
+
+        if args.list_n_jobs:
+            print(f"To list all jobs, use --list-jobs option.")
+
+        # list all jobs
+        if args.list_jobs:
+            for job in jobs:
+                print(job)
+
+        return 0
+    
     if args.serve:
         search.serve(name=args.name)
     else:

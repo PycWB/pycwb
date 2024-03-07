@@ -2,6 +2,7 @@ import os
 
 from prefect import flow, unmapped, task
 from prefect_dask import get_dask_client
+from dask_jobqueue import SLURMCluster, HTCondorCluster
 from prefect_dask.task_runners import DaskTaskRunner
 from dask.distributed import Client, LocalCluster
 from .tasks.builtin import check_env, read_config, create_working_directory, print_job_info, \
@@ -47,11 +48,17 @@ def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
 
 @flow
 def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
-           n_proc=1, plot=False, compress_json=True):
+           n_proc=1, plot=False, compress_json=True, dry_run=False):
     working_dir = os.path.abspath(working_dir)
     create_working_directory(working_dir)
     check_env()
     config = read_config(file_name)
+
+    job_segments = create_job_segment(config)
+
+    # dry run
+    if dry_run:
+        return job_segments
 
     # override n_proc in config
     if n_proc != 0:
@@ -71,12 +78,14 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
         else:
             raise ValueError("Cannot run with n_proc < 0")
     else:
-        raise ValueError("Job submission not implemented yet.")
+        if submit == 'condor':
+            raise NotImplementedError
+        elif submit == 'slurm':
+            raise NotImplementedError
 
     check_if_output_exists(working_dir, config.outputDir, overwrite)
     create_output_directory(working_dir, config.outputDir, config.logDir, file_name)
 
-    job_segments = create_job_segment(config)
     create_catalog_file(working_dir, config, job_segments)
     create_web_dir(working_dir, config.outputDir)
     xtalk_catalog = load_xtalk_catalog.submit(config.MRAcatalog)
