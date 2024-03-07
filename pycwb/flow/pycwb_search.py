@@ -89,7 +89,7 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
 
     create_catalog_file(working_dir, config, job_segments)
     create_web_dir(working_dir, config.outputDir)
-    # load_xtalk_catalog.submit(config.MRAcatalog)
+    load_xtalk_catalog(config.MRAcatalog)
     # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
 
     for job_seg in job_segments:
