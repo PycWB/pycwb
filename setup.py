@@ -32,7 +32,8 @@ install_requires = [
     "lalsuite>=7.0.0",
     "prefect",
     "prefect-dask",
-    "dask"
+    "dask",
+    "dask_jobqueue",
     # "nds2-client",
     # "python-nds2-client"
 ]
