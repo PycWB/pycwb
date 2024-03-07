@@ -5,7 +5,7 @@ import warnings
 
 if __name__ == "__main__":
     # deprecation warning
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.warn("pycwb_show is deprecated, use pycwb server instead", DeprecationWarning)
     parser = argparse.ArgumentParser(description='Python HTTP Server')
     server.init_parser(parser)
     args = parser.parse_args()
