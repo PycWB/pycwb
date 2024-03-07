@@ -8,7 +8,7 @@ from numba import njit
 logger = logging.getLogger(__name__)
 
 
-def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc):
+def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
 
@@ -59,7 +59,7 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc):
 
     z_len = len(z.data)
 
-    results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
+    results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len, whiten) for pix in cluster.pixels]
     # if min(nproc, len(cluster.pixels)) == 1:
     #     results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
     # else:
@@ -79,7 +79,7 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc):
     return z
 
 
-def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
+def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, whiten=False):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
 
@@ -114,7 +114,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
     # time-of-flight backward correction for reconstructed waveforms
     waveforms = []
     for i in range(nIFO):
-        x = get_MRA_wave(cluster, wdm_list, rate, i, a_type, mode, nproc=config.nproc)
+        x = get_MRA_wave(cluster, wdm_list, rate, i, a_type, mode, nproc=config.nproc, whiten=whiten)
         if len(x.data) == 0:
             logger.warning("zero length")
             return False
@@ -132,15 +132,15 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof):
     return waveforms
 
 
-def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len):
+def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len, whiten=False):
     if not pix.core:
         return
 
     rms = pix.data[ifo].noise_rms
     a00 = pix.data[ifo].asnr if a_type == 'signal' else pix.data[ifo].wave
     a90 = pix.data[ifo].a_90 if a_type == 'signal' else pix.data[ifo].w_90
-    a00 *= rms if a_type == 'strain' else 1
-    a90 *= rms if a_type == 'strain' else 1
+    a00 *= 1 if whiten else rms
+    a90 *= 1 if whiten else rms
 
     # find the object which pix.layers == wdm.max_layers + 1
     wdm = [w for w in wdmList if w.max_layer + 1 == pix.layers][0]

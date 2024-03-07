@@ -244,13 +244,15 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
 
 
 @task
-def reconstruct_waveform(working_dir, config, job_seg, trigger_data):
+def reconstruct_waveform(working_dir, config, job_seg, trigger_data, plot=False):
     event, cluster, event_skymap_statistics = trigger_data
 
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                               'signal', 0, True)
+                                               'signal', 0, True, whiten=False)
+    reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                                        'signal', 0, True, whiten=True)
 
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
@@ -260,18 +262,35 @@ def reconstruct_waveform(working_dir, config, job_seg, trigger_data):
         print(f"Saving reconstructed waveform for {job_seg.ifos[i]}")
         ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}.txt")
 
-    return [quote(d) for d in reconstructed_waves]
+    for i, ts in enumerate(reconstructed_waves_whiten):
+        print(f"Saving reconstructed waveform for {job_seg.ifos[i]} (whitened)")
+        ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}_whitened.txt")
+
+    if plot:
+        from matplotlib import pyplot as plt
+
+        for j, reconstructed_wave in enumerate(reconstructed_waves):
+            plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
+            plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+            plt.savefig(f'{trigger_folder}/reconstructed_wave_ifo_{j+1}.png')
+            plt.close()
+
+        for j, reconstructed_wave in enumerate(reconstructed_waves_whiten):
+            plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
+            plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+            plt.savefig(f'{trigger_folder}/reconstructed_wave_whiten_ifo_{j+1}.png')
+            plt.close()
+
+    return reconstructed_waves
 
 
 @task
-def plot_triggers(working_dir, config, job_seg, trigger_data, reconstructed_waves):
+def plot_triggers(working_dir, config, job_seg, trigger_data):
     event, cluster, event_skymap_statistics = trigger_data
 
     print(f"Making plots for event {event.hash_id}")
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
-    plot_reconstructed_waveforms(trigger_folder, reconstructed_waves,
-                                 xlim=(event.left[0], event.left[0] + event.stop[0] - event.start[0]))
     # plot the likelihood map
     plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
     plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')

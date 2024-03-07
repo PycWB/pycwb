@@ -41,10 +41,10 @@ def process_job_segment(working_dir, config, job_seg,
                                                             conditioned_data, xtalk_catalog)
 
     save_trigger.map(working_dir, config, job_seg, triggers_data)
-    reconstructed_waves = reconstruct_waveform.map(working_dir, config, job_seg, triggers_data)
+    reconstructed_waves = reconstruct_waveform.map(working_dir, config, job_seg, triggers_data, plot)
 
     if plot:
-        plot_triggers.map(working_dir, config, job_seg, triggers_data, reconstructed_waves)
+        plot_triggers.map(working_dir, config, job_seg, triggers_data)
 
 
 @flow(log_prints=True)
