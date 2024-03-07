@@ -14,7 +14,7 @@ from .tasks.builtin import check_env, read_config, create_working_directory, pri
 
 
 @flow
-def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
+def process_job_segment(working_dir, config, job_seg,
                         plot=False, compress_json=True):
     print_job_info(job_seg)
     data = []
@@ -31,6 +31,7 @@ def process_job_segment(working_dir, config, job_seg, xtalk_catalog,
     if job_seg.injections:
         data = generate_injection_task.submit(config, job_seg, data)
 
+    xtalk_catalog = load_xtalk_catalog.submit(config.MRAcatalog)
     conditioned_data = data_conditioning_task.map(config, unmapped(data), range(len(job_seg.ifos)))
     fragment_clusters_multi_res = coherence_task.map(config, unmapped(conditioned_data), range(config.nRES))
 
@@ -88,11 +89,11 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
 
     create_catalog_file(working_dir, config, job_segments)
     create_web_dir(working_dir, config.outputDir)
-    xtalk_catalog = load_xtalk_catalog.submit(config.MRAcatalog)
+    # load_xtalk_catalog.submit(config.MRAcatalog)
     # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
 
     for job_seg in job_segments:
         # TODO: customize the name
-        subflow(working_dir, config, job_seg, xtalk_catalog, plot, compress_json)
+        subflow(working_dir, config, job_seg, plot, compress_json)
 
 

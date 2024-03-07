@@ -1,9 +1,55 @@
 import struct
 import numpy as np
+import pathlib
 from numba import njit
 
 
-def load_catalog(fn):
+def load_catalog(fn, dump=True):
+    """
+    Load the crosstalk catalog file, if the file is in .npz format, then load the file as npz, otherwise load the bin
+    file and parse it. If parameter dump is True, then save the parsed data into a .npz file with the same name as the
+    input file in current working directory.
+
+    Parameters
+    ----------
+    fn : str
+        The file name of the crosstalk catalog file
+    dump : bool
+        If True, save the parsed data into a .npz file with the same name as the input file in current working directory
+
+    Returns
+    -------
+    xtalk_coeff : np.ndarray
+        The crosstalk coefficients
+    xtalk_lookup_table : np.ndarray
+        The lookup table for crosstalk coefficients
+    layers : np.ndarray
+        The number of layers for each resolution
+    nRes : int
+        The number of resolutions
+    """
+
+    # if ext of fn is .npz, then load the file as npz
+    if pathlib.Path(fn).suffix == ".npz":
+        print(f"Loading {fn}")
+        data = np.load(fn)
+        return data['xtalk_coeff'], data['xtalk_lookup_table'], data['layers'], data['nRes']
+
+    # Check if there is converted file
+    # if ext of fn is .bin, search if there is a .npz file with the same name
+    # under the same directory and working directory
+    if pathlib.Path(fn).suffix == ".bin":
+        print(f"A .bin file is detected, searching for .npz file with the same name.")
+        npz_fn = fn.replace(".bin", ".npz")
+        if pathlib.Path(npz_fn).exists():
+            print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
+            return load_catalog(npz_fn)
+
+        npz_fn = pathlib.Path(fn).name.replace(".bin", ".npz")
+        if pathlib.Path(npz_fn).exists():
+            print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
+            return load_catalog(npz_fn)
+
     with open(fn, "rb") as f:
         data = f.read()  # Read the entire file into memory
 
@@ -43,6 +89,11 @@ def load_catalog(fn):
                         entry_index += 1
                     lookup_table[i, j, k, l, 1] = entry_index
 
+    if dump:
+        # dump to current working directory
+        filename = pathlib.Path(fn).name.replace(".bin", ".npz")
+        np.savez(filename, xtalk_coeff=xtalk_coeff, xtalk_lookup_table=lookup_table, layers=layers,
+                 nRes=nRes)
     return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes
 
 
