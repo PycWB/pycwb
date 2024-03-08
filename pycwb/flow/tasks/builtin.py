@@ -255,12 +255,15 @@ def save_trigger(working_dir, config, job_seg, trigger_data, id):
     add_events_to_catalog(f"{working_dir}/{config.outputDir}/catalog.json",
                           event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
 
+    return trigger_folder
+
 
 @task
-def reconstruct_waveform(working_dir, config, job_seg, trigger_data, index, plot=False):
+def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index, plot=False):
+    trigger_folder = trigger_folders[index]
     event, cluster, event_skymap_statistics = trigger_data[index]
 
-    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+    # trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
     print(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
@@ -301,11 +304,12 @@ def reconstruct_waveform(working_dir, config, job_seg, trigger_data, index, plot
 
 
 @task
-def plot_triggers(working_dir, config, job_seg, trigger_data, index):
+def plot_triggers(trigger_folders, trigger_data, index):
+    trigger_folder = trigger_folders[index]
     event, cluster, event_skymap_statistics = trigger_data[index]
 
     print(f"Making plots for event {event.hash_id}")
-    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+    # trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
     # plot the likelihood map
     plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')

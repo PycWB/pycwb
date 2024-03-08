@@ -1,5 +1,6 @@
 import asyncio
 import os
+import math
 
 from prefect.utilities.annotations import quote
 from prefect import flow, unmapped, task, context
@@ -50,11 +51,11 @@ async def process_job_segment(working_dir, config, job_seg,
                                                             conditioned_data, xtalk_catalog)
 
     triggers_indexes = map_wrapper.submit(triggers_data)
-    save_trigger.map(working_dir, config, job_seg, unmapped(triggers_data), triggers_indexes)
-    reconstructed_waves = reconstruct_waveform.map(working_dir, config, job_seg, unmapped(triggers_data), triggers_indexes, plot)
+    trigger_folders = save_trigger.map(working_dir, config, job_seg, unmapped(triggers_data), triggers_indexes)
+    reconstruct_waveform.map(trigger_folders, config, job_seg, unmapped(triggers_data), triggers_indexes, plot)
 
     if plot:
-        plot_triggers.map(working_dir, config, job_seg, unmapped(triggers_data), triggers_indexes)
+        plot_triggers.map(trigger_folders, unmapped(triggers_data), triggers_indexes)
 
 
 @flow(log_prints=True)
@@ -101,10 +102,13 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
         # create workers for job submission system
         import getpass
 
+        cpu_per_worker = 2
+        mem_per_worker = int(3 * cpu_per_worker)
+        workers = math.ceil(n_proc / cpu_per_worker)
         if submit == 'condor':
             job_script_prologue = [f'cd {working_dir}', f'source {working_dir}/start.sh']
             # TODO: customize the account group
-            cluster = HTCondorCluster(cores=n_proc, memory=f"{int(3*n_proc)}GB", disk="1GB",
+            cluster = HTCondorCluster(cores=cpu_per_worker, memory=f"{mem_per_worker}GB", disk="1GB",
                                       job_extra_directives={
                                           'universe': 'vanilla',
                                           'accounting_group': 'ligo.dev.o4.burst.ebbh.cwbonline',
@@ -113,7 +117,7 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
                                       log_directory='logs', python='python3',
                                       job_script_prologue=job_script_prologue)
             print(cluster.job_script())
-            cluster.scale(1)
+            cluster.scale(workers)
             client = Client(cluster)
             address = client.scheduler.address
             subflow = process_job_segment.with_options(task_runner=DaskTaskRunner(address=address),
