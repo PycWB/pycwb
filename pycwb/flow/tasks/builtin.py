@@ -69,10 +69,10 @@ def create_output_directory(working_dir, output_dir, log_dir, user_parameter_fil
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    if not os.path.exists(f"{output_dir}/user_parameters.yaml"):
-        shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
-    else:
-        logger.warning(f"User parameters file already exists in {working_dir}/{output_dir}")
+    # if not os.path.exists(f"{output_dir}/user_parameters.yaml"):
+    shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
+    # else:
+    #     logger.warning(f"User parameters file already exists in {working_dir}/{output_dir}")
 
 
 @task

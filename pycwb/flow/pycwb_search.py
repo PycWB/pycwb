@@ -60,11 +60,20 @@ async def process_job_segment(working_dir, config, job_seg,
 @flow(log_prints=True)
 async def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
            n_proc=1, plot=False, compress_json=True, dry_run=False):
+    # convert to absolute path in case the current working directory is changed
     working_dir = os.path.abspath(working_dir)
+    file_name = os.path.abspath(file_name)
+
+    # create working directory and change the current working directory to the given working directory
     create_working_directory(working_dir)
+
+    # check environment
     check_env()
+
+    # read user parameters
     config = read_config(file_name)
 
+    # create job segments
     job_segments = create_job_segment(config)
 
     # dry run
@@ -121,12 +130,12 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
     create_web_dir(working_dir, config.outputDir)
     load_xtalk_catalog(config.MRAcatalog)
     # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
-    print(context.get_run_context().flow_run.dict())
 
+    parent_job_name = context.get_run_context().flow_run.dict()['name']
     subjobs = []
-    for job_seg in job_segments:
+    for i, job_seg in enumerate(job_segments):
         # TODO: customize the name
-        subjobs.append(subflow(working_dir, config, job_seg, plot, compress_json))
+        subjobs.append(subflow.with_options(name=f"{parent_job_name}-{i}")(working_dir, config, job_seg, plot, compress_json))
 
     await asyncio.gather(*subjobs)
 
