@@ -135,7 +135,9 @@ def print_job_info(job_seg):
 
 @task
 def generate_injection_task(config, job_seg, data=None):
+    print(f"Generating injection for job segment {job_seg.index}")
     data = generate_injection(config, job_seg, data)
+    print(f"Generated injection for job segment {job_seg.index}")
 
     # avoid prefect inspect the internal data
     # return [quote(d) for d in data]
@@ -144,34 +146,42 @@ def generate_injection_task(config, job_seg, data=None):
 
 @task
 def read_file_from_job_segment(config, job_seg, frame):
+    print(f"Reading frame {frame} from job segment {job_seg.index}")
     single_frame = read_single_frame_from_job_segment(config, frame, job_seg)
+    print(f"Finished reading frame {frame} from job segment {job_seg.index}")
     return single_frame
 
 
 @task
 def merge_frame_task(job_seg, data, seg_edge) -> list:
+    print(f"Merging frames for job segment {job_seg.index}")
     merged_data = merge_frames(job_seg, data, seg_edge)
+    print(f"Merged frames for job segment {job_seg.index}")
     return merged_data
 
 
 @task
-def generate_noise_for_job_seg_task(job_seg, sample_rate, f_low=2.0, data=None):
+def generate_noise_for_job_seg_task(job_seg, config, f_low=2.0, data=None):
+    sample_rate = config.inRate
     print(f"Generating noise for job segment {job_seg.index}")
     if 'seeds' in job_seg.noise:
         print(f"Using seeds {job_seg.noise['seeds']}")
     print(f"Sample rate: {sample_rate}")
     print(f"Low frequency: {f_low}")
     data = generate_noise_for_job_seg(job_seg, sample_rate, f_low, data)
-
+    print(f"Generated noise for job segment {job_seg.index}")
     return data
 
 
 @task
 def data_conditioning_task(config, strains, ifo):
     strain = strains[ifo]
-    print(f"Data conditioning for strain {strain}")
+    print(f"Data conditioning for {ifo}")
+    print(f'Performing regression for {ifo}')
     data_regression = regression(config, strain)
+    print(f'Performing whitening for {ifo}')
     whitened_data = whitening(config, data_regression)
+    print(f"Data conditioning for {ifo} done")
     return whitened_data
 
 
@@ -196,13 +206,16 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
     tf_maps, nRMS_list = zip(*conditioned_data)
 
     # prepare the network object required for cwb likelihood, will be removed in the future
+    print("Creating network object")
     network = Network(config, tf_maps, nRMS_list)
 
     # perform supercluster
+    print("Performing supercluster")
     super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
                                                    xtalk_coeff, xtalk_lookup_table, layers)
 
     # perform likelihood
+    print("Performing likelihood")
     events, clusters, skymap_statistics = likelihood(config, network, [super_fragment_clusters])
 
     # only return selected events
@@ -218,8 +231,8 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
 
 
 @task
-def save_trigger(working_dir, config, job_seg, trigger_data):
-    event, cluster, event_skymap_statistics = trigger_data
+def save_trigger(working_dir, config, job_seg, trigger_data, id):
+    event, cluster, event_skymap_statistics = trigger_data[id]
 
     if cluster.cluster_status != -1:
         return 0
@@ -244,8 +257,8 @@ def save_trigger(working_dir, config, job_seg, trigger_data):
 
 
 @task
-def reconstruct_waveform(working_dir, config, job_seg, trigger_data, plot=False):
-    event, cluster, event_skymap_statistics = trigger_data
+def reconstruct_waveform(working_dir, config, job_seg, trigger_data, index, plot=False):
+    event, cluster, event_skymap_statistics = trigger_data[index]
 
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 

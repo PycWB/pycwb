@@ -156,12 +156,14 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
 
 
 def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coeff, xtalk_lookup_table, layers):
+    print("Generating sparse table from fragment clusters")
     sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 
     skyres = config.MIN_SKYRES_HEALPIX if config.healpix > config.MIN_SKYRES_HEALPIX else 0
 
     ########################
     # ROOT code start
+    print(f"Using cWB code to load the require data")
     if skyres > 0:
         network.update_sky_map(config, skyres)
         network.net.setAntenna()
@@ -209,7 +211,7 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
 
     fragment_clusters = convert_netcluster_to_fragment_clusters(pwc)
-
+    print(f"cWB code finished")
     ########################
 
     # prepare user parameters
