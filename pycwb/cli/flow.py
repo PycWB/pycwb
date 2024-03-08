@@ -1,5 +1,5 @@
 import os
-import click
+import asyncio
 
 def init_parser(parser):
     # Add the arguments
@@ -115,5 +115,5 @@ def command(args):
         search.serve(name=args.name)
     else:
         # Run the search function with the specified user parameter file
-        search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
-               overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)
+        asyncio.run(search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
+               overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json))
