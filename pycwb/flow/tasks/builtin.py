@@ -262,8 +262,11 @@ def reconstruct_waveform(working_dir, config, job_seg, trigger_data, index, plot
 
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
+    print(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True, whiten=False)
+
+    print(f"Reconstructing whitened waveform for event {event.hash_id}")
     reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                         'signal', 0, True, whiten=True)
 
@@ -298,8 +301,8 @@ def reconstruct_waveform(working_dir, config, job_seg, trigger_data, index, plot
 
 
 @task
-def plot_triggers(working_dir, config, job_seg, trigger_data):
-    event, cluster, event_skymap_statistics = trigger_data
+def plot_triggers(working_dir, config, job_seg, trigger_data, index):
+    event, cluster, event_skymap_statistics = trigger_data[index]
 
     print(f"Making plots for event {event.hash_id}")
     trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
