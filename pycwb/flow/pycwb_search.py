@@ -52,10 +52,10 @@ async def process_job_segment(working_dir, config, job_seg,
 
     triggers_indexes = map_wrapper.submit(triggers_data)
     trigger_folders = save_trigger.map(working_dir, config, job_seg, unmapped(triggers_data), triggers_indexes)
-    reconstruct_waveform.map(trigger_folders, config, job_seg, unmapped(triggers_data), triggers_indexes, plot)
+    reconstruct_waveform.map(unmapped(trigger_folders), config, job_seg, unmapped(triggers_data), triggers_indexes, plot)
 
     if plot:
-        plot_triggers.map(trigger_folders, unmapped(triggers_data), triggers_indexes)
+        plot_triggers.map(unmapped(trigger_folders), unmapped(triggers_data), triggers_indexes)
 
 
 @flow(log_prints=True)
@@ -104,7 +104,7 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
 
         cpu_per_worker = 2
         mem_per_worker = int(3 * cpu_per_worker)
-        workers = math.ceil(n_proc / cpu_per_worker)
+        # workers = math.ceil(n_proc / cpu_per_worker)
         if submit == 'condor':
             job_script_prologue = [f'cd {working_dir}', f'source {working_dir}/start.sh']
             # TODO: customize the account group
@@ -117,7 +117,7 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
                                       log_directory='logs', python='python3',
                                       job_script_prologue=job_script_prologue)
             print(cluster.job_script())
-            cluster.scale(workers)
+            cluster.scale(n_proc)
             client = Client(cluster)
             address = client.scheduler.address
             subflow = process_job_segment.with_options(task_runner=DaskTaskRunner(address=address),
