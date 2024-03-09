@@ -264,6 +264,11 @@ def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index, 
     reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                         'signal', 0, True, whiten=True)
 
+    reconstructed_waves_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                                        'signal', -1, True, whiten=True)
+    reconstructed_waves_whiten_90 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                                        'signal', 1, True, whiten=True)
+
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
         print(f"Creating trigger folder: {trigger_folder}")
@@ -275,6 +280,12 @@ def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index, 
     for i, ts in enumerate(reconstructed_waves_whiten):
         print(f"Saving reconstructed waveform for {job_seg.ifos[i]} (whitened)")
         ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}_whitened.txt")
+
+    for i, (hp, hc) in enumerate(zip(reconstructed_waves_whiten_00, reconstructed_waves_whiten_90)):
+        # save strain = hp + 1j hc
+        print(f"Saving reconstructed strain for {job_seg.ifos[i]} (whitened)")
+        hp = hp + 1j * hc
+        hp.save(f"{trigger_folder}/reconstructed_strain_{job_seg.ifos[i]}_whitened.txt")
 
     if plot:
         from matplotlib import pyplot as plt
