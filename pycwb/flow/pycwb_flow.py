@@ -21,6 +21,7 @@ def map_wrapper(data):
     return list(range(len(data)))
 
 
+# TODO: add flow_run_name
 @flow
 async def process_job_segment(working_dir, config, job_seg,
                         plot=False, compress_json=True):

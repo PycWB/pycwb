@@ -216,14 +216,17 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
             continue
         event = events[i]
         event_skymap_statistics = skymap_statistics[i]
-        events_data.append(quote((event, cluster, event_skymap_statistics)))
+        events_data.append((event, cluster, event_skymap_statistics))
 
     return events_data
 
 
 @task
-def save_trigger(working_dir, config, job_seg, trigger_data, id):
-    event, cluster, event_skymap_statistics = trigger_data[id]
+def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
+    if not index:
+        event, cluster, event_skymap_statistics = trigger_data
+    else:
+        event, cluster, event_skymap_statistics = trigger_data[index]
 
     if cluster.cluster_status != -1:
         return 0
@@ -250,9 +253,13 @@ def save_trigger(working_dir, config, job_seg, trigger_data, id):
 
 
 @task
-def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index, plot=False):
-    trigger_folder = trigger_folders[index]
-    event, cluster, event_skymap_statistics = trigger_data[index]
+def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index=None, plot=False):
+    if not index:
+        event, cluster, event_skymap_statistics = trigger_data
+        trigger_folder = trigger_folders
+    else:
+        trigger_folder = trigger_folders[index]
+        event, cluster, event_skymap_statistics = trigger_data[index]
 
     # trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
 
