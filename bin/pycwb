@@ -7,6 +7,7 @@ import argparse
 import pycwb.cli.server as server
 import pycwb.cli.run as run
 import pycwb.cli.flow as flow
+import pycwb.cli.batch as batch
 import pycwb.cli.xtalk as xtalk
 
 
@@ -27,6 +28,10 @@ def main():
     flow_parser = subparsers.add_parser('flow', help='Run search')
     flow.init_parser(flow_parser)
     flow_parser.set_defaults(func=flow.command)
+
+    batch_parser = subparsers.add_parser('batch', help='Run search')
+    batch.init_parser(batch_parser)
+    batch_parser.set_defaults(func=batch.command)
 
     xtalk_parser = subparsers.add_parser('xtalk', help='Convert xtalk file')
     xtalk.init_parser(xtalk_parser)
