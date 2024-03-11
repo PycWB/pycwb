@@ -1,6 +1,5 @@
 import asyncio
 import os
-import math
 
 from prefect.utilities.annotations import quote
 from prefect import flow, unmapped, task, context
@@ -8,6 +7,8 @@ from prefect_dask import get_dask_client
 from dask_jobqueue import SLURMCluster, HTCondorCluster
 from prefect_dask.task_runners import DaskTaskRunner
 from dask.distributed import Client, LocalCluster
+
+from .sqeuences.builtin import prepare_job_runs
 from .tasks.builtin import check_env, read_config, create_working_directory, print_job_info, \
     check_if_output_exists, create_output_directory, create_job_segment, \
     generate_noise_for_job_seg_task, \
@@ -62,29 +63,14 @@ async def process_job_segment(working_dir, config, job_seg,
 @flow(log_prints=True)
 async def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
            n_proc=1, plot=False, compress_json=True, dry_run=False):
-    # convert to absolute path in case the current working directory is changed
     working_dir = os.path.abspath(working_dir)
-    file_name = os.path.abspath(file_name)
 
-    # create working directory and change the current working directory to the given working directory
-    create_working_directory(working_dir)
-
-    # check environment
-    check_env()
-
-    # read user parameters
-    config = read_config(file_name)
-
-    # create job segments
-    job_segments = create_job_segment(config)
+    # create job segments and read user parameters
+    job_segments, config = flow(prepare_job_runs)(working_dir, file_name, n_proc, dry_run, overwrite)
 
     # dry run
     if dry_run:
         return job_segments
-
-    # override n_proc in config
-    if n_proc != 0:
-        config.nproc = n_proc
 
     # Create runner
     if not submit:
@@ -105,7 +91,6 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
 
         cpu_per_worker = 2
         mem_per_worker = int(3 * cpu_per_worker)
-        # workers = math.ceil(n_proc / cpu_per_worker)
         if submit == 'condor':
             job_script_prologue = [f'cd {working_dir}', f'source {working_dir}/start.sh']
             # TODO: customize the account group
@@ -128,14 +113,7 @@ async def search(file_name, working_dir='.', overwrite=False, submit=False, log_
         else:
             raise ValueError("Unknown submit option, only support 'condor' and 'slurm'")
 
-    check_if_output_exists(working_dir, config.outputDir, overwrite)
-    create_output_directory(working_dir, config.outputDir, config.logDir, file_name)
-
-    create_catalog_file(working_dir, config, job_segments)
-    create_web_dir(working_dir, config.outputDir)
-    load_xtalk_catalog(config.MRAcatalog)
-    # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
-
+    # run subflows
     parent_job_name = context.get_run_context().flow_run.dict()['name']
     subjobs = []
     for i, job_seg in enumerate(job_segments):
