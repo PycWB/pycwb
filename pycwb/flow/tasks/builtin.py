@@ -181,6 +181,15 @@ def coherence_task(config, conditioned_data, res):
     tf_maps, nRMS_list = zip(*conditioned_data)
 
     clusters = coherence_single_res(res, config, tf_maps, nRMS_list)
+
+    n_pixels = 0
+    n_clusters = 0
+    for sc in clusters:
+        n_clusters += len(sc.clusters)
+        for cluster in sc.clusters:
+            n_pixels += len(cluster.pixels)
+
+    print(f"Resolutions {res}: {n_clusters} clusters, {n_pixels} pixels")
     return clusters
 
 
@@ -223,7 +232,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
 
 @task
 def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
-    if not index:
+    if index is None:
         event, cluster, event_skymap_statistics = trigger_data
     else:
         event, cluster, event_skymap_statistics = trigger_data[index]
@@ -254,7 +263,7 @@ def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
 
 @task
 def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index=None, plot=False):
-    if not index:
+    if index is None:
         event, cluster, event_skymap_statistics = trigger_data
         trigger_folder = trigger_folders
     else:
