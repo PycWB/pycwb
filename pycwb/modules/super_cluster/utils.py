@@ -96,7 +96,7 @@ def remove_duplicates_sorted(arr):
     return unique[:count]
 
 
-@njit(cache=True)
+# @njit(cache=True)
 def get_cluster_links(pixels, gap, n_ifo):
     """
 
@@ -110,6 +110,9 @@ def get_cluster_links(pixels, gap, n_ifo):
     Tgap_base = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
     # Update Tgap based on your gap factor.
     Tgap = Tgap_base * (1. + gap)
+
+    # TODO: check if it is correct to expose dF as a return value
+    dF = 0
 
     cluster_links = []
     n_pixels = len(pixels)
@@ -153,7 +156,6 @@ def get_cluster_links(pixels, gap, n_ifo):
                 if link not in cluster_links:  # This check is not efficient in Numba
                     cluster_links.append(link)
 
-        # remove redundant links with numpy
     return np.array(cluster_links, dtype=np.int32), dF
 
 

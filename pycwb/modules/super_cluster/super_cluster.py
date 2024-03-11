@@ -64,7 +64,7 @@ def supercluster(clusters, atype, gap, threshold, n_ifo, mini_pix = 3, core=Fals
         clusters_temp = []
         for c_id in c_ids:
             clusters_temp.append(clusters[c_id])
-        # TODO: remove the cut out side of the supercluster, make it additional function
+        # TODO: move the cut out side of the supercluster, make it additional function
         sc = calculate_supercluster_data(clusters_temp, atype, core, pair, mini_pix, threshold, dF)
         superclusters.append(sc)
 
@@ -269,17 +269,17 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
 
         # update cluster status and print results
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
-            print(f"Cluster {i} passed subnet, subrho, and subthr cut")
+            print(f"Cluster {i} ({len(c.pixels)} pixels) passed subnet, subrho, and subthr cut")
             c.cluster_status = -1
         else:
-            log_output = f"Cluster {i} failed "
+            log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
             if not results['subnet_passed']:
                 log_output += f"subnet cut condition: {results['subnet_condition']}, "
             if not results['subrho_passed']:
                 log_output += f"subrho cut condition: {results['subrho_condition']}, "
             if not results['subthr_passed']:
                 log_output += f"subthr cut condition: {results['subthr_condition']}, "
-            # print(log_output)
+            print(log_output)
             c.cluster_status = 1
 
     fragment_clusters.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
