@@ -270,4 +270,4 @@ def avx_stat_ps(x, X, s, S, si, co, mask):
     corr_coeff = float32(2.0) * Lr / (LL + _o)  # network correlation coefficient
     total_noise = (GN + RN) / float32(2.0)
 
-    return corr_coeff, EC, NN, total_noise, ec
+    return corr_coeff, EC, NN, total_noise, ec, gn, rn

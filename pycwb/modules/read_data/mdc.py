@@ -62,6 +62,12 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
 
 def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     # if seeds is not provided, use None for all ifos
+    print(f"Generating noise for job segment {job_seg.index}")
+    if 'seeds' in job_seg.noise:
+        print(f"Using seeds {job_seg.noise['seeds']}")
+    print(f"Sample rate: {sample_rate}")
+    print(f"Low frequency: {f_low}")
+
     seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
 
     # generate noise for each ifo
@@ -75,6 +81,7 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     else:
         data = noises
 
+    print(f"Generated noise for job segment {job_seg.index}")
     return data
 
 
@@ -258,14 +265,15 @@ def generate_injection(config, job_seg, strain=None):
     ifos = job_seg.ifos
 
     # load noise
-    logger.info(f'Generating noise for {ifos}')
+    print(f'Generating noise for {ifos}')
 
     injected = strain
 
     # generate zero noise if injected is None
     if not injected:
-        injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)), delta_t=1.0 / config.inRate)
-                    for ifo in ifos]
+        injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)),
+                               delta_t=1.0 / config.inRate,
+                               epoch=job_seg.start_time) for ifo in ifos]
 
     for injection in job_seg.injections:
         ##############################
@@ -287,7 +295,7 @@ def generate_injection(config, job_seg, strain=None):
         polarization = injection['pol'] if 'pol' in injection else 0.0
         gps_end_time = injection['gps_time']
 
-        logger.info(f'Generating injection for {ifos} with parameters: \n {injection} \n')
+        print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
 
         ##############################
         # generating injection
@@ -302,7 +310,7 @@ def generate_injection(config, job_seg, strain=None):
 
         # generate hp and hc
         if generator:
-            logger.info(f'Using generator: {generator}')
+            print(f'Using generator: {generator}')
             # import module
             module = import_helper(generator['module'], "wf_gen")
             # get function
@@ -321,5 +329,5 @@ def generate_injection(config, job_seg, strain=None):
 
         # inject signal into noise and convert to wavearray
         injected = [injected[i].add_into(strain[i]) for i in range(len(ifos))]
-
+    # FIXME: should this moved to outside as a step?
     return [check_and_resample(injected[i], config, i) for i in range(len(ifos))]

@@ -144,6 +144,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
 
 def merge_frames(job_seg, data, seg_edge):
+    print(f'Merging data from job segment {job_seg.index}')
     merged_data = []
 
     # split data by ifo for next step of merging

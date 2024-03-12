@@ -138,7 +138,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     # print('e: ', e)
     detector_snr = e / norm  # detector {0:NIFO} SNR
 
-    return detector_snr, norm, rn
+    return detector_snr, norm, rn, q_norm
 
 
 @njit(cache=True)

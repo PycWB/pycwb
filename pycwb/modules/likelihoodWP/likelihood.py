@@ -135,7 +135,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     # l_max = 0
     # STAT=-1.e12
     offset = int(td00.shape[0] / 2)
-
+    # TODO: sky sky mask
     AA_array = np.zeros(n_sky, dtype=float32)
     for l in prange(n_sky):
         # get time delayed data slice at sky location l, make sure it is numpy float32 array
@@ -174,7 +174,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         #     print(f"Lo({l}): ", Lo)
 
         # coherent statistics
-        Cr, Ec, Mp, No, coherent_energy = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
+        Cr, Ec, Mp, No, coherent_energy, _, _ = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
         CH = No / (n_ifo * Mo + sqrt(Mo))  # chi2 in TF domain
         cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
@@ -261,14 +261,14 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
 
     # coherent statistics
-    _, _, _, _, coherent_energy = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
+    _, _, _, _, coherent_energy, gn, rn = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
     Eo, pd, pD, pd_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
     Lo, ps, pS, ps_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
 
-    detector_snr, norm, rn = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
+    detector_snr, data_norm, rn = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
     D_snr = np.sum(detector_snr)
-    gw_norm, signal_norm = gw_norm_numpy(td_energy, norm, ps_E, coherent_energy)
+    gw_norm, signal_norm = gw_norm_numpy(td_energy, data_norm, ps_E, coherent_energy)
     S_snr = np.sum(gw_norm)
     # print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
     print("Eo = ", Eo, ", Lo = ", Lo, ", Ep = ", D_snr, ", Lp = ", S_snr)
