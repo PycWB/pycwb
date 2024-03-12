@@ -300,7 +300,7 @@ def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index=N
     for i, (hp, hc) in enumerate(zip(reconstructed_waves_whiten_00, reconstructed_waves_whiten_90)):
         # save strain = hp + 1j hc
         print(f"Saving reconstructed strain for {job_seg.ifos[i]} (whitened)")
-        hp = hp + 1j * hc
+        hp = hp - 1j * hc
         hp.save(f"{trigger_folder}/reconstructed_strain_{job_seg.ifos[i]}_whitened.txt")
 
     if plot:
