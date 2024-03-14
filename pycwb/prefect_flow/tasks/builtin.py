@@ -131,7 +131,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
 
     # perform likelihood
     print("Performing likelihood")
-    events, clusters, skymap_statistics = likelihood(config, network, [super_fragment_clusters])
+    events, clusters, skymap_statistics = likelihood(config, network, super_fragment_clusters)
 
     # only return selected events
     events_data = []

@@ -3,11 +3,14 @@ import logging
 from filelock import SoftFileLock
 import json
 import pycwb
+from pycwb.config import Config
+from pycwb.types.job import WaveSegment
+from pycwb.types.network_event import Event
 
 logger = logging.getLogger(__name__)
 
 
-def create_catalog(filename, config, jobs):
+def create_catalog(filename: str, config: Config, jobs: list[WaveSegment]) -> None:
     """
     Create a catalog file with config, version, jobs
 
@@ -38,7 +41,7 @@ def create_catalog(filename, config, jobs):
             json.dump(output, f, default=vars)
 
 
-def add_events_to_catalog(filename, events):
+def add_events_to_catalog(filename: str, events: list[Event]) -> None:
     """
     Add events to catalog
 

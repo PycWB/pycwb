@@ -300,6 +300,6 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     network.restore_skymap(config, skyres)
 
     ###############################
-    return fragment_clusters
+    return [fragment_clusters]
 
 

@@ -1,16 +1,16 @@
 import os
 import shutil
 from datetime import datetime
+from pycwb.types.job import WaveSegment
 
-
-def create_working_directory(working_dir):
+def create_working_directory(working_dir: str) -> None:
     working_dir = os.path.abspath(working_dir)
     if not os.path.exists(working_dir):
         print(f"Creating working directory: {working_dir}")
         os.makedirs(working_dir)
 
 
-def check_if_output_exists(working_dir, output_dir, overwrite=False):
+def check_if_output_exists(working_dir: str, output_dir: str, overwrite: bool = False) -> None:
     output_dir = f"{working_dir}/{output_dir}"
     if os.path.exists(output_dir) and os.listdir(output_dir):
         if overwrite:
@@ -20,7 +20,7 @@ def check_if_output_exists(working_dir, output_dir, overwrite=False):
             raise ValueError(f"Output directory {output_dir} is not empty")
 
 
-def create_output_directory(working_dir, output_dir, log_dir, user_parameter_file):
+def create_output_directory(working_dir: str, output_dir: str, log_dir: str, user_parameter_file: str) -> None:
     # create folder for output and log
     print(f"Output folder: {working_dir}/{output_dir}")
     print(f"Log folder: {working_dir}/{log_dir}")
@@ -37,7 +37,7 @@ def create_output_directory(working_dir, output_dir, log_dir, user_parameter_fil
     shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
 
 
-def check_MRACatalog_setting():
+def check_MRACatalog_setting() -> bool:
     if not os.environ.get('HOME_WAT_FILTERS'):
         print("HOME_WAT_FILTERS is not set.")
         print("Please download the latest version of cwb config "
@@ -51,7 +51,7 @@ def check_MRACatalog_setting():
     return True
 
 
-def print_job_info(job_seg):
+def print_job_info(job_seg: WaveSegment) -> None:
     job_id = job_seg.index
     print(f"Job ID: {job_id}")
     print(f"Start time: {job_seg.start_time}")
