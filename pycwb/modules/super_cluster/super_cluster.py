@@ -156,6 +156,7 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
 
 
 def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coeff, xtalk_lookup_table, layers):
+    # FIXME: check issue SSeries<DataType_t>::GetSTFdata : index not present in sparse table
     print("Generating sparse table from fragment clusters")
     sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
 

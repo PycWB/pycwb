@@ -35,9 +35,11 @@ def create_output_directory(working_dir: str, output_dir: str, log_dir: str, use
     if os.path.exists(f"{output_dir}/user_parameters.yaml"):
         # check if the files are the same with md5
         if not filecmp.cmp(user_parameter_file, f"{output_dir}/user_parameters.yaml"):
+            print(f"Old user_parameters.yaml file is different from the new one.")
             # rename the old user parameter file to user_parameters_old_{date}.yaml
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             shutil.move(f"{output_dir}/user_parameters.yaml", f"{output_dir}/user_parameters_old_{timestamp}.yaml")
+            print(f"Old user_parameters.yaml file is renamed to user_parameters_old_{timestamp}.yaml")
 
     shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
 

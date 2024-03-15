@@ -130,12 +130,15 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
         else:
             injections = [injection['parameters']]
     elif 'parameters_from_python' in injection:
+        print(f"Importing {injection['parameters_from_python']['file']} for injection parameters")
         # remove the .py extension if it exists
         module = import_helper(injection['parameters_from_python']['file'], "wf_gen")
 
+        print(f"Calling {injection['parameters_from_python']['function']} to get injection parameters")
         # get the injection parameters
         injections = getattr(module, injection['parameters_from_python']['function'])()
 
+        print(f"Got {len(injections)} injection parameters")
         if not isinstance(injections, list):
             raise ValueError('The function get_injection_parameters() should return a list of injection parameters')
     else:
@@ -153,7 +156,7 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
         # inject all the parameters in one job segment
         job_segments = [WaveSegment(0, ifo, injection['segment']['start'], injection['segment']['end'],
                                     noise=noise, injections=injections)]
-    elif simulation_mode == "one_inject_in_one_segments":
+    elif simulation_mode == "one_inject_in_one_segment":
         # repeat the injection N times for the same job segment
         repeat = len(injections) #injection['segment']['repeat']
         # if len(injections) != repeat:
