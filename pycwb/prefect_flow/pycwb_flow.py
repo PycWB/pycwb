@@ -61,10 +61,8 @@ async def process_job_segment(working_dir, config, job_seg,
 @flow(log_prints=True)
 async def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None,
            n_proc=1, plot=False, compress_json=True, dry_run=False):
-    working_dir = os.path.abspath(working_dir)
-
     # create job segments and read user parameters
-    job_segments, config = flow(prepare_job_runs)(working_dir, file_name, n_proc, dry_run, overwrite)
+    job_segments, config, working_dir = flow(prepare_job_runs)(working_dir, file_name, n_proc, dry_run, overwrite)
 
     # dry run
     if dry_run:

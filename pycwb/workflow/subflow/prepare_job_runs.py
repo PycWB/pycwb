@@ -38,4 +38,4 @@ def prepare_job_runs(working_dir, config_file, n_proc=1, dry_run=False, overwrit
         create_web_viewer(f"{working_dir}/{config.outputDir}")
 
     # slags = job_generator(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
-    return job_segments, config
+    return job_segments, config, working_dir
