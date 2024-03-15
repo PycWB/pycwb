@@ -67,12 +67,6 @@ def init_parser(parser):
                         default=False,
                         help='compress the json files, by default False')
 
-    # serve
-    parser.add_argument('--serve',
-                        action='store_true',
-                        default=False,
-                        help='Run prefect flow in serve mode')
-
     # serve name
     parser.add_argument('--name',
                         metavar='name',
@@ -94,7 +88,7 @@ def init_parser(parser):
 
 
 def command(args):
-    from pycwb.prefect_flow.pycwb_batch import search
+    from pycwb.workflow.batch import search
 
     if args.list_n_jobs or args.list_jobs:
         jobs = search(args.user_parameter_file, working_dir=args.work_dir, n_proc=1, dry_run=True)
@@ -110,10 +104,7 @@ def command(args):
                 print(job)
 
         return 0
-    
-    if args.serve:
-        search.serve(name=args.name)
-    else:
-        # Run the search function with the specified user parameter file
-        search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
-               overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)
+
+    # Run the search function with the specified user parameter file
+    search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
+           overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)

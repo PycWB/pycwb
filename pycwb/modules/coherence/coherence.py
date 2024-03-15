@@ -69,6 +69,10 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     return fragment_clusters
 
 
+def coherence_single_res_wrapper(i, config, data):
+    return coherence_single_res(i, config, data[0], data[1])
+
+
 def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     """
     Calculate the coherence for a single resolution
