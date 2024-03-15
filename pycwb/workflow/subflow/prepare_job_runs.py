@@ -27,6 +27,7 @@ def prepare_job_runs(working_dir, config_file, n_proc=1, dry_run=False, overwrit
     job_segments = create_job_segment_from_config(config)
 
     if not dry_run:
+        print(f"Number of jobs: {len(job_segments)}")
         # override n_proc in config
         if n_proc != 0:
             config.nproc = n_proc

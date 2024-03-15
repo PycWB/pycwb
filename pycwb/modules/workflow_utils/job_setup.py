@@ -2,6 +2,8 @@ import os
 import shutil
 from datetime import datetime
 from pycwb.types.job import WaveSegment
+import filecmp
+
 
 def create_working_directory(working_dir: str) -> None:
     working_dir = os.path.abspath(working_dir)
@@ -17,7 +19,8 @@ def check_if_output_exists(working_dir: str, output_dir: str, overwrite: bool = 
             print(f"Overwrite output directory {output_dir}")
         else:
             print(f"Output directory {output_dir} is not empty")
-            raise ValueError(f"Output directory {output_dir} is not empty")
+            raise ValueError(f"Output directory {output_dir} is not empty, please set overwrite to True "
+                             f"if you want to overwrite it.")
 
 
 def create_output_directory(working_dir: str, output_dir: str, log_dir: str, user_parameter_file: str) -> None:
@@ -30,9 +33,11 @@ def create_output_directory(working_dir: str, output_dir: str, log_dir: str, use
         os.makedirs(log_dir)
 
     if os.path.exists(f"{output_dir}/user_parameters.yaml"):
-        # rename the old user parameter file to user_parameters_old_{date}.yaml
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        shutil.move(f"{output_dir}/user_parameters.yaml", f"{output_dir}/user_parameters_old_{timestamp}.yaml")
+        # check if the files are the same with md5
+        if not filecmp.cmp(user_parameter_file, f"{output_dir}/user_parameters.yaml"):
+            # rename the old user parameter file to user_parameters_old_{date}.yaml
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.move(f"{output_dir}/user_parameters.yaml", f"{output_dir}/user_parameters_old_{timestamp}.yaml")
 
     shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
 
