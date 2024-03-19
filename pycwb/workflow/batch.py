@@ -70,10 +70,10 @@ def process_job_segment(working_dir, config, job_seg, plot=False, compress_json=
 
     network = Network(config, tf_maps, nRMS_list)
 
-    # super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
-    #                                                xtalk_coeff, xtalk_lookup_table, layers)
+    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
+                                                   xtalk_coeff, xtalk_lookup_table, layers)
 
-    super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
+    # super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
 
     events, clusters, skymap_statistics = likelihood(config, network, super_fragment_clusters)
 
@@ -105,7 +105,7 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
            n_proc=1, plot=False, compress_json=True, dry_run=False):
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite)
     logger_init(log_file, log_level)
-    log_prints()
+    # log_prints()
     # cluster = LocalCluster(n_workers=n_proc, processes=True, threads_per_worker=1)
     # cluster.scale(n_proc)
     # client = Client(cluster)

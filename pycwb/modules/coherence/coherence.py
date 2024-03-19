@@ -38,7 +38,7 @@ def coherence(config, tf_maps, nRMS_list, net=None):
 
     Returns
     -------
-    fragment_clusters: list of pycwb.types.network_cluster.FragmentCluster
+    fragment_clusters: list[list[pycwb.types.network_cluster.FragmentCluster]]
         List of fragment clusters
     """
     # calculate upsample factor
@@ -60,13 +60,13 @@ def coherence(config, tf_maps, nRMS_list, net=None):
                                        range(config.nRES)]
 
     # flat the array
-    fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
+    # fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
 
     logger.info("----------------------------------------")
     logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
     logger.info("----------------------------------------")
 
-    return fragment_clusters
+    return fragment_clusters_multi_res
 
 
 def coherence_single_res_wrapper(i, config, data):

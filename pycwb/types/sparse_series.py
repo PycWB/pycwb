@@ -29,7 +29,7 @@ class SparseTimeFrequencySeries:
         self.layer_halo = layer_halo
         self.net_delay = net_delay
 
-    def from_fragment_cluster(self, wdm, tf_map, fragment_cluster, td_size, m_tau, ifo_id):
+    def from_fragment_cluster(self, wdm, tf_map, fragment_clusters, td_size, m_tau, ifo_id):
         wdm.set_td_filter(td_size, 1)
         ws = tf_map.copy()
         ws.wavelet = wdm
@@ -37,8 +37,11 @@ class SparseTimeFrequencySeries:
 
         self.set_map(ws)
         self.set_halo(m_tau)
-        for cluster in fragment_cluster.clusters:
-            self.add_core(ifo_id, cluster)
+        if not isinstance(fragment_clusters, list):
+            fragment_clusters = [fragment_clusters]
+        for fragment_cluster in fragment_clusters:
+            for cluster in fragment_cluster.clusters:
+                self.add_core(ifo_id, cluster)
         self.update_sparse_table()
         return self
 

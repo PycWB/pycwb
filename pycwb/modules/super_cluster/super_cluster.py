@@ -183,14 +183,20 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
         network.add_wavelet(wdm)
 
     # merge cluster
-    cluster = copy.deepcopy(fragment_clusters[0])
-    if len(fragment_clusters) > 1:
-        for fragment_cluster in fragment_clusters[1:]:
-            cluster.clusters += fragment_cluster.clusters
+    print(f"Merging clusters with {len(fragment_clusters)} layers and {len(fragment_clusters[0])} lags")
+
+    clusters_by_lag = []
+    for j in range(int(network.nLag)):
+        cluster = copy.deepcopy(fragment_clusters[0][j])
+        if len(fragment_clusters) > 1:
+            for fragment_cluster in fragment_clusters[1:]:
+                cluster.clusters += fragment_cluster[j].clusters
+        print(f"Number of clusters for lag {j}: {len(cluster.clusters)}")
+        clusters_by_lag.append(cluster)
 
     # pwc_list = []
     # Load tdamp and convert to fragment cluster for testing
-    net_cluster = convert_fragment_clusters_to_netcluster(cluster)
+    net_clusters = [convert_fragment_clusters_to_netcluster(cluster) for cluster in clusters_by_lag]
 
     for n in range(config.nIFO):
         det = network.get_ifo(n)
@@ -198,20 +204,24 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
         for sparse_table in sparse_table_list:
             det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
 
-    pwc = network.get_cluster(0)
-    pwc.cpf(net_cluster, False)
+    fragment_clusters = []
+    for lag in range(int(network.nLag)):
+        print(f"Loading time-delay amp for lag {lag} of {int(network.nLag)}")
+        pwc = network.get_cluster(lag)
+        pwc.cpf(net_clusters[lag], False)
 
-    if config.subacor > 0:
-        network.net.acor = config.subacor
-    if config.subrho > 0:
-        network.net.netRHO = config.subrho
+        if config.subacor > 0:
+            network.net.acor = config.subacor
+        if config.subrho > 0:
+            network.net.netRHO = config.subrho
 
-    network.set_delay_index(hot[0].rate())
-    pwc.setcore(False)
+        network.set_delay_index(hot[0].rate())
+        pwc.setcore(False)
 
-    pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
+        pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
 
-    fragment_clusters = convert_netcluster_to_fragment_clusters(pwc)
+        fragment_clusters.append(convert_netcluster_to_fragment_clusters(pwc))
+
     print(f"cWB code finished")
     ########################
 
@@ -231,69 +241,72 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     subrho = config.subrho if config.subrho > 0 else network.net.netRHO
     ml, FP, FX = load_data_from_ifo(network, config.nIFO)
 
-    clusters = fragment_clusters.clusters
+    for fragment_cluster, lag in zip(fragment_clusters, range(int(network.nLag))):
+        print(f"Processing fragment cluster for lag {lag} with {len(fragment_cluster.clusters)} clusters")
+        clusters = fragment_cluster.clusters
 
-    superclusters = supercluster(clusters, 'L', gap, e2or, n_ifo)
+        superclusters = supercluster(clusters, 'L', gap, e2or, n_ifo)
 
-    # get the total number of pixels
-    total_pixels = 0
-    for i, c in enumerate(superclusters):
-        total_pixels += len(c.pixels)
-        # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status > 0 else "accepted"}')
+        # get the total number of pixels
+        total_pixels = 0
+        for i, c in enumerate(superclusters):
+            total_pixels += len(c.pixels)
+            # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status > 0 else "accepted"}')
 
-    # filter out the rejected superclusters
-    accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
-    print(f"Total number of superclusters: {len(superclusters)}, total pixels: {total_pixels}, "
-          f"accepted clusters: {len(accepted_superclusters)}")
+        # filter out the rejected superclusters
+        accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
+        print(f"Total number of superclusters: {len(superclusters)}, total pixels: {total_pixels}, "
+              f"accepted clusters: {len(accepted_superclusters)}")
 
-    # if there are no accepted superclusters, return None
-    if len(accepted_superclusters) == 0:
-        return None
+        # if there are no accepted superclusters, return None
+        if len(accepted_superclusters) == 0:
+            return None
 
-    # defragment the superclusters
-    new_superclusters = defragment(accepted_superclusters, Tgap, Fgap, n_ifo)
-    # print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
+        # defragment the superclusters
+        new_superclusters = defragment(accepted_superclusters, Tgap, Fgap, n_ifo)
+        # print(f"Total number of superclusters after defragment: {len(new_superclusters)}")
 
-    # get the total number of pixels
-    total_pixels = 0
-    for i, c in enumerate(superclusters):
-        total_pixels += len(c.pixels)
-        # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
-    print(f"Total number of superclusters after defragment: {len(new_superclusters)}, total pixels: {total_pixels}")
+        # get the total number of pixels
+        total_pixels = 0
+        for i, c in enumerate(superclusters):
+            total_pixels += len(c.pixels)
+            # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
+        print(f"Total number of superclusters after defragment: {len(new_superclusters)}, total pixels: {total_pixels}")
 
-    for i, c in enumerate(new_superclusters):
-        # sort pixels by likelihood for down selection
-        c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
-        # down select config.loud pixels and apply sub_net_cut
-        results = sub_net_cut(c.pixels[:n_loudest], ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho,
-                    xtalk_coeff, xtalk_lookup_table, layers)
+        for i, c in enumerate(new_superclusters):
+            # sort pixels by likelihood for down selection
+            c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
+            # down select config.loud pixels and apply sub_net_cut
+            results = sub_net_cut(c.pixels[:n_loudest], ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho,
+                        xtalk_coeff, xtalk_lookup_table, layers)
 
-        # update cluster status and print results
-        if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
-            print(f"Cluster {i} ({len(c.pixels)} pixels) passed subnet, subrho, and subthr cut")
-            c.cluster_status = -1
-        else:
-            log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
-            if not results['subnet_passed']:
-                log_output += f"subnet cut condition: {results['subnet_condition']}, "
-            if not results['subrho_passed']:
-                log_output += f"subrho cut condition: {results['subrho_condition']}, "
-            if not results['subthr_passed']:
-                log_output += f"subthr cut condition: {results['subthr_condition']}, "
-            print(log_output)
-            c.cluster_status = 1
+            # update cluster status and print results
+            if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
+                print(f"Cluster {i} ({len(c.pixels)} pixels) passed subnet, subrho, and subthr cut")
+                c.cluster_status = -1
+            else:
+                log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
+                if not results['subnet_passed']:
+                    log_output += f"subnet cut condition: {results['subnet_condition']}, "
+                if not results['subrho_passed']:
+                    log_output += f"subrho cut condition: {results['subrho_condition']}, "
+                if not results['subthr_passed']:
+                    log_output += f"subthr cut condition: {results['subthr_condition']}, "
+                print(log_output)
+                c.cluster_status = 1
 
-    fragment_clusters.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
+        fragment_cluster.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
 
-    total_pixels = 0
-    for i, c in enumerate(fragment_clusters.clusters):
-        total_pixels += len(c.pixels)
-    print(f"Total number of superclusters after sub_net_cut: {len(fragment_clusters.clusters)}, total pixels: {total_pixels}")
+        total_pixels = 0
+        for i, c in enumerate(fragment_cluster.clusters):
+            total_pixels += len(c.pixels)
+        print(f"Total number of superclusters for lag {lag} after sub_net_cut: "
+              f"{len(fragment_cluster.clusters)}, total pixels: {total_pixels}")
 
-    for c in fragment_clusters.clusters:
-        for p in c.pixels:
-            p.core = 1
-            p.td_amp = None
+        for c in fragment_cluster.clusters:
+            for p in c.pixels:
+                p.core = 1
+                p.td_amp = None
 
     ###############################
     # ROOT code start
@@ -301,6 +314,6 @@ def supercluster_wrapper(config, network, fragment_clusters, tf_maps, xtalk_coef
     network.restore_skymap(config, skyres)
 
     ###############################
-    return [fragment_clusters]
+    return fragment_clusters
 
 

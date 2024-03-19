@@ -115,7 +115,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
     xtalk_coeff, xtalk_lookup_table, layers, nRes = xtalk_catalog
 
     # flatten the fragment clusters from different resolutions
-    fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
+    # fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
 
     # extract the tf_maps and nRMS_list from conditioned_data
     tf_maps, nRMS_list = zip(*conditioned_data)
@@ -126,7 +126,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
 
     # perform supercluster
     print("Performing supercluster")
-    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
+    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters_multi_res, tf_maps,
                                                    xtalk_coeff, xtalk_lookup_table, layers)
 
     # perform likelihood

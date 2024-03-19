@@ -31,11 +31,11 @@ def likelihood(config, network, fragment_clusters):
 
     skymap_statistics = []
     for j, fragment_cluster in enumerate(fragment_clusters):
-        cycle = fragment_cluster.shift
+        # cycle = fragment_cluster.shift
 
         # print header
         print("-------------------------------------------------------")
-        print("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), cycle))
+        print("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), j))
         print("   ----------------------------------------------------")
 
         # loop over clusters to calculate likelihood
@@ -137,7 +137,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     cluster = convert_netcluster_to_fragment_clusters(network.get_cluster(lag)).clusters[0]
 
     event = Event()
-    event.output(network.net, k + 1, 0)
+    event.output(network.net, k + 1, lag)
 
     pwc.clean(1)
 

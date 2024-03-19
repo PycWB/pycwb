@@ -29,7 +29,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
     :param wdm_list: list of wavelets
     :type wdm_list: list[WDM]
     :param fragment_clusters: fragment clusters
-    :type fragment_clusters: list[FragmentCluster]
+    :type fragment_clusters: list[list[FragmentCluster]]
     :param sparse_table_list: list of sparse tables
     :type sparse_table_list: list[SparseTimeFrequencySeries]
     :return: the list of clusters
@@ -63,20 +63,12 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         # add wavelets to network
         network.add_wavelet(wdm)
 
-    # merge cluster
-    cluster = copy.deepcopy(fragment_clusters[0])
-    if len(fragment_clusters) > 1:
-        for fragment_cluster in fragment_clusters[1:]:
-            cluster.clusters += fragment_cluster.clusters
 
     pwc_list = []
 
     ###############################
     # cWB2G supercluster
     ###############################
-    # convert to netcluster
-    cluster = convert_fragment_clusters_to_netcluster(cluster)
-
     # read sparse map to detector for pwc.loadTDampSSE
     for n in range(config.nIFO):
         det = network.get_ifo(n)
@@ -85,6 +77,15 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             det.vSS.push_back(convert_sparse_series_to_sseries(sparse_table[n]))
 
     for j in range(int(network.nLag)):
+        # merge cluster
+        cluster = copy.deepcopy(fragment_clusters[0][j])
+        if len(fragment_clusters) > 1:
+            for fragment_cluster in fragment_clusters[1:]:
+                cluster.clusters += fragment_cluster[j].clusters
+
+        # convert to netcluster
+        cluster = convert_fragment_clusters_to_netcluster(cluster)
+
         # cycle = cfg.simulation ? ifactor : Long_t(NET.wc_List[j].shift);
         cycle = int(network.get_cluster(j).shift)
         cycle_name = f"lag={cycle}"
