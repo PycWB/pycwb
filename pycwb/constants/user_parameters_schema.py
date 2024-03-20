@@ -21,6 +21,54 @@ schema = {
             "default": "log",
             "cwb": False
         },
+        "catalog_dir": {
+            "type": "string",
+            "description": "catalog directory",
+            "default": "catalog",
+            "cwb": False
+        },
+        "trigger_dir": {
+            "type": "string",
+            "description": "trigger directory",
+            "default": "trigger",
+            "cwb": False
+        },
+        "plot_trigger": {
+            "type": "boolean",
+            "description": "plot triggers",
+            "default": False,
+            "cwb": False
+        },
+        "save_waveform": {
+            "type": "boolean",
+            "description": "save waveform from triggers",
+            "default": False,
+            "cwb": False
+        },
+        "plot_waveform": {
+            "type": "boolean",
+            "description": "plot waveform from triggers",
+            "default": False,
+            "cwb": False
+        },
+        "save_sky_map": {
+            "type": "boolean",
+            "description": "save sky maps to json",
+            "default": False,
+            "cwb": False
+        },
+        "plot_sky_map": {
+            "type": "boolean",
+            "description": "plot sky maps",
+            "default": False,
+            "cwb": False
+        },
+        "compress_output_json": {
+            "type": "boolean",
+            "description": "compress output json",
+            "default": False,
+            "cwb": False
+        },
         "nproc": {
             "type": "integer",
             "description": "number of processes",
