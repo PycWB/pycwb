@@ -23,18 +23,26 @@ def check_if_output_exists(working_dir: str, output_dir: str, overwrite: bool = 
                              f"if you want to overwrite it.")
 
 
-def create_output_directory(working_dir: str, output_dir: str, log_dir: str, user_parameter_file: str) -> None:
+def create_output_directory(working_dir: str, output_dir: str, log_dir: str, catalog_dir: str,
+                            trigger_dir: str, user_parameter_file: str) -> None:
     # create folder for output and log
     config_dir = f"{working_dir}/config"
     print(f"Output folder: {working_dir}/{output_dir}")
+    print(f"Trigger folder: {working_dir}/{trigger_dir}")
     print(f"Log folder: {working_dir}/{log_dir}")
     print(f"Config folder: {config_dir}")
+    print(f"Catalog folder: {working_dir}/{catalog_dir}")
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     if not os.path.exists(config_dir):
         os.makedirs(config_dir)
+    if not os.path.exists(catalog_dir):
+        os.makedirs(catalog_dir)
+    if not os.path.exists(trigger_dir):
+        os.makedirs(trigger_dir)
 
     if os.path.exists(f"{config_dir}/user_parameters.yaml"):
         # check if the files are the same with md5, if not, backup the old file
