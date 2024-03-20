@@ -25,23 +25,27 @@ def check_if_output_exists(working_dir: str, output_dir: str, overwrite: bool = 
 
 def create_output_directory(working_dir: str, output_dir: str, log_dir: str, user_parameter_file: str) -> None:
     # create folder for output and log
+    config_dir = f"{working_dir}/config"
     print(f"Output folder: {working_dir}/{output_dir}")
     print(f"Log folder: {working_dir}/{log_dir}")
+    print(f"Config folder: {config_dir}")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir)
 
-    if os.path.exists(f"{output_dir}/user_parameters.yaml"):
-        # check if the files are the same with md5
-        if not filecmp.cmp(user_parameter_file, f"{output_dir}/user_parameters.yaml"):
+    if os.path.exists(f"{config_dir}/user_parameters.yaml"):
+        # check if the files are the same with md5, if not, backup the old file
+        if not filecmp.cmp(user_parameter_file, f"{config_dir}/user_parameters.yaml"):
             print(f"Old user_parameters.yaml file is different from the new one.")
             # rename the old user parameter file to user_parameters_old_{date}.yaml
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.move(f"{output_dir}/user_parameters.yaml", f"{output_dir}/user_parameters_old_{timestamp}.yaml")
+            shutil.move(f"{config_dir}/user_parameters.yaml", f"{config_dir}/user_parameters_old_{timestamp}.yaml")
             print(f"Old user_parameters.yaml file is renamed to user_parameters_old_{timestamp}.yaml")
 
-    shutil.copyfile(user_parameter_file, f"{output_dir}/user_parameters.yaml")
+    shutil.copyfile(user_parameter_file, f"{config_dir}/user_parameters.yaml")
 
 
 def check_MRACatalog_setting() -> bool:

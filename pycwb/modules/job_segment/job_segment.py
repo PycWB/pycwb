@@ -1,4 +1,7 @@
 import logging
+
+import orjson
+
 from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
@@ -170,3 +173,27 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
 
     return job_segments
 
+
+def save_job_segments_to_json(job_segments, output_file) -> None:
+    """Save the job segments to a JSON file.
+
+    :param job_segments: The job segments.
+    :type job_segments: list[WaveSegment]
+    :param output_file: The output file.
+    :type output_file: str
+    """
+    with open(output_file, 'wb') as f:
+        f.write(orjson.dumps(job_segments))
+
+
+def load_job_segments_from_json(input_file: str) -> list[WaveSegment]:
+    """Load the job segments from a JSON file.
+
+    :param input_file: The input file.
+    :type input_file: str
+    :return: The job segments.
+    :rtype: list[WaveSegment]
+    """
+    with open(input_file, 'rb') as f:
+        data = orjson.loads(f.read())
+    return data

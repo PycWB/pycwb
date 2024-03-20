@@ -1,2 +1,2 @@
-from .prepare_job_runs import prepare_job_runs
+from .prepare_job_runs import prepare_job_runs, load_batch_run
 from .supercluster_and_likelihood import supercluster_and_likelihood

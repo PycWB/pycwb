@@ -34,6 +34,7 @@ install_requires = [
     "prefect-dask",
     "dask",
     "dask_jobqueue",
+    "htcondor",
     # "nds2-client",
     # "python-nds2-client"
 ]
