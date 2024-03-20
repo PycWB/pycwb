@@ -52,6 +52,8 @@ class WaveSegment:
         start time of the segment
     end_time: float
         end time of the segment
+    shift: list, optional
+        list of shifts for each interferometer, used for superlags
     frames: list, optional
         list of frame files that are within the segment
     noise: dict, optional
@@ -63,6 +65,7 @@ class WaveSegment:
     ifos: List[str]
     start_time: float
     end_time: float
+    shift: List[float] = None
     seg_edge: Optional[float] = None
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
