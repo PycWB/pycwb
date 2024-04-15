@@ -191,17 +191,25 @@ def plot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
     plt.savefig(f'{output_dir}/hrss50.png')
 
 
-def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
+def sort_key(s):
+    import re
+    parts = re.match(r"([a-zA-Z]+)(\d+)Q(\d+)", s)
+    num_before_q = int(parts.group(2))
+    num_after_q = int(parts.group(3))
+    return (num_after_q, num_before_q)
+
+def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.', filename='hrss50_comparison.png', wf_names_selection=None):
     import matplotlib.pyplot as plt
     import seaborn as sns
     import numpy as np
 
-    color = sns.color_palette("Paired")
+    color = sns.color_palette('Paired')
     bar_width = 0.8 / len(run_dirs)
     opacity = 0.8
 
     data_sets = []
     for i, (run_dir, tag) in enumerate(zip(run_dirs, tags)):
+        print(f"Reading: {tag}")
         injections = read_inj_type(run_dir + 'injectionList.txt')
         imdc_set_hrss10, imdc_set_hrss50, imdc_set_hrss90, imdc_set_hrss50_err = read_hrss_for_mdc(run_dir)
         wf_names_all = []
@@ -210,8 +218,11 @@ def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
         hrss50_errs_all = []
         for j, inj_set_name in enumerate(imdc_set_hrss50.keys()):
             wf_names = list(imdc_set_hrss50[inj_set_name].keys())
-            hrss50s = [imdc_set_hrss50[inj_set_name][wf_name] for wf_name in wf_names]
-            hrss50_errs = np.array([imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names]) - hrss50s
+            # filter out the wf_names containing 5000
+            wf_names = [wf_name for wf_name in wf_names if '5000' not in wf_name and '849' not in wf_name]
+            hrss50s = [imdc_set_hrss50[inj_set_name][wf_name] for wf_name in wf_names if wf_name in imdc_set_hrss50[inj_set_name]]
+            # print(f"inj_set_name: {inj_set_name}, wf_names: {wf_names}, hrss50s: {hrss50s}, hrss50_errs: {[imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names]}")
+            hrss50_errs = np.array([imdc_set_hrss50_err[inj_set_name][wf_name] for wf_name in wf_names if wf_name in imdc_set_hrss50_err[inj_set_name]]) - hrss50s
 
             wf_names_all += wf_names
             hrss50s_all += list(hrss50s)
@@ -224,26 +235,47 @@ def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
         # hrss50_errs_all = np.array(hrss50_errs_all)[sorted_indices]
         # wf_names_sorted = np.array(wf_names_all)[sorted_indices]
 
-        data_sets.append((wf_names_all, hrss50s_all, hrss50_errs_all, tag))
+        data_set = {}
+        for i, wf_name in enumerate(wf_names_all):
+            data_set[wf_name] = [hrss50s_all[i], hrss50_errs_all[i]]
+        # data_sets.append((wf_names_all, hrss50s_all, hrss50_errs_all, tag))
+        data_sets.append((data_set, tag))
 
+    if wf_names_selection:
+        wf_names_plot = wf_names_selection
+    else:
+        wf_names_plot = set([k for d in data_sets for k in d[0].keys() ])
+        wf_names_plot = sorted(wf_names_plot, key=sort_key)
     # Plot the data
     # figure size (10, 5)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(14, 3.5))
     len_data_sets = len(data_sets)
-    for i, (wf_names, hrss50s, hrss50_errs, label) in enumerate(data_sets):
-        index = np.arange(len(wf_names))
-        bars = ax.bar(index + i*bar_width, hrss50s, bar_width, alpha=opacity, color=color[i], yerr=hrss50_errs, label=label,
+    for i, (data_set, label) in enumerate(data_sets):
+        indexes = []
+        hrss50s = []
+        hrss50_errs = []
+        for wf_name in data_set.keys():
+            if wf_name not in wf_names_plot:
+                continue
+            indexes.append(wf_names_plot.index(wf_name))
+            hrss50s.append(data_set[wf_name][0])
+            hrss50_errs.append(data_set[wf_name][1])
+        bars = ax.bar(np.array(indexes) + i*bar_width, hrss50s, bar_width, alpha=opacity, color=color[i], yerr=hrss50_errs, label=label,
                       error_kw=dict(lw=1, capsize=1.5, capthick=1, alpha=0.7))
-    wf_names = data_sets[0][0]
-    index = np.arange(len(wf_names))
+    # wf_names = data_sets[0][0]
+    index = np.arange(len(wf_names_plot))
     ax.set_yscale('log')
-    ax.set_xlabel('Waveform Names')
+    # ax.set_xlabel('Waveform Names')
     ax.set_ylabel('hrss50 values')
-    ax.set_title('Comparison of hrss50 values')
+    # ax.set_title('Comparison of hrss50 values')
     ax.set_xticks(index + bar_width*(len_data_sets-1)/2)
-    ax.set_xticklabels(wf_names, rotation=45, ha='right')  # Rotate x-labels 45 degrees
-    ax.legend()
+    ax.set_xticklabels(wf_names_plot, rotation=45, ha='right')  # Rotate x-labels 45 degrees
+    ax.legend(ncol=3)
 
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/hrss50_barplot.png')
+    # save the plot with transparent background
+    plt.savefig(output_dir + '/' + filename, bbox_inches='tight', transparent=True)
+    plt.show()
+
+# barplot_hrss_from_mdc([run_dir1, run4_dir], ['v20', 'run4'])
