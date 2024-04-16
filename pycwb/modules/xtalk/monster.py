@@ -12,7 +12,7 @@ def load_catalog(fn, dump=True):
 
     Parameters
     ----------
-    fn : str
+    fn : str or Path
         The file name of the crosstalk catalog file
     dump : bool
         If True, save the parsed data into a .npz file with the same name as the input file in current working directory
@@ -38,17 +38,18 @@ def load_catalog(fn, dump=True):
     # Check if there is converted file
     # if ext of fn is .bin, search if there is a .npz file with the same name
     # under the same directory and working directory
-    if pathlib.Path(fn).suffix == ".bin":
+    if pathlib.Path(fn).suffix == ".bin" or pathlib.Path(fn).suffix == ".xbin":
         print(f"A .bin file is detected, searching for .npz file with the same name.")
-        npz_fn = fn.replace(".bin", ".npz")
+        # npz_fn = fn.replace(".bin", ".npz")
+        npz_fn = pathlib.Path(fn).with_suffix(".npz")
         if pathlib.Path(npz_fn).exists():
             print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
             return load_catalog(npz_fn)
 
-        npz_fn = pathlib.Path(fn).name.replace(".bin", ".npz")
-        if pathlib.Path(npz_fn).exists():
-            print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
-            return load_catalog(npz_fn)
+        # npz_fn = pathlib.Path(fn).name.replace(".bin", ".npz")
+        # if pathlib.Path(npz_fn).exists():
+        #     print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
+        #     return load_catalog(npz_fn)
 
     with open(fn, "rb") as f:
         data = f.read()  # Read the entire file into memory
@@ -91,7 +92,8 @@ def load_catalog(fn, dump=True):
 
     if dump:
         # dump to current working directory
-        filename = pathlib.Path(fn).name.replace(".bin", ".npz")
+        # filename = pathlib.Path(fn).name.replace(".bin", ".npz")
+        filename = pathlib.Path(fn).with_suffix(".npz")
         np.savez(filename, xtalk_coeff=xtalk_coeff, xtalk_lookup_table=lookup_table, layers=layers,
                  nRes=nRes)
     return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes

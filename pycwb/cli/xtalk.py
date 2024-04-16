@@ -14,6 +14,7 @@ def init_parser(parser):
                         '-o',
                         metavar='output_dir',
                         type=str,
+                        default='.',
                         help='the output directory')
 
 
