@@ -5,7 +5,9 @@ pycwb.constants.user_parameters_schema.
 """
 import os.path
 import logging
+import pathlib
 
+from ..modules.xtalk.xtalk_data import check_and_download_xtalk_data
 from ..types.wdm_xtalk import WDMXTalkCatalog
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
@@ -67,9 +69,8 @@ class Config:
             setattr(self, key, params[key])
 
         self.add_derived_key()
-        self.check_file(self.MRAcatalog)
-        if self.MRAcatalog:
-            self.check_MRA_catalog()
+        self.check_xtalk_file(self.MRAcatalog)
+        self.check_MRA_catalog()
         self.check_lagStep()
 
     def add_derived_key(self):
@@ -90,7 +91,10 @@ class Config:
 
         # load WAT filter directory and set MRAcatalog
         if not self.filter_dir:
-            self.filter_dir = os.environ['HOME_WAT_FILTERS']
+            if os.environ.get('HOME_WAT_FILTERS') is None:
+                self.filter_dir = os.path.abspath(".")
+            else:
+                self.filter_dir = os.environ['HOME_WAT_FILTERS']
 
         self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
@@ -141,6 +145,33 @@ class Config:
         """
         if not os.path.isfile(file_name):
             raise FileNotFoundError(f"File {file_name} does not exist")
+
+    @staticmethod
+    def check_xtalk_file(file_name: str) -> bool:
+        """
+        Helper function to check if xtalk file exists and download it if it does not exist
+
+        Parameters
+        ----------
+        file_name : str
+            Path to the xtalk file
+
+        Returns
+        -------
+        bool
+            True if the file exists or has been downloaded successfully, False otherwise
+
+        Raises
+        ------
+        FileNotFoundError
+            If the file does not exist and cannot be downloaded
+        """
+        if not os.path.isfile(file_name):
+            if check_and_download_xtalk_data(str(pathlib.Path(file_name).name), str(pathlib.Path(file_name).parent)):
+                return True
+            else:
+                raise FileNotFoundError(f"File {file_name} does not exist")
+        return True
 
     def check_lagStep(self):
         """

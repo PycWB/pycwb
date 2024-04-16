@@ -44,7 +44,7 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     os.chdir(working_dir)
 
     # check environment
-    check_MRACatalog_setting()
+    # check_MRACatalog_setting()
 
     # read user parameters
     config = Config(file_name)
@@ -78,7 +78,7 @@ def load_batch_run(working_dir: str, config_file: str, job_file: str, job_start:
 
     os.chdir(working_dir)
 
-    check_MRACatalog_setting()
+    # check_MRACatalog_setting()
 
     config = Config(file_name)
 
