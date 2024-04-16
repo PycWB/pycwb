@@ -1,6 +1,12 @@
 import numpy as np
 from scipy.special import erfc
 from scipy.optimize import root_scalar
+import warnings
+
+# this function is deprecated, please consider using sigmoid_fit.py to fit the data instead
+# of reading from the fit_parameters file
+warnings.warn("This function is deprecated, please consider using sigmoid_fit.py to fit the data instead"
+              " of reading from the fit_parameters file", DeprecationWarning)
 
 
 def read_inj_type(file_name):
