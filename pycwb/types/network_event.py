@@ -74,6 +74,7 @@ class Event:
     oSNR: list[float] = field(default_factory=list)
     ioSNR: list[float] = field(default_factory=list)
     Deff: list[float] = field(default_factory=list)
+    injection: dict = field(default_factory=dict)
 
 
     # def __init__(self):

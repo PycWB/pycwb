@@ -4,13 +4,13 @@ import logging
 from pycwb.config import Config
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, \
     convert_netcluster_to_fragment_clusters
-from pycwb.types.network_cluster import FragmentCluster
+from pycwb.types.network_cluster import FragmentCluster, Cluster
 from pycwb.types.network_event import Event
 
 logger = logging.getLogger(__name__)
 
 
-def likelihood(config, network, fragment_clusters):
+def likelihood(config, network, fragment_clusters) -> tuple[list[Event], list[Cluster], list[dict]]:
     """
     calculate likelihood
 

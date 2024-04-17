@@ -3,6 +3,7 @@ import os
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
+from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 
@@ -40,11 +41,16 @@ def supercluster_and_likelihood(working_dir, config, job_seg, fragment_clusters_
     # save triggers
     trigger_folders = []
     for trigger in events_data:
-        trigger_folders.append(save_trigger(working_dir, config, job_seg, trigger))
+        trigger_folders.append(
+            save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
+                         save_sky_map=config.save_sky_map)
+        )
     return trigger_folders
 
 
-def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
+def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
+                 job_seg: WaveSegment, trigger_data: tuple | list,
+                 save_sky_map: bool = True, index: bool = None):
     if index is None:
         event, cluster, event_skymap_statistics = trigger_data
     else:
@@ -55,7 +61,7 @@ def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
 
     print(f"Saving trigger {event.hash_id}")
 
-    trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
+    trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
     print(f"Creating trigger folder: {trigger_folder}")
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
@@ -65,10 +71,11 @@ def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
     print(f"Saving trigger data")
     save_dataclass_to_json(event, f"{trigger_folder}/event.json")
     save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
-    save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
+    if save_sky_map:
+        save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
     print(f"Adding event to catalog")
-    add_events_to_catalog(f"{working_dir}/{config.outputDir}/catalog.json",
+    add_events_to_catalog(f"{working_dir}/{catalog_dir}/catalog.json",
                           event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
 
     return trigger_folder

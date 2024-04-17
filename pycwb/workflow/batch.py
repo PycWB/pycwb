@@ -1,5 +1,6 @@
 from distributed import Client, LocalCluster
 
+from pycwb.config import Config
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.super_cluster.supercluster import supercluster
@@ -9,6 +10,7 @@ from pycwb.modules.read_data import generate_injection, merge_frames, \
     read_single_frame_from_job_segment, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.likelihood import likelihood
+from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run, supercluster_and_likelihood
@@ -47,7 +49,8 @@ from pycwb.workflow.subflow.supercluster_and_likelihood import save_trigger
 #     return client.gather(trigger_folders)
 
 
-def process_job_segment(working_dir, config, job_seg, plot=False, compress_json=True):
+def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment,
+                        plot: bool = False, compress_json: bool = True):
     print_job_info(job_seg)
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -86,23 +89,33 @@ def process_job_segment(working_dir, config, job_seg, plot=False, compress_json=
         event_skymap_statistics = skymap_statistics[i]
         events_data.append((event, cluster, event_skymap_statistics))
 
+        # associate the injections if there are any
+        if job_seg.injections:
+            for injection in job_seg.injections:
+                if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
+                    event.injection = injection
+
     # save triggers
     trigger_folders = []
     for trigger in events_data:
-        trigger_folders.append(save_trigger(working_dir, config, job_seg, trigger))
+        trigger_folders.append(
+            save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
+                         save_sky_map=config.save_sky_map)
+        )
 
-    if plot:
-        for trigger_folder, trigger in zip(trigger_folders, events_data):
-            event, cluster, event_skymap_statistics = trigger
-            reconstruct_waveforms_flow(trigger_folder, config, job_seg,
-                                       event, cluster, save=True, plot=True)
+    for trigger_folder, trigger in zip(trigger_folders, events_data):
+        event, cluster, event_skymap_statistics = trigger
+        reconstruct_waveforms_flow(trigger_folder, config, job_seg,
+                                   event, cluster, save=config.save_waveform, plot=config.plot_waveform)
+        if config.plot_sky_map:
             plot_trigger_flow(trigger_folder, event, cluster, event_skymap_statistics)
 
     return trigger_folders
 
 
-def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=None, log_level="INFO",
+def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
            n_proc=1, plot=False, compress_json=False, dry_run=False):
+    # TODO: optimize the plot control
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
                                                          plot=plot, compress_json=compress_json)
@@ -121,8 +134,7 @@ def search(file_name, working_dir='.', overwrite=False, submit=False, log_file=N
 
 
 def batch_submit(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
-                 job_per_worker=10,
-                 n_proc=1, dry_run=False):
+                 job_per_worker=10, n_proc=1, dry_run=False):
     import htcondor
 
     logger_init(log_file, log_level)
