@@ -6,6 +6,7 @@ from pycbc.types.timeseries import TimeSeries
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.plot_map.world_map import plot_skymap_contour
+from pycwb.modules.read_data import generate_strain_from_injection
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_cluster import Cluster
@@ -14,7 +15,8 @@ from pycwb.types.network_event import Event
 
 def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: WaveSegment,
                           event: Event, cluster: Cluster,
-                          save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
+                          save: bool = True, plot: bool = False,
+                          save_injection: bool = True, plot_injection: bool = False) -> Dict[str, TimeSeries]:
     print(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True, whiten=False)
@@ -61,6 +63,23 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: Wav
             plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
             plt.savefig(f'{trigger_folder}/reconstructed_wave_whiten_ifo_{j + 1}.png')
             plt.close()
+
+
+    if save_injection or plot_injection:
+        if event.injection:
+            strains = generate_strain_from_injection(event.injection, config, config.inRate, job_seg.ifos)
+
+            if save_injection:
+                for i, strain in enumerate(strains):
+                    print(f"Saving injected strain for {job_seg.ifos[i]}")
+                    strain.save(f"{trigger_folder}/injected_strain_{job_seg.ifos[i]}.txt")
+
+            if plot_injection:
+                from matplotlib import pyplot as plt
+                for i, strain in enumerate(strains):
+                    plt.plot(strain.sample_times, strain.data)
+                    plt.savefig(f'{trigger_folder}/injected_strain_{job_seg.ifos[i]}.png')
+                    plt.close()
 
     data = {}
     for i, ifo in enumerate(job_seg.ifos):

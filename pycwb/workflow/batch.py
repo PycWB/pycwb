@@ -106,7 +106,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment,
     for trigger_folder, trigger in zip(trigger_folders, events_data):
         event, cluster, event_skymap_statistics = trigger
         reconstruct_waveforms_flow(trigger_folder, config, job_seg,
-                                   event, cluster, save=config.save_waveform, plot=config.plot_waveform)
+                                   event, cluster,
+                                   save=config.save_waveform, plot=config.plot_waveform,
+                                   save_injection=config.save_injection, plot_injection=config.plot_injection)
         if config.plot_sky_map:
             plot_trigger_flow(trigger_folder, event, cluster, event_skymap_statistics)
 
@@ -114,7 +116,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment,
 
 
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
-           n_proc=1, plot=False, compress_json=False, dry_run=False):
+           n_proc=1, plot=None, compress_json=False, dry_run=False):
     # TODO: optimize the plot control
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
@@ -172,7 +174,7 @@ def batch_submit(file_name, working_dir='.', overwrite=False, log_file=None, log
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
               job_file=None, job_start=0, job_end=1,
-              n_proc=1, plot=False, compress_json=True):
+              n_proc=1, plot=None, compress_json=True):
     job_segments, config, working_dir = load_batch_run(working_dir, config_file, job_file, job_start, job_end, n_proc)
     logger_init(log_file, log_level)
 

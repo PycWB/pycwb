@@ -58,7 +58,7 @@ def init_parser(parser):
     # generate plot
     parser.add_argument('--plot',
                         action='store_true',
-                        default=False,
+                        default=None,
                         help='generate the plot, by default False')
 
     # compress json

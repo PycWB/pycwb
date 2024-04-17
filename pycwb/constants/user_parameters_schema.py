@@ -51,6 +51,18 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "save_injection": {
+            "type": "boolean",
+            "description": "save injected waveform",
+            "default": False,
+            "cwb": False
+        },
+        "plot_injection": {
+            "type": "boolean",
+            "description": "plot injected waveform",
+            "default": False,
+            "cwb": False
+        },
         "save_sky_map": {
             "type": "boolean",
             "description": "save sky maps to json",

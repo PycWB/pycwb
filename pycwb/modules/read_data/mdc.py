@@ -10,6 +10,7 @@ from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from .read_data import check_and_resample
 from pycwb.utils.module import import_helper
+from ...config import Config
 from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 
 logger = logging.getLogger(__name__)
@@ -163,7 +164,7 @@ def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_ti
 
     Returns
     --------
-    signal : float
+    signal : list of TimeSeries
         h(t) corresponding to the injection.
     """
     hp._epoch += geocent_end_time
@@ -252,7 +253,81 @@ def generate_injection_from_config(config):
     return injected
 
 
-def generate_injection(config, job_seg, strain=None):
+def generate_strain_from_injection(injection: dict, config: Config, sample_rate, ifos) -> list[TimeSeries]:
+    """
+    Generate strain from given injection parameters, the config is used to get the default values
+
+    Parameters
+    ----------
+    injection : dict
+        injection parameters
+    config : Config
+        user configuration
+    sample_rate : float
+        sample rate
+    ifos : list[str]
+        list of detectors
+
+    Returns
+    -------
+    list[pycbc.types.timeseries.TimeSeries]
+        strain
+    """
+    ##############################
+    # setting default values
+    ##############################
+    if 'approximant' in injection:
+        approximant = injection['approximant']
+    elif 'approximant' in config.injection:
+        approximant = config.injection['approximant']
+    else:
+        approximant = 'IMRPhenomXPHM'
+
+    injection['approximant'] = approximant
+    injection['delta_t'] = 1.0 / sample_rate
+    injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
+
+    declination = injection['dec'] if 'dec' in injection else 0.0
+    right_ascension = injection['ra'] if 'ra' in injection else 0.0
+    polarization = injection['pol'] if 'pol' in injection else 0.0
+    gps_end_time = injection['gps_time']
+
+    print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
+
+    ##############################
+    # generating injection
+    ##############################
+    # check if waveform generator is specified
+    if 'generator' in injection:
+        generator = injection['generator']
+    elif 'generator' in config.injection:
+        generator = config.injection['generator']
+    else:
+        generator = None
+
+    # generate hp and hc
+    if generator:
+        print(f'Using generator: {generator}')
+        # import module
+        module = import_helper(generator['module'], "wf_gen")
+        # get function
+        function = getattr(module, generator['function'])
+        # generate waveform
+        hp, hc = function(**injection)
+
+        hp = convert_to_pycbc_timeseries(hp)
+        hc = convert_to_pycbc_timeseries(hc)
+    else:
+        from pycbc.waveform import get_td_waveform
+        hp, hc = get_td_waveform(**injection)
+
+    from pycwb.modules.read_data import project_to_detector
+    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
+
+    return strain
+
+
+def generate_injections(config, job_seg, strain=None):
     """
     A sample function to generate injection from pycbc and save it to gwf files
     with the detectors specified in the config
@@ -276,58 +351,12 @@ def generate_injection(config, job_seg, strain=None):
                                epoch=job_seg.start_time) for ifo in ifos]
 
     for injection in job_seg.injections:
-        ##############################
-        # setting default values
-        ##############################
-        if 'approximant' in injection:
-            approximant = injection['approximant']
-        elif 'approximant' in config.injection:
-            approximant = config.injection['approximant']
-        else:
-            approximant = 'IMRPhenomXPHM'
-
-        injection['approximant'] = approximant
-        injection['delta_t'] = 1.0 / injected[0].sample_rate
-        injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
-
-        declination = injection['dec'] if 'dec' in injection else 0.0
-        right_ascension = injection['ra'] if 'ra' in injection else 0.0
-        polarization = injection['pol'] if 'pol' in injection else 0.0
-        gps_end_time = injection['gps_time']
-
-        print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
-
-        ##############################
-        # generating injection
-        ##############################
-        # check if waveform generator is specified
-        if 'generator' in injection:
-            generator = injection['generator']
-        elif 'generator' in config.injection:
-            generator = config.injection['generator']
-        else:
-            generator = None
-
-        # generate hp and hc
-        if generator:
-            print(f'Using generator: {generator}')
-            # import module
-            module = import_helper(generator['module'], "wf_gen")
-            # get function
-            function = getattr(module, generator['function'])
-            # generate waveform
-            hp, hc = function(**injection)
-
-            hp = convert_to_pycbc_timeseries(hp)
-            hc = convert_to_pycbc_timeseries(hc)
-        else:
-            from pycbc.waveform import get_td_waveform
-            hp, hc = get_td_waveform(**injection)
-
-        from pycwb.modules.read_data import project_to_detector
-        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
+        strain = generate_strain_from_injection(injection, config, injected[0].sample_rate, ifos)
 
         # inject signal into noise and convert to wavearray
         injected = [injected[i].add_into(strain[i]) for i in range(len(ifos))]
     # FIXME: should this moved to outside as a step?
     return [check_and_resample(injected[i], config, i) for i in range(len(ifos))]
+
+# Backward compatibility
+generate_injection = generate_injections
