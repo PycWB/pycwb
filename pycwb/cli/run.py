@@ -65,7 +65,7 @@ def init_parser(parser):
 
 
 def command(args):
-    from pycwb.workflow.batch import search
+    from pycwb.workflow.run import search
 
     if args.list_n_jobs or args.list_jobs:
         jobs = search(args.user_parameter_file, working_dir=args.work_dir, n_proc=1, dry_run=True)
@@ -83,5 +83,5 @@ def command(args):
         return 0
 
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc, submit=args.submit,
+    search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc,
            overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)
