@@ -12,7 +12,8 @@ from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reco
 from pycwb.workflow.subflow.supercluster_and_likelihood import save_trigger
 
 
-def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True):
+def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
+                        catalog_file: str = None):
     print_job_info(job_seg)
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -62,7 +63,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     for trigger in events_data:
         trigger_folders.append(
             save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
-                         save_sky_map=config.save_sky_map)
+                         save_sky_map=config.save_sky_map, catalog_file=catalog_file)
         )
 
     for trigger_folder, trigger in zip(trigger_folders, events_data):

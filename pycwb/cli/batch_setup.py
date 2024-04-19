@@ -8,12 +8,19 @@ def init_parser(parser):
                         type=str,
                         help='the path to the user parameter file')
 
-    parser.add_argument('--submit',
-                        '-s',
+    parser.add_argument('--cluster',
+                        '-c',
                         metavar='job_submission_system',
                         type=str,
                         choices=['condor', 'slurm'],
+                        default='condor',
                         help='the submit option, the available options are condor and slurm')
+
+    parser.add_argument('--submit',
+                        '-s',
+                        action='store_true',
+                        default=False,
+                        help='submit the jobs to the job submission system')
 
     # working dir
     parser.add_argument('--work-dir',
@@ -43,7 +50,6 @@ def init_parser(parser):
                         '-g',
                         metavar='accounting_group',
                         type=str,
-                        default='ligo.sim.o4.burst.allsky.cwboffline',
                         help='the condor accounting group')
 
     # threads
@@ -51,28 +57,23 @@ def init_parser(parser):
                         '-n',
                         metavar='n_proc',
                         type=int,
-                        default=0,
+                        default=1,
                         help='the number of cpu to use, if it set to 0, '
                              'it will use the value from the user parameter file.')
 
-    # generate plot
-    parser.add_argument('--plot',
-                        action='store_true',
-                        default=None,
-                        help='generate the plot, by default False')
+    # job_per_worker
+    parser.add_argument('--job-per-worker',
+                        '-j',
+                        metavar='job_per_worker',
+                        type=int,
+                        default=5,
+                        help='the number of jobs per worker')
 
     # compress json
     parser.add_argument('--compress_json',
                         action='store_true',
-                        default=False,
+                        default=True,
                         help='compress the json files, by default False')
-
-    # serve name
-    parser.add_argument('--name',
-                        metavar='name',
-                        type=str,
-                        default='pycwb',
-                        help='the name of the serve')
 
     # list number of jobs
     parser.add_argument('--list-n-jobs',
@@ -105,6 +106,17 @@ def command(args):
 
         return 0
 
+    if args.cluster is 'slurm':
+        print("Slurm is not supported yet.")
+        return 1
+
     # Run the search function with the specified user parameter file
-    batch_setup(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc,
-           overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)
+    batch_setup(args.user_parameter_file, working_dir=args.work_dir,
+                compress_json=args.compress_json,
+                cluster=args.cluster,
+                conda_env=args.conda_env,
+                n_proc=args.n_proc,
+                accounting_group=args.accounting_group,
+                job_per_worker=args.job_per_worker,
+                submit=args.submit,
+                overwrite=args.force_overwrite, )
