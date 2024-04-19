@@ -153,8 +153,10 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                 print(f"Failed to create job done flag file: {e}")
 
         except Exception as e:
+            import traceback
             print(f"Error processing job segment: {job_seg}")
             print(e)
+            traceback.print_exc()
 
             # create a flag file to indicate the job is failed
             try:
