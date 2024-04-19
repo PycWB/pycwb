@@ -88,8 +88,10 @@ pycwb merge-catalog --work-dir={working_dir}
         log='../log/merge.log',
         output='../log/merge.out',
         error='../log/merge.err',
-        request_cpus='1',
-        request_memory='16GB',
+        accounting_group=accounting_group,
+        accounting_group_user=getpass.getuser(),
+        request_cpus=n_proc,
+        request_memory='8GB',
         request_disk='4GB',
     )
 
