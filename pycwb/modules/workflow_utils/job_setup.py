@@ -27,6 +27,7 @@ def create_output_directory(working_dir: str, output_dir: str, log_dir: str, cat
                             trigger_dir: str, user_parameter_file: str) -> None:
     # create folder for output and log
     config_dir = f"{working_dir}/config"
+    input_dir = f"{working_dir}/input"
     job_status_dir = f"{working_dir}/job_status"
     public_dir = f"{working_dir}/public"
     print(f"Output folder: {working_dir}/{output_dir}")
@@ -51,6 +52,8 @@ def create_output_directory(working_dir: str, output_dir: str, log_dir: str, cat
         os.makedirs(job_status_dir)
     if not os.path.exists(public_dir):
         os.makedirs(public_dir)
+    if not os.path.exists(input_dir):
+        os.makedirs(input_dir)
 
     if os.path.exists(f"{config_dir}/user_parameters.yaml"):
         # check if the files are the same with md5, if not, backup the old file
