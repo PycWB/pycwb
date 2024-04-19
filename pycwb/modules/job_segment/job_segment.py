@@ -12,20 +12,20 @@ logger = logging.getLogger(__name__)
 
 
 def create_job_segment_from_config(config):
+    logger.info("-" * 80)
+    logger.info("Initializing job segments")
+
     if not config.simulation:
-        logger.info("-" * 80)
-        logger.info("Initializing job segments")
         job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
                                           config.segLen, config.segMLS, config.segEdge, config.segOverlap,
                                           config.rateANA, config.l_high)
-
-        # log number of segments
-        logger.info(f"Number of segments: {len(job_segments)}")
-        logger.info("-" * 80)
     else:
         job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
-        for job_seg in job_segments:
-            logger.info(job_seg)
+        # for job_seg in job_segments:
+        #     logger.info(job_seg)
+        # log number of segments
+    logger.info(f"Number of segments: {len(job_segments)}")
+    logger.info("-" * 80)
     return job_segments
 
 

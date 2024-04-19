@@ -58,7 +58,7 @@ def init_parser(parser):
                         metavar='n_proc',
                         type=int,
                         default=1,
-                        help='the number of cpu to use, if it set to 0, '
+                        help='the number of cpu to use, default to 1. If it set to 0, '
                              'it will use the value from the user parameter file.')
 
     # job_per_worker
@@ -73,7 +73,7 @@ def init_parser(parser):
     parser.add_argument('--compress_json',
                         action='store_true',
                         default=True,
-                        help='compress the json files, by default False')
+                        help='compress the json files, by default True')
 
     # list number of jobs
     parser.add_argument('--list-n-jobs',

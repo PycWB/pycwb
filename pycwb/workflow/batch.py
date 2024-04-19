@@ -30,12 +30,12 @@ def batch_setup(file_name, working_dir='.',
     jobs = [{
         'jobs': f"{i * job_per_worker}-{min((i + 1) * job_per_worker, len(job_segments)) - 1}"
     } for i in range(n_workers)]
-
+    config_file_name = os.path.basename(file_name)
     batch_job = htcondor.Submit({
         "executable": "source",
         "arguments": f"/cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh && "
                      f"conda activate {conda_env} && "
-                     f"pycwb batch-run {working_dir}/config/{config} --work-dir={working_dir} "
+                     f"pycwb batch-run {working_dir}/config/{config_file_name} --work-dir={working_dir} "
                      f"--jobs=$(jobs) --n-proc={n_proc}",
         "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config",
         "should_transfer_files": "yes",
