@@ -45,6 +45,13 @@ def init_parser(parser):
                         default=os.environ.get('CONDA_DEFAULT_ENV'),
                         help='the conda environment')
 
+    # additional init
+    parser.add_argument('--additional-init',
+                        '-a',
+                        metavar='additional_init',
+                        type=str,
+                        help='additional initialization commands')
+
     # accounting_group
     parser.add_argument('--accounting-group',
                         '-g',
@@ -115,6 +122,7 @@ def command(args):
                 compress_json=args.compress_json,
                 cluster=args.cluster,
                 conda_env=args.conda_env,
+                additional_init=args.additional_init,
                 n_proc=args.n_proc,
                 accounting_group=args.accounting_group,
                 job_per_worker=args.job_per_worker,

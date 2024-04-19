@@ -12,7 +12,7 @@ from pycwb.workflow.subflow.process_job_segment import process_job_segment
 
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
-                compress_json=True, cluster="condor", conda_env=None,
+                compress_json=True, cluster="condor", conda_env=None, additional_init="",
                 accounting_group=None, job_per_worker=10, n_proc=1, dry_run=False, submit=False):
     import htcondor
 
@@ -45,6 +45,7 @@ def batch_setup(file_name, working_dir='.',
         f.write(f"""#!/bin/bash
 source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
 conda activate {conda_env}
+{additional_init}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={n_proc}
         """)
 
@@ -68,17 +69,29 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         "request_disk": "4GB",
     })
 
-    # merge_job = htcondor.Submit(
-    #     executable='pycwb batch-merge',
-    #     arguments=f"{working_dir}/config/{config}",
-    #     transfer_input_files="",
-    #     log='merge.log',
-    #     output='merge.out',
-    #     error='merge.err',
-    #     request_cpus='1',
-    #     request_memory='128MB',
-    #     request_disk='1GB',
-    # )
+    # create merge.sh
+    with open(f"{dag_dir}/merge.sh", 'w') as f:
+        f.write(f"""#!/bin/bash
+source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
+conda activate {conda_env}
+{additional_init}
+pycwb merge-catalog --work-dir={working_dir}
+        """)
+
+    # add execute permission to merge.sh
+    os.chmod(f"{dag_dir}/merge.sh", 0o755)
+
+    merge_job = htcondor.Submit(
+        executable="merge.sh",
+        transfer_input_files=f"{working_dir}/catalog",
+        should_transfer_files="yes",
+        log='../log/merge.log',
+        output='../log/merge.out',
+        error='../log/merge.err',
+        request_cpus='1',
+        request_memory='16GB',
+        request_disk='4GB',
+    )
 
     dag = dags.DAG()
 
@@ -89,10 +102,10 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         vars=jobs,
     )
 
-    # merge_layer = batch_layer.child_layer(
-    #     name = 'merge',
-    #     submit_description = merge_job,
-    # )
+    merge_layer = batch_layer.child_layer(
+        name = 'merge',
+        submit_description = merge_job,
+    )
 
     # make the magic happen!
     dag_file = dags.write_dag(dag, dag_dir, dag_file_name=f'pycwb_{os.path.basename(working_dir)}.dag')
