@@ -45,7 +45,7 @@ def batch_setup(file_name, working_dir='.',
         f.write(f"""#!/bin/bash
 source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
 conda activate {conda_env}
-pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_dir} --jobs=$1 --n-proc={n_proc}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={n_proc}
         """)
 
     # add execute permission to run.sh
