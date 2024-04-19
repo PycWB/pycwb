@@ -8,7 +8,7 @@ from pycwb.modules.likelihood import likelihood
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow
+from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, plot_skymap_flow
 from pycwb.workflow.subflow.supercluster_and_likelihood import save_trigger
 
 
@@ -72,8 +72,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                    event, cluster,
                                    save=config.save_waveform, plot=config.plot_waveform,
                                    save_injection=config.save_injection, plot_injection=config.plot_injection)
+
+        if config.plot_trigger:
+            plot_trigger_flow(trigger_folder, event, cluster)
+
         if config.plot_sky_map:
-            plot_trigger_flow(trigger_folder, event, cluster, event_skymap_statistics)
+            plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
 
     return trigger_folders
 

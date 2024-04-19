@@ -90,13 +90,17 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: Wav
 
 
 def plot_trigger_flow(trigger_folder: str,
-                 event: Event, cluster: Cluster, event_skymap_statistics: Dict[str, List[float]]) -> None:
+                 event: Event, cluster: Cluster) -> None:
     print(f"Making plots for event {event.hash_id}")
 
     # plot the likelihood map
     plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
     plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
 
+
+def plot_skymap_flow(trigger_folder: str,
+                 event: Event, event_skymap_statistics: Dict[str, List[float]]) -> None:
+    print(f"Making skymap plots for event {event.hash_id}")
     # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
     for key in event_skymap_statistics.keys():
         plot_skymap_contour(event_skymap_statistics,
