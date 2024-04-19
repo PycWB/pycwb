@@ -64,7 +64,10 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
         create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                                 config.trigger_dir, file_name)
 
-        create_catalog(f"{working_dir}/{config.catalog_dir}/catalog.json", config, job_segments)
+        catalog_file = f"{working_dir}/{config.catalog_dir}/catalog.json"
+
+        if not os.path.exists(catalog_file):
+            create_catalog(catalog_file, config, job_segments)
         create_web_viewer(f"{working_dir}/public")
         # save_job_segments_to_json(job_segments, f"{working_dir}/config/job_segments.json")
 
@@ -99,6 +102,8 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
                             config.trigger_dir, file_name)
 
     catalog_file = f"{working_dir}/{config.catalog_dir}/catalog_{jobs}.json"
-    create_catalog(catalog_file, config, selected_job_segments)
+
+    if not os.path.exists(catalog_file):
+        create_catalog(catalog_file, config, selected_job_segments)
 
     return selected_job_segments, config, working_dir, catalog_file
