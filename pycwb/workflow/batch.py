@@ -53,8 +53,7 @@ pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_d
 
     # create the submit description for the batch job
     batch_job = htcondor.Submit({
-        "executable": "source",
-        "arguments": f"run.sh",
+        "executable": "./run.sh",
         "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config, "
                                 f"{working_dir}/input, {working_dir}/wdmMRA",
         "should_transfer_files": "yes",
