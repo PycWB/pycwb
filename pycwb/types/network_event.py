@@ -326,6 +326,7 @@ class Event:
             "phi": self.phi,
             "theta": self.theta,
             "psi": self.psi,
+            "injection": self.injection,
         }
 
     @property
