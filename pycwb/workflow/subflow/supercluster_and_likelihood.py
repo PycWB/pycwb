@@ -75,7 +75,9 @@ def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
         save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
     print(f"Adding event to catalog")
-    add_events_to_catalog(f"{working_dir}/{catalog_dir}/{catalog_file})",
-                          event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
+    # if catalog_file is in full absolute path, use it directly
+    if not catalog_file.startswith("/"):
+        catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
+    add_events_to_catalog(catalog_file, event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
 
     return trigger_folder
