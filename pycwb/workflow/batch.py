@@ -65,7 +65,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         "accounting_group": accounting_group,
         "accounting_group_user": getpass.getuser(),
         "request_cpus": f"{n_proc}",
-        "request_memory": "4GB",
+        "request_memory": "6GB",
         "request_disk": "4GB",
     })
 
