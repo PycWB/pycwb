@@ -88,7 +88,17 @@ def batch_setup(file_name, working_dir='.',
 
     if submit:
         dag_submit = htcondor.Submit.from_dag(str(dag_file), {'force': 1})
+        print('------------------------')
         print(dag_submit)
+        print('------------------------')
+        os.chdir(dag_dir)
+
+        schedd = htcondor.Schedd()
+        cluster_id = schedd.submit(dag_submit).cluster()
+
+        print(f"DAGMan job cluster is {cluster_id}")
+
+        os.chdir(working_dir)
 
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
