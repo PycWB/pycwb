@@ -31,6 +31,7 @@ def batch_setup(file_name, working_dir='.',
 
     # blow away any old files
     shutil.rmtree(dag_dir, ignore_errors=True)
+    os.makedirs(dag_dir, exist_ok=True)
 
     # create a bash script to run the job
     n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
