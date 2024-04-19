@@ -45,7 +45,7 @@ def batch_setup(file_name, working_dir='.',
         f.write(f"""#!/bin/bash
 source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
 conda activate {conda_env}
-pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_dir} --jobs=$(jobs) --n-proc={n_proc}
+pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_dir} --jobs=$1 --n-proc={n_proc}
         """)
 
     # add execute permission to run.sh
@@ -53,13 +53,14 @@ pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_d
 
     # create the submit description for the batch job
     batch_job = htcondor.Submit({
-        "executable": "./run.sh",
+        "executable": "run.sh",
+        "arguments": f"$(jobs)",  # Passing jobs as an argument
         "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config, "
-                                f"{working_dir}/input, {working_dir}/wdmMRA",
+                                f"{working_dir}/input, {working_dir}/wdmXTalk",
         "should_transfer_files": "yes",
-        "output": "log/batch-$(ProcId).out",
-        "error": "log/batch-$(ProcId).err",
-        "log": "log/batch-$(ProcId).log",
+        "output": "../log/batch-$(jobs).out",
+        "error": "../log/batch-$(jobs).err",
+        "log": "../log/batch-$(jobs).log",
         "accounting_group": accounting_group,
         "accounting_group_user": getpass.getuser(),
         "request_cpus": f"{n_proc}",
