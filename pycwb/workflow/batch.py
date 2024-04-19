@@ -26,18 +26,36 @@ def batch_setup(file_name, working_dir='.',
     if accounting_group is None:
         raise ValueError("Accounting group is required for condor batch submission")
 
+    # create the DAG directory
+    dag_dir = (Path.cwd() / 'condor').absolute()
+
+    # blow away any old files
+    shutil.rmtree(dag_dir, ignore_errors=True)
+
+    # create a bash script to run the job
     n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
     jobs = [{
         'jobs': f"{i * job_per_worker}-{min((i + 1) * job_per_worker, len(job_segments)) - 1}"
     } for i in range(n_workers)]
     config_file_name = os.path.basename(file_name)
+
+    # create run.sh
+    with open(f"{dag_dir}/run.sh", 'w') as f:
+        f.write(f"""#!/bin/bash
+source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
+conda activate {conda_env}
+pycwb batch-runner {working_dir}/config/{config_file_name} --work-dir={working_dir} --jobs=$(jobs) --n-proc={n_proc}
+        """)
+
+    # add execute permission to run.sh
+    os.chmod(f"{dag_dir}/run.sh", 0o755)
+
+    # create the submit description for the batch job
     batch_job = htcondor.Submit({
         "executable": "source",
-        "arguments": f"/cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh && "
-                     f"conda activate {conda_env} && "
-                     f"pycwb batch-run {working_dir}/config/{config_file_name} --work-dir={working_dir} "
-                     f"--jobs=$(jobs) --n-proc={n_proc}",
-        "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config",
+        "arguments": f"run.sh",
+        "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config, "
+                                f"{working_dir}/input, {working_dir}/wdmMRA",
         "should_transfer_files": "yes",
         "output": "log/batch-$(ProcId).out",
         "error": "log/batch-$(ProcId).err",
@@ -75,13 +93,8 @@ def batch_setup(file_name, working_dir='.',
     #     submit_description = merge_job,
     # )
 
-    dag_dir = (Path.cwd() / 'condor').absolute()
-
-    # blow away any old files
-    shutil.rmtree(dag_dir, ignore_errors=True)
-
     # make the magic happen!
-    dag_file = dags.write_dag(dag, dag_dir)
+    dag_file = dags.write_dag(dag, dag_dir, dag_file_name=f'pycwb_{os.path.basename(working_dir)}.dag')
 
     print(f'DAG directory: {dag_dir}')
     print(f'DAG description file: {dag_file}')
