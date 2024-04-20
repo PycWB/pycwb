@@ -136,6 +136,7 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                                                        n_proc=n_proc, compress_json=compress_json)
     logger_init(log_file, log_level)
 
+    exceptions = []
     for job_seg in job_segments:
         # check if the job is done
         if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
@@ -153,14 +154,16 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                 print(f"Failed to create job done flag file: {e}")
 
         except Exception as e:
-            import traceback
             print(f"Error processing job segment: {job_seg}")
             print(e)
-            traceback.print_exc()
-
             # create a flag file to indicate the job is failed
             try:
                 with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
                     f.write("")
             except Exception as e:
                 print(f"Failed to create job failed flag file: {e}")
+
+            exceptions.append(e)
+
+    if exceptions:
+        raise ExceptionGroup("JobFailure", exceptions)
