@@ -1,5 +1,6 @@
 from pycwb.config import Config
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
+from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_injection, generate_noise_for_job_seg, read_from_job_segment
@@ -28,18 +29,18 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.injections:
         data = generate_injection(config, job_seg, data)
 
-    xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-
     tf_maps, nRMS_list = data_conditioning(config, data)
 
     fragment_clusters = coherence(config, tf_maps, nRMS_list)
 
     network = Network(config, tf_maps, nRMS_list)
 
-    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
-                                                   xtalk_coeff, xtalk_lookup_table, layers)
-
-    # super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
+    if config.use_root_supercluster:
+        super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
+    else:
+        xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
+        super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
+                                                       xtalk_coeff, xtalk_lookup_table, layers)
 
     events, clusters, skymap_statistics = likelihood(config, network, super_fragment_clusters)
 

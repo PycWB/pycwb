@@ -81,6 +81,12 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "use_root_supercluster": {
+            "type": "boolean",
+            "description": "use cwb supercluster, if false use python version",
+            "default": True,
+            "cwb": False
+        },
         "nproc": {
             "type": "integer",
             "description": "number of processes",
