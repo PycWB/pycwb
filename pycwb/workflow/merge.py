@@ -1,7 +1,5 @@
 import glob
 import orjson
-# import os
-# from pycwb.config import Config
 
 
 def merge_catalog(working_dir: str = '.'):

@@ -82,3 +82,33 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
     return trigger_folders
 
+
+# def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):
+#     print_job_info(job_seg)
+#
+#     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
+#         raise ValueError("No data to process")
+#
+#     if job_seg.frames:
+#         frame_data = client.map(read_single_frame_from_job_segment,
+#                                 [config] * len(job_seg.frames),
+#                                 [job_seg] * len(job_seg.frames),
+#                                 job_seg.frames)
+#         data = client.submit(merge_frames, job_seg, frame_data, config.segEdge)
+#     else:
+#         data = None
+#
+#     if job_seg.noise:
+#         data = client.submit(generate_noise_for_job_seg, job_seg, config.inRate, data=data)
+#     if job_seg.injections:
+#         data = client.submit(generate_injection, config, job_seg, data)
+#
+#     xtalk_catalog = client.submit(load_catalog, config.MRAcatalog)
+#     conditioned_data = client.submit(data_conditioning, config, data)
+#     fragment_clusters_multi_res = client.map(coherence_single_res_wrapper, list(range(config.nRES)),
+#                                              [config] * config.nRES, [conditioned_data] * config.nRES)
+#
+#     trigger_folders = client.submit(supercluster_and_likelihood, working_dir, config, job_seg,
+#                                  fragment_clusters_multi_res, conditioned_data, xtalk_catalog)
+#
+#     return client.gather(trigger_folders)
