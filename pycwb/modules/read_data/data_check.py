@@ -55,6 +55,7 @@ def check_and_resample(data, config, ifo_index):
     # DC correction
     if config.dcCal[ifo_index] > 0 and config.dcCal[ifo_index] != 1.0:
         data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
+        logger.info(f"DC correction: {config.dcCal[ifo_index]}")
 
     # resampling
     if config.fResample > 0:
