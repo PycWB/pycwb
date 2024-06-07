@@ -34,11 +34,17 @@ def fit(xdata, ydata, debug=False):
 
     # Initial parameters
     initial_guesses = [
+        [xdata[idx], 0.3, 0.5, 1, 0],
+        [xdata[idx], 0.5, 0.5, 1, 0],
+        [xdata[idx], 0.7, 0.5, 1, 0],
         [xdata[idx], 0.3, 1, 1, 0],
+        [xdata[idx], 0.5, 1, 1, 0],
         [xdata[idx], 0.7, 1, 1, 0],
         [xdata[idx], 0.3, 2, 0.5, 0],
+        [xdata[idx], 0.5, 2, 0.5, 0],
         [xdata[idx], 0.7, 2, 0.5, 0],
         [xdata[idx], 0.3, 3, 1, 0],
+        [xdata[idx], 0.5, 3, 1, 0],
         [xdata[idx], 0.7, 3, 1, 0],
     ]
 
@@ -50,10 +56,14 @@ def fit(xdata, ydata, debug=False):
 
         params_bounds = ([-25, 0, 0, 0, 0], [-19, np.inf, np.inf, 2.5, np.inf])
 
-        params, covariance = curve_fit(logNfit, xdata, ydata, method='dogbox',
-                                       p0=initial_params, bounds=params_bounds,
-                                       )
-        chi2 = np.sum(((logNfit(xdata, *params) - ydata) / ydata.std()) ** 2)
+        try:
+            params, covariance = curve_fit(logNfit, xdata, ydata, method='dogbox',
+                                           p0=initial_params, bounds=params_bounds,
+                                           )
+            chi2 = np.sum(((logNfit(xdata, *params) - ydata) / ydata.std()) ** 2)
+        except:
+            chi2 = 1e23
+            print("error in fit")
         if debug:
             print(chi2)
         if chi2 < best_chi2:
@@ -62,6 +72,8 @@ def fit(xdata, ydata, debug=False):
 
     if best_chi2 > 0.01:
         warnings.warn(f"Best fit error is high: {best_chi2:.2E} > 0.01")
+        if best_chi2 > 1e20:
+            warnings.warn(f"Fit failed")
 
     params, covariance = best_fit
     # Calculate derived quantities and errors
