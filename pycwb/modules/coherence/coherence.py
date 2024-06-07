@@ -123,6 +123,9 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
 
     # produce TF maps with max over the sky energy
     alp = 0.0
+
+    # FIXME: max time delay is different to pycbc
+    config.max_delay = net.get_max_delay()
     for n in range(len(config.ifo)):
         ts = convert_to_wavearray(tf_maps[n])
         ts.Edge = config.segEdge
