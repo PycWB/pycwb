@@ -319,9 +319,8 @@ schema = {
         },
         "netRHO": {
             "type": "number",
-            "description": "[>4.0] coherent network SNR (supercluster, likelihood)",
+            "description": "[>4.0] coherent network SNR (supercluster, likelihood), if <=0 then use the new statistics for XGBoost",
             "default": 4.0,
-            "minimum": 4.0,
         },
         "netCC": {
             "type": "number",
