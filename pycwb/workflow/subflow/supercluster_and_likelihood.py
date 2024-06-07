@@ -56,6 +56,9 @@ def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
     else:
         event, cluster, event_skymap_statistics = trigger_data[index]
 
+    if catalog_file is None:
+        catalog_file = "catalog.json"
+
     if cluster.cluster_status != -1:
         return 0
 
