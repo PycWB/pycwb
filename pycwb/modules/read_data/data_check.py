@@ -59,7 +59,10 @@ def check_and_resample(data, config, ifo_index):
     # resampling
     if config.fResample > 0:
         logger.info(f"Resampling data from {data.sample_rate} to {config.fResample}")
-        data = data.resample(1.0 / config.fResample)
+        # data = data.resample(1.0 / config.fResample)
+        w = convert_to_wavearray(data)
+        w.Resample(config.fResample)
+        data = convert_wavearray_to_pycbc_timeseries(w)
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
     if new_sample_rate != config.inRate:
