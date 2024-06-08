@@ -268,6 +268,28 @@ class Cluster:
 
         return merged_map, t_start_new, min_dt, min_df
 
+    def get_size(self):
+        """
+        Get cluster size
+
+        Returns
+        -------
+        int
+            cluster size
+        """
+        return len(self.pixels)
+
+    def get_analyzed_size(self):
+        """
+        Get analyzed pixels
+
+        Returns
+        -------
+        int
+            analyzed pixels
+        """
+        return len([p for p in self.pixels if p.likelihood > 0 and p.core])
+
 
 @dataclass
 class FragmentCluster:
