@@ -107,7 +107,8 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     wdm_list = network.get_wdm_list()
     for wdm in wdm_list:
         wdm.setTDFilter(config.TDSize, config.upTDF)
-
+    # FIXME: precision setup in config
+    # network.net.precision = config.get_precision(100, 5)
     network.set_delay_index(config.TDRate)
 
     # sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, [fragment_cluster])

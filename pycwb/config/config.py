@@ -221,3 +221,6 @@ class Config:
             logger.info(f"MRA catalog has tag {wdm_MRA.tag}, updating beta order and precision from MRA catalog")
             self.WDM_beta_order, self.WDM_precision = int(wdm_MRA.beta_order), int(wdm_MRA.precision)
 
+    @staticmethod
+    def get_precision(cluster_size_threshold, healpix_order):
+        return cluster_size_threshold+65536*healpix_order

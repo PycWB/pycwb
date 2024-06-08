@@ -1,6 +1,6 @@
 import os
 from typing import Dict, List
-
+import math
 from pycbc.types.timeseries import TimeSeries
 
 from pycwb.config import Config
@@ -29,6 +29,15 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: Wav
     #                                                      'signal', -1, True, whiten=True)
     # reconstructed_waves_whiten_90 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', 1, True, whiten=True)
+
+    # rescale
+    for ts in reconstructed_waves:
+        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+        ts.data *= rescale
+
+    for ts in reconstructed_waves_whiten:
+        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+        ts.data *= rescale
 
     if save:
         if not os.path.exists(trigger_folder):
