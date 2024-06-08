@@ -186,7 +186,7 @@ def reconstruct_waveform(trigger_folders, config, job_seg, trigger_data, index=N
         event, cluster, event_skymap_statistics = trigger_data[index]
 
     # trigger_folder = f"{working_dir}/{config.outputDir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
-    return reconstruct_waveforms_flow(trigger_folder, config, job_seg, event, cluster, save=True, plot=plot)
+    return reconstruct_waveforms_flow(trigger_folder, config, job_seg.ifos, event, cluster, save=True, plot=plot)
 
 
 @task

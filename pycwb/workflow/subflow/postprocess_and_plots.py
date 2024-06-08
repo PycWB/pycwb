@@ -13,7 +13,7 @@ from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 
 
-def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: WaveSegment,
+def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[str],
                           event: Event, cluster: Cluster,
                           save: bool = True, plot: bool = False,
                           save_injection: bool = True, plot_injection: bool = False) -> Dict[str, TimeSeries]:
@@ -45,18 +45,18 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: Wav
             print(f"Creating trigger folder: {trigger_folder}")
 
         for i, ts in enumerate(reconstructed_waves):
-            print(f"Saving reconstructed waveform for {job_seg.ifos[i]}")
-            ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}.txt")
+            print(f"Saving reconstructed waveform for {ifos[i]}")
+            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}.txt")
 
         for i, ts in enumerate(reconstructed_waves_whiten):
-            print(f"Saving reconstructed waveform for {job_seg.ifos[i]} (whitened)")
-            ts.save(f"{trigger_folder}/reconstructed_waveform_{job_seg.ifos[i]}_whitened.txt")
+            print(f"Saving reconstructed waveform for {ifos[i]} (whitened)")
+            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}_whitened.txt")
 
         # for i, (hp, hc) in enumerate(zip(reconstructed_waves_whiten_00, reconstructed_waves_whiten_90)):
         #     # save strain = hp + 1j hc
-        #     print(f"Saving reconstructed strain for {job_seg.ifos[i]} (whitened)")
+        #     print(f"Saving reconstructed strain for {ifos[i]} (whitened)")
         #     hp = hp - 1j * hc
-        #     hp.save(f"{trigger_folder}/reconstructed_strain_{job_seg.ifos[i]}_whitened.txt")
+        #     hp.save(f"{trigger_folder}/reconstructed_strain_{ifos[i]}_whitened.txt")
 
     if plot:
         from matplotlib import pyplot as plt
@@ -64,34 +64,34 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, job_seg: Wav
         for j, reconstructed_wave in enumerate(reconstructed_waves):
             plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
             plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            plt.savefig(f'{trigger_folder}/reconstructed_wave_ifo_{j + 1}.png')
+            plt.savefig(f'{trigger_folder}/reconstructed_wave_ifo_{ifos[j]}.png')
             plt.close()
 
         for j, reconstructed_wave in enumerate(reconstructed_waves_whiten):
             plt.plot(reconstructed_wave.sample_times, reconstructed_wave.data)
             plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            plt.savefig(f'{trigger_folder}/reconstructed_wave_whiten_ifo_{j + 1}.png')
+            plt.savefig(f'{trigger_folder}/reconstructed_wave_whiten_ifo_{ifos[j]}.png')
             plt.close()
 
 
     if save_injection or plot_injection:
         if event.injection:
-            strains = generate_strain_from_injection(event.injection, config, config.inRate, job_seg.ifos)
+            strains = generate_strain_from_injection(event.injection, config, config.inRate, ifos)
 
             if save_injection:
                 for i, strain in enumerate(strains):
-                    print(f"Saving injected strain for {job_seg.ifos[i]}")
-                    strain.save(f"{trigger_folder}/injected_strain_{job_seg.ifos[i]}.txt")
+                    print(f"Saving injected strain for {ifos[i]}")
+                    strain.save(f"{trigger_folder}/injected_strain_{ifos[i]}.txt")
 
             if plot_injection:
                 from matplotlib import pyplot as plt
                 for i, strain in enumerate(strains):
                     plt.plot(strain.sample_times, strain.data)
-                    plt.savefig(f'{trigger_folder}/injected_strain_{job_seg.ifos[i]}.png')
+                    plt.savefig(f'{trigger_folder}/injected_strain_{ifos[i]}.png')
                     plt.close()
 
     data = {}
-    for i, ifo in enumerate(job_seg.ifos):
+    for i, ifo in enumerate(ifos):
         data[f"{ifo}_reconstructed_waves"] = reconstructed_waves[i]
         data[f"{ifo}_reconstructed_waves_whiten"] = reconstructed_waves_whiten[i]
 
@@ -103,8 +103,8 @@ def plot_trigger_flow(trigger_folder: str,
     print(f"Making plots for event {event.hash_id}")
 
     # plot the likelihood map
-    plot_statistics(cluster, 'likelihood', filename=f'{trigger_folder}/likelihood_map.png')
-    plot_statistics(cluster, 'null', filename=f'{trigger_folder}/null_map.png')
+    plot_statistics(cluster, 'likelihood', gps_shift=event.gps[0], filename=f'{trigger_folder}/likelihood_map.png')
+    plot_statistics(cluster, 'null', gps_shift=event.gps[0], filename=f'{trigger_folder}/null_map.png')
 
 
 def plot_skymap_flow(trigger_folder: str,

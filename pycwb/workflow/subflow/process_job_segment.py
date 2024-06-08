@@ -68,8 +68,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         )
 
     for trigger_folder, trigger in zip(trigger_folders, events_data):
+        # FIXME: add gps time and segment time on the x ticks
         event, cluster, event_skymap_statistics = trigger
-        reconstruct_waveforms_flow(trigger_folder, config, job_seg,
+        reconstruct_waveforms_flow(trigger_folder, config, job_seg.ifos,
                                    event, cluster,
                                    save=config.save_waveform, plot=config.plot_waveform,
                                    save_injection=config.save_injection, plot_injection=config.plot_injection)
