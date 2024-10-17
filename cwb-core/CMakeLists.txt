@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.14.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15.0 FATAL_ERROR)
 project(
     WAT
     LANGUAGES CXX ASM
     VERSION 7.0.1.0
     DESCRIPTION "cWB pipeline source library"
 )
+
+set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE INTERNAL "" FORCE)
 
 if(NOT CMAKE_BUILD_TYPE)
    set(CMAKE_BUILD_TYPE "Release" CACHE STRING
