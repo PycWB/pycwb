@@ -1,11 +1,13 @@
 # PycWB
 
+[![Documentations](https://readthedocs.org/projects/pycwb/badge/?version=latest)](https://pycwb.readthedocs.io/en/latest/)
 [![Build Status](https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/pipelines)
 [![Releases](https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/releases)
 [![PyPI version](https://badge.fury.io/py/pycWB.svg)](https://badge.fury.io/py/pycWB)
 [![License](https://img.shields.io/badge/license-GPLv3-blue)](https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE)
 
 PycWB is a modularized Python package for gravitational wave burst search based on the core function of cWB.
+The documentation can be found at [pycwb.readthedocs.io](https://pycwb.readthedocs.io/en/latest/).
 
 ## Installation
 
@@ -32,7 +34,6 @@ conda config --env --set subdir osx-64
 conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config htcondor
 ```
 
-```bash
 ### Install pycWB from source
 
 ```bash
@@ -49,7 +50,7 @@ make install
 Example project can be found in [examples](https://git.ligo.org/yumeng.xu/pycwb/-/tree/main/examples)
 
 ```python
-from pycwb.search import search
+from pycwb.workflow.run import search
 
 search('./user_parameters.yaml')
 ```
@@ -57,14 +58,9 @@ search('./user_parameters.yaml')
 or run with command line
 
 ```bash
-pycwb_search ./user_parameters.yaml
+pycwb run ./user_parameters.yaml
 ```
 
 ## Interactive tutorial
 
  - Google Colab tutorial: [pycWB_GW150914.ipynb](https://colab.research.google.com/github/PycWB/pycwb/blob/main/examples/colab/pycWB_GW150914.ipynb)
-
-
-## Documentation
-
-Documentation can be found in [https://yumeng.xu.docs.ligo.org/pycwb](https://yumeng.xu.docs.ligo.org/pycwb)
