@@ -6,9 +6,29 @@
 Welcome to pycWB's documentation!
 ===================================
 
+.. image:: https://readthedocs.org/projects/pycwb/badge/?version=latest
+   :target: https://pycwb.readthedocs.io/en/latest/
+   :alt: Documentations
+
+.. image:: https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg
+   :target: https://git.ligo.org/yumeng.xu/pycwb/-/pipelines
+   :alt: Build Status
+
+.. image:: https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg
+   :target: https://git.ligo.org/yumeng.xu/pycwb/-/releases
+   :alt: Releases
+
+.. image:: https://badge.fury.io/py/pycWB.svg
+   :target: https://badge.fury.io/py/pycWB
+   :alt: PyPI version
+
+.. image:: https://img.shields.io/badge/license-GPLv3-blue
+   :target: https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE
+   :alt: License
+
+
 pycWB is a modularized Python package for gravitational wave burst search based on the core function of cWB.
 
-...
 
 .. toctree::
    :hidden:
@@ -41,6 +61,10 @@ Getting Started
 Installation
 ------------
 
+PycWB is available on `PyPI <https://pypi.org/project/pycWB/>`_. You can install it with pip.
+Some dependencies are required to be installed before installing pycWB with pip.
+The easiest way is to install them with conda.
+
 .. code-block:: bash
 
    conda create -n pycwb "python>=3.9,<3.11"
@@ -52,30 +76,24 @@ Installation
 Run your first burst search
 ---------------------------
 
-Copy the example configuration folder
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In your first burst search, we will use a built-in noise generator and waveform generator
+to minimize the requirement for external data. What you need is just one configuration file in YAML format.
+
+To start with, copy the example configuration folder from the source code or download the
+`user_parameters_injection.yaml` manually from `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/user_parameters_injection.yaml>`_.
 
 .. code-block:: bash
 
-    cp -r [path_to_source_code]/examples/injection my_search
+    cp -r [path_to_source_code]/examples/injection my_first_search
 
-Start searching!
-~~~~~~~~~~~~~~~~
-
-You can directly run the example search script in the example folder
+Now, you are all set! You can directly run the example in the terminal with the `pycwb run` command
 
 .. code-block:: bash
 
-    cd my_search
-    pycwb_search user_parameters_injection.yaml
+    pycwb run user_parameters_injection.yaml
 
-If you are on a cluster, you can submit the job to the cluster
-
-.. code-block:: bash
-
-    pycwb_search user_parameters_injection.yaml --submit condor
-
-Or you can open the juptyer notebook `pycwb_injection.ipynb` and run the search step by step
+Or you can open the juptyer notebook `pycwb_injection.ipynb` (download `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/pycwb_injection.ipynb>`_)
+and run the search step by step
 
 Go deeper into pycWB.search
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
