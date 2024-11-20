@@ -80,19 +80,19 @@ In your first burst search, we will use a built-in noise generator and waveform 
 to minimize the requirement for external data. What you need is just one configuration file in YAML format.
 
 To start with, copy the example configuration folder from the source code or download the
-`user_parameters_injection.yaml` manually from `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/user_parameters_injection.yaml>`_.
+``user_parameters_injection.yaml`` manually from `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/user_parameters_injection.yaml>`_.
 
 .. code-block:: bash
 
     cp -r [path_to_source_code]/examples/injection my_first_search
 
-Now, you are all set! You can directly run the example in the terminal with the `pycwb run` command
+Now, you are all set! You can directly run the example in the terminal with the ``pycwb run`` command
 
 .. code-block:: bash
 
     pycwb run user_parameters_injection.yaml
 
-Or you can open the juptyer notebook `pycwb_injection.ipynb` (download `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/pycwb_injection.ipynb>`_)
+Or you can open the juptyer notebook ``pycwb_injection.ipynb`` (download `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/pycwb_injection.ipynb>`_)
 and run the search step by step
 
 Go deeper into pycWB.search
@@ -106,6 +106,33 @@ Step by step injection!
 
 If you want to know more about the injection process step by step, please refer to
 :ref:`tutorial_injection` or the juptyer notebook `pycwb_injection.ipynb`
+
+Command line interfaces (CLI)
+------------------------------
+
+It is recommended to use the command line interfaces (CLI) to run the search.
+You can get help by running the command with the ``-h`` option. Here are the current available commands:
+
+.. list-table:: Available Commands
+   :header-rows: 1
+
+   * - Command
+     - Description
+   * - ``pycwb run``
+     - Run a single search
+   * - ``pycwb batch-setup``
+     - Setup batch run
+   * - ``pycwb batch-runner``
+     - Runner for batch run, used for the job submission
+   * - ``pycwb flow``
+     - Run search with prefect flow
+   * - ``pycwb xtalk``
+     - Convert xtalk file
+   * - ``pycwb merge-catalog``
+     - Merge catalog files
+   * - ``pycwb server``
+     - Run a simple server to show the results
+
 
 Basic Workflow
 ==============
