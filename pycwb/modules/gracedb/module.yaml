@@ -1,0 +1,4 @@
+name: gracedb
+author: pycWB
+description: A interface for the LIGO/Virgo GraceDB database
+dependencies: ["ligo-proxy-utils", "ligo-gracedb"]
