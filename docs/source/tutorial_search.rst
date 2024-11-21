@@ -22,16 +22,6 @@ Initialize logger with log_file and log_level, if log_file is None, log will be 
    from pycwb.modules.logger import logger_init
    logger_init(log_file, log_level)
 
-set env HOME_WAT_FILTERS to the path of xdmXTalk. pycWB stops including xdmXTalk file in the package.
-The xdmXTalk file can be downloaded from https://github.com/PycWB/xtalk-data.
-You can also use your own xdmXTalk file.
-
-.. code-block:: python
-
-   import os, pycwb
-
-   pycwb_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-   os.environ['HOME_WAT_FILTERS'] = <You path to the folder containing xdmXTalk files>
 
 read user parameters from user_parameters.yaml to a :py:class:`.Config` object.
 

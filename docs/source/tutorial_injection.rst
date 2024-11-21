@@ -25,10 +25,6 @@ Next, load the environment and the configuration file:
     from pycwb.config import Config
     from pycwb.modules.logger import logger_init
 
-    if not os.environ.get('HOME_WAT_FILTERS'):
-        pyburst_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pyburst_path)}/vendor"
-
     logger_init()
 
     config = Config('./user_parameters_injection.yaml')
@@ -39,12 +35,13 @@ Now, create an injection job using the parameters specified in the configuration
 
 .. code-block:: python
 
-    from pycwb.modules.read_data import generate_injection
+    from pycwb.modules.read_data import generate_injection, generate_noise_for_job_seg
     from pycwb.modules.job_segment import create_job_segment_from_injection
 
     job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
 
-    data = generate_injection(config, job_segments[0])
+    data = generate_noise_for_job_seg(job_segments[0], config.inRate)
+    data = generate_injection(config, job_segments[0], data)
 
 A pyCBC time series is generated for each detector defined in the configuration file.
 
@@ -85,7 +82,7 @@ Finally, calculate the likelihood for each supercluster:
 
     from pycwb.modules.likelihood import likelihood
 
-    events, clusters = likelihood(config, network, pwc_list)
+    events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 
 You can use the following code to plot the events on the spectrogram:
 

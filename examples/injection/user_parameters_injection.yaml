@@ -2,6 +2,14 @@
 
 outputDir: "output"
 nproc: 6
+plot_trigger: True
+plot_waveform: True
+plot_injection: True
+plot_sky_map: True
+save_sky_map: True
+save_injection: True
+save_waveform: True
+
 ###### search ######
 
 #calibVer: "C01"
