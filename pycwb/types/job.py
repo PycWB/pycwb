@@ -60,6 +60,10 @@ class WaveSegment:
         The noise configurations that are within the segment
     injections: list, optional
         list of injections that are within the segment
+    superevent: str, optional
+        superevent id
+    gps_time: list, optional
+        list of gps times for each interferometer
     """
     index: int
     ifos: List[str]
@@ -70,6 +74,8 @@ class WaveSegment:
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
+    superevent: Optional[str] = None
+    gps_time: Optional[List[float]] = None
 
     @property
     def duration(self) -> float:
