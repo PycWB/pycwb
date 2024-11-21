@@ -25,10 +25,6 @@ Next, load the environment and the configuration file:
     from pycwb.config import Config
     from pycwb.modules.logger import logger_init
 
-    if not os.environ.get('HOME_WAT_FILTERS'):
-        pyburst_path = os.path.dirname(os.path.abspath(pycwb.__file__))
-        os.environ['HOME_WAT_FILTERS'] = f"{os.path.abspath(pyburst_path)}/vendor"
-
     logger_init()
 
     config = Config('./user_parameters_injection.yaml')
