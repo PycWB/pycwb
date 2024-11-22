@@ -52,8 +52,14 @@ class WaveSegment:
         start time of the segment
     end_time: float
         end time of the segment
+    sample_rate: float
+        sample rate of the segment
     shift: list, optional
         list of shifts for each interferometer, used for superlags
+    seg_edge: float, optional
+        the edge of the segment
+    channels: list, optional
+        list of data  channels for each interferometer
     frames: list, optional
         list of frame files that are within the segment
     noise: dict, optional
@@ -62,20 +68,19 @@ class WaveSegment:
         list of injections that are within the segment
     superevent: str, optional
         superevent id
-    gps_time: list, optional
-        list of gps times for each interferometer
     """
     index: int
     ifos: List[str]
     start_time: float
     end_time: float
+    sample_rate: float
+    seg_edge: float
     shift: List[float] = None
-    seg_edge: Optional[float] = None
+    channels: Optional[List[str]] = None
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
     superevent: Optional[str] = None
-    gps_time: Optional[List[float]] = None
 
     @property
     def duration(self) -> float:
