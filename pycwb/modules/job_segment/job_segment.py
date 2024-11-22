@@ -74,6 +74,8 @@ def create_job_segment_from_config(config):
     if config.frFiles:
         attach_frame_files_to_job_segments(job_segments, config.ifo, config.frFiles, config.segEdge)
 
+    if config.gwdatafind:
+        gwdatafind_frames_for_job_segments(job_segments, config.ifo, config.gwdatafind, config.segEdge)
     # attach the channel names to the job segments
     if config.channelNamesRaw:
         for job_seg in job_segments:
