@@ -99,6 +99,36 @@ schema = {
             "default": {},
             "cwb": False
         },
+        "gps_start": {
+            "type": "number",
+            "description": "start gps time, used together with gps_end for generating job segments",
+            "cwb": False
+        },
+        "gps_end": {
+            "type": "number",
+            "description": "end gps time, used together with gps_start for generating job segments",
+            "cwb": False
+        },
+        "gps_center": {
+            "type": "number",
+            "description": "center gps time, used together with time_left and time_right for generating job segments",
+            "cwb": False
+        },
+        "time_left": {
+            "type": "number",
+            "description": "left time offset from gps_center, used together with gps_center and time_right for generating job segments",
+            "cwb": False
+        },
+        "time_right": {
+            "type": "number",
+            "description": "right time offset from gps_center, used together with gps_center and time_left for generating job segments",
+            "cwb": False
+        },
+        "superevent": {
+            "type": "string",
+            "description": "superevent name, used together with time_left and time_right for generating job segments",
+            "cwb": False
+        },
         "WDM_beta_order": {
             "type": "integer",
             "description": "WDM default parameters: beta function order for Meyer",
