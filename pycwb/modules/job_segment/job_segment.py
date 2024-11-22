@@ -42,14 +42,15 @@ def create_job_segment_from_config(config):
         periods = ([config.gps_start], [config.gps_end])
     # case 2: gps_center, time_left, and time_right are specified
     elif config.gps_center:
+        gps_center = int(config.gps_center)
         if not config.time_left and not config.time_right:
             raise ValueError("Please specify either time_left or time_right for the job segment")
-        periods = ([config.gps_center - config.time_left], [config.gps_center + config.time_right])
+        periods = ([gps_center - config.time_left], [gps_center + config.time_right])
     # case 3: superevent, time_left, and time_right are specified
     elif config.superevent:
         if not config.time_left and not config.time_right:
             raise ValueError("Please specify either time_left or time_right for the superevent")
-        gps_center = get_superevent_t0(config.superevent)
+        gps_center = int(get_superevent_t0(config.superevent))
         periods = ([gps_center - config.time_left], [gps_center + config.time_right])
 
     # create job segments
@@ -58,7 +59,7 @@ def create_job_segment_from_config(config):
         job_segments = job_segment_from_dq(config.dq_files, config.ifo,
                                           config.segLen, config.segMLS, config.segEdge, config.segOverlap,
                                           config.rateANA, config.l_high, config.inRate,
-                                           periods=config.periods)
+                                           periods=periods)
 
     ## if only simulation mode is specified without DQ files or periods,
     # create job segments based on the injection parameters
