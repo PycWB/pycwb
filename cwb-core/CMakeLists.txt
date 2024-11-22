@@ -50,7 +50,8 @@ if(NOT DEFINED XIFO)
    set(XIFO 4)
 endif()
 
-set(CWB_OPTS "XIFO=${XIFO}" "_USE_CPP")
+# Fix the macso cross-compilation issue, see git.ligo.org issue#4
+set(CWB_OPTS "XIFO=${XIFO}" "_USE_CPP" "_Float16=short")
 
 
 #Find ROOT

@@ -28,10 +28,13 @@ Currently, pycWB is only available for x64 architecture.
 For Apple Silicon users, you can install the dependencies with the following commands:
 
 ```bash
-conda create -n pycwb "python>=3.9,<3.11"
+# make sure rosetta is installed
+softwareupdate --install-rosetta --agree-to-license
+# Optional: export CONDA_BUILD=1
+conda create -n pycwb
 conda activate pycwb
 conda config --env --set subdir osx-64
-conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config htcondor
+conda install -c conda-forge "python>=3.9,<3.11" root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config ruamel.yaml htcondor
 ```
 
 ### Install pycWB from source
