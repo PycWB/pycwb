@@ -32,39 +32,44 @@ def create_job_segment_from_config(config):
     logger.info("-" * 80)
     logger.info("Initializing job segments")
 
-    # case 1: pure simulation mode, no DQ files
-    if config.simulation:
-        # TODO: split out the injection part for other job types
-        job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
-                                                         config.inRate, config.segEdge)
-    # case 2: gps_start and gps_end are specified, only one job segment will be created
-    elif config.gps_start and config.gps_end:
-        job_segments = [WaveSegment(0, config.ifo, config.gps_start, config.gps_end,
-                                    sample_rate=config.inRate,
-                                    seg_edge=config.segEdgee)]
-    # case 3: gps_center, time_left, and time_right are specified, only one job segment will be created
+
+    job_segments = None
+    periods = None
+
+    ## generate job segments based on the configuration if the DQ files or periods are specified
+    # case 1: gps_start and gps_end are specified
+    if config.gps_start and config.gps_end:
+        periods = ([config.gps_start], [config.gps_end])
+    # case 2: gps_center, time_left, and time_right are specified
     elif config.gps_center:
         if not config.time_left and not config.time_right:
             raise ValueError("Please specify either time_left or time_right for the job segment")
-        job_segments = [WaveSegment(0, config.ifo, config.gps_center - config.time_left,
-                                    config.gps_center + config.time_right,
-                                    sample_rate=config.inRate, seg_edge=config.segEdge)]
-    # case 4: superevent, time_left, and time_right are specified, only one job segment will be created
+        periods = ([config.gps_center - config.time_left], [config.gps_center + config.time_right])
+    # case 3: superevent, time_left, and time_right are specified
     elif config.superevent:
         if not config.time_left and not config.time_right:
             raise ValueError("Please specify either time_left or time_right for the superevent")
         gps_center = get_superevent_t0(config.superevent)
-        job_segments = [WaveSegment(0, config.ifo, gps_center - config.time_left,
-                                    gps_center + config.time_right,
-                                    sample_rate=config.inRate, seg_edge=config.segEdge, superevent=config.superevent)]
-    # case 5: DQ files are specified
-    else:
+        periods = ([gps_center - config.time_left], [gps_center + config.time_right])
+
+    # create job segments
+    if config.dq_files or periods:
         # get the job segments from the DQ files
         job_segments = job_segment_from_dq(config.dq_files, config.ifo,
                                           config.segLen, config.segMLS, config.segEdge, config.segOverlap,
-                                          config.rateANA, config.l_high, config.inRate)
+                                          config.rateANA, config.l_high, config.inRate,
+                                           periods=config.periods)
 
-    # attach the frame files to the job segments
+    ## if only simulation mode is specified without DQ files or periods,
+    # create job segments based on the injection parameters
+    if config.simulation and job_segments is None:
+        # TODO: split out the injection part for other job types
+        job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
+                                                         config.inRate, config.segEdge)
+
+    ## TODO: when the DQ files and simulation both are specified, inject the parameters into the job segments
+
+    # attach the frame files to the job segments if defined
     if config.frFiles:
         attach_frame_files_to_job_segments(job_segments, config.ifo, config.frFiles, config.segEdge)
 
@@ -73,12 +78,14 @@ def create_job_segment_from_config(config):
         for job_seg in job_segments:
             job_seg.channels = config.channelNamesRaw
 
+    ## TODO: check if the job segments are valid
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
     return job_segments
 
 
 def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high, sample_rate,
+                        periods=None,
                        slag_size=0, slag_off=0, slag_min=0, slag_max=0, slag_site=0, slag_file=0):
     """Select a job segment from the database.
 
@@ -98,6 +105,10 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     :type rateANA: int
     :param l_high: The high frequency cutoff.
     :type l_high: int
+    :param sample_rate: The sample rate.
+    :type sample_rate: int
+    :param periods: Given start and stop periods, will be added with the dq_file_list
+    :type periods: tuple[list[int], list[int]]
     :param slag_size: The super lag size.
     :type slag_size: int, optional
     :param slag_off: The super lag offset.
@@ -115,7 +126,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     """
     if slag_size > 0:
         # TODO: not finished
-        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1')
+        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
 
         # Get number/list of available super lag jobs
         # Compute the available segments with length=segLen contained between the interval [min,max]
@@ -138,7 +149,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
         raise Exception("Not finished")
 
     else:
-        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1')
+        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
 
         job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge, sample_rate)
 
