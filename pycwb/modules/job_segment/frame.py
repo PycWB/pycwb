@@ -81,10 +81,12 @@ def select_frame_list(frame_list, start, stop, seg_edge):
     return frame_list
 
 
-def get_frame_files_from_gwdatafind(sites, frametypes, start, stop, seg_edge, host=None):
+def get_frame_files_from_gwdatafind(ifos, sites, frametypes, start, stop, seg_edge, host=None):
     """
     Use gwdatafind to get the frame files for the job segments
 
+    :param ifos: list of interferometers
+    :type ifos: list[str]
     :param sites: list of sites
     :type sites: list[str]
     :param frametypes: list of frame types
@@ -117,7 +119,7 @@ def get_frame_files_from_gwdatafind(sites, frametypes, start, stop, seg_edge, ho
             # get the gps time and duration with int type
             gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
             # append the frame file to the list
-            frame_list.append(FrameFile(sites[i], frame_path, gps_start, duration))
+            frame_list.append(FrameFile(ifos[i], frame_path, gps_start, duration))
 
     return frame_list
 

@@ -211,7 +211,7 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
     host = gwdatafind.get('host')
 
     for job_seg in job_segments:
-        job_seg.frames = get_frame_files_from_gwdatafind(gwdatafind['site'], gwdatafind['frametype'],
+        job_seg.frames = get_frame_files_from_gwdatafind(ifos, gwdatafind['site'], gwdatafind['frametype'],
                                                          job_seg.start_time, job_seg.end_time, seg_edge, host=host)
 
 
