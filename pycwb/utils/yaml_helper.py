@@ -43,6 +43,6 @@ def set_default(params, schema):
     """
     for key in schema['properties'].keys():
         if key not in params:
-            params[key] = schema['properties'][key]['default']
+            params[key] = schema['properties'][key]['default'] if 'default' in schema['properties'][key] else None
 
     return params
