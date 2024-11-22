@@ -6,7 +6,7 @@ from pycwb.types.job import WaveSegment
 logger = logging.getLogger(__name__)
 
 
-def read_seg_list(dq_file_list, dq_cat):
+def read_seg_list(dq_file_list=None, dq_cat='CWB_CAT1', periods=None):
     """Load the files contains segment list from the data quality files below the data quality category (dq_file.load_file)).
     Then merge the segment list (merge_seg_list) and return the merged segment list.
 
@@ -14,14 +14,22 @@ def read_seg_list(dq_file_list, dq_cat):
     :type dq_file_list: list[DQFile]
     :param dq_cat: The data quality category.
     :type dq_cat: str
+    :param periods: Given start and stop periods.
+    :type periods: tuple[list[int], list[int]]
     :return: A list of segments.
     :rtype: list[WaveSegment]
     """
     seg_list = []
-    for dq_file in dq_file_list:
-        if dq_file.dq_cat <= dq_cat:
-            logger.info(f"Loading data quality file {dq_file.file}")
-            seg_list.append(dq_file.get_periods())
+    if dq_file_list is None or len(dq_file_list) == 0:
+        seg_list.append(([0], [np.inf]))
+    else:
+        for dq_file in dq_file_list:
+            if dq_file.dq_cat <= dq_cat:
+                logger.info(f"Loading data quality file {dq_file.file}")
+                seg_list.append(dq_file.get_periods())
+
+    if periods is not None:
+        seg_list.append(periods)
 
     if len(seg_list) == 0:
         logger.error("No CWB_CAT=%s files in the list", dq_cat)
