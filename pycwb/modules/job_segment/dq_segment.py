@@ -93,7 +93,7 @@ def get_seg_list(ifo, dq_list, seg_len, seg_mls, seg_edge):
     return []
 
 
-def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge):
+def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate):
     """
     Build the job segment list.
 
@@ -108,6 +108,8 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge):
     output segA : xxx---------xxx \n
     output segB :             xxx----------xxx \n
 
+    :param ifos:  list of interferometers
+    :type ifos:  list[str]
     :param dq_list:  number of detectors
     :type dq_list:  list[DQFile]
     :param seg_len:  Segment length [sec]
@@ -116,6 +118,8 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge):
     :type seg_mls:  int
     :param seg_edge:  wavelet boundary offset [sec]
     :type seg_edge:  int
+    :param sample_rate:  sample rate [Hz]
+    :type sample_rate:  int
     :return:  Return the job segment list
     :rtype:  list[WaveSegment]
     """
@@ -141,7 +145,8 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge):
                 lostlivetime += length
                 continue
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, start, stop))
+            job_list.append(WaveSegment(seg_index, ifos, start, stop,
+                                        seg_edge=seg_edge, sample_rate=sample_rate))
             continue
         if n == 1:
             if length > seg_len:
@@ -149,32 +154,40 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge):
                 half = int(remainder / 2)
                 if half >= seg_mls:
                     seg_index += 1
-                    job_list.append(WaveSegment(seg_index, ifos, start, start + half))
+                    job_list.append(WaveSegment(seg_index, ifos, start, start + half,
+                                                seg_edge=seg_edge, sample_rate=sample_rate))
 
                     seg_index += 1
-                    job_list.append(WaveSegment(seg_index, ifos, start + half, stop))
+                    job_list.append(WaveSegment(seg_index, ifos, start + half, stop,
+                                                seg_edge=seg_edge, sample_rate=sample_rate))
                 else:
                     seg_index += 1
-                    job_list.append(WaveSegment(seg_index, ifos, start, start + seg_len))
+                    job_list.append(WaveSegment(seg_index, ifos, start, start + seg_len,
+                                                seg_edge=seg_edge, sample_rate=sample_rate))
             else:
                 seg_index += 1
-                job_list.append(WaveSegment(i, ifos, start, stop))
+                job_list.append(WaveSegment(i, ifos, start, stop,
+                                            seg_edge=seg_edge, sample_rate=sample_rate))
             continue
 
         for j in range(n - 1):
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, seg_len * j + start, seg_len * j + start + seg_len))
+            job_list.append(WaveSegment(seg_index, ifos, seg_len * j + start, seg_len * j + start + seg_len,
+                                        seg_edge=seg_edge, sample_rate=sample_rate))
 
         remainder = stop - job_list[-1].end_time
         half = int(remainder / 2)
         if half >= seg_mls:
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + half))
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + half,
+                                        seg_edge=seg_edge, sample_rate=sample_rate))
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, stop))
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, stop,
+                                        seg_edge=seg_edge, sample_rate=sample_rate))
         else:
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + seg_len))
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + seg_len,
+                                        seg_edge=seg_edge, sample_rate=sample_rate))
 
     logger.info('lost livetime after building of the standard job list = %d sec' % lostlivetime)
 

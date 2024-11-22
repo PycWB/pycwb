@@ -7,29 +7,78 @@ from .dq_segment import read_seg_list, get_seg_list, get_job_list
 from .frame import get_frame_meta, select_frame_list
 from pycwb.types.job import WaveSegment
 from ...utils.module import import_helper
+from pycwb.modules.gracedb import get_superevent_t0
 
 logger = logging.getLogger(__name__)
 
 
 def create_job_segment_from_config(config):
+    """
+    Create job segments based on the configuration file. Currently, the following cases are supported:
+    1. pure simulation mode: only injection parameters are specified
+    2. gps_start and gps_end are specified, only one job segment will be created
+    3. gps_center, time_left, and time_right are specified, only one job segment will be created
+    4. superevent, time_left, and time_right are specified, only one job segment will be created
+    5. DQ files are specified
+
+    The frame files will be attached to the job segments if fr_files are specified.
+    Otherwise, the start and end times of the job segments can be used with the channel names to fetch the data.
+
+    :param config: The configuration object.
+    :type config: Config
+    :return:
+    :rtype: list[WaveSegment]
+    """
     logger.info("-" * 80)
     logger.info("Initializing job segments")
 
-    if not config.simulation:
-        job_segments = select_job_segment(config.dq_files, config.ifo, config.frFiles,
-                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
-                                          config.rateANA, config.l_high)
+    # case 1: pure simulation mode, no DQ files
+    if config.simulation:
+        # TODO: split out the injection part for other job types
+        job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
+                                                         config.inRate, config.segEdge)
+    # case 2: gps_start and gps_end are specified, only one job segment will be created
+    elif config.gps_start and config.gps_end:
+        job_segments = [WaveSegment(0, config.ifo, config.gps_start, config.gps_end,
+                                    sample_rate=config.inRate,
+                                    seg_edge=config.segEdgee)]
+    # case 3: gps_center, time_left, and time_right are specified, only one job segment will be created
+    elif config.gps_center:
+        if not config.time_left and not config.time_right:
+            raise ValueError("Please specify either time_left or time_right for the job segment")
+        job_segments = [WaveSegment(0, config.ifo, config.gps_center - config.time_left,
+                                    config.gps_center + config.time_right,
+                                    sample_rate=config.inRate, seg_edge=config.segEdge)]
+    # case 4: superevent, time_left, and time_right are specified, only one job segment will be created
+    elif config.superevent:
+        if not config.time_left and not config.time_right:
+            raise ValueError("Please specify either time_left or time_right for the superevent")
+        gps_center = get_superevent_t0(config.superevent)
+        job_segments = [WaveSegment(0, config.ifo, gps_center - config.time_left,
+                                    gps_center + config.time_right,
+                                    sample_rate=config.inRate, seg_edge=config.segEdge, superevent=config.superevent)]
+    # case 5: DQ files are specified
     else:
-        job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection)
-        # for job_seg in job_segments:
-        #     logger.info(job_seg)
-        # log number of segments
+        # get the job segments from the DQ files
+        job_segments = job_segment_from_dq(config.dq_files, config.ifo,
+                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
+                                          config.rateANA, config.l_high, config.inRate)
+
+    # attach the frame files to the job segments
+    if config.frFiles:
+        attach_frame_files_to_job_segments(job_segments, config.ifo, config.frFiles, config.segEdge)
+
+    # attach the channel names to the job segments
+    if config.channelNamesRaw:
+        for job_seg in job_segments:
+            job_seg.channels = config.channelNamesRaw
+
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
     return job_segments
 
 
-def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high,
+def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high, sample_rate,
                        slag_size=0, slag_off=0, slag_min=0, slag_max=0, slag_site=0, slag_file=0):
     """Select a job segment from the database.
 
@@ -37,8 +86,6 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
     :type dq_file_list: list[DQFile]
     :param ifos: The list of interferometers.
     :type ifos: list[str]
-    :param fr_files: The list of frame files.
-    :type fr_files: list[FrameFile]
     :param seg_len: The segment length.
     :type seg_len: int
     :param seg_mls: The minimum segment length after DQ_CAT1.
@@ -93,7 +140,7 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
     else:
         cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1')
 
-        job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge)
+        job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge, sample_rate)
 
     rate_min = rateANA >> l_high
     for job_seg in job_segments:
@@ -112,6 +159,10 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
         logger.debug(f"job segment gps range = {job_seg.start_time} - {job_seg.end_time}")
     logger.info(f"Number of job segments = {len(job_segments)}")
 
+    return job_segments
+
+
+def attach_frame_files_to_job_segments(job_segments, ifos, fr_files, seg_edge):
     # Get frame file list
     frame_files = []
     for i in range(len(ifos)):
@@ -122,10 +173,8 @@ def select_job_segment(dq_file_list, ifos, fr_files, seg_len, seg_mls, seg_edge,
     for job_seg in job_segments:
         job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
 
-    return job_segments
 
-
-def create_job_segment_from_injection(ifo, simulation_mode, injection):
+def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_rate, seg_edge):
     # get the injection parameters
     if 'parameters' in injection:
         if isinstance(injection['parameters'], list):
@@ -158,6 +207,7 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
     if simulation_mode == "all_inject_in_one_segment":
         # inject all the parameters in one job segment
         job_segments = [WaveSegment(0, ifo, injection['segment']['start'], injection['segment']['end'],
+                                    sample_rate=sample_rate, seg_edge=seg_edge,
                                     noise=noise, injections=injections)]
     elif simulation_mode == "one_inject_in_one_segment":
         # repeat the injection N times for the same job segment
@@ -166,6 +216,7 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection):
         #     raise ValueError(f"The number of injections ({len(injections)}) does not match the number of repeats ({repeat})")
 
         job_segments = [WaveSegment(i, ifo, injection['segment']['start'], injection['segment']['end'],
+                                    sample_rate=sample_rate, seg_edge=seg_edge,
                                     noise=noise, injections=[injections[i]])
                         for i in range(repeat)]
     else:

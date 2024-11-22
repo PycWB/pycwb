@@ -65,9 +65,9 @@ def select_frame_list(frame_list, start, stop, seg_edge):
     :param frame_list: list of frame metadata
     :type frame_list: list[FrameFile]
     :param start: start time of the segment
-    :type start: int
+    :type start: int or float
     :param stop: stop time of the segment
-    :type stop: int
+    :type stop: int or float
     :param seg_edge: buffer of the segment
     :type seg_edge: int or float
     :return: list of frame
