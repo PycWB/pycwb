@@ -4,7 +4,7 @@ import orjson
 
 from .super_lag import get_slag_job_list, get_slag_list
 from .dq_segment import read_seg_list, get_seg_list, get_job_list
-from .frame import get_frame_meta, select_frame_list
+from .frame import get_frame_meta, select_frame_list, get_frame_files_from_gwdatafind
 from pycwb.types.job import WaveSegment
 from ...utils.module import import_helper
 from pycwb.modules.gracedb import get_superevent_t0
@@ -184,6 +184,33 @@ def attach_frame_files_to_job_segments(job_segments, ifos, fr_files, seg_edge):
     # TODO: this is only for simple job segment
     for job_seg in job_segments:
         job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
+
+
+def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge):
+    """
+    Use gwdatafind to get the frame files for the job segments
+
+    :param job_segments: The job segments.
+    :type job_segments: list[WaveSegment]
+    :param ifos: The list of interferometers.
+    :type ifos: list[str]
+    :param gwdatafind: The gwdatafind setting.
+    :type gwdatafind: dict
+    :param seg_edge: The wavelet boundary offset.
+    :type seg_edge: int
+
+    :return: None
+    """
+    from gwdatafind import find_urls
+
+    # prepare the gwdatafind.find_urls arguments
+    if 'site' not in gwdatafind:
+        gwdatafind['site'] = [ifo[0] for ifo in ifos]
+    host = gwdatafind.get('host')
+
+    for job_seg in job_segments:
+        job_seg.frames = get_frame_files_from_gwdatafind(gwdatafind['site'], gwdatafind['frametype'],
+                                                         job_seg.start_time, job_seg.end_time, seg_edge, host=host)
 
 
 def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_rate, seg_edge):

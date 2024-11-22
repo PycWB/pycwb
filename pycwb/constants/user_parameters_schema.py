@@ -129,6 +129,15 @@ schema = {
             "description": "superevent name, used together with time_left and time_right for generating job segments",
             "cwb": False
         },
+        "gwdatafind": {
+            "type": "string",
+            "description": "If the gwdatafind is set, the framefiles can be pulled from the LIGO data server, "
+                           "the support keys are: site, frametype, host. Example: ",
+                           "     site: ['L','H']"
+                           "     frametype: ['L1_HOFT_C00','H1_HOFT_C00']"
+                           "     host: 'datafind.ldas.cit:80'"
+            "cwb": False
+        },
         "WDM_beta_order": {
             "type": "integer",
             "description": "WDM default parameters: beta function order for Meyer",

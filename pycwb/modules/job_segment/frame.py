@@ -81,3 +81,44 @@ def select_frame_list(frame_list, start, stop, seg_edge):
     return frame_list
 
 
+def get_frame_files_from_gwdatafind(sites, frametypes, start, stop, seg_edge, host=None):
+    """
+    Use gwdatafind to get the frame files for the job segments
+
+    :param sites: list of sites
+    :type sites: list[str]
+    :param frametypes: list of frame types
+    :type frametypes: list[str]
+    :param start: start time of the segment
+    :type start: int or float
+    :param stop: stop time of the segment
+    :type stop: int or float
+    :param seg_edge: buffer of the segment
+    :type seg_edge: int or float
+    :param host: host name of the frame server
+    :type host: str
+
+    :return: list of frame files
+    :rtype: list[FrameFile]
+    """
+    from gwdatafind import find_urls
+
+    seg_start = start - seg_edge
+    seg_stop = stop + seg_edge
+
+    frame_list = []
+    for i, frametype in enumerate(frametypes):
+        url = find_urls(sites[i], frametype, seg_start, seg_stop, host=host)
+        frame_paths = [fp.replace("file://localhost", "") for fp in url]
+
+        for frame_path in frame_paths:
+            # get the file name without the extension with pathlib
+            frame_name = Path(frame_path).stem
+            # get the gps time and duration with int type
+            gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
+            # append the frame file to the list
+            frame_list.append(FrameFile(sites[i], frame_path, gps_start, duration))
+
+    return frame_list
+
+
