@@ -185,8 +185,8 @@ def merge_frames(job_seg, data, seg_edge):
 
 def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     # should read data with segment edge
-    start = job_seg.start_time - config.segEdge
-    end = job_seg.end_time + config.segEdge
+    start = job_seg.start_time - job_seg.seg_edge
+    end = job_seg.end_time + job_seg.seg_edge
 
     # for each frame, if the frame start time is later than the job segment start time, use the frame start time
     if frame.start_time > start:
@@ -196,14 +196,14 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     if frame.end_time < end:
         end = frame.end_time
 
-    i = config.ifo.index(frame.ifo)
-    data = read_from_gwf(frame.path, config.channelNamesRaw[i], start=start, end=end)
+    i = job_seg.ifos.index(frame.ifo)
+    data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
     print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
-    if int(data.sample_rate.value) != int(config.inRate):
+    if int(data.sample_rate.value) != int(job_seg.sample_rate):
         sample_rate_old = data.sample_rate.value
         w = convert_to_wavearray(data)
-        w.Resample(config.inRate)
+        w.Resample(job_seg.sample_rate)
         data = convert_wavearray_to_timeseries(w)
         # data = data.resample(config.inRate)
-        print(f'Resample data from {sample_rate_old} to {config.inRate}')
+        print(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
     return check_and_resample(data, config, i)
