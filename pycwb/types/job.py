@@ -66,8 +66,6 @@ class WaveSegment:
         The noise configurations that are within the segment
     injections: list, optional
         list of injections that are within the segment
-    superevent: str, optional
-        superevent id
     """
     index: int
     ifos: List[str]
@@ -80,7 +78,6 @@ class WaveSegment:
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
-    superevent: Optional[str] = None
 
     @property
     def duration(self) -> float:
