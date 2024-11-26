@@ -91,6 +91,34 @@ class WaveSegment:
         """
         return self.end_time - self.start_time
 
+    @property
+    def physical_start_times(self) -> Dict[str, float]:
+        """
+        Get the physical start times of the segment.
+
+        Returns
+        -------
+        physical_start_times: dict
+            physical start times of the segment
+        """
+        if self.shift is None:
+            return {ifo: self.start_time for ifo in self.ifos}
+        return {ifo: self.start_time + self.shift[i] for i, ifo in enumerate(self.ifos)}
+
+    @property
+    def physical_end_times(self) -> Dict[str, float]:
+        """
+        Get the physical end times of the segment.
+
+        Returns
+        -------
+        physical_end_times: dict
+            physical end times of the segment
+        """
+        if self.shift is None:
+            return {ifo: self.end_time for ifo in self.ifos}
+        return {ifo: self.end_time + self.shift[i] for i, ifo in enumerate(self.ifos)}
+
     to_dict = asdict
 
 
