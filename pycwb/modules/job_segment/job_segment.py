@@ -218,14 +218,20 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
 
 def attach_frame_files_to_job_segments(job_segments, ifos, fr_files, seg_edge):
     # Get frame file list
-    frame_files = []
-    for i in range(len(ifos)):
-        frame_files += get_frame_meta(fr_files[i], ifos[i])
+    frame_files = {}
+    for i, ifo in enumerate(ifos):
+        frame_files[ifo] = get_frame_meta(fr_files[i], ifo)
 
     # Select frame files for each job segment
-    # TODO: this is only for simple job segment
     for job_seg in job_segments:
-        job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
+        if job_seg.frames is None:
+            job_seg.frames = []
+        for ifo in ifos:
+            job_seg.frames += select_frame_list(frame_files[ifo],
+                                                job_seg.physical_start_times[ifo],
+                                                job_seg.physical_end_times[ifo],
+                                                seg_edge)
+        # job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
 
 
 def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge):
@@ -251,8 +257,13 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
     host = gwdatafind.get('host')
 
     for job_seg in job_segments:
-        job_seg.frames = get_frame_files_from_gwdatafind(ifos, gwdatafind['site'], gwdatafind['frametype'],
-                                                         job_seg.start_time, job_seg.end_time, seg_edge, host=host)
+        if job_seg.frames is None:
+            job_seg.frames = []
+        for i, ifo in enumerate(ifos):
+            job_seg.frames += get_frame_files_from_gwdatafind(ifo, gwdatafind['site'][i], gwdatafind['frametype'][i],
+                                                            job_seg.start_time, job_seg.end_time, seg_edge, host=host)
+        # job_seg.frames = get_frame_files_from_gwdatafind(ifos, gwdatafind['site'], gwdatafind['frametype'],
+        #                                                  job_seg.start_time, job_seg.end_time, seg_edge, host=host)
 
 
 def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_rate, seg_edge):

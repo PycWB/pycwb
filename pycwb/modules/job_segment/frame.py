@@ -81,16 +81,16 @@ def select_frame_list(frame_list, start, stop, seg_edge):
     return frame_list
 
 
-def get_frame_files_from_gwdatafind(ifos, sites, frametypes, start, stop, seg_edge, host=None):
+def get_frame_files_from_gwdatafind(ifo, site, frametype, start, stop, seg_edge, host=None):
     """
     Use gwdatafind to get the frame files for the job segments
 
-    :param ifos: list of interferometers
-    :type ifos: list[str]
-    :param sites: list of sites
-    :type sites: list[str]
-    :param frametypes: list of frame types
-    :type frametypes: list[str]
+    :param ifo: name of the interferometer
+    :type ifo: str
+    :param site: site name of the interferometer
+    :type site: str
+    :param frametype: frame type
+    :type frametype: str
     :param start: start time of the segment
     :type start: int or float
     :param stop: stop time of the segment
@@ -109,17 +109,17 @@ def get_frame_files_from_gwdatafind(ifos, sites, frametypes, start, stop, seg_ed
     seg_stop = stop + seg_edge
 
     frame_list = []
-    for i, frametype in enumerate(frametypes):
-        url = find_urls(sites[i], frametype, seg_start, seg_stop, host=host)
-        frame_paths = [fp.replace("file://localhost", "") for fp in url]
 
-        for frame_path in frame_paths:
-            # get the file name without the extension with pathlib
-            frame_name = Path(frame_path).stem
-            # get the gps time and duration with int type
-            gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
-            # append the frame file to the list
-            frame_list.append(FrameFile(ifos[i], frame_path, gps_start, duration))
+    url = find_urls(site, frametype, seg_start, seg_stop, host=host)
+    frame_paths = [fp.replace("file://localhost", "") for fp in url]
+
+    for frame_path in frame_paths:
+        # get the file name without the extension with pathlib
+        frame_name = Path(frame_path).stem
+        # get the gps time and duration with int type
+        gps_start, duration = [int(i) for i in frame_name.split("-")[-2:]]
+        # append the frame file to the list
+        frame_list.append(FrameFile(ifo, frame_path, gps_start, duration))
 
     # TODO: check if the framefiles match with the seg_start and seg_stop
 
