@@ -24,6 +24,7 @@ def whitening(config, h):
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
     wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
 
+    # TODO: check the length of data and white parameters to prevent freezing
     # check if whitening WDM filter lenght is less than cwb scratch
     wdmFlen = wdm_white.m_H / config.rateANA
     if wdmFlen > config.segEdge + 0.001:

@@ -121,6 +121,8 @@ def get_frame_files_from_gwdatafind(ifos, sites, frametypes, start, stop, seg_ed
             # append the frame file to the list
             frame_list.append(FrameFile(ifos[i], frame_path, gps_start, duration))
 
+    # TODO: check if the framefiles match with the seg_start and seg_stop
+
     return frame_list
 
 

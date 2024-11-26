@@ -36,7 +36,11 @@ def create_job_segment_from_config(config):
     job_segments = None
     periods = None
 
+    ############################################
     ## generate job segments based on the configuration if the DQ files or periods are specified
+    ############################################
+
+    ## generate the period with given gps times or superevent id
     # case 1: gps_start and gps_end are specified
     if config.gps_start and config.gps_end:
         periods = ([config.gps_start], [config.gps_end])
@@ -53,7 +57,7 @@ def create_job_segment_from_config(config):
         gps_center = int(get_superevent_t0(config.superevent))
         periods = ([gps_center - config.time_left], [gps_center + config.time_right])
 
-    # create job segments
+    ## create job segments
     if config.dq_files or periods:
         # get the job segments from the DQ files
         job_segments = job_segment_from_dq(config.dq_files, config.ifo,
@@ -61,26 +65,37 @@ def create_job_segment_from_config(config):
                                           config.rateANA, config.l_high, config.inRate,
                                            periods=periods)
 
-    ## if only simulation mode is specified without DQ files or periods,
+    ############################################
+    ## injections on job segments
+    ############################################
+
+    ## Case 1: if only simulation mode is specified without DQ files or periods,
     # create job segments based on the injection parameters
     if config.simulation and job_segments is None:
         # TODO: split out the injection part for other job types
         job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
                                                          config.inRate, config.segEdge)
 
-    ## TODO: when the DQ files and simulation both are specified, inject the parameters into the job segments
+    ## TODO: Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
 
+    ############################################
+    ## Load the frames if frFiles or gwdatafind specified
+    ############################################
     # attach the frame files to the job segments if defined
     if config.frFiles:
+        # if frFiles exist, attach the given framefiles to the job segments
         attach_frame_files_to_job_segments(job_segments, config.ifo, config.frFiles, config.segEdge)
 
     if config.gwdatafind:
+        # if gwdatafind specified, use gwdatafind to fetch the frame files for each job segment
         gwdatafind_frames_for_job_segments(job_segments, config.ifo, config.gwdatafind, config.segEdge)
-    # attach the channel names to the job segments
+
+    # attach the channel names to the job segments from config for self-contained information
     if config.channelNamesRaw:
         for job_seg in job_segments:
             job_seg.channels = config.channelNamesRaw
 
+    ############################################
     ## TODO: check if the job segments are valid
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
