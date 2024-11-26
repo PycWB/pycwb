@@ -233,7 +233,8 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
     print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     # shift the time label of the physical data to the data start time
-    data.shift(data_start - data.t0)
+    data.shift(data_start - start)
+    print(f'Shift data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     if int(data.sample_rate.value) != int(job_seg.sample_rate):
         sample_rate_old = data.sample_rate.value
         w = convert_to_wavearray(data)
