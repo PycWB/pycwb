@@ -1,11 +1,12 @@
 import logging
 
+import numpy as np
 import orjson
 
-from .super_lag import get_slag_job_list, get_slag_list
-from .dq_segment import read_seg_list, get_seg_list, get_job_list
+from .dq_segment import read_seg_list, get_job_list, merge_seg_list
 from .frame import get_frame_meta, select_frame_list, get_frame_files_from_gwdatafind
 from pycwb.types.job import WaveSegment
+from ..superlag import generate_slags
 from ...utils.module import import_helper
 from pycwb.modules.gracedb import get_superevent_t0
 
@@ -142,34 +143,57 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     :return: The job segment.
     :rtype: WaveSegment
     """
+    # merge the DQ segments for each interferometer
+    seg_lists = []
+    for ifo in ifos:
+        dq_files = [dq_file for dq_file in dq_file_list if dq_file.ifo == ifo]
+        cat1_list = read_seg_list(dq_files, 'CWB_CAT1')
+        seg_lists.append(cat1_list)
+
+    # for zero super lag, merge the segments, and get the standard job segments
+    merged_seg_list = seg_lists[0]
+    for seg_list in seg_lists[1:]:
+        merged_seg_list = merge_seg_list(merged_seg_list, seg_list)
+
+    job_segments = get_job_list(ifos, merged_seg_list, seg_len, seg_mls, seg_edge, sample_rate)
+
+    # for super lag, shift the cat1 list and merge the segments
     if slag_size > 0:
-        # TODO: not finished
-        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
+        slags = generate_slags(len(ifos), slag_min, slag_max, slag_off, slag_size)
 
-        # Get number/list of available super lag jobs
-        # Compute the available segments with length=segLen contained between the interval [min,max]
-        # Where min,max are the minimum and macimum times in the cat1List list
-        # The start time of each segment is forced to be a multiple of segLen
-        slag_job_list = get_slag_job_list(cat1_list, seg_len)
+        for slag in slags:
+            slag_seg_lists = []
+            for ifo, j in enumerate(slag):
+                slag_seg_lists.append(np.array(seg_lists[ifo]) + j * seg_len)
 
-        slag_segments = len(slag_job_list)
+            merged_slag_seg_list = slag_seg_lists[0]
+            for seg_list in slag_seg_lists[1:]:
+                merged_slag_seg_list = merge_seg_list(merged_slag_seg_list, seg_list)
+            print('live time', merged_slag_seg_list[1][0] - merged_slag_seg_list[0][0])
+            job_segments += get_job_list(ifos, merged_seg_list, seg_len, seg_mls,
+                                         seg_edge=seg_edge, sample_rate=sample_rate,
+                                         shift=np.array(slag) * seg_len)
 
-        # Get super lag list : slagList
-        # Is the list of available segment shifts according to the slag configuration parameters
-        slag_list = get_slag_list(slag_segments, slag_size, slag_segments, slag_off, slag_min, slag_max, slag_site,
-                                  slag_file)
-
-        for slag in slag_list:
-            logger.info(f"SuperLag={slag.slag_id[0]} jobID={slag.job_id}")
-            for n in range(len(ifos)):
-                logger.info(f"segID[{slag.slag_id[1]}]={slag.seg_id[n]}")
-
-        raise Exception("Not finished")
-
-    else:
-        cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
-
-        job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge, sample_rate)
+        # cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
+        #
+        # # Get number/list of available super lag jobs
+        # # Compute the available segments with length=segLen contained between the interval [min,max]
+        # # Where min,max are the minimum and macimum times in the cat1List list
+        # # The start time of each segment is forced to be a multiple of segLen
+        # slag_job_list = get_slag_job_list(cat1_list, seg_len)
+        #
+        # slag_segments = len(slag_job_list)
+        #
+        # # Get super lag list : slagList
+        # # Is the list of available segment shifts according to the slag configuration parameters
+        # slag_list = get_slag_list(slag_segments, slag_size, slag_segments, slag_off, slag_min, slag_max, slag_site,
+        #                           slag_file)
+        #
+        # for slag in slag_list:
+        #     logger.info(f"SuperLag={slag.slag_id[0]} jobID={slag.job_id}")
+        #     for n in range(len(ifos)):
+        #         logger.info(f"segID[{slag.slag_id[1]}]={slag.seg_id[n]}")
+        # raise Exception("Not finished")
 
     rate_min = rateANA >> l_high
     for job_seg in job_segments:
