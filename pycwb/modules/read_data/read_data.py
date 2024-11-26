@@ -11,7 +11,7 @@ from ..job_segment import WaveSegment
 logger = logging.getLogger(__name__)
 
 
-def read_from_gwf(filename, channel, start=None, end=None):
+def read_from_gwf(filename, channel, start=None, end=None) -> TimeSeries:
     """
     Read data from GWF file
 
@@ -28,7 +28,7 @@ def read_from_gwf(filename, channel, start=None, end=None):
     :param end: end time to read from the gwf file, defaults to reading to the end of the file
     :type end: float, optional
     :return: strain data
-    :rtype: pycbc.types.timeseries.TimeSeries
+    :rtype: gwpy.timeseries.TimeSeries
     """
     # Read data from GWF file
     if start or end:
@@ -184,21 +184,56 @@ def merge_frames(job_seg, data, seg_edge):
 
 
 def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
+    """
+    Read data from a single frame file in job segment, this functions also handles the shift defined in the WaveSegment.
+    It will read the data with the physical start and end time of the frame, and shift the data to the data start time.
+    The segment edge of the job segment will be added to the start and end time of the data.
+    Additionally, it will resample the data if the sample rate of the data is different from the job segment sample rate.
+
+    Parameters
+    ----------
+    config : Config
+        user configuration
+    frame : FrameFile
+        frame file to read
+    job_seg : WaveSegment
+        job segment
+
+    Returns
+    -------
+    TimeSeries
+        strain data
+    """
+    # get the physical start and end time of the frame
+    ifo = frame.ifo
+    physical_start_time = job_seg.physical_start_times[ifo]
+    physical_end_time = job_seg.physical_end_times[ifo]
+    data_start_time = job_seg.start_time
+    data_end_time = job_seg.end_time
+
     # should read data with segment edge
-    start = job_seg.start_time - job_seg.seg_edge
-    end = job_seg.end_time + job_seg.seg_edge
+    start = physical_start_time - job_seg.seg_edge
+    end = physical_end_time + job_seg.seg_edge
+    data_start = data_start_time - job_seg.seg_edge
+    data_end = data_end_time + job_seg.seg_edge
 
     # for each frame, if the frame start time is later than the job segment start time, use the frame start time
     if frame.start_time > start:
+        # sync the data start time with the offset of frame start time
+        data_start += frame.start_time - start
         start = frame.start_time
 
     # for each frame, if the frame end time is earlier than the job segment end time, use the frame end time
     if frame.end_time < end:
+        # sync the data end time with the offset of frame end time
+        data_end -= end - frame.end_time
         end = frame.end_time
 
     i = job_seg.ifos.index(frame.ifo)
     data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
     print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
+    # shift the time label of the physical data to the data start time
+    data.shift(data_start - data.t0)
     if int(data.sample_rate.value) != int(job_seg.sample_rate):
         sample_rate_old = data.sample_rate.value
         w = convert_to_wavearray(data)
