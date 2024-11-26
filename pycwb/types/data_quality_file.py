@@ -1,10 +1,12 @@
 import csv
 import logging
 import numpy as np
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class DQFile:
     """
     Class to store data quality file information
@@ -25,25 +27,12 @@ class DQFile:
         flag for 4 column data
     """
 
-    __slots__ = ['ifo', 'file', 'dq_cat', 'shift', 'invert', 'c4']
-
-    def __init__(self, ifo, file, dq_cat, shift, invert, c4):
-        #: str: ifo name
-        self.ifo = ifo
-        #: str: data quality file path
-        self.file = file
-        #: str: data quality category
-        self.dq_cat = dq_cat
-        #: float: shift in seconds
-        self.shift = shift
-        #: bool: flag for inversion
-        self.invert = invert
-        #: bool: flag for 4 column data
-        self.c4 = c4
-
-    def __repr__(self):
-        return f"DQFile(ifo={self.ifo}, file={self.file}, dq_cat={self.dq_cat}, " \
-               f"shift={self.shift}, invert={self.invert}, c4={self.c4})"
+    ifo: str
+    file: str
+    dq_cat: str
+    shift: float
+    invert: bool
+    c4: bool
 
     @property
     def __dict__(self):

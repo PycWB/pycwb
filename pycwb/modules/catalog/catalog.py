@@ -1,7 +1,7 @@
 import os
 import logging
 from filelock import SoftFileLock
-import json
+import orjson
 import pycwb
 from pycwb.config import Config
 from pycwb.types.job import WaveSegment
@@ -32,13 +32,13 @@ def create_catalog(filename: str, config: Config, jobs: list[WaveSegment]) -> No
     output = {
         "config": config.__dict__,
         "version": pycwb.__version__,
-        "jobs": [job.to_dict() for job in jobs],
+        "jobs": jobs,
         "events": []
     }
 
     with SoftFileLock(filename + ".lock", timeout=10):
-        with open(filename, 'w') as f:
-            json.dump(output, f, default=vars)
+        with open(filename, 'wb') as f:
+            f.write(orjson.dumps(output, option=orjson.OPT_SERIALIZE_NUMPY))
 
 
 def add_events_to_catalog(filename: str, events: list[Event]) -> None:
