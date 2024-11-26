@@ -51,13 +51,13 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
                      plot: bool = None, compress_json: bool = None) -> tuple[list[WaveSegment], Config, str]:
     """
     This is the helper function to create the run directories, create catalog file,
-     make a copy of user parameter file, and generate the job segments from the Config.
+    make a copy of user parameter file, and generate the job segments from the Config.
     It also provides several check to prevent override of existing run.
 
     :param working_dir: The working dirs for the run
     :param config_file: The path of user parameter YAML file
     :param n_proc: The number of processes to use, will overwrite the setting the YAML file
-    :param dry_run: If set true, no file will the created or downloaded. Only the job segments list will be returned
+    :param dry_run: If set true, only the working directory and xtalk will be created.
     :param overwrite: If set true, the previous run will be overwritten
     :param plot: If set true, all the output settings will be switched on
     :param compress_json: If set true, the output json will be compressed
@@ -68,15 +68,14 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     file_name = os.path.abspath(config_file)
 
     # create working directory and change the current working directory to the given working directory
-    if not dry_run:
-        create_working_directory(working_dir)
-        os.chdir(working_dir)
+    create_working_directory(working_dir)
+    os.chdir(working_dir)
 
     # check environment
     # check_MRACatalog_setting()
 
     # read user parameters
-    config = Config(file_name, dry_run=dry_run)
+    config = Config(file_name)
 
     job_segments = create_job_segment_from_config(config)
     # slags = generate_slags(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)

@@ -13,14 +13,14 @@ def fetch_txt(url):
 
 
 def download_file(url, file_name):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # Raises an exception for 4XX or 5XX errors
-        with open(file_name, "wb") as f:
-            f.write(response.content)
-        return f"File {file_name} has been downloaded successfully."
-    except requests.RequestException as e:
-        return f"An error occurred: {e}"
+    #try:
+    response = requests.get(url)
+    response.raise_for_status()  # Raises an exception for 4XX or 5XX errors
+    with open(file_name, "wb") as f:
+        f.write(response.content)
+    #     print(f"File {file_name} has been downloaded successfully.")
+    # except requests.RequestException as e:
+    #     print(f"An error occurred: {e}")
 
 
 def check_and_download_xtalk_data(file_name: str, output_dir: str = ".")\
