@@ -101,7 +101,7 @@ def get_seg_list(ifo, dq_list, seg_len, seg_mls, seg_edge):
     return []
 
 
-def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=None):
+def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=None, index_start=0):
     """
     Build the job segment list.
 
@@ -130,6 +130,8 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=N
     :type sample_rate:  int
     :param shift:  list of shifts for each interferometer, used for superlags
     :type shift:  list[float]
+    :param index_start:  index of the first segment
+    :type index_start:  int
     :return:  Return the job segment list
     :rtype:  list[WaveSegment]
     """
@@ -140,7 +142,7 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=N
     lostlivetime = 0
     job_list = []
 
-    seg_index = 0
+    seg_index = index_start
 
     for i in range(len(dq_list[0])):
         start = math.ceil(dq_list[0][i]) + seg_edge

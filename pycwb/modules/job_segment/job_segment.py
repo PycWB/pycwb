@@ -159,6 +159,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
 
     # for super lag, shift the cat1 list and merge the segments
     if slag_size > 0:
+        # TODO: add checks on maximum super lag size
         slags = generate_slags(len(ifos), slag_min, slag_max, slag_off, slag_size)
 
         for slag in slags:
@@ -172,7 +173,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
             print('live time', merged_slag_seg_list[1][0] - merged_slag_seg_list[0][0])
             job_segments += get_job_list(ifos, merged_seg_list, seg_len, seg_mls,
                                          seg_edge=seg_edge, sample_rate=sample_rate,
-                                         shift=np.array(slag) * seg_len)
+                                         shift=np.array(slag) * seg_len, index_start=len(job_segments))
 
         # cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
         #
