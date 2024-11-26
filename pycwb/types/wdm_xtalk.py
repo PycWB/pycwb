@@ -1,3 +1,5 @@
+import os
+
 import ROOT
 import logging
 
@@ -18,7 +20,10 @@ class WDMXTalkCatalog:
 
     def load_MRA(self, file):
         logger.info("Loading catalog of WDM cross-talk coefficients: %s", file)
-        self.catalog.read(file)
+        if not os.path.isfile(file):
+            raise FileNotFoundError(f"File {file} does not exist")
+        else:
+            self.catalog.read(file)
 
     @property
     def tag(self):
