@@ -62,9 +62,10 @@ def create_job_segment_from_config(config):
     if config.dq_files or periods:
         # get the job segments from the DQ files
         job_segments = job_segment_from_dq(config.dq_files, config.ifo,
-                                          config.segLen, config.segMLS, config.segEdge, config.segOverlap,
-                                          config.rateANA, config.l_high, config.inRate,
-                                           periods=periods)
+                                           config.segLen, config.segMLS, config.segEdge, config.segOverlap,
+                                           config.rateANA, config.l_high, config.inRate, periods=periods,
+                                           slag_size=config.slagSize, slag_off=config.slagOff,
+                                           slag_min=config.slagMin, slag_max=config.slagMax)
 
     ############################################
     ## injections on job segments
