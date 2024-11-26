@@ -29,7 +29,7 @@ class Config:
         Schema to validate the user parameters, default is the schema defined in pycwb.constants.user_parameters_schema
     """
 
-    def __init__(self, file_name, schema=None):
+    def __init__(self, file_name, schema=None, dry_run=False):
         if schema is None:
             schema = user_parameters_schema
 
@@ -69,7 +69,8 @@ class Config:
             setattr(self, key, params[key])
 
         self.add_derived_key()
-        self.check_xtalk_file(self.MRAcatalog)
+        if not dry_run:
+            self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
         self.check_lagStep()
 
