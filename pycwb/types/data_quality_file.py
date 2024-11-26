@@ -72,7 +72,7 @@ class DQFile:
         # read the file in dq_file
         with open(self.file, 'r') as f:
             # remove the spaces at the end of each line
-            lines = (line.rstrip() for line in f)
+            lines = (line.rstrip().replace("\t", " ") for line in f)
             # read the file as csv
             reader = csv.reader(lines, delimiter=" ", skipinitialspace=True)
             for line in reader:
@@ -84,7 +84,7 @@ class DQFile:
                     else:
                         _start, _stop = line
                 except ValueError:
-                    logger.error(f"Error to parse : {line}")
+                    logger.error(f"Error to parse {self.file}: {line}")
                     raise Exception("Wrong format")
 
 
