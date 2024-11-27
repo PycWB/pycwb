@@ -64,13 +64,13 @@ def add_events_to_catalog(filename: str, events: list[Event]) -> None:
     if os.path.exists(filename):
         with SoftFileLock(filename + ".lock", timeout=10):
             # read the json file
-            with open(filename, 'r+') as f:
-                catalog = json.load(f)
+            with open(filename, 'rb+') as f:
+                catalog = orjson.loads(f.read())
                 # append events
                 catalog["events"].extend(events)
                 # write the json file
                 f.seek(0)
-                json.dump(catalog, f)
+                f.write(orjson.dumps(catalog, option=orjson.OPT_SERIALIZE_NUMPY))
     else:
         logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
 

@@ -130,6 +130,7 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     config = overwrite_config(config, n_proc=n_proc,
                               compress_output_json=compress_json)
 
+    # TODO: load job segments from catalog
     job_segments = create_job_segment_from_config(config)
 
     if max(job_ids) > len(job_segments):

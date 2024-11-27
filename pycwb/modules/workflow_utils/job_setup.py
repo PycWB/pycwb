@@ -14,6 +14,7 @@ def create_working_directory(working_dir: str) -> None:
 
 def check_if_output_exists(working_dir: str, output_dir: str, overwrite: bool = False) -> None:
     output_dir = f"{working_dir}/{output_dir}"
+    print(f"Checking if output directory exist: {output_dir}")
     if os.path.exists(output_dir) and os.listdir(output_dir):
         if overwrite:
             print(f"Overwrite output directory {output_dir}")

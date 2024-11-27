@@ -156,8 +156,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     for seg_list in seg_lists[1:]:
         merged_seg_list = merge_seg_list(merged_seg_list, seg_list)
 
-    job_segments = get_job_list(ifos, merged_seg_list, seg_len, seg_mls, seg_edge, sample_rate)
-
+    job_segments = []
     # for super lag, shift the cat1 list and merge the segments
     if slag_size > 0:
         # TODO: add checks on maximum super lag size
@@ -175,8 +174,11 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
             job_segments += get_job_list(ifos, merged_seg_list, seg_len, seg_mls,
                                          seg_edge=seg_edge, sample_rate=sample_rate,
                                          shift=np.array(slag) * seg_len, index_start=len(job_segments))
+    else:
+        job_segments += get_job_list(ifos, merged_seg_list, seg_len, seg_mls, seg_edge, sample_rate)
 
-        # cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
+
+    # cat1_list = read_seg_list(dq_file_list, 'CWB_CAT1', periods)
         #
         # # Get number/list of available super lag jobs
         # # Compute the available segments with length=segLen contained between the interval [min,max]

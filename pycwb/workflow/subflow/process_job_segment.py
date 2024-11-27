@@ -1,3 +1,4 @@
+import os
 from pycwb.config import Config
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
