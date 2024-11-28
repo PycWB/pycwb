@@ -133,10 +133,10 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # TODO: load job segments from catalog
     job_segments = create_job_segment_from_config(config)
 
-    if max(job_ids) > len(job_segments):
+    if max(job_ids) - 1 > len(job_segments):
         raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
 
-    selected_job_segments = [job_segments[i] for i in job_ids]
+    selected_job_segments = [job_segments[i-1] for i in job_ids]
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)

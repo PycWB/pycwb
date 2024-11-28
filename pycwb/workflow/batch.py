@@ -37,7 +37,7 @@ def batch_setup(file_name, working_dir='.',
     # create a bash script to run the job
     n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
     jobs = [{
-        'jobs': f"{i * job_per_worker}-{min((i + 1) * job_per_worker, len(job_segments)) - 1}"
+        'jobs': f"{i * job_per_worker + 1}-{min((i + 1) * job_per_worker, len(job_segments))}"
     } for i in range(n_workers)]
     config_file_name = os.path.basename(file_name)
 
