@@ -264,7 +264,9 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
             job_seg.frames = []
         for i, ifo in enumerate(ifos):
             job_seg.frames += get_frame_files_from_gwdatafind(ifo, gwdatafind['site'][i], gwdatafind['frametype'][i],
-                                                            job_seg.start_time, job_seg.end_time, seg_edge, host=host)
+                                                            job_seg.physical_start_times[ifo],
+                                                            job_seg.physical_end_times[ifo],
+                                                            seg_edge, host=host)
         # job_seg.frames = get_frame_files_from_gwdatafind(ifos, gwdatafind['site'], gwdatafind['frametype'],
         #                                                  job_seg.start_time, job_seg.end_time, seg_edge, host=host)
 
