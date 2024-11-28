@@ -77,7 +77,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         f.write(f"""#!/bin/bash
 source /cvmfs/oasis.opensciencegrid.org/ligo/sw/conda/etc/profile.d/conda.sh
 conda activate {conda_env}
-{additional_init}
+{additional_init or ''}
 pycwb merge-catalog --work-dir={working_dir}
         """)
 

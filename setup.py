@@ -35,6 +35,7 @@ install_requires = [
     "dask",
     "dask_jobqueue",
     "htcondor",
+    "psutil",
     # "nds2-client",
     # "python-nds2-client"
 ]
