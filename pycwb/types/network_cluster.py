@@ -215,6 +215,9 @@ class Cluster:
             values = [getattr(p, key) for p in res]
             v_map = coo_array((values, (times, freqs)), shape=(max(times) + 1, max(freqs) + 1))
 
+            # if all zeros, skip
+            if len(v_map.nonzero()[0]) == 0:
+                continue
             # strip the zeros
             t_start = v_map.nonzero()[0].min()
             d = v_map.toarray()[t_start:]
