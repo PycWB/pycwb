@@ -73,7 +73,7 @@ def init_parser(parser):
                         '-j',
                         metavar='job_per_worker',
                         type=int,
-                        default=5,
+                        default=1,
                         help='the number of jobs per worker')
 
     # memory

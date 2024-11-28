@@ -148,10 +148,12 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
 
         try:
             # TODO: run the job in a separate process to prevent memory leak
-            process = multiprocessing.Process(target=process_job_segment,
-                                              args=(working_dir, config, job_seg, compress_json, catalog_file))
-            process.start()
-            process.join()
+            # process = multiprocessing.Process(target=process_job_segment,
+            #                                   args=(working_dir, config, job_seg, compress_json, catalog_file))
+            # process.start()
+            # process.join()
+            process_job_segment(working_dir, config, job_seg,
+                                compress_json=compress_json, catalog_file=catalog_file)
 
             # create a flag file to indicate the job is done
             try:
