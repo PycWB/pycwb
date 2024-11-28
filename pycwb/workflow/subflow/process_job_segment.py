@@ -1,4 +1,6 @@
+import logging
 import os
+import psutil
 from pycwb.config import Config
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
@@ -13,6 +15,8 @@ from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, plot_skymap_flow
+
+logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
@@ -31,9 +35,14 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.injections:
         data = generate_injection(config, job_seg, data)
 
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
     tf_maps, nRMS_list = data_conditioning(config, data)
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
 
     fragment_clusters = coherence(config, tf_maps, nRMS_list)
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     network = Network(config, tf_maps, nRMS_list)
 
@@ -43,8 +52,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
         super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
                                                        xtalk_coeff, xtalk_lookup_table, layers)
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     events, clusters, skymap_statistics = likelihood(config, network, super_fragment_clusters)
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # only return selected events
     events_data = []
@@ -60,6 +71,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for injection in job_seg.injections:
                 if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
                     event.injection = injection
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # save triggers
     trigger_folders = []
@@ -68,6 +80,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
                          save_sky_map=config.save_sky_map, catalog_file=catalog_file)
         )
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     for trigger_folder, trigger in zip(trigger_folders, events_data):
         # FIXME: add gps time and segment time on the x ticks
@@ -82,6 +95,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         if config.plot_sky_map:
             plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
+    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     return trigger_folders
 

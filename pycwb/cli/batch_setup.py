@@ -76,6 +76,22 @@ def init_parser(parser):
                         default=5,
                         help='the number of jobs per worker')
 
+    # memory
+    parser.add_argument('--memory',
+                        '-m',
+                        metavar='memory',
+                        type=str,
+                        default='6GB',
+                        help='the memory for each job')
+
+    # disk
+    parser.add_argument('--disk',
+                        '-k',
+                        metavar='disk',
+                        type=str,
+                        default='4GB',
+                        help='the disk space for each job')
+
     # compress json
     parser.add_argument('--compress_json',
                         action='store_true',
@@ -124,6 +140,8 @@ def command(args):
                 conda_env=args.conda_env,
                 additional_init=args.additional_init,
                 n_proc=args.n_proc,
+                memory=args.memory,
+                disk=args.disk,
                 accounting_group=args.accounting_group,
                 job_per_worker=args.job_per_worker,
                 submit=args.submit,

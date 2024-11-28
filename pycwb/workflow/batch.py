@@ -14,7 +14,8 @@ from pycwb.workflow.subflow.process_job_segment import process_job_segment
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster="condor", conda_env=None, additional_init="",
-                accounting_group=None, job_per_worker=10, n_proc=1, dry_run=False, submit=False):
+                accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
+                dry_run=False, submit=False):
     import htcondor
 
     logger_init(log_file, log_level)
@@ -65,9 +66,10 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         "log": "../log/batch-$(jobs).log",
         "accounting_group": accounting_group,
         "accounting_group_user": getpass.getuser(),
+        "on_exit_hold": "(ExitCode != 0)",
         "request_cpus": f"{n_proc}",
-        "request_memory": "6GB",
-        "request_disk": "4GB",
+        "request_memory": memory,
+        "request_disk": disk,
     })
 
     # create merge.sh
