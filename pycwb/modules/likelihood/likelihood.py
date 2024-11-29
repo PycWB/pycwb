@@ -2,7 +2,6 @@ import copy
 import time
 import logging
 
-from benchmark.likelihood.generate_data_for_likelihood import fragment_clusters
 from pycwb.config import Config
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, \
     convert_netcluster_to_fragment_clusters
