@@ -13,3 +13,4 @@ dependencies:
   - root=6.26.10
   - setuptools_scm
   - sphinx_rtd_theme
+  - furo
