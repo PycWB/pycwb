@@ -37,6 +37,8 @@ def likelihood(config, network, fragment_cluster, lag=0) -> tuple[list[Event], l
 
     # backward compatibility for list of fragment clusters
     if isinstance(fragment_cluster, list):
+        logger.warning("The support of list type is only for backward compatibility. "
+                       "It will be deprecated in the future.")
         if len(fragment_cluster) != 1:
             raise ValueError("Only one fragment cluster is supported, if you want to process multiple fragment clusters,"
                              " please use a loop. The support of list type is only for backward compatibility.")
