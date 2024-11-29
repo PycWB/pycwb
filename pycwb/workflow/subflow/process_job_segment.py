@@ -54,48 +54,49 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                                        xtalk_coeff, xtalk_lookup_table, layers)
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    events, clusters, skymap_statistics = likelihood(config, network, super_fragment_clusters)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+    for lag, fragment_cluster in enumerate(super_fragment_clusters):
+        events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster, lag=lag)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    # only return selected events
-    events_data = []
-    for i, cluster in enumerate(clusters):
-        if cluster.cluster_status != -1:
-            continue
-        event = events[i]
-        event_skymap_statistics = skymap_statistics[i]
-        events_data.append((event, cluster, event_skymap_statistics))
+        # only return selected events
+        events_data = []
+        for i, cluster in enumerate(clusters):
+            if cluster.cluster_status != -1:
+                continue
+            event = events[i]
+            event_skymap_statistics = skymap_statistics[i]
+            events_data.append((event, cluster, event_skymap_statistics))
 
-        # associate the injections if there are any
-        if job_seg.injections:
-            for injection in job_seg.injections:
-                if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
-                    event.injection = injection
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+            # associate the injections if there are any
+            if job_seg.injections:
+                for injection in job_seg.injections:
+                    if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
+                        event.injection = injection
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    # save triggers
-    trigger_folders = []
-    for trigger in events_data:
-        trigger_folders.append(
-            save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
-                         save_sky_map=config.save_sky_map, catalog_file=catalog_file)
-        )
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+        # save triggers
+        trigger_folders = []
+        for trigger in events_data:
+            trigger_folders.append(
+                save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
+                             save_sky_map=config.save_sky_map, catalog_file=catalog_file)
+            )
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    for trigger_folder, trigger in zip(trigger_folders, events_data):
-        # FIXME: add gps time and segment time on the x ticks
-        event, cluster, event_skymap_statistics = trigger
-        reconstruct_waveforms_flow(trigger_folder, config, job_seg.ifos,
-                                   event, cluster,
-                                   save=config.save_waveform, plot=config.plot_waveform,
-                                   save_injection=config.save_injection, plot_injection=config.plot_injection)
+        for trigger_folder, trigger in zip(trigger_folders, events_data):
+            # FIXME: add gps time and segment time on the x ticks
+            event, cluster, event_skymap_statistics = trigger
+            reconstruct_waveforms_flow(trigger_folder, config, job_seg.ifos,
+                                       event, cluster,
+                                       save=config.save_waveform, plot=config.plot_waveform,
+                                       save_injection=config.save_injection, plot_injection=config.plot_injection)
 
-        if config.plot_trigger:
-            plot_trigger_flow(trigger_folder, event, cluster)
+            if config.plot_trigger:
+                plot_trigger_flow(trigger_folder, event, cluster)
 
-        if config.plot_sky_map:
-            plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+            if config.plot_sky_map:
+                plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     return trigger_folders
 

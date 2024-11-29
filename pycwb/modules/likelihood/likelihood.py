@@ -1,6 +1,8 @@
 import copy
 import time
 import logging
+
+from benchmark.likelihood.generate_data_for_likelihood import fragment_clusters
 from pycwb.config import Config
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, \
     convert_netcluster_to_fragment_clusters
@@ -10,16 +12,18 @@ from pycwb.types.network_event import Event
 logger = logging.getLogger(__name__)
 
 
-def likelihood(config, network, fragment_clusters) -> tuple[list[Event], list[Cluster], list[dict]]:
+def likelihood(config, network, fragment_cluster, lag=0) -> tuple[list[Event], list[Cluster], list[dict]]:
     """
-    calculate likelihood
+    calculate likelihood for single lag
 
     :param config: user configuration
     :type config: Config
     :param network: network
     :type network: Network
-    :param fragment_clusters: list of cluster
-    :type fragment_clusters: list[FragmentCluster]
+    :param fragment_cluster: FragmentCluster or list of FragmentCluster
+    :type fragment_cluster: FragmentCluster or list[FragmentCluster]
+    :param lag: lag
+    :type lag: int
     :return: the list of events and clusters
     :rtype: list[Event], list[Cluster]
     """
@@ -30,58 +34,64 @@ def likelihood(config, network, fragment_clusters) -> tuple[list[Event], list[Cl
     clusters = []
 
     skymap_statistics = []
-    for j, fragment_cluster in enumerate(fragment_clusters):
-        # cycle = fragment_cluster.shift
 
-        # print header
-        print("-------------------------------------------------------")
-        print("-> Processing %d clusters in lag=%d" % (len(fragment_clusters[j].clusters), j))
-        print("   ----------------------------------------------------")
+    # backward compatibility for list of fragment clusters
+    if isinstance(fragment_cluster, list):
+        if len(fragment_cluster) != 1:
+            raise ValueError("Only one fragment cluster is supported, if you want to process multiple fragment clusters,"
+                             " please use a loop. The support of list type is only for backward compatibility.")
+        fragment_cluster = fragment_cluster[0]
+    # cycle = fragment_cluster.shift
 
-        # loop over clusters to calculate likelihood
-        for k, selected_cluster in enumerate(fragment_cluster.clusters):
-            # skip if cluster is already rejected
-            if selected_cluster.cluster_status > 0:
-                continue
+    # print header
+    logger.info("-------------------------------------------------------")
+    logger.info("-> Processing %d clusters in lag=%d" % (len(fragment_cluster.clusters), lag))
+    logger.info("   ----------------------------------------------------")
 
-            cluster_id = k + 1
-            event, cluster = _likelihood(config, network, j, cluster_id, fragment_cluster.dump_cluster(k))
-            events.append(event)
-            clusters.append(cluster)
+    # loop over clusters to calculate likelihood
+    for k, selected_cluster in enumerate(fragment_cluster.clusters):
+        # skip if cluster is already rejected
+        if selected_cluster.cluster_status > 0:
+            continue
 
-            # skip saving skymap_statistic if cluster is already rejected
-            if cluster.cluster_status != -1:
-                skymap_statistics.append(None)
-                continue
+        cluster_id = k + 1
+        event, cluster = _likelihood(config, network, lag, cluster_id, fragment_cluster.dump_cluster(k))
+        events.append(event)
+        clusters.append(cluster)
 
-            # save skymap statistic
-            skymap_statistic = {
-                "nSensitivity": [],
-                "nAlignment": [],
-                "nLikelihood": [],
-                "nNullEnergy": [],
-                "nCorrEnergy": [],
-                "nCorrelation": [],
-                "nSkyStat": [],
-                "nProbability": [],
-                "nDisbalance": [],
-                "nNetIndex": [],
-                "nEllipticity": [],
-                "nPolarisation": []
-            }
+        # skip saving skymap_statistic if cluster is already rejected
+        if cluster.cluster_status != -1:
+            skymap_statistics.append(None)
+            continue
 
-            for key in skymap_statistic:
-                var = getattr(network.net, key)
+        # save skymap statistic
+        skymap_statistic = {
+            "nSensitivity": [],
+            "nAlignment": [],
+            "nLikelihood": [],
+            "nNullEnergy": [],
+            "nCorrEnergy": [],
+            "nCorrelation": [],
+            "nSkyStat": [],
+            "nProbability": [],
+            "nDisbalance": [],
+            "nNetIndex": [],
+            "nEllipticity": [],
+            "nPolarisation": []
+        }
 
-                layer_size = var.value.size()
-                l = []
-                for i in range(layer_size):
-                    l.extend(list(var.value[i]))
-                # L = var.size()
-                # skymap_statistic[key] = [var.get(l) for l in range(L)]
-                skymap_statistic[key] = l
+        for key in skymap_statistic:
+            var = getattr(network.net, key)
 
-            skymap_statistics.append(skymap_statistic)
+            layer_size = var.value.size()
+            l = []
+            for i in range(layer_size):
+                l.extend(list(var.value[i]))
+            # L = var.size()
+            # skymap_statistic[key] = [var.get(l) for l in range(L)]
+            skymap_statistic[key] = l
+
+        skymap_statistics.append(skymap_statistic)
 
     n_events = len([c for c in clusters if c.cluster_status == -1])
 
