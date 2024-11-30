@@ -30,9 +30,13 @@ def sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters, para
                                      [(config, tf_maps, i, fragment_cluster)
                                       for i, fragment_cluster in enumerate(fragment_clusters)])
     else:
-        sparse_tables = list(map(_sparse_table_from_fragment_cluster,
-                                 [(config, tf_maps, i, fragment_cluster)
-                                  for i, fragment_cluster in enumerate(fragment_clusters)]))
+        sparse_tables = []
+
+        for i, fragment_cluster in enumerate(fragment_clusters):
+            sparse_tables.append(_sparse_table_from_fragment_cluster((config, tf_maps, i, fragment_cluster)))
+        # sparse_tables = list(map(_sparse_table_from_fragment_cluster,
+        #                          [(config, tf_maps, i, fragment_cluster)
+        #                           for i, fragment_cluster in enumerate(fragment_clusters)]))
 
     timer_stop = time.perf_counter()
     logger.info("----------------------------------------")

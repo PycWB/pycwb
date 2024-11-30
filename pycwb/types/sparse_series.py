@@ -165,11 +165,17 @@ class SparseTimeFrequencySeries:
             cluster += [(ll, tt) for ll in range(start_l, end_l + 1) for tt in range(start_t, end_t + 1)]
 
         # remove duplicates
-        cluster = sorted(set(cluster))
+        cluster = list(dict.fromkeys(cluster))
+        cluster.sort()
 
         # get the sparse maps
-        sparse_map_00 = [self.wavelet.get_map_00(ll * n_layer + tt) for tt, ll in cluster]
-        sparse_map_90 = [self.wavelet.get_map_90(ll * n_layer + tt) for tt, ll in cluster]
+        # sparse_map_00 = [self.wavelet.get_map_00(ll * n_layer + tt) for tt, ll in cluster]
+        # sparse_map_90 = [self.wavelet.get_map_90(ll * n_layer + tt) for tt, ll in cluster]
+        sparse_map_00 = []
+        sparse_map_90 = []
+        for tt, ll in cluster:
+            sparse_map_00.append(self.wavelet.get_map_00(ll * n_layer + tt))
+            sparse_map_90.append(self.wavelet.get_map_90(ll * n_layer + tt))
 
         self.set_sparse_table(cluster, sparse_map_00, sparse_map_90)
 
