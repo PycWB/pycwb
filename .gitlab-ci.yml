@@ -20,7 +20,7 @@ image: buildpack-deps:jammy
 stages:          # List of stages for jobs, and their order of execution
   - build
   - deploy
-  - post-deploy
+  #- post-deploy
 
 .install_common: &install_common
   - wget -q https://root.cern/download/root_v6.26.14.Linux-ubuntu22-x86_64-gcc11.4.tar.gz
