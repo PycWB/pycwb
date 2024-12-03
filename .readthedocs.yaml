@@ -6,7 +6,7 @@ build:
     python: "mambaforge-22.9"
   jobs:
     pre_install:
-      - git update-index --assume-unchanged environment.yml docs/conf.py
+      - git update-index --assume-unchanged envs/environment.yml docs/source/conf.py
 
 conda:
   environment: envs/environment.yml
