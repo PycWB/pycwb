@@ -4,6 +4,9 @@ build:
   os: "ubuntu-22.04"
   tools:
     python: "mambaforge-22.9"
+  jobs:
+    pre_install:
+      - git update-index --assume-unchanged environment.yml docs/conf.py
 
 conda:
   environment: envs/environment.yml
