@@ -2,8 +2,8 @@ import numpy as np
 import orjson
 
 
-def ifar_rho(source, ranking_par, bin_size, livetime_key='livetime', save='ifar_rho.json', **kwargs):
-    print(f"Calculating ifar and rho for source {source} with ranking parameter {ranking_par} with bin size {bin_size}")
+def far_rho(source, ranking_par, bin_size, livetime_key='livetime', save='far_rho.json', **kwargs):
+    print(f"Calculating far and rho for source {source} with ranking parameter {ranking_par} with bin size {bin_size}")
 
     if source not in kwargs:
         print(f"Source {source} not found in the results")
@@ -28,10 +28,10 @@ def ifar_rho(source, ranking_par, bin_size, livetime_key='livetime', save='ifar_
     accumulate_hist = np.cumsum(hist[::-1])[::-1]
     bins = bins[:-1]
 
-    # calculate the ifar for each bin
+    # calculate the far for each bin
     livetime_in_years = livetime / 86400 / 365.25
-    ifar = [accumulate_hist[i] / livetime_in_years for i in range(len(accumulate_hist))]
-    data = {'bins': bins, 'ifar': ifar, 'n_events': hist,
+    far = [accumulate_hist[i] / livetime_in_years for i in range(len(accumulate_hist))]
+    data = {'bins': bins, 'far': far, 'n_events': hist,
             'ranking_par': ranking_par, 'source': source, 'livetime': livetime}
 
     if save:
