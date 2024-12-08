@@ -1,0 +1,27 @@
+global:
+  work_dir: /Users/yumengxu/Downloads/pycwb_examples
+steps:
+  - action: report.read_results.read_triggers
+    args:
+      run_dir: background
+      filters:
+        - "lag[0]>0"
+    output_alias: 'background'
+  - action: report.read_results.read_live_time
+    args:
+      run_dir: background
+      filters:
+        - "lag[0]>0"
+    output_alias: 'livetime'
+  - action: report.ifar_rho.ifar_rho # this module will calculate the ifar_rho and pass the output to the downstream modules
+    args:
+      source: 'background'
+      livetime_key: 'livetime'
+      ranking_par: rho[0]
+      bin_size: 0.0001
+      save: ifar_rho.json
+    output_alias: 'ifar_rho'
+  - action: report.report.report # generate report
+    args:
+      ifar_rho_source: 'ifar_rho'
+      output: public/

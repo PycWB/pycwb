@@ -1,0 +1,40 @@
+global:
+  work_dir: /Users/yumengxu/Downloads/pycwb_examples/non-builtin-waveform
+steps:
+  - action: events_filter # this module will filter the event and pass to the downstream modules
+    args:
+      run_dir: O4_K01_BurstLD_BKG
+      conditions:
+        - "lag>0" # only process non-zero lag events
+    output_alias: 'background'
+  - action: events_filter # read the training set and name it as 'training_set'
+    args:
+      run_dir: O4_K01_BurstLD_SIM_TrainingSet1
+    output_alias: 'sim_training_set'
+  - action: events_splitter # split the background into bkg_training_set and bkg_test_set
+    args:
+      source: 'background'
+      percent: [0.5, 0.5]
+    output_alias: ['bkg_training_set', 'bkg_test_set']
+  - action: xgboost_model # take the training set from the upsteam
+    args:
+      background: ['bkg_training_set']
+      simulation: ['sim_training_set']
+      config: xgb_config.py
+      get_rhor: xgb_get_rhor.py
+      name: 'model_v1a'
+  - action: xgboost_apply # apply xgb on BKG
+    args:
+      source: 'bkg_test_set'
+      model: 'model_v1a'
+    output_alias: 'bkg_test_set.model_v1a'
+  - action: ifar_rho # this module will calculate the ifar_rho and pass the output to the downstream modules
+    args:
+      source: 'bkg_test_set.model_v1a'
+      ranking_par: rho[1]
+      ranking_par_bin: 0.0001
+    output_alias: 'bkg_test_set.model_v1a.ifar'
+  - action: report # generate report
+    args:
+      source: 'bkg_test_set.model_v1a.ifar'
+    output: public/
