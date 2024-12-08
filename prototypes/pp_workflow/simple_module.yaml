@@ -13,15 +13,32 @@ steps:
       filters:
         - "lag[0]>0"
     output_alias: 'livetime'
-  - action: report.ifar_rho.ifar_rho # this module will calculate the ifar_rho and pass the output to the downstream modules
+  - action: report.far_rho.far_rho # this module will calculate the far_rho and pass the output to the downstream modules
     args:
       source: 'background'
       livetime_key: 'livetime'
       ranking_par: rho[0]
       bin_size: 0.0001
-      save: ifar_rho.json
-    output_alias: 'ifar_rho'
+      save: far_rho.json
+    output_alias: 'far_rho'
+  - action: report.read_results.read_triggers
+    args:
+      run_dir: background
+      filters:
+        - "lag[0]==0"
+    output_alias: 'zero_lag'
+  - action: report.read_results.read_live_time
+    args:
+      run_dir: background
+      filters:
+        - "lag[0]==0"
+    output_alias: 'livetime_zerolag'
+  - action: report.report.report_zero_lag
+    args:
+      source: 'zero_lag'
+      livetime_key: 'livetime_zerolag'
+      far_rho_source: 'far_rho'
   - action: report.report.report # generate report
     args:
-      ifar_rho_source: 'ifar_rho'
+      far_rho_source: 'far_rho'
       output: public/
