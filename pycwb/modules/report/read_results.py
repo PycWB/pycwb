@@ -4,6 +4,13 @@ import os
 def read_catalog(catalog_file):
     with open(catalog_file, 'r') as f:
         catalog = orjson.loads(f.read())
+
+    # remove redundant events (unique event['id']) in catalog
+    n_events_before = len(catalog['events'])
+    catalog['events'] = list({f"{event['job_id']}_{event['id']}": event for event in catalog['events']}.values())
+    n_events_after = len(catalog['events'])
+    if n_events_before != n_events_after:
+        print(f"Removed {n_events_before - n_events_after} duplicated events")
     return catalog
 
 def read_event(event_file):
