@@ -143,7 +143,7 @@ class Event:
     #     self.ioSNR = []
     #     self.Deff = []
 
-    def output(self, net, ID, LAG):
+    def output(self, net, ID, LAG, shifts):
         """
         Generate event parameters from ROOT.network object
 
@@ -160,6 +160,7 @@ class Event:
         self.neted = [0, 0, 0]
         self.eventID = [0, 0, 0]
         self.type = [0, 0, 0]
+        self.slag = shifts or [0, 0, 0]
 
 
         pwc = net.getwc(LAG)
@@ -302,7 +303,7 @@ class Event:
     #     """
     #     return json.dumps(self.__dict__)
 
-    def summary(self, job_id, id):
+    def summary(self):
         """
         Return a summary of the event for building the catalog
 

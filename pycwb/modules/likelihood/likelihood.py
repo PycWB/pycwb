@@ -11,7 +11,8 @@ from pycwb.types.network_event import Event
 logger = logging.getLogger(__name__)
 
 
-def likelihood(config, network, fragment_cluster, lag=0) -> tuple[list[Event], list[Cluster], list[dict]]:
+def likelihood(config, network, fragment_cluster, lag=0, shifts=(0,0,0), job_id=None) \
+        -> tuple[list[Event], list[Cluster], list[dict]]:
     """
     calculate likelihood for single lag
 
@@ -56,7 +57,8 @@ def likelihood(config, network, fragment_cluster, lag=0) -> tuple[list[Event], l
             continue
 
         cluster_id = k + 1
-        event, cluster = _likelihood(config, network, lag, cluster_id, fragment_cluster.dump_cluster(k))
+        event, cluster = _likelihood(config, network, lag, cluster_id, fragment_cluster.dump_cluster(k), shifts)
+        event.job_id = job_id
         events.append(event)
         clusters.append(cluster)
 
@@ -106,7 +108,7 @@ def likelihood(config, network, fragment_cluster, lag=0) -> tuple[list[Event], l
     return events, clusters, skymap_statistics
 
 
-def _likelihood(config, network, lag, cluster_id, fragment_cluster):
+def _likelihood(config, network, lag, cluster_id, fragment_cluster, shifts=(0,0,0)):
     # dumb variables
     k = 0
 
@@ -149,7 +151,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster):
     cluster = convert_netcluster_to_fragment_clusters(network.get_cluster(lag)).clusters[0]
 
     event = Event()
-    event.output(network.net, k + 1, lag)
+    event.output(network.net, k + 1, lag, shifts=shifts)
 
     pwc.clean(1)
 

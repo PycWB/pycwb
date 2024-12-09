@@ -55,7 +55,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     for lag, fragment_cluster in enumerate(super_fragment_clusters):
-        events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster, lag=lag)
+        events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
+                                                         lag=lag, shifts=job_seg.shift, job_id=job_seg.index)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # only return selected events
@@ -72,8 +73,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 for injection in job_seg.injections:
                     if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
                         event.injection = injection
-            event.job_id = job_seg.index
-            event.slag = job_seg.shift
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # save triggers
