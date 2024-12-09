@@ -53,20 +53,27 @@ def read_triggers(work_dir, run_dir, filters=None, file='catalog/catalog.json',*
     return events
 
 
-def read_live_time(work_dir, run_dir, filters=None, lag_filter=None, file='catalog/catalog.json',**kwargs):
+def read_live_time(work_dir, run_dir, filters=None, file='catalog/catalog.json',**kwargs):
     print(f"Reading live time from {os.path.join(work_dir, run_dir, file)}")
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
 
     # TODO: this is for the simplest case only
-    # combine the filter for lag and slag
     lags = np.arange(catalog['config']['lagSize'])
-    if lag_filter:
-        lags = [lag for lag in lags if eval(lag_filter, {"__builtins__": None}, {'lag': lag})]
-    jobs = catalog['jobs']
 
-    # FIXME: fix the live time calculation
+    livetimes = []
+    for job in catalog['jobs']:
+        shift = job['shift']
+        livetime_single = job['end_time'] - job['start_time']
+        for lag in lags:
+            livetimes.append({
+                'shift': shift,
+                'livetime': livetime_single,
+                'lag': lag
+            })
+
     if filters:
-        jobs = list_dict_filter(jobs, filters, name='jobs')
+        livetimes = list_dict_filter(livetimes, filters, name='live times')
 
-    durations = [(job['end_time'] - job['start_time']) * len(lags) for job in jobs]
-    return sum(durations)
+    total_live_time = sum([lt['livetime'] for lt in livetimes])
+    print(f"Total live time: {total_live_time}s ({total_live_time/86400:.2f} days, {total_live_time/86400/365:.2f} years)")
+    return total_live_time
