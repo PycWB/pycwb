@@ -11,6 +11,7 @@ import pycwb.cli.batch_setup as batch_setup
 import pycwb.cli.batch_runner as batch_runner
 import pycwb.cli.xtalk as xtalk
 import pycwb.cli.merge_catalog as merge_catalog
+import pycwb.cli.post_process as post_process
 
 def main():
     parser = argparse.ArgumentParser(prog='pycwb')
@@ -45,6 +46,10 @@ def main():
     merge_catalog_parser = subparsers.add_parser('merge-catalog', help='Merge catalog files')
     merge_catalog.init_parser(merge_catalog_parser)
     merge_catalog_parser.set_defaults(func=merge_catalog.command)
+
+    post_process_parser = subparsers.add_parser('post-process', help='Post process the results')
+    post_process.init_parser(post_process_parser)
+    post_process_parser.set_defaults(func=post_process.command)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):

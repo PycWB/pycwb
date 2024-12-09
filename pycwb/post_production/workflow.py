@@ -3,7 +3,7 @@ import copy
 from pycwb.utils.module import import_helper
 
 
-def parse_workflow(workflow_file):
+def run_workflow(workflow_file):
     with open(workflow_file, 'r') as f:
         workflow = yaml.safe_load(f)
 
