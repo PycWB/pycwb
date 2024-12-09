@@ -31,7 +31,10 @@ def read_triggers(work_dir, run_dir, filters, file='catalog/catalog.json',**kwar
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
 
     events = []
-    for event in catalog['events']:
+    n_events = len(catalog['events'])
+    for i, event in enumerate(catalog['events']):
+        if i % 10000 == 0:
+            print(f"Reading event {i}/{n_events}")
         event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
         events.append(read_event(event_file))
 
