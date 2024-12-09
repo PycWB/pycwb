@@ -1,7 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
-
 import orjson
 import os
+import numpy as np
+
 
 def read_catalog(catalog_file):
     with open(catalog_file, 'rb') as f:
@@ -20,15 +21,15 @@ def read_event(event_file):
         events = orjson.loads(f.read())
     return events
 
-def events_filter(events, conditions):
-    print(f"number of events before filtering: {len(events)}")
+def list_dict_filter(data, conditions, name='event'):
+    print(f"number of {name} before filtering: {len(data)}")
     filter_string = " and ".join(conditions)
     print(f"Performing filter: {filter_string}")
-    filtered_events = [event for event in events if eval(filter_string, {"__builtins__": None}, event)]
-    print(f"number of events after filtering: {len(filtered_events)}")
+    filtered_events = [d for d in data if eval(filter_string, {"__builtins__": None}, d)]
+    print(f"number of {name} after filtering: {len(filtered_events)}")
     return filtered_events
 
-def read_triggers(work_dir, run_dir, filters, file='catalog/catalog.json',**kwargs):
+def read_triggers(work_dir, run_dir, filters=None, file='catalog/catalog.json',**kwargs):
     print(f"Reading results from {os.path.join(work_dir, run_dir, file)}")
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
 
@@ -48,13 +49,24 @@ def read_triggers(work_dir, run_dir, filters, file='catalog/catalog.json',**kwar
                 print(f"Reading event {i}/{n_events}", end='\r')
             events.append(future.result())
     if filters:
-        events = events_filter(events, filters)
+        events = list_dict_filter(events, filters, name='triggers')
     return events
 
 
-def read_live_time(work_dir, run_dir, file='catalog/catalog.json',**kwargs):
+def read_live_time(work_dir, run_dir, filters=None, lag_filter=None, file='catalog/catalog.json',**kwargs):
     print(f"Reading live time from {os.path.join(work_dir, run_dir, file)}")
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
+
+    # TODO: this is for the simplest case only
+    # combine the filter for lag and slag
+    lags = np.arange(catalog['config']['lagSize'])
+    if lag_filter:
+        lags = [lag for lag in lags if eval(lag_filter, {"__builtins__": None}, {'lag': lag})]
     jobs = catalog['jobs']
-    durations = [job['end_time'] - job['start_time'] for job in jobs]
+
+    # FIXME: fix the live time calculation
+    if filters:
+        jobs = list_dict_filter(jobs, filters, name='jobs')
+
+    durations = [(job['end_time'] - job['start_time']) * len(lags) for job in jobs]
     return sum(durations)

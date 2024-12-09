@@ -58,6 +58,15 @@ def report_zero_lag(source, livetime_key='livetime_zerolag', far_rho_source='far
         index = int(index.rstrip(']'))
         values = [trigger[base_key][index] for trigger in triggers]
 
+    # remove None in values and print warning with trigger job_id and id
+    none_values = [triggers[i] for i, value in enumerate(values) if value is None]
+    if none_values:
+        print(f"Warning: {len(none_values)} triggers with None value in {ranking_par}")
+        for none_value in none_values:
+            print(none_value)
+    triggers = [triggers[i] for i, value in enumerate(values) if value is not None]
+    values = [value for value in values if value is not None]
+
     # align the values to the bin
     bin_indices = np.digitize(values, bins) - 1
     far_values = [far[i] for i in bin_indices]
