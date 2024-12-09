@@ -160,7 +160,7 @@ class Event:
         self.neted = [0, 0, 0]
         self.eventID = [0, 0, 0]
         self.type = [0, 0, 0]
-        self.slag = shifts if shifts else [0, 0, 0]
+        self.slag = shifts if shifts is not None else [0, 0, 0]
 
 
         pwc = net.getwc(LAG)
