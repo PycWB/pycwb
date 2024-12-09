@@ -1,8 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import orjson
 import os
 
 def read_catalog(catalog_file):
-    with open(catalog_file, 'r') as f:
+    with open(catalog_file, 'rb') as f:
         catalog = orjson.loads(f.read())
 
     # remove redundant events (unique event['id']) in catalog
@@ -14,7 +16,7 @@ def read_catalog(catalog_file):
     return catalog
 
 def read_event(event_file):
-    with open(event_file, 'r') as f:
+    with open(event_file, 'rb') as f:
         events = orjson.loads(f.read())
     return events
 
@@ -32,12 +34,19 @@ def read_triggers(work_dir, run_dir, filters, file='catalog/catalog.json',**kwar
 
     events = []
     n_events = len(catalog['events'])
-    for i, event in enumerate(catalog['events']):
-        if i % 10000 == 0:
-            print(f"Reading event {i}/{n_events}")
-        event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
-        events.append(read_event(event_file))
+    # for i, event in enumerate(catalog['events']):
+    #     if i % 100 == 0:
+    #         print(f"Reading event {i}/{n_events}", end='\r')
+    #     event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
+    #     events.append(read_event(event_file))
 
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(read_event, os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json"))
+                   for event in catalog['events']]
+        for i, future in enumerate(futures):
+            if i % 100 == 0:
+                print(f"Reading event {i}/{n_events}", end='\r')
+            events.append(future.result())
     if filters:
         events = events_filter(events, filters)
     return events

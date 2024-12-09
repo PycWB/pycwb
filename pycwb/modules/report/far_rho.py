@@ -23,6 +23,15 @@ def far_rho(source, ranking_par, bin_size, livetime_key='livetime', save='far_rh
         index = int(index.rstrip(']'))
         values = [trigger[base_key][index] for trigger in triggers]
 
+    # remove None in values and print warning with trigger job_id and id
+    none_values = [triggers[i] for i, value in enumerate(values) if value is None]
+    if none_values:
+        print(f"Warning: {len(none_values)} triggers with None value in {ranking_par}")
+        for none_value in none_values:
+            print(none_value)
+
+    values = [value for value in values if value is not None]
+
     # calculate the n_events vs rho
     hist, bins = np.histogram(values, bins=np.arange(min(values), max(values) + bin_size, bin_size))
     accumulate_hist = np.cumsum(hist[::-1])[::-1]
