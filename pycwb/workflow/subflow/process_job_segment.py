@@ -72,6 +72,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 for injection in job_seg.injections:
                     if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
                         event.injection = injection
+            event.job_id = job_seg.index
+            event.slag = job_seg.shift
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # save triggers
@@ -134,7 +136,7 @@ def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
     # if catalog_file is in full absolute path, use it directly
     if not catalog_file.startswith("/"):
         catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-    add_events_to_catalog(catalog_file, event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
+    add_events_to_catalog(catalog_file, event.summary())
 
     return trigger_folder
 

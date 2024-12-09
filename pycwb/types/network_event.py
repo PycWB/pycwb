@@ -75,6 +75,7 @@ class Event:
     ioSNR: list[float] = field(default_factory=list)
     Deff: list[float] = field(default_factory=list)
     injection: dict = field(default_factory=dict)
+    job_id: int = None
 
 
     # def __init__(self):
@@ -159,7 +160,6 @@ class Event:
         self.neted = [0, 0, 0]
         self.eventID = [0, 0, 0]
         self.type = [0, 0, 0]
-        self.slag = [0, 0, 0]
 
 
         pwc = net.getwc(LAG)
@@ -312,11 +312,13 @@ class Event:
         :rtype: dict
         """
         return {
-            "job_id": job_id,
-            "id": id,
+            "job_id": self.job_id,
+            "id": self.long_id,
             "ifo": self.ifo_list,
             "nevent": self.nevent,
             "rho": self.rho[0],
+            "lag": self.lag[0],
+            "slag": self.slag,
             "start": self.start,
             "stop": self.stop,
             "low": self.low,
@@ -340,6 +342,16 @@ class Event:
         hash_object = hashlib.md5()
         hash_object.update(f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}".encode("utf-8"))  # Encoding the string to bytes
         return hash_object.hexdigest()[-10:]
+
+    @property
+    def long_id(self):
+        """
+        Return a long ID of the event
+
+        :return: Long ID of the event
+        :rtype: str
+        """
+        return f"{self.stop[0]}_{self.hash_id}"
 
     def dump(self):
         """
