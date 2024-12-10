@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import poisson
+from .continues_poisson import get_percentiles, get_percentiles_ROOT
 
 
 def report(far_rho_source=None, **kwargs):
@@ -104,15 +105,24 @@ def report_zero_lag(source, livetime_key='livetime_zerolag', far_rho_source='far
     n_events_range = livetime_in_years / ifar_range
     sigma_levels = [1, 2, 3]
     confidence_levels = [0.6827, 0.9545, 0.9973]
-    conf_intervals = {sigma: poisson.interval(confidence, n_events_range) for sigma, confidence in zip(sigma_levels, confidence_levels)}
+    # conf_intervals = {sigma: poisson.interval(confidence, n_events_range) for sigma, confidence in zip(sigma_levels, confidence_levels)}
+    # # Plot the Poisson confidence intervals
+    # colors = ['gray', 'gray', 'gray']
+    # for sigma, color in zip(sigma_levels, colors):
+    #     lower, upper = conf_intervals[sigma]
+    precentiles = np.array([[(1 - c) / 2, 1 - (1 - c) / 2] for c in confidence_levels]).reshape(-1)
+    #conf_intervals = {sigma: poisson.interval(confidence, n_events_range) for sigma, confidence in zip(sigma_levels, confidence_levels)}
+    conf_intervals = np.array([get_percentiles_ROOT(n, precentiles).reshape((len(confidence_levels), 2)) for n in n_events_range])
     # Plot the Poisson confidence intervals
     colors = ['gray', 'gray', 'gray']
     for sigma, color in zip(sigma_levels, colors):
-        lower, upper = conf_intervals[sigma]
-        plt.fill_between(ifar_range, lower, upper, color=color, alpha=0.6 / sigma, label=f'{sigma} sigma', linewidth=0.4)
+        lower, upper = conf_intervals[:, sigma-1, 0], conf_intervals[:, sigma-1, 1]
+        plt.fill_between(ifar_range, lower, upper, color=color, alpha=0.6 / sigma, label=f'{sigma} sigma', linewidth=0.4,interpolate=True)
 
     plt.xlabel('ifar')
     plt.ylabel('n_events')
+    plt.xlim(ifar_min, ifar_max)
+    plt.ylim(8e-1, max(n_events_range))
     plt.xscale('log')
     plt.yscale('log')
     plt.legend()
