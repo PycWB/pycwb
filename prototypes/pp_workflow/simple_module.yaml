@@ -4,14 +4,14 @@ steps:
   - action: report.read_results.read_triggers
     args:
       run_dir: background
-      filters:
-        - "lag[0]>0"
+      prefilters:
+        - "shift[0] != 0 or shift[1] != 0 or lag != 0"
     output_alias: 'background'
   - action: report.read_results.read_live_time
     args:
       run_dir: background
       filters:
-        - "lag[0]>0"
+        - "shift[0] != 0 or shift[1] != 0 or lag != 0"
     output_alias: 'livetime'
   - action: report.far_rho.far_rho # this module will calculate the far_rho and pass the output to the downstream modules
     args:
@@ -24,14 +24,18 @@ steps:
   - action: report.read_results.read_triggers
     args:
       run_dir: background
-      filters:
-        - "lag[0]==0"
+      prefilters:
+        - "lag==0"
+        - "slag[0]==0"
+        - "slag[1]==0"
     output_alias: 'zero_lag'
   - action: report.read_results.read_live_time
     args:
       run_dir: background
       filters:
-        - "lag[0]==0"
+        - "lag==0"
+        - "shift[0]==0"
+        - "shift[1]==0"
     output_alias: 'livetime_zerolag'
   - action: report.report.report_zero_lag
     args:

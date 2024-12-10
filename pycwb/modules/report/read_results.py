@@ -29,7 +29,7 @@ def list_dict_filter(data, conditions, name='event'):
     print(f"number of {name} after filtering: {len(filtered_events)}")
     return filtered_events
 
-def read_triggers(work_dir, run_dir, filters=None, file='catalog/catalog.json',**kwargs):
+def read_triggers(work_dir, run_dir, prefilters=None, filters=None, file='catalog/catalog.json',**kwargs):
     print(f"Reading results from {os.path.join(work_dir, run_dir, file)}")
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
 
@@ -40,6 +40,8 @@ def read_triggers(work_dir, run_dir, filters=None, file='catalog/catalog.json',*
     #         print(f"Reading event {i}/{n_events}", end='\r')
     #     event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
     #     events.append(read_event(event_file))
+    if prefilters:
+        catalog['events'] = list_dict_filter(catalog['events'], prefilters, name='catalog triggers')
 
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(read_event, os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json"))
