@@ -101,7 +101,7 @@ def report_zero_lag(source, livetime_key='livetime_zerolag', far_rho_source='far
 
     # Calculate the Poisson confidence intervals
     # generate the ifar range which is denser at the higher ifar
-    ifar_range = np.linspace(ifar_min, ifar_max, 100000)
+    ifar_range = np.linspace(ifar_min, ifar_max, 500)
     n_events_range = livetime_in_years / ifar_range
     sigma_levels = [1, 2, 3]
     confidence_levels = [0.6827, 0.9545, 0.9973]
