@@ -12,6 +12,7 @@ import pycwb.cli.batch_runner as batch_runner
 import pycwb.cli.xtalk as xtalk
 import pycwb.cli.merge_catalog as merge_catalog
 import pycwb.cli.post_process as post_process
+import pycwb.cli.gwosc as gwosc
 
 def main():
     parser = argparse.ArgumentParser(prog='pycwb')
@@ -51,6 +52,11 @@ def main():
     post_process.init_parser(post_process_parser)
     post_process_parser.set_defaults(func=post_process.command)
 
+    #gwosc subcommand
+    gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')
+    gwosc.init_parser(gwosc_parser)
+    gwosc_parser.set_defaults(func=gwosc.command)
+        
     args = parser.parse_args()
     if hasattr(args, 'func'):
         args.func(args)
