@@ -124,6 +124,10 @@ You can get help by running the command with the ``-h`` option. Here are the cur
      - Setup batch run
    * - ``pycwb batch-runner``
      - Runner for batch run, used for the job submission
+   * - ``pycwb post-process``
+     - Run the post process workflow
+   * - ``pycwb gwosc``
+     - Download data from GWOSC and setup the search
    * - ``pycwb flow``
      - Run search with prefect flow
    * - ``pycwb xtalk``
