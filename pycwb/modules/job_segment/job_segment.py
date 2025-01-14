@@ -148,7 +148,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     seg_lists = []
     for ifo in ifos:
         dq_files = [dq_file for dq_file in dq_file_list if dq_file.ifo == ifo]
-        cat1_list = read_seg_list(dq_files, 'CWB_CAT1')
+        cat1_list = read_seg_list(dq_files, 'CWB_CAT1', periods)
         seg_lists.append(cat1_list)
 
     # for zero super lag, merge the segments, and get the standard job segments
