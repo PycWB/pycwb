@@ -98,7 +98,10 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
     # if not hasattr(ROOT, "_copy_to_wavearray"):
     #     declare_function()
 
-    ROOT.pycwb_copy_to_wavearray(data.value.ctypes.data_as(c_double_p), h, len(data.value))
+    # convert it to contiguous array to prevent segmentation fault
+    new_data = np.ascontiguousarray(data.value, dtype=np.float64)
+
+    ROOT.pycwb_copy_to_wavearray(new_data.ctypes.data_as(c_double_p), h, len(data.value))
 
     h.start(np.asarray(data.t0, dtype=np.double))
     h.rate(int(1. / np.asarray(data.dt, dtype=np.double)))
@@ -122,7 +125,10 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
     # if not hasattr(ROOT, "_copy_to_wavearray"):
     #     declare_function()
 
-    ROOT.pycwb_copy_to_wavearray(data.data.ctypes.data_as(c_double_p), h, len(data.data))
+    # convert it to contiguous array to prevent segmentation fault
+    new_data = np.ascontiguousarray(data.data, dtype=np.float64)
+
+    ROOT.pycwb_copy_to_wavearray(new_data.ctypes.data_as(c_double_p), h, len(data.data))
 
     h.start(np.asarray(data.start_time, dtype=np.double))
     h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
