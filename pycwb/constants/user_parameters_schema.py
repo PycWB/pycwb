@@ -574,6 +574,21 @@ schema = {
             "description": "[sec] noise sampling time stride",
             "default": 20.
         },
+        "whiteSolver": {
+            "type": "string",
+            "description": "method used to solve Levinson Recursion ['Fast'] or ['Standard']. Only needed if whiteMethod is 'MESA'", 
+            "default": 'Fast'
+        },
+        "whiteOrder": {
+            "type": "number", 
+            "description": "Maximum Autoregressive order for the Lenvinson Recursion", 
+            "default": 800.
+        },
+        "whiteMethod": {
+            "type": "string",
+            "description": "Sets what type of whitening has to be used. if 'wavelet' WDM time-frequency domain is applied. if 'mesa', it whitens with a PSD estimate given by mesa in the frequency domain. If 'mixed', the whitening is performed in time frequency domain but the nRMS is substitued with a MESA estimate for the coefficients", 
+            "default": "wavelet"
+        },
         "simulation": {
             "type": "string",
             "default": None

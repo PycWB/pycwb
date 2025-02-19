@@ -62,6 +62,10 @@ class Config:
         self.WDM_beta_order = None
         self.WDM_precision = None
         self.WDM_level = []
+        #Add whitening parameters 
+        self.whiteMethod = None 
+        self.whiteSolver = None
+        self.whiteOrder = None 
 
         params = load_yaml(file_name, schema)
 
