@@ -1,6 +1,6 @@
 from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow import prepare_job_runs
-from pycwb.workflow.subflow.process_job_segment import process_job_segment
+from pycwb.workflow.subflow.job_segment_conditioning import job_segment_conditioning
 
 
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
@@ -18,6 +18,6 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
     # client = Client(cluster)
 
     for job_seg in job_segments:
-        process_job_segment(working_dir, config, job_seg, compress_json=compress_json)
+        process_job_segment(working_dir, config, job_seg)
 
     # client.close()
