@@ -43,9 +43,8 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
 
     pvalues = [anderson_test(tf_map.data) for tf_map in tf_maps]
     
-    save_pvalue(pvalues) 
+    save_pvalue(pvalues, config)
     
-    return trigger_folders
 
 def anderson_test(data): 
     """performs an Anderson Darling test on input data and returns its pvalue """ 
