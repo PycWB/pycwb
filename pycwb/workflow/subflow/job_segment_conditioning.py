@@ -70,7 +70,7 @@ def save_pvalue(values, config, working_dir: str, sub_dir: str):
         os.makedirs(test_folder)
     else: 
         print(f"Test folder {test_folder} already exists, skip") 
-    filename = '/'.join([test_folder,'anderson.txt']) 
+    filename = '/'.join([test_folder,f'anderson_{config.whiteMethod}.txt']) 
     
     print(f'Saving Anderson pvalue') 
      try:
