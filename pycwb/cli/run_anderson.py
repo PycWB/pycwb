@@ -65,7 +65,7 @@ def init_parser(parser):
 
 
 def command(args):
-    from pycwb.workflow.testConditioning import search
+    from pycwb.workflow.run_anderson import search
 
     if args.list_n_jobs or args.list_jobs:
         jobs = search(args.user_parameter_file, working_dir=args.work_dir, n_proc=1, dry_run=True)

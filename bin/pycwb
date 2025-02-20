@@ -13,6 +13,7 @@ import pycwb.cli.xtalk as xtalk
 import pycwb.cli.merge_catalog as merge_catalog
 import pycwb.cli.post_process as post_process
 import pycwb.cli.gwosc as gwosc
+import pycwb.cli.run_anderson as run_anderson
 
 def main():
     parser = argparse.ArgumentParser(prog='pycwb')
@@ -51,6 +52,10 @@ def main():
     post_process_parser = subparsers.add_parser('post-process', help='Post process the results')
     post_process.init_parser(post_process_parser)
     post_process_parser.set_defaults(func=post_process.command)
+
+    run_anderson_parser = subparsers.add_parser('run_anderson', help='Run Test on conditioned data')
+    run_anderson.init_parser(run_anderson_parser)
+    run_parser.set_defaults(func=run_anderson.command)
 
     #gwosc subcommand
     gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')
