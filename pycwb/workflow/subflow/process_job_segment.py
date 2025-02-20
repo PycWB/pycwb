@@ -40,105 +40,48 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     tf_maps, nRMS_list = data_conditioning(config, data)
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+    pvalues = [anderson_test(tf_map.data) for tf_map in tf_maps]
+    
+    save_pvalue(pvalues, config)
 
-    fragment_clusters = coherence(config, tf_maps, nRMS_list)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+    return 0
 
-    network = Network(config, tf_maps, nRMS_list)
+def anderson_test(data): 
+    """performs an Anderson Darling test on input data and returns its pvalue """ 
+    
+    statistics = anderson(data)[0]
+    if statistics <= 0.2: 
+        pvalue = 1 - np.exp(-13.436 + 101.14 * (statistics)- 223.73 * statistics ** 2) 
+    
+    elif statistics > 0.2 and statistics <= 0.34: 
+        pvalue = 1 - np.exp(-8.318 + 42.796 * statistics- 59.938* statistics ** 2)
+    
+    elif statistics > 0.34 and statistics < .6: 
+        pvalue = np.exp(0.9177 - 4.279 * statistics - 1.38 * statistics ** 2)
+    
+    elif statistics >= .6: 
+        pvalue = np.exp(1.2937 - 5.709 * statistics + 0.0186 * statistics ** 2)
+        
+    return pvalue
 
-    if config.use_root_supercluster:
-        super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
-    else:
-        xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-        super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
-                                                       xtalk_coeff, xtalk_lookup_table, layers)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-    for lag, fragment_cluster in enumerate(super_fragment_clusters):
-        events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
-                                                         lag=lag, shifts=job_seg.shift, job_id=job_seg.index)
-        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-        # only return selected events
-        events_data = []
-        for i, cluster in enumerate(clusters):
-            if cluster.cluster_status != -1:
-                continue
-            event = events[i]
-            event_skymap_statistics = skymap_statistics[i]
-            events_data.append((event, cluster, event_skymap_statistics))
-
-            # associate the injections if there are any
-            if job_seg.injections:
-                for injection in job_seg.injections:
-                    if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
-                        event.injection = injection
-        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-        # save triggers
-        trigger_folders = []
-        for trigger in events_data:
-            trigger_folders.append(
-                save_trigger(working_dir, config.trigger_dir, config.catalog_dir, job_seg, trigger,
-                             save_sky_map=config.save_sky_map, catalog_file=catalog_file)
-            )
-        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-        for trigger_folder, trigger in zip(trigger_folders, events_data):
-            # FIXME: add gps time and segment time on the x ticks
-            event, cluster, event_skymap_statistics = trigger
-            reconstruct_waveforms_flow(trigger_folder, config, job_seg.ifos,
-                                       event, cluster,
-                                       save=config.save_waveform, plot=config.plot_waveform,
-                                       save_injection=config.save_injection, plot_injection=config.plot_injection)
-
-            if config.plot_trigger:
-                plot_trigger_flow(trigger_folder, event, cluster)
-
-            if config.plot_sky_map:
-                plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
-        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-    return trigger_folders
-
-
-def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
-                 job_seg: WaveSegment, trigger_data: tuple | list,
-                 save_sky_map: bool = True, index: bool = None, catalog_file: str = "catalog.json"):
-    if index is None:
-        event, cluster, event_skymap_statistics = trigger_data
-    else:
-        event, cluster, event_skymap_statistics = trigger_data[index]
-
-    if catalog_file is None:
-        catalog_file = "catalog.json"
-
-    if cluster.cluster_status != -1:
-        return 0
-
-    print(f"Saving trigger {event.hash_id}")
-
-    trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{event.stop[0]}_{event.hash_id}"
-    print(f"Creating trigger folder: {trigger_folder}")
-    if not os.path.exists(trigger_folder):
-        os.makedirs(trigger_folder)
-    else:
-        print(f"Trigger folder {trigger_folder} already exists, skip")
-
-    print(f"Saving trigger data")
-    save_dataclass_to_json(event, f"{trigger_folder}/event.json")
-    save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
-    if save_sky_map:
-        save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
-
-    print(f"Adding event to catalog")
-    # if catalog_file is in full absolute path, use it directly
-    if not catalog_file.startswith("/"):
-        catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-    add_events_to_catalog(catalog_file, event.summary())
-
-    return trigger_folder
-
+def save_pvalue(values, config, working_dir: str, sub_dir: str):
+    test_folder = '/'.join([working_dir, sub_dir]) 
+    if not os.path.exists(test_folder): 
+        os.makedirs(test_folder)
+    else: 
+        print(f"Test folder {test_folder} already exists, skip") 
+    filename = '/'.join([test_folder,f'anderson_{config.whiteMethod}.txt']) 
+    
+    print(f'Saving Anderson pvalue') 
+    try:
+        with open(filename, 'a') as f:  # Open file in append mode
+            f.write(' '.join(map(str, values)) + '\n')  # Append value with newline
+    except FileNotFoundError:
+        with open(filename, 'w') as f:  
+            f.write(' '.join(config.ifos) + '\n')
+            f.write(' '.join(map(str, values))+ '\n')
+            
+    return filename 
 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):
 #     print_job_info(job_seg)
