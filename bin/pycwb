@@ -55,7 +55,7 @@ def main():
 
     run_anderson_parser = subparsers.add_parser('run_anderson', help='Run Test on conditioned data')
     run_anderson.init_parser(run_anderson_parser)
-    run_parser.set_defaults(func=run_anderson.command)
+    run_anderson_parser.set_defaults(func=run_anderson.command)
 
     #gwosc subcommand
     gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')

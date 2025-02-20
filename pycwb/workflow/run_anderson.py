@@ -18,6 +18,6 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
     # client = Client(cluster)
 
     for job_seg in job_segments:
-        process_job_segment(working_dir, config, job_seg)
+        job_segment_conditioning(working_dir, config, job_seg)
 
     # client.close()
