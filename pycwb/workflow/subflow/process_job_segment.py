@@ -38,13 +38,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     tf_maps, nRMS_list = data_conditioning(config, data)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
     pvalues = [anderson_test(tf_map.data) for tf_map in tf_maps]
     
     save_pvalue(pvalues, config)
-
-    return 0
+    
 
 def anderson_test(data): 
     """performs an Anderson Darling test on input data and returns its pvalue """ 
@@ -82,6 +79,7 @@ def save_pvalue(values, config, working_dir: str, sub_dir: str):
             f.write(' '.join(map(str, values))+ '\n')
             
     return filename 
+
 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):
 #     print_job_info(job_seg)

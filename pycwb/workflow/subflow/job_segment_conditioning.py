@@ -73,7 +73,7 @@ def save_pvalue(values, config, working_dir: str, sub_dir: str):
     filename = '/'.join([test_folder,f'anderson_{config.whiteMethod}.txt']) 
     
     print(f'Saving Anderson pvalue') 
-     try:
+    try:
         with open(filename, 'a') as f:  # Open file in append mode
             f.write(' '.join(map(str, values)) + '\n')  # Append value with newline
     except FileNotFoundError:
