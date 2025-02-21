@@ -104,6 +104,15 @@ def _whiten(config,h,tf_map,wavelet):
         #Recover nRMS as root median square from whitened and non-whitened data 
         data_per_batch = int(config.whiteStride // wdm_dt)
         nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)  
+        cutoff = int(nRMS_matrix.shape[1] % (20 / wdm_dt))
+                
+        #check the length is proper to flatten nRMS array afterwards 
+        if cutoff == 0: 
+            pass
+        else: 
+            print('cutting last {} s of data'.format(cutoff * wdm_dt))
+            nRMS_matrix = nRMS_matrix[:,:-cutoff]
+        
         nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch)
         nRMS = np.sqrt(np.median(nRMS_reshaped ** 2, axis = 2)).reshape(-1, order = 'F')          
         
