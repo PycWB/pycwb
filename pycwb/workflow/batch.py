@@ -2,13 +2,13 @@ import multiprocessing
 import os
 import getpass
 import shutil
+import logging
 from pathlib import Path
-
-from htcondor import dags
-
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
-from pycwb.workflow.subflow.process_job_segment import process_job_segment
+from pycwb.utils.module import import_function
+
+logger = logging.getLogger(__name__)
 
 
 def batch_setup(file_name, working_dir='.',
@@ -17,6 +17,7 @@ def batch_setup(file_name, working_dir='.',
                 accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
                 dry_run=False, submit=False):
     import htcondor
+    from htcondor import dags
 
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
@@ -139,6 +140,10 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                                                        n_proc=n_proc, compress_json=compress_json)
     logger_init(log_file, log_level)
 
+    logger.info(f"Loading segment processer: {config.segment_processer}")
+    main_func = import_function(config.segment_processer)
+    logger.info(f"Segment processer loaded: {main_func}")
+
     exceptions = []
     for job_seg in job_segments:
         # check if the job is done
@@ -152,7 +157,7 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
             #                                   args=(working_dir, config, job_seg, compress_json, catalog_file))
             # process.start()
             # process.join()
-            process_job_segment(working_dir, config, job_seg,
+            main_func(working_dir, config, job_seg,
                                 compress_json=compress_json, catalog_file=catalog_file)
 
             # create a flag file to indicate the job is done

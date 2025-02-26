@@ -1,6 +1,9 @@
 from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow import prepare_job_runs
-from pycwb.workflow.subflow.process_job_segment import process_job_segment
+from pycwb.utils.module import import_function
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
@@ -17,7 +20,11 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
     # cluster.scale(n_proc)
     # client = Client(cluster)
 
+    logger.info(f"Loading segment processer: {config.segment_processer}")
+    main_func = import_function(config.segment_processer)
+    logger.info(f"Segment processer loaded: {main_func}")
+
     for job_seg in job_segments:
-        process_job_segment(working_dir, config, job_seg, compress_json=compress_json)
+        main_func(working_dir, config, job_seg, compress_json=compress_json)
 
     # client.close()

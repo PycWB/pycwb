@@ -13,3 +13,13 @@ def import_helper(module_str, module_name):
         module = importlib.import_module(module_str)
 
     return module
+
+
+def import_function(func_str):
+    func_name = func_str.split('.')[-1]
+    module_name = '.'.join(func_str.split('.')[:-1])
+    if not module_name.startswith('pycwb'):
+        module_name = f"pycwb.modules.{module_name}"
+    module = import_helper(module_name, module_name)
+    func = getattr(module, func_name)
+    return func
