@@ -1,18 +1,44 @@
 import numpy as np
 from math import ceil
 import logging
+from pycwb.modules.injection.par_generator import get_injection_list_from_parameters, repeat
+from pycwb.modules.injection.sky_distribution import generate_sky_distribution, distribute_injections_on_sky
 
 logger = logging.getLogger(__name__)
 
 
-def generate_injection_list_from_config(injection_config):
-    pass
+def generate_injection_list_from_config(injection_config, start_gps_time, end_gps_time):
+    repeat_injection = injection_config['repeat_injection']
+    rate = eval(injection_config['rate']) if type(injection_config['rate']) == str else injection_config['rate']
+    jitter = injection_config['jitter']
+    sky_distribution = injection_config['sky_distribution']
+
+    injections = get_injection_list_from_parameters(injection_config)
+    injections = repeat(injections, repeat_injection)
+    sky_locations = generate_sky_distribution(sky_distribution, len(injections))
+    distribute_injections_on_sky(injections, sky_locations)
+    distribute_inj_in_gps_time(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+
+    return injections
+
 
 def distribute_inj_in_gps_time(injections, rate, jitter, 
                                start_gps_time, end_gps_time, 
                                edge_buffer = 0,
                                shuffle=True,
                                allow_repeat=True):
+    """
+    Distribute injections in GPS time with a given rate and jitter.
+
+    :param injections: The list of injections
+    :param rate: The rate of injections
+    :param jitter: The jitter of injections
+    :param start_gps_time: The start GPS time
+    :param end_gps_time: The end GPS time
+    :param edge_buffer: The buffer time at the start and end of the data
+    :param shuffle: Shuffle the injections before distributing in time
+    :param allow_repeat: Allow repeating the injections if there is not enough time to distribute
+    """
     interval = 1 / rate
     if jitter > interval / 2:
         raise ValueError('Jitter is too large')
@@ -55,6 +81,6 @@ def distribute_inj_in_gps_time(injections, rate, jitter,
     # add gps time and trail number to injections
     for i, inj in enumerate(injections):
         inj['gps_time'] = gps_times[i]
-        inj['trail'] = i // n_inj_in_each_repeat
+        inj['trail_idx'] = i // n_inj_in_each_repeat
 
     return injections
