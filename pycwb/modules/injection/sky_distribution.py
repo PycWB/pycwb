@@ -31,12 +31,10 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
     elif dist_type == "Patch":
         center_ra, center_dec = sky_distribution_config['patch']['center']
         radius = sky_distribution_config['patch']['radius']
-        frame = sky_distribution_config['patch']['frame']
         
         # Generate points in a small circle around the center
-        skycoord = SkyCoord(ra=center_ra*u.deg, dec=center_dec*u.deg, frame='icrs')
-        ra, dec = skycoord.represent_as('unitsphericalcircle').sample(n_samples, radius=radius*u.deg)
-        return ra.to(u.deg).value, dec.to(u.deg).value
+        ra, dec = sample_uniform_sky_area(center_ra, center_dec, radius, n_samples)
+        return ra, dec
     
     elif dist_type == "Custom":
         # Example: Sample from a HEALPix map
@@ -53,15 +51,15 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         raise ValueError(f"Unknown distribution type: {dist_type}")
     
 
-def distribute_injections(injections, sky_locations, coordsys='icrs'):
+def distribute_injections_on_sky(injections, sky_locations, shuffle=True, coordsys='icrs'):
     """
     Randomly distribute injections in the sky locations. If the coordinate system is ICRS, the sky locations are saved in ra and dec attributes. 
     Otherwise, the sky locations are saved in sky_loc attribute and the coordsys attribute is added for later conversion with gps_time.
 
     :param injections: The list of injections
     :param sky_locations: The list of sky locations (ra, dec)
+    :param shuffle: Shuffle the sky locations before distributing the injections
     :param coordsys: The coordinate system of the sky locations
-    :return: The distributed injections
     """
     ra = sky_locations[0]
     dec = sky_locations[1]
@@ -69,23 +67,73 @@ def distribute_injections(injections, sky_locations, coordsys='icrs'):
     if len(injections) != len(ra) or len(injections) != len(dec):
         raise ValueError("The number of injections and sky locations must be the same.")
     
-    distributed_injections = []
-    # shuffle the sky locations
-    ra = np.random.shuffle(ra)
-    dec = np.random.shuffle(dec)
+    # distributed_injections = []
 
+    # shuffle the sky locations
+    if shuffle:
+        np.random.shuffle(ra)
+        np.random.shuffle(dec)
+
+    print(f'len(injections): {len(injections)}')
+    print(f'len(ra): {len(ra)}')
+    print(f'len(dec): {len(dec)}')
     if coordsys == 'icrs':
         # If the coordinate system is ICRS, save the sky location directly in ra and dec attributes
-        for inj, sky_loc in zip(injections, sky_locations):
-            inj['ra'] = sky_loc[0]
-            inj['dec'] = sky_loc[1]
-            distributed_injections.append(inj)
+        for i, inj in enumerate(injections):
+            inj['ra'] = ra[i]
+            inj['dec'] = dec[i]
     else:
         # If the coordinate system is not ICRS, save the sky location in sky_loc attribute and add the coordsys for later conversion
-        for inj, sky_loc in zip(injections, sky_locations):
-            inj['sky_loc'] = sky_loc
+        for i, inj in enumerate(injections):
+            inj['sky_loc'] = [ra[i], dec[i]]
             inj['coordsys'] = coordsys
-            distributed_injections.append(inj)
-    
-    return distributed_injections
 
+
+
+def sample_uniform_sky_area(ra_center, dec_center, radius, n_samples=1):
+    """
+    Sample points uniformly in area within a circular patch on the celestial sphere.
+
+    Parameters:
+    ra_center (float): Right Ascension (RA) of the center in degrees.
+    dec_center (float): Declination (Dec) of the center in degrees.
+    radius (float): Radius of the circular patch in degrees.
+    n_samples (int): Number of points to sample.
+
+    Returns:
+    np.ndarray: (n_samples, 2) array with sampled (RA, Dec) coordinates in degrees.
+    """
+    # Convert degrees to radians
+    ra_center = np.radians(ra_center)
+    dec_center = np.radians(dec_center)
+    radius = np.radians(radius)
+    
+    # Sample uniformly in cos(θ) and φ for area uniformity
+    cos_theta = np.random.uniform(np.cos(radius), 1, n_samples)
+    theta = np.arccos(cos_theta)  # Convert back to theta
+    phi = np.random.uniform(0, 2 * np.pi, n_samples)
+
+    # Convert to Cartesian coordinates
+    x = np.sin(theta) * np.cos(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(theta)
+
+    # Rotate from (0,0,1) to (RA_center, Dec_center)
+    sin_dec = np.sin(dec_center)
+    cos_dec = np.cos(dec_center)
+    sin_ra = np.sin(ra_center)
+    cos_ra = np.cos(ra_center)
+
+    x_new = cos_dec * cos_ra * x - sin_ra * y + sin_dec * cos_ra * z
+    y_new = cos_dec * sin_ra * x + cos_ra * y + sin_dec * sin_ra * z
+    z_new = -sin_dec * x + cos_dec * z
+
+    # Convert back to RA and Dec
+    dec_samples = np.arcsin(z_new)
+    ra_samples = np.arctan2(y_new, x_new)
+
+    # Normalize RA to [0, 360) degrees
+    ra_samples = np.degrees(ra_samples) % 360
+    dec_samples = np.degrees(dec_samples)
+
+    return np.array([ra_samples, dec_samples])
