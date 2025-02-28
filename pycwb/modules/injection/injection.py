@@ -11,6 +11,7 @@ def generate_injection_list_from_config(injection_config):
 def distribute_inj_in_gps_time(injections, rate, jitter, 
                                start_gps_time, end_gps_time, 
                                edge_buffer = 0,
+                               shuffle=True,
                                allow_repeat=True):
     interval = 1 / rate
     if jitter > interval / 2:
@@ -33,10 +34,12 @@ def distribute_inj_in_gps_time(injections, rate, jitter,
     if required_time > total_available_time:
         n_inj_in_each_repeat = int(total_available_time * rate)
         n_data_repeat = ceil(n_inj / n_inj_in_each_repeat)
-        logger.info(f'Using {n_data_repeat} data repeats to distribute {n_inj} injections')
+        logger.info(f'Using {n_data_repeat} data repeats to distribute {n_inj} injections, each trail contains {n_inj_in_each_repeat} injections')
 
     # shuffle injections
-    np.random.shuffle(injections)
+    if shuffle:
+        np.random.shuffle(injections)
+        logger.info('Shuffling injections before distributing in time')
 
     # distribute injections
     gps_times = np.linspace(start_gps_time + interval/2, end_gps_time - interval/2, n_inj_in_each_repeat)

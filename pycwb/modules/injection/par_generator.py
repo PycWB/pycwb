@@ -1,7 +1,7 @@
 import numpy as np
 from pycwb.utils.module import import_function_from_file
 import logging
-
+import copy
 logger = logging.getLogger(__name__)
 
 
@@ -70,7 +70,7 @@ def repeat(par_list, n_repeat):
     :param n_repeat: The number of repeats
     :return: The repeated list
     """
-    return par_list * n_repeat
+    return [copy.deepcopy(d) for _ in range(n_repeat) for d in par_list]
 
 
 def inc_pol_replicator(par_list, inclinations, polarizations):
