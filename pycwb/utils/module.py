@@ -1,6 +1,9 @@
 import importlib
 import importlib.util
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def import_helper(module_str, module_name):
@@ -22,4 +25,14 @@ def import_function(func_str):
         module_name = f"pycwb.modules.{module_name}"
     module = import_helper(module_name, module_name)
     func = getattr(module, func_name)
+    logger.info(f"Imported function {func_str}")
+    return func
+
+
+def import_function_from_file(file, func_name):
+    module_name = file.split('/')[-1].split('.')[0]
+    module = import_helper(file, module_name)
+
+    func = getattr(module, func_name)
+    logger.info(f"Imported function {func_name} from {file}")
     return func
