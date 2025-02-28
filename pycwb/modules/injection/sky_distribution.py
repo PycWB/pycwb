@@ -74,9 +74,6 @@ def distribute_injections_on_sky(injections, sky_locations, shuffle=True, coords
         np.random.shuffle(ra)
         np.random.shuffle(dec)
 
-    print(f'len(injections): {len(injections)}')
-    print(f'len(ra): {len(ra)}')
-    print(f'len(dec): {len(dec)}')
     if coordsys == 'icrs':
         # If the coordinate system is ICRS, save the sky location directly in ra and dec attributes
         for i, inj in enumerate(injections):
