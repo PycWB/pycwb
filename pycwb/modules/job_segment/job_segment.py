@@ -1,5 +1,5 @@
 import logging
-
+from warnings import warn
 import numpy as np
 import orjson
 
@@ -9,7 +9,7 @@ from pycwb.types.job import WaveSegment
 from ..superlag import generate_slags
 from ...utils.module import import_helper
 from pycwb.modules.gracedb import get_superevent_t0
-
+from pycwb.modules.injection.par_generator import get_injection_list_from_parameters
 logger = logging.getLogger(__name__)
 
 
@@ -77,8 +77,12 @@ def create_job_segment_from_config(config):
         # TODO: split out the injection part for other job types
         job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
                                                          config.inRate, config.segEdge)
-
     ## TODO: Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
+    elif config.simulation and job_segments is not None:
+        # inject the parameters into the job segments
+        pass
+        # for job_seg in job_segments:
+        #     job_seg.injections = config.injection['parameters']
 
     ############################################
     ## Load the frames if frFiles or gwdatafind specified
@@ -272,27 +276,9 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
 
 
 def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_rate, seg_edge):
-    # get the injection parameters
-    if 'parameters' in injection:
-        if isinstance(injection['parameters'], list):
-            injections = injection['parameters']
-        else:
-            injections = [injection['parameters']]
-    elif 'parameters_from_python' in injection:
-        print(f"Importing {injection['parameters_from_python']['file']} for injection parameters")
-        # remove the .py extension if it exists
-        module = import_helper(injection['parameters_from_python']['file'], "wf_gen")
-
-        print(f"Calling {injection['parameters_from_python']['function']} to get injection parameters")
-        # get the injection parameters
-        injections = getattr(module, injection['parameters_from_python']['function'])()
-
-        print(f"Got {len(injections)} injection parameters")
-        if not isinstance(injections, list):
-            raise ValueError('The function get_injection_parameters() should return a list of injection parameters')
-    else:
-        raise ValueError('No injection parameters specified, '
-                         'please specify either parameters or parameters_from_python')
+    warn("This function will be deprecated.", DeprecationWarning)
+    # TODO: keep the job generation from noise but remove the injection insertion
+    injections = get_injection_list_from_parameters(injection)
 
     # get the noise settings
     if 'noise' in injection['segment'] and injection['segment']['noise'] is not None:
@@ -320,6 +306,41 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_ra
         raise ValueError(f"Invalid simulation mode: {simulation_mode}")
 
     return job_segments
+
+
+def add_injections_into_job_segments(job_segments, injections):
+    """
+    Associates injections with job segments based on overlapping time intervals.
+    
+    Parameters:
+    job_segments (list): A list of job segment objects with start_time, end_time, and injections list.
+    injections (list): A list of injection dictionaries with start_time and end_time.
+    
+    Returns:
+    None: The function modifies job_segments in place.
+    """
+    for injection in injections:
+        injection['start_time'] = injection['gps_time'] + injection['t_start']
+        injection['end_time'] = injection['gps_time'] + injection['t_end']
+    # Sort job segments and injections by start_time
+    job_segments.sort(key=lambda x: x.start_time)
+    injections.sort(key=lambda x: x["start_time"])
+    
+    injection_index = 0
+    num_injections = len(injections)
+    
+    for segment in job_segments:
+        segment.injections = []
+        # Move injection index to the first relevant injection
+        while injection_index < num_injections and injections[injection_index]["end_time"] < segment.start_time:
+            injection_index += 1
+        
+        # Collect all overlapping injections
+        i = injection_index
+        while i < num_injections and injections[i]["start_time"] <= segment.end_time:
+            if injections[i]["end_time"] >= segment.start_time:
+                segment.injections.append(injections[i])
+            i += 1
 
 
 def save_job_segments_to_json(job_segments, output_file) -> None:
