@@ -20,3 +20,20 @@ def get_injection_parameters():
     final_list = inc_pol_replicator(mass_list, inc_list, pol_list)
 
     return final_list
+
+
+def get_blipglitch_parameters():
+    # b range from 50 to 120, with 10 steps
+    n_injections = 64000 * 3
+    # gaussian distribution of amplitude
+    amplitudes = np.random.normal(1e-21, 1e-22, n_injections)
+    # gaussian distribution of duration
+    durations = np.random.normal(0.1, 0.01, n_injections)
+
+    blip_list = [{
+        'type': 'blip',
+        'amplitude': amp,
+        'duration': dur,
+    } for amp, dur in zip(amplitudes, durations)]
+
+    return blip_list

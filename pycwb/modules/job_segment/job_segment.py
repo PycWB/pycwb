@@ -9,6 +9,7 @@ from pycwb.types.job import WaveSegment
 from ..superlag import generate_slags
 from ...utils.module import import_helper
 from pycwb.modules.gracedb import get_superevent_t0
+from pycwb.modules.injection.injection import generate_injection_list_from_config
 from pycwb.modules.injection.par_generator import get_injection_list_from_parameters
 logger = logging.getLogger(__name__)
 
@@ -73,16 +74,16 @@ def create_job_segment_from_config(config):
 
     ## Case 1: if only simulation mode is specified without DQ files or periods,
     # create job segments based on the injection parameters
-    if config.simulation and job_segments is None:
+    if config.injection and job_segments is None:
         # TODO: split out the injection part for other job types
         job_segments = create_job_segment_from_injection(config.ifo, config.simulation, config.injection,
                                                          config.inRate, config.segEdge)
-    ## TODO: Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
-    elif config.simulation and job_segments is not None:
-        # inject the parameters into the job segments
-        pass
-        # for job_seg in job_segments:
-        #     job_seg.injections = config.injection['parameters']
+    ## Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
+    elif config.injection and job_segments is not None:
+        start_gps_time = min([job_seg.start_time for job_seg in job_segments])
+        end_gps_time = max([job_seg.end_time for job_seg in job_segments])
+        injections, n_trails = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
+        add_injections_into_job_segments(job_segments, injections)
 
     ############################################
     ## Load the frames if frFiles or gwdatafind specified

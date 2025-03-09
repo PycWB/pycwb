@@ -8,21 +8,66 @@ logger = logging.getLogger(__name__)
 
 
 def generate_injection_list_from_config(injection_config, start_gps_time, end_gps_time):
+    repeat_injection = injection_config.get('repeat_injection', None)
+    sky_distribution = injection_config.get('sky_distribution', None)
+
+    injections = get_injection_list_from_parameters(injection_config)
+
+    # repeat injections if specified
+    if repeat_injection:
+        injections = repeat(injections, repeat_injection)
+
+    # distribute injections on sky if specified
+    if sky_distribution:
+        sky_locations = generate_sky_distribution(sky_distribution, len(injections))
+        distribute_injections_on_sky(injections, sky_locations)
+
+    # distribute injections in GPS time
+    time_distribution = injection_config.get('time_distribution', {})
+    time_distribution_type = time_distribution.get('type', None)
+    if time_distribution_type == 'rate':
+        time_distribution_rate = time_distribution.get('rate', None)
+        rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
+        jitter = time_distribution.get('jitter', 0)
+        injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+    elif time_distribution_type == 'poisson':
+        time_distribution_rate = time_distribution.get('rate', None)
+        rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
+        max_trail = time_distribution.get('max_trail', None)
+        injections, n_trails = distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, max_trail=max_trail, shuffle=False)
+    elif time_distribution_type == 'custom':
+        max_trail = None
+    else:
+        raise ValueError('Unknown time distribution, only support rate, poisson, custom')
+
+    return injections, n_trails
+
+
+def generate_auxiliary_injection_list_from_config(injection_config, start_gps_time, end_gps_time, n_trails):
     repeat_injection = injection_config['repeat_injection']
-    rate = eval(injection_config['rate']) if type(injection_config['rate']) == str else injection_config['rate']
-    jitter = injection_config['jitter']
     sky_distribution = injection_config['sky_distribution']
 
     injections = get_injection_list_from_parameters(injection_config)
     injections = repeat(injections, repeat_injection)
-    sky_locations = generate_sky_distribution(sky_distribution, len(injections))
-    distribute_injections_on_sky(injections, sky_locations)
-    distribute_inj_in_gps_time(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+    if sky_distribution:
+        sky_locations = generate_sky_distribution(sky_distribution, len(injections))
+        distribute_injections_on_sky(injections, sky_locations)
 
-    return injections
+    if injection_config['time_distribution'] == 'rate':
+        rate = eval(injection_config['rate']) if type(injection_config['rate']) == str else injection_config['rate']
+        jitter = injection_config['jitter']
+        injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+    elif injection_config['time_distribution'] == 'poisson':
+        pass
+    elif injection_config['time_distribution'] == 'custom':
+        pass
+    else:
+        raise ValueError('Unknown time distribution, only support rate, poisson, custom')
+
+    return injections, n_trails
 
 
-def distribute_inj_in_gps_time(injections, rate, jitter, 
+def distribute_inj_in_gps_time_by_rate(injections, rate, jitter, 
                                start_gps_time, end_gps_time, 
                                edge_buffer = 0,
                                shuffle=True,
@@ -83,4 +128,59 @@ def distribute_inj_in_gps_time(injections, rate, jitter,
         inj['gps_time'] = gps_times[i]
         inj['trail_idx'] = i // n_inj_in_each_repeat
 
-    return injections
+    return injections, n_data_repeat
+
+
+def distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, edge_buffer = 0, max_trail = None, 
+                                          shuffle=True):
+    """
+    Distribute injections in GPS time with a Poisson distribution. 
+
+    :param injections: The list of injections
+    :param rate: The rate of injections
+    :param start_gps_time: The start GPS time
+    :param end_gps_time: The end GPS time
+    :param edge_buffer: The buffer time at the start and end of the data
+    :param max_trails: The maximum number of trails for the case of auxiliary injections
+    """
+    
+    # if incoherence and ifos is None:
+    #     raise ValueError('ifos must be provided for incoherent injections')
+    
+    # shuffle injections
+    if shuffle:
+        np.random.shuffle(injections)
+        logger.info('Shuffling injections before distributing in time')
+
+    n_inj = len(injections)
+    # # estimate if the number of injections is enough
+    # est_avail_inj_time = n_inj / rate * len(ifos) if incoherence else n_inj / rate
+    # total_available_time = ((end_gps_time - edge_buffer) - (start_gps_time + edge_buffer)) * n_trails
+    # if est_avail_inj_time < total_available_time:
+    #     logger.warning(f'Not enough injections to distribute in time, required time: {est_avail_inj_time} s, available time: {total_available_time} s')
+    
+    injection_idx = 0
+    transient_signal = []
+
+    trail_idx = 0
+
+    while injection_idx < n_inj:
+        t = start_gps_time + edge_buffer + np.random.exponential(1/rate)
+        while t < end_gps_time - edge_buffer:
+            par = {
+                'gps_time': t + np.random.exponential(1/rate),
+                'trail_idx': trail_idx,
+            }
+            transient_signal.append(injections[injection_idx] | par)
+            injection_idx += 1
+            t += np.random.exponential(1/rate)
+
+            if injection_idx >= n_inj:
+                break
+                # raise ValueError('Not enough injections to distribute in time')
+            
+        trail_idx += 1
+        if max_trail and trail_idx >= max_trail:
+            break
+
+    return transient_signal, trail_idx
