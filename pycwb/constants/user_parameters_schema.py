@@ -99,6 +99,12 @@ schema = {
             "default": 4,
             "cwb": False
         },
+        "skip_no_injection": {
+            "type": "boolean",
+            "description": "skip jobs without injection",
+            "default": False,
+            "cwb": False
+        },
         "injection": {
             "type": "object",
             "description": "injection parameters",
