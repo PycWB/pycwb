@@ -8,7 +8,6 @@ import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
-from .read_data import check_and_resample
 from pycwb.utils.module import import_helper
 from ...config import Config
 from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
@@ -355,8 +354,7 @@ def generate_injections(config, job_seg, strain=None):
 
         # inject signal into noise and convert to wavearray
         injected = [injected[i].add_into(strain[i]) for i in range(len(ifos))]
-    # FIXME: should this moved to outside as a step?
-    return [check_and_resample(injected[i], config, i) for i in range(len(ifos))]
+    return injected
 
 # Backward compatibility
 generate_injection = generate_injections

@@ -8,7 +8,7 @@ from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
-from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment
+from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.likelihood import likelihood
 from pycwb.types.job import WaveSegment
@@ -52,10 +52,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         else:
             logger.info(f"Processing trail_idx: {trail_idx} without injections")
             sub_job_seg = job_seg
-        
         # add trail_idx to the sub_job_seg
         sub_job_seg.trail_idx = trail_idx
 
+        # check and resample the data
+        data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
+        
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         tf_maps, nRMS_list = data_conditioning(config, data)
