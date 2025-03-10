@@ -1,0 +1,102 @@
+
+outputDir: "output"
+nproc: 6
+plot_trigger: True
+plot_waveform: True
+plot_injection: True
+plot_sky_map: True
+save_sky_map: True
+save_injection: True
+save_waveform: True
+
+analysis: "2G"
+cfg_search: "r"
+
+optim: False
+
+###### network configuration ######
+ifo: ["L1","H1"]
+refIFO: "L1"
+
+inRate: 16384
+# lags
+lagSize: 1
+lagStep: 1.
+lagOff: 0
+lagMax: 0
+
+# superlags
+slagSize: 0 # number of super lags (simulation=1) - if slagSize=0 -> Standard Segments
+slagMin: 0
+slagMax: 0
+slagOff: 0
+
+# job
+segLen: 400
+segMLS: 400
+segTHR: 200
+segEdge: 10
+
+# frequency
+fLow: 16.
+fHigh: 1024.
+
+
+levelR: 3
+l_low: 4 # low frequency resolution level		// std (sthr = 2)
+l_high: 10 # high frequency resolution level	// std (sthr = 8)
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+healpix: 7
+
+###### cWB production thresholds & regulators ######
+
+bpp: 0.001
+subnet: 0.5
+subcut: 0.0
+netRHO: 5.5
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: -1.0
+LOUD: 300
+
+pattern: 5
+
+iwindow: 30
+
+nSky: 196608
+
+# simulation
+nfactor: 1
+
+channelNamesRaw: ["L1:GWOSC-4KHZ_R1_STRAIN","H1:GWOSC-4KHZ_R1_STRAIN"]
+frFiles: ["./input/L1_frames.in", "./input/H1_frames.in"]
+
+DQF: [
+  [ "L1" ,"./input/L1_cat0.txt", CWB_CAT0, 0., False, False ],
+  [ "H1" ,"./input/H1_cat0.txt", CWB_CAT0, 0., False, False ],
+  [ "L1" ,"./input/L1_cat1.txt", CWB_CAT1, 0., False, False ],
+  [ "H1" ,"./input/H1_cat1.txt", CWB_CAT1, 0., False, False ],
+  [ "L1" ,"./input/L1_cat2.txt", CWB_CAT2, 0., False, False ],
+  [ "H1" ,"./input/H1_cat2.txt", CWB_CAT2, 0., False, False ],
+  [ "L1" ,"./input/cwb_period.txt", CWB_CAT0, 0., False, False ],
+  [ "H1" ,"./input/cwb_period.txt", CWB_CAT0, 0., False, False ],
+]
+
+injection:
+  allow_reuse_data: True
+  repeat_injection: 1
+  sky_distribution:
+    type: UniformAllSky
+  time_distribution:
+    type: 'rate'
+    rate: 1/200
+    jitter: 50
+  parameters_from_python:
+    file: "injection_parameters.py"
+    function: "get_injection_parameters"
+  approximant: "IMRPhenomXPHM"
