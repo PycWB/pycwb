@@ -1,34 +1,7 @@
 import logging
-import pickle
 import xgboost as xgb
 from pandas import DataFrame
-from pycwb.utils.module import import_function_from_file
 logger = logging.getLogger(__name__)
-
-
-def load_model(model_file: str) -> xgb.Booster:
-    """
-    Load the model from the file.
-
-    Parameters
-    ----------
-    model_file : str
-        The path to the model file.
-
-    Returns
-    -------
-    model : xgb.Booster
-        The loaded model.
-
-    """
-    ext = model_file.split('.')[-1]
-    if ext == 'json':
-        # handle fake json file which is a pickle file
-        model = pickle.load(open(model_file, 'rb'))
-    elif ext == 'ujs':
-        model = xgb.Booster(model_file=model_file)
-    
-    return model
 
 
 def predict(events: DataFrame, model: xgb.Booster, config: dict, verbose: bool = False):
@@ -51,15 +24,16 @@ def predict(events: DataFrame, model: xgb.Booster, config: dict, verbose: bool =
 
     # load the function for calculating the ranking statistics
     # check if the function is defined in the file
-    config_ranking_statistics = ML_options.get('ranking_statistics')
-    if config_ranking_statistics is None:
-        raise ValueError("The configuration does not contain the key 'ranking_statistics'.")
-    config_ranking_statistics_file = config_ranking_statistics.get('file')
-    config_ranking_statistics_function = config_ranking_statistics.get('function')
-    if config_ranking_statistics_file is None or config_ranking_statistics_function is None:
-        raise ValueError("The configuration does not contain the key 'file' or 'function' in 'ranking_statistics'.")
+    # config_ranking_statistics = ML_options.get('ranking_statistics')
+    # if config_ranking_statistics is None:
+    #     raise ValueError("The configuration does not contain the key 'ranking_statistics'.")
+    # config_ranking_statistics_file = config_ranking_statistics.get('file')
+    # config_ranking_statistics_function = config_ranking_statistics.get('function')
+    # if config_ranking_statistics_file is None or config_ranking_statistics_function is None:
+    #     raise ValueError("The configuration does not contain the key 'file' or 'function' in 'ranking_statistics'.")
 
-    func_add_ranking_statistics = import_function_from_file(config_ranking_statistics_file, config_ranking_statistics_function)
+    # func_add_ranking_statistics = import_function_from_file(config_ranking_statistics_file, config_ranking_statistics_function)
+    add_ranking_statistics = config['add_ranking_statistics']
 
     # set the number of threads for prediction
     model._Booster.set_param('nthread', ML_options['nthread(prediction)'])
@@ -74,7 +48,7 @@ def predict(events: DataFrame, model: xgb.Booster, config: dict, verbose: bool =
     events['MLstat'] = model.predict_proba(events[ML_list], iteration_range=None)[:,1]
 
     # calculate ranking statistics
-    func_add_ranking_statistics(events)
+    add_ranking_statistics(events)
 
     if(verbose): 
         columnsNamesArr = events.columns.values
