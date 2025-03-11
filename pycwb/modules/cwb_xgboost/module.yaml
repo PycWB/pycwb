@@ -1,0 +1,7 @@
+name: cwb_xgboost
+author: cWB developers
+description: |
+  This module provides a simple interface to the XGBoost library for
+  training and testing models on cWB data.
+version: 0.1
+dependencies: ["xgboost", "numpy", "pandas", "scikit-learn"]
