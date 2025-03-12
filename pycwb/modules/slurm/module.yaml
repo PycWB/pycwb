@@ -1,0 +1,4 @@
+name: slurm
+author: pycWB
+description: "This module provides a set of functions to interact with the SLURM workload manager."
+dependencies: []
