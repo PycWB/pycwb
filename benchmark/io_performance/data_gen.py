@@ -335,14 +335,44 @@ generated_output = {
     "events": sample_event
 }
 
+# save as compressed json
+
 import orjson
 import gzip
 
 start_time = perf_counter()
-
-# save as compressed json
 with gzip.open("data.json.gz", 'wb') as f:
     f.write(orjson.dumps(generated_output, option=orjson.OPT_SERIALIZE_NUMPY))
 
 print(f"Time taken to write to file: {perf_counter() - start_time}")
 
+
+# save as parquet
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+# Parquet write test
+start_time = perf_counter()
+
+# Convert data to Arrow Tables
+jobs_table = pa.Table.from_pylist(sample_job)
+events_table = pa.Table.from_pylist(sample_event)
+
+# Write to Parquet files
+pq.write_table(jobs_table, 'jobs.parquet')
+pq.write_table(events_table, 'events.parquet')
+
+print(f"Time taken to write Parquet files: {perf_counter() - start_time}")
+
+# Parquet read test
+start_time = perf_counter()
+
+# Read from Parquet files
+jobs_table = pq.read_table('jobs.parquet')
+events_table = pq.read_table('events.parquet')
+
+# Convert back to Python objects if needed (optional)
+# jobs_data = jobs_table.to_pylist()
+# events_data = events_table.to_pylist()
+
+print(f"Time taken to read Parquet files: {perf_counter() - start_time}")
