@@ -13,7 +13,7 @@ class HTCondor:
         self.n_proc = n_proc
         self.memory = memory
         self.disk = disk
-        self.dag_dir = (self.working_dir / 'condor').absolute()
+        self.dag_dir = os.path.join(self.working_dir, 'condor')
         self.dag_file = None
         if accounting_group is None:
             raise ValueError("Accounting group is required for condor batch submission")
