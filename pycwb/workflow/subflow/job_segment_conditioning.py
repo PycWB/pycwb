@@ -16,7 +16,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, plot_skymap_flow
 from scipy.stats import anderson 
-
+import numpy as np 
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,30 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
     tf_maps, nRMS_list = data_conditioning(config, data)
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    pvalues = [anderson_test(tf_map.data) for tf_map in tf_maps]
-    
-    save_pvalue(pvalues, config)
+    #sample_rate = config.inRate / 2 ** config.levelR 
+    #scratch = int(sample_rate * config.segEdge) 
+    #pvalues = [anderson_test(tf_map.data[scratch:-scratch]) for tf_map in tf_maps]
+
+    #save_pvalue(pvalues, config, working_dir)
+    save_conditioning(tf_maps, nRMS_list, working_dir, config, job_seg) 
+
+
+def save_conditioning(tf_maps, nrms, working_dir, config, job_seg):
+    timeseries_folder = f'{working_dir}/timeSeries'
+    nrms_folder = f'{working_dir}/nrms'
+    times_folder = f'{working_dir}/job_time'
+    os.makedirs(timeseries_folder, exist_ok = True)
+    os.makedirs(nrms_folder, exist_ok = True)
+    os.makedirs(times_folder, exist_ok = True)
+    with open(f'{times_folder}/job_{job_seg.index}', 'a') as f: 
+        f.write(f'{job_seg.start_time} {job_seg.end_time}')
+        
+    for i, ifo in enumerate(config.ifo):
+        print(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", os.path.exists(f"{timeseries_folder}")) 
+        np.save(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", tf_maps[i].data.data)
+        np.save(f"{nrms_folder}/nrms_{job_seg.index}_{ifo}", nrms[i].data.data)
+        
+    return timeseries_folder 
     
 
 def anderson_test(data): 
@@ -64,7 +85,8 @@ def anderson_test(data):
         
     return pvalue
 
-def save_pvalue(values, config, working_dir: str, sub_dir: str):
+def save_pvalue(values, config, working_dir: str):
+    sub_dir = 'Anderson_Results'
     test_folder = '/'.join([working_dir, sub_dir]) 
     if not os.path.exists(test_folder): 
         os.makedirs(test_folder)
@@ -73,14 +95,14 @@ def save_pvalue(values, config, working_dir: str, sub_dir: str):
     filename = '/'.join([test_folder,f'anderson_{config.whiteMethod}.txt']) 
     
     print(f'Saving Anderson pvalue') 
-    try:
+    if os.path.exists(filename): 
         with open(filename, 'a') as f:  # Open file in append mode
             f.write(' '.join(map(str, values)) + '\n')  # Append value with newline
-    except FileNotFoundError:
+    else:
         with open(filename, 'w') as f:  
-            f.write(' '.join(config.ifos) + '\n')
+            f.write(' '.join(config.ifo) + '\n')
             f.write(' '.join(map(str, values))+ '\n')
-            
+    
     return filename 
 
 
