@@ -1,7 +1,8 @@
 import time
 import logging
 from .regression import regression
-from .whitening import whitening
+from .whitening_mesa import whitening_mesa
+from .whitening_cwb import whitening_cwb
 from multiprocessing import Pool
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,10 @@ def data_conditioning(config, strains, nproc=1):
             res = p.starmap(whitening, [(config, d) for d in data_regressions])
     else:
         data_regressions = [regression(config, h) for h in strains]
-        res = [whitening(config, h) for h in data_regressions]
+        if config.whiteMethod == 'wavelet': 
+            res = [whitening_cwb(config, h) for h in data_regressions]
+        if config.whiteMethod == 'mesa': 
+            res = [whitening_mesa(config, h) for h in data_regressions]
 
     conditioned_strains, nRMS_list = zip(*res)
 
