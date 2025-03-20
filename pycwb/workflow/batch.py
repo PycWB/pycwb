@@ -8,8 +8,8 @@ from htcondor import dags
 
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
+from pycwb.workflow.subflow.job_segment_conditioning import job_segment_conditioning
 from pycwb.workflow.subflow.process_job_segment import process_job_segment
-
 
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
@@ -152,8 +152,7 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
             #                                   args=(working_dir, config, job_seg, compress_json, catalog_file))
             # process.start()
             # process.join()
-            process_job_segment(working_dir, config, job_seg,
-                                compress_json=compress_json, catalog_file=catalog_file)
+            job_segment_conditioning(working_dir, config, job_seg)
 
             # create a flag file to indicate the job is done
             try:
