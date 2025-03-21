@@ -204,17 +204,26 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     # get function
     function = getattr(module, generator['function'])
     # generate waveform
-    hp, hc = function(**injection)
+    generated_data = function(**injection)
 
-    hp = convert_to_pycbc_timeseries(hp)
-    hc = convert_to_pycbc_timeseries(hc)
+    if isinstance(generated_data, tuple):
+        # backward compatibility for hp and hc
+        hp, hc = generated_data
+        hp = convert_to_pycbc_timeseries(hp)
+        hc = convert_to_pycbc_timeseries(hc)
 
-    from pycwb.modules.read_data import project_to_detector
-    declination = injection.get('dec')
-    right_ascension = injection.get('ra')
-    polarization = injection.get('pol')
-    gps_end_time = injection.get('gps_time')
-    strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
+        declination = injection.get('dec')
+        right_ascension = injection.get('ra')
+        polarization = injection.get('pol')
+        gps_end_time = injection.get('gps_time')
+        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
+    elif isinstance(generated_data, dict):
+        # TODO: add support for more polarizations
+        raise NotImplementedError("Only hp and hc polarization is supported for now")
+    elif isinstance(generated_data, list):
+        strain = generated_data
+    else:
+        raise ValueError(f"Unsupported return type from waveform generator: {generated_data}, should be tuple for hp and hc, dict for more polarizations or list for strain")
 
     return strain
 
