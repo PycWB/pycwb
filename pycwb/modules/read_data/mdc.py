@@ -176,7 +176,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
         strain
     """
     # setting default values removed, PycWB core code should not handle the default values to prevent inexplicit overwrite!!!
-
+    injection['delta_t'] = 1.0 / sample_rate
     print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
 
     ##############################
@@ -216,6 +216,10 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
         right_ascension = injection.get('ra')
         polarization = injection.get('pol')
         gps_end_time = injection.get('gps_time')
+        if declination is None or right_ascension is None or polarization is None:
+            raise ValueError(f"ra, dec and pol are required in the injection parameters, while ra: {right_ascension}, dec: {declination}, pol: {polarization}")
+        if gps_end_time is None:
+            raise ValueError("gps_time is required in the injection parameters")
         strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
     elif isinstance(generated_data, dict):
         # TODO: add support for more polarizations
