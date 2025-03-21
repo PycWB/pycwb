@@ -188,25 +188,32 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     elif 'generator' in config.injection:
         generator = config.injection['generator']
     else:
-        generator = None
+        # deprecated warning: the default waveform generator will be remove in the future
+        from warnings import warn
+        warn("The default waveform generator will be removed in the future, please specify the generator in the injection parameters")
+        generator = {
+            "module": "pycbc.waveform",
+            "function": "get_td_waveform"
+        }
+
 
     # generate hp and hc
-    if generator:
-        print(f'Using generator: {generator}')
-        # import module
-        module = import_helper(generator['module'], "wf_gen")
-        # get function
-        function = getattr(module, generator['function'])
-        # generate waveform
-        hp, hc = function(**injection)
+    print(f'Using generator: {generator}')
+    # import module
+    module = import_helper(generator['module'], "wf_gen")
+    # get function
+    function = getattr(module, generator['function'])
+    # generate waveform
+    hp, hc = function(**injection)
 
-        hp = convert_to_pycbc_timeseries(hp)
-        hc = convert_to_pycbc_timeseries(hc)
-    else:
-        from pycbc.waveform import get_td_waveform
-        hp, hc = get_td_waveform(**injection)
+    hp = convert_to_pycbc_timeseries(hp)
+    hc = convert_to_pycbc_timeseries(hc)
 
     from pycwb.modules.read_data import project_to_detector
+    declination = injection.get('dec')
+    right_ascension = injection.get('ra')
+    polarization = injection.get('pol')
+    gps_end_time = injection.get('gps_time')
     strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
 
     return strain
