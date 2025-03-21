@@ -175,24 +175,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     list[pycbc.types.timeseries.TimeSeries]
         strain
     """
-    ##############################
-    # setting default values
-    ##############################
-    if 'approximant' in injection:
-        approximant = injection['approximant']
-    elif 'approximant' in config.injection:
-        approximant = config.injection['approximant']
-    else:
-        approximant = 'IMRPhenomXPHM'
-
-    injection['approximant'] = approximant
-    injection['delta_t'] = 1.0 / sample_rate
-    injection['f_lower'] = config.fLow if 'f_lower' not in injection else injection['f_lower']
-
-    declination = injection['dec'] if 'dec' in injection else 0.0
-    right_ascension = injection['ra'] if 'ra' in injection else 0.0
-    polarization = injection['pol'] if 'pol' in injection else 0.0
-    gps_end_time = injection['gps_time']
+    # setting default values removed, PycWB core code should not handle the default values to prevent inexplicit overwrite!!!
 
     print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
 
