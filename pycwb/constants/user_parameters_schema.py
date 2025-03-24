@@ -81,6 +81,12 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "segment_processer": {
+            "type": "string",
+            "description": "main segment processer function for the analysis, the arguments for the function are: func(working_dir, config, job_seg, **kwargs)",
+            "default": "pycwb.workflow.subflow.process_job_segment.process_job_segment",
+            "cwb": False
+        },
         "use_root_supercluster": {
             "type": "boolean",
             "description": "use cwb supercluster, if false use python version",
@@ -91,6 +97,12 @@ schema = {
             "type": "integer",
             "description": "number of processes",
             "default": 4,
+            "cwb": False
+        },
+        "skip_no_injection": {
+            "type": "boolean",
+            "description": "skip jobs without injection",
+            "default": False,
             "cwb": False
         },
         "injection": {
