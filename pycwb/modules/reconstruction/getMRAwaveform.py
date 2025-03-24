@@ -8,7 +8,7 @@ from numba import njit
 logger = logging.getLogger(__name__)
 
 
-def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False):
+def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False) -> TimeSeries:
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
 
@@ -122,9 +122,9 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
         # apply time delay
         if tof:
             R = rTDF  # effective time-delay rate
-            t_shift = v[i] / R
+            t_shift = -v[i] / R
             xf = x.to_frequencyseries()
-            xf = xf.cyclic_time_shift(t_shift)
+            xf.data *= np.exp(-2j * np.pi * xf.sample_frequencies * t_shift)
             x = xf.to_timeseries()
 
         waveforms.append(x)

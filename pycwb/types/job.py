@@ -46,6 +46,8 @@ class WaveSegment:
     ----------
     index: int
         index of the segment
+    trail_idx: int
+        trail index of the segment for injections, leave it 0 for no injections
     ifos: list of str
         list of interferometers
     start_time: float
@@ -78,6 +80,7 @@ class WaveSegment:
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
+    trail_idx: int = 0
 
     @property
     def duration(self) -> float:

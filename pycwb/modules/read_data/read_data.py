@@ -144,6 +144,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
 
 def merge_frames(job_seg, data, seg_edge):
+    # TODO: use gwpy to merge the data instead of pycbc timeseries
     print(f'Merging data from job segment {job_seg.index}')
     merged_data = []
 
@@ -242,4 +243,5 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
         data = convert_wavearray_to_timeseries(w)
         # data = data.resample(config.inRate)
         print(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
-    return check_and_resample(data, config, i)
+    # return check_and_resample(data, config, i) # move this to the final step
+    return data.to_pycbc()

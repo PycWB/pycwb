@@ -1,0 +1,4 @@
+name: injection
+author: pycWB
+description: Generate injections
+dependencies: ["astropy", "healpy", "numpy"]
