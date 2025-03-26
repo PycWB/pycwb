@@ -35,8 +35,47 @@ def batch_setup(file_name, working_dir='.',
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor for now")
 
 
+def data_collector(working_dir, queue):
+    while True:
+        item = queue.get()
+        if item is None:  # Sentinel to terminate
+            break
+        try:
+            print(f"Merging {item}")
+        except Exception as e:
+            print(f"Error merging {item}: {e}")
+
+
+def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
+    if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
+        print(f"Job segment {job_seg.index} is already done")
+        return
+
+    try:
+        main_func(working_dir, config, job_seg,
+                            compress_json=compress_json, catalog_file=catalog_file, queue=queue)
+
+        # create a flag file to indicate the job is done
+        try:
+            with open(f"{working_dir}/job_status/job_{job_seg.index}.done", 'w') as f:
+                f.write("")
+        except Exception as e:
+            print(f"Failed to create job done flag file: {e}")
+
+    except Exception as e:
+        print(f"Error processing job segment: {job_seg}")
+        print(e)
+        # create a flag file to indicate the job is failed
+        try:
+            with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
+                f.write("")
+        except Exception as e:
+            print(f"Failed to create job failed flag file: {e}")
+            return e
+
+
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
-              jobs=None, n_proc=1, compress_json=True):
+              jobs=None, n_proc=1, compress_json=True, n_workers=1):
     job_segments, config, working_dir, catalog_file = load_batch_run(working_dir, config_file, jobs,
                                                        n_proc=n_proc, compress_json=compress_json)
     logger_init(log_file, log_level)
@@ -45,40 +84,35 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     main_func = import_function(config.segment_processer)
     logger.info(f"Segment processer loaded: {main_func}")
 
+    # create a queue and a worker to collect the data
+    queue = multiprocessing.Queue()
+    data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, queue))
+    data_collector_worker.start()
+
     exceptions = []
-    for job_seg in job_segments:
-        # check if the job is done
-        if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
-            print(f"Job segment {job_seg.index} is already done")
-            continue
+    with multiprocessing.Pool(n_workers) as pool:
+        for job_seg in job_segments:
+            results = []
+            for job_seg in job_segments:
+                r = pool.apply_async(process_single_with_flag,
+                                     args=(main_func, queue, working_dir, config, job_seg,
+                                           compress_json, catalog_file))
+                results.append(r)
 
-        try:
-            # TODO: run the job in a separate process to prevent memory leak
-            # process = multiprocessing.Process(target=process_job_segment,
-            #                                   args=(working_dir, config, job_seg, compress_json, catalog_file))
-            # process.start()
-            # process.join()
-            main_func(working_dir, config, job_seg,
-                                compress_json=compress_json, catalog_file=catalog_file)
+            for r in results:
+                try:
+                    err = r.get()
+                    if err:
+                        exceptions.append(err)
+                except Exception as e:
+                    exceptions.append(e)
 
-            # create a flag file to indicate the job is done
-            try:
-                with open(f"{working_dir}/job_status/job_{job_seg.index}.done", 'w') as f:
-                    f.write("")
-            except Exception as e:
-                print(f"Failed to create job done flag file: {e}")
+        pool.close()
+        pool.join()
 
-        except Exception as e:
-            print(f"Error processing job segment: {job_seg}")
-            print(e)
-            # create a flag file to indicate the job is failed
-            try:
-                with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
-                    f.write("")
-            except Exception as e:
-                print(f"Failed to create job failed flag file: {e}")
-
-            exceptions.append(e)
+        # send a sentinel to terminate the data collector
+        queue.put(None)
+        data_collector_worker.join()
 
     if exceptions:
         raise ExceptionGroup("JobFailure", exceptions)
