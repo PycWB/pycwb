@@ -21,7 +21,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegment):
+def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegment, compress_json):
     print_job_info(job_seg)
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -46,25 +46,32 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
     #pvalues = [anderson_test(tf_map.data[scratch:-scratch]) for tf_map in tf_maps]
 
     #save_pvalue(pvalues, config, working_dir)
-    save_conditioning(tf_maps, nRMS_list, working_dir, config, job_seg) 
+    save_conditioning(config, tf_maps, nRMS_list, working_dir, job_seg) 
 
-
-def save_conditioning(tf_maps, nrms, working_dir, config, job_seg):
+def save_conditioning(config, tf_map, psds, working_dir, job_seg):
+    psds_folder = f'{working_dir}/PSDs'
     timeseries_folder = f'{working_dir}/timeSeries'
-    nrms_folder = f'{working_dir}/nrms'
-    times_folder = f'{working_dir}/job_time'
-    os.makedirs(timeseries_folder, exist_ok = True)
-    os.makedirs(nrms_folder, exist_ok = True)
-    os.makedirs(times_folder, exist_ok = True)
-    with open(f'{times_folder}/job_{job_seg.index}', 'a') as f: 
-        f.write(f'{job_seg.start_time} {job_seg.end_time}')
-        
-    for i, ifo in enumerate(config.ifo):
-        print(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", os.path.exists(f"{timeseries_folder}")) 
-        np.save(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", tf_maps[i].data.data)
-        np.save(f"{nrms_folder}/nrms_{job_seg.index}_{ifo}", nrms[i].data.data)
-        
-    return timeseries_folder 
+    os.makedirs(timeseries_folder, exist_ok = True) 
+    os.makedirs(psds_folder, exist_ok = True)
+    for i, ifo in enumerate(config.ifo): 
+        np.save(f'{timeseries_folder}/ts_{job_seg.index}_{ifo}',tf_map[i].data.data)
+        np.save(f'{psds_folder}/PSDs_{job_seg.index}_{ifo}', psds[i])
+#def save_conditioning(tf_maps, nrms, working_dir, config, job_seg):
+#    timeseries_folder = f'{working_dir}/timeSeries'
+#    nrms_folder = f'{working_dir}/nrms'
+#    times_folder = f'{working_dir}/job_time'
+#    os.makedirs(timeseries_folder, exist_ok = True)
+#    os.makedirs(nrms_folder, exist_ok = True)
+#    os.makedirs(times_folder, exist_ok = True)
+#    with open(f'{times_folder}/job_{job_seg.index}', 'a') as f: 
+#        f.write(f'{job_seg.start_time} {job_seg.end_time}')
+#        
+#    for i, ifo in enumerate(config.ifo):
+#        print(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", os.path.exists(f"{timeseries_folder}")) 
+#        np.save(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", tf_maps[i].data.data)
+#        np.save(f"{nrms_folder}/nrms_{job_seg.index}_{ifo}", nrms[i].data.data)
+#        
+#    return timeseries_folder 
     
 
 def anderson_test(data): 
