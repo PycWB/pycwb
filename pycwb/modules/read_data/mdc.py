@@ -175,6 +175,8 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     list[pycbc.types.timeseries.TimeSeries]
         strain
     """
+    from warnings import warn
+
     # setting default values removed, PycWB core code should not handle the default values to prevent inexplicit overwrite!!!
     injection['delta_t'] = 1.0 / sample_rate
     print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
@@ -188,17 +190,18 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     elif 'generator' in config.injection:
         generator = config.injection['generator']
     else:
+        # ------------------------------
         # deprecated warning: the default waveform generator will be remove in the future
-        from warnings import warn
-        warn("The default waveform generator will be removed in the future, please specify the generator in the injection parameters")
+        warn("The default waveform generator will be removed in the future, please specify the generator in the injection parameters", DeprecationWarning)
         generator = {
             "module": "pycbc.waveform",
             "function": "get_td_waveform"
         }
+        # ------------------------------
 
 
     # generate hp and hc
-    print(f'Using generator: {generator}')
+    logger.info(f"Generating waveform using {generator['module']}.{generator['function']}")
     # import module
     module = import_helper(generator['module'], "wf_gen")
     # get function
@@ -206,26 +209,56 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
     # generate waveform
     generated_data = function(**injection)
 
+    # ------------------------------
+    # backward compatibility for hp and hc, remove in the future
     if isinstance(generated_data, tuple):
-        # backward compatibility for hp and hc
-        hp, hc = generated_data
-        hp = convert_to_pycbc_timeseries(hp)
-        hc = convert_to_pycbc_timeseries(hc)
+        warn("Returning hp and hc as tuple is deprecated, please return as dict with keys hp and hc", DeprecationWarning)
+        logger.warning("Returning hp and hc as tuple is going to be deprecated, please return as dict with keys hp and hc")
+        generated_data = {
+            'type': 'polarizations',
+            'hp': generated_data[0],
+            'hc': generated_data[1]
+        }
+    # ------------------------------
 
-        declination = injection.get('dec')
-        right_ascension = injection.get('ra')
-        polarization = injection.get('pol')
-        gps_end_time = injection.get('gps_time')
-        if declination is None or right_ascension is None or polarization is None:
-            raise ValueError(f"ra, dec and pol are required in the injection parameters, while ra: {right_ascension}, dec: {declination}, pol: {polarization}")
-        if gps_end_time is None:
-            raise ValueError("gps_time is required in the injection parameters")
-        strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
-    elif isinstance(generated_data, dict):
-        # TODO: add support for more polarizations
-        raise NotImplementedError("Only hp and hc polarization is supported for now")
-    elif isinstance(generated_data, list):
-        strain = generated_data
+    if isinstance(generated_data, dict):
+        if generated_data.get('type') == 'strain':
+            logger.info("Strain is generated")
+            generated_data.pop('type')
+
+            # check on ifos
+            logger.info(f"Checking if the ifos in the config are same as the provided ifos")
+            provided_ifos = set(generated_data.keys())
+            if provided_ifos != set(ifos):
+                raise ValueError(f"Provided ifos {provided_ifos} are not same as the ifos {ifos} in config")
+            
+            # return the strain with the order of ifos in the config
+            strain = [convert_to_pycbc_timeseries(generated_data.get(ifo)) for ifo in ifos]
+        elif generated_data.get('type') == 'polarizations':
+            generated_data.pop('type')
+            logger.info(f"Polarizations {generated_data.keys()} are generated")
+
+            # convert to pycbc timeseries
+            # if more polarizations are generated, throw an error
+            if set(generated_data.keys()) != {'hp', 'hc'}:
+                raise NotImplementedError("Only hp and hc polarization is supported for now")
+
+            hp = convert_to_pycbc_timeseries(generated_data.get('hp'))
+            hc = convert_to_pycbc_timeseries(generated_data.get('hc'))
+
+            # extrinsic parameters required for projection
+            declination = injection.get('dec')
+            right_ascension = injection.get('ra')
+            polarization = injection.get('pol')
+            gps_end_time = injection.get('gps_time')
+            if declination is None or right_ascension is None or polarization is None:
+                raise ValueError(f"ra, dec and pol are required in the injection parameters, while ra: {right_ascension}, dec: {declination}, pol: {polarization}")
+            if gps_end_time is None:
+                raise ValueError("gps_time is required in the injection parameters")
+            
+            # project to detector
+            logger.info(f"Projecting {generated_data.keys()} to detectors {ifos}")
+            strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
     else:
         raise ValueError(f"Unsupported return type from waveform generator: {generated_data}, should be tuple for hp and hc, dict for more polarizations or list for strain")
 
