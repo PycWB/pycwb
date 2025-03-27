@@ -10,7 +10,6 @@ from memspectrum import MESA
 import os 
 from scipy import signal
 from pycbc.filter.resample import highpass
-from time import time 
 #from pycbc.filter import highpass
 os.environ['HOME_WAT_FILTERS'] = '/home/waveburst/SOFT/cWB/tags/config/O4_cWB_2G_config_v1.14/XTALKS'
 
@@ -43,73 +42,53 @@ def whitening_mesa(config, h):
     M = MESA() 
     stride = int(config.whiteStride * sampling_rate)
     window = int(config.whiteWindow * sampling_rate)
-     
-    psds = [] 
+    start, stop = 0, window  
     h_white = h.copy() 
-    n_windows = (len(h) - window) // stride
     #Loop over data segment chunks 
-    t0 = time() 
-    for i in range(n_windows + 1):
-        start = i * stride
-        M.solve(h[start:start+ window], method = config.whiteSolver, m = config.whiteOrder)
-        f, psd = M.spectrum(1 / sampling_rate) 
-        psds.append(psd) 
-    t1 = time () 
-    print(f'PSDs computed in: {t1 - t0} seconds')
-     
-    for i in range(n_windows + 1):
-        start = i  * stride 
-        stop = start + window
-        
+    while stop <= len(h):
         #get indeces for whitening segments [w] and segment to be whitened [s]
-        h_tmp = h[start:stop] 
-        h_w = (h_tmp.to_frequencyseries() / psds[i][:len(h_tmp) // 2 + 1]**0.5).to_timeseries() * np.sqrt(1 / sampling_rate)
-        if i == 0:
-            h_white[start:stop-stride] = h_w[:-stride]
-        elif i == n_windows:
-            h_white[start + stride:stop] = h_w[stride:]
-        else: 
-            h_white[start + stride:stop-stride] = h_w[stride:-stride]
-    
-    print(f'Job whitened in {time() - t1} seconds')
+        h_tmp = h[start:stop]
+        M.solve(h_tmp)
+        _, psd = M.spectrum(1 / sampling_rate) 
+        h_w = (h_tmp.to_frequencyseries() / psd[:len(h_tmp) // 2 + 1]**0.5).to_timeseries() * np.sqrt(1 / sampling_rate)
+        h_white[start + stride:stop-stride] = h_w[stride:-stride]
+        start += stride
+        stop += stride
+    #Undo last step update of "stop" to get real used stop 
+    stop -= stride
     del(h_tmp) 
     del(h_w) 
      
     #Initialize TF map 
-    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h[:stop]), wdm_white.wavelet)
+    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h[stride:stop-stride]), wdm_white.wavelet)
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
 
     #Create a TF map for whitened array 
-    tf_map_white = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
+    tf_map_white = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[stride:stop-stride]), wdm_white.wavelet)
     tf_map_white.Forward()
     tf_map_white.setlow(config.fLow)
     tf_map_white.sethigh(config.fHigh)
 
     #Compute whitening factor in TF domain from time going to stride to stop - stride 
     nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)
-    
 
     #Compute the nRMS taking the median over 20 second segments and convert to array 
     data_per_batch = int(config.whiteStride // wdm_dt)
     nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch)
-    print(nRMS_reshaped.shape)    
-    nRMS_reshaped[:int(16 / wdm_df)] = 1  #set nRMS = 1 for f < 16 
-    nRMS = np.sqrt(np.median(nRMS_reshaped ** 2, axis = 2))
-    nRMS[: int(16 / wdm_df)+1] = 1 
-    #print(16 / wdm_df)    
+
+    nRMS = np.sqrt(np.median(nRMS_reshaped ** 2, axis = 2)).reshape(-1, order = 'F')
     n_segments = nRMS_reshaped.shape[1]
-    nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F') 
-    
- 
+    nRMS = np.append(nRMS, np.ones(n_segments), axis = 0).reshape(-1, order = 'F') 
     #convert to nRMS
+    n_segments = nRMS_reshaped.shape[1]
     nRMS = _convert_numpy_nrms_to_wseries(nRMS, h.start_time, sampling_rate, n_segments,  wdm_white.wavelet)
-    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
+    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[stride:stop-stride]), wdm_white.wavelet)
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
     n_rms = convert_wseries_to_time_frequency_series(nRMS)
 
-    return tf_map_whitened, psds
+    return tf_map_whitened, n_rms
 
     
 

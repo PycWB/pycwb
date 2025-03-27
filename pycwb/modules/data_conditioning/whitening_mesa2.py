@@ -53,15 +53,19 @@ def whitening_mesa(config, h):
         print((len(h) - i*step)/sampling_rate)
 
     # Pad with zeros along axis=0 for edge handling
-    psds_padded = np.pad(psds, ((1, 1), (0, 0)), mode='constant', constant_values=0)
+    #psds_padded = np.pad(psds, ((1, 1), (0, 0)), mode='constant', constant_values=0)
 
     # Create sliding windows of shape (100, 2000, 3)
-    windows = np.lib.stride_tricks.sliding_window_view(psds_padded, (3,), axis=0)
+    # windows = np.lib.stride_tricks.sliding_window_view(psds, (2,), axis=0)
 
     # Compute the median along the last axis (window axis)
-    psds_filtered = np.median(windows, axis=-1)
-    
-    return psds, psds_filtered
+    psds = np.array(psds) 
+    psds_ratio = psds[:-1,:] / psds[1:,:]
+    ratio_sum = psds_ratio.sum(axis = 1)
+
+    print(psds.shape) 
+
+    return psds, ratio
     
 #    while stop <= len(h):
 #        #get indeces for whitening segments [w] and segment to be whitened [s]
