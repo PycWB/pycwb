@@ -21,7 +21,30 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+    """
+    The core workflow to process single job segment with trails or lags. 
+
+    Parameters
+    ----------
+    working_dir : str
+        The working directory for the run
+    config : Config
+        The configuration object
+    job_seg : WaveSegment
+        The job segment to process
+    compress_json : bool
+        Whether to compress the json files
+    catalog_file : str
+        The catalog file to save the triggers
+    queue : Queue
+        The queue to send the triggers to the collector for saving in production mode
+    production_mode : bool
+        Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
+    skip_lags : list
+        The options to skip certain lags. It is used for resuming the processing after a crash
+    
+    """
     print_job_info(job_seg)
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -57,18 +80,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # check and resample the data
         data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
-        
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # data conditioning
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-
+        # coherence
         fragment_clusters = coherence(config, tf_maps, nRMS_list)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
 
+        # supercluster
         if config.use_root_supercluster:
             super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
         else:
@@ -77,9 +102,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                                         xtalk_coeff, xtalk_lookup_table, layers)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
             events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
                                                             lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
+            
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
             # only return selected events
@@ -98,6 +125,17 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             event.injection = injection
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+            # if in production mode, send the triggers to the queue instead of saving them here
+            if production_mode:
+                logger.info("In production mode, sending triggers to the queue instead of saving them in the processor")
+                queue.put({
+                    "job_seg": sub_job_seg,
+                    "lag": lag,
+                    "events": events_data,
+                    "clusters": clusters
+                })
+                continue
+
             # save triggers
             trigger_folders = []
             for trigger in events_data:
@@ -107,6 +145,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 )
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+            # post process and plot
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 # FIXME: add gps time and segment time on the x ticks
                 event, cluster, event_skymap_statistics = trigger
