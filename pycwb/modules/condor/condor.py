@@ -104,6 +104,8 @@ pycwb merge-catalog --work-dir={working_dir}
             "request_cpus": f"{self.n_proc}",
             "request_memory": self.memory,
             "request_disk": self.disk,
+            "use_oauth_services": "scitokens",
+            "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         })
 
         merge_job = htcondor.Submit(
