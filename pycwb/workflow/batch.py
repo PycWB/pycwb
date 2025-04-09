@@ -85,7 +85,8 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     logger.info(f"Segment processer loaded: {main_func}")
 
     # create a queue and a worker to collect the data
-    queue = multiprocessing.Queue()
+    manager = multiprocessing.Manager()
+    queue = manager.Queue()
     data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, queue))
     data_collector_worker.start()
 
