@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np 
 import ROOT
 import logging
 from pycwb.modules.cwb_conversions import *
@@ -10,7 +10,8 @@ from memspectrum import MESA
 import os 
 from scipy import signal
 from pycbc.filter.resample import highpass
-from time import time 
+from sklearn.ensemble import IsolationForest
+
 #from pycbc.filter import highpass
 os.environ['HOME_WAT_FILTERS'] = '/home/waveburst/SOFT/cWB/tags/config/O4_cWB_2G_config_v1.14/XTALKS'
 
@@ -48,15 +49,18 @@ def whitening_mesa(config, h):
     h_white = h.copy() 
     n_windows = (len(h) - window) // stride
     #Loop over data segment chunks 
-    t0 = time() 
     for i in range(n_windows + 1):
         start = i * stride
-        M.solve(h[start:start+ window], method = config.whiteSolver, m = config.whiteOrder)
+        M.solve(h[start:start+ window], method = config.mesaSolver, m = config.mesaOrder)
         f, psd = M.spectrum(1 / sampling_rate) 
         psds.append(psd) 
-    t1 = time () 
-    print(f'PSDs computed in: {t1 - t0} seconds')
-     
+    
+    #reindex psds to exclude possibly-glitch-contaminated estimates 
+    outliers = np.repeat(False, len(psds)
+    if config.mesaReindex: 
+        psds, outliers = reindex_psds(np.array(psds), f)
+    
+    #Use PSDs estimates to whiten the data         
     for i in range(n_windows + 1):
         start = i  * stride 
         stop = start + window
@@ -64,17 +68,16 @@ def whitening_mesa(config, h):
         #get indeces for whitening segments [w] and segment to be whitened [s]
         h_tmp = h[start:stop] 
         h_w = (h_tmp.to_frequencyseries() / psds[i][:len(h_tmp) // 2 + 1]**0.5).to_timeseries() * np.sqrt(1 / sampling_rate)
-        if i == 0:
+        
+        if i == 0: 
             h_white[start:stop-stride] = h_w[:-stride]
-        elif i == n_windows:
-            h_white[start + stride:stop] = h_w[stride:]
+        if i == n_windows: 
+            h_white[start+stride:stop] = h_w[stride:]
         else: 
             h_white[start + stride:stop-stride] = h_w[stride:-stride]
-    
-    print(f'Job whitened in {time() - t1} seconds')
     del(h_tmp) 
     del(h_w) 
-     
+    edge = int(config.segEdge * sampling_rate)
     #Initialize TF map 
     tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h[:stop]), wdm_white.wavelet)
     tf_map.Forward()
@@ -93,25 +96,51 @@ def whitening_mesa(config, h):
 
     #Compute the nRMS taking the median over 20 second segments and convert to array 
     data_per_batch = int(config.whiteStride // wdm_dt)
-    nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch)
-    print(nRMS_reshaped.shape)    
+    nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch) 
     nRMS_reshaped[:int(16 / wdm_df)] = 1  #set nRMS = 1 for f < 16 
     nRMS = np.sqrt(np.median(nRMS_reshaped ** 2, axis = 2))
-    nRMS[: int(16 / wdm_df)+1] = 1 
-    #print(16 / wdm_df)    
+    #nRMS[: int(16 / wdm_df)+1] = 1 #set nRMS = 1 for f < 16
+    #add 1 as last frequency bin for compatibility 
     n_segments = nRMS_reshaped.shape[1]
-    nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F') 
+    nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F')  
     
  
-    #convert to nRMS
+    #convert to pycwb types nRMS
     nRMS = _convert_numpy_nrms_to_wseries(nRMS, h.start_time, sampling_rate, n_segments,  wdm_white.wavelet)
-    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
+    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
     n_rms = convert_wseries_to_time_frequency_series(nRMS)
 
-    return tf_map_whitened, psds
+    return tf_map_whitened, n_rms, psds, outliers
 
-    
+
+def reindex_psds(psds, f): 
+
+    #Compute ratio of PSDs over median over some frequencies bin to have a reference PSD 
+    mask_lf = (f > 16) & (f < 128)
+    mask_hf = (f > 128)
+    psd_median = np.median(psds, axis = 0)
+
+    #Compute the log distance over low and high frequency ranges to find IF features  
+    dist_lf = np.mean((np.log(psds[:,mask_lf] / psd_median[mask_lf])) ** 2, axis = 1) ** .5
+    dist_hf = np.mean((np.log(psds[:,mask_hf] / psd_median[mask_hf])) ** 2, axis = 1) ** .5
+    dist = np.stack([dist_lf, dist_hf], axis = 1)
+    predictions = IsolationForest(n_estimators = 100).fit_predict(dist)
+    #Outliers are only above median 
+    median_lf, median_hf = np.median([dist_lf,dist_hf], axis = 1)
+    above_median = (dist_lf > median_lf) | (dist_hf > median_hf)
+    predictions = np.logical_and(predictions == -1,above_median)
+    #Reindex outliers 
+    outliers_idx = np.where(predictions)[0] 
+    inliers_idx = np.where(~predictions)[0] 
+
+    for idx in outliers_idx: 
+        new_idx = inliers_idx[np.argmin(np.abs(inliers_idx-idx))]
+        psds[idx] = psds[new_idx]
+        print(f"Subsituting PSD {idx} with PSD {new_idx}")
+    return psds, predictions
+
+
 
 def _convert_numpy_nrms_to_wseries(data: np.array, start: np.double, rate: int, n_segments: int,  wavelet):
     """

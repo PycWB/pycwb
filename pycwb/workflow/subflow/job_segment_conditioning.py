@@ -7,8 +7,9 @@ from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
-from pycwb.modules.read_data import generate_injection, generate_noise_for_job_seg, read_from_job_segment
-from pycwb.modules.data_conditioning import data_conditioning
+from pycwb.modules.read_data import generate_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
+from pycwb.modules.data_conditioning import data_conditioning, regression, whitening_mesa, whitening_cwb
+
 from pycwb.modules.likelihood import likelihood
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
@@ -38,7 +39,18 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
 
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    tf_maps, nRMS_list = data_conditioning(config, data)
+    #check and resample the data 
+    data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
+
+    
+    data_regression = [regression(config, h) for h in data] 
+    if config.whiteMethod == 'wavelet': 
+        tf_maps, nrms = zip(*[whitening_cwb(config, h) for h in data_regression])
+        psds, mask = [None,None], [None,None] 
+
+    elif config.whiteMethod == 'mesa':
+        tf_maps, nrms, psds, mask = zip(*[whitening_mesa(config, h) for h in data_regression])
+        
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     #sample_rate = config.inRate / 2 ** config.levelR 
@@ -46,16 +58,22 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
     #pvalues = [anderson_test(tf_map.data[scratch:-scratch]) for tf_map in tf_maps]
 
     #save_pvalue(pvalues, config, working_dir)
-    save_conditioning(config, tf_maps, nRMS_list, working_dir, job_seg) 
+    save_conditioning(config, tf_maps, nrms, psds, mask, working_dir, job_seg) 
 
-def save_conditioning(config, tf_map, psds, working_dir, job_seg):
+def save_conditioning(config, tf_maps, nrms, psds, mask, working_dir, job_seg):
+    timeseries_folder = f'{working_dir}/timeSeries' 
+    nrms_folder = f'{working_dir}/nrms'
     psds_folder = f'{working_dir}/PSDs'
-    timeseries_folder = f'{working_dir}/timeSeries'
-    os.makedirs(timeseries_folder, exist_ok = True) 
-    os.makedirs(psds_folder, exist_ok = True)
+    mask_folder = f'{working_dir}/mask'
+    for folder in [psds_folder,timeseries_folder,nrms_folder,mask_folder]: 
+        os.makedirs(folder, exist_ok = True) 
+    
     for i, ifo in enumerate(config.ifo): 
-        np.save(f'{timeseries_folder}/ts_{job_seg.index}_{ifo}',tf_map[i].data.data)
-        np.save(f'{psds_folder}/PSDs_{job_seg.index}_{ifo}', psds[i])
+        np.save(f'{timeseries_folder}/ts_{job_seg.index}_{ifo}',tf_maps[i].data.data)
+        np.save(f'{nrms_folder}/nrms_{job_seg.index}_{ifo}', nrms[i].data.data)
+        np.save(f'{psds_folder}/pds_{job_seg.index}_{ifo}', psds[i])    
+        np.save(f'{mask_folder}/glitch_{job_seg.index}_{ifo}', mask[i])
+
 #def save_conditioning(tf_maps, nrms, working_dir, config, job_seg):
 #    timeseries_folder = f'{working_dir}/timeSeries'
 #    nrms_folder = f'{working_dir}/nrms'
