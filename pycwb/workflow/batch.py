@@ -36,19 +36,22 @@ def batch_setup(file_name, working_dir='.',
 
 
 def data_collector(working_dir, queue):
+    logger_init(log_file=None, log_level="INFO", worker_prefix=f'DataCollector')
     while True:
         item = queue.get()
         if item is None:  # Sentinel to terminate
             break
         try:
-            print(f"Merging {item}")
+            logger.info(f"Merging {item}")
         except Exception as e:
-            print(f"Error merging {item}: {e}")
+            logger.error(f"Error merging {item}: {e}")
 
 
 def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
+    logger_init(log_file=None, log_level="INFO", worker_prefix=f'Job-{job_seg.index}')
+    logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
     if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
-        print(f"Job segment {job_seg.index} is already done")
+        logger.info(f"Job segment {job_seg.index} is already done")
         return
 
     try:
@@ -60,17 +63,17 @@ def process_single_with_flag(main_func, queue, working_dir, config, job_seg, com
             with open(f"{working_dir}/job_status/job_{job_seg.index}.done", 'w') as f:
                 f.write("")
         except Exception as e:
-            print(f"Failed to create job done flag file: {e}")
+            logger.error(f"Failed to create job done flag file: {e}")
 
     except Exception as e:
-        print(f"Error processing job segment: {job_seg}")
-        print(e)
+        logger.error(f"Error processing job segment: {job_seg}")
+        logger.error(e)
         # create a flag file to indicate the job is failed
         try:
             with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
                 f.write("")
         except Exception as e:
-            print(f"Failed to create job failed flag file: {e}")
+            logger.error(f"Failed to create job failed flag file: {e}")
             return e
 
 
@@ -92,24 +95,25 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
 
     exceptions = []
     with multiprocessing.Pool(n_workers) as pool:
+        logger.info(f"Starting {n_workers} workers")
+        results = []
         for job_seg in job_segments:
-            results = []
-            for job_seg in job_segments:
-                r = pool.apply_async(process_single_with_flag,
-                                     args=(main_func, queue, working_dir, config, job_seg,
-                                           compress_json, catalog_file))
-                results.append(r)
+            r = pool.apply_async(process_single_with_flag,
+                                    args=(main_func, queue, working_dir, config, job_seg,
+                                        compress_json, catalog_file))
+            results.append(r)
 
-            for r in results:
-                try:
-                    err = r.get()
-                    if err:
-                        exceptions.append(err)
-                except Exception as e:
-                    exceptions.append(e)
+        for r in results:
+            try:
+                err = r.get()
+                if err:
+                    exceptions.append(err)
+            except Exception as e:
+                exceptions.append(e)
 
         pool.close()
         pool.join()
+        logger.info("All jobs are done, waiting for data collector to finish")
 
         # send a sentinel to terminate the data collector
         queue.put(None)
