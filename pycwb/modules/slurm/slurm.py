@@ -17,11 +17,11 @@ class Slurm:
         self.job_per_worker = job_per_worker
 
     def create(self, job_segments, submit=False):
-        if os.path.exists(self.dag_dir):
+        if os.path.exists(self.slurm_dir):
             if not click.confirm("Are you sure you want to clean the existing slurm directory?", default=False):
                 print("Cleaning aborted.")
                 return
-            shutil.rmtree(self.dag_dir, ignore_errors=True)
+            shutil.rmtree(self.slurm_dir, ignore_errors=True)
     
         self.generate_job_script(job_segments)
         self.generate_merge_script()

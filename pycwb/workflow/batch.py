@@ -29,7 +29,7 @@ def batch_setup(file_name, working_dir='.',
                           n_proc, memory, disk)
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
-        slurm = Slurm(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
+        slurm = Slurm(working_dir, conda_env, additional_init, job_per_worker,
                       n_proc, memory, disk)
         slurm.create(job_segments, submit=submit)
     else:
