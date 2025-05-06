@@ -8,7 +8,7 @@ from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
-
+from pycwb.modules.slurm.slurm import Slurm
 logger = logging.getLogger(__name__)
 
 
@@ -17,9 +17,6 @@ def batch_setup(file_name, working_dir='.',
                 compress_json=True, cluster="condor", conda_env=None, additional_init="",
                 accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
                 dry_run=False, submit=False):
-    import htcondor
-    from htcondor import dags
-
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
                                                          compress_json=compress_json)
@@ -31,8 +28,12 @@ def batch_setup(file_name, working_dir='.',
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
                           n_proc, memory, disk)
         condor.create(job_segments, submit=submit)
+    elif cluster == "slurm":
+        slurm = Slurm(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
+                      n_proc, memory, disk)
+        slurm.create(job_segments, submit=submit)
     else:
-        raise ValueError(f"Unsupported cluster type: {cluster}, only support condor for now")
+        raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")
 
 
 def data_collector(working_dir, queue):
