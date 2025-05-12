@@ -63,6 +63,12 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "save_cluster": {
+            "type": "boolean",
+            "description": "save cluster to json",
+            "default": True,
+            "cwb": False
+        },
         "save_sky_map": {
             "type": "boolean",
             "description": "save sky maps to json",

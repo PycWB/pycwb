@@ -141,6 +141,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger in events_data:
                 trigger_folders.append(
                     save_trigger(working_dir, config.trigger_dir, config.catalog_dir, sub_job_seg, trigger,
+                                save_cluster=config.save_cluster,
                                 save_sky_map=config.save_sky_map, catalog_file=catalog_file)
                 )
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
@@ -164,7 +165,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
 def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
                  job_seg: WaveSegment, trigger_data: tuple | list,
-                 save_sky_map: bool = True, index: bool = None, catalog_file: str = "catalog.json"):
+                 save_cluster: bool = True, save_sky_map: bool = True, 
+                 index: bool = None, catalog_file: str = "catalog.json"):
     if index is None:
         event, cluster, event_skymap_statistics = trigger_data
     else:
@@ -176,26 +178,30 @@ def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
     if cluster.cluster_status != -1:
         return 0
 
-    print(f"Saving trigger {event.hash_id}")
-
-    trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event.stop[0]}_{event.hash_id}"
-    print(f"Creating trigger folder: {trigger_folder}")
-    if not os.path.exists(trigger_folder):
-        os.makedirs(trigger_folder)
-    else:
-        print(f"Trigger folder {trigger_folder} already exists, skip")
-
-    print(f"Saving trigger data")
-    save_dataclass_to_json(event, f"{trigger_folder}/event.json")
-    save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
-    if save_sky_map:
-        save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
-
+    # Save the event to the catalog
     print(f"Adding event to catalog")
     # if catalog_file is in full absolute path, use it directly
     if not catalog_file.startswith("/"):
         catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-    add_events_to_catalog(catalog_file, event.summary())
+    add_events_to_catalog(catalog_file, event)
+
+    # Save the event to the trigger folder
+    if save_cluster or save_sky_map:
+        print(f"Saving trigger {event.hash_id}")
+
+        trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event.stop[0]}_{event.hash_id}"
+        print(f"Creating trigger folder: {trigger_folder}")
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+        else:
+            print(f"Trigger folder {trigger_folder} already exists, skip")
+
+        print(f"Saving trigger data")
+        # save_dataclass_to_json(event, f"{trigger_folder}/event.json")
+        if save_cluster:
+            save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
+        if save_sky_map:
+            save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
     return trigger_folder
 
