@@ -69,8 +69,8 @@ fi
 echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
 
 conda activate {conda_env}
-
-python3 process_jobs.py --start $start --end $end --nproc $n_proc
+{self.additional_init}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc}
                 """)
             pass
 
