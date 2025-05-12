@@ -48,7 +48,7 @@ class Slurm:
 #SBATCH --array=0-{n_workers-1}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={n_proc}
-#SBATCH --time=01:00:00
+#SBATCH --time=24:00:00
 #SBATCH --constraint=cal
 #SBATCH --mem={memory}
 

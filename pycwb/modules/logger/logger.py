@@ -21,10 +21,10 @@ def logger_init(log_file: str = None, log_level: str = 'INFO', silent: bool = Fa
 
 
     if log_file:
-        logging.basicConfig(filename=log_file, level=log_level,
+        logging.basicConfig(filename=log_file, level=log_level, force=True,
                             format=format_str, datefmt='%y-%m-%d %H:%M:%S')
     else:
-        logging.basicConfig(stream=sys.stdout, level=log_level,
+        logging.basicConfig(stream=sys.stdout, level=log_level, force=True,
                             format=format_str, datefmt='%y-%m-%d %H:%M:%S')
 
     if not silent:
