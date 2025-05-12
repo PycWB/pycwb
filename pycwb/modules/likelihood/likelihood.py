@@ -100,10 +100,10 @@ def likelihood(config, network, fragment_cluster, lag=0, shifts=(0,0,0), job_id=
 
     # timer
     timer_end = time.perf_counter()
-    print("-------------------------------------------------------")
-    print("Total events: %d" % n_events)
-    print("Total time: %.2f s" % (timer_end - timer_start))
-    print("-------------------------------------------------------")
+    logger.info("-------------------------------------------------------")
+    logger.info("Total events: %d" % n_events)
+    logger.info("Total time: %.2f s" % (timer_end - timer_start))
+    logger.info("-------------------------------------------------------")
 
     return events, clusters, skymap_statistics
 
@@ -157,16 +157,16 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster, shifts=(0,0,
 
     ####################
 
-    print("Selected core pixels: %d" % selected_core_pixels)
+    logger.info("Selected core pixels: %d" % selected_core_pixels)
 
     detected = cluster.cluster_status == -1
 
     # print reconstructed event
-    print("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixels)))
+    logger.info("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixels)))
     if detected:
-        print("\t -> SELECTED !!!")
+        logger.info("\t -> SELECTED !!!")
     else:
-        print("\t <- rejected    ")
+        logger.info("\t <- rejected    ")
 
     return event, cluster
 

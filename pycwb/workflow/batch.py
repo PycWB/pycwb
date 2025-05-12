@@ -49,7 +49,7 @@ def data_collector(working_dir, queue):
 
 
 def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
-    logger_init(log_file=None, log_level="INFO", worker_prefix=f'Job-{job_seg.index}')
+    logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
     if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
         logger.info(f"Job segment {job_seg.index} is already done")
