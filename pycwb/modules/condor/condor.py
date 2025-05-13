@@ -111,6 +111,8 @@ pycwb merge-catalog --work-dir={working_dir}
         })
 
         merge_job = htcondor.Submit(
+            universe="vanilla",
+            getenv="true",
             executable="merge.sh",
             transfer_input_files=f"{working_dir}/catalog",
             should_transfer_files="yes",
