@@ -153,7 +153,7 @@ pycwb merge-catalog --work-dir={working_dir}
         working_dir = self.working_dir
         dag_dir = self.dag_dir
 
-        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1})
+        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1, 'import_env': 1})
         print('------------------------')
         print(dag_submit)
         print('------------------------')
