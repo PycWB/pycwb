@@ -90,6 +90,8 @@ pycwb merge-catalog --work-dir={working_dir}
 
         # create the submit description for the batch job
         batch_job = htcondor.Submit({
+            "universe": "vanilla",
+            "getenv": "true",
             "executable": "run.sh",
             "arguments": f"$(jobs)",  # Passing jobs as an argument
             "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config, "
