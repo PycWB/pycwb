@@ -62,11 +62,11 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
 
 def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     # if seeds is not provided, use None for all ifos
-    print(f"Generating noise for job segment {job_seg.index}")
+    logger.info(f"Generating noise for job segment {job_seg.index}")
     if 'seeds' in job_seg.noise:
-        print(f"Using seeds {job_seg.noise['seeds']}")
-    print(f"Sample rate: {sample_rate}")
-    print(f"Low frequency: {f_low}")
+        logger.info(f"Using seeds {job_seg.noise['seeds']}")
+    logger.info(f"Sample rate: {sample_rate}")
+    logger.info(f"Low frequency: {f_low}")
 
     seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
 
@@ -81,7 +81,7 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     else:
         data = noises
 
-    print(f"Generated noise for job segment {job_seg.index}")
+    logger.info(f"Generated noise for job segment {job_seg.index}")
     return data
 
 
@@ -179,7 +179,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
 
     # setting default values removed, PycWB core code should not handle the default values to prevent inexplicit overwrite!!!
     injection['delta_t'] = 1.0 / sample_rate
-    print(f'Generating injection for {ifos} with parameters: \n {injection} \n')
+    logger.info(f'Generating injection for {ifos} with parameters: \n {injection} \n')
 
     ##############################
     # generating injection
@@ -278,7 +278,7 @@ def generate_injections(config, job_seg, strain=None):
     ifos = job_seg.ifos
 
     # load noise
-    print(f'Generating noise for {ifos}')
+    logger.info(f'Generating noise for {ifos}')
 
     injected = strain
 

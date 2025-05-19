@@ -193,7 +193,7 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
 
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
-    print(logger_info)
+    logger.info(logger_info)
     return fragment_clusters
 
 

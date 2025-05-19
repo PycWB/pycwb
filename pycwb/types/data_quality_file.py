@@ -34,16 +34,16 @@ class DQFile:
     invert: bool
     c4: bool
 
-    @property
-    def __dict__(self):
-        return {
-            "ifo": self.ifo,
-            "file": self.file,
-            "dq_cat": self.dq_cat,
-            "shift": self.shift,
-            "invert": self.invert,
-            "c4": self.c4
-        }
+    # @property
+    # def __dict__(self):
+    #     return {
+    #         "ifo": self.ifo,
+    #         "file": self.file,
+    #         "dq_cat": self.dq_cat,
+    #         "shift": self.shift,
+    #         "invert": self.invert,
+    #         "c4": self.c4
+    #     }
 
     def get_periods(self):
         """
