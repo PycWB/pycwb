@@ -42,3 +42,26 @@ def load_model(model_file: str) -> xgb.Booster:
         model = xgb.Booster(model_file=model_file)
     
     return model
+
+
+def read_json_to_pandas(catalog_file: str):
+    """
+    Read the json file into a pandas DataFrame.
+
+    Parameters
+    ----------
+    catalog_file : str
+        The path to the json file.
+
+    Returns
+    -------
+    df : DataFrame
+        The DataFrame read from the json file.
+
+    """
+    import pandas as pd
+    df = pd.read_json(catalog_file)
+
+    # format conversion
+    
+    return df
