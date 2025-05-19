@@ -44,7 +44,7 @@ def check_module_existence(module_name, target_dir=None):
     return os.path.exists(module_path)
 
 
-def pull_external_module(module_name, module_path, repo_url, target_dir=None):
+def pull_external_module(module_name, module_path, repo_url, version=None, target_dir=None):
     """
     Pull the specified external module from the repository.
 
@@ -52,6 +52,7 @@ def pull_external_module(module_name, module_path, repo_url, target_dir=None):
         module_name (str): Name of the module to pull.
         module_path (str): Path to the module in the repository.
         repo_url (str): URL of the repository to pull from.
+        version (str, optional): Version of the module to check. Defaults to None.
         target_dir (str, optional): Directory to check for the module. Defaults to None.
 
     Returns:
@@ -65,8 +66,18 @@ def pull_external_module(module_name, module_path, repo_url, target_dir=None):
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            logger.info(f"Cloning {repo_url} into {tmp_dir}")
-            subprocess.run(['git', 'clone', '--depth', '1', repo_url, tmp_dir], check=True)
+            logger.info(f"Cloning {repo_url} with version {version} to {tmp_dir}")
+            # subprocess.run(['git', 'clone', '--depth', '1', repo_url, tmp_dir], check=True)
+            if version:
+                result = subprocess.run([
+                    "git", "clone", "--branch", version, "--depth", "1", repo_url, tmp_dir
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+                # Only print if there's a real issue
+                if result.returncode != 0:
+                    logger.error(f"Error cloning repository: {result.stderr}")
+            else:
+                subprocess.run(['git', 'clone', '--depth', '1', repo_url, tmp_dir], check=True)
 
             source_path = os.path.join(tmp_dir, module_path)
             if not os.path.exists(source_path):
