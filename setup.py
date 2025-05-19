@@ -24,7 +24,7 @@ install_requires = [
     "aiohttp",
     "pycbc",
     "filelock",
-    "scipy",
+    "scipy<1.14", # required by healpy
     "pillow>=9.0.0",
     "click",
     "orjson",
