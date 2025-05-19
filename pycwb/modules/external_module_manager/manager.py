@@ -22,29 +22,29 @@ def load_config(external_module_config, config_schema=schema):
     params = load_yaml(external_module_config, config_schema)
 
     target_dir = params.get("target_dir")
+    if target_dir is None:
+        import pycwb
+        target_dir = os.path.join(os.path.dirname(pycwb.__file__), 'modules')
     modules = params.get("modules", [])
     return target_dir, modules
 
 
-def check_module_existence(module_name, target_dir=None):
+def check_module_existence(module_name, target_dir):
     """
     Check if the specified module exists in the the pycwb installation directory.
 
     Args:
         module_name (str): Name of the module to check.
+        target_dir (str): Directory to check for the module.
 
     Returns:
         bool: True if the module exists, False otherwise.
     """
-    if target_dir is None:
-        import pycwb
-        target_dir = os.path.join(os.path.dirname(pycwb.__file__), 'modules')
-
     module_path = os.path.join(target_dir, module_name)
     return os.path.exists(module_path)
 
 
-def pull_external_module(module_name, module_path, repo_url, version=None, target_dir=None):
+def pull_external_module(module_name, module_path, repo_url, target_dir, version=None):
     """
     Pull the specified external module from the repository.
 
@@ -52,16 +52,16 @@ def pull_external_module(module_name, module_path, repo_url, version=None, targe
         module_name (str): Name of the module to pull.
         module_path (str): Path to the module in the repository.
         repo_url (str): URL of the repository to pull from.
+        target_dir (str): Directory to copy the module to.
         version (str, optional): Version of the module to check. Defaults to None.
-        target_dir (str, optional): Directory to check for the module. Defaults to None.
 
     Returns:
         bool: True if the module was pulled successfully, False otherwise.
     """
-    if target_dir is None:
-        import pycwb
-        target_dir = os.path.join(os.path.dirname(pycwb.__file__), 'modules')
-
+    if not os.path.exists(target_dir):
+        logger.error(f"Target directory {target_dir} does not exist.")
+        return False
+    
     dest_path = os.path.join(target_dir, module_name)
 
     try:
