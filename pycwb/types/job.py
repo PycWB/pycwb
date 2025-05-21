@@ -106,7 +106,7 @@ class WaveSegment:
         """
         if self.shift is None:
             return {ifo: self.start_time for ifo in self.ifos}
-        return {ifo: self.start_time + self.shift[i] for i, ifo in enumerate(self.ifos)}
+        return {ifo: self.start_time - self.shift[i] for i, ifo in enumerate(self.ifos)}
 
     @property
     def physical_end_times(self) -> Dict[str, float]:
@@ -120,7 +120,7 @@ class WaveSegment:
         """
         if self.shift is None:
             return {ifo: self.end_time for ifo in self.ifos}
-        return {ifo: self.end_time + self.shift[i] for i, ifo in enumerate(self.ifos)}
+        return {ifo: self.end_time - self.shift[i] for i, ifo in enumerate(self.ifos)}
 
     to_dict = asdict
 
