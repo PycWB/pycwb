@@ -1,5 +1,5 @@
 from gwpy.timeseries import TimeSeries
-from .data_check import check_and_resample
+import numpy as np
 import pycbc.catalog
 import logging
 from multiprocessing import Pool
@@ -39,6 +39,13 @@ def read_from_gwf(filename, channel, start=None, end=None) -> TimeSeries:
     # Read gwf file
     data = TimeSeries.read(filename, channel, start, end)
 
+    # check if data contains NaN values
+    if np.isnan(np.sum(data)):
+        if start and end:
+            raise ValueError(f'Data from {filename} ({channel}) from {start} to {end} contains NaN values')
+        else:
+            raise ValueError(f'Data from {filename} ({channel}) contains NaN values')
+    
     return data
 
 
