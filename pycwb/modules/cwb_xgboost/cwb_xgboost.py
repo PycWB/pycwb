@@ -3,7 +3,7 @@ from pycwb.utils.module import import_function_from_file
 from .config import xgb_config
 from .prediction import predict
 from .utils import load_model
-
+from .read_data import preprocess_events
 
 def xgb_predict(events: DataFrame, config_file: str, model_file: str, search: str, nifo: int):
     """
@@ -35,6 +35,9 @@ def xgb_predict(events: DataFrame, config_file: str, model_file: str, search: st
     # load the model
     model = load_model(model_file)
 
+    # preprocess the events DataFrame
+    events = preprocess_events(events, nifo, ML_options, ML_caps)
+    
     # predict the ranking statistics
     predict(events, model, xgb_params, ML_list, add_ranking_statistics)
     
