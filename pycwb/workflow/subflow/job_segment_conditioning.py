@@ -29,6 +29,9 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
         raise ValueError("No data to process")
 
     data = None
+    pvalues = {}
+    means = {} 
+    stds = {} 
 
     if job_seg.frames:
         data = read_from_job_segment(config, job_seg)
@@ -44,55 +47,61 @@ def job_segment_conditioning(working_dir: str, config: Config, job_seg: WaveSegm
 
     
     data_regression = [regression(config, h) for h in data] 
+     
+
     if config.whiteMethod == 'wavelet': 
         tf_maps, nrms = zip(*[whitening_cwb(config, h) for h in data_regression])
-        psds, mask = [None,None], [None,None] 
 
     elif config.whiteMethod == 'mesa':
-        tf_maps, nrms, psds, mask = zip(*[whitening_mesa(config, h) for h in data_regression])
-        
+        tf_maps, nrms = zip(*[whitening_mesa(config, h) for h in data_regression])
+    
+    sample_rate = config.inRate / 2 ** (config.levelR) 
+    print(sample_rate) 
+    logger.info("Applying data conditionind and testing with Anderson")
+    #Compute p-value with anderson test every 20 seconds 
+    step = int(sample_rate * config.whiteStride) 
+    for i, ifo in enumerate(job_seg.ifos): 
+        pvalues[ifo] = [] 
+        means[ifo] = [] 
+        stds[ifo] = [] 
+        size = len(tf_maps[i].data.data) 
+        for j in range(1,size // step - 1): 
+            p, m, s = compute_statistics(tf_maps[i].data.data[j * step : (j+1) * step])
+            pvalues[ifo].append(p)
+            means[ifo].append(m)
+            stds[ifo].append(s) 
+
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-    #sample_rate = config.inRate / 2 ** config.levelR 
-    #scratch = int(sample_rate * config.segEdge) 
-    #pvalues = [anderson_test(tf_map.data[scratch:-scratch]) for tf_map in tf_maps]
+    save_conditioning(config, nrms, pvalues, means, stds, working_dir, job_seg) 
 
-    #save_pvalue(pvalues, config, working_dir)
-    save_conditioning(config, tf_maps, nrms, psds, mask, working_dir, job_seg) 
-
-def save_conditioning(config, tf_maps, nrms, psds, mask, working_dir, job_seg):
-    timeseries_folder = f'{working_dir}/timeSeries' 
+def save_conditioning(config, nrms, pvalues, means, stds, working_dir, job_seg):
     nrms_folder = f'{working_dir}/nrms'
-    psds_folder = f'{working_dir}/PSDs'
-    mask_folder = f'{working_dir}/mask'
-    for folder in [psds_folder,timeseries_folder,nrms_folder,mask_folder]: 
+    anderson_folder = f'{working_dir}/anderson' 
+    mean_folder = f'{working_dir}/mean'
+    std_folder = f'{working_dir}/std' 
+
+    for folder in [nrms_folder, anderson_folder, mean_folder, std_folder]: 
         os.makedirs(folder, exist_ok = True) 
     
     for i, ifo in enumerate(config.ifo): 
-        np.save(f'{timeseries_folder}/ts_{job_seg.index}_{ifo}',tf_maps[i].data.data)
         np.save(f'{nrms_folder}/nrms_{job_seg.index}_{ifo}', nrms[i].data.data)
-        np.save(f'{psds_folder}/pds_{job_seg.index}_{ifo}', psds[i])    
-        np.save(f'{mask_folder}/glitch_{job_seg.index}_{ifo}', mask[i])
+        np.save(f'{anderson_folder}/pvalues_{job_seg.index}_{ifo}', pvalues[ifo])    
+        np.save(f'{mean_folder}/mean_{job_seg.index}_{ifo}', means[ifo])
+        np.save(f'{std_folder}/std_{job_seg.index}_{ifo}', stds[ifo])
 
-#def save_conditioning(tf_maps, nrms, working_dir, config, job_seg):
-#    timeseries_folder = f'{working_dir}/timeSeries'
-#    nrms_folder = f'{working_dir}/nrms'
-#    times_folder = f'{working_dir}/job_time'
-#    os.makedirs(timeseries_folder, exist_ok = True)
-#    os.makedirs(nrms_folder, exist_ok = True)
-#    os.makedirs(times_folder, exist_ok = True)
-#    with open(f'{times_folder}/job_{job_seg.index}', 'a') as f: 
-#        f.write(f'{job_seg.start_time} {job_seg.end_time}')
-#        
-#    for i, ifo in enumerate(config.ifo):
-#        print(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", os.path.exists(f"{timeseries_folder}")) 
-#        np.save(f"{timeseries_folder}/ts_{job_seg.index}_{ifo}", tf_maps[i].data.data)
-#        np.save(f"{nrms_folder}/nrms_{job_seg.index}_{ifo}", nrms[i].data.data)
-#        
-#    return timeseries_folder 
-    
+def compute_statistics(data): 
+    pvalue = anderson_pval(data) 
+    mean = data.mean() 
+    std = data.std() 
+    if pvalue > 1: 
+        pvalue, mean, std = (np.nan,) * 3 
+    if pvalue < 1e-5: 
+        pvalue, mean, std = (np.nan,) * 3
+    return pvalue, mean, std
 
-def anderson_test(data): 
+
+def anderson_pval(data): 
     """performs an Anderson Darling test on input data and returns its pvalue """ 
     
     statistics = anderson(data)[0]
@@ -110,25 +119,6 @@ def anderson_test(data):
         
     return pvalue
 
-def save_pvalue(values, config, working_dir: str):
-    sub_dir = 'Anderson_Results'
-    test_folder = '/'.join([working_dir, sub_dir]) 
-    if not os.path.exists(test_folder): 
-        os.makedirs(test_folder)
-    else: 
-        print(f"Test folder {test_folder} already exists, skip") 
-    filename = '/'.join([test_folder,f'anderson_{config.whiteMethod}.txt']) 
-    
-    print(f'Saving Anderson pvalue') 
-    if os.path.exists(filename): 
-        with open(filename, 'a') as f:  # Open file in append mode
-            f.write(' '.join(map(str, values)) + '\n')  # Append value with newline
-    else:
-        with open(filename, 'w') as f:  
-            f.write(' '.join(config.ifo) + '\n')
-            f.write(' '.join(map(str, values))+ '\n')
-    
-    return filename 
 
 
 
