@@ -38,6 +38,15 @@ def init_parser(parser):
                         action='store_true',
                         default=True,
                         help='compress the json files, by default True')
+    
+    # n_workers
+    parser.add_argument('--n-workers',
+                        '-w',
+                        metavar='n_workers',
+                        type=int,
+                        default=1,
+                        help='the number of workers to use, default to 1. If it set to 0, '
+                             'it will use the value from the user parameter file.')
 
 
 def command(args):
@@ -45,4 +54,4 @@ def command(args):
 
     # Run the search function with the specified user parameter file
     batch_run(args.user_parameter_file, working_dir=args.work_dir,
-              jobs=args.jobs, compress_json=args.compress_json, n_proc=args.n_proc)
+              jobs=args.jobs, compress_json=args.compress_json, n_proc=args.n_proc, n_workers=args.n_workers)

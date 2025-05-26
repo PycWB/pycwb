@@ -90,6 +90,8 @@ pycwb merge-catalog --work-dir={working_dir}
 
         # create the submit description for the batch job
         batch_job = htcondor.Submit({
+            "universe": "vanilla",
+            "getenv": "true",
             "executable": "run.sh",
             "arguments": f"$(jobs)",  # Passing jobs as an argument
             "transfer_input_files": f"{working_dir}/job_status, {working_dir}/config, "
@@ -104,9 +106,13 @@ pycwb merge-catalog --work-dir={working_dir}
             "request_cpus": f"{self.n_proc}",
             "request_memory": self.memory,
             "request_disk": self.disk,
+            "use_oauth_services": "scitokens",
+            "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         })
 
         merge_job = htcondor.Submit(
+            universe="vanilla",
+            getenv="true",
             executable="merge.sh",
             transfer_input_files=f"{working_dir}/catalog",
             should_transfer_files="yes",
@@ -147,7 +153,7 @@ pycwb merge-catalog --work-dir={working_dir}
         working_dir = self.working_dir
         dag_dir = self.dag_dir
 
-        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1})
+        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1, 'import_env': 1})
         print('------------------------')
         print(dag_submit)
         print('------------------------')

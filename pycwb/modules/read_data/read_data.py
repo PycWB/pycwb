@@ -1,5 +1,5 @@
 from gwpy.timeseries import TimeSeries
-from .data_check import check_and_resample
+import numpy as np
 import pycbc.catalog
 import logging
 from multiprocessing import Pool
@@ -39,6 +39,13 @@ def read_from_gwf(filename, channel, start=None, end=None) -> TimeSeries:
     # Read gwf file
     data = TimeSeries.read(filename, channel, start, end)
 
+    # check if data contains NaN values
+    if np.isnan(np.sum(data)):
+        if start and end:
+            raise ValueError(f'Data from {filename} ({channel}) from {start} to {end} contains NaN values')
+        else:
+            raise ValueError(f'Data from {filename} ({channel}) contains NaN values')
+    
     return data
 
 
@@ -145,7 +152,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
 def merge_frames(job_seg, data, seg_edge):
     # TODO: use gwpy to merge the data instead of pycbc timeseries
-    print(f'Merging data from job segment {job_seg.index}')
+    logger.info(f'Merging data from job segment {job_seg.index}')
     merged_data = []
 
     # split data by ifo for next step of merging
@@ -176,7 +183,7 @@ def merge_frames(job_seg, data, seg_edge):
             raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}, '
                              f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
 
-        print(
+        logger.info(
             f'data info: start={ifo_data.start_time}, duration={ifo_data.duration}, rate={ifo_data.sample_rate}')
         # append to final data
         merged_data.append(ifo_data)
@@ -232,16 +239,16 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
 
     i = job_seg.ifos.index(frame.ifo)
     data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
-    print(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
+    logger.info(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     # shift the time label of the physical data to the data start time
     data.shift(data_start - start)
-    print(f'Shift data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
+    logger.info(f'Shift data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     if int(data.sample_rate.value) != int(job_seg.sample_rate):
         sample_rate_old = data.sample_rate.value
         w = convert_to_wavearray(data)
         w.Resample(job_seg.sample_rate)
         data = convert_wavearray_to_timeseries(w)
         # data = data.resample(config.inRate)
-        print(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
+        logger.info(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
     # return check_and_resample(data, config, i) # move this to the final step
     return data.to_pycbc()

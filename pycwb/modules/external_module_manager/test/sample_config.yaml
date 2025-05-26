@@ -1,0 +1,5 @@
+modules:
+  - name: wdm_wavelet
+    version: v0.2.2
+    repo_url: https://git.ligo.org/yumeng.xu/wdm-wavelet.git
+    module_path: wdm_wavelet

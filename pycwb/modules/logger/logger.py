@@ -4,7 +4,7 @@ import traceback
 logger = logging.getLogger(__name__)
 
 
-def logger_init(log_file: str = None, log_level: str = 'INFO'):
+def logger_init(log_file: str = None, log_level: str = 'INFO', silent: bool = False, worker_prefix: str = None):
     """Initialize logger with format %(asctime)s - %(funcName)s - %(levelname)s - %(message)s
 
     :param log_file: log file path
@@ -14,16 +14,23 @@ def logger_init(log_file: str = None, log_level: str = 'INFO'):
     :return: None
     """
     # create logger
-    if log_file:
-        logging.basicConfig(filename=log_file, level=log_level,
-                            format='%(asctime)s - %(funcName)s - %(levelname)s - %(message)s', datefmt='%y-%m-%d %H:%M:%S')
+    if worker_prefix:
+        format_str = f'[{worker_prefix}]' + '%(asctime)s - %(funcName)s - %(levelname)s - %(message)s'
     else:
-        logging.basicConfig(stream=sys.stdout, level=log_level,
-                            format='%(asctime)s - %(funcName)s - %(levelname)s - %(message)s', datefmt='%y-%m-%d %H:%M:%S')
+        format_str = '%(asctime)s - %(funcName)s - %(levelname)s - %(message)s'
 
-    logger.info("Logging initialized")
-    logger.info("Logging level: " + log_level)
-    logger.info("Logging file: " + str(log_file))
+
+    if log_file:
+        logging.basicConfig(filename=log_file, level=log_level, force=True,
+                            format=format_str, datefmt='%y-%m-%d %H:%M:%S')
+    else:
+        logging.basicConfig(stream=sys.stdout, level=log_level, force=True,
+                            format=format_str, datefmt='%y-%m-%d %H:%M:%S')
+
+    if not silent:
+        logger.info("Logging initialized")
+        logger.info("Logging level: " + log_level)
+        logger.info("Logging file: " + str(log_file))
 
 
 class StreamToLogger(object):

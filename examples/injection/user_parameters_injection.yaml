@@ -96,5 +96,7 @@ injection:
     coa_phase: 0
     ra: 0
     dec: 0
-  approximant: "IMRPhenomXHM"
+    pol: 0
+    f_lower: 20.0 
+    approximant: "IMRPhenomXHM"
 

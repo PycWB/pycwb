@@ -21,7 +21,30 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+    """
+    The core workflow to process single job segment with trails or lags. 
+
+    Parameters
+    ----------
+    working_dir : str
+        The working directory for the run
+    config : Config
+        The configuration object
+    job_seg : WaveSegment
+        The job segment to process
+    compress_json : bool
+        Whether to compress the json files
+    catalog_file : str
+        The catalog file to save the triggers
+    queue : Queue
+        The queue to send the triggers to the collector for saving in production mode
+    production_mode : bool
+        Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
+    skip_lags : list
+        The options to skip certain lags. It is used for resuming the processing after a crash
+    
+    """
     print_job_info(job_seg)
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -57,18 +80,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # check and resample the data
         data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
-        
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # data conditioning
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-
+        # coherence
         fragment_clusters = coherence(config, tf_maps, nRMS_list)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
 
+        # supercluster
         if config.use_root_supercluster:
             super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
         else:
@@ -77,9 +102,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                                         xtalk_coeff, xtalk_lookup_table, layers)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
             events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
                                                             lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
+            
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
             # only return selected events
@@ -98,15 +125,28 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             event.injection = injection
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+            # if in production mode, send the triggers to the queue instead of saving them here
+            if production_mode:
+                logger.info("In production mode, sending triggers to the queue instead of saving them in the processor")
+                queue.put({
+                    "job_seg": sub_job_seg,
+                    "lag": lag,
+                    "events": events_data,
+                    "clusters": clusters
+                })
+                continue
+
             # save triggers
             trigger_folders = []
             for trigger in events_data:
                 trigger_folders.append(
                     save_trigger(working_dir, config.trigger_dir, config.catalog_dir, sub_job_seg, trigger,
+                                save_cluster=config.save_cluster,
                                 save_sky_map=config.save_sky_map, catalog_file=catalog_file)
                 )
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+            # post process and plot
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 # FIXME: add gps time and segment time on the x ticks
                 event, cluster, event_skymap_statistics = trigger
@@ -125,7 +165,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
 def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
                  job_seg: WaveSegment, trigger_data: tuple | list,
-                 save_sky_map: bool = True, index: bool = None, catalog_file: str = "catalog.json"):
+                 save_cluster: bool = True, save_sky_map: bool = True, 
+                 index: bool = None, catalog_file: str = "catalog.json"):
     if index is None:
         event, cluster, event_skymap_statistics = trigger_data
     else:
@@ -137,26 +178,30 @@ def save_trigger(working_dir: str, trigger_dir: str, catalog_dir: str,
     if cluster.cluster_status != -1:
         return 0
 
-    print(f"Saving trigger {event.hash_id}")
-
-    trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event.stop[0]}_{event.hash_id}"
-    print(f"Creating trigger folder: {trigger_folder}")
-    if not os.path.exists(trigger_folder):
-        os.makedirs(trigger_folder)
-    else:
-        print(f"Trigger folder {trigger_folder} already exists, skip")
-
-    print(f"Saving trigger data")
-    save_dataclass_to_json(event, f"{trigger_folder}/event.json")
-    save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
-    if save_sky_map:
-        save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
-
-    print(f"Adding event to catalog")
+    # Save the event to the catalog
+    logger.info(f"Adding event to catalog")
     # if catalog_file is in full absolute path, use it directly
     if not catalog_file.startswith("/"):
         catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-    add_events_to_catalog(catalog_file, event.summary())
+    add_events_to_catalog(catalog_file, event)
+
+    # Save the event to the trigger folder
+    if save_cluster or save_sky_map:
+        logger.info(f"Saving trigger {event.hash_id}")
+
+        trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event.stop[0]}_{event.hash_id}"
+        logger.info(f"Creating trigger folder: {trigger_folder}")
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+        else:
+            logger.info(f"Trigger folder {trigger_folder} already exists, skip")
+
+        logger.info(f"Saving trigger data")
+        # save_dataclass_to_json(event, f"{trigger_folder}/event.json")
+        if save_cluster:
+            save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
+        if save_sky_map:
+            save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
     return trigger_folder
 

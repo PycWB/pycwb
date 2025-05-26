@@ -13,6 +13,7 @@ import pycwb.cli.xtalk as xtalk
 import pycwb.cli.merge_catalog as merge_catalog
 import pycwb.cli.post_process as post_process
 import pycwb.cli.gwosc as gwosc
+import pycwb.cli.get_external_modules as get_external_modules
 
 def main():
     parser = argparse.ArgumentParser(prog='pycwb')
@@ -56,6 +57,11 @@ def main():
     gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')
     gwosc.init_parser(gwosc_parser)
     gwosc_parser.set_defaults(func=gwosc.command)
+
+    # get_external_modules subcommand
+    get_external_modules_parser = subparsers.add_parser('get-external-modules', help='Get external modules')
+    get_external_modules.init_parser(get_external_modules_parser)
+    get_external_modules_parser.set_defaults(func=get_external_modules.command)
         
     args = parser.parse_args()
     if hasattr(args, 'func'):

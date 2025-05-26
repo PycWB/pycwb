@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, List
 import math
 from pycbc.types.timeseries import TimeSeries
@@ -13,15 +14,17 @@ from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 
 
+logger = logging.getLogger(__name__)
+
 def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[str],
                           event: Event, cluster: Cluster,
                           save: bool = True, plot: bool = False,
                           save_injection: bool = True, plot_injection: bool = False) -> Dict[str, TimeSeries]:
-    print(f"Reconstructing waveform for event {event.hash_id}")
+    logger.info(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True, whiten=False)
 
-    print(f"Reconstructing whitened waveform for event {event.hash_id}")
+    logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
     reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                       'signal', 0, True, whiten=True)
 
@@ -42,19 +45,19 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     if save:
         if not os.path.exists(trigger_folder):
             os.makedirs(trigger_folder)
-            print(f"Creating trigger folder: {trigger_folder}")
+            logger.info(f"Creating trigger folder: {trigger_folder}")
 
         for i, ts in enumerate(reconstructed_waves):
-            print(f"Saving reconstructed waveform for {ifos[i]}")
+            logger.info(f"Saving reconstructed waveform for {ifos[i]}")
             ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}.txt")
 
         for i, ts in enumerate(reconstructed_waves_whiten):
-            print(f"Saving reconstructed waveform for {ifos[i]} (whitened)")
+            logger.info(f"Saving reconstructed waveform for {ifos[i]} (whitened)")
             ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}_whitened.txt")
 
         # for i, (hp, hc) in enumerate(zip(reconstructed_waves_whiten_00, reconstructed_waves_whiten_90)):
         #     # save strain = hp + 1j hc
-        #     print(f"Saving reconstructed strain for {ifos[i]} (whitened)")
+        #     logger.info(f"Saving reconstructed strain for {ifos[i]} (whitened)")
         #     hp = hp - 1j * hc
         #     hp.save(f"{trigger_folder}/reconstructed_strain_{ifos[i]}_whitened.txt")
 
@@ -80,7 +83,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
             if save_injection:
                 for i, strain in enumerate(strains):
-                    print(f"Saving injected strain for {ifos[i]}")
+                    logger.info(f"Saving injected strain for {ifos[i]}")
                     strain.save(f"{trigger_folder}/injected_strain_{ifos[i]}.txt")
 
             if plot_injection:
@@ -100,7 +103,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
 def plot_trigger_flow(trigger_folder: str,
                  event: Event, cluster: Cluster) -> None:
-    print(f"Making plots for event {event.hash_id}")
+    logger.info(f"Making plots for event {event.hash_id}")
 
     # plot the likelihood map
     plot_statistics(cluster, 'likelihood', gps_shift=event.gps[0], filename=f'{trigger_folder}/likelihood_map.png')
@@ -109,7 +112,7 @@ def plot_trigger_flow(trigger_folder: str,
 
 def plot_skymap_flow(trigger_folder: str,
                  event: Event, event_skymap_statistics: Dict[str, List[float]]) -> None:
-    print(f"Making skymap plots for event {event.hash_id}")
+    logger.info(f"Making skymap plots for event {event.hash_id}")
     # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
     for key in event_skymap_statistics.keys():
         plot_skymap_contour(event_skymap_statistics,

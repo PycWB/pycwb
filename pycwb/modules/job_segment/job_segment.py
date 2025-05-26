@@ -176,7 +176,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
             for seg_list in slag_seg_lists[1:]:
                 merged_slag_seg_list = merge_seg_list(merged_slag_seg_list, seg_list)
             print('live time', merged_slag_seg_list[1][0] - merged_slag_seg_list[0][0])
-            job_segments += get_job_list(ifos, merged_seg_list, seg_len, seg_mls,
+            job_segments += get_job_list(ifos, merged_slag_seg_list, seg_len, seg_mls,
                                          seg_edge=seg_edge, sample_rate=sample_rate,
                                          shift=np.array(slag) * seg_len, index_start=len(job_segments))
     else:
