@@ -9,6 +9,7 @@ from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.plot_map.world_map import plot_skymap_contour
 from pycwb.modules.read_data import generate_strain_from_injection
 from pycwb.modules.reconstruction import get_network_MRA_wave
+from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
@@ -32,6 +33,15 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     #                                                      'signal', -1, True, whiten=True)
     # reconstructed_waves_whiten_90 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', 1, True, whiten=True)
+
+    try: 
+        [qveto, qfactor] = get_qveto(reconstructed_waves[0].data, NTHR=2, ATHR=10)
+        [qveto_whiten, qfactor_whiten] = get_qveto(reconstructed_waves_whiten[0].data, NTHR=2, ATHR=10)
+
+        qveto = min(qveto, qveto_whiten)
+        qfactor = min(qfactor, qfactor_whiten)
+    except Exception as e:
+        logger.error(f"Error calculating Qveto for event {event.hash_id}: {e}")
 
     # rescale
     for ts in reconstructed_waves:
@@ -97,7 +107,9 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     for i, ifo in enumerate(ifos):
         data[f"{ifo}_reconstructed_waves"] = reconstructed_waves[i]
         data[f"{ifo}_reconstructed_waves_whiten"] = reconstructed_waves_whiten[i]
-
+    data['qveto'] = qveto
+    data['qfactor'] = qfactor
+    
     return data
 
 

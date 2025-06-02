@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 
 
-@dataclass(slots=True)
+@dataclass()
 class Event:
     """
     This class is used to store the results of an event.
