@@ -59,7 +59,7 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
         events['noise'+str(n)] = events['noise'].apply(lambda x: x[n] if isinstance(x, list) and len(x) > n else None)
 
     # add chunk = 1
-    events['chunk'] = 1
+    events['chunk'] = 0
     if 'ecor' in xvars and 'likelihood' in xvars:
         events['ecor/likelihood'] = events['ecor']/events['likelihood']
     if 'duration' in xvars and 'bandwidth' in xvars:
@@ -76,16 +76,16 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
         for n in range(1,nifo): events['noise'] = events['noise']+1/(events['noise'+str(n)]*events['noise'+str(n)])
         events['noise'] = np.sqrt(1/events['noise'])
 
-    events['Qa']=np.sqrt(events['Qveto0'])
+    events['Qa']=np.sqrt(events['qveto'])
 
     # check ML_options
     for option, value in ML_options.items():
         if(option=='Qp(index)'):
             # add Qp feature to xpd
-            if (value!=1) and (value!=2) and (value!=3):
-                print('\nError: ML_options(''Qp(index)'') must be 1 or 2 or 3\n')
+            if (value!=1):
+                print('\nError: ML_options(''Qp(index)'') must be 1, only one Qp feature is supported\n')
                 exit(1)
-            events['Qp'] = events['Qveto'+str(value)]/(2*np.sqrt(np.log10(np.minimum(200,events['ecor']))))
+            events['Qp'] = events['qfactor']/(2*np.sqrt(np.log10(np.minimum(200,events['ecor']))))
         if(option=='rho0(define)'):
             # select rho0 definition
             if (value!=0) and (value!=1):
