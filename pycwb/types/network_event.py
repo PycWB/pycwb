@@ -285,6 +285,34 @@ class Event:
             self.frequency[0] = pcd.cFreq
 
 
+            #    this->ECOR     = pcd->normcor;                         // normalized coherent energy
+            #    this->netcc[0] = pcd->netcc;                           // MRA or SRA cc statistic 
+            #    this->netcc[1] = pcd->skycc;                           // all-resolution cc statistic
+            #    this->netcc[2] = pcd->subnet;                          // MRA or SRA sub-network statistic 
+            #    this->netcc[3] = pcd->SUBNET;                          // all-resolution sub-network statistic
+
+            #    this->neted[0] = pcd->netED;                           // network ED
+            #    this->neted[1] = pcd->netnull;                         // total null energy with Gaussian bias correction
+            #    this->neted[2] = pcd->energy;                          // total event energy
+            #    this->neted[3] = pcd->likesky;                         // total likelihood at all resolutions
+            #    this->neted[4] = pcd->enrgsky;                         // total energy at all resolutions
+            self.ECOR = pcd.normcor  # normalized coherent energy
+            self.netcc = [
+                pcd.netcc,  # MRA or SRA cc statistic
+                pcd.skycc,  # all-resolution cc statistic
+                pcd.subnet,  # MRA or SRA sub-network statistic
+                pcd.SUBNET  # all-resolution sub-network statistic
+            ]
+            self.neted = [
+                pcd.netED,  # network ED
+                pcd.netnull,  # total null energy with Gaussian bias correction
+                pcd.energy,  # total event energy
+                pcd.likesky,  # total likelihood at all resolutions
+                pcd.enrgsky  # total energy at all resolutions
+            ]
+
+            self.penalty = pcd.netnull / n_ifo
+            self.penalty /= pcd.nDoF if pat0 else self.size[0]  # cluster chi2/nDoF
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
             self.rho[0] = pcd.netRHO  # reduced coherent SNR per detector
