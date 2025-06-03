@@ -95,7 +95,10 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     data_collector_worker.start()
 
     exceptions = []
-    with multiprocessing.Pool(n_workers) as pool:
+    with multiprocessing.Pool(
+        n_workers,
+        maxtasksperchild=1,  # Restart workers after each task to avoid memory leaks
+        ) as pool:
         logger.info(f"Starting {n_workers} workers")
         results = []
         for job_seg in job_segments:
