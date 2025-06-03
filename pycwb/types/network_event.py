@@ -234,10 +234,6 @@ class Event:
         self.lag = [pwc.shift] * n_ifo
         net.getMRAwave(ID, LAG, 's', net.optim)
         for i in range(n_ifo):
-            print(f"Processing ifo {i} for event {ID}")
-            print('noise_net[i]', noise_net[i])
-            print('noise_net[i][kid]', noise_net[i][kid])
-            print(np.power(10., noise_net[i][kid]) / np.sqrt(inRate))
             pd = net.getifo(i)
             Aa = pd.antenna(self.theta[0], self.phi[0], self.psi[0])
             self.type = [1]
