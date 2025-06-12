@@ -312,7 +312,7 @@ class Event:
             ]
 
             self.penalty = pcd.netnull / n_ifo
-            self.penalty /= pcd.nDoF if pat0 else self.size[0]  # cluster chi2/nDoF
+            self.penalty /= self.size[0] if pat0 else pcd.nDoF # cluster chi2/nDoF
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
             self.rho[0] = pcd.netRHO  # reduced coherent SNR per detector
