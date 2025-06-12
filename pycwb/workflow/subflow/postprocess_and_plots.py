@@ -23,11 +23,11 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                           save_injection: bool = True, plot_injection: bool = False) -> Dict[str, TimeSeries]:
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                               'signal', 0, True, whiten=False)
+                                               'signal', 0, True, whiten=False, in_rate=config.inRate)
 
     logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
     reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                      'signal', 0, True, whiten=True)
+                                                      'signal', 0, True, whiten=True, in_rate=config.inRate)
 
     # reconstructed_waves_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', -1, True, whiten=True)
@@ -43,14 +43,14 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     except Exception as e:
         logger.error(f"Error calculating Qveto for event {event.hash_id}: {e}")
 
-    # rescale
-    for ts in reconstructed_waves:
-        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
-        ts.data *= rescale
+    # # rescale
+    # for ts in reconstructed_waves:
+    #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+    #     ts.data *= rescale
 
-    for ts in reconstructed_waves_whiten:
-        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
-        ts.data *= rescale
+    # for ts in reconstructed_waves_whiten:
+    #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+    #     ts.data *= rescale
 
     if save:
         if not os.path.exists(trigger_folder):
