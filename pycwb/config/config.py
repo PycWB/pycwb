@@ -66,7 +66,7 @@ class Config:
         self.whiteMethod = None 
         self.mesaSolver = None
         self.mesaOrder = None 
-
+        self.mesaReindex = None 
         params = load_yaml(file_name, schema)
 
         for key in params:
