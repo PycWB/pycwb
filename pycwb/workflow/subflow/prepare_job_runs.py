@@ -75,7 +75,8 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     # check_MRACatalog_setting()
 
     # read user parameters
-    config = Config(file_name)
+    config = Config()
+    config.load_from_yaml(file_name)
 
     job_segments = create_job_segment_from_config(config)
     # slags = generate_slags(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)

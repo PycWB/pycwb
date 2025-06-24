@@ -3,6 +3,8 @@ Class to store all user parameters, load parameters from yaml file and check par
 default values are defined in the provided schema. By default, the schema is the schema defined in
 pycwb.constants.user_parameters_schema.
 """
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Any
 import os.path
 import logging
 import pathlib
@@ -16,7 +18,7 @@ from ..constants import user_parameters_schema
 
 logger = logging.getLogger(__name__)
 
-
+@dataclass
 class Config:
     """
     Class to store user parameters
@@ -28,45 +30,47 @@ class Config:
     schema : dict
         Schema to validate the user parameters, default is the schema defined in pycwb.constants.user_parameters_schema
     """
+    dq_files: List[DQFile] = field(default_factory=list)
+    
+    # Loadable/expected parameters from YAML
+    outputDir: Optional[str] = None
+    logDir: Optional[str] = None
+    nproc: Optional[int] = None
+    cfg_gamma: Optional[float] = None
+    gamma: Optional[float] = field(init=False)
+    fResample: Optional[int] = None
+    rateANA: Optional[float] = field(init=False)
+    levelR: Optional[int] = None
+    inRate: Optional[int] = None
+    nRES: Optional[int] = field(init=False)
+    l_low: Optional[int] = None
+    l_high: Optional[int] = None
+    fLow: Optional[float] = None
+    fHigh: Optional[float] = None
+    whiteWindow: Optional[float] = None
+    filter_dir: Optional[str] = None
+    wdmXTalk: Optional[str] = None
+    MRAcatalog: Optional[str] = field(init=False)
+    TDRate: Optional[float] = field(init=False)
+    lagStep: Optional[float] = None
+    lagBuffer: Optional[str] = None
+    lagMode: Optional[str] = None
+    max_delay: Optional[float] = field(init=False)
+    injection: Dict = field(default_factory=dict)
+    WDM_beta_order: Optional[int] = None
+    WDM_precision: Optional[int] = None
+    WDM_level: List[int] = field(default_factory=list)
+    cfg_search: Optional[Any] = None
+    ifo: List[str] = field(default_factory=list)
+    DQF: List[List[Any]] = field(default_factory=list)
+    upTDF: Optional[int] = None
+    segEdge: Optional[float] = None
+    segMLS: Optional[float] = None
 
-    def __init__(self, file_name, schema=None):
+    def load_from_yaml(self, file_name, schema=None):
         if schema is None:
             schema = user_parameters_schema
 
-        self.outputDir = None
-        self.logDir = None
-        self.nproc = None
-        self.cfg_gamma = None
-        self.gamma = None
-        self.fResample = None
-        self.rateANA = None
-        self.levelR = None
-        self.inRate = None
-        self.nRES = None
-        self.l_low = None
-        self.l_high = None
-        self.l_white = None
-        self.fLow = None
-        self.fHigh = None
-        self.whiteWindow = None
-        self.filter_dir = None
-        self.wdmXTalk = None
-        self.MRAcatalog = None
-        self.TDRate = None
-        self.lagStep = None
-        self.lagBuffer = None
-        self.lagMode = None
-        self.max_delay = None
-        self.dq_files = []
-        self.injection = {}
-        self.WDM_beta_order = None
-        self.WDM_precision = None
-        self.WDM_level = []
-        #Add whitening parameters 
-        self.whiteMethod = None 
-        self.mesaSolver = None
-        self.mesaOrder = None 
-        self.mesaReindex = None 
         params = load_yaml(file_name, schema)
 
         for key in params:
@@ -76,6 +80,10 @@ class Config:
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
         self.check_lagStep()
+
+    def load_from_dict(self, params: Dict[str, Any]):
+        for key in params:
+            setattr(self, key, params[key])
 
     def add_derived_key(self):
         """
