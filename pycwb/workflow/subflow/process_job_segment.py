@@ -159,12 +159,18 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 
                 # calculate Qveto and Qfactor, add to the event for dumping to the catalog
                 try:
-                    rec_strain_whiten = reconst_data[f'{sub_job_seg.ifos[0]}_reconstructed_strain_whiten']
-                    rec_waves_whiten = reconst_data[f'{sub_job_seg.ifos[0]}_reconstructed_waves_whiten']
-                    [qveto_strain, qfactor_strain] = get_qveto(rec_strain_whiten)
-                    [qveto_waves, qfactor_waves] = get_qveto(rec_waves_whiten)
-                    event.qveto = min(qveto_strain, qveto_waves)
-                    event.qfactor = min(qfactor_strain, qfactor_waves)
+                    min_qveto = 1e23
+                    min_qfactor = 1e23
+
+                    # find the minimum Qveto and Qfactor for the event in all ifos and reconstructed strain/waves
+                    for ifo in sub_job_seg.ifos:
+                        for type in ['strain', 'waves']:
+                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_reconstructed_{type}_whiten'])
+                            min_qveto = min(min_qveto, qveto)
+                            min_qfactor = min(min_qfactor, qfactor)
+
+                    event.qveto = min_qveto
+                    event.qfactor = min_qfactor
                     logger.info(f"Qveto for event {event.hash_id}: {event.qveto}, Qfactor: {event.qfactor}")
                 except Exception as e:
                     logger.error(f"Error calculating Qveto for event {event.hash_id}: {e}")
