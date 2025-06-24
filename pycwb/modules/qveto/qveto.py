@@ -13,7 +13,9 @@ def get_qveto(wf, NTHR=1, ATHR=7.58859):
     Returns:
     tuple: (Qveto, Qfactor) metrics.
     """
-    # Resample waveform by factor of 4 using FFT
+    wf = np.asarray(wf, dtype=np.float64)
+
+    ## Resample waveform to 4 times the original length using FFT
     n = len(wf)
     # Real FFT (forward transform)
     spec = np.fft.rfft(wf)
@@ -22,7 +24,8 @@ def get_qveto(wf, NTHR=1, ATHR=7.58859):
     new_spec[:len(spec)] = spec
     # Inverse FFT to get resampled waveform (4*n points)
     x = np.fft.irfft(new_spec, n=4 * n)
-    
+
+
     # Find zero crossings and extract segment maxima
     signs = np.sign(x)
     # Identify zero crossings (where sign changes)

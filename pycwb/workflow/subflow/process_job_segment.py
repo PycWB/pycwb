@@ -11,6 +11,7 @@ from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
 from pycwb.modules.data_conditioning import data_conditioning
 from pycwb.modules.likelihood import likelihood
+from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
@@ -155,8 +156,18 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                         event, cluster,
                                         save=config.save_waveform, plot=config.plot_waveform,
                                         save_injection=config.save_injection, plot_injection=config.plot_injection)
-                event.qveto = reconst_data['qveto']
-                event.qfactor = reconst_data['qfactor']
+                
+                # calculate Qveto and Qfactor, add to the event for dumping to the catalog
+                try:
+                    rec_strain_whiten = reconst_data[f'{sub_job_seg.ifos[0]}_reconstructed_strain_whiten']
+                    rec_waves_whiten = reconst_data[f'{sub_job_seg.ifos[0]}_reconstructed_waves_whiten']
+                    [qveto_strain, qfactor_strain] = get_qveto(rec_strain_whiten)
+                    [qveto_waves, qfactor_waves] = get_qveto(rec_waves_whiten)
+                    event.qveto = min(qveto_strain, qveto_waves)
+                    event.qfactor = min(qfactor_strain, qfactor_waves)
+                    logger.info(f"Qveto for event {event.hash_id}: {event.qveto}, Qfactor: {event.qfactor}")
+                except Exception as e:
+                    logger.error(f"Error calculating Qveto for event {event.hash_id}: {e}")
 
                 if config.plot_trigger:
                     plot_trigger_flow(trigger_folder, event, cluster)
