@@ -38,7 +38,6 @@ def whitening_mesa(config, h):
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
     wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
     wdmFlen = wdm_white.m_H / config.rateANA
-    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
     
     if config.whiteStride != config.whiteWindow / 3: 
         logger.warning('Value of whiteStride in config must be one third of whiteWindow. It will be changed in the analysis')
