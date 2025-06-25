@@ -37,9 +37,15 @@ def load_model(model_file: str) -> xgb.Booster:
     ext = model_file.split('.')[-1]
     if ext == 'json':
         # handle fake json file which is a pickle file
-        model = pickle.load(open(model_file, 'rb'))
+        try:
+            model = pickle.load(open(model_file, 'rb'))
+        except Exception as e:
+            # try to load as xgboost json model
+            model = xgb.XGBClassifier()
+            model.load_model(fname=model_file)
     elif ext == 'ujs':
-        model = xgb.Booster(model_file=model_file)
+        model = xgb.XGBClassifier()
+        model.load_model(fname=model_file)
     
     return model
 

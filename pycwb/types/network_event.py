@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 
 
-@dataclass(slots=True)
+@dataclass()
 class Event:
     """
     This class is used to store the results of an event.
@@ -191,10 +191,10 @@ class Event:
         noise_net = []
         NOISE_net = []
         for i in range(n_ifo):
-            start_net.append(list(pwc.get("start", i, 'L', 0)))
-            stop_net.append(list(pwc.get("stop", i, 'L', 0)))
-            noise_net.append(list(pwc.get("noise", i, 'S', 0)))
-            NOISE_net.append(list(pwc.get("NOISE", i, 'S', 0)))
+            start_net.append(list(pwc.get("start", i+1, 'L', 0)))
+            stop_net.append(list(pwc.get("stop", i+1, 'L', 0)))
+            noise_net.append(list(pwc.get("noise", i+1, 'S', 0)))
+            NOISE_net.append(list(pwc.get("NOISE", i+1, 'S', 0)))
 
         # print('duration ', np.array(start_net) - np.array(stop_net))
 
@@ -285,6 +285,34 @@ class Event:
             self.frequency[0] = pcd.cFreq
 
 
+            #    this->ECOR     = pcd->normcor;                         // normalized coherent energy
+            #    this->netcc[0] = pcd->netcc;                           // MRA or SRA cc statistic 
+            #    this->netcc[1] = pcd->skycc;                           // all-resolution cc statistic
+            #    this->netcc[2] = pcd->subnet;                          // MRA or SRA sub-network statistic 
+            #    this->netcc[3] = pcd->SUBNET;                          // all-resolution sub-network statistic
+
+            #    this->neted[0] = pcd->netED;                           // network ED
+            #    this->neted[1] = pcd->netnull;                         // total null energy with Gaussian bias correction
+            #    this->neted[2] = pcd->energy;                          // total event energy
+            #    this->neted[3] = pcd->likesky;                         // total likelihood at all resolutions
+            #    this->neted[4] = pcd->enrgsky;                         // total energy at all resolutions
+            self.ECOR = pcd.normcor  # normalized coherent energy
+            self.netcc = [
+                pcd.netcc,  # MRA or SRA cc statistic
+                pcd.skycc,  # all-resolution cc statistic
+                pcd.subnet,  # MRA or SRA sub-network statistic
+                pcd.SUBNET  # all-resolution sub-network statistic
+            ]
+            self.neted = [
+                pcd.netED,  # network ED
+                pcd.netnull,  # total null energy with Gaussian bias correction
+                pcd.energy,  # total event energy
+                pcd.likesky,  # total likelihood at all resolutions
+                pcd.enrgsky  # total energy at all resolutions
+            ]
+
+            self.penalty = pcd.netnull / n_ifo
+            self.penalty /= self.size[0] if pat0 else pcd.nDoF # cluster chi2/nDoF
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
             self.rho[0] = pcd.netRHO  # reduced coherent SNR per detector

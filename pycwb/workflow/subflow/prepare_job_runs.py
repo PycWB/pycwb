@@ -1,14 +1,14 @@
 import os
+import orjson
 from typing import List
+from dacite import from_dict
 
 from pycwb.config import Config
 from pycwb.modules.catalog import create_catalog
-from pycwb.modules.job_segment import create_job_segment_from_config, save_job_segments_to_json, \
-    load_job_segments_from_json
+from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.web_viewer.create import create_web_viewer
 from pycwb.modules.workflow_utils.job_setup import create_working_directory, \
-    check_if_output_exists, create_output_directory, \
-    check_MRACatalog_setting
+    check_if_output_exists, create_output_directory
 from pycwb.types.job import WaveSegment
 from pycwb.utils.parser import parse_id_string
 
@@ -75,7 +75,8 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     # check_MRACatalog_setting()
 
     # read user parameters
-    config = Config(file_name)
+    config = Config()
+    config.load_from_yaml(file_name)
 
     job_segments = create_job_segment_from_config(config)
     # slags = generate_slags(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
@@ -125,18 +126,28 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
 
     # check_MRACatalog_setting()
 
-    config = Config(file_name)
+    # # TODO: should it be loaded from the catalog?
+    # config = Config()
+    # config.load_from_yaml(file_name)
 
-    config = overwrite_config(config, n_proc=n_proc,
-                              compress_output_json=compress_json)
+    # config = overwrite_config(config, n_proc=n_proc,
+    #                           compress_output_json=compress_json)
 
-    # TODO: load job segments from catalog
-    job_segments = create_job_segment_from_config(config)
+    # # TODO: load job segments from catalog
+    # job_segments = create_job_segment_from_config(config)
+
+    catalog = orjson.loads(open('catalog/catalog.json', 'rb').read())
+    config = Config()
+    config.load_from_dict(catalog['config'])
+    print(f"Loaded config from catalog: {config}")
+    job_segments = catalog['jobs']
+    print(f"Loaded {len(job_segments)} job segments from catalog")
 
     if max(job_ids) - 1 > len(job_segments):
         raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
 
-    selected_job_segments = [job_segments[i-1] for i in job_ids]
+    # selected_job_segments = [job_segments[i-1] for i in job_ids]
+    selected_job_segments = [from_dict(WaveSegment, job_segments[i-1]) for i in job_ids]
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)

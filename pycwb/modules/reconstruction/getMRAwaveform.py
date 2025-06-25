@@ -79,7 +79,7 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False)
     return z
 
 
-def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, whiten=False):
+def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, whiten=False, in_rate=None, start_time=None):
     """
     get MRA waveforms of type atype in time domain given lag nomber and cluster ID
 
@@ -101,6 +101,10 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
         -1/0/1 - return 90/mra/0 phase
     tof : bool
         if tof = true, apply time-of-flight corrections
+    whiten : bool
+        if whiten = true, reconstruct whitened waveforms
+    in_rate : float, optional
+        input rate of the original data, used for rescaling the waveforms.
 
     Returns
     -------
@@ -128,6 +132,13 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
             x = xf.to_timeseries()
 
         waveforms.append(x)
+        
+        if in_rate is not None:
+            rescale = 1. / np.sqrt(2) ** (np.log2(in_rate / x.sample_rate))
+            x.data *= rescale
+
+        if start_time is not None:
+            x.start_time += start_time
 
     return waveforms
 

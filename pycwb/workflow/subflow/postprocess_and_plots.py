@@ -9,7 +9,6 @@ from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.plot_map.world_map import plot_skymap_contour
 from pycwb.modules.read_data import generate_strain_from_injection
 from pycwb.modules.reconstruction import get_network_MRA_wave
-from pycwb.types.job import WaveSegment
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 
@@ -22,25 +21,34 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                           save_injection: bool = True, plot_injection: bool = False) -> Dict[str, TimeSeries]:
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_waves = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                               'signal', 0, True, whiten=False)
+                                               'signal', 0, True, whiten=False, in_rate=config.inRate)
 
     logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
     reconstructed_waves_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                      'signal', 0, True, whiten=True)
+                                                      'signal', 0, True, whiten=True, in_rate=config.inRate)
 
+    logger.info(f"Reconstructing strain for event {event.hash_id}")
+    reconstructed_strain  = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                                'strain', 0, True, whiten=False, in_rate=config.inRate)
+    
+    logger.info(f"Reconstructing whitened strain for event {event.hash_id}")
+    reconstructed_strain_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
+                                                      'strain', 0, True, whiten=True, in_rate=config.inRate)
+    
     # reconstructed_waves_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', -1, True, whiten=True)
     # reconstructed_waves_whiten_90 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', 1, True, whiten=True)
 
-    # rescale
-    for ts in reconstructed_waves:
-        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
-        ts.data *= rescale
 
-    for ts in reconstructed_waves_whiten:
-        rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
-        ts.data *= rescale
+    # # rescale
+    # for ts in reconstructed_waves:
+    #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+    #     ts.data *= rescale
+
+    # for ts in reconstructed_waves_whiten:
+    #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
+    #     ts.data *= rescale
 
     if save:
         if not os.path.exists(trigger_folder):
@@ -76,6 +84,17 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
             plt.savefig(f'{trigger_folder}/reconstructed_wave_whiten_ifo_{ifos[j]}.png')
             plt.close()
 
+        for j, reconstructed_strain in enumerate(reconstructed_strain):
+            plt.plot(reconstructed_strain.sample_times, reconstructed_strain.data)
+            plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+            plt.savefig(f'{trigger_folder}/reconstructed_strain_ifo_{ifos[j]}.png')
+            plt.close()
+        
+        for j, reconstructed_strain in enumerate(reconstructed_strain_whiten):
+            plt.plot(reconstructed_strain.sample_times, reconstructed_strain.data)
+            plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
+            plt.savefig(f'{trigger_folder}/reconstructed_strain_whiten_ifo_{ifos[j]}.png')
+            plt.close()
 
     if save_injection or plot_injection:
         if event.injection:
@@ -97,7 +116,9 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     for i, ifo in enumerate(ifos):
         data[f"{ifo}_reconstructed_waves"] = reconstructed_waves[i]
         data[f"{ifo}_reconstructed_waves_whiten"] = reconstructed_waves_whiten[i]
-
+        data[f"{ifo}_reconstructed_strain"] = reconstructed_strain[i]
+        data[f"{ifo}_reconstructed_strain_whiten"] = reconstructed_strain_whiten[i]
+    
     return data
 
 

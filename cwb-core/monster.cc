@@ -480,8 +480,7 @@ std::vector<int> monster::getXTalk(netcluster* pwc, int id, bool check)
          tmp.data[N*8+7] = tmpOvlp.CC[3];
 	 //cout<<"i="<<i<<" j="<<j<<" M="<<M-1<<" N="<<N<<" "<<tmp.data[N*8+3]<<endl;
       } 
-
-      N++;
+      N = K+1;
       float* p8 = (float*)_mm_malloc(N*8*sizeof(float),32);    // N x 8 floats aligned array
       for(int n = 0; n<N*8; n++) p8[n] = tmp.data[n];
       sizeCC.push_back(N);

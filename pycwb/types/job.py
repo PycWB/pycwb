@@ -75,7 +75,7 @@ class WaveSegment:
     end_time: float
     sample_rate: float
     seg_edge: float
-    shift: List[float] = None
+    shift: Optional[List[float]] = None
     channels: Optional[List[str]] = None
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
