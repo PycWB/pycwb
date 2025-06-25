@@ -8,7 +8,7 @@ from pycwb.types.wdm import WDM
 logger = logging.getLogger(__name__)
 
 
-def whitening(config, h):
+def whitening_cwb(config, h):
     """
     Performs whitening on the given strain data
 
