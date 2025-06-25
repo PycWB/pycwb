@@ -31,9 +31,11 @@ def data_conditioning(config, strains, nproc=1):
         data_regressions = [regression(config, h) for h in strains]
         if config.whiteMethod == 'wavelet': 
             res = [whitening_cwb(config, h) for h in data_regressions]
-        if config.whiteMethod == 'mesa': 
+        elif config.whiteMethod == 'mesa': 
             res = [whitening_mesa(config, h) for h in data_regressions]
-
+        else: 
+            logger.error(f"Method {config.whiteMethod} is not a valid whitening method")
+            raise ValueError(f"Method {config.whiteMethod} is not a valid whitening method")
     conditioned_strains, nRMS_list = zip(*res)
 
     # timer
@@ -57,6 +59,12 @@ def data_conditioning_single(config, strain):
     :rtype: tuple[TimeFrequencySeries, TimeFrequencySeries]
     """
     data_regression = regression(config, strain)
-    conditioned_strain, nRMS = whitening(config, data_regression)
+    if config.whiteMethod == 'wavelet': 
+        conditioned_strain, nRMS = whitening_cwb(config, data_regression) 
+    elif config.whiteMethod == 'mesa': 
+        conditioned_strain, nRMS = whitening_mesa(config, data_regression)
+    else:
+        logger.error(f"Method {config.whiteMethod} is not a valid whitening method")
+        raise ValueError(f"Method {config.whiteMethod} is not a valid whitening method")
 
     return conditioned_strain, nRMS
