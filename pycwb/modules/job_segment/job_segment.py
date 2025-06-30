@@ -72,7 +72,7 @@ def create_job_segment_from_config(config):
     ## injections on job segments
     ############################################
 
-    ## Case 1: if only simulation mode is specified without DQ files or periods,
+    ## Case 1 (Backward compatibility): if only simulation mode is specified without DQ files or periods,
     # create job segments based on the injection parameters
     if config.injection and job_segments is None:
         # TODO: split out the injection part for other job types
@@ -175,6 +175,11 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
             merged_slag_seg_list = slag_seg_lists[0]
             for seg_list in slag_seg_lists[1:]:
                 merged_slag_seg_list = merge_seg_list(merged_slag_seg_list, seg_list)
+
+            if len(merged_slag_seg_list) == 0:
+                logger.warning(f"No segments found for super lag {slag}")
+                raise ValueError(f"No segments found for super lag {slag}, please check the DQ files or periods")
+
             print('live time', merged_slag_seg_list[1][0] - merged_slag_seg_list[0][0])
             job_segments += get_job_list(ifos, merged_slag_seg_list, seg_len, seg_mls,
                                          seg_edge=seg_edge, sample_rate=sample_rate,
