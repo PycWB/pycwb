@@ -16,8 +16,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-#from pycbc.filter import highpass
-os.environ['HOME_WAT_FILTERS'] = '/home/waveburst/SOFT/cWB/tags/config/O4_cWB_2G_config_v1.14/XTALKS'
 
 def whitening_mesa(config, h):
     """
