@@ -1,8 +1,12 @@
 import numpy as np
+import logging
 from astropy import units as u
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, Galactic
 import astropy.time as time
 import healpy as hp  # Optional for custom maps
+
+logger = logging.getLogger(__name__)
+
 
 def generate_sky_distribution(sky_distribution_config, n_samples):
     """
@@ -17,18 +21,26 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
     :return: The RA and Dec of the sky distribution
     """
     dist_type = sky_distribution_config['type']
+    logger.info(f"Generating sky distribution of type: {dist_type} with {n_samples} samples")
     
     if dist_type == "existing":
+        logger.info("Loading existing sky distribution data from: "
+                    f"{sky_distribution_config['existing_path']}")
         # Load RA/Dec from existing data (example)
         ra, dec = np.loadtxt(sky_distribution_config['existing_path'], unpack=True)
         return ra, dec
     
     elif dist_type == "UniformAllSky":
+        logger.info("Generating uniform distribution across the entire sky")
         ra = np.random.uniform(0, 360, n_samples)
         dec = np.degrees(np.arcsin(2*np.random.uniform(0, 1, n_samples) - 1))
         return ra, dec
     
     elif dist_type == "Patch":
+        logger.info("Generating points in a small circular patch around a center RA/Dec")
+        logger.info(f"Center RA: {sky_distribution_config['patch']['center'][0]}, "
+                    f"Center Dec: {sky_distribution_config['patch']['center'][1]}, "
+                    f"Radius: {sky_distribution_config['patch']['radius']} degrees")
         center_ra, center_dec = sky_distribution_config['patch']['center']
         radius = sky_distribution_config['patch']['radius']
         
@@ -37,6 +49,7 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         return ra, dec
     
     elif dist_type == "Custom":
+        logger.info(f"Sampling from a custom HEALPix map: {sky_distribution_config['custom']['healpix_map']}")
         # Example: Sample from a HEALPix map
         skymap = hp.read_map(sky_distribution_config['custom']['healpix_map'])
         nside = sky_distribution_config['custom']['nside']
@@ -61,6 +74,7 @@ def distribute_injections_on_sky(injections, sky_locations, shuffle=True, coords
     :param shuffle: Shuffle the sky locations before distributing the injections
     :param coordsys: The coordinate system of the sky locations
     """
+    logger.info(f"Distributing {len(injections)} injections on sky locations with coordsys: {coordsys}")
     ra = sky_locations[0]
     dec = sky_locations[1]
 
