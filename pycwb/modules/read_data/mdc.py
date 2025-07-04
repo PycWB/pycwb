@@ -8,7 +8,7 @@ import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
-from pycwb.utils.module import import_helper
+from pycwb.utils.module import import_function
 from ...config import Config
 from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 
@@ -193,19 +193,17 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
         # ------------------------------
         # deprecated warning: the default waveform generator will be remove in the future
         warn("The default waveform generator will be removed in the future, please specify the generator in the injection parameters", DeprecationWarning)
-        generator = {
-            "module": "pycbc.waveform",
-            "function": "get_td_waveform"
-        }
+        generator = "pycbc.waveform.get_td_waveform"
         # ------------------------------
 
+    # check if generator is a string
+    if not isinstance(generator, str):
+        raise TypeError(f"Generator should be a string, e.g. 'pycbc.waveform.get_td_waveform', got {type(generator)}")
 
     # generate hp and hc
-    logger.info(f"Generating waveform using {generator['module']}.{generator['function']}")
-    # import module
-    module = import_helper(generator['module'], "wf_gen")
-    # get function
-    function = getattr(module, generator['function'])
+    logger.info(f"Generating waveform using {generator}")
+    # import function
+    function = import_function(generator)
     # generate waveform
     generated_data = function(**injection)
 
