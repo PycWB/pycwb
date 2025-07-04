@@ -6,6 +6,11 @@ The injected signal is WNB17b,
 
 The `t_start` and `t_end` are the estimated start time and end time relative to the `t0` given by the waveform generator (`pycbc.get_td_waveform` by default). These are used to estimate the start gps time and end gps time of the injection, to place the injection correctly in the job segments. It is ok to overestimate the `t_start` and `t_end`, but it should not be underestimated, otherwise some injections may be missed.
 
+## Install the required packages
+
+```bash
+pip install burst-waveform
+```
 
 ## Fetch the required data
 
