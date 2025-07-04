@@ -97,13 +97,11 @@ injection:
   parameters_from_python:
     file: "injection_parameters.py"
     function: "get_injection_parameters"
-  generator:
-    file: "wnb_waveform_wrapper.py"
-    function: get_td_waveform
+  generator: burst_waveform.interface.generate_waveform_pycwb.get_td_waveform
   repeat_injection: 1
   sky_distribution:
     type: UniformAllSky
   time_distribution:
     type: 'rate'
-    rate: 1/800
-    jitter: 300
+    rate: 1/100
+    jitter: 30
