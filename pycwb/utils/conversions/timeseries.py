@@ -1,5 +1,6 @@
 from lal import REAL8TimeSeries
 from pycbc.types import TimeSeries
+from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 
 def convert_to_pycbc_timeseries(lal_ts):
@@ -11,6 +12,9 @@ def convert_to_pycbc_timeseries(lal_ts):
         hp = TimeSeries(lal_ts.data.data, delta_t=lal_ts.deltaT, epoch=lal_ts.epoch)
     elif type(lal_ts) == TimeSeries:
         hp = lal_ts
+    elif isinstance(lal_ts, GWpyTimeSeries):
+        # Convert GWpy TimeSeries to pycbc TimeSeries
+        hp = lal_ts.to_pycbc()
     else:
         raise TypeError("Input must be a LAL or pycbc TimeSeries")
 
