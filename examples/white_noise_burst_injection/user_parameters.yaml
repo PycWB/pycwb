@@ -94,9 +94,11 @@ DQF: [
 ]
 
 injection:
+  seed: 16
   parameters_from_python:
-    file: "injection_parameters.py"
-    function: "get_injection_parameters"
+    function: "./injection_parameters.get_injection_parameters"
+    args:
+      seed: 16
   generator: burst_waveform.interface.generate_waveform_pycwb.get_td_waveform
   repeat_injection: 1
   sky_distribution:

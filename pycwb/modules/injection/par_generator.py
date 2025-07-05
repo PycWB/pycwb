@@ -1,5 +1,5 @@
 import numpy as np
-from pycwb.utils.module import import_function_from_file
+from pycwb.utils.module import import_function
 import logging
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,10 @@ def get_injection_list_from_parameters(injection):
             injections = [injection['parameters']]
     elif 'parameters_from_python' in injection:
         # get the injection parameters
-        par_gen_func = import_function_from_file(injection['parameters_from_python']['file'], 
-                                               injection['parameters_from_python']['function'])
+        par_gen_func = import_function(injection['parameters_from_python']['function'])
         # call the function to get the injection parameters
-        injections = par_gen_func()
+        func_args = injection['parameters_from_python'].get('args', {})
+        injections = par_gen_func(**func_args)
 
         logger.info(f"{len(injections)} injection parameters generated")
 

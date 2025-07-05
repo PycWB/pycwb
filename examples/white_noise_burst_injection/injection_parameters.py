@@ -3,7 +3,7 @@ import numpy as np
 from pycwb.modules.injection.par_generator import repeat
 
 
-def get_injection_parameters_snr():
+def get_injection_parameters_snr(seed=None):
 
     """
     Generate parameters for white noise burst injection.
@@ -11,8 +11,6 @@ def get_injection_parameters_snr():
     Returns:
         dict: A dictionary containing the parameters for the injection.
     """
-    seed = random.randint(100000, 999999)  # Random seed for reproducibility
-    
     snr_min = 6.5
     snr_max = 300
     snr_dist = 2
@@ -52,9 +50,7 @@ def get_injection_parameters_snr():
     return RandomWNB17b
     
     
-def get_injection_parameters():
-    seed = random.randint(100000, 999999)  # Random seed for reproducibility
-
+def get_injection_parameters(seed=None):
     RandomWNB17b = []
     for n in range(16):
         frequency = random.uniform(24, 1696)  # WNB17 -> (24,996)
