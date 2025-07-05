@@ -8,6 +8,20 @@ def init_parser(parser):
                         type=str,
                         help='the path to the user parameter file')
 
+    # config_vars
+    parser.add_argument('--config-vars',
+                        metavar='config_vars',
+                        type=str,
+                        default=None,
+                        help='the config variables to overwrite, in the format of key1=value1,key2=value2')
+
+    parser.add_argument('--input-dir',
+                        '-i',
+                        metavar='input_dir',
+                        type=str,
+                        default=None,
+                        help='the input directory, the input files will be copied to the working directory, such as the data quality files')
+    
     # working dir
     parser.add_argument('--work-dir',
                         '-d',
@@ -83,5 +97,11 @@ def command(args):
         return 0
 
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, working_dir=args.work_dir, n_proc=args.n_proc,
-           overwrite=args.force_overwrite, plot=args.plot, compress_json=args.compress_json)
+    search(args.user_parameter_file, 
+           input_dir=args.input_dir,
+           working_dir=args.work_dir, 
+           n_proc=args.n_proc,
+           overwrite=args.force_overwrite, 
+           plot=args.plot, 
+           compress_json=args.compress_json, 
+           config_vars=args.config_vars)

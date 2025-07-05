@@ -7,10 +7,12 @@ logger = logging.getLogger(__name__)
 
 
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
-           n_proc=1, plot=None, compress_json=False, dry_run=False):
+           n_proc=1, plot=None, config_vars: str = None, input_dir=None,
+           compress_json=False, dry_run=False):
     # TODO: optimize the plot control
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
+                                                         config_vars=config_vars, input_dir=input_dir,
                                                          plot=plot, compress_json=compress_json)
 
     if dry_run:

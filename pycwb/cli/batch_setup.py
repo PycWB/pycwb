@@ -7,7 +7,20 @@ def init_parser(parser):
                         metavar='file_path',
                         type=str,
                         help='the path to the user parameter file')
+    # config_vars
+    parser.add_argument('--config-vars',
+                        metavar='config_vars',
+                        type=str,
+                        default=None,
+                        help='the config variables to overwrite, in the format of key1=value1,key2=value2')
 
+    parser.add_argument('--input-dir',
+                        '-i',
+                        metavar='input_dir',
+                        type=str,
+                        default=None,
+                        help='the input directory, the input files will be copied to the working directory, such as the data quality files')
+    
     parser.add_argument('--cluster',
                         '-c',
                         metavar='job_submission_system',
@@ -135,6 +148,7 @@ def command(args):
 
     # Run the search function with the specified user parameter file
     batch_setup(args.user_parameter_file, working_dir=args.work_dir,
+                input_dir=args.input_dir,
                 compress_json=args.compress_json,
                 cluster=args.cluster,
                 conda_env=args.conda_env,
@@ -145,4 +159,5 @@ def command(args):
                 accounting_group=args.accounting_group,
                 job_per_worker=args.job_per_worker,
                 submit=args.submit,
-                overwrite=args.force_overwrite, )
+                overwrite=args.force_overwrite, 
+                config_vars=args.config_vars)

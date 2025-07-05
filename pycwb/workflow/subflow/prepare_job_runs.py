@@ -1,8 +1,12 @@
 import os
 import orjson
+import uuid
+import tempfile
+import shutil
+import logging
 from typing import List
 from dacite import from_dict
-
+from jinja2 import Template 
 from pycwb.config import Config
 from pycwb.modules.catalog import create_catalog
 from pycwb.modules.job_segment import create_job_segment_from_config
@@ -10,7 +14,9 @@ from pycwb.modules.web_viewer.create import create_web_viewer
 from pycwb.modules.workflow_utils.job_setup import create_working_directory, \
     check_if_output_exists, create_output_directory
 from pycwb.types.job import WaveSegment
-from pycwb.utils.parser import parse_id_string
+from pycwb.utils.parser import parse_id_string, parse_vars
+
+logger = logging.getLogger(__name__)
 
 
 def overwrite_config(config: Config, n_proc: int = None, plot_trigger: bool = None, save_waveform: bool = None,
@@ -48,6 +54,7 @@ def overwrite_config(config: Config, n_proc: int = None, plot_trigger: bool = No
 
 def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
                      dry_run: bool = False, overwrite: bool = False,
+                     config_vars: str = None, input_dir: str = None,
                      plot: bool = None, compress_json: bool = None) -> tuple[list[WaveSegment], Config, str]:
     """
     This is the helper function to create the run directories, create catalog file,
@@ -66,6 +73,7 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     # convert to absolute path in case the current working directory is changed
     working_dir = os.path.abspath(working_dir)
     file_name = os.path.abspath(config_file)
+    input_dir = os.path.abspath(input_dir) if input_dir else None
 
     # create working directory and change the current working directory to the given working directory
     create_working_directory(working_dir)
@@ -73,6 +81,14 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
 
     # check environment
     # check_MRACatalog_setting()
+
+    # if input_dir is given, copy the input files to the working directory
+    if input_dir is not None:
+        copy_input_files(input_dir, working_dir)
+
+    # if config_vars is geven, parse it and update the config as a template
+    if config_vars is not None:
+        file_name = generate_config(file_name, config_vars)
 
     # read user parameters
     config = Config()
@@ -82,7 +98,7 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     # slags = generate_slags(len(config.ifo), config.slagMin, config.slagMax, config.slagOff, config.slagSize)
 
     if not dry_run:
-        print(f"Number of jobs: {len(job_segments)}")
+        logger.info(f"Number of jobs: {len(job_segments)}")
         # override n_proc in config
         config = overwrite_config(config, n_proc=n_proc, save_waveform=plot, save_sky_map=plot,
                                   plot_trigger=plot, plot_waveform=plot, plot_sky_map=plot,
@@ -139,9 +155,9 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     catalog = orjson.loads(open('catalog/catalog.json', 'rb').read())
     config = Config()
     config.load_from_dict(catalog['config'])
-    print(f"Loaded config from catalog: {config}")
+    logger.info(f"Loaded config from catalog: {config}")
     job_segments = catalog['jobs']
-    print(f"Loaded {len(job_segments)} job segments from catalog")
+    logger.info(f"Loaded {len(job_segments)} job segments from catalog")
 
     if max(job_ids) - 1 > len(job_segments):
         raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
@@ -158,3 +174,38 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
         create_catalog(catalog_file, config, selected_job_segments)
 
     return selected_job_segments, config, working_dir, catalog_file
+
+
+def copy_input_files(input_dir: str, working_dir: str):
+    """
+    Copy input files from the input directory to the working directory.
+    This is used to ensure that the input files are available in the working directory.
+
+    :param input_dir: The directory containing the input files
+    :param working_dir: The working directory where the input files will be copied
+    """
+    if not os.path.exists(input_dir):
+        raise FileNotFoundError(f"Input directory {input_dir} does not exist.")
+    logging.info(f"Copying input files from {input_dir} to {working_dir}")
+    # copy the input directory to the working directory
+    input_dir_name = os.path.basename(input_dir)
+    input_target_dir = os.path.join(working_dir, input_dir_name)
+    # if the input directory already exists, and not empty, skip copying
+    if os.path.exists(input_target_dir) and os.listdir(input_target_dir):
+        logging.warning(f"Input directory {input_target_dir} already exists and is not empty. Skipping copying.")
+    else:
+        # copy the input directory to the working directory
+        shutil.copytree(input_dir, input_target_dir)
+        logging.info(f"Copied input files to {input_target_dir}")
+
+
+def generate_config(file_name: str, config_vars: str) -> str:
+    config_vars = parse_vars(config_vars)
+    print(f"Parsed config vars: {config_vars}")
+    template = Template(open(file_name, 'r').read())
+    file_name = os.path.join(tempfile.gettempdir(), f"config_{uuid.uuid4().hex}.yaml")
+    print(f"Writing config to temporary file: {file_name}")
+    with open(file_name, 'w') as f:
+        f.write(template.render(config_vars))
+
+    return file_name

@@ -12,3 +12,12 @@ def parse_id_string(id_string: str) -> list[int]:
             # It's a single number, convert to int and add to the list
             result.append(int(part))
     return result
+
+
+def parse_vars(var_string):
+    variables = {}
+    for item in var_string.split():
+        if '=' in item:
+            key, value = item.split('=', 1)
+            variables[key] = value
+    return variables

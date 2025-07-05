@@ -16,9 +16,11 @@ def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster="condor", conda_env=None, additional_init="",
                 accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
+                config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc, dry_run, overwrite,
+                                                         config_vars=config_vars, input_dir=input_dir,
                                                          compress_json=compress_json)
 
     if dry_run:
