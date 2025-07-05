@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from math import ceil
 import logging
 from pycwb.modules.injection.par_generator import get_injection_list_from_parameters, repeat
@@ -8,8 +9,15 @@ logger = logging.getLogger(__name__)
 
 
 def generate_injection_list_from_config(injection_config, start_gps_time, end_gps_time):
+    seed = injection_config.get('seed', None)
     repeat_injection = injection_config.get('repeat_injection', None)
     sky_distribution = injection_config.get('sky_distribution', None)
+
+    # set random seed for reproducibility if specified
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        logger.info(f'Setting random seed to {seed} for injection generation reproducibility')
 
     injections = get_injection_list_from_parameters(injection_config)
 
