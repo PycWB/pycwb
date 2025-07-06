@@ -62,3 +62,28 @@ Replace the following in `monster.cc`
 
 
 to let the output managed by the python code.
+
+Solved part of the memory leak
+--------------------------------
+
+In `network.cc`, the following line was added to the destructor of `Network` class:
+
+.. code-block:: c
+
+    // Delete detector pointers
+    for (detector* d : ifoList) {
+        delete d;
+    }
+
+    // Delete WDM pointers
+    for (WDM<double>* wdm : wdmList) {
+        if (wdm) {
+        delete wdm;    // delete WDM object
+        }
+    }
+
+    // Delete wc_List
+    for (size_t i = 0; i < wc_List.size(); ++i) {
+        wc_List[i].clear();
+    }
+    re
