@@ -26,7 +26,7 @@ def data_conditioning(config, strains, nproc=1):
         logger.info("Start data conditioning in parallel")
         with Pool(processes=min(nproc, config.nIFO)) as p:
             data_regressions = p.starmap(regression, [(config, h) for h in strains])
-            res = p.starmap(whitening, [(config, d) for d in data_regressions])
+            res = p.starmap(whitening_cwb, [(config, d) for d in data_regressions])
     else:
         data_regressions = [regression(config, h) for h in strains]
         if config.whiteMethod == 'wavelet': 

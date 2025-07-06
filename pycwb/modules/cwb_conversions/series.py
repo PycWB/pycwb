@@ -172,6 +172,7 @@ def convert_wavearray_to_timeseries(h):
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
+    h.resize(0)
     return ar
 
 
@@ -192,6 +193,7 @@ def convert_wavearray_to_pycbc_timeseries(h):
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
+    h.resize(0)
     return ar
 
 
@@ -227,6 +229,7 @@ def convert_wseries_to_timeseries(h):
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
+    h.resize(0)
     return ar
 
 
@@ -247,6 +250,7 @@ def convert_wseries_to_pycbc_timeseries(h):
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
+    h.resize(0)
     return ar
 
 

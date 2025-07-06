@@ -50,6 +50,7 @@ def regression(config, h):
     # cleaned data
     hh = r.getClean()
     strain = convert_wavearray_to_pycbc_timeseries(hh)
+    tf_map.resize(0)
     ##########################################
 
     return strain

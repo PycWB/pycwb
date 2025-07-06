@@ -65,6 +65,7 @@ def whitening_cwb(config, h):
     # hw = ut.convert_wseries_to_wavearray(tf_map)
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map)
     n_rms = convert_wseries_to_time_frequency_series(nRMS)
+    wtmp.resize(0)
     ##########################################
 
     return tf_map_whitened, n_rms
