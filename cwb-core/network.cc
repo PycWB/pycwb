@@ -69,6 +69,22 @@ network::network(const network& value)
 
 network::~network()
 {
+  // Delete detector pointers
+  for (detector* d : ifoList) {
+    delete d;
+  }
+
+  // Delete WDM pointers
+  for (WDM<double>* wdm : wdmList) {
+    if (wdm) {
+      delete wdm;    // delete WDM object
+    }
+  }
+
+  // Delete wc_List
+  for (size_t i = 0; i < wc_List.size(); ++i) {
+      wc_List[i].clear();
+  }
   return;
 }
 
