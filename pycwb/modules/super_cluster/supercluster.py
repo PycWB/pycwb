@@ -149,7 +149,8 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         # remove rejected clusters as done in netcluster.cpf()
         fragment_cluster.remove_rejected()
         pwc_list.append(fragment_cluster)
-
+        
+        pwc.clean(1)
         pwc.clear()
     ###############################
 

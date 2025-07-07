@@ -154,6 +154,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster, shifts=(0,0,
     event.output(network.net, k + 1, lag, shifts=shifts)
 
     pwc.clean(1)
+    pwc.clear()
 
     ####################
 

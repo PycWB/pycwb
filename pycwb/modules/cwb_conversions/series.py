@@ -155,7 +155,7 @@ def WSeries_to_matrix(w):
     return matrix
 
 
-def convert_wavearray_to_timeseries(h):
+def convert_wavearray_to_timeseries(h, clean=True):
     """
     Convert wavearray to gwpy timeseries (get 3 times faster with c++ function)
 
@@ -172,11 +172,12 @@ def convert_wavearray_to_timeseries(h):
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
-    h.resize(0)
+    if clean:
+        h.resize(0)
     return ar
 
 
-def convert_wavearray_to_pycbc_timeseries(h):
+def convert_wavearray_to_pycbc_timeseries(h, clean=True):
     """
     Convert wavearray to pycbc timeseries
 
@@ -193,11 +194,12 @@ def convert_wavearray_to_pycbc_timeseries(h):
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
-    h.resize(0)
+    if clean:
+        h.resize(0)
     return ar
 
 
-def convert_wavearray_to_nparray(h, short=False):
+def convert_wavearray_to_nparray(h, short=False, clean=True):
     """
     Convert wavearray to numpy array
 
@@ -207,12 +209,16 @@ def convert_wavearray_to_nparray(h, short=False):
     :rtype: np.array
     """
     if short:
-        return np.array(ROOT.pycwb_get_short_wavearray_data(h))
+        data = np.array(ROOT.pycwb_get_short_wavearray_data(h))
     else:
-        return np.array(ROOT.pycwb_get_wavearray_data(h))
+        data = np.array(ROOT.pycwb_get_wavearray_data(h))
 
+    if clean:
+        h.resize(0)
 
-def convert_wseries_to_timeseries(h):
+    return data
+
+def convert_wseries_to_timeseries(h, clean=True):
     """
     Convert wavearray to gwpy timeseries (get 3 times faster with c++ function)
 
@@ -229,11 +235,12 @@ def convert_wseries_to_timeseries(h):
 
     ar = TimeSeries(ar, dt=1. / h.rate(), t0=h.start())
 
-    h.resize(0)
+    if clean:
+        h.resize(0)
     return ar
 
 
-def convert_wseries_to_pycbc_timeseries(h):
+def convert_wseries_to_pycbc_timeseries(h, clean=True):
     """
     Convert wavearray to pycbc timeseries (get 3 times faster with c++ function)
 
@@ -250,11 +257,12 @@ def convert_wseries_to_pycbc_timeseries(h):
 
     ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
 
-    h.resize(0)
+    if clean:
+        h.resize(0)
     return ar
 
 
-def convert_wseries_to_time_frequency_series(h):
+def convert_wseries_to_time_frequency_series(h, clean=False):
     """
     Convert wavearray to time frequency series
 
@@ -267,7 +275,7 @@ def convert_wseries_to_time_frequency_series(h):
     # convert wseries to pycbc timeseries
     from pycwb.types.wdm import WDM
 
-    data = convert_wseries_to_pycbc_timeseries(h)
+    data = convert_wseries_to_pycbc_timeseries(h, clean=clean)
 
     # create a new time frequency series with the pycbc timeseries and the wavelet
     return TimeFrequencySeries(data=data, wavelet=WDM(wavelet=h.pWavelet), whiten_mode=h.w_mode,
