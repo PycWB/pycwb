@@ -189,6 +189,11 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
 
         pwc.clear()
 
+    for j in range(int(net.nLag)):
+        pwc = net.get_cluster(j)
+        pwc.clean(1)
+
+    ts.resize(0)  # clear the time series to free memory
     ###############################
 
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
