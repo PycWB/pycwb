@@ -87,12 +87,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # coherence
-        fragment_clusters = coherence(config, tf_maps, nRMS_list)
-        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
         # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
+
+        # coherence
+        fragment_clusters = coherence(config, tf_maps, nRMS_list, net=network)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # supercluster
         if config.use_root_supercluster:
