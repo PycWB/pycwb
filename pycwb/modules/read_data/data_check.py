@@ -49,9 +49,6 @@ def check_and_resample(data, config, ifo_index):
     if data.sample_rate != config.inRate:
         raise ValueError('Sample rate is not consistent with configuation')
 
-    # TODO: complete the following
-    # data shift
-    # SLAG
     # DC correction
     if config.dcCal[ifo_index] > 0 and config.dcCal[ifo_index] != 1.0:
         data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
