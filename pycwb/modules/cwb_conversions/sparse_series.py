@@ -1,5 +1,6 @@
 import numpy as np
 import ROOT
+import cppyy
 
 
 def convert_sparse_series_to_sseries(sparse_series):
@@ -9,7 +10,8 @@ def convert_sparse_series_to_sseries(sparse_series):
     if len(data) == 0:
         ss.pWavelet.allocate(0, ROOT.nullptr)
     else:
-        ss.pWavelet.allocate(len(data), data)
+        _ptr = cppyy.gbl._to_double_malloc(data, len(data))
+        ss.pWavelet.allocate(len(data), _ptr)
 
     ss.sparseLookup.resize(len(sparse_series.sparse_lookup))
     for i, v in enumerate(sparse_series.sparse_lookup):

@@ -17,9 +17,10 @@ class TimeFrequencySeries:
     :param f_high: high frequency cutoff
     :type f_high: float
     """
-    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', '_f_low', '_f_high']
+    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', '_f_low', '_f_high', '_wseries']
 
-    def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None):
+    def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None, 
+                 wseries=None):
         self._wavelet = None
         #: Time series data
         self.data = data
@@ -35,6 +36,8 @@ class TimeFrequencySeries:
         self._f_low = f_low
         #: high frequency cutoff
         self._f_high = f_high
+        #: WSeries object, used for data cleaning
+        self._wseries = wseries
 
     def __dict__(self):
         return {key: getattr(self, key) for key in self.__slots__}
@@ -47,10 +50,15 @@ class TimeFrequencySeries:
             bpp=self.bpp,
             w_rate=self.w_rate,
             f_low=self.f_low,
-            f_high=self.f_high
+            f_high=self.f_high,
         )
 
         return new
+
+    def __del__(self):
+        if self._wseries:
+            self._wseries.resize(0)
+            del self._wseries
 
     __copy__ = copy
 

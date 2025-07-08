@@ -18,6 +18,8 @@ std::vector<double> inline pycwb_get_wavearray_data(wavearray<double> *wave) {
         data.push_back(wave->data[i]);
     }
 
+    // wave->resize(0); // Clear the wavearray to free memory
+
     return data;
 };
 
@@ -26,6 +28,8 @@ std::vector<short> inline pycwb_get_short_wavearray_data(wavearray<short> *wave)
     for (int i = 0; i < wave->size(); i++) {
         data.push_back(wave->data[i]);
     }
+
+    // wave->resize(0); // Clear the wavearray to free memory
 
     return data;
 };

@@ -2,7 +2,7 @@ import ROOT
 import numpy as np
 import cppyy
 from pycwb.modules.cwb_conversions import convert_wavearray_to_pycbc_timeseries
-
+from ctypes import c_double
 
 def declare_function():
     cppyy.cppdef("""
@@ -62,6 +62,17 @@ class WDM:
         #: defines filter length by truncation error quantified by P = -log10(1 - norm_of_filter) (see the paper)
         self.precision = precision
 
+        self._ptr = None
+
+    def __del__(self):
+        """
+        destructor of the WDM object
+        """
+        self.release()
+        # if self._ptr:
+        #     cppyy.gbl.free(self._ptr)
+        #     self._ptr = None
+
     def set_td_filter(self, coeff_factor, upsample_factor):
         """
         initialization of the time delay filters
@@ -89,7 +100,11 @@ class WDM:
             return self.wavelet.allocate()
 
         if not n:
-            return self.wavelet.allocate(len(data), cppyy.gbl._to_double_malloc(data.data, len(data.data)))
+            if self._ptr:
+                # cppyy.gbl.free(self._ptr)
+                self._ptr = None
+            self._ptr = cppyy.gbl._to_double_malloc(data.data, len(data.data))
+            return self.wavelet.allocate(len(data), self._ptr)
         else:
             return self.wavelet.allocate(n, data)
 
@@ -98,6 +113,9 @@ class WDM:
         release memory of the WDM sliced array
         """
         self.wavelet.release()
+        # if self._ptr:
+        #     cppyy.gbl.free(self._ptr)
+        #     self._ptr = None
 
     def clone(self):
         """

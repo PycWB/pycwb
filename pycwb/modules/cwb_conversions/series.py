@@ -279,7 +279,7 @@ def convert_wseries_to_time_frequency_series(h, clean=False):
 
     # create a new time frequency series with the pycbc timeseries and the wavelet
     return TimeFrequencySeries(data=data, wavelet=WDM(wavelet=h.pWavelet), whiten_mode=h.w_mode,
-                               bpp=h.bpp, w_rate=h.wRate, f_low=h.f_low, f_high=h.f_high)
+                               bpp=h.bpp, w_rate=h.wRate, f_low=h.f_low, f_high=h.f_high, wseries=h)
 
 
 def convert_time_frequency_series_to_wseries(h):
