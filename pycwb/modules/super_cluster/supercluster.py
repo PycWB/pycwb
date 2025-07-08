@@ -65,7 +65,6 @@ def supercluster(config, network, fragment_clusters, tf_maps):
 
 
     pwc_list = []
-
     ###############################
     # cWB2G supercluster
     ###############################

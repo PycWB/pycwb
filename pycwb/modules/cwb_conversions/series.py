@@ -82,6 +82,26 @@ def convert_to_wavearray(data):
     return output
 
 
+def convert_numpy_to_wavearray(data: np.array):
+    """
+    Convert numpy array to wavearray with python loop
+
+    :param data: numpy array
+    :type data: np.array
+    :return: Converted ROOT.wavearray
+    :rtype: ROOT.wavearray
+    """
+    h = ROOT.wavearray(np.double)()
+
+    for d in data:
+        h.append(d)
+
+    h.start(0.)
+    h.rate(1.)
+
+    return h
+
+
 
 def convert_timeseries_to_wavearray(data: TimeSeries):
     """

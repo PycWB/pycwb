@@ -17,7 +17,7 @@ class TimeFrequencySeries:
     :param f_high: high frequency cutoff
     :type f_high: float
     """
-    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', '_f_low', '_f_high', '_wseries']
+    __slots__ = ['_wavelet', 'data', 'whiten_mode', 'bpp', 'w_rate', '_f_low', '_f_high', '_wseries', '_ptr']
 
     def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None, 
                  wseries=None):
@@ -59,6 +59,9 @@ class TimeFrequencySeries:
         if self._wseries:
             self._wseries.resize(0)
             del self._wseries
+        if self._wavelet:
+            self._wavelet.release()
+            del self._wavelet
 
     __copy__ = copy
 

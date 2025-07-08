@@ -62,6 +62,15 @@ class Network:
 
         self.set_time_shift(config.lagSize, config.lagStep, config.lagOff, config.lagMax,
                             config.lagBuffer, config.lagMode, config.lagSite)
+    def __del__(self):
+        """
+        Destructor to clean up the network object.
+        """
+        for i in range(self.ifo_size):
+            ifo = self.net.getifo(i)
+            ifo.HoT.resize(0)
+            ifo.TFmap.resize(0)
+            ifo.nRMS.resize(0)
 
     def load_strains(self, tf_maps, nRMS_list, segEdge):
         """

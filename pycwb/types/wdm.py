@@ -1,7 +1,7 @@
 import ROOT
 import numpy as np
 import cppyy
-from pycwb.modules.cwb_conversions import convert_wavearray_to_pycbc_timeseries
+from pycwb.modules.cwb_conversions import convert_numpy_to_wavearray
 from ctypes import c_double
 
 def declare_function():
@@ -69,9 +69,8 @@ class WDM:
         destructor of the WDM object
         """
         self.release()
-        # if self._ptr:
-        #     cppyy.gbl.free(self._ptr)
-        #     self._ptr = None
+        self.release_ptr()
+
 
     def set_td_filter(self, coeff_factor, upsample_factor):
         """
@@ -99,13 +98,18 @@ class WDM:
         if data is None:
             return self.wavelet.allocate()
 
+        self.release_ptr()
+
         if not n:
-            if self._ptr:
-                # cppyy.gbl.free(self._ptr)
-                self._ptr = None
-            self._ptr = cppyy.gbl._to_double_malloc(data.data, len(data.data))
-            return self.wavelet.allocate(len(data), self._ptr)
+            if isinstance(data, np.ndarray):
+                self._ptr = ('wavearray', convert_numpy_to_wavearray(data.data))
+                d = self._ptr[1].data
+            else:
+                self._ptr = ('malloc', cppyy.gbl._to_double_malloc(data.data, len(data.data)))
+                d = self._ptr[1]
+            return self.wavelet.allocate(len(data), d)
         else:
+            self._ptr = ('malloc', data)
             return self.wavelet.allocate(n, data)
 
     def release(self):
@@ -113,10 +117,19 @@ class WDM:
         release memory of the WDM sliced array
         """
         self.wavelet.release()
-        # if self._ptr:
-        #     cppyy.gbl.free(self._ptr)
-        #     self._ptr = None
 
+    def release_ptr(self):
+        """
+        release pointer to the WDM sliced array
+        """
+        if self._ptr:
+            if self._ptr[0] == 'wavearray':
+                self._ptr[1].resize(0)
+            elif self._ptr[0] == 'malloc':
+                pass
+                # cppyy.gbl.free(self._ptr[1])
+            self._ptr = None
+    
     def clone(self):
         """
         clone the WDM object
@@ -130,6 +143,16 @@ class WDM:
         """
         new_wavelet = self.wavelet.Init()
         return WDM(wavelet=new_wavelet, m=self.m, k=self.k, beta_order=self.beta_order, precision=self.precision)
+
+    def dump_data(self):
+        """
+        dump data of the WDM sliced array
+
+        :return: data of the WDM sliced array
+        :rtype: numpy.ndarray
+        """
+        data = np.array(ROOT.pycwb_get_malloc_data(self.wavelet.pWWS, self.wavelet.nWWS))
+        return data
 
     def to_type_WDM(self):
         """
