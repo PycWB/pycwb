@@ -40,6 +40,7 @@ install_requires = [
     "python-ligo-lw<2.0.0",  # error for version > 2: FileNotFoundError: [Errno 2] No such file or directory: 'ligolw/version.py.in'
     "scikit-learn",
     "jinja2",  # for template rendering
+    "plotly",  # for plotting
     # "nds2-client",
     # "python-nds2-client"
 ]
