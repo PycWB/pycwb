@@ -7,17 +7,16 @@ logger = logging.getLogger(__name__)
 
 def get_strain_from_file(**parameters): 
     """
-    Generates the pycbc strain reading it from a file. The available extensions are: .txt, .npy and .hdf5.
+    Generates the pycbc strain reading it from a file. The available extensions are: .txt, .npy and .hdf.
     Parameters:
     -----------
     parameters: dict
         A dictionary containing the following keys:
         - 'files': A dictionary with keys as interferometer names (e.g., 'H1', 'L1') and values as file paths.
-        - 'start_time': The GPS start time for the strain data.
     Returns:
     --------
     injections: dict
-        A dictionary with keys as interferometer names and values as pycbc strain objects.
+        A dictionary with keys as interferometer names and values as pycbc TimeSeries.
     """
     #Initialize the injections dictionary
     injections = {'type': 'strain'}
