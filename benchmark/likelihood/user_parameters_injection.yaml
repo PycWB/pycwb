@@ -1,7 +1,7 @@
 ###### project ######
 
 outputDir: "output"
-nproc: 6
+nproc: 1
 ###### search ######
 
 #calibVer: "C01"
@@ -69,6 +69,7 @@ iwindow: 100
 # simulation
 simulation: "all_inject_in_one_segment"
 nfactor: 1
+segment_processer: ./data_generator.process_job_segment
 
 injection:
   segment:
@@ -77,17 +78,6 @@ injection:
     noise:
       seeds: [1002, 1004]
   parameters:
-    - mass1: 20
-      mass2: 20
-      spin1z: 0
-      spin2z: 0
-      distance: 1000
-      inclination: 0
-      polarization: 0
-      gps_time: 1126259462.4
-      coa_phase: 0
-      ra: 0
-      dec: 0
     - mass1: 36
       mass2: 29
       spin1x: 0.3
@@ -100,5 +90,6 @@ injection:
       coa_phase: 0
       ra: 0
       dec: 0
+      pol: 0
+      f_lower: 16
       approximant: "IMRPhenomXPHM"
-  approximant: "IMRPhenomXHM"
