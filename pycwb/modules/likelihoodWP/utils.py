@@ -81,6 +81,19 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         The q component of the packet. q[ifo][pixel]
     xtalks : np.ndarray
         The cross-talk matrix. xtalks[pixel]
+    xtalks_lookup : np.ndarray
+        Lookup table for cross-talk ranges. xtalks_lookup[pixel]
+    mk : np.ndarray
+        Mask indicating valid pixels. mk[pixel]
+    q_E : np.ndarray
+        Energy threshold for the q component. q_E[ifo]
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - detector_snr: The signal-to-noise ratio for the detector. was the return value for the cWB function
+
     """
     n_pixels = len(p[0])
     n_ifos = len(p)

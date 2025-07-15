@@ -332,6 +332,38 @@ def sum_vec(a, b, res):
 
 @njit(cache=True)
 def dpf_np_loops_vec(Fp0, Fx0, rms):
+    """
+    Compute the dominant polarization frame (DPF)
+
+    Parameters
+    ----------
+    Fp0 : np.ndarray
+        The Fp0 vector for the current sky location.
+    Fx0 : np.ndarray
+        The Fx0 vector for the current sky location.
+    rms : np.ndarray
+        The rms values for the pixels, shape (NPIX, NIFO).
+
+    Returns
+    -------
+    tuple
+        - NI : float
+            The normalized index. (?)
+        - f: np.ndarray
+            The plus polarization component in the DPF.
+        - F: np.ndarray
+            The cross polarization component in the DPF.
+        - fp: np.ndarray
+            |f+|^2 
+        - fx: np.ndarray
+            |fx|^2
+        - si: np.ndarray
+            The sine component of the DPF.
+        - co: np.ndarray
+            The cosine component of the DPF.
+        - ni: np.ndarray
+            The network index for each pixel.
+    """
     NPIX, NIFO = rms.shape
     NPIX = uint32(NPIX)
     NIFO = uint32(NIFO)
@@ -369,14 +401,14 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
             _fF += F[i, j] * f[i, j]
 
         # Compute si, co, AP, nn, fp, and cc
-        _si = mul_vec(float32(2.), _fF)  # 2. * _fF
-        _co = sub_vec(_ff, _FF)  # _ff - _FF
-        _AP = add_vec(_ff, _FF)  # _ff + _FF
-        _nn = norm_vec(_co, _si)  # np.sqrt(_co * _co + _si * _si)
-        _cc = div_vec(_co, _nn)  # _co / (_nn + 0.0001)
-        fp[i] = avg_vec(_AP, _nn)  # (_AP + _nn) / 2.
-        si[i] = sin_from_cc(_cc)  # sqrt((1. - _cc) / 2.)
-        co[i] = cos_from_cc(_cc, _si)  # (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
+        _si = mul_vec(float32(2.), _fF)  # rotation 2*sin*cos*norm
+        _co = sub_vec(_ff, _FF)          # rotation (cos^2-sin^2)*norm
+        _AP = add_vec(_ff, _FF)          # total antenna norm
+        _nn = norm_vec(_co, _si)         # co/si norm    np.sqrt(_co * _co + _si * _si)
+        _cc = div_vec(_co, _nn)          # cos(2p)       _co / (_nn + 0.0001)
+        fp[i] = avg_vec(_AP, _nn)        # |f+|^2        (_AP + _nn) / 2.
+        si[i] = sin_from_cc(_cc)         # |sin(p)|      sqrt((1. - _cc) / 2.)
+        co[i] = cos_from_cc(_cc, _si)    # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
 
     # Compute f_new, F_new, fF_new, F_new, fx, ni
     for i in range(NPIX):
@@ -404,9 +436,9 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
         # ni[i] /= (fp[i] * fp[i] + _o)
         ni[i] = div_vec(ni[i], mul_vec(fp[i], fp[i]))
         # NI += fx[i] / (ni[i] + _o)
-        NI += div_vec(fx[i], ni[i])
+        NI += div_vec(fx[i], ni[i])     # sum of |fx|^2/2/ni
         # if fp[i] > float32(0.0):
-        NN += pos_sign_vec(fp[i])
+        NN += pos_sign_vec(fp[i])       # pixel count
         # NN += 1 if fp[i] > 0.0 else 0
 
     return sqrt(NI / (NN + 0.01)), f, F, fp, fx, si, co, ni
