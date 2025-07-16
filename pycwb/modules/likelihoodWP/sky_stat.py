@@ -34,9 +34,36 @@ def _avx_loadata_ps(p, q, En):
 
 
 @njit(cache=True)
-def load_data_from_td(p, q, network_energy_threshold):
-    n_ifo = len(p)  # Number of interferometers
-    n_pix = len(p[0])  # Number of pixels
+def load_data_from_td(v00, v90, network_energy_threshold):
+    """
+    Compute the total energy for each pixel and the mask based on the network energy threshold.
+
+    TODO: rename this function to something more descriptive, like `compute_pixel_energy_and_mask`. And split the logic into smaller functions if necessary.
+
+    Parameters:
+    -----------
+    v00 : np.ndarray
+        The 00 polarization data for each interferometer and pixel.
+    v90 : np.ndarray
+        The 90 polarization data for each interferometer and pixel.
+    network_energy_threshold : float
+        The threshold for the network energy to determine if a pixel is active.
+
+    Returns:
+    --------
+    tuple
+        - EE : float
+            The total energy of the network.
+        - NN : int
+            The number of active pixels.
+        - energy_total : np.ndarray
+            The total energy for each pixel.
+        - mask : np.ndarray
+            A mask indicating which pixels are active based on the network energy threshold.
+    """
+
+    n_ifo = len(v00)  # Number of interferometers
+    n_pix = len(v00[0])  # Number of pixels
 
     energy_total = np.empty(n_pix, dtype=float32)
     mask = np.empty(n_pix, dtype=int32)
@@ -49,8 +76,8 @@ def load_data_from_td(p, q, network_energy_threshold):
         AA = float32(0.0)
 
         for j in range(n_ifo):
-            aa += p[j][i] * p[j][i]
-            AA += q[j][i] * q[j][i]
+            aa += v00[j][i] * v00[j][i]
+            AA += v90[j][i] * v90[j][i]
 
         energy_total[i] = aa + AA + float32(1e-12)
         mask[i] = energy_total[i] > network_energy_threshold
@@ -63,9 +90,55 @@ def load_data_from_td(p, q, network_energy_threshold):
 
 
 @njit(cache=True)
-def avx_GW_ps(p, q, f, F, fp, fx, ni, et, mask, reg):
-    n_ifo = len(p)  # Number of interferometers
-    n_pix = len(p[0])  # Number of pixels
+def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
+    """
+    GW strain packet
+
+    Parameters
+    ----------
+    v00 : np.ndarray
+        The 00 polarization component of the packet. v00[ifo][pixel]
+    v90 : np.ndarray
+        The 90 polarization component of the packet. v90[ifo][pixel]
+    f : np.ndarray
+        The plus polarization component in the DPF. f[pixel][ifo]
+    F : np.ndarray
+        The cross polarization component in the DPF. F[pixel][ifo]
+    fp : np.ndarray
+        The plus polarization component in the DPF, normalized. |f+|^2. fp[pixel][ifo]
+    fx : np.ndarray
+        The cross polarization component in the DPF, normalized. |fx|^2. fx[pixel][ifo]
+    ni : np.ndarray
+        The noise index for each pixel. ni[pixel][ifo]
+    et : np.ndarray
+        The total energy for each pixel. et[pixel][ifo]
+    mask : np.ndarray
+        The mask indicating active pixels. mask[pixel]
+    reg : tuple
+        The regularization parameters.
+
+    Returns
+    -------
+    tuple
+        - NN : int
+            The number of pixels above threshold
+        - p_updated : np.ndarray
+            The updated 00 component of the packet. p_updated[ifo][pixel]
+        - q_updated : np.ndarray
+            The updated 90 component of the packet. q_updated[ifo][pixel]
+        - mask_updated : np.ndarray
+            The updated mask for the pixels. mask_updated[pixel]
+        - au : np.ndarray
+            Amplitude component
+        - AU : np.ndarray
+            Amplitude component
+        - av : np.ndarray
+            Amplitude component
+        - AV : np.ndarray
+            Amplitude component
+    """
+    n_ifo = len(v00)  # Number of interferometers
+    n_pix = len(v00[0])  # Number of pixels
 
     au = np.empty(n_pix, dtype=np.float32)
     AU = np.empty(n_pix, dtype=np.float32)
@@ -83,10 +156,10 @@ def avx_GW_ps(p, q, f, F, fp, fx, ni, et, mask, reg):
     for i in range(n_pix):
         _xp, _XP, _xx, _XX = float32(0), float32(0), float32(0), float32(0)
         for j in range(n_ifo):
-            _xp += p[j][i] * f[i][j]
-            _XP += q[j][i] * f[i][j]
-            _xx += p[j][i] * F[i][j]
-            _XX += q[j][i] * F[i][j]
+            _xp += v00[j][i] * f[i][j]
+            _XP += v90[j][i] * f[i][j]
+            _xx += v00[j][i] * F[i][j]
+            _XX += v90[j][i] * F[i][j]
 
         _f = sqrt(ni[i] * (_xp * _xp + _XP * _XP) / (et[i] + _o)) * _rr - fp[i]
         _f = _f if _f > float32(0.) else float32(0.0)
@@ -147,9 +220,35 @@ def avx_GW_ps(p, q, f, F, fp, fx, ni, et, mask, reg):
 
 
 @njit(cache=True)
-def avx_ort_ps(p, q, mask):
-    n_ifo = len(p)  # Number of interferometers
-    n_pix = len(p[0])  # Number of pixels
+def avx_ort_ps(v00, v90, mask):
+    """
+    orthogonalize data vectors v00 and v90, calculate norms of orthogonal vectors and rotation sin & cos
+
+    Parameters
+    ----------
+    v00 : np.ndarray
+        The 00 polarization component of the packet. v00[ifo][pixel]
+    v90 : np.ndarray
+        The 90 polarization component of the packet. v90[ifo][pixel]
+    mask : np.ndarray
+        The mask indicating active pixels. mask[pixel]
+
+    Returns
+    -------
+    tuple
+        - E: float
+            signal energy
+        - si: np.ndarray
+            sin of the rotation angle for each pixel. si[pixel]
+        - co: np.ndarray
+            cos of the rotation angle for each pixel. co[pixel]
+        - ee: np.ndarray
+            plus component energy for each pixel. ee[pixel]
+        - EE: np.ndarray
+            cross component energy for each pixel. EE[pixel]
+    """
+    n_ifo = len(v00)  # Number of interferometers
+    n_pix = len(v00[0])  # Number of pixels
     _0 = np.float32(0)
     _1 = np.float32(1)
     _o = np.float32(1e-21)
@@ -168,9 +267,9 @@ def avx_ort_ps(p, q, mask):
         aA = np.float32(0)
 
         for j in range(n_ifo):
-            aa += p[j][i] * p[j][i]
-            AA += q[j][i] * q[j][i]
-            aA += p[j][i] * q[j][i]
+            aa += v00[j][i] * v00[j][i]
+            AA += v90[j][i] * v90[j][i]
+            aA += v00[j][i] * v90[j][i]
 
         # Orthogonalization sin and cos calculations
         si[i] = aA * float32(2.)  # rotation 2*sin*cos*norm
@@ -196,9 +295,47 @@ def avx_ort_ps(p, q, mask):
 
 
 @njit(cache=True)
-def avx_stat_ps(x, X, s, S, si, co, mask):
-    n_ifo = len(x)  # Number of interferometers
-    n_pix = len(x[0])  # Number of pixels
+def avx_stat_ps(v00, v90, s, S, si, co, mask):
+    """
+    returns coherent statistics in the format {cc,ec,ed,gn}
+
+    Parameters
+    ----------
+    v00 : np.ndarray
+        The 00 polarization component of the packet. v00[ifo][pixel]
+    v90 : np.ndarray
+        The 90 polarization component of the packet. v90[ifo][pixel]
+    s : np.ndarray
+        The updated 00 component of the packet. s[ifo][pixel]
+    S : np.ndarray
+        The updated 90 component of the packet. S[ifo][pixel]
+    si : np.ndarray
+        The sin of the rotation angle for each pixel. si[pixel]
+    co : np.ndarray
+        The cos of the rotation angle for each pixel. co[pixel]
+    mask : np.ndarray
+        The mask indicating active pixels. mask[pixel]
+
+    Returns
+    -------
+    tuple
+        - corr_coeff : float
+            The network correlation coefficient.
+        - EC: float
+            The total coherent energy.
+        - NN: int
+            The number of pixels
+        - total_noise: float
+            The total noise
+        - ec: np.ndarray
+            The coherent energy for each pixel.
+        - gn: np.ndarray
+            The G-noise correction for each pixel.
+        - rn: np.ndarray
+            The residual noise in the TF domain for each pixel.
+    """
+    n_ifo = len(v00)  # Number of interferometers
+    n_pix = len(v00[0])  # Number of pixels
 
     _o = np.float32(0.001)
     _0 = np.float32(0)
@@ -229,9 +366,9 @@ def avx_stat_ps(x, X, s, S, si, co, mask):
 
         for j in range(n_ifo):
             s_ = s[j][i] * co[i] + S[j][i] * si[i]
-            x_ = x[j][i] * co[i] + X[j][i] * si[i]
+            x_ = v00[j][i] * co[i] + v90[j][i] * si[i]
             S_ = S[j][i] * co[i] - s[j][i] * si[i]
-            X_ = X[j][i] * co[i] - x[j][i] * si[i]
+            X_ = v90[j][i] * co[i] - v00[j][i] * si[i]
 
             a = s_ * x_
             A = S_ * X_
@@ -242,8 +379,8 @@ def avx_stat_ps(x, X, s, S, si, co, mask):
             C += A * A
             ss += s_ * s_
             SS += S_ * S_
-            rr += (s[j][i] - x[j][i]) ** 2
-            RR += (S[j][i] - X[j][i]) ** 2
+            rr += (s[j][i] - v00[j][i]) ** 2
+            RR += (S[j][i] - v90[j][i]) ** 2
 
         mk = 1 if mask[i] >= _0 else 0  # event mask
         c = c / (xs * xs + _o)  # first component incoherent energy

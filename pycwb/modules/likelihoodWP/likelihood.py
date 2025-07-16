@@ -6,7 +6,8 @@ from numba.typed import List
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
-from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy
+from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
+        avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
 from ..xtalk.monster import load_catalog, getXTalk_pixels
 
 
@@ -229,29 +230,34 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     return l_max
 
 
-@njit(cache=True)
+# @njit(cache=True)
 def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk, cluster_xtalk_lookup_table):
+    """
+
+    """
     # from numpy import float32
     # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    v00 = np.empty((n_ifo, n_pix), dtype=float32)
-    v90 = np.empty((n_ifo, n_pix), dtype=float32)
-    td_energy = np.zeros((n_ifo, n_pix), dtype=float32)
+    v00 = np.empty((n_ifo, n_pix), dtype=np.float32)
+    v90 = np.empty((n_ifo, n_pix), dtype=np.float32)
+    td_energy = np.zeros((n_ifo, n_pix), dtype=np.float32)
 
     offset = int(td00.shape[0] / 2)
 
+    # get time delayed data slice at sky location l
     for i in range(n_ifo):
         v00[i] = td00[ml[i, l] + offset, i]
         v90[i] = td90[ml[i, l] + offset, i]
 
+    # compute the energy of the time delayed data slice
     for i in range(n_ifo):
         for j in range(n_pix):
             td_energy[i, j] = v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
 
-    # calculate data stats for time delayed data slice
+    # calculate the total energy, active pixels and mask
     Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
 
-    # calculate DPF f+,fx and their norms
+    # calculate DPF f+,fx and their norms for the sky location l
     _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[l], FX[l], rms)
 
     # gw strain packet, return number of selected pixels
@@ -263,15 +269,115 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # coherent statistics
     _, _, _, _, coherent_energy, gn, rn = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
+    ##############################
+    # Eo = _avx_packet_ps(pd, pD, _AVX, V4);            // get data packet
+    # Lo = _avx_packet_ps(ps, pS, _AVX, V4);            // get signal packet
+    # D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, V4);           // data packet energy snr
+    # S_snr = _avx_norm_ps(pS, pD, p_ec, V4);           // set signal norms, return signal SNR
+    # Ep = D_snr[0];
+    # Lp = S_snr[0];
+    ##############################
     Eo, pd, pD, pd_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
     Lo, ps, pS, ps_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
 
-    detector_snr, data_norm, rn = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
+    detector_snr, data_norm, rn, q_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
     D_snr = np.sum(detector_snr)
-    gw_norm, signal_norm = gw_norm_numpy(td_energy, data_norm, ps_E, coherent_energy)
+    gw_norm, signal_norm = gw_norm_numpy(td_energy, data_norm, ps_E, coherent_energy) # return signal norms and signal SNR	 
     S_snr = np.sum(gw_norm)
     # print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
     print("Eo = ", Eo, ", Lo = ", Lo, ", Ep = ", D_snr, ", Lp = ", S_snr)
+    
+    #################################
+    # _CC = _avx_noise_ps(pS, pD, _AVX, V4);            // get G-noise correction
+    # _mm256_storeu_ps(vvv, _CC);                     // extract coherent statistics
+    # Gn = vvv[0];                                   // gaussian noise correction
+    # Ec = vvv[1];                                   // core coherent energy in TF domain
+    # Dc = vvv[2];                                   // signal-core coherent energy in TF domain
+    # Rc = vvv[3];                                   // EC normalization
+    # Eh = vvv[4];                                   // satellite energy in TF domain
+    #################################
+    vvv = avx_noise_ps(pS, pD, energy_total, mask, coherent_energy, gn, rn)
+    Gn = vvv[0]       # gaussian noise correction
+    Ec = vvv[1]       # core coherent energy in TF domain
+    Dc = vvv[2]       # signal-core coherent energy in TF domain
+    Rc = vvv[3]       # EC normalization
+    Eh = vvv[4]       # satellite energy in TF domain
+    print("Gn = ", Gn, ", Ec = ", Ec, ", Dc = ", Dc, ", Rc = ", Rc, ", Eh = ", Eh)
+
+
+    ##################################
+    # N = _avx_setAMP_ps(pd, pD, _AVX, V4) - 1;           // set data packet amplitudes
+    # _avx_setAMP_ps(ps, pS, _AVX, V4);                 // set signal packet amplitudes
+    # _avx_loadNULL_ps(pn, pN, pd, pD, ps, pS, V4);        // load noise TF domain amplitudes
+    # D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, -V4);          // data packet energy snr
+    # N_snr = _avx_norm_ps(wdmMRA, pn, pN, _AVX, -V4);          // noise packet energy snr
+    # Np = N_snr.data[0];                            // time-domain NULL
+    # Em = D_snr.data[0];                            // time domain energy
+    # Lm = Em - Np - Gn;                                 // time domain signal energy
+    # norm = Em > 0 ? (Eo - Eh) / Em : 1.e9;               // norm
+    # if (norm < 1) norm = 1;                           // corrected norm
+    # Ec /= norm;                                   // core coherent energy in time domain
+    # Dc /= norm;                                   // signal-core coherent energy in time domain
+    # ch = (Np + Gn) / (N * nIFO);                         // chi2
+    ##################################
+
+    # set data packet amplitudes
+    N, pd, pD = avx_setAMP_ps(pd, pD, n_ifo, mask, fp, fx, ee, EE, gn) - 1  # set data packet amplitudes
+    # set signal packet amplitudes
+    _, ps, pS = avx_setAMP_ps(ps, pS, n_ifo, mask, fp, fx, ee, EE, gn)
+    # load noise TF domain amplitudes
+    pn, pN = avx_loadNULL_ps(pd, pD, ps, pS)
+    # data packet energy snr
+    detector_snr, data_norm, rn, q_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
+    D_snr = np.sum(detector_snr)
+    noise_snr, noise_norm, rn, q_norm = packet_norm_numpy(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask, ps_E)
+    N_snr = np.sum(noise_snr)  # noise packet energy snr
+    Np = N_snr  # time-domain NULL
+    Em = D_snr  # time domain energy
+    Lm = Em - Np - Gn  # time domain signal energy
+    norm = Em / (Eo - Eh) if (Eo - Eh) > 0 else 1.e9  # norm
+    if norm < 1:
+        norm = 1
+    Ec /= norm  # core coherent energy in time domain
+    Dc /= norm  # signal-core coherent energy in time domain
+    ch = (Np + Gn) / (N * n_ifo)  # chi
+
+    #################################
+    # if (netRHO >= 0) {    // original 2G
+    #     cc = ch > 1 ? ch : 1;                          // rho correction factor
+    #     rho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;           // cWB detection stat
+    # } else {        // (XGB.rho0)
+    #     penalty = ch;
+    #     ecor = Ec;
+    #     rho = sqrt(ecor / (1 + penalty * (max((float) 1., penalty) - 1)));
+    #     // original 2G rho statistic: only for test
+    #     cc = ch > 1 ? ch : 1;                          // rho correction factor
+    #     xrho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;          // cWB detection stat
+    # }
+    #################################
+    if network_energy_threshold >= 0: # original 2G
+        cc = ch if ch > 1 else 1  # rho correction factor
+        rho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
+    else:  # (XGB.rho0)
+        penalty = ch
+        ecor = Ec
+        rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1)))
+        # original 2G rho statistic: only for test
+        cc = ch if ch > 1 else 1  # rho correction factor
+        xrho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
+
+    #################################
+    # // save projection on network plane in polar coordinates
+    # // The Dual Stream Transform (DSP) is applied to v00,v90
+    # _avx_pol_ps(v00, v90, p00_POL, p90_POL, _APN, _AVX, V4);
+    # // save DSP components in polar coordinates
+    # _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
+    #################################
+    
+    # save projection on network plane in polar coordinates
+    p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
+    # save DSP components in polar coordinates
+    r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
 
 
 def calculate_detection_statistic():
