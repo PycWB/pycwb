@@ -277,17 +277,17 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # Ep = D_snr[0];
     # Lp = S_snr[0];
     ##############################
-    Eo, pd, pD, pd_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
-    Lo, ps, pS, ps_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
+    Eo, pd, pD, pD_E, _, _, _, _ = avx_packet_ps(v00, v90, mask)  # get data packet
+    Lo, ps, pS, pS_E, _, _, _, _ = avx_packet_ps(ps, pS, mask)  # get signal packet
 
-    detector_snr, data_norm, rn, q_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pd_E)
+    detector_snr, pD_E, rn, pD_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E)
     D_snr = np.sum(detector_snr)
-    gw_norm, signal_norm = gw_norm_numpy(td_energy, data_norm, ps_E, coherent_energy) # return signal norms and signal SNR	 
-    S_snr = np.sum(gw_norm)
-    # print(f"Eo = {Eo}, Lo = {Lo}, Ep = {D_snr}, Lp = {S_snr}")
+    S_snr, signal_snr, pS_E, pS_norm = gw_norm_numpy(pD_norm, pD_E, pS_E, coherent_energy) # return signal norms and signal SNR
+    # S_snr = np.sum(signal_norm)
+    print(S_snr, signal_snr)
     print("Eo = ", Eo, ", Lo = ", Lo, ", Ep = ", D_snr, ", Lp = ", S_snr)
-    
-    #################################
+
+    ############### G-noise correction ##################
     # _CC = _avx_noise_ps(pS, pD, _AVX, V4);            // get G-noise correction
     # _mm256_storeu_ps(vvv, _CC);                     // extract coherent statistics
     # Gn = vvv[0];                                   // gaussian noise correction
@@ -296,15 +296,17 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
     # Rc = vvv[3];                                   // EC normalization
     # Eh = vvv[4];                                   // satellite energy in TF domain
     #################################
-    vvv = avx_noise_ps(pS, pD, energy_total, mask, coherent_energy, gn, rn)
-    Gn = vvv[0]       # gaussian noise correction
-    Ec = vvv[1]       # core coherent energy in TF domain
-    Dc = vvv[2]       # signal-core coherent energy in TF domain
-    Rc = vvv[3]       # EC normalization
-    Eh = vvv[4]       # satellite energy in TF domain
-    print("Gn = ", Gn, ", Ec = ", Ec, ", Dc = ", Dc, ", Rc = ", Rc, ", Eh = ", Eh)
+    # Gn: gaussian noise correction
+    # Ec: core coherent energy in TF domain
+    # Dc: signal-core coherent energy in TF domain
+    # Rc: EC normalization
+    # Eh: satellite energy in TF domain    
+    Gn, Ec, Dc, Rc, Eh, Es, NC, NS = avx_noise_ps(pS_norm, pD_norm, energy_total, mask, coherent_energy, gn, rn)
 
-
+    print("Gn = ", Gn, ", Ec = ", Ec, ", Dc = ", Dc, ", Rc = ", Rc, ", Eh = ", Eh, ", Es = ", Es, ", NC = ", NC, ", NS = ", NS)
+    print(f"pD[0][393]: {pD[0][393]}, pS[0][393]: {pS[0][393]}")
+    print(f"pD[1][393]: {pD[1][393]}, pS[1][393]: {pS[1][393]}")
+    return 0
     ##################################
     # N = _avx_setAMP_ps(pd, pD, _AVX, V4) - 1;           // set data packet amplitudes
     # _avx_setAMP_ps(ps, pS, _AVX, V4);                 // set signal packet amplitudes

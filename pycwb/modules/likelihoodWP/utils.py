@@ -116,47 +116,69 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
     tuple
         - NS : float
     """
-    # Number of detectors (channels), assume 8
-    k = MK[-1]  # simulate pAVX[1][I] from C++
-    k_inv = 1.0 / k
+    n_pixels = len(p[0])
+    n_ifos = len(p)
 
-    # Sum of all p and q channels across detectors
-    ns = np.sum(p) * k_inv
-    nx = np.sum(q) * k_inv
+    # TODO: Simplify the computation
+    EC = 0
+    NC = 0
+    ES = 0
+    SC = 0
+    RC = 0
+    GN = 0
+    EH = 0
+    NS = 0
 
-    # Masks
-    mk = (MK > 0).astype(np.float32)           # event mask
-    nm_data = mk * (nx > 0).astype(np.float32) # norm x event mask (core)
-    nc = nm_data.sum()                         # number of core pixels
-    EC = (nm_data * ec).sum()                  # coherent energy
+    for i in range(n_pixels):
+        ns = 0
+        nx = 0
+            
+        for j in range(n_ifos):
+            ns += p[j][i]
+            nx += q[j][i]
+        ns /= n_ifos
+        nx /= n_ifos
+        if i in [392, 393, 394, 395]:
+            print(f"Pixel {i}: ns = {ns}, nx = {nx}")
+    
+        mk = 1.0 if MK[i] > 0 else 0.0  # event mask
+        nm = 1.0 if nx > 0 else 0.0  # data norm mask
+        nm = mk * nm  # norm x event mask
 
-    nm_halo = mk - nm_data                     # halo mask
-    ES = (nm_halo * rn).sum() / 2              # residual satellite noise (time)
-    EH = ((mk - mk * (ns > 0).astype(np.float32)) * et).sum() / 2  # halo energy in TF
+        EC += nm * ec[i]  # coherent energy
+        NC += nm
 
-    # RC normalization
-    rc_mask = (gn < 2).astype(np.float32)
-    nn = gn * (1 - rc_mask)
-    rc_denominator = rc_mask + nn * 0.5
-    rc = ec / (rc_denominator + 1e-9)
+        nm = mk - nm                    # halo mask
+        ES += nm * rn[i]                # residual sattelite noise
+        rc = 1.0 if gn[i] < 2 else 0.0  # rc=1 if gn<2, or rc=0 if gn>=2
+        nn = gn[i] * (1 - rc)           # _nn = [_1 - _rc] * _gn
+        rc += nn * 0.5                  # Ec normalization
+        rc = ec[i] / (rc + 1e-9)        # normalized EC
 
-    # Signal mask
-    nm_signal = mk * (ns > 0).astype(np.float32)
-    SC = (nm_signal * ec).sum()
-    RC = (nm_signal * rc).sum()
-    GN = (nm_signal * gn * mk).sum()
-    NS = nm_signal.sum()
+        nm = 1.0 if ns > 0 else 0.0  # signal norm mask
+        nm = mk * nm  # norm x event mask
+        gn[i] = mk * gn[i] * nx  # normalize Gaussian noise ecorrection
+        SC += nm * ec[i]  # signal coherent energy
+        RC += nm * rc  # total normalized EC
+        GN += nm * gn[i]  # G-noise correction in time domain
+        NS += nm # number of signal pixels
 
-    return (
-        NS,           # ns
-        nc,           # nc
-        ES,           # es
-        EH,           # eh
-        RC / (SC + 0.01),  # rc / (sc + epsilon)
-        SC - EC,      # sc - ec
-        EC,           # ec
-        GN            # gn sum
-    ) 
+        nm = mk - nm  # satellite mask
+        if nm > 0:
+            print(f"Warning: nm > 0 for pixel {i}, nm = {nm}, et = {et[i]}")
+            print(f"ns = {ns}, nx = {nx}, mk = {mk}, ec = {ec[i]}, gn = {gn[i]}")
+        EH += nm * et[i]  # halo energy in TF domain
+
+    es = ES / 2  # residual satellite energy in time domain
+    eh = EH / 2  # halo energy in TF domain
+    gn = GN  # G-noise correction
+    nc = NC  # number of core pixels
+    ns = NS  # number of signal pixels
+    rc = RC  # normalized EC x 2
+    ec = EC  # signal coherent energy x 2
+    sc = SC  # core coherent energy x 2
+
+    return gn, ec, sc - ec, rc / (sc + 0.01), eh, es, nc, ns
 
 
 # static inline float _avx_setAMP_ps(float** p, float** q, 
@@ -792,11 +814,11 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         - detector_snr : np.ndarray
             The detector SNR for each interferometer.
         - norm : np.ndarray
-            The norm of the packet for each interferometer.
+            The norm of the packet for each interferometer. Was II + 5 in cWB
         - rn : np.ndarray
             Halo noise
         - q_norm : np.ndarray
-            The 90 degree component norms for each interferometer.
+            The 90 degree component norms for each interferometer. Was I + i in cWB
     """
     n_pixels = len(p[0])
     n_ifos = len(p)
@@ -858,7 +880,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
 
 
 @njit(cache=True)
-def gw_norm_numpy(data_norm, q_norm, p_E, ec):
+def gw_norm_numpy(q_norm, q_E, p_E, ec):
     """
      set signal norms, return signal SNR
 
@@ -869,33 +891,39 @@ def gw_norm_numpy(data_norm, q_norm, p_E, ec):
     q_norm : np.ndarray
         The 90 degree component norms for each interferometer. q_norm[ifo][pixel]
     p_E : np.ndarray
-        The energy threshold for the p component. p_E[ifo]
+        The energy threshold for the p component. p_E[ifo], was p[II+4]**2 / 2 in cWB
     ec : np.ndarray
         The energy component for each interferometer. ec[ifo][pixel]
 
     Returns
     -------
     tuple
+        - total_norm : float
+            The total SNR
         - norm : np.ndarray
             The detector SNR for each interferometer.
-        - signal_norm : np.ndarray
-            The signal norms for each interferometer.
+        - p_norm_II5 : np.ndarray
+            Was II5 in cWB
+        - p_norm : np.ndarray
+            The 00 degree component norms for each interferometer.
     """
-    n_pixels = len(data_norm[0])
-    n_ifos = len(data_norm)
+    n_pixels = len(q_norm[0])
+    n_ifos = len(q_norm)
 
     norm = np.zeros(n_ifos)
-    p_norm = np.zeros(n_ifos)
+    new_p_E = np.zeros(n_ifos)
+    p_norm = np.zeros((n_ifos, n_pixels))
 
-    signal_norm = np.zeros((n_ifos, n_pixels))
     for i in range(n_ifos):
-        norm[i] = q_norm[i]  # get data norms
-        p_norm[i] = norm[i]  # save norms
-        e = p_E[i] * 2  # TF-Domain SNR
+        norm[i] = q_E[i]  # get data norms
+        new_p_E[i] = norm[i]  # save norms
+        e = p_E[i] * 2  # TF-Domain SNR, here the p_E is the p[II+4]**2 / 2 in cWB
         norm[i] = e / norm[i]  # detector {0:NIFO} SNR
-        signal_norm[i] = np.where(ec > 0, data_norm[i], 0)  # set signal norms
+        for j in range(n_pixels):
+            p_norm[i][j] = np.where(ec[j] > 0, q_norm[i][j], 0)  # set p norms
 
-    return norm, signal_norm
+    total_norm = np.sum(norm)  # total norm
+    return total_norm, norm, new_p_E, p_norm
 
 
 @njit
