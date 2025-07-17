@@ -604,7 +604,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 #    return; 
 # } 
-def avx_pol_ps(p, q, pol00, pol90, MK, fp, fx, f, F):
+def avx_pol_ps(p, q, MK, fp, fx, f, F):
     """
     Calculates the polar coordinates of the input vector v in the DPF frame.
 
@@ -639,10 +639,10 @@ def avx_pol_ps(p, q, pol00, pol90, MK, fp, fx, f, F):
     new_p = np.empty((n_ifo, n_pix), dtype=np.float32)
     new_q = np.empty((n_ifo, n_pix), dtype=np.float32)
     
-    r = pol00[0]
-    a = pol00[1]
-    R = pol90[0]
-    A = pol90[1]
+    r = np.empty(n_pix, dtype=np.float32)
+    a = np.empty(n_pix, dtype=np.float32)
+    R = np.empty(n_pix, dtype=np.float32)
+    A = np.empty(n_pix, dtype=np.float32)
 
     _o = float(1.e-5)
 
@@ -660,30 +660,40 @@ def avx_pol_ps(p, q, pol00, pol90, MK, fp, fx, f, F):
             xx[j] = F[j][i] * (mk * p[j][i])
             XX[j] = F[j][i] * (mk * q[j][i])
 
-        cc = xp / (np.sqrt(fp[i]) + _o)
-        ss = xx / (np.sqrt(fx[i]) + _o)
+        # 00/90 components in polar coordinates (pol00/90[0] : radius, pol00/90[1] : angle in radians)
+        cpol = xp / (np.sqrt(fp[i]) + _o)
+        spol = xx / (np.sqrt(fx[i]) + _o)
+        rpol = (xp * xp) / (fp[i] + _o) + (xx * xx) / (fx[i] + _o)
 
-        rr = (xp * xp) / (fp[i] + _o) + (xx * xx) / (fx[i] + _o)
+        CPOL = XP / (np.sqrt(fp[i]) + _o)
+        SPOL = XX / (np.sqrt(fx[i]) + _o)
+        RPOL = (XP * XP) / (fp[i] + _o) + (XX * XX) / (fx[i] + _o)
 
-        cpol = np.sqrt(cc)
-        spol = np.sqrt(ss)
-        rpol = np.sqrt(rr)
+        r[i] = np.sqrt(rpol)
+        a[i] = np.arctan2(spol, cpol)
+        R[i] = np.sqrt(RPOL)
+        A[i] = np.arctan2(SPOL, CPOL)
 
-        CC = XP / (np.sqrt(fp[i]) + _o)
-        SS = XX / (np.sqrt(fx[i]) + _o)
+    # PnP - Projection to network Plane
+    cpol /= (np.sqrt(fp[i]) + _o)   # (x,f+) / {|f+|^2+epsilon}
+    spol /= (np.sqrt(fx[i]) + _o)  # (x,fx) / {|fx|^2+epsilon}
+    CPOL /= (np.sqrt(fp[i]) + _o)  # (X,f+) / {|f+|^2+epsilon}
+    SPOL /= (np.sqrt(fx[i]) + _o)  # (X,fx) / {|fx|^2+epsilon}  
 
-        RPOL = np.sqrt((XP * XP) / (fp[i] + _o) + (XX * XX) / (fx[i] + _o))
+    for j in range(n_ifo):
+        new_p[j][i] = (f[j][i] * cpol + F[j][i] * spol)
+        new_q[j][i] = (f[j][i] * CPOL + F[j][i] * SPOL)
 
-        for j in range(n_ifo):
-            r[j][i] = rpol[j]
-            a[j][i] = np.arctan2(spol[j], cpol[j])
-            R[j][i] = RPOL[j]
-            A[j][i] = np.arctan2(SS[j], CC[j])
+    # DSP - Dual Stream Phase Transform
+    N = np.sqrt(cpol * cpol + CPOL * CPOL)
+    cpol /= (N + _o)  # cos_dsp = N * (x,f+)/|f+|^2
+    CPOL /= (N + _o)  # sin_dsp = N * (X,f+)/|f+|^2
 
-            new_p[j][i] = cc[j] * f[j][i] + ss[j] * F[j][i]
-            new_q[j][i] = CC[j] * f[j][i] - SS[j] * F[j][i]
+    for j in range(n_ifo):
+        new_p[j][i] = new_p[j][i] * cpol + new_q[j][i] * CPOL
+        new_q[j][i] = new_q[j][i] * cpol - new_p[j][i] * CPOL
 
-    return new_p, new_q
+    return new_p, new_q, (r, a), (R, A)
 
 
 @njit(cache=True)

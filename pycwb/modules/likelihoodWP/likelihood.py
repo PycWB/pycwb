@@ -1,6 +1,4 @@
-from logging import DEBUG
 from math import sqrt
-
 import numpy as np
 from numba import njit, prange, float32
 from numba.typed import List
@@ -10,7 +8,7 @@ from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
 from ..xtalk.monster import load_catalog, getXTalk_pixels
-
+from .typing import SkyStatistics
 
 def likelihood(network, nIFO, cluster, MRAcatalog):
     # load network parameters
@@ -49,10 +47,10 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
 
-    calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
+    sky_statistics = calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
                              wdm_xtalk)
-
-    calculate_detection_statistic()
+    
+    calculate_detection_statistic(**sky_statistics)
 
     threshold_cut()
     likelihood_by_pixel()
@@ -234,7 +232,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
 # @njit(cache=True)
 def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, 
                              network_energy_threshold, cluster_xtalk, cluster_xtalk_lookup_table,
-                             DEBUG=False):
+                             DEBUG=False) -> SkyStatistics:
     """
 
     """
@@ -390,14 +388,35 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
     # // save DSP components in polar coordinates
     # _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
     #################################
-    return 0
     # save projection on network plane in polar coordinates
-    p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
+    v00, v90, p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
     # save DSP components in polar coordinates
-    r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
+    v00, v90, r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
 
+    return SkyStatistics(
+        Gn=np.float(Gn),
+        Ec=np.float(Ec),
+        Dc=np.float(Dc),
+        Rc=np.float(Rc),
+        Eh=np.float(Eh),
+        Es=np.float(Es),
+        Np=np.float(Np),
+        Lm=np.float(Lm),
+        norm=np.float(norm),
+        cc=np.float(cc),
+        rho=np.float(rho),
+        xrho=np.float(xrho),
+        Lo=np.float(Lo),
+        Eo=np.float(Eo),
+        v00=v00,
+        v90=v90,
+        p00_POL=p00_POL,
+        p90_POL=p90_POL,
+        r00_POL=r00_POL,
+        r90_POL=r90_POL
+    )
 
-def calculate_detection_statistic():
+def calculate_detection_statistic(sky_statistics: SkyStatistics):
     pass
 
 
