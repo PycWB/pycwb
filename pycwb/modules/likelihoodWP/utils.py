@@ -624,10 +624,10 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
         The FP component.
     fx : np.ndarray
         The FX component.
-    f : list
-        List of antenna patterns for each detector.
-    F : list
-        List of antenna patterns for each detector.
+    f : np.ndarray
+        Array of antenna patterns for each detector.
+    F : np.ndarray
+        Array of antenna patterns for each detector.
 
     Returns
     -------
@@ -649,16 +649,16 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     for i in range(n_pix):
         mk = float(1.0) if MK[i] > 0 else float(0.0)
 
-        xp = np.zeros(n_ifo, dtype=np.float32)
-        XP = np.zeros(n_ifo, dtype=np.float32)
-        xx = np.zeros(n_ifo, dtype=np.float32)
-        XX = np.zeros(n_ifo, dtype=np.float32)
+        xp = 0.
+        XP = 0.
+        xx = 0.
+        XX = 0.
 
         for j in range(n_ifo):
-            xp[j] = f[j][i] * (mk * p[j][i])
-            XP[j] = f[j][i] * (mk * q[j][i])
-            xx[j] = F[j][i] * (mk * p[j][i])
-            XX[j] = F[j][i] * (mk * q[j][i])
+            xp += f[i][j] * (mk * p[j][i])
+            XP += f[i][j] * (mk * q[j][i])
+            xx += F[i][j] * (mk * p[j][i])
+            XX += F[i][j] * (mk * q[j][i])
 
         # 00/90 components in polar coordinates (pol00/90[0] : radius, pol00/90[1] : angle in radians)
         cpol = xp / (np.sqrt(fp[i]) + _o)
@@ -681,8 +681,8 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     SPOL /= (np.sqrt(fx[i]) + _o)  # (X,fx) / {|fx|^2+epsilon}  
 
     for j in range(n_ifo):
-        new_p[j][i] = (f[j][i] * cpol + F[j][i] * spol)
-        new_q[j][i] = (f[j][i] * CPOL + F[j][i] * SPOL)
+        new_p[j][i] = (f[i][j] * cpol + F[i][j] * spol)
+        new_q[j][i] = (f[i][j] * CPOL + F[i][j] * SPOL)
 
     # DSP - Dual Stream Phase Transform
     N = np.sqrt(cpol * cpol + CPOL * CPOL)

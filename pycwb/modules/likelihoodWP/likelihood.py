@@ -3,11 +3,12 @@ import numpy as np
 from numba import njit, prange, float32
 from numba.typed import List
 from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
+from pycwb.types.network_cluster import Cluster
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
-from ..xtalk.monster import load_catalog, getXTalk_pixels
+from ..xtalk.monster import load_catalog, getXTalk_pixels, getXTalk
 from .typing import SkyStatistics
 
 def likelihood(network, nIFO, cluster, MRAcatalog):
@@ -47,12 +48,18 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
 
-    sky_statistics = calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
+    sky_statistics: SkyStatistics = calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
                              wdm_xtalk)
-    
-    calculate_detection_statistic(**sky_statistics)
 
-    threshold_cut()
+    rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
+    if rejected:
+        print(f"Cluster rejected due to threshold cuts: {rejected}")
+        return None
+
+
+    fill_detection_statistic(sky_statistics, cluster=cluster, n_ifo=nIFO, wdm_xtalk=wdm_xtalk, layers=layers)
+
+
     likelihood_by_pixel()
     subnetwork_statistic()
     detection_statistic()
@@ -367,6 +374,9 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
     #     xrho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;          // cWB detection stat
     # }
     #################################
+    xrho = 0.
+    penalty = 0.
+    ecor = 0.
     if network_energy_threshold >= 0: # original 2G
         cc = ch if ch > 1 else 1  # rho correction factor
         rho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
@@ -389,39 +399,173 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
     # _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
     #################################
     # save projection on network plane in polar coordinates
-    v00, v90, p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
+    v00, v90, p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)
     # save DSP components in polar coordinates
-    v00, v90, r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, n_ifo, si, co, au, AU, av, AV)
+    v00, v90, r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)
 
     return SkyStatistics(
-        Gn=np.float(Gn),
-        Ec=np.float(Ec),
-        Dc=np.float(Dc),
-        Rc=np.float(Rc),
-        Eh=np.float(Eh),
-        Es=np.float(Es),
-        Np=np.float(Np),
-        Lm=np.float(Lm),
-        norm=np.float(norm),
-        cc=np.float(cc),
-        rho=np.float(rho),
-        xrho=np.float(xrho),
-        Lo=np.float(Lo),
-        Eo=np.float(Eo),
+        Gn=np.float32(Gn),
+        Ec=np.float32(Ec),
+        Dc=np.float32(Dc),
+        Rc=np.float32(Rc),
+        Eh=np.float32(Eh),
+        Es=np.float32(Es),
+        Np=np.float32(Np),
+        Lm=np.float32(Lm),
+        norm=np.float32(norm),
+        cc=np.float32(cc),
+        rho=np.float32(rho),
+        xrho=np.float32(xrho),
+        Lo=np.float32(Lo),
+        Eo=np.float32(Eo),
+        energy_array_plus=ee,
+        energy_array_cross=EE,
+        pixel_mask=mask,
         v00=v00,
         v90=v90,
+        gaussian_noise_correction=gn,
+        noise_amplitude_00=pn,
+        noise_amplitude_90=pN,
+        pd=pd,
+        pD=pD,
+        ps=ps,
+        pS=pS,
         p00_POL=p00_POL,
         p90_POL=p90_POL,
         r00_POL=r00_POL,
         r90_POL=r90_POL
     )
 
-def calculate_detection_statistic(sky_statistics: SkyStatistics):
-    pass
+def fill_detection_statistic(sky_statistics: SkyStatistics, cluster: Cluster, n_ifo: int, wdm_xtalk: List, layers: List):
+    pixel_mask = sky_statistics.pixel_mask
+    energy_array_plus = sky_statistics.energy_array_plus
+    energy_array_cross = sky_statistics.energy_array_cross
+    pd = sky_statistics.pd
+    pD = sky_statistics.pD
+    ps = sky_statistics.ps
+    pS = sky_statistics.pS
+    gaussian_noise_correction = sky_statistics.gaussian_noise_correction
+    noise_amplitude_00 = sky_statistics.noise_amplitude_00
+    noise_amplitude_90 = sky_statistics.noise_amplitude_90
+    n_pix = len(cluster.pixels)
+    event_size = 0 # defined as Mw in cwb
+    cluster_xtalk, cluster_xtalk_lookup_table = wdm_xtalk
+
+    for i, pixel in enumerate(cluster.pixels):
+        pixel.core = False
+        pixel.likelihood = 0.0
+        pixel.null = 0.0
+
+        if pixel_mask[i] > 0:
+            pixel.core = True
+            pixel.likelihood = - (energy_array_plus[i] + energy_array_cross[i]) / 2.0
+
+        for j in range(n_ifo):
+            pixel.data[j].wave = pd[j][i]
+            pixel.data[j].w_90 = pD[j][i]
+            pixel.data[j].asnr = ps[j][i]
+            pixel.data[j].a_90 = pS[j][i]
+
+        if not pixel.core:
+            continue
+        if gaussian_noise_correction[i] <= 0:
+            continue    # skip satellites
+            
+        event_size += 1
+
+        for k, xpix in enumerate(cluster.pixels):
+            if not xpix.core or not gaussian_noise_correction[k] <= 0:
+                continue
+            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, cluster_xtalk, cluster_xtalk_lookup_table)
+            if xt[0] > 2:
+                continue
+
+            for j in range(n_ifo):
+                pixel.null += xt[0] * noise_amplitude_00[j][i] * noise_amplitude_00[j][k] 
+                pixel.null += xt[1] * noise_amplitude_00[j][i] * noise_amplitude_90[j][k]
+                pixel.null += xt[2] * noise_amplitude_90[j][i] * noise_amplitude_00[j][k]
+                pixel.null += xt[3] * noise_amplitude_90[j][i] * noise_amplitude_90[j][k]
 
 
-def threshold_cut():
-    pass
+
+    
+
+
+def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float, netEC_threshold: float) -> str:
+    """
+    Apply threshold cuts based on the sky statistics and network energy threshold.
+    
+    Parameters:
+    sky_statistics (SkyStatistics): The statistics calculated for the sky location.
+    network_energy_threshold (float): The threshold for network energy.
+    netEC_threshold (float): The threshold for net EC.
+    
+    Returns:
+    str: A rejection reason if any condition is not met, otherwise None.
+    """
+    # if (this->netRHO >= 0)
+    #   { // original 2G
+    #     if (Lm <= 0. || (Eo - Eh) <= 0. || Ec * Rc / cc < netEC || N < 1)
+    #     {
+    #       pwc->sCuts[id - 1] = 1;
+    #       count = 0; // reject cluster
+    #       pwc->clean(id);
+    #       continue;
+    #     }
+    #   }
+    #   else
+    #   { // (XGB.rho0)
+    #     if (Lm <= 0. || (Eo - Eh) <= 0. || rho < fabs(this->netRHO) || N < 1)
+    #     {
+    #       pwc->sCuts[id - 1] = 1;
+    #       count = 0; // reject cluster
+    #       pwc->clean(id);
+    #       continue;
+    #     }
+    #   }
+    Lm = sky_statistics.Lm
+    Eo = sky_statistics.Eo
+    Np = sky_statistics.Np
+    Eh = sky_statistics.Eh
+    Ec = sky_statistics.Ec
+    Rc = sky_statistics.Rc
+    cc = sky_statistics.cc
+    rho = sky_statistics.rho
+    if network_energy_threshold > 0:
+        condition_1 = Lm <= 0.
+        condition_2 = (Eo - Eh) <= 0.
+        condition_3 = Ec * Rc / cc < netEC_threshold
+        condition_4 = Np < 1
+        if condition_1 or condition_2 or condition_3 or condition_4:
+            rejection_reason = ""
+            if condition_1:
+                rejection_reason += f"Lm > 0 but Lm = {Lm};"
+            if condition_2:
+                rejection_reason += f" (Eo - Eh) > 0 but (Eo - Eh) = {Eo - Eh};"
+            if condition_3:
+                rejection_reason += f" Ec * Rc / cc >= netEC_threshold but Ec * Rc / cc = {Ec * Rc / cc};"
+            if condition_4:
+                rejection_reason += f" Np > 1 but Np = {Np};"
+            return rejection_reason
+    else:
+        # For XGB.rho0 case
+        condition_1 = Lm <= 0.
+        condition_2 = (Eo - Eh) <= 0.
+        condition_3 = rho < abs(network_energy_threshold)
+        condition_4 = Np < 1
+        if condition_1 or condition_2 or condition_3 or condition_4:
+            rejection_reason = ""
+            if condition_1:
+                rejection_reason += f"Lm > 0 but Lm = {Lm};"
+            if condition_2:
+                rejection_reason += f" (Eo - Eh) > 0 but (Eo - Eh) = {Eo - Eh};"
+            if condition_3:
+                rejection_reason += f" rho >= abs(network_energy_threshold) but rho = {rho} < {abs(network_energy_threshold)};"
+            if condition_4:
+                rejection_reason += f" Np > 1 but Np = {Np};"
+            return rejection_reason
+        
+    return None  # No rejection, all conditions passed
 
 
 def likelihood_by_pixel():
