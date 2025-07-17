@@ -138,8 +138,12 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
             nx += q[j][i]
         ns /= n_ifos
         nx /= n_ifos
-        if i in [392, 393, 394, 395]:
-            print(f"Pixel {i}: ns = {ns}, nx = {nx}")
+        # # DEBUG:
+        # if i in [392, 393, 394, 395]:
+        #     print(f"Pixel {i}: ns = {ns}, nx = {nx}")
+        # if i == 393:
+        #     ns = -ns
+        #     nx = -nx
     
         mk = 1.0 if MK[i] > 0 else 0.0  # event mask
         nm = 1.0 if nx > 0 else 0.0  # data norm mask
@@ -164,9 +168,10 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
         NS += nm # number of signal pixels
 
         nm = mk - nm  # satellite mask
-        if nm > 0:
-            print(f"Warning: nm > 0 for pixel {i}, nm = {nm}, et = {et[i]}")
-            print(f"ns = {ns}, nx = {nx}, mk = {mk}, ec = {ec[i]}, gn = {gn[i]}")
+        # # DEBUG:
+        # if nm > 0:
+        #     print(f"Warning: nm > 0 for pixel {i}, nm = {nm}, et = {et[i]}")
+        #     print(f"ns = {ns}, nx = {nx}, mk = {mk}, ec = {ec[i]}, gn = {gn[i]}")
         EH += nm * et[i]  # halo energy in TF domain
 
     es = ES / 2  # residual satellite energy in time domain
@@ -259,7 +264,7 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
 #    }
 #    return _wat_hsum(_Np)*4/k;
 # } 
-def avx_setAMP_ps(p, q, nifo, MK, fp, fx, ee, EE, gn):
+def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
     """
     set packet amplitudes for waveform reconstruction
     returns number of degrees of freedom - effective # of pixels per detector
@@ -270,20 +275,16 @@ def avx_setAMP_ps(p, q, nifo, MK, fp, fx, ee, EE, gn):
         The p component of the signal.
     q : np.ndarray
         The q component of the signal.
-    nifo : int
-        Number of interferometers.
+    q_norm : np.ndarray
+        Pointer to pixel norms.
+    q_si : np.ndarray
+        The second component of the q signal. q_II2 : np.ndarray
+    q_co : np.ndarray
+        The third component of the q signal. q_II3 : np.ndarray
+    q_E : np.ndarray
+        The fourth component of the q signal. q_II4 : np.ndarray
     MK : np.ndarray
         The mask indicating valid pixels.
-    fp : np.ndarray
-        The FP component.
-    fx : np.ndarray
-        The FX component.
-    ee : np.ndarray
-        The coherent energy.
-    EE : np.ndarray
-        The total energy.
-    gn : np.ndarray
-        The G-noise component.
 
     Returns
     -------
@@ -295,35 +296,29 @@ def avx_setAMP_ps(p, q, nifo, MK, fp, fx, ee, EE, gn):
         - new_q : np.ndarray
             Updated q component.
     """
-    k = MK[-1]  # simulate pAVX[1][I] from C++
-    k_inv = 1.0 / k
-
     new_p = np.zeros_like(p)
     new_q = np.zeros_like(q)
 
     n_pix = len(p[0])
+    n_ifo = len(p)
+
+    aA = q_a + q_A
     
     _Np = 0.0  # number of effective pixels per detector
 
     for i in range(n_pix):
-        mk = float(1.0) if MK[i] > 0 else float(0.0)  # event mask
-
-        for j in range(nifo):
-            a = q[j][i + nifo * 4]
-            s = q[j][i + nifo * 2]
-            c = q[j][i + nifo * 3]
-
-            _a = p[j][i]
-            _A = q[j][i]
-
-            _n = mk * a
-
-            new_p[j][i] = _n * (_a * c - _A * s)
-            new_q[j][i] = _n * (_A * c + _a * s)
-
-            _Np += mk
-
-    return _Np * k_inv * 4 / n_pix, new_p, new_q
+        mk = 0.5 * (1.0 if MK[i] > 0 else 0.0)  # event mask
+        _nn = 0.0  # norm x event mask
+        for j in range(n_ifo):
+            _nn += q_norm[j][i]
+            # here the q_E is different from the q_II4
+            _n = aA[j] * mk * q_norm[j][i]  # norm x event mask
+            new_p[j][i] = _n * (p[j][i] * q_co[j] - q[j][i] * q_si[j])
+            new_q[j][i] = _n * (q[j][i] * q_co[j] + p[j][i] * q_si[j])
+        
+        _nn *= mk  # norm x event mask
+        _Np += _nn  # accumulate effective pixels
+    return _Np * 4 / n_ifo, new_p, new_q
 
 
 # static inline void _avx_loadNULL_ps(float** n, float** N, 
@@ -872,8 +867,6 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     # print('q: ', norm)
     e = q_E * 2   # TF-Domain SNR
     norm = np.where(norm < float32(2.), float32(2.), norm)  # set norm to 2 if norm < 2
-    # print('norm: ', norm)
-    # print('e: ', e)
     detector_snr = e / norm  # detector {0:NIFO} SNR
 
     return detector_snr, norm, rn, q_norm

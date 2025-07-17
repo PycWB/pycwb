@@ -67,12 +67,19 @@ print(f"l_max: {l_max}")
 # Calculate sky statistics
 #############################################
 calculate_sky_statistics(l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk,
-                         cluster_xtalk_lookup)
+                         cluster_xtalk_lookup, DEBUG=True)
 
+# Eo = 8255.51, Lo = 7805.59, Ep = 1552.52, Lp = 1467.77
+# Gn = 83.9425, Ec = 7571.68, Dc = 0.441406, Rc = 0.999999, Eh = 9.45466
+print(f"expected Eo: 8255.51, Lo: 7805.59, Ep: 1552.52, Lp: 1467.77")
+print(f"expected Gn: 83.9425, Ec: 7571.68, Dc: 0.441406, Rc: 0.999999, Eh: 9.45466, Es: 0, NC: 369, NS: 368")
+print(f"expected N = 83.0302, N2 = 83.9448")
+print(f"expected Np = 70.9542, Em = 1676.79, Lm = 1521.89, norm = 4.91776, Ec = 1539.66, Dc = 0.0897575, ch = 0.932774")
+print(f"expected cc = 1, rho = 27.7458, ecor = 1.4013e-45, penalty = 2.92971e-33, xrho = 4.2039e-45")
 #############################################
 # Performance test
 #############################################
-
+exit()
 total_time = 0
 # # convert FP, FX, rms to float32
 for i in range(10):
