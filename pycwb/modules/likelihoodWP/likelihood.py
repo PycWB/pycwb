@@ -8,7 +8,7 @@ from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
-from ..xtalk.monster import load_catalog, getXTalk_pixels, getXTalk
+from pycwb.modules.xtalk.type import XTalk
 from .typing import SkyStatistics, SkyMapStatistics
 
 def likelihood(network, nIFO, cluster, MRAcatalog):
@@ -26,9 +26,8 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     n_pix = len(cluster.pixels)
 
     # Load xtalk catalog
-
-    catalog, layers, nRes = load_catalog(MRAcatalog)
-    cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(cluster.pixels, True, layers, catalog)
+    xtalk = XTalk.load(MRAcatalog, dump=True)
+    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
 
     # Extract data from python object to numpy arrays for numba
     ml, FP, FX = load_data_from_ifo(network, nIFO)
@@ -61,8 +60,7 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
 
 
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
-                             n_ifo=nIFO, cluster_xtalk_lookup=cluster_xtalk_lookup,
-                             cluster_xtalk=cluster_xtalk, layers=layers,
+                             n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold)
 
 
@@ -466,7 +464,7 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
 
 def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: SkyMapStatistics, 
                              cluster: Cluster, n_ifo: int, 
-                             xtalk_lookup_table: List, xtalk: List, layers: List,
+                             xtalk: XTalk,
                              network_energy_threshold: float):
     pixel_mask = sky_statistics.pixel_mask
     energy_array_plus = sky_statistics.energy_array_plus
@@ -514,7 +512,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         for k, xpix in enumerate(cluster.pixels):
             if not xpix.core or not gaussian_noise_correction[k] <= 0:
                 continue
-            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, xtalk, xtalk_lookup_table)
+            xt = xtalk.get_xtalk(pix1=pixel, pix2=xpix)
             if xt[0] > 2:
                 continue
 
@@ -533,7 +531,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         for k, xpix in enumerate(cluster.pixels):
             if not xpix.core or not coherent_energy[k] <= 0:
                 continue
-            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, xtalk, xtalk_lookup_table)
+            xt = xtalk.get_xtalk(pix1=pixel, pix2=xpix)
             if xt[0] > 2:
                 continue
 
@@ -548,7 +546,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     Emax = np.max(S_snr)
 
     Esub = np.sum(S_snr) - Emax
-    print(S_snr)
     # Esub = Esub * (1 + 2 * Rc * Esub / Emax);
     # Nmax = Gn + Np - N * (nIFO - 1);
     Esub = Esub * (1 + 2 * Rc * Esub / Emax)
