@@ -38,6 +38,7 @@ class SkyStatistics:
     Eh: np.float32    # satellite energy in TF domain
     Es: np.float32    # sideband energy in TF domain
     Np: np.float32    # number of pixels
+    Em: np.float32    # energy map
     Lm: np.float32    # likelihood map
     norm: np.float32  # normalization factor
     cc: np.float32    # cross-correlation
@@ -45,6 +46,7 @@ class SkyStatistics:
     xrho: np.float32  # new cWB SNR used for XGBoost
     Lo: np.float32
     Eo: np.float32
+    N_pix_effective: np.float32  # effective number of pixels
     energy_array_plus: np.ndarray  # energy array for plus polarization
     energy_array_cross: np.ndarray  # energy array for cross polarization
     v00: np.ndarray  # time delayed data slice at sky location l for pol00
@@ -57,7 +59,37 @@ class SkyStatistics:
     gaussian_noise_correction: np.ndarray  # gaussian noise correction for pixels (Gn)
     noise_amplitude_00: np.ndarray  # noise amplitude for 00 (pn)
     noise_amplitude_90: np.ndarray  # noise amplitude for 90 (pN)
+    coherent_energy: np.ndarray # coherent energy for pixels (ec)
     p00_POL: np.ndarray  # polar angle component of the signal packet for pol00
     p90_POL: np.ndarray  # polar angle component of the signal packet for pol90
     r00_POL: np.ndarray  # radius component of the residual packet for pol00
     r90_POL: np.ndarray  # radius component of the residual packet for pol90
+    S_snr: np.ndarray  # SNR for the signal packet
+    f: np.ndarray  
+    F: np.ndarray  
+
+
+@dataclass
+class SkyMapStatistics:
+    """
+    Dataclass that encapsulates the sky map statistics for a specific sky location.
+
+    Attributes:
+        l_max (int): The maximum likelihood value for the sky location.
+    """
+    l_max: int
+    nAntennaPrior: np.array  # sqrt(ff + FF)
+    nAlignment: np.array  # sqrt(FF / ff) if ff > 0 else 0
+    nLikelihood: np.array  # Eo - No
+    nNullEnergy: np.array  # No
+    nCorrEnergy: np.array  # Ec
+    nCorrelation: np.array  # Co
+    nSkyStat: np.array  # AA
+    nDisbalance: np.array  # CH
+    nNetIndex: np.array  # cc
+    nEllipticity: np.array  # Cr
+    nPolarisation: np.array  # Mp
+
+    @classmethod
+    def from_tuple(cls, t):
+        return cls(*t)

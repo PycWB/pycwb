@@ -9,7 +9,7 @@ from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
 from ..xtalk.monster import load_catalog, getXTalk_pixels, getXTalk
-from .typing import SkyStatistics
+from .typing import SkyStatistics, SkyMapStatistics
 
 def likelihood(network, nIFO, cluster, MRAcatalog):
     # load network parameters
@@ -28,7 +28,7 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     # Load xtalk catalog
 
     catalog, layers, nRes = load_catalog(MRAcatalog)
-    sizeCC, wdm_xtalk = getXTalk_pixels(cluster.pixels, True, layers, catalog)
+    cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(cluster.pixels, True, layers, catalog)
 
     # Extract data from python object to numpy arrays for numba
     ml, FP, FX = load_data_from_ifo(network, nIFO)
@@ -45,11 +45,14 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
 
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
-    l_max = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
+    skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
+    skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
-    sky_statistics: SkyStatistics = calculate_sky_statistics(l_max, nIFO, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
-                             wdm_xtalk)
+    sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
+                                                             FP, FX, rms, td00, td90, ml, REG, 
+                                                             network_energy_threshold, 
+                                                             cluster_xtalk, cluster_xtalk_lookup)
 
     rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
     if rejected:
@@ -57,7 +60,10 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
         return None
 
 
-    fill_detection_statistic(sky_statistics, cluster=cluster, n_ifo=nIFO, wdm_xtalk=wdm_xtalk, layers=layers)
+    fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
+                             n_ifo=nIFO, cluster_xtalk_lookup=cluster_xtalk_lookup,
+                             cluster_xtalk=cluster_xtalk, layers=layers,
+                             network_energy_threshold=network_energy_threshold)
 
 
     likelihood_by_pixel()
@@ -233,7 +239,22 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     l_max = np.argmax(AA_array)
     sky = np.max(nProbability)
 
-    return l_max
+    return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \
+              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)
+    # return {
+    #     'l_max': l_max,
+    #     'nAntennaPrior': nAntenaPrior,
+    #     'nAlignment': nAlignment,
+    #     'nLikelihood': nLikelihood,
+    #     'nNullEnergy': nNullEnergy,
+    #     'nCorrEnergy': nCorrEnergy,
+    #     'nCorrelation': nCorrelation,
+    #     'nSkyStat': nSkyStat,
+    #     'nDisbalance': nDisbalance,
+    #     'nNetIndex': nNetIndex,
+    #     'nEllipticity': nEllipticity,
+    #     'nPolarisation': nPolarisation,
+    # }
 
 
 # @njit(cache=True)
@@ -411,6 +432,7 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
         Eh=np.float32(Eh),
         Es=np.float32(Es),
         Np=np.float32(Np),
+        Em=np.float32(Em),
         Lm=np.float32(Lm),
         norm=np.float32(norm),
         cc=np.float32(cc),
@@ -424,6 +446,8 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
         v00=v00,
         v90=v90,
         gaussian_noise_correction=gn,
+        coherent_energy=coherent_energy,
+        N_pix_effective=N,
         noise_amplitude_00=pn,
         noise_amplitude_90=pN,
         pd=pd,
@@ -433,10 +457,17 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
         p00_POL=p00_POL,
         p90_POL=p90_POL,
         r00_POL=r00_POL,
-        r90_POL=r90_POL
+        r90_POL=r90_POL,
+        S_snr=signal_snr,
+        f = f,
+        F = F,
     )
 
-def fill_detection_statistic(sky_statistics: SkyStatistics, cluster: Cluster, n_ifo: int, wdm_xtalk: List, layers: List):
+
+def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: SkyMapStatistics, 
+                             cluster: Cluster, n_ifo: int, 
+                             xtalk_lookup_table: List, xtalk: List, layers: List,
+                             network_energy_threshold: float):
     pixel_mask = sky_statistics.pixel_mask
     energy_array_plus = sky_statistics.energy_array_plus
     energy_array_cross = sky_statistics.energy_array_cross
@@ -445,11 +476,17 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, cluster: Cluster, n_
     ps = sky_statistics.ps
     pS = sky_statistics.pS
     gaussian_noise_correction = sky_statistics.gaussian_noise_correction
-    noise_amplitude_00 = sky_statistics.noise_amplitude_00
-    noise_amplitude_90 = sky_statistics.noise_amplitude_90
-    n_pix = len(cluster.pixels)
+    pn = sky_statistics.noise_amplitude_00
+    pN = sky_statistics.noise_amplitude_90
+    coherent_energy = sky_statistics.coherent_energy
+    S_snr = sky_statistics.S_snr
+    Rc = sky_statistics.Rc
+    Gn = sky_statistics.Gn
+    Np = sky_statistics.Np
+    N_pix_effective = sky_statistics.N_pix_effective
+
     event_size = 0 # defined as Mw in cwb
-    cluster_xtalk, cluster_xtalk_lookup_table = wdm_xtalk
+    n_coherent_pixels = 0
 
     for i, pixel in enumerate(cluster.pixels):
         pixel.core = False
@@ -458,6 +495,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, cluster: Cluster, n_
 
         if pixel_mask[i] > 0:
             pixel.core = True
+            # TODO: what is the use of this?
             pixel.likelihood = - (energy_array_plus[i] + energy_array_cross[i]) / 2.0
 
         for j in range(n_ifo):
@@ -476,19 +514,90 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, cluster: Cluster, n_
         for k, xpix in enumerate(cluster.pixels):
             if not xpix.core or not gaussian_noise_correction[k] <= 0:
                 continue
-            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, cluster_xtalk, cluster_xtalk_lookup_table)
+            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, xtalk, xtalk_lookup_table)
             if xt[0] > 2:
                 continue
 
             for j in range(n_ifo):
-                pixel.null += xt[0] * noise_amplitude_00[j][i] * noise_amplitude_00[j][k] 
-                pixel.null += xt[1] * noise_amplitude_00[j][i] * noise_amplitude_90[j][k]
-                pixel.null += xt[2] * noise_amplitude_90[j][i] * noise_amplitude_00[j][k]
-                pixel.null += xt[3] * noise_amplitude_90[j][i] * noise_amplitude_90[j][k]
+                pixel.null += xt[0] * pn[j][i] * pn[j][k] 
+                pixel.null += xt[1] * pn[j][i] * pN[j][k]
+                pixel.null += xt[2] * pN[j][i] * pn[j][k]
+                pixel.null += xt[3] * pN[j][i] * pN[j][k]
 
+        if coherent_energy[i] <= 0:
+            continue    # skip the incoherent pixels
 
+        n_coherent_pixels += 1
+        pixel.likelihood = 0
 
+        for k, xpix in enumerate(cluster.pixels):
+            if not xpix.core or not coherent_energy[k] <= 0:
+                continue
+            xt = getXTalk(pixel.layers, pixel.time, xpix.layers, xpix.time, layers, xtalk, xtalk_lookup_table)
+            if xt[0] > 2:
+                continue
+
+            for j in range(n_ifo):
+                pixel.likelihood += xt[0] * ps[j][i] * ps[j][k]
+                pixel.likelihood += xt[1] * ps[j][i] * pS[j][k]
+                pixel.likelihood += xt[2] * pS[j][i] * ps[j][k]
+                pixel.likelihood += xt[3] * pS[j][i] * pS[j][k]
+
+    # subnetwork statistic
+    Nmax = 0.0
+    Emax = np.max(S_snr)
+
+    Esub = np.sum(S_snr) - Emax
+    print(S_snr)
+    # Esub = Esub * (1 + 2 * Rc * Esub / Emax);
+    # Nmax = Gn + Np - N * (nIFO - 1);
+    Esub = Esub * (1 + 2 * Rc * Esub / Emax)
+    Nmax = Gn + Np - N_pix_effective * (n_ifo - 1)
+    print(f"Esub: {Esub}, Nmax: {Nmax}, n_coherent_pixels: {n_coherent_pixels}, N_pix_effective: {N_pix_effective}")
+    # pwc->cData[id - 1].norm = norm * 2;                 // packet norm  (saved in norm)
+    # pwc->cData[id - 1].skyStat = 0;                     //
+    # pwc->cData[id - 1].skySize = Mw;                    // event size in the skyloop    (size[1])
+    # pwc->cData[id - 1].netcc = Cp;                      // network cc                   (netcc[0])
+    # pwc->cData[id - 1].skycc = Cr;                      // reduced network cc           (netcc[1])
+    # pwc->cData[id - 1].subnet = Esub / (Esub + Nmax);   // sub-network statistic        (netcc[2])
+    # pwc->cData[id - 1].SUBNET = Co;                     // sky cc                       (netcc[3])
+    # pwc->cData[id - 1].likenet = Lw;                    // waveform likelihood
+    # pwc->cData[id - 1].netED = Nw + Gn + Dc - N * nIFO; // residual NULL energy         (neted[0])
+    # pwc->cData[id - 1].netnull = Nw + Gn;               // packet NULL                  (neted[1])
+    # pwc->cData[id - 1].energy = Ew;                     // energy in time domain        (neted[2])
+    # pwc->cData[id - 1].likesky = Em;                    // energy in the loop           (neted[3])
+    # pwc->cData[id - 1].enrgsky = Eo;                    // TF-domain all-res energy     (neted[4])
+    # pwc->cData[id - 1].netecor = Ec;                    // packet (signal) coherent energy
+    # pwc->cData[id - 1].normcor = Ec * Rc;               // normalized coherent energy
+    cluster.cluster_meta.sky_size = event_size             # event size in the skyloop
+    cluster.cluster_meta.sub_net = Esub / (Esub + Nmax)    # sub-network statistic
+    cluster.cluster_meta.sub_net2 = skymap_statistics.nCorrelation[skymap_statistics.l_max]    # sky cc
+    cluster.cluster_meta.like_sky = sky_statistics.Em      # energy in the loop
+    cluster.cluster_meta.energy_sky = sky_statistics.Eo    # TF-domain all-res energy
+    cluster.cluster_meta.net_ecor = sky_statistics.Ec      # packet (signal) coherent energy
+    cluster.cluster_meta.norm_cor = sky_statistics.Ec * sky_statistics.Rc   # normalized coherent energy
     
+    if network_energy_threshold >= 0:  # original 2G
+        cluster.cluster_meta.net_rho = sky_statistics.rho      # chirp rho
+    else:  # (XGB.rho0)
+        pass
+
+    cluster.cluster_meta.g_net = skymap_statistics.nAntennaPrior[skymap_statistics.l_max]  # antenna prior
+    cluster.cluster_meta.a_net = skymap_statistics.nAlignment[skymap_statistics.l_max]  # alignment
+    cluster.cluster_meta.i_net = 0   # degrees of freedom
+    cluster.cluster_meta.ndof = N_pix_effective  # degrees of freedom
+    cluster.cluster_meta.sky_chi2 = skymap_statistics.nDisbalance[skymap_statistics.l_max]  # disbalance
+    cluster.cluster_meta.g_noise = sky_statistics.Gn  # gaussian noise correction
+    cluster.cluster_meta.iota = 0.0 
+    cluster.cluster_meta.psi = 0.0
+    cluster.cluster_meta.ellipticity = 0
+
+    print(f"sky size: {cluster.cluster_meta.sky_size}, sub_net: {cluster.cluster_meta.sub_net}, sub_net2: {cluster.cluster_meta.sub_net2}, "
+            f"like_sky: {cluster.cluster_meta.like_sky}, energy_sky: {cluster.cluster_meta.energy_sky}, net_ecor: {cluster.cluster_meta.net_ecor}, "
+            f"norm_cor: {cluster.cluster_meta.norm_cor}, g_net: {cluster.cluster_meta.g_net}, "
+            f"a_net: {cluster.cluster_meta.a_net}, i_net: {cluster.cluster_meta.i_net}, ndof: {cluster.cluster_meta.ndof}, "
+            f"sky_chi2: {cluster.cluster_meta.sky_chi2}, g_noise: {cluster.cluster_meta.g_noise}, ")
+
 
 
 def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float, netEC_threshold: float) -> str:
