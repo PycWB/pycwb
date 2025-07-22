@@ -6,8 +6,10 @@ import pickle
 from math import sqrt
 import numpy as np
 from pycwb.modules.likelihoodWP.likelihood import calculate_dpf, find_optimal_sky_localization, calculate_sky_statistics
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
+from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels, threshold_cut, fill_detection_statistic
 from pycwb.modules.xtalk.monster import load_catalog, getXTalk_pixels
+from pycwb.modules.xtalk.type import XTalk
+from pycwb.modules.likelihoodWP.typing import SkyMapStatistics
 import time
 
 #################################################################################
@@ -20,12 +22,14 @@ FP = test_data['FP']
 FX = test_data['FX']
 ml = test_data['ml']
 n_sky = test_data['n_sky']
+cluster = test_data['cluster']
 pixels = test_data['pixels']
 gamma_regulator = test_data['gamma_regulator']
 delta_regulator = test_data['delta_regulator']
 network_energy_threshold = test_data['network_energy_threshold']
 netCC = test_data['netCC']
 n_ifo = test_data['n_ifo']
+netEC_threshold = test_data['netEC_threshold']
 REG = np.array([delta_regulator * sqrt(2), 0., 0.])
 
 rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
@@ -37,13 +41,14 @@ n_pix = rms.shape[1]
 fn = f"./wdmXTalk/OverlapCatalog16-1024.bin"
 
 start_time = time.time()
-xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(fn)
+# xtalk_coeff, xtalk_lookup_table, layers, nRes = load_catalog(fn)
+xtalk = XTalk.load(fn)
 print(f"Time for load_catalog: {time.time() - start_time} s")
 
 #######################
 # Get xtalk for pixels
 #######################
-cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, True, layers, xtalk_coeff, xtalk_lookup_table)
+cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(pixels, True)
 
 #############################################
 # Convert FP, FX, rms, td00, td90 to float32
@@ -59,16 +64,24 @@ rms = rms.T.astype(np.float32)
 #############################################
 REG[1] = calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold)
 
-l_max = find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator,
+skymap_statistics = find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator,
                                       network_energy_threshold)
-print(f"l_max: {l_max}")
+skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
 #############################################
 # Calculate sky statistics
 #############################################
-calculate_sky_statistics(l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk,
+sky_statistics = calculate_sky_statistics(skymap_statistics.l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk,
                          cluster_xtalk_lookup, DEBUG=True)
 
+rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
+if rejected:
+    print(f"Cluster rejected due to threshold cuts: {rejected}")
+
+
+fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
+                            n_ifo=n_ifo, xtalk=xtalk,
+                            network_energy_threshold=network_energy_threshold)
 # Eo = 8255.51, Lo = 7805.59, Ep = 1552.52, Lp = 1467.77
 # Gn = 83.9425, Ec = 7571.68, Dc = 0.441406, Rc = 0.999999, Eh = 9.45466
 print(f"expected Eo: 8255.51, Lo: 7805.59, Ep: 1552.52, Lp: 1467.77")

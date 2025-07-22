@@ -138,6 +138,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         test_data = {
             'FP': FP,
             'FX': FX,
+            'cluster': cluster_test.clusters[0],
             'pixels': pixels,
             'n_ifo': config.nIFO,
             'ml': ml,
