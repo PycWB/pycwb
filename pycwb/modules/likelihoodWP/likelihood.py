@@ -14,6 +14,7 @@ from .typing import SkyStatistics, SkyMapStatistics
 def likelihood(network, nIFO, cluster, MRAcatalog):
     # load network parameters
 
+    # prepare the variables from cWB objects
     acor = network.net.acor
     network_energy_threshold = 2 * acor * acor * nIFO
     gamma_regulator = network.net.gamma * network.net.gamma * 2 / 3
@@ -25,7 +26,7 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     n_sky = network.net.index.size()
     n_pix = len(cluster.pixels)
 
-    # Load xtalk catalog
+    # Load xtalk catalog for the pixels in the cluster
     xtalk = XTalk.load(MRAcatalog, dump=True)
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
 
@@ -39,39 +40,61 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     FP = FP.T.astype(np.float32)
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
-    wdm_xtalk = List(wdm_xtalk)
 
 
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
+    # loop over the sky locations to find the optimal sky localization, 
+    # l_max and sky statistics will be returned in tuple due to the limitations of numba
     skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
+    # Convert the tuple to SkyMapStatistics dataclass for better structure and IDE friendly
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
+    # calculate sky statistics for the cluster at the optimal sky location l_max,
+    # dozens of parameters will be returned in SkyStatistics dataclass
     sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
                                                              FP, FX, rms, td00, td90, ml, REG, 
                                                              network_energy_threshold, 
                                                              cluster_xtalk, cluster_xtalk_lookup)
 
+    # Check if the cluster is rejected based on the threshold cuts, 
+    # the function will return the reason for rejection. If the cluster is not rejected, it will return None.
     rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
     if rejected:
         print(f"Cluster rejected due to threshold cuts: {rejected}")
         return None
 
-
+    # Fill the detection statistics into the cluster and pixels for return
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
                              n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold)
+    
+    # Placeholder: Get the chirp mass
+    get_chirp_mass(cluster)
 
+    # Placeholder: Get the error region
+    get_error_region(cluster)
 
-    likelihood_by_pixel()
-    subnetwork_statistic()
-    detection_statistic()
-    get_error_region()
-    get_chip_mass()
+    return cluster
 
 
 def load_data_from_pixels(pixels, nifo):
+    """
+    Load data from pixels into numpy arrays for numba processing.
+    
+    Args:
+        pixels (List[Pixel]): List of pixel objects containing time delayed data.
+        nifo (int): Number of interferometers.
+
+    Returns:
+        tuple: rms, td00, td90, td_energy
+            - rms (np.ndarray): RMS values for each interferometer and pixel.
+            - td00 (np.ndarray): Time delayed data for 00 polarization.
+            - td90 (np.ndarray): Time delayed data for 90 polarization.
+            - td_energy (np.ndarray): Energy of the time delayed data.
+    
+    """
     tsize = len(pixels[0].td_amp[0])
 
     rms = np.zeros((nifo, len(pixels)))
@@ -98,6 +121,18 @@ def load_data_from_pixels(pixels, nifo):
 
 
 def load_data_from_ifo(network, nIFO):
+    """
+    Load the data from cWB ROOT objects into numpy arrays for numba processing.
+    Args:
+        network (Network): The cWB network object containing interferometer data.
+        nIFO (int): Number of interferometers.
+
+    Returns:
+        tuple: ml, FP, FX
+            - ml (np.ndarray): Array of indices for each sky location.
+            - FP (np.ndarray): Array of f+ polarization data for each interferometer.
+            - FX (np.ndarray): Array of fx polarization data for each interferometer.
+    """
     ml = []
     FP = []
     FX = []
@@ -115,6 +150,40 @@ def load_data_from_ifo(network, nIFO):
 
 @njit(cache=True, parallel=True)
 def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold):
+    """
+    Find the optimal sky localization by calculating sky statistics for each sky location.
+    
+    Args:
+        n_ifo (int): Number of interferometers.
+        n_pix (int): Number of pixels.
+        n_sky (int): Number of sky locations.
+        FP (np.ndarray): f+ polarization data for each interferometer.
+        FX (np.ndarray): fx polarization data for each interferometer.
+        rms (np.ndarray): RMS values for each interferometer and pixel.
+        td00 (np.ndarray): Time delayed data for 00 polarization.
+        td90 (np.ndarray): Time delayed data for 90 polarization.
+        ml (np.ndarray): Array of indices for each sky location.
+        REG (np.ndarray): Regularization parameters.
+        netCC (float): Network correlation coefficient threshold.
+        delta_regulator (float): Delta regulator value.
+        network_energy_threshold (float): Energy threshold for the network.
+
+    Returns:
+        tuple: (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, 
+                nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)
+            - l_max (int): Index of the sky location with maximum likelihood.
+            - nAntenaPrior (np.ndarray): Antenna prior values for each sky location.
+            - nAlignment (np.ndarray): Alignment values for each sky location.
+            - nLikelihood (np.ndarray): Likelihood values for each sky location.
+            - nNullEnergy (np.ndarray): Null energy values for each sky location.
+            - nCorrEnergy (np.ndarray): Correlation energy values for each sky location.
+            - nCorrelation (np.ndarray): Correlation values for each sky location.
+            - nSkyStat (np.ndarray): Sky statistics for each sky location.
+            - nDisbalance (np.ndarray): Disbalance values for each sky location.
+            - nNetIndex (np.ndarray): Network index values for each sky location.
+            - nEllipticity (np.ndarray): Ellipticity values for each sky location.
+            - nPolarisation (np.ndarray): Polarization values for each sky location.
+    """
     # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     # FP = FP.T.astype(np.float32)
@@ -260,7 +329,24 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
                              network_energy_threshold, cluster_xtalk, cluster_xtalk_lookup_table,
                              DEBUG=False) -> SkyStatistics:
     """
+    Calculate the sky statistics for a specific sky location l.
+    Args:
+        l (int): Index of the sky location.
+        n_ifo (int): Number of interferometers.
+        n_pix (int): Number of pixels.
+        FP (np.ndarray): f+ polarization data for each interferometer.
+        FX (np.ndarray): fx polarization data for each interferometer.
+        rms (np.ndarray): RMS values for each interferometer and pixel.
+        td00 (np.ndarray): Time delayed data for 00 polarization.
+        td90 (np.ndarray): Time delayed data for 90 polarization.
+        ml (np.ndarray): Array of indices for each sky location.
+        REG (np.ndarray): Regularization parameters.
+        network_energy_threshold (float): Energy threshold for the network.
+        cluster_xtalk (XTalk): Cluster XTalk object containing xtalk information.
+        cluster_xtalk_lookup_table: Lookup table for xtalk.
 
+    Returns:
+        SkyStatistics: Dataclass containing the sky statistics for the specified sky location.
     """
     # from numpy import float32
     # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
@@ -466,6 +552,20 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                              cluster: Cluster, n_ifo: int, 
                              xtalk: XTalk,
                              network_energy_threshold: float):
+    """
+    Fill the detection statistics into the cluster and pixels.
+    
+    Args:
+        sky_statistics (SkyStatistics): The sky statistics object containing the calculated statistics.
+        skymap_statistics (SkyMapStatistics): The skymap statistics object to be filled.
+        cluster (Cluster): The cluster object containing the pixels.
+        n_ifo (int): Number of interferometers.
+        xtalk (XTalk): The XTalk object for cross-talk calculations.
+        network_energy_threshold (float): Energy threshold for the network.
+    
+    Returns:
+        None: The function modifies the cluster and skymap_statistics in place.
+    """
     pixel_mask = sky_statistics.pixel_mask
     energy_array_plus = sky_statistics.energy_array_plus
     energy_array_cross = sky_statistics.energy_array_cross
@@ -602,12 +702,12 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     Apply threshold cuts based on the sky statistics and network energy threshold.
     
     Parameters:
-    sky_statistics (SkyStatistics): The statistics calculated for the sky location.
-    network_energy_threshold (float): The threshold for network energy.
-    netEC_threshold (float): The threshold for net EC.
+        sky_statistics (SkyStatistics): The statistics calculated for the sky location.
+        network_energy_threshold (float): The threshold for network energy.
+        netEC_threshold (float): The threshold for net EC.
     
     Returns:
-    str: A rejection reason if any condition is not met, otherwise None.
+        str: A rejection reason if any condition is not met, otherwise None.
     """
     # if (this->netRHO >= 0)
     #   { // original 2G
@@ -686,7 +786,7 @@ def detection_statistic():
     pass
 
 
-def get_error_region():
+def get_error_region(cluster: Cluster):
     # pwc->p_Ind[id - 1].push_back(Mo);
     # double T = To + pwc->start;                          // trigger time
     # std::vector<float> sArea;
@@ -702,7 +802,7 @@ def get_error_region():
     pass
 
 
-def get_chip_mass():
+def get_chirp_mass(cluster: Cluster):
     # if (netRHO >= 0) {
     # ee = pwc->mchirp(id);        // original mchirp 2G
     # cc = Ec / (fabs(Ec) + ee);            // chirp cc
