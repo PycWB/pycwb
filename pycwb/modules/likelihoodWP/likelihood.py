@@ -12,6 +12,18 @@ from pycwb.modules.xtalk.type import XTalk
 from .typing import SkyStatistics, SkyMapStatistics
 
 def likelihood(network, nIFO, cluster, MRAcatalog):
+    """
+    Main function to calculate the likelihood for a given network and cluster.
+
+    Args:
+        network (Network): The cWB network object containing interferometer data.
+        nIFO (int): Number of interferometers.
+        cluster (Cluster): The cluster object containing pixel data.
+        MRAcatalog (str): Path to the MRA catalog for xtalk information.
+
+    Returns:
+        Cluster: The updated cluster object with filled detection statistics.
+    """
     # load network parameters
 
     # prepare the variables from cWB objects
