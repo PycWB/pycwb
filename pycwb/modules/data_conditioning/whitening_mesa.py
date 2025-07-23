@@ -127,7 +127,7 @@ def whitening_mesa(config, h):
  
     #convert to pycwb types nRMS
     #nRMS = _convert_numpy_nrms_to_wseries(nRMS, h.start_time, sampling_rate, n_segments,  wdm_white.wavelet)
-    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
+    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
     #n_rms = convert_wseries_to_time_frequency_series(nRMS)
     n_rms = tf_map_whitened.copy() 
