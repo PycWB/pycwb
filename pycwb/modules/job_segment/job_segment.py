@@ -84,6 +84,14 @@ def create_job_segment_from_config(config):
         end_gps_time = max([job_seg.end_time for job_seg in job_segments])
         injections, n_trails = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
         add_injections_into_job_segments(job_segments, injections)
+        # add noise settings to the job segments if specified
+        noise = config.injection.get('noise', None)
+        if noise is not None:
+            for job_seg in job_segments:
+                job_seg.noise = {
+                    'type': noise['type'],
+                    'seeds': [noise['delta_seeds'][ifo] + job_seg.physical_start_times[ifo] for ifo in config.ifo],
+                }
 
     ############################################
     ## Load the frames if frFiles or gwdatafind specified
