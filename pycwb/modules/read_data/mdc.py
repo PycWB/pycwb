@@ -15,8 +15,8 @@ from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 logger = logging.getLogger(__name__)
 
 
-def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 16, duration: int = 32,
-                   sample_rate: float = 4096, seed: int = 1234, start_time: int = 0):
+def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 4, duration: int = 32,
+                   sample_rate: float = 16384, seed: int = 1234, start_time: int = 0):
     """
     Generate noise from a given psd file or aLIGOZeroDetHighPower psd
 
@@ -45,12 +45,20 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     # generate noise
     flen = int(sample_rate / delta_f) + 1
     if psd:
+        logger.info(f"Using psd file {psd} with f_low {f_low}, delta_f {delta_f}, flen {flen}")
         psd = pycbc.psd.from_txt(psd, flen, delta_f, f_low)
     else:
+        logger.info(f"Using aLIGOZeroDetHighPower psd with f_low {f_low}, delta_f {delta_f}, flen {flen}")
         psd = pycbc.psd.aLIGOZeroDetHighPower(flen, delta_f, f_low)
 
     delta_t = 1.0 / sample_rate
-    # Generate 32 seconds of noise at 4096 Hz
+
+    # if sample rate is higher than psd provided, resize the psd to fill 0 values
+    desired_length = int (1.0 / delta_t / psd.delta_f)//2+1
+    if len(psd) < desired_length:
+        logger.warning(f"PSD length {len(psd)} is less than desired length {desired_length}, resizing PSD")
+        psd.resize(desired_length)
+
     t_samples = int(duration / delta_t)
     noise = pycbc.noise.noise_from_psd(t_samples, delta_t, psd, seed=seed)
 
