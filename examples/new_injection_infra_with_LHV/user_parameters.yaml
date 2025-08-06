@@ -1,0 +1,100 @@
+###### project ######
+
+outputDir: "output"
+nproc: 6
+###### search ######
+
+#calibVer: "C01"
+#channelName: "DCS-CALIB_STRAIN_CLEAN_C01" # //"DCS-CALIB_STRAIN_CLEAN_C01";  // C00 -> "GDS-CALIB_STRAIN", C01 -> "DCS-CALIB_STRAIN_C01", C02 -> "DCS-CALIB_STRAIN_C02"
+
+analysis: "2G"
+cfg_search: "r"
+
+plot_trigger: False
+save_waveform: False
+plot_waveform: False
+save_injection: False
+plot_injection: False
+compress_output_json: False
+
+optim: False
+
+###### network configuration ######
+ifo: ["L1","H1","V1"]
+refIFO: "L1"
+
+# lags
+lagSize: 1
+lagStep: 1.
+lagOff: 0
+lagMax: 0
+
+# superlags
+slagSize: 1 # number of super lags (simulation=1) - if slagSize=0 -> Standard Segments
+slagMin: 0
+slagMax: 0
+slagOff: 0
+
+# job
+segLen: 1200
+segMLS: 600
+segTHR: 200
+segEdge: 10
+
+# frequency
+fLow: 16.
+fHigh: 1024.
+
+
+levelR: 3
+l_low: 4 # low frequency resolution level		// std (sthr = 2)
+l_high: 10 # high frequency resolution level	// std (sthr = 8)
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+healpix: 7
+
+###### cWB production thresholds & regulators ######
+
+bpp: 0.001
+subnet: 0.5
+subcut: -1.0
+netRHO: 5.0
+cedRHO: 5.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: .0
+LOUD: 300
+
+pattern: 10
+
+iwindow: 100
+
+
+gps_start: 1242432800
+gps_end: 1242440000
+
+injection:
+  seed: 150914
+  parameters_from_python:
+    function: "./injection_parameters.get_injection_parameters"
+  repeat_injection: 100
+  sky_distribution:
+    type: UniformAllSky
+  time_distribution:
+    type: 'rate'
+    rate: 1/30
+    jitter: 10
+  noise:
+    type: "GaussianNoise"
+    psds:
+      H1: "input/aligo_O4high.txt"
+      L1: "input/aligo_O4high.txt"
+      V1: "input/avirgo_O4high_NEW.txt"
+    delta_seeds: 
+      H1: 10
+      L1: 20
+      V1: 30
