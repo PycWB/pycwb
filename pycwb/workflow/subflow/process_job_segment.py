@@ -56,8 +56,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.frames:
         base_data = read_from_job_segment(config, job_seg)
     if job_seg.noise:
-        base_data = generate_noise_for_job_seg(job_seg, config.inRate, data=base_data)
-    
+        base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
+
     data = base_data
     
     # get all the trail_idx from the injections, if there is no injections, use 0

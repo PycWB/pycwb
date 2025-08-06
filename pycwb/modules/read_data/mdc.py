@@ -65,13 +65,17 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     logger.info(f"Generating noise for job segment {job_seg.index}")
     if 'seeds' in job_seg.noise:
         logger.info(f"Using seeds {job_seg.noise['seeds']}")
+    if 'psds' in job_seg.noise:
+        logger.info(f"Using psds {job_seg.noise['psds']}")
     logger.info(f"Sample rate: {sample_rate}")
     logger.info(f"Low frequency: {f_low}")
 
     seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
+    psds = job_seg.noise['psds'] if 'psds' in job_seg.noise else [None] * len(job_seg.ifos)
 
     # generate noise for each ifo
-    noises = [generate_noise(f_low=f_low, sample_rate=sample_rate,
+    noises = [generate_noise(psd=psds[i],
+                             f_low=f_low, sample_rate=sample_rate,
                              duration=job_seg.duration,
                              start_time=job_seg.start_time, seed=seed) for i, seed in enumerate(seeds)]
 

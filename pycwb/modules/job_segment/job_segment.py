@@ -90,6 +90,7 @@ def create_job_segment_from_config(config):
             for job_seg in job_segments:
                 job_seg.noise = {
                     'type': noise['type'],
+                    'psds': [noise['psds'][ifo] for ifo in config.ifo],
                     'seeds': [noise['delta_seeds'][ifo] + job_seg.physical_start_times[ifo] for ifo in config.ifo],
                 }
 
