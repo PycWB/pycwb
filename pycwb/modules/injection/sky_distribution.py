@@ -27,26 +27,51 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         logger.info("Loading existing sky distribution data from: "
                     f"{sky_distribution_config['existing_path']}")
         # Load RA/Dec from existing data (example)
+        unit = sky_distribution_config.get('unit', None)
+        if unit not in ['rad', 'deg']:
+            raise ValueError("Must specify the unit of the existing data, either 'rad' or 'deg'")
         ra, dec = np.loadtxt(sky_distribution_config['existing_path'], unpack=True)
+
+        if unit == 'deg':
+            logger.info("Converting RA/Dec from degrees to radians")
+            ra = np.deg2rad(ra)
+            dec = np.deg2rad(dec)
         return ra, dec
     
     elif dist_type == "UniformAllSky":
         logger.info("Generating uniform distribution across the entire sky")
         ra = np.random.uniform(0, 360, n_samples)
         dec = np.degrees(np.arcsin(2*np.random.uniform(0, 1, n_samples) - 1))
-        return ra, dec
+        return np.deg2rad(ra), np.deg2rad(dec)
     
     elif dist_type == "Patch":
         logger.info("Generating points in a small circular patch around a center RA/Dec")
-        logger.info(f"Center RA: {sky_distribution_config['patch']['center'][0]}, "
-                    f"Center Dec: {sky_distribution_config['patch']['center'][1]}, "
-                    f"Radius: {sky_distribution_config['patch']['radius']} degrees")
-        center_ra, center_dec = sky_distribution_config['patch']['center']
+        logger.info("Patch generation uses degree internally, and will return RA/Dec in radians for injection.")
+        # parameters check
+        unit = sky_distribution_config['patch'].get('unit', None)
+        if unit not in ['rad', 'deg']:
+            raise ValueError("Must specify the unit of the patch, either 'rad' or 'deg'")
+        if 'center' not in sky_distribution_config['patch'] or 'radius' not in sky_distribution_config['patch']:
+            raise ValueError("Must specify the center and radius of the patch")
+        if 'ra' not in sky_distribution_config['patch']['center'] or 'dec' not in sky_distribution_config['patch']['center']:
+            raise ValueError("Must specify the center RA and Dec of the patch")
+
+        center_ra = sky_distribution_config['patch']['center']['ra']
+        center_dec = sky_distribution_config['patch']['center']['dec']
         radius = sky_distribution_config['patch']['radius']
-        
+
+        if unit == 'rad':
+            logger.info(f"Center RA: {center_ra} radians, Center Dec: {center_dec} radians, Radius: {radius} radians")
+            logger.info("Converting center RA/Dec and radius from radians to degrees")
+            center_ra = np.rad2deg(center_ra)
+            center_dec = np.rad2deg(center_dec)
+            radius = np.rad2deg(radius)
+       
+        logger.info(f"Center RA: {center_ra} degrees, Center Dec: {center_dec} degrees, Radius: {radius} degrees")
+        logger.info("Generating points in a small circular patch around a center RA/Dec")
         # Generate points in a small circle around the center
         ra, dec = sample_uniform_sky_area(center_ra, center_dec, radius, n_samples)
-        return ra, dec
+        return np.deg2rad(ra), np.deg2rad(dec)
     
     elif dist_type == "Custom":
         logger.info(f"Sampling from a custom HEALPix map: {sky_distribution_config['custom']['healpix_map']}")
@@ -58,7 +83,7 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         theta, phi = hp.pix2ang(nside, indices)
         ra = np.degrees(phi)
         dec = np.degrees(np.pi/2 - theta)
-        return ra, dec
+        return np.deg2rad(ra), np.deg2rad(dec)
     
     else:
         raise ValueError(f"Unknown distribution type: {dist_type}")
