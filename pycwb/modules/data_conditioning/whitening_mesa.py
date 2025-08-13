@@ -213,7 +213,7 @@ def generate_nrms_wseries(config, data, nrms):
     nRMS.bandpass(16., 0., 1)
     
     #Substitute the cWB nRMS with the MESA nRMS 
-    for i in range(len(nrms)): 
+    for i in range(len(nRMS)): 
         nRMS.data[i] = nrms[i]
 
     #print(len(nrms))
