@@ -10,6 +10,7 @@ import multiprocessing as mp
 from memspectrum import MESA
 import os 
 from scipy import signal
+from scipy.special import expit 
 from pycbc.filter.resample import highpass
 from sklearn.ensemble import IsolationForest
 import logging
@@ -30,8 +31,8 @@ def whitening_mesa(config, h):
     """ 
     
     #Initialise WDM
-    logger.info(f'Whitening the data using Maximum Entropy Spectral Analysis. \nThe chosen parameters are:\
-            autoregressive order = {config.mesaOrder}, solving method = {config.mesaSolver}') 
+    logger.info(f'Whitening the data using Maximum Entropy Spectral Analysis.') 
+    logger.info(f"autoregressive order = {config.mesaOrder}, solving method = {config.mesaSolver}") 
 
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
     wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
@@ -42,9 +43,9 @@ def whitening_mesa(config, h):
         config.whiteStride = config.whiteWindow / 3 
     #Sampling variables 
     sampling_rate = config.inRate / (2 ** config.levelR)
-    Ny = .5 * sampling_rate #The Nyquist frequency 
-    wdm_df = Ny / layers_white #frequency resolution for the WDM 
-    wdm_dt = .5 / wdm_df #time resolution for the WDM 
+    Ny = .5 * sampling_rate     #The Nyquist frequency 
+    wdm_df = Ny / layers_white  #Frequency resolution for the WDM 
+    wdm_dt = .5 / wdm_df        #Time resolution for the WDM 
     
 
     #Convert to pycbc and remove mean 
@@ -54,12 +55,10 @@ def whitening_mesa(config, h):
         pass 
     h -= np.mean(h) 
 
-    #filter the data 
+    #Filter the data 
     a,b = signal.butter(8, config.fLow / Ny, btype = 'high', analog = False) 
     h.data = signal.filtfilt(a,b,h)
    
-    #pycbc highpass filter gives problems 
-    #h = h.highpass_fir(frequency = config.fLow, order = 50, remove_corrupted = False)
     
     #Initialise whitening
     M = MESA() 
@@ -79,14 +78,16 @@ def whitening_mesa(config, h):
     #reindex psds to exclude possibly-glitch-contaminated estimates 
     if config.mesaReindex: 
         psds = reindex_psds(np.array(psds), f)
-    
-    #Use PSDs estimates to whiten the data         
+
+    W = planck_taper_window(window) 
+
+    #Use PSDs estimates to whiten the data     
     for i in range(n_windows + 1):
         start = i  * stride 
         stop = start + window
         
         #get indeces for whitening segments [w] and segment to be whitened [s]
-        h_tmp = h[start:stop] 
+        h_tmp = h[start:stop] * W
         h_w = (h_tmp.to_frequencyseries() / psds[i][:len(h_tmp) // 2 + 1]**0.5).to_timeseries() * np.sqrt(1 / sampling_rate)
         
         if i == 0: 
@@ -103,7 +104,7 @@ def whitening_mesa(config, h):
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
-
+ 
     #Create a TF map for whitened array 
     tf_map_white = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
     tf_map_white.Forward()
@@ -117,21 +118,23 @@ def whitening_mesa(config, h):
     #Compute the nRMS taking the median over 20 second segments and convert to array 
     data_per_batch = int(config.whiteStride // wdm_dt)
     nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch) 
-    nRMS_reshaped[:int(16 / wdm_df)] = 1  #set nRMS = 1 for f < 16 
-    nRMS = np.sqrt(np.median(nRMS_reshaped ** 2, axis = 2))
+    #set nRMS = 1 for f <= 16 
+    nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
+    #Compute the nRMS as the median over the segments ignoring nans if present
+    nRMS = np.sqrt(np.nanmedian(nRMS_reshaped ** 2, axis = 2))
 
     #add 1 as last frequency bin for compatibility 
     n_segments = nRMS_reshaped.shape[1]
     nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F')  
-    
- 
-    #convert to pycwb types nRMS
+    nRMS = generate_nrms_wseries(config, h, nRMS)
+
     #nRMS = _convert_numpy_nrms_to_wseries(nRMS, h.start_time, sampling_rate, n_segments,  wdm_white.wavelet)
-    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
+    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
+    tf_map_whitened.w_mode = 1   #Change w_mode to 1 for compatibility with "Network.cc" 
+
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
-    #n_rms = convert_wseries_to_time_frequency_series(nRMS)
-    n_rms = tf_map_whitened.copy() 
-    n_rms.data = TimeSeries(nRMS, delta_t = 1 / sampling_rate, epoch = tf_map_whitened.data.start_time)
+    n_rms = convert_wseries_to_time_frequency_series(nRMS)
+
     
     return tf_map_whitened, n_rms
 
@@ -170,6 +173,50 @@ def reindex_psds(psds, f):
     for idx in outliers_idx: 
         new_idx = inliers_idx[np.argmin(np.abs(inliers_idx-idx))]
         psds[idx] = psds[new_idx]
-        print(f"Subsituting PSD {idx} with PSD {new_idx}")
+        logger.info(f"Subsituting PSD {idx} with PSD {new_idx}")
 
     return psds
+
+def planck_taper_window(N, eps = 0.15):
+    window = np.zeros(N)
+    for k in range(N):
+        if k == 0 or k == N - 1:
+            window[k] = 0
+        elif 0 < k < eps * (N - 1):
+            za = eps * (N - 1) * (1 / k + 1 / (k - eps * (N - 1)))
+            window[k] = expit(-za)
+        elif eps * (N - 1) <= k <= (1 - eps) * (N - 1):
+            window[k] = 1
+        elif (1 - eps) * (N - 1) < k < N - 1:
+            zb = eps * (N - 1) * (
+                1 / (N - 1 - k) + 1 / ((1 - eps) * (N - 1) - k)
+            )
+            window[k] = expit(-zb)
+    
+    return window
+
+def generate_nrms_wseries(config, data, nrms): 
+    """ 
+    Generates a WSeries object for the nRMS from the numpy array of nRMS values
+    """ 
+
+    #Generates the WDM object for the nRMS
+    layers = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
+    wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)
+
+    #Generate the WSeries and use it to initialise nRMS with the correct parameters
+    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(data), wdm.wavelet)
+    tf_map.Forward()
+    tf_map.setlow(config.fLow)
+    tf_map.sethigh(config.fHigh)
+    nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge,  config.whiteStride)
+    nRMS.bandpass(16., 0., 1)
+    
+    #Substitute the cWB nRMS with the MESA nRMS 
+    for i in range(len(nRMS)): 
+        nRMS.data[i] = nrms[i]
+
+    #print(len(nrms))
+    #print(len(nRMS)) 
+
+    return nRMS 
