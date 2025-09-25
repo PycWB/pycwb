@@ -38,8 +38,9 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     n_sky = network.net.index.size()
     n_pix = len(cluster.pixels)
 
-    # Load xtalk catalog for the pixels in the cluster
+    # Load xtalk catalog
     xtalk = XTalk.load(MRAcatalog, dump=True)
+    # Get xtalk pixels and lookup table
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
 
     # Extract data from python object to numpy arrays for numba
@@ -53,7 +54,7 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
 
-
+    # Note: What are the two regulators for?
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
     # loop over the sky locations to find the optimal sky localization, 

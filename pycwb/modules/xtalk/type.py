@@ -31,7 +31,19 @@ class XTalk:
 
     def get_xtalk_pixels(self, pixels, check=True):
         """
-        Get the crosstalk coefficients for the given pixels.
+        Get the crosstalk coefficients for the given pixels. There are two arrays returned because the number of crosstalk coefficients
+        is not the same for all pixels. To make the array homogeneous for the numba JIT compiler, we return two arrays:
+        - cluster_xtalk_lookup: The lookup table for crosstalk coefficients. Contains the start and end indices for each pixel.
+        - cluster_xtalk: The crosstalk coefficients for the pixels.
+
+        Args:
+            pixels (list of Pixel): A list of Pixel objects.
+            check (bool): To be fixed later, currently not used.
+
+        Returns:
+            tuple: A tuple containing:
+                - cluster_xtalk_lookup (np.ndarray): Lookup table for crosstalk coefficients.
+                - cluster_xtalk (np.ndarray): Crosstalk coefficients for the pixels.
         """
         cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, check, self.layers, self.coeff, self.lookup_table)
         return cluster_xtalk_lookup, cluster_xtalk
