@@ -122,6 +122,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 # associate the injections if there are any
                 if sub_job_seg.injections:
                     for injection in sub_job_seg.injections:
+                        # FIXME: for overlap signal, this won't work
                         if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
                             event.injection = injection
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
