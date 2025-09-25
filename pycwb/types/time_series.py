@@ -16,6 +16,16 @@ class TimeSeries:
     def times(self) -> np.ndarray:
         """Returns the array of time values."""
         return self.t0 + self.dt * np.arange(len(self.data))
+    
+    @property
+    def sample_rate(self) -> float:
+        """Returns the sampling rate."""
+        return 1.0 / self.dt
+    
+    @property
+    def end_time(self) -> float:
+        """Returns the end time of the time series."""
+        return self.t0 + self.dt * len(self.data)
 
     def __array__(self) -> np.ndarray:
         """Allows implicit conversion to a NumPy array."""
@@ -34,6 +44,41 @@ class TimeSeries:
 
     def __str__(self):
         return str(self.data)
+
+    def wavecount(self, threshold, edge_length=None):
+        """
+        Count the number of wavelet coefficients above a certain threshold.
+        Backward compatibility with ROOT.WaveArray::wavecount
+
+        :param threshold: threshold value
+        :type threshold: float
+        :param edge_length: edge length to exclude
+        :type edge_length: int
+        :return: number of coefficients above the threshold
+        :rtype: int
+        """
+        if edge_length is not None:
+            return np.sum(self.data[edge_length:-edge_length] > threshold)
+        return np.sum(self.data > threshold)
+
+    def wavesplit(self, start_index, end_index, split_index):
+        """
+        Find the value at the split index in the sorted array segment.
+        Backward compatibility with ROOT.WaveArray::wavesplit
+
+        :param start_index: start index of the segment
+        :type start_index: int
+        :param end_index: end index of the segment
+        :type end_index: int
+        :param split_index: index to split the sorted segment
+        :type split_index: int
+        :return: value at the split index
+        :rtype: float
+        """
+        split_index = split_index - 1 # don't know why, it is consistent with ROOT
+        parted = np.partition(self.data[start_index:end_index], split_index)
+        value = parted[split_index]
+        return value
     
     def to_pycbc(self):
         """
@@ -65,7 +110,7 @@ class TimeSeries:
         :return: TimeSeries object
         :rtype: TimeSeries
         """
-        return cls(data=pycbc_ts.data, t0=pycbc_ts.start_time, dt=pycbc_ts.delta_t)
+        return cls(data=pycbc_ts.data, t0=float(pycbc_ts.start_time), dt=pycbc_ts.delta_t)
     
     @classmethod
     def from_gwpy(cls, gwpy_ts):
