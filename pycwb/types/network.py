@@ -94,7 +94,7 @@ class Network:
 
     def set_time_shift(self, lag_size, lag_step, lag_off, lag_max, lag_buffer, lag_mode, lag_site):
         """
-        Set time shift parameters for cwb network
+        Set time shift (lag) parameters for cwb network
 
         Parameters
         ----------
@@ -275,9 +275,16 @@ class Network:
         float
             maximum delay
         """
-        return self.net.getDelay('MAX')
+        n_ifo = self.ifo_size
+        if n_ifo < 2:
+            return 0.0
+        maxTau = max([self.get_ifo(i).tau.max() for i in range(n_ifo)])
+        minTau = min([self.get_ifo(i).tau.min() for i in range(n_ifo)])
+        return max(abs(maxTau), abs(minTau))
+        # return self.net.getDelay('MAX')
 
     def set_delay_index(self, rate):
+        n_ifo = self.ifo_size
         self.net.setDelayIndex(rate)
 
     def get_cluster(self, lag):
