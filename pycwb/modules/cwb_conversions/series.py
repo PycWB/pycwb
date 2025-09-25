@@ -166,7 +166,7 @@ def WSeries_to_matrix(w):
     :rtype: np.array
     """
     matrix = list()
-    for n in range(w.maxLayer()):
+    for n in range(w.maxLayer() + 1):
         a = ROOT.wavearray(np.double)()
         w.getLayer(a, n)
         matrix.append(np.asarray(a))
