@@ -96,6 +96,9 @@ injection:
     jitter: 30
   noise:
     type: "GaussianNoise"
+    psds:
+      H1: "input/aligo_O4high.txt"
+      L1: "input/aligo_O4high.txt"
     delta_seeds: 
       H1: 10
       L1: 20
