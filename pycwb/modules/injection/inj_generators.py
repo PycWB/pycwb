@@ -5,15 +5,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_strain_from_file(files, sample_rate = 16384,**kwargs): 
+def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs): 
     """
     Generates the pycbc strain reading it from a file. The available extensions are: .txt, .npy and .hdf.
     Parameters:
     -----------
     parameters: dict
         A dictionary containing the following keys:
-        - 'files': A dictionary with keys as interferometer names (e.g., 'H1', 'L1') and values as file paths.
         - 'sample_rate': The sample rate of the data in which the strain is to be injected. Default is 16384 Hz. 
+        - 'files': A dictionary with keys as interferometer names and values as file paths. 
+                    Eg {'H1': 'path/to/H1_strain.txt', 'L1': 'path/to/L1_strain.txt'}
     Returns:
     --------
     injections: dict
@@ -21,18 +22,24 @@ def get_strain_from_file(files, sample_rate = 16384,**kwargs):
     """
     #Initialize the injections dictionary
     injections = {'type': 'strain'}
+    sample_rate = 1 / delta_t 
 
-
-    #Add options for different extensions? npy, txt 
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
         strain = load_timeseries(file)
         strain.start_time = kwargs['gps_time']
-        #Re-Sample signal if actual rate is different from the target sample rate in parameters 
-        factor = sample_rate / strain.sample_rate
-        if factor != 1: 
-            logger.info(f"Resampling {ifo} data with factor {factor:.2f} (from {strain.sample_rate} to {sample_rate})")
-        injections[ifo] = resample_data(strain, factor)
+
+    
+        if strain.sample_rate == sample_rate:
+            injections[ifo] = strain
+
+        elif not allow_resampling and strain.sample_rate != sample_rate:
+            raise ValueError(f"Strain sample rate ({strain.sample_rate} Hz) does not match target sample rate ({sample_rate} Hz). Set allow_resampling = True to enable resampling.")
+
+        else: 
+            logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
+            factor = sample_rate / strain.sample_rate
+            injections[ifo] = resample_data(strain, factor)
 
     return injections
 
