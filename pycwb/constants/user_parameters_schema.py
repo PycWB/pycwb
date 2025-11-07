@@ -602,6 +602,11 @@ schema = {
             "description": "Maximum Autoregressive order for the Lenvinson Recursion", 
             "default": 800.
         },
+        "mesaHalfSeg": {
+            "type": "number", 
+            "description": "half - 1 size of the number of PSD over which the median over which the median is computed. If < 1, no median is applied", 
+            "default": 4
+        },
         "whiteMethod": {
             "type": "string",
             "description": "Sets what type of whitening has to be used. if 'wavelet' WDM time-frequency domain is applied. if 'mesa', it whitens with a PSD estimate given by mesa in the frequency domain. If 'mixed', the whitening is performed in time frequency domain but the nRMS is substitued with a MESA estimate for the coefficients", 

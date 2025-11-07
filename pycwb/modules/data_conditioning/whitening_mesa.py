@@ -74,9 +74,15 @@ def whitening_mesa(config, h):
         M.solve(h[start:start+ window], method = config.mesaSolver, m = config.mesaOrder)
         f, psd = M.spectrum(1 / sampling_rate) 
         psds.append(psd) 
-    
+
+    #Smooth the PSDs estimates with a rolling median filter
+    if config.mesaHalfSeg > 0: 
+        logger.info(f"Smoothing PSDs estimates with rolling median filter over {config.mesaHalfSeg * 2 + 1} segments")
+        psds = rolling_median(np.array(psds), half_size = config.mesaHalfSeg)
+
     #reindex psds to exclude possibly-glitch-contaminated estimates 
     if config.mesaReindex: 
+        logger.warning("Reindexing PSDs estimates with Isolation Forest to exclude possible glitch contamination. To disable set mesaReindex to False in config file")
         psds = reindex_psds(np.array(psds), f)
 
     W = planck_taper_window(window) 
@@ -98,7 +104,7 @@ def whitening_mesa(config, h):
             h_white[start + stride:stop-stride] = h_w[stride:-stride]
     del(h_tmp) 
     del(h_w) 
-    edge = int(config.segEdge * sampling_rate)
+
     #Initialize TF map 
     tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h[:stop]), wdm_white.wavelet)
     tf_map.Forward()
@@ -114,9 +120,8 @@ def whitening_mesa(config, h):
     #Compute effective whitening filter 
     nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)
     
-
     #Compute the nRMS taking the median over 20 second segments and convert to array 
-    data_per_batch = int(config.whiteStride // wdm_dt)
+    data_per_batch = int(20 // wdm_dt)
     nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch) 
     #set nRMS = 1 for f <= 16 
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
@@ -128,15 +133,50 @@ def whitening_mesa(config, h):
     nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F')  
     nRMS = generate_nrms_wseries(config, h, nRMS)
 
-    #nRMS = _convert_numpy_nrms_to_wseries(nRMS, h.start_time, sampling_rate, n_segments,  wdm_white.wavelet)
     tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
     tf_map_whitened.w_mode = 1   #Change w_mode to 1 for compatibility with "Network.cc" 
-
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
     n_rms = convert_wseries_to_time_frequency_series(nRMS)
-
     
     return tf_map_whitened, n_rms
+
+
+def rolling_median(psds, half_size): 
+    """ 
+    Smooths the PSDs estimates with a rolling median filter 
+
+    Parameters: 
+    ----------
+    psds:   np.ndarray (N_segments, N_frequencies)      
+            array containing all the PSDs estimates 
+    half_size: int, optional
+            Half size of the rolling median window. The number of segments is The default is 2 * half_size + 1. 
+            Default value is 4 
+    """ 
+
+    out = np.empty_like(psds)
+    N = psds.shape[0]
+    
+    for i in range(N):
+        #Define left and right edges of the rolling median window
+        left = i - half_size
+        right = i + half_size + 1  
+
+        # If we run off the left edge, extend to the right to compensate
+        if left < 0:
+            deficit = -left
+            left = 0
+            right = min(N, right + deficit)
+
+        # If we run off the right edge, extend to the left to compensate
+        if right > N:
+            deficit = right - N
+            right = N
+            left = max(0, left - deficit)
+
+        out[i] = np.median(psds[int(left):int(right)], axis=0)
+
+    return out
 
 
 def reindex_psds(psds, f): 
@@ -160,7 +200,7 @@ def reindex_psds(psds, f):
     dist_lf = np.mean((np.log(psds[:,mask_lf] / psd_median[mask_lf])) ** 2, axis = 1) ** .5
     dist_hf = np.mean((np.log(psds[:,mask_hf] / psd_median[mask_hf])) ** 2, axis = 1) ** .5
     dist = np.stack([dist_lf, dist_hf], axis = 1)
-    predictions = IsolationForest(n_estimators = 100).fit_predict(dist)
+    predictions = IsolationForest(n_estimators = 100, contamination = .15).fit_predict(dist)
     
     #Remove outliers if found below the median  
     median_lf, median_hf = np.median([dist_lf,dist_hf], axis = 1)
@@ -173,7 +213,7 @@ def reindex_psds(psds, f):
     for idx in outliers_idx: 
         new_idx = inliers_idx[np.argmin(np.abs(inliers_idx-idx))]
         psds[idx] = psds[new_idx]
-        logger.info(f"Subsituting PSD {idx} with PSD {new_idx}")
+    logger.info(f"Reindexed {len(outliers_idx)} PSDs estimates out of {psds.shape[0]} total segments")
 
     return psds
 
@@ -209,7 +249,7 @@ def generate_nrms_wseries(config, data, nrms):
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
-    nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge,  config.whiteStride)
+    nRMS = tf_map.white(60, 0, config.segEdge, 20)
     nRMS.bandpass(16., 0., 1)
     
     #Substitute the cWB nRMS with the MESA nRMS 
