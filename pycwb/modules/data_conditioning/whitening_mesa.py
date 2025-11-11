@@ -38,9 +38,9 @@ def whitening_mesa(config, h):
     wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
     wdmFlen = wdm_white.m_H / config.rateANA
     
-    if config.whiteStride != config.whiteWindow / 3: 
-        logger.warning('Value of whiteStride in config must be one third of whiteWindow. It will be changed in the analysis')
-        config.whiteStride = config.whiteWindow / 3 
+    if config.mesaStride != config.mesaWindow / 3: 
+        logger.warning('Value of mesa Stide in config must be one third of mesa Window. It will be changed in the analysis')
+        config.mesaStride = config.mesaWindow / 3 
     #Sampling variables 
     sampling_rate = config.inRate / (2 ** config.levelR)
     Ny = .5 * sampling_rate     #The Nyquist frequency 
@@ -62,8 +62,8 @@ def whitening_mesa(config, h):
     
     #Initialise whitening
     M = MESA() 
-    stride = int(config.whiteStride * sampling_rate)
-    window = int(config.whiteWindow * sampling_rate)
+    stride = int(config.mesaStride * sampling_rate)
+    window = int(config.mesaWindow * sampling_rate)
      
     psds = [] 
     h_white = h.copy() 
@@ -121,7 +121,7 @@ def whitening_mesa(config, h):
     nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)
     
     #Compute the nRMS taking the median over 20 second segments and convert to array 
-    data_per_batch = int(20 // wdm_dt)
+    data_per_batch = int(config.whiteStride // wdm_dt)
     nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch) 
     #set nRMS = 1 for f <= 16 
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
@@ -249,7 +249,9 @@ def generate_nrms_wseries(config, data, nrms):
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
-    nRMS = tf_map.white(60, 0, config.segEdge, 20)
+    if config.whiteWindow != 60 or config.whiteStride != 20:
+        logger.warning(f"whiteWindow = {config.whiteWindow} and whiteStride = {config.whiteStride} in config are different from default values (60,20). This may lead to unexpected results in the whitening nRMS generation.")
+    nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge, config.whiteStride)
     nRMS.bandpass(16., 0., 1)
     
     #Substitute the cWB nRMS with the MESA nRMS 
