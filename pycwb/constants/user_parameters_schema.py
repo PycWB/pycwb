@@ -584,12 +584,12 @@ schema = {
         },
         "whiteWindow": {
             "type": "number",
-            "description": "[sec] time window dT. if = 0 - dT=T, where T is segment duration",
+            "description": "[sec] time window dT. if = 0 - dT=T, where T is segment duration. If whiteMethod='mesa', controls the MESA nRMS estimate (no values other than 60 have been tested in this context)",
             "default": 60.
         },
         "whiteStride": {
             "type": "number",
-            "description": "[sec] noise sampling time stride",
+            "description": "[sec] noise sampling time stride. If whiteMethod='mesa', controls the MESA nRMS estimate (no values other than 20 have been tested in this context)",
             "default": 20.
         },
         "mesaSolver": {
@@ -601,6 +601,21 @@ schema = {
             "type": "number", 
             "description": "Maximum Autoregressive order for the Lenvinson Recursion", 
             "default": 800.
+        },
+        "mesaHalfSeg": {
+            "type": "number", 
+            "description": "half - 1 size of the number of PSD over which the median over which the median is computed. If < 1, no median is applied", 
+            "default": 4
+        },
+        "mesaWindow": {
+            "type": "number", 
+            "description": "window length [sec] used to compute MESA PSD estimates", 
+            "default": 15 
+        },
+        "mesaStride": {
+            "type": "number", 
+            "description": "stride length [sec] between two consecutive MESA PSD estimates. Should be mesaWindow / 3", 
+            "default": 5
         },
         "whiteMethod": {
             "type": "string",
