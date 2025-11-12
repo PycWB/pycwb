@@ -68,6 +68,7 @@ class WDM:
         """
         destructor of the WDM object
         """
+        pass
         self.release()
         self.release_ptr()
 
