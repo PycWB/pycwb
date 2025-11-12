@@ -160,9 +160,9 @@ def sample_uniform_sky_area(ra_center, dec_center, radius, n_samples=1):
     sin_ra = np.sin(ra_center)
     cos_ra = np.cos(ra_center)
 
-    x_new = cos_dec * cos_ra * x - sin_ra * y + sin_dec * cos_ra * z
-    y_new = cos_dec * sin_ra * x + cos_ra * y + sin_dec * sin_ra * z
-    z_new = -sin_dec * x + cos_dec * z
+    x_new = sin_dec * cos_ra * x - sin_ra * y + cos_dec * cos_ra * z
+    y_new = sin_dec * sin_ra * x + cos_ra * y + cos_dec * sin_ra * z
+    z_new = - cos_dec * x + sin_dec * z
 
     # Convert back to RA and Dec
     dec_samples = np.arcsin(z_new)
