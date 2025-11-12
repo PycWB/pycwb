@@ -1,7 +1,6 @@
 import multiprocessing
 import os
 import getpass
-import shutil
 import logging
 import sys
 from pathlib import Path
