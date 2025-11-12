@@ -19,3 +19,9 @@ Run the script `performance_test_opt_sky.py` to run the benchmark.
 ```bash
 python performance_test_opt_sky.py
 ```
+
+## Test the whole likelihood
+
+```bash
+pycwb run user_parameters_likelihood_test.yaml -n 1
+```
