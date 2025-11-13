@@ -120,19 +120,16 @@ def whitening_mesa(config, h):
     #Compute effective whitening filter 
     nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)
     
-    #Compute the nRMS taking the median over 20 second segments and convert to array 
+    #Compute the nRMS taking the median over "whiteStride" seconds segments and convert to array 
     data_per_batch = int(config.whiteStride // wdm_dt)
-    nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df),-1,data_per_batch) 
-    #set nRMS = 1 for f <= 16 
+    nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df)+1,-1,data_per_batch) 
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
+    
     #Compute the nRMS as the median over the segments ignoring nans if present
     nRMS = np.sqrt(np.nanmedian(nRMS_reshaped ** 2, axis = 2))
-
-    #add 1 as last frequency bin for compatibility 
-    n_segments = nRMS_reshaped.shape[1]
-    nRMS = np.vstack((nRMS,np.ones((1,n_segments)))).reshape(-1, order = 'F')  
-    nRMS = generate_nrms_wseries(config, h, nRMS)
-
+    nRMS = generate_nrms_wseries(config, h, nRMS.reshape(-1, order = 'F'))
+    
+    #Convert to tf map types
     tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
     tf_map_whitened.w_mode = 1   #Change w_mode to 1 for compatibility with "Network.cc" 
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
