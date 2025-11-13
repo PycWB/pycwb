@@ -1,0 +1,316 @@
+from pycbc.types.timeseries import load_timeseries, TimeSeries 
+import numpy as np 
+from scipy.signal import correlate 
+import cmath 
+
+
+class Waveform(TimeSeries): 
+    """
+    Class to handle waveform data.
+    """
+    def __init__(self, data: TimeSeries):
+        super().__init__(data, data._delta_t, data.start_time)
+        self.findStartEnd() 
+        #Store time and phase shift to reverse the synchronization
+        self._total_time_shift = 0 
+        self._total_phase_shift = 0
+
+    #method to retrieve real gps times 
+
+    def syncWaveformOLD(self, reference_waveform, sync_phase = True): 
+        """
+        Synchronize this waveform with a reference waveform.
+        """
+        #
+        if not isinstance(reference_waveform, Waveform):
+            raise ValueError("Reference waveform must be an instance of Waveform.")
+        
+        if self.sample_rate != reference_waveform.sample_rate:
+            raise ValueError("Sample rates do not match.")
+        
+
+        #Resize to have same number of elements
+        n_zeros = np.abs(len(self) - len(reference_waveform))
+        if len(self) < len(reference_waveform):
+            # Resize this waveform to match the reference waveform
+            self.resize(len(reference_waveform)) 
+            self.roll( n_zeros // 2) #Center the waveform 
+            self._epoch = self._epoch - n_zeros // 2 * self._delta_t
+        elif len(self) > len(reference_waveform):
+            # Resize the reference waveform to match this waveform
+            reference_waveform.resize(len(self)) 
+            reference_waveform.roll(n_zeros // 2) #Center the waveform
+            reference_waveform._epoch = self._epoch - n_zeros // 2 * reference_waveform._delta_t
+        else: 
+            pass 
+
+        #self.alignStartTime(reference_waveform) #Needed for correct cross correlation computation 
+        self.alignStartTime(reference_waveform)
+        self.timeShift(self.computeTimeDifference(reference_waveform)) 
+        if sync_phase:
+            self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
+        #self.phaseShift(self.computePhaseDifference(reference_waveform))
+
+    def syncWaveform(self, reference_waveform, sync_phase = True): 
+        """
+        Synchronize this waveform with a reference waveform.
+        """
+        #
+        if not isinstance(reference_waveform, Waveform):
+            raise ValueError("Reference waveform must be an instance of Waveform.")
+        
+        if self.sample_rate != reference_waveform.sample_rate:
+            raise ValueError("Sample rates do not match.")
+        
+        self.alignStartTime(reference_waveform)
+        self.timeShift(self.computeTimeDifference(reference_waveform)) 
+        if sync_phase:
+            self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
+        #self.phaseShift(self.computePhaseDifference(reference_waveform))
+
+
+    def retriveOnsourceTimes(self): 
+        """
+        Retireve the original on-source time of the waveform, re-establishing original
+        """
+        self.data = self.phaseShift(-self._total_phase_shift)
+        self.timeShift(-self._total_time_shift)
+
+    def fft(self, direct = True): 
+        """
+        Compute the FFT of the waveform data.
+        """
+        if direct: 
+            if hasattr(self, 'frequencies'):
+                "Direct FFT is already computed."
+                return 
+            self.frequencies = np.fft.rfftfreq(len(self.data), d=self.delta_t)
+            self.data = np.fft.rfft(self.data, norm = 'ortho')
+        if not direct: 
+            if not hasattr(self, 'frequencies'):
+                raise ValueError("Direct FFT not computed. Call fft(direct=True) first.")
+            self.data = np.fft.irfft(self.data, norm = 'ortho')
+            del(self.frequencies)
+        return self 
+
+    def alignStartTime(self, reference_waveform): 
+        """
+        Prepend and append zeros to the waveforms to align them in time.
+        """
+        time_shift = reference_waveform.start_time - self.start_time
+        if time_shift != 0:
+            # Shift the waveform in time
+            self.timeShift(time_shift)
+        
+        
+    def findStartEnd(self, rtol = 1e-3): 
+        """
+        Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
+        and creates relative attributes in the waveform object.
+        """
+        non_zero_indices = np.where(np.abs(self.data) > self.data.max() * rtol)[0]
+        if non_zero_indices.size == 0:
+            raise ValueError("Waveform data is all zeros or below the threshold.")
+        self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
+        self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
+        return self.tstart, self.tend     
+
+
+    def alignStartTime(self, reference_waveform):
+        """
+        Compute the difference in start time between this waveform and a reference waveform
+        """
+        #Using time shift presereves reverisibility even if waveform is sliced 
+        time_shift = reference_waveform.start_time - self.start_time
+        if time_shift != 0:
+            self.timeShift(time_shift) 
+        
+
+    def _computeCrossCorrelationOLD(self, reference_waveform):
+        """
+        Compute the cross-correlation between this waveform and another waveform.
+        """
+        if self.data.size != reference_waveform.data.size:
+            raise ValueError("Waveforms must have the same size for cross-correlation.")
+        
+        if self.start_time != reference_waveform.start_time:
+            raise ValueError("Waveforms must have the same start time for cross-correlation.")
+        
+        return correlate(reference_waveform.data, self.data, method = 'fft', mode="full")
+
+
+    def computeTimeDifferenceOLD(self, reference_waveform):
+        """
+        Compute the time difference between this waveform and another waveform.
+        """
+        #order in CC is to preserve + sign in time shift 
+        cc = self._computeCrossCorrelation(reference_waveform)
+        lags = np.arange(-len(cc)/ 2, len(cc) / 2) / self.sample_rate # in samples
+        max_index = cc.argmax()
+        time_shift = lags[max_index]
+        return time_shift
+
+
+    def _computeCrossCorrelation(self, reference_waveform):
+        """
+        Compute the cross-correlation between this waveform and another waveform.
+        """
+        if self.start_time != reference_waveform.start_time:
+            raise ValueError("Waveforms must have the same start time for cross-correlation.")
+        
+        return correlate(reference_waveform.data, self.data, method='fft', mode='full')
+
+
+    def computeTimeDifference(self, reference_waveform):
+        """
+        Compute the time difference between this waveform and another waveform.
+        """
+        cc = self._computeCrossCorrelation(reference_waveform)
+
+        # length of signals
+        n1 = len(reference_waveform.data)
+        n2 = len(self.data)
+
+        # correct lag array: from -(n2-1) to (n1-1)
+        lags = np.arange(-(n2-1), n1) / self.sample_rate  
+
+        max_index = cc.argmax()
+        time_shift = lags[max_index]
+        return time_shift
+
+    def timeShift(self, shift): 
+        """
+        Shift the waveform in time by a specified amount.
+        """
+        if shift == 0: return 
+        self.start_time += shift 
+        self._total_time_shift += shift
+        self.findStartEnd() #updated start, end indeces after time shifting 
+
+
+    def computePhaseDifference(self, reference_waveform): 
+        """
+        Synchronize the phase of this waveform with another waveform.
+        """
+        #Reinitialize the waveforms to the same time slice
+        start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
+        this = self.__class__(self.time_slice(start, end)) 
+        reference = self.__class__(reference_waveform.time_slice(start,end))
+        #Compute 90_degree phase shifted versions of the waveforms
+        this_90 = this.phaseShift(np.pi / 2)
+        reference_90 = reference.phaseShift(np.pi / 2) 
+
+        num, den = 0, 0
+        for i in range(np.size(this)):
+            try: 
+                num += this[i] * reference_90[i] - this_90[i] * reference[i]
+                den += this[i] * reference[i] + this_90[i] * reference_90[i]
+            except IndexError: 
+                pass 
+        #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
+        phase_diff = - np.arctan2(num, den)
+    
+        return phase_diff   
+
+
+    def phaseShift(self, shift):
+        """
+        Shift the phase of the waveform by a specified amount.
+        """
+        #Raise error if shift is not a number 
+        if not isinstance(shift, (int, float)):
+            raise ValueError("Shift must be a numeric value.")
+
+        #If shift is zero, do nothing        
+        if shift == 0: return self.data 
+        #Apply phase shift to the waveform data
+        data_fft = np.fft.rfft(self.data)
+        #Apply the phase shift to the FFT data
+        data_fft_shifted = data_fft * cmath.rect(1, shift)
+        #Store in the total phase shift
+        self._total_phase_shift += shift
+        #Convert back to time domain
+        return np.fft.irfft(data_fft_shifted, n = len(self.data)) 
+        
+
+
+    def resample(self, new_sample_rate):
+        """
+        Resample the waveform to a new sample rate.
+        """
+        if not isinstance(new_sample_rate, (int, float)) or new_sample_rate <= 0:
+            raise ValueError("New sample rate must be a positive numeric value.")
+        
+        resampled_ts = self.resample(1 / new_sample_rate)
+        return self.__class__(resampled_data)
+
+
+    def match(self, other_waveform): 
+        """
+        Check if this waveform matches another waveform.
+        """
+        if not isinstance(other_waveform, Waveform):
+            raise ValueError("Can only match with another waveform instance.")
+        
+        # Check if the data arrays are equal
+        num = np.sum(self.data * other_waveform.data)
+        den = np.sqrt(np.sum(self.data**2) * np.sum(other_waveform.data**2))
+        return num / den 
+
+    def RMS(self, norm = None):
+        squareSum = np.sum(self.data[self.istart:self.istop]**2)
+        if norm is None: 
+            pass 
+        if norm == "N":
+            squareSum /= self.data.size 
+        else: 
+            raise ValueError("Invalid normalization type. Use 'N' for normalized or None for raw RMS.") 
+        return np.sqrt(squareSum) 
+
+    def rollingRMS(self, norm = None): 
+        cumsum = np.cumsum(self.data[self.istart:self.istop] ** 2) 
+        if norm is None: 
+            pass 
+        elif norm == "N":
+            cumsum /= N 
+        else:
+            raise ValueError("Invalid normalization type. Use 'N' for normalized or 'R' for raw RMS.")
+        return np.sqrt(cumsum)    
+
+    def max(self): 
+        """
+        Return the maximum value of the waveform.
+        """
+        return self.data.max() 
+
+
+    def argmax(self): 
+        """
+        Return the index of the maximum value of the waveform.
+        """
+        return self.data.argmax() 
+
+
+    def copy(self): 
+        """
+        Return a copy of the waveform.
+        """
+        copy = self.__class__(self) 
+        copy._total_time_shift = self._total_time_shift
+        copy._total_phase_shift = self._total_phase_shift
+        return self.__class__(self)
+
+    def __len__(self):
+        return len(self.data)
+
+
+def load_waveform(filename, resample = None):
+    """
+    Load a waveform from a file.
+    """
+    # Assuming the waveform is stored in a file, you can use pycbc's load_timeseries
+    # to load the waveform data.
+    data = load_timeseries(filename)
+    if isinstance(resample, int) or isinstance(resample, float):
+        data = data.resample(resample)
+    return Waveform(data) 
