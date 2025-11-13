@@ -57,11 +57,11 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
         for i, ts in enumerate(reconstructed_waves):
             logger.info(f"Saving reconstructed waveform for {ifos[i]}")
-            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}.txt")
+            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}.{config.save_waveform_format}")
 
         for i, ts in enumerate(reconstructed_waves_whiten):
             logger.info(f"Saving reconstructed waveform for {ifos[i]} (whitened)")
-            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}_whitened.txt")
+            ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}_whitened.{config.save_waveform_format}")
 
         # for i, (hp, hc) in enumerate(zip(reconstructed_waves_whiten_00, reconstructed_waves_whiten_90)):
         #     # save strain = hp + 1j hc
@@ -103,7 +103,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
             if save_injection:
                 for i, strain in enumerate(strains):
                     logger.info(f"Saving injected strain for {ifos[i]}")
-                    strain.save(f"{trigger_folder}/injected_strain_{ifos[i]}.txt")
+                    strain.save(f"{trigger_folder}/injected_strain_{ifos[i]}.{config.save_waveform_format}")
 
             if plot_injection:
                 from matplotlib import pyplot as plt
