@@ -47,7 +47,7 @@ schema = {
         },
         "save_waveform_format": {
             "enum": ["txt", "hdf"],
-            "description": "format to save waveform from triggers, options are: 'txt'",
+            "description": "format to save waveform from triggers, options are: 'txt' and 'hdf'",
             "default": "hdf"
         },
         "plot_waveform": {
