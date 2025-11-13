@@ -7,6 +7,9 @@ import cmath
 class Waveform(TimeSeries): 
     """
     Class to handle waveform data.
+
+    :param data: data
+    :type data: pycbc.types.timeseries.TimeSeries
     """
     def __init__(self, data: TimeSeries):
         super().__init__(data, data._delta_t, data.start_time)
@@ -20,6 +23,11 @@ class Waveform(TimeSeries):
     def syncWaveformOLD(self, reference_waveform, sync_phase = True): 
         """
         Synchronize this waveform with a reference waveform.
+
+        :param reference_waveform: The reference waveform to synchronize with.
+        :type reference_waveform: Waveform
+        :param sync_phase: Whether to synchronize the phase as well. Default is True.
+        :type sync_phase: bool
         """
         #
         if not isinstance(reference_waveform, Waveform):
@@ -54,6 +62,11 @@ class Waveform(TimeSeries):
     def syncWaveform(self, reference_waveform, sync_phase = True): 
         """
         Synchronize this waveform with a reference waveform.
+
+        :param reference_waveform: The reference waveform to synchronize with.
+        :type reference_waveform: Waveform
+        :param sync_phase: Whether to synchronize the phase as well. Default is True.
+        :type sync_phase: bool
         """
         #
         if not isinstance(reference_waveform, Waveform):
@@ -66,7 +79,6 @@ class Waveform(TimeSeries):
         self.timeShift(self.computeTimeDifference(reference_waveform)) 
         if sync_phase:
             self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
-        #self.phaseShift(self.computePhaseDifference(reference_waveform))
 
 
     def retriveOnsourceTimes(self): 
@@ -79,34 +91,52 @@ class Waveform(TimeSeries):
     def fft(self, direct = True): 
         """
         Compute the FFT of the waveform data.
+
+        :param direct: If True, compute the direct FFT. If False, compute the inverse FFT.
+        :type direct: bool
+        :return: The waveform with FFT applied.
+        :rtype: Waveform
         """
+        
+        #Compute direct FFT and store frequencies in attribute
         if direct: 
             if hasattr(self, 'frequencies'):
                 "Direct FFT is already computed."
                 return 
             self.frequencies = np.fft.rfftfreq(len(self.data), d=self.delta_t)
             self.data = np.fft.rfft(self.data, norm = 'ortho')
+
+        #Compute inverse FFT. 
         if not direct: 
             if not hasattr(self, 'frequencies'):
                 raise ValueError("Direct FFT not computed. Call fft(direct=True) first.")
             self.data = np.fft.irfft(self.data, norm = 'ortho')
             del(self.frequencies)
+
         return self 
 
     def alignStartTime(self, reference_waveform): 
         """
-        Prepend and append zeros to the waveforms to align them in time.
+        Align the start time of this waveform with a reference waveform.
+
+        :param reference_waveform: The reference waveform to align with.
+        :type reference_waveform: Waveform
         """
+
         time_shift = reference_waveform.start_time - self.start_time
         if time_shift != 0:
-            # Shift the waveform in time
             self.timeShift(time_shift)
-        
+
         
     def findStartEnd(self, rtol = 1e-3): 
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
         and creates relative attributes in the waveform object.
+
+        :param rtol: relative tolerance to define non-zero values
+        :type rtol: float
+        :return: (tstart, tend)
+        :rtype: tuple containing the estimated start and end times
         """
         non_zero_indices = np.where(np.abs(self.data) > self.data.max() * rtol)[0]
         if non_zero_indices.size == 0:
@@ -115,40 +145,6 @@ class Waveform(TimeSeries):
         self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
         return self.tstart, self.tend     
 
-
-    def alignStartTime(self, reference_waveform):
-        """
-        Compute the difference in start time between this waveform and a reference waveform
-        """
-        #Using time shift presereves reverisibility even if waveform is sliced 
-        time_shift = reference_waveform.start_time - self.start_time
-        if time_shift != 0:
-            self.timeShift(time_shift) 
-        
-
-    def _computeCrossCorrelationOLD(self, reference_waveform):
-        """
-        Compute the cross-correlation between this waveform and another waveform.
-        """
-        if self.data.size != reference_waveform.data.size:
-            raise ValueError("Waveforms must have the same size for cross-correlation.")
-        
-        if self.start_time != reference_waveform.start_time:
-            raise ValueError("Waveforms must have the same start time for cross-correlation.")
-        
-        return correlate(reference_waveform.data, self.data, method = 'fft', mode="full")
-
-
-    def computeTimeDifferenceOLD(self, reference_waveform):
-        """
-        Compute the time difference between this waveform and another waveform.
-        """
-        #order in CC is to preserve + sign in time shift 
-        cc = self._computeCrossCorrelation(reference_waveform)
-        lags = np.arange(-len(cc)/ 2, len(cc) / 2) / self.sample_rate # in samples
-        max_index = cc.argmax()
-        time_shift = lags[max_index]
-        return time_shift
 
 
     def _computeCrossCorrelation(self, reference_waveform):
@@ -163,7 +159,7 @@ class Waveform(TimeSeries):
 
     def computeTimeDifference(self, reference_waveform):
         """
-        Compute the time difference between this waveform and another waveform.
+        Compute the time difference between this waveform and another waveform using cross-correlation.
         """
         cc = self._computeCrossCorrelation(reference_waveform)
 
@@ -185,7 +181,8 @@ class Waveform(TimeSeries):
         if shift == 0: return 
         self.start_time += shift 
         self._total_time_shift += shift
-        self.findStartEnd() #updated start, end indeces after time shifting 
+        #updated start, end indeces after time shifting 
+        self.findStartEnd() 
 
 
     def computePhaseDifference(self, reference_waveform): 
@@ -241,13 +238,14 @@ class Waveform(TimeSeries):
         if not isinstance(new_sample_rate, (int, float)) or new_sample_rate <= 0:
             raise ValueError("New sample rate must be a positive numeric value.")
         
-        resampled_ts = self.resample(1 / new_sample_rate)
+        resampled_data = self.resample(1 / new_sample_rate)
         return self.__class__(resampled_data)
 
 
-    def match(self, other_waveform): 
+
+    def overlap(self, other_waveform): 
         """
-        Check if this waveform matches another waveform.
+        Compute the overlap between this waveform and another waveform.
         """
         if not isinstance(other_waveform, Waveform):
             raise ValueError("Can only match with another waveform instance.")
@@ -257,24 +255,36 @@ class Waveform(TimeSeries):
         den = np.sqrt(np.sum(self.data**2) * np.sum(other_waveform.data**2))
         return num / den 
 
-    def RMS(self, norm = None):
+
+    def RMS(self, norm = False):
+        """ 
+        Return the RMS value of the waveform.
+
+        :param norm: If True, normalize by the number of samples.
+        :type norm: bool
+        :return: RMS value
+        :rtype: float
+        """
         squareSum = np.sum(self.data[self.istart:self.istop]**2)
-        if norm is None: 
-            pass 
-        if norm == "N":
+
+        if norm:
             squareSum /= self.data.size 
-        else: 
-            raise ValueError("Invalid normalization type. Use 'N' for normalized or None for raw RMS.") 
+
         return np.sqrt(squareSum) 
 
-    def rollingRMS(self, norm = None): 
+
+    def rollingRMS(self, norm = False): 
+        """
+        Return the rolling RMS of the waveform.
+
+        :param norm: If True, normalize by the number of samples.
+        :type norm: bool
+        :return: rolling RMS array
+        :rtype: np.ndarray
+        """
         cumsum = np.cumsum(self.data[self.istart:self.istop] ** 2) 
-        if norm is None: 
-            pass 
-        elif norm == "N":
-            cumsum /= N 
-        else:
-            raise ValueError("Invalid normalization type. Use 'N' for normalized or 'R' for raw RMS.")
+        if norm: 
+            cumsum /= self.data.size
         return np.sqrt(cumsum)    
 
     def max(self): 
