@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt 
 import numpy as np 
-from Postprocess_Functions import * 
+from pycwb.modules.post_production.waveform_reconstruction import * 
 #from plotting import plot_styles, default_plot_config
 
 
