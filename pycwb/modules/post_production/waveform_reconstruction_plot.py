@@ -32,14 +32,14 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed, confidence_level, method = percentile_method)  
     mean = np.mean(reconstructed, axis=0)
 
+    x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
     #plot the confidence intervals, mean and median 
-    ax.fill_between(injected.sample_times, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI') 
-    ax.plot(injected.sample_times, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
-    ax.plot(injected.sample_times, injected, label='Injected', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'], alpha=plot_kwargs['injected_alpha']) 
-
+    ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI') 
+    ax.plot(x_values, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.plot(x_values, injected, label='Injected', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'], alpha=plot_kwargs['injected_alpha']) 
     if plot_median: 
         median = np.median(reconstructed, axis=0) 
-        ax.plot(injected.sample_times, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
+        ax.plot(x_values, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
 
     #Visualization 
     ax.grid(True)
@@ -83,11 +83,13 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
     bias /= injected if normalize else bias 
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method) 
     mean_bias = np.mean(bias, axis=0) 
-    
+
+    x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
+
     #Plot 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize']) 
-    ax.fill_between(injected.sample_times, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
-    ax.plot(injected.sample_times, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])  
+    ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+    ax.plot(x_values, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])  
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.grid(True)
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
@@ -172,7 +174,7 @@ def plot_auto_overlap(reconstructed, injected):
     return fig, to_save 
 
 
-def plot_cumulative_hrss(reconstructed, injected, domanin, confidence_level, percentile_method, plot_median=True):
+def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, percentile_method, plot_median=True):
     """Plot the cumulative distribution of the reconstructed HRSS compared to the injected HRSS.
     """
     #Compute relevant statistics
@@ -184,15 +186,16 @@ def plot_cumulative_hrss(reconstructed, injected, domanin, confidence_level, per
     mean_hrss = reconstructed_hrss.mean(axis=0) 
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed_hrss, confidence_level=confidence_level, method=percentile_method) 
 
+    x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
-    ax.plot(injected.sample_times, injected_hrss / injected_hrss[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
-    ax.plot(injected.sample_times, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
-    ax.fill_between(injected.sample_times, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{plot_kwargs["CL"]}% CI')
+    ax.plot(x_values, injected_hrss / injected_hrss[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
+    ax.plot(x_values, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{plot_kwargs["CL"]}% CI')
     
     if plot_median:
         median_hrss = np.median(reconstructed_hrss, axis=0) 
-        ax.plot(injected.sample_times, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
+        ax.plot(x_values, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
     
     #Visulization 
     ax.grid(True)
