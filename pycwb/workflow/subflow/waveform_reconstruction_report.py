@@ -42,7 +42,7 @@ def process_strain(folder, ifo, reference_folder, args):
     if args.use_relative_reference:
         logger.info("Using relative reference for waveform reconstruction analysis.")
         #Load all the reconstructed and injected waveforms, synchronize and slice them
-        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True) 
+        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True, format = args.waveform_format) 
         reconstructed_waveforms = sync_waveforms(reconstructed_waveforms, injected_waveforms, sync_phase = True)
         reconstructed_waveforms_sliced, injected_waveforms = slice_waveforms(reconstructed_waveforms, injected_waveforms) 
 
@@ -60,7 +60,7 @@ def process_strain(folder, ifo, reference_folder, args):
     
         #Load all the reconstructed waveforms if not already loaded in the previous step
         if "reconstructed_waveforms" not in locals():
-            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False) 
+            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False, format = args.waveform_format) 
             logger.info(f"Loaded {len(reconstructed_waveforms)} reconstructed waveforms for {ifo}.")
         #Load the reference injected waveform from a common trigger folder. If no folder is given, take the first one in the list 
         if reference_folder is None:
@@ -153,6 +153,7 @@ def main():
     parser.add_argument("folder", type=str, help="Folder containing the analysis")
     parser.add_argument("--plot_median", type=bool, default=True, help="Whether to plot the median waveform")
     parser.add_argument("--ConfidenceLevel", type=float, default=0.9, help="Confidence level for the analysis")
+    parser.add_argument("--waveform_format", type=str, default="hdf", help="Format of the waveform files. Options are 'hdf' or 'txt'")
     parser.add_argument("--CL Method", type=str, default="percentile", help="Method to compute the confidence level. Options are 'percentile', 'lower', 'upper'")
     parser.add_argument("-use_absolute_reference", dest="use_absolute_reference", action="store_true", help="Whether to use absolute reference")
 
