@@ -7,13 +7,15 @@ import healpy as hp  # Optional for custom maps
 
 logger = logging.getLogger(__name__)
 
+#TODO: Modify ra dec to phi theta  
 
 def generate_sky_distribution(sky_distribution_config, n_samples):
     """
     Generate a sky distribution of n_samples points. The supported distribution types are:
-    - existing: Load RA/Dec from existing data
+    - existing: Load phi/Theta from existing data
     - random_all_sky: Randomly distribute points in the whole sky
     - patch: Generate points in a small circle around the center
+    - fixed: Fixed phi/Theta for all injections
     - custom: Sample from a HEALPix map
 
     :param sky_distribution_config: The sky distribution configuration
@@ -30,19 +32,19 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         unit = sky_distribution_config.get('unit', None)
         if unit not in ['rad', 'deg']:
             raise ValueError("Must specify the unit of the existing data, either 'rad' or 'deg'")
-        ra, dec = np.loadtxt(sky_distribution_config['existing_path'], unpack=True)
+        phi, theta = np.loadtxt(sky_distribution_config['existing_path'], unpack=True)
 
         if unit == 'deg':
-            logger.info("Converting RA/Dec from degrees to radians")
-            ra = np.deg2rad(ra)
-            dec = np.deg2rad(dec)
-        return ra, dec
+            logger.info("Converting phi/theta from degrees to radians")
+            phi = np.deg2rad(phi)
+            theta = np.deg2rad(theta)
+        return phi, theta
     
     elif dist_type == "UniformAllSky":
         logger.info("Generating uniform distribution across the entire sky")
-        ra = np.random.uniform(0, 360, n_samples)
-        dec = np.degrees(np.arcsin(2*np.random.uniform(0, 1, n_samples) - 1))
-        return np.deg2rad(ra), np.deg2rad(dec)
+        phi = np.random.uniform(0, 360, n_samples)
+        theta = np.degrees(np.arcsin(2*np.random.uniform(0, 1, n_samples) - 1))
+        return np.deg2rad(phi), np.deg2rad(theta)
     
     elif dist_type == "Patch":
         logger.info("Generating points in a small circular patch around a center RA/Dec")
@@ -53,25 +55,38 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
             raise ValueError("Must specify the unit of the patch, either 'rad' or 'deg'")
         if 'center' not in sky_distribution_config['patch'] or 'radius' not in sky_distribution_config['patch']:
             raise ValueError("Must specify the center and radius of the patch")
-        if 'ra' not in sky_distribution_config['patch']['center'] or 'dec' not in sky_distribution_config['patch']['center']:
+        if 'phi' not in sky_distribution_config['patch']['center'] or 'theta' not in sky_distribution_config['patch']['center']:
             raise ValueError("Must specify the center RA and Dec of the patch")
 
-        center_ra = sky_distribution_config['patch']['center']['ra']
-        center_dec = sky_distribution_config['patch']['center']['dec']
+        center_phi = sky_distribution_config['patch']['center']['phi']
+        center_theta = sky_distribution_config['patch']['center']['theta']
         radius = sky_distribution_config['patch']['radius']
 
         if unit == 'rad':
-            logger.info(f"Center RA: {center_ra} radians, Center Dec: {center_dec} radians, Radius: {radius} radians")
-            logger.info("Converting center RA/Dec and radius from radians to degrees")
-            center_ra = np.rad2deg(center_ra)
-            center_dec = np.rad2deg(center_dec)
-            radius = np.rad2deg(radius)
+            logger.info(f"Center phi: {center_phi} radians, Center theta: {center_theta} radians, Radius: {radius} radians")
+            logger.info("Converting center Phi/Theta and radius from radians to degrees")
+            center_phi = np.rad2deg(center_phi)
+            center_theta = np.rad2deg(center_theta)
+            radius = np.rad2deg(radius) #try radius 0 
        
-        logger.info(f"Center RA: {center_ra} degrees, Center Dec: {center_dec} degrees, Radius: {radius} degrees")
-        logger.info("Generating points in a small circular patch around a center RA/Dec")
+        logger.info(f"Center Phi: {center_phi} degrees, Center Theta: {center_theta} degrees, Radius: {radius} degrees")
+        logger.info("Generating points in a small circular patch around a center Phi/Theta")
         # Generate points in a small circle around the center
-        ra, dec = sample_uniform_sky_area(center_ra, center_dec, radius, n_samples)
-        return np.deg2rad(ra), np.deg2rad(dec)
+        phi, theta = sample_uniform_sky_area(center_phi, center_theta, radius, n_samples)
+        return np.deg2rad(phi), np.deg2rad(theta)
+    
+    elif dist_type == "Fixed": 
+        unit = sky_distribution_config["coordinates"].get('unit', None)
+        if unit not in ['rad', 'deg']:
+            raise ValueError("Must specify the unit of the patch, either 'rad' or 'deg'")
+        
+        phi = sky_distribution_config['coordinates']['sky_loc']['phi']
+        theta = sky_distribution_config['coordinates']['sky_loc']['theta'] 
+        if unit == 'deg': 
+            logger.info("Converting phi/theta from degrees to radians")
+            phi = np.deg2rad(phi)
+            theta = np.deg2rad(theta)
+        return np.repeat(phi, n_samples), np.repeat(theta, n_samples)
     
     elif dist_type == "Custom":
         logger.info(f"Sampling from a custom HEALPix map: {sky_distribution_config['custom']['healpix_map']}")
@@ -81,9 +96,9 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         npix = hp.nside2npix(nside)
         indices = np.random.choice(npix, size=n_samples, p=skymap)
         theta, phi = hp.pix2ang(nside, indices)
-        ra = np.degrees(phi)
-        dec = np.degrees(np.pi/2 - theta)
-        return np.deg2rad(ra), np.deg2rad(dec)
+        phi = np.degrees(phi)
+        theta = np.degrees(np.pi/2 - theta)
+        return np.deg2rad(phi), np.deg2rad(theta)
     
     else:
         raise ValueError(f"Unknown distribution type: {dist_type}")
@@ -100,33 +115,33 @@ def distribute_injections_on_sky(injections, sky_locations, shuffle=True, coords
     :param coordsys: The coordinate system of the sky locations
     """
     logger.info(f"Distributing {len(injections)} injections on sky locations with coordsys: {coordsys}")
-    ra = sky_locations[0]
-    dec = sky_locations[1]
+    phi = sky_locations[0]
+    theta = sky_locations[1]
 
-    if len(injections) != len(ra) or len(injections) != len(dec):
+    if len(injections) != len(phi) or len(injections) != len(theta):
         raise ValueError("The number of injections and sky locations must be the same.")
     
     # distributed_injections = []
 
     # shuffle the sky locations
     if shuffle:
-        np.random.shuffle(ra)
-        np.random.shuffle(dec)
+        np.random.shuffle(phi)
+        np.random.shuffle(theta)
 
     if coordsys == 'icrs':
         # If the coordinate system is ICRS, save the sky location directly in ra and dec attributes
         for i, inj in enumerate(injections):
-            inj['ra'] = ra[i]
-            inj['dec'] = dec[i]
+            inj['ra'] = phi[i]
+            inj['dec'] = theta[i]
     else:
         # If the coordinate system is not ICRS, save the sky location in sky_loc attribute and add the coordsys for later conversion
         for i, inj in enumerate(injections):
-            inj['sky_loc'] = [ra[i], dec[i]]
+            inj['sky_loc'] = [phi[i], theta[i]]
             inj['coordsys'] = coordsys
 
 
 
-def sample_uniform_sky_area(ra_center, dec_center, radius, n_samples=1):
+def sample_uniform_sky_area(phi_center, theta_center, radius, n_samples=1):
     """
     Sample points uniformly in area within a circular patch on the celestial sphere.
 
@@ -139,37 +154,37 @@ def sample_uniform_sky_area(ra_center, dec_center, radius, n_samples=1):
     Returns:
     np.ndarray: (n_samples, 2) array with sampled (RA, Dec) coordinates in degrees.
     """
-    # Convert degrees to radians
-    ra_center = np.radians(ra_center)
-    dec_center = np.radians(dec_center)
+    # Convert degrees to radians 
+    phi_center = np.radians(phi_center) #B4: RA center
+    theta_center = np.radians(theta_center) #B4: Dec center
     radius = np.radians(radius)
     
     # Sample uniformly in cos(θ) and φ for area uniformity
-    cos_theta = np.random.uniform(np.cos(radius), 1, n_samples)
-    theta = np.arccos(cos_theta)  # Convert back to theta
-    phi = np.random.uniform(0, 2 * np.pi, n_samples)
+    cos_alpha = np.random.uniform(np.cos(radius), 1, n_samples) #renamed theta -> alpha 
+    alpha = np.arccos(cos_alpha)  # Convert back to theta    #renamed theta -> alpha 
+    beta = np.random.uniform(0, 2 * np.pi, n_samples)         #renamed phi -> beta
 
     # Convert to Cartesian coordinates
-    x = np.sin(theta) * np.cos(phi)
-    y = np.sin(theta) * np.sin(phi)
-    z = np.cos(theta)
+    x = np.sin(alpha) * np.cos(beta)
+    y = np.sin(alpha) * np.sin(beta)
+    z = np.cos(alpha)
 
     # Rotate from (0,0,1) to (RA_center, Dec_center)
-    sin_dec = np.sin(dec_center)
-    cos_dec = np.cos(dec_center)
-    sin_ra = np.sin(ra_center)
-    cos_ra = np.cos(ra_center)
+    sin_theta = np.sin(theta_center)
+    cos_theta = np.cos(theta_center)
+    sin_phi = np.sin(phi_center)
+    cos_phi = np.cos(phi_center)
 
-    x_new = sin_dec * cos_ra * x - sin_ra * y + cos_dec * cos_ra * z
-    y_new = sin_dec * sin_ra * x + cos_ra * y + cos_dec * sin_ra * z
-    z_new = - cos_dec * x + sin_dec * z
+    x_new = sin_theta * cos_phi * x - sin_phi * y + cos_theta * cos_phi * z
+    y_new = sin_theta * sin_phi * x + cos_phi * y + cos_theta * sin_phi * z
+    z_new = - cos_theta * x + sin_theta * z
 
     # Convert back to RA and Dec
-    dec_samples = np.arcsin(z_new)
-    ra_samples = np.arctan2(y_new, x_new)
+    theta_samples = np.arcsin(z_new)
+    phi_samples = np.arctan2(y_new, x_new)
 
     # Normalize RA to [0, 360) degrees
-    ra_samples = np.degrees(ra_samples) % 360
-    dec_samples = np.degrees(dec_samples)
+    phi_samples = np.degrees(phi_samples) % 360
+    theta_samples = np.degrees(theta_samples)
 
-    return np.array([ra_samples, dec_samples])
+    return np.array([phi_samples, theta_samples])
