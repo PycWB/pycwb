@@ -3,14 +3,14 @@
 from pycwb.types.waveform import Waveform, load_waveform 
 from tqdm import tqdm  # type: ignore
 import numpy as np  # type: ignore
+import logging 
 import os 
 
 #Put in a module ()
 
 #TODO: Implement whitened options 
-#TODO: Implement file extension options 
-#TODO: Implement args (or config) analysis options 
-
+    
+logger = logging.getLogger(__name__) 
 
 def save(figure, results_dictionary, directory, filename, extension = 'pdf'): 
     """Save the figure and results dictionary to the specified directory.
@@ -55,7 +55,6 @@ def load_waveforms(folder, ifo, load_injected = True, whitened = False, format =
     trigger_folders = os.listdir(folder)
     reconstructed_waveforms, injected = [], [] 
 
-    print(len(trigger_folders))
     for f in tqdm(trigger_folders, desc="Loading waveforms"):
 
         try: 
@@ -105,8 +104,8 @@ def sync_waveforms(waveforms, reference, sync_phase = True):
     
     else: 
         raise ValueError("Reference waveform must either be a single Waveform or a list of Waveforms with the same length as the waveforms to be synchronized.") 
-
-    print(f"Number of discarded waveforms during syncronization: {discarded_waveforms}")
+    if discarded_waveforms > 0:
+        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization due to errors .")
 
     return sync_waveforms 
 
@@ -161,8 +160,8 @@ def slice_waveforms(waveforms, reference_waveforms):
                 
     else: 
         raise ValueError("Reference waveform must either be a single Waveform or a list of Waveforms with the same length as the waveforms to be synchronized.")
-    print(f"Number of discarded waveforms: {discarded_waveforms}")
-    
+    if discarded_waveforms > 0:
+        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization due to errors .")    
 
     return sliced_list, reference_waveforms_
 
