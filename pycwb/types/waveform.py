@@ -61,7 +61,7 @@ class Waveform(TimeSeries):
         
         #Compute direct FFT and store frequencies in attribute
         if direct: 
-            if hasattr(self, 'frequencies'):
+            if hasattr(self, 'sample_frequencies'):
                 "Direct FFT is already computed."
                 return 
             self.frequencies = np.fft.rfftfreq(len(self.data), d=self.delta_t)
@@ -69,10 +69,10 @@ class Waveform(TimeSeries):
 
         #Compute inverse FFT. 
         if not direct: 
-            if not hasattr(self, 'frequencies'):
+            if not hasattr(self, 'sample_frequencies'):
                 raise ValueError("Direct FFT not computed. Call fft(direct=True) first.")
             self.data = np.fft.irfft(self.data, norm = 'ortho')
-            del(self.frequencies)
+            del(self.sample_frequencies)
 
         return self 
 
@@ -90,7 +90,7 @@ class Waveform(TimeSeries):
             self.timeShift(time_shift)
 
         
-        
+
     def findStartEnd(self, rtol = 1e-3): 
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
