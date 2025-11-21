@@ -1,8 +1,8 @@
 #Postprocessing for waveform reconstruction 
 
 from pycwb.types.waveform import Waveform, load_waveform 
-from tqdm import tqdm 
-import numpy as np 
+from tqdm import tqdm  # type: ignore
+import numpy as np  # type: ignore
 import os 
 
 #Put in a module ()
@@ -19,7 +19,7 @@ def save(figure, results_dictionary, directory, filename, extension = 'pdf'):
     results_dir = os.path.join(directory, 'reports', 'waveform_reconstruction_results')
 
     if not os.path.exists(plots_dir) or not os.path.exists(results_dir, exist_ok=True): 
-        create_save_directory(directory)
+        create_save_directories(directory)
 
     #Save figure
     figure_path = os.path.join(directory,  f'{filename}.{extension}', bbox_inches='tight') 
@@ -30,7 +30,7 @@ def save(figure, results_dictionary, directory, filename, extension = 'pdf'):
     np.savez(results_path, **results_dictionary)
 
 
-def create_save_directory(analysis_directory): 
+def create_save_directories(analysis_directory): 
     """Create a directory for saving plots and results.
 
     Parameters
@@ -48,7 +48,7 @@ def create_save_directory(analysis_directory):
     os.makedirs(results_directory, exist_ok=True)
 
 
-def load_waveforms(folder, ifo, load_injected = True, whitened = False): 
+def load_waveforms(folder, ifo, load_injected = True, whitened = False, format = 'hdf'): 
     """
     Load reconstructed waveforms from a given folder.
     """
@@ -59,8 +59,8 @@ def load_waveforms(folder, ifo, load_injected = True, whitened = False):
     for f in tqdm(trigger_folders, desc="Loading waveforms"):
 
         try: 
-            reconstructed_file_name = "reconstructed_waveform_{ifo}_whitened.hdf" if whitened else f"reconstructed_waveform_{ifo}.txt"
-            injected_file_name = f"injected_strain_{ifo}.txt" 
+            reconstructed_file_name = f"reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
+            injected_file_name = f"injected_strain_{ifo}.{format}" 
            
             #load reconstructed waveforms (r) for the selected trigger folder and ifo 
             r_waveform = load_waveform(os.path.join(folder,f, reconstructed_file_name))
@@ -257,4 +257,3 @@ def compute_hrss(waveform, delta_t):
 
 
 
-    os.makedirs(results_directory, exist_ok=True)
