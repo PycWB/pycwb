@@ -1,17 +1,51 @@
 #Postprocessing for waveform reconstruction 
 
-from Waveform import Waveform, load_waveform 
-import numpy as np 
-from numpy.linalg import norm
-import os 
+from pycwb.types.waveform import Waveform, load_waveform 
 from tqdm import tqdm 
-from argparse import ArgumentParser
+import numpy as np 
+import os 
 
 #Put in a module ()
 
 #TODO: Implement whitened options 
 #TODO: Implement file extension options 
 #TODO: Implement args (or config) analysis options 
+
+
+def save(figure, results_dictionary, directory, filename, extension = 'pdf'): 
+    """Save the figure and results dictionary to the specified directory.
+    """
+    plots_dir = os.path.join(directory, 'reports', 'waveform_reconstruction_plots')
+    results_dir = os.path.join(directory, 'reports', 'waveform_reconstruction_results')
+
+    if not os.path.exists(plots_dir) or not os.path.exists(results_dir, exist_ok=True): 
+        create_save_directory(directory)
+
+    #Save figure
+    figure_path = os.path.join(directory,  f'{filename}.{extension}', bbox_inches='tight') 
+    figure.savefig(figure_path)
+
+    #Save results dictionary as a npz file
+    results_path = os.path.join(directory, f"{filename}.npz")
+    np.savez(results_path, **results_dictionary)
+
+
+def create_save_directory(analysis_directory): 
+    """Create a directory for saving plots and results.
+
+    Parameters
+    ----------
+    analysis_directory : str
+        The base directory for analysis outputs. 
+    """
+    if not os.path.exists(analysis_directory):
+        raise FileNotFoundError(f"The provided analysis directory {analysis_directory} does not exist.")
+    
+    plot_directory = os.path.join(analysis_directory, 'reports', 'waveform_reconstruction_plots')
+    results_directory = os.path.join(analysis_directory, 'reports', 'waveform_reconstruction_results')     
+
+    os.makedirs(plot_directory, exist_ok=True)
+    os.makedirs(results_directory, exist_ok=True)
 
 
 def load_waveforms(folder, ifo, load_injected = True, whitened = False): 
@@ -133,7 +167,7 @@ def slice_waveforms(waveforms, reference_waveforms):
     return sliced_list, reference_waveforms_
 
 
-def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "shortest"):
+def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "percentiles"):
     """
     Compute the confidence intervals for a list of waveforms.
     """
@@ -220,3 +254,7 @@ def compute_hrss(waveform, delta_t):
     Compute the hrss for a list of waveforms.
     """
     return np.sqrt(np.sum(np.array(waveform) * np.conj(waveform)) * delta_t) 
+
+
+
+    os.makedirs(results_directory, exist_ok=True)
