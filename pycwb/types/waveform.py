@@ -18,46 +18,6 @@ class Waveform(TimeSeries):
         self._total_time_shift = 0 
         self._total_phase_shift = 0
 
-    #method to retrieve real gps times 
-
-    def syncWaveformOLD(self, reference_waveform, sync_phase = True): 
-        """
-        Synchronize this waveform with a reference waveform.
-
-        :param reference_waveform: The reference waveform to synchronize with.
-        :type reference_waveform: Waveform
-        :param sync_phase: Whether to synchronize the phase as well. Default is True.
-        :type sync_phase: bool
-        """
-        #
-        if not isinstance(reference_waveform, Waveform):
-            raise ValueError("Reference waveform must be an instance of Waveform.")
-        
-        if self.sample_rate != reference_waveform.sample_rate:
-            raise ValueError("Sample rates do not match.")
-        
-
-        #Resize to have same number of elements
-        n_zeros = np.abs(len(self) - len(reference_waveform))
-        if len(self) < len(reference_waveform):
-            # Resize this waveform to match the reference waveform
-            self.resize(len(reference_waveform)) 
-            self.roll( n_zeros // 2) #Center the waveform 
-            self._epoch = self._epoch - n_zeros // 2 * self._delta_t
-        elif len(self) > len(reference_waveform):
-            # Resize the reference waveform to match this waveform
-            reference_waveform.resize(len(self)) 
-            reference_waveform.roll(n_zeros // 2) #Center the waveform
-            reference_waveform._epoch = self._epoch - n_zeros // 2 * reference_waveform._delta_t
-        else: 
-            pass 
-
-        #self.alignStartTime(reference_waveform) #Needed for correct cross correlation computation 
-        self.alignStartTime(reference_waveform)
-        self.timeShift(self.computeTimeDifference(reference_waveform)) 
-        if sync_phase:
-            self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
-        #self.phaseShift(self.computePhaseDifference(reference_waveform))
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
         """
@@ -88,6 +48,7 @@ class Waveform(TimeSeries):
         self.data = self.phaseShift(-self._total_phase_shift)
         self.timeShift(-self._total_time_shift)
 
+
     def fft(self, direct = True): 
         """
         Compute the FFT of the waveform data.
@@ -115,6 +76,7 @@ class Waveform(TimeSeries):
 
         return self 
 
+
     def alignStartTime(self, reference_waveform): 
         """
         Align the start time of this waveform with a reference waveform.
@@ -127,6 +89,7 @@ class Waveform(TimeSeries):
         if time_shift != 0:
             self.timeShift(time_shift)
 
+        
         
     def findStartEnd(self, rtol = 1e-3): 
         """
