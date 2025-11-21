@@ -27,8 +27,9 @@ def generate_injection_list_from_config(injection_config, start_gps_time, end_gp
 
     # distribute injections on sky if specified
     if sky_distribution:
+        coordinate_system = sky_distribution.get('coordsys', 'icrs') 
         sky_locations = generate_sky_distribution(sky_distribution, len(injections))
-        distribute_injections_on_sky(injections, sky_locations)
+        distribute_injections_on_sky(injections, sky_locations, coordsys = coordinate_system)
 
     # distribute injections in GPS time
     time_distribution = injection_config.get('time_distribution', {})

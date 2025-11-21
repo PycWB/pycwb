@@ -9,6 +9,7 @@ import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from pycwb.utils.module import import_function
+from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
 from ...config import Config
 from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 
@@ -256,18 +257,32 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             hp = convert_to_pycbc_timeseries(generated_data.get('hp'))
             hc = convert_to_pycbc_timeseries(generated_data.get('hc'))
 
-            # extrinsic parameters required for projection
-            declination = injection.get('dec')
-            right_ascension = injection.get('ra')
-            polarization = injection.get('pol')
+            #check GPS time 
             gps_end_time = injection.get('gps_time')
-            if declination is None or right_ascension is None or polarization is None:
-                raise ValueError(f"ra, dec and pol are required in the injection parameters, while ra: {right_ascension}, dec: {declination}, pol: {polarization}")
             if gps_end_time is None:
                 raise ValueError("gps_time is required in the injection parameters")
             
-            # project to detector
+            #Check Coordinate system, default to 'icrs' if not provided
+            right_ascension = injection.get('ra') 
+            declination = injection.get('dec')
+            polarization = injection.get('pol')
+            coordinate_system = injection.get('coordsys', 'icrs')
+
+            #change coordinates to icrs 
+            if coordinate_system != 'icrs': 
+                logger.info(f"Converting from {coordinate_system} to celestial coordinates for injection")
+                
+                sky_loc = injection.get('sky_loc')
+                if sky_loc is None or len(sky_loc) != 2:
+                    raise ValueError(f"sky_loc = [phi,theta] is required in the injection parameters when coordinate system is {coordinate_system}, while sky_loc: {injection.get('sky_loc')}") 
+                right_ascension, declination = convert_to_celestial_coordinates(sky_loc[0],sky_loc[1],injection.get('gps_time'),coordinate_system)
+
+            if declination is None or right_ascension is None or polarization is None:
+                raise ValueError(f"ra, dec and pol are required in the injection parameters, while ra: {right_ascension}, dec: {declination}, pol: {polarization}")
+        
+            # project to detectors 
             logger.info(f"Projecting {generated_data.keys()} to detectors {ifos}")
+
             strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
     else:
         raise ValueError(f"Unsupported return type from waveform generator: {generated_data}, should be tuple for hp and hc, dict for more polarizations or list for strain")
