@@ -8,9 +8,7 @@ import logging
 
 #this in the subflow and is call via CLI 
 
-#TODO: Implement Logging 
 #TODO: Implement Single Folder Analysis (almost done)
-#TODO: Implement analysis args parameters from CLI  
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +17,7 @@ def find_common_dirs(folders):
     common_dirs = set.intersection(*sets)
     return list(common_dirs) 
 
-def process_strain(folder, ifo, reference_folder, args):  
+def process_strain(folder, ifo, reference_folder, confidence_level, waveform_format, use_absolute_reference, use_relative_reference, ordering, plot_median):  
     """
     Process the folder containing the waveforms and perform analysis.
     Parameters: 
@@ -28,6 +26,7 @@ def process_strain(folder, ifo, reference_folder, args):
         reference_folder (str, None): Path to the folder containing the reference injected waveforms. If None, the first folder in the list is used.
         args (argparse.Namespace): Command line arguments.
     """ 
+    logger.info(f"Processing waveform reconstruction analysis for {ifo} in folder: {folder}")
 
     #Define the folder for loadingthe data and saving the results 
     triggers_folder = os.path.join(folder, "trigger")
@@ -39,10 +38,10 @@ def process_strain(folder, ifo, reference_folder, args):
     os.makedirs(results_folder, exist_ok=True) 
 
     #If True, plots statistics of waveforms with respect to relative reference (Significantly increases computational times)
-    if args.use_relative_reference:
+    if use_relative_reference:
         logger.info("Using relative reference for waveform reconstruction analysis.")
         #Load all the reconstructed and injected waveforms, synchronize and slice them
-        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True, format = args.waveform_format) 
+        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True, format = waveform_format) 
         reconstructed_waveforms = sync_waveforms(reconstructed_waveforms, injected_waveforms, sync_phase = True)
         reconstructed_waveforms_sliced, injected_waveforms = slice_waveforms(reconstructed_waveforms, injected_waveforms) 
 
@@ -56,11 +55,11 @@ def process_strain(folder, ifo, reference_folder, args):
         del(reconstructed_waveforms_sliced)
         del(injected_waveforms)
 
-    if args.use_absolute_reference: 
+    if use_absolute_reference: 
     
         #Load all the reconstructed waveforms if not already loaded in the previous step
         if "reconstructed_waveforms" not in locals():
-            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False, format = args.waveform_format) 
+            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False, format = waveform_format) 
             logger.info(f"Loaded {len(reconstructed_waveforms)} reconstructed waveforms for {ifo}.")
         #Load the reference injected waveform from a common trigger folder. If no folder is given, take the first one in the list 
         if reference_folder is None:
@@ -84,17 +83,17 @@ def process_strain(folder, ifo, reference_folder, args):
         #Plot the time domain waveforms with CI 
         logger.info("Plotting time domain waveforms")
         twaveform_fig, twaveform_data = plot_waveform_reconstruction(reconstructed_waveforms, injected_waveform, domain = 'time',\
-                                                                     confidence_level = args.CL, percentile_method = args.CL_Method, plot_median = args.plot_median) 
+                                                                     confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median) 
         twaveform_fig.savefig(os.path.join(plots_folder, f"time_waveform_reconstruction_{ifo}.png"), bbox_inches='tight')
         np.savez(os.path.join(results_folder, f"time_waveform_reconstruction_{ifo}.npz"), **twaveform_data)
 
         #Plot the time domain bias with CI 
-        tbias_fig, tbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = args.CL, percentile_method = args.CL_Method, normalize = False)
+        tbias_fig, tbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         tbias_fig.savefig(os.path.join(plots_folder, f"time_bias_{ifo}.png")) 
         np.savez(os.path.join(results_folder, f"time_bias_{ifo}.npz"), **tbias_data) 
 
         #Plot the time domain bias, normalized wrt to the injected waveform
-        ntbias_fig, ntbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = args.CL, percentile_method = args.CL_Method, normalize = True)
+        ntbias_fig, ntbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = confidence_level, percentile_method = ordering, normalize = True)
         ntbias_fig.savefig(os.path.join(plots_folder, f"normalized_time_bias_{ifo}.png")) 
         np.savez(os.path.join(results_folder, f"normalized_time_bias_{ifo}.npz"), **ntbias_data)
 
@@ -104,8 +103,8 @@ def process_strain(folder, ifo, reference_folder, args):
         np.savez(os.path.join(results_folder, f"overlap_{ifo}.npz"), **overlap_data)
 
         #Plot the time domain cumulative hrss 
-        chrss_fig, chrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = args.CL, percentile_method = args.CL_Method,\
-                                                     plot_median = args.plot_median)
+        chrss_fig, chrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = confidence_level, percentile_method = ordering,\
+                                                     plot_median = plot_median)
         chrss_fig.savefig(os.path.join(plots_folder, f"cumulative_hrss_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"cumulative_hrss_{ifo}.npz"), **chrss_data)
 
@@ -120,23 +119,23 @@ def process_strain(folder, ifo, reference_folder, args):
         #Plot the frequency domain waveforms with CI
         logger.info('Plotting frequency domain waveforms')
         fwaveform_fig, fwaveform_data = plot_waveform_reconstruction(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency',\
-                                                                     confidence_level = args.CL, percentile_method = args.CL_Method, plot_median = args.plot_median)
+                                                                     confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median)
         fwaveform_fig.savefig(os.path.join(plots_folder, f"frequency_waveform_reconstruction_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_waveform_reconstruction_{ifo}.npz"), **fwaveform_data)
 
         #Plot the frequency domain bias with CI
-        fbias_fig, fbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = args.CL, percentile_method = args.CL_Method, normalize = False)
+        fbias_fig, fbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         fbias_fig.savefig(os.path.join(plots_folder, f"frequency_bias_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_bias_{ifo}.npz"), **fbias_data) 
 
         #Plot the frequency (f) domain bias, normalized (n) wrt to the injected waveform
-        nfbias_fig, nfbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = args.CL, percentile_method = args.CL_Method, normalize = True)
+        nfbias_fig, nfbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = True)
         nfbias_fig.savefig(os.path.join(plots_folder, f"normalized_frequency_bias_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"normalized_frequency_bias_{ifo}.npz"), **nfbias_data)
 
         #Plot the frequency domain cumulative hrss
-        fchrss_fig, fchrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = args.CL, percentile_method = args.CL_Method,\
-                                                     plot_median = args.plot_median)
+        fchrss_fig, fchrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering,\
+                                                     plot_median = plot_median)
         fchrss_fig.savefig(os.path.join(plots_folder, f"frequency_cumulative_hrss_{ifo}.png"), bbox_inches='tight')
         np.savez(os.path.join(results_folder, f"frequency_cumulative_hrss_{ifo}.npz"), **fchrss_data)
         
@@ -151,19 +150,22 @@ def main():
     #Parse the command line arguments 
     parser = ArgumentParser(description="Process some integers.")
     parser.add_argument("folder", type=str, help="Folder containing the analysis")
-    parser.add_argument("--plot_median", type=bool, default=True, help="Whether to plot the median waveform")
-    parser.add_argument("--ConfidenceLevel", type=float, default=0.9, help="Confidence level for the analysis")
+    parser.add_argument("--absolute_reference", type=str, default=None, help="Name of the folder to use as absolute reference")
+    parser.add_argument("--confidence_level", type=float, default=0.9, help="Confidence level for the analysis")
     parser.add_argument("--waveform_format", type=str, default="hdf", help="Format of the waveform files. Options are 'hdf' or 'txt'")
-    parser.add_argument("--CL Method", type=str, default="percentile", help="Method to compute the confidence level. Options are 'percentile', 'lower', 'upper'")
-    parser.add_argument("-use_absolute_reference", dest="use_absolute_reference", action="store_true", help="Whether to use absolute reference")
+    parser.add_argument("--use_absolute_reference", dest="use_absolute_reference", action="store_true", help="Whether to use absolute reference")
 
     #Parameters to decide if using absolute and/or relative reference for the analysis
-    parser.add_argument("-no_absolute_reference", dest="use_absolute_reference", action="store_false", help="Whether to not use absolute reference")
-    parser.add_argument("-absolute_reference", type=str, default=None, help="Name of the folder to use as absolute reference")
-    parser.set_defaults(use_absolute_reference=True)
+    #TODO: check if no absolute reference, no reltive, and use = ... are needed. REMOVE THEM OTHERWISE  
+
+    #parser.add_argument("-no_absolute_reference", dest="use_absolute_reference", action="store_false", help="Whether to not use absolute reference")
+    #parser.set_defaults(use_absolute_reference=True)
     parser.add_argument("-use_relative_reference", dest="use_relative_reference", action="store_true", help="Whether to use relative reference")
-    parser.add_argument("-no_relative_reference", dest="use_relative_reference", action="store_false", help="Whether to not use relative reference")
-    parser.set_defaults(use_relative_reference=False)
+    #parser.add_argument("-no_relative_reference", dest="use_relative_reference", action="store_false", help="Whether to not use relative reference")
+    #parser.set_defaults(use_relative_reference=False)
+    parser.add_argument("--ordering", type=str, default="percentile", help="Method to compute the confidence level. Options are 'percentile', 'lower', 'upper'")
+    parser.add_argument("--plot_median", type=bool, default=True, help="Whether to plot the median waveform")
+
     args = parser.parse_args()
 
     if args.use_relative_reference: 
@@ -184,7 +186,15 @@ def main():
 
     for ifo in ifos:
         print(f"{'-' * 10} Processing {ifo} {'-' * 10}")
-        process_strain(args.folder, ifo, args.reference_folder, args)
+        process_strain(folder= args.folder, 
+                    ifo = ifo, 
+                    reference_folder= args.absolute_reference, 
+                    confidence_level = args.confidence_level, 
+                    waveform_format = args.waveform_format, 
+                    use_absolute_reference = args.use_absolute_reference, 
+                    use_relative_reference = args.use_relative_reference, 
+                    ordering = args.ordering, 
+                    plot_median = args.plot_median)
 
 
 
