@@ -44,7 +44,13 @@ def init_parser(parser):
                         action="store_true", 
                         help="Whether to use absolute reference")
 
-    #parser.add_argument("-no_absolute_reference", dest="use_absolute_reference", action="store_false", help="Whether to not use absolute reference")
+        
+    parser.set_defaults(use_absolute_reference=True)
+
+
+    
+    parser.add_argument("-no_absolute_reference", dest="use_absolute_reference", action="store_false", help="Whether to not use absolute reference")
+
 
 
     parser.add_argument("--reference_folder", 
