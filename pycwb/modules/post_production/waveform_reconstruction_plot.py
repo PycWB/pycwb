@@ -5,8 +5,6 @@ from pycwb.modules.post_production.waveform_reconstruction import *
 
 #Put in the same module as PostProcess Functions  
 
-#TODO: modify hrss scatter plot to histogram with injected hrss as a vertical line 
-
 plot_kwargs = { 'CL_color': 'lightgray',
                 'CL_alpha': 0.5,
                 'injected_color': 'black',

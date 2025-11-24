@@ -17,7 +17,7 @@ def find_common_dirs(folders):
     common_dirs = set.intersection(*sets)
     return list(common_dirs) 
 
-def process_strain(folder, ifo, reference_folder, confidence_level, waveform_format, use_absolute_reference, use_relative_reference, ordering, plot_median):  
+def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute_reference, use_relative_reference, waveform_format, ordering, plot_median):  
     """
     Process the folder containing the waveforms and perform analysis.
     Parameters: 
