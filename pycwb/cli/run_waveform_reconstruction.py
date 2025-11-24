@@ -59,7 +59,7 @@ def init_parser(parser):
 
 
 def command(args):
-    from pycwb.modules.post_production import process_strain 
+    from pycwb.workflow.subflow.waveform_reconstruction_report import process_strain 
 
     if not args.use_absolute_reference and not args.use_relative_reference:
         raise ValueError("At least one of --use_absolute_reference or --use_relative_reference must be set to True.") 
@@ -70,8 +70,8 @@ def command(args):
                     ifo = ifo, 
                     reference_folder= args.reference_folder, 
                     confidence_level = args.confidence_level, 
-                    waveform_format = args.waveform_format, 
                     use_absolute_reference = args.use_absolute_reference, 
                     use_relative_reference = args.use_relative_reference, 
+                    waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
                     plot_median = args.plot_median)
