@@ -68,7 +68,7 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
             reference_folder = os.path.join(triggers_folder, reference_folder)
     
         logger.info(f"Using absolute reference from folder: {reference_folder}")
-        reference_waveform = load_waveform(os.path.join(reference_folder, f"injected_strain_{ifo}.txt"), resample=reconstructed_waveforms[0]._delta_t)
+        reference_waveform = load_waveform(os.path.join(reference_folder, f"injected_strain_{ifo}.{waveform_format}"), resample=reconstructed_waveforms[0]._delta_t)
         reconstructed_waveforms = sync_waveforms(reconstructed_waveforms, reference_waveform, sync_phase = True)
 
         #Plot time Leakage 
