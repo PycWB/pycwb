@@ -201,9 +201,9 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
     ax.set_ylabel('Cumulative HRSS (normalized)', fontsize=plot_kwargs['fontsize'])
 
-    if domanin == 'time':
+    if domain == 'time':
         ax.set_xlabel('GPS Time [s]', fontsize=plot_kwargs['fontsize'])
-    elif domanin == 'frequency':
+    elif domain == 'frequency':
         ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
     else: 
         raise ValueError("Domain must be 'time' or 'frequency'")
