@@ -29,6 +29,15 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
     if domain == 'frequency':
         reconstructed = np.abs(reconstructed)
         injected = np.abs(injected) 
+        x_values = np.fft.fftfreq(len(injected.data), d=injected._delta_t)
+        x_label = 'Frequency [Hz]'
+
+    elif domain == 'time': 
+        x_values = injected.sample_times
+        x_label = 'GPS Time [s]'
+
+    else: 
+        raise ValueError("Domain must be 'time' or 'frequency'")
 
     #Compute relevant statistics 
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed, confidence_level, method = percentile_method)  
@@ -48,16 +57,11 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
     ax.set_ylabel('Strain', fontsize=plot_kwargs['fontsize'])
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.tick_params(labelsize=plot_kwargs['fontsize']) 
+    ax.set_xlabel(x_label, fontsize=plot_kwargs['fontsize'])
+    if domain == 'frequency':
+        plt.xscale('log'), plt.yscale('log')
 
-    if domain == 'time':
-        ax.set_title('Time Domain Waveform Reconstruction', fontsize=plot_kwargs['fontsize'])
-    elif domain == 'frequency':
-        ax.set_title('Frequency Domain Waveform Reconstruction', fontsize=plot_kwargs['fontsize'])
-        plt.xscale('log')
-        plt.yscale('log')
 
-    else: 
-        raise ValueError("Domain must be 'time' or 'frequency'")
 
 
     #Define the "to save" dictionary
@@ -85,13 +89,18 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
     if domain == 'frequency':
         reconstructed = np.abs(reconstructed)
         injected = np.abs(injected) 
-        
+        x_values = np.fft.fftfreq(len(injected.data), d=injected._delta_t)
+        x_label = 'Frequency [Hz]'
+
+    elif domain == 'time': 
+        x_values = injected.sample_times 
+        x_label = 'GPS Time [s]' 
+
     bias = np.asarray(reconstructed) - np.asarray(injected)
     bias /= injected if normalize else bias 
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method) 
     mean_bias = np.mean(bias, axis=0) 
 
-    x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
 
     #Plot 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize']) 
@@ -101,13 +110,7 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
     ax.grid(True)
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
     ax.set_ylabel('Bias', fontsize=plot_kwargs['fontsize'])
-
-    if domain == 'time':
-        ax.set_xlabel('GPS Time [s]', fontsize=plot_kwargs['fontsize'])
-    elif domain == 'frequency':
-        ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
-    else: 
-        raise ValueError("Domain must be 'time' or 'frequency'")
+    ax.set_xlabel(x_label, fontsize=plot_kwargs['fontsize'])
     
     if normalize: 
         ax.set_ylim(-4,4) 
