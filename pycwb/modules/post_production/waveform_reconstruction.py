@@ -217,7 +217,7 @@ def compute_cumulative_hrss(waveform, delta_t, axis = 1):
     """
     Compute the cumulative hrss of a waveform.
     """
-    hrss = np.sqrt(np.cumsum(np.array(waveform) * np.conj(waveform), axis=axis) * delta_t)
+    hrss = np.sqrt(np.cumsum(np.abs(waveform) ** 2, axis=axis) * delta_t)
     return hrss
 
 
@@ -250,7 +250,7 @@ def compute_hrss(waveform, delta_t):
     """
     Compute the hrss for a list of waveforms.
     """
-    return np.sqrt(np.sum(np.array(waveform) * np.conj(waveform)) * delta_t) 
+    return np.sqrt(np.sum(np.abs(waveform) ** 2) * delta_t) 
 
 
 
