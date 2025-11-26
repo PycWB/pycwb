@@ -4,17 +4,24 @@ import os
 #It may be needed to store some other arguments where action = 'store_true' is used. 
 
 def init_parser(parser):
+
      #Parse the command line arguments 
     parser.add_argument("folder", 
                         type=str, 
                         help="Folder containing the analysis")
 
     
-    parser.add_argument("ifos", 
-                        type=list, 
-                        default=["H1","L1"],
-                        help="List of ifos used in the analysis")
+   # parser.add_argument("--ifos", 
+   #                     type=list, 
+   #                     default=["H1","L1"],
+   #                     help="List of ifos used in the analysis")
     
+    parser.add_argument('--ifo',
+                        action='append', 
+                        help='Call IFO to perform analysis', 
+                        required=True)
+
+
 
     parser.add_argument("--plot_median", 
                         type=bool, 
@@ -36,7 +43,7 @@ def init_parser(parser):
 
     parser.add_argument("--ordering", 
                         type=str, 
-                        default="percentile", 
+                        default="percentiles", 
                         help="Method to compute the confidence level. Options are 'percentile', 'lower', 'upper'")
 
 
@@ -70,7 +77,7 @@ def command(args):
     if not args.use_absolute_reference and not args.use_relative_reference:
         raise ValueError("At least one of --use_absolute_reference or --use_relative_reference must be set to True.") 
     
-    for ifo in args.ifos:
+    for ifo in args.ifo:
         #check process_strain argumenta are correctly defined 
         process_strain(folder= args.folder, 
                     ifo = ifo, 
