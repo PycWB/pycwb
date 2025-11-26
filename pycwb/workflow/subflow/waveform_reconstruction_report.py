@@ -1,8 +1,8 @@
 from pycwb.types.waveform import load_waveform
 from pycwb.modules.post_production.waveform_reconstruction import load_waveforms, sync_waveforms, slice_waveforms
 from pycwb.modules.post_production.waveform_reconstruction_plot import *
+from numpy.linalg import norm 
 import os 
-from argparse import ArgumentParser
 import numpy as np  # pyright: ignore[reportMissingImports]
 import logging
 
@@ -12,10 +12,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def find_common_dirs(folders): 
-    sets = [set(os.listdir(os.path.join(folder))) for folder in folders]
-    common_dirs = set.intersection(*sets)
-    return list(common_dirs) 
 
 def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute_reference, use_relative_reference, waveform_format, ordering, plot_median):  
     """
@@ -26,7 +22,7 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         reference_folder (str, None): Path to the folder containing the reference injected waveforms. If None, the first folder in the list is used.
         args (argparse.Namespace): Command line arguments.
     """ 
-    logger.info(f"Processing waveform reconstruction analysis for {ifo} in folder: {folder}")
+    print(f"Processing waveform reconstruction analysis for {ifo} in folder: {folder}")
 
     #Define the folder for loadingthe data and saving the results 
     triggers_folder = os.path.join(folder, "trigger")
@@ -92,11 +88,6 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         tbias_fig.savefig(os.path.join(plots_folder, f"time_bias_{ifo}.png")) 
         np.savez(os.path.join(results_folder, f"time_bias_{ifo}.npz"), **tbias_data) 
 
-        #Plot the time domain bias, normalized wrt to the injected waveform
-        ntbias_fig, ntbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = confidence_level, percentile_method = ordering, normalize = True)
-        ntbias_fig.savefig(os.path.join(plots_folder, f"normalized_time_bias_{ifo}.png")) 
-        np.savez(os.path.join(results_folder, f"normalized_time_bias_{ifo}.npz"), **ntbias_data)
-
         #Plot the overlap 
         overlap_fig, overlap_data = plot_overlap(reconstructed_waveforms, injected_waveform)
         overlap_fig.savefig(os.path.join(plots_folder, f"overlap_{ifo}.png"),  bbox_inches='tight')
@@ -124,17 +115,12 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         np.savez(os.path.join(results_folder, f"frequency_waveform_reconstruction_{ifo}.npz"), **fwaveform_data)
 
         #Plot the frequency domain bias with CI
-        fbias_fig, fbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
+        fbias_fig, fbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         fbias_fig.savefig(os.path.join(plots_folder, f"frequency_bias_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_bias_{ifo}.npz"), **fbias_data) 
 
-        #Plot the frequency (f) domain bias, normalized (n) wrt to the injected waveform
-        nfbias_fig, nfbias_data = plot_bias(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = True)
-        nfbias_fig.savefig(os.path.join(plots_folder, f"normalized_frequency_bias_{ifo}.png"), bbox_inches='tight') 
-        np.savez(os.path.join(results_folder, f"normalized_frequency_bias_{ifo}.npz"), **nfbias_data)
-
         #Plot the frequency domain cumulative hrss
-        fchrss_fig, fchrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering,\
+        fchrss_fig, fchrss_data = plot_cumulative_hrss(reconstructed_waveforms, injected_waveform, domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering,\
                                                      plot_median = plot_median)
         fchrss_fig.savefig(os.path.join(plots_folder, f"frequency_cumulative_hrss_{ifo}.png"), bbox_inches='tight')
         np.savez(os.path.join(results_folder, f"frequency_cumulative_hrss_{ifo}.npz"), **fchrss_data)
