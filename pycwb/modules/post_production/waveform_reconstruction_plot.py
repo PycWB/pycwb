@@ -191,7 +191,6 @@ def plot_frequency_bias(reconstructed, injected_fft, confidence_level = .95, per
     pos_mask = x_values >= 0
     x_pos = x_values[pos_mask]
 
-    print(reco_arr.shape, inj_arr.shape)
     bias = reco_arr - inj_arr
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method)
     mean_bias = np.mean(bias, axis=0)
@@ -323,7 +322,7 @@ def plot_frequency_cumulative_hrss(reconstructed, injected_fft, confidence_level
     inj_arr = np.abs(np.asarray(injected_fft))
 
     n = len(getattr(injected_fft, 'data', inj_arr))
-    dt = getattr(injected_fft, '_delta_t', None)
+    dt = getattr(injected_pycwb/modules/post_production/waveform_reconstruction_plot.pyfft, '_delta_t', None)
     x_values = np.fft.fftfreq(n, d=dt)
     pos_mask = x_values >= 0
     x_pos = x_values[pos_mask]
