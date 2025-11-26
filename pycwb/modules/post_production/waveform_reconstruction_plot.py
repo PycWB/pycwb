@@ -43,7 +43,6 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed, confidence_level, method = percentile_method)  
     mean = np.mean(reconstructed, axis=0)
 
-    x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
     #plot the confidence intervals, mean and median 
     ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI') 
     ax.plot(x_values, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
@@ -196,8 +195,8 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
     mean_hrss = reconstructed_hrss.mean(axis=0) 
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed_hrss, confidence_level=confidence_level, method=percentile_method) 
 
+    
     x_values = injected.sample_times if domain == 'time' else injected.sample_frequencies 
-
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
     ax.plot(x_values, injected_hrss / injected_hrss[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
     ax.plot(x_values, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
