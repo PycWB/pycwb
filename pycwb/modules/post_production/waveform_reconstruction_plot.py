@@ -63,7 +63,7 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
         'median': median,
         'lower_bound': lower_bound,
         'upper_bound': upper_bound,
-        'CL': plot_kwargs['CL']
+        'CL': confidence_level
     }
     plt.close() 
 
@@ -107,7 +107,7 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
         'mean_bias': mean_bias,
         'lower_bound': lower_bound,
         'upper_bound': upper_bound,
-        'CL': plot_kwargs['CL']
+        'CL': confidence_level
     }
     return fig, to_save 
 
@@ -214,7 +214,7 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
       'median_hrss': median_hrss,
       'lower_bound': lower_bound,
       'upper_bound': upper_bound,
-      'CL': plot_kwargs['CL']
+      'CL': confidence_level
     }
 
     return fig, to_save 
