@@ -322,13 +322,12 @@ def plot_frequency_cumulative_hrss(reconstructed, injected_fft, confidence_level
     inj_arr = np.abs(np.asarray(injected_fft))
 
     n = len(getattr(injected_fft, 'data', inj_arr))
-    dt = getattr(injected_pycwb/modules/post_production/waveform_reconstruction_plot.pyfft, '_delta_t', None)
-    x_values = np.fft.fftfreq(n, d=dt)
+    x_values = np.fft.fftfreq(n, d=injected_fft._delta_t)
     pos_mask = x_values >= 0
     x_pos = x_values[pos_mask]
 
-    injected_hrss = compute_cumulative_hrss(injected_fft, dt, axis=0)
-    reconstructed_hrss = compute_cumulative_hrss(reconstructed, dt, axis=1) / injected_hrss[-1]
+    injected_hrss = compute_cumulative_hrss(injected_fft, injected_fft._delta_t, axis=0)
+    reconstructed_hrss = compute_cumulative_hrss(reconstructed, injected_fft._delta_t, axis=1) / injected_hrss[-1]
 
     # select positive frequencies
     injected_hrss_pos = injected_hrss[pos_mask]
