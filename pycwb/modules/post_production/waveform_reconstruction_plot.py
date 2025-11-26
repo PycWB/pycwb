@@ -26,6 +26,10 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
     #initialise image 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])  
 
+    if domain == 'frequency':
+        reconstructed = np.abs(reconstructed)
+        injected = np.abs(injected) 
+
     #Compute relevant statistics 
     lower_bound, upper_bound = compute_confidence_intervals(reconstructed, confidence_level, method = percentile_method)  
     mean = np.mean(reconstructed, axis=0)
@@ -77,6 +81,11 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
     Plot the bias of the reconstructed waveforms compared to the injected waveform.
     """
     #Compute bias, it mean and confidence intervals 
+
+    if domain == 'frequency':
+        reconstructed = np.abs(reconstructed)
+        injected = np.abs(injected) 
+        
     bias = np.asarray(reconstructed) - np.asarray(injected)
     bias /= injected if normalize else bias 
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method) 
