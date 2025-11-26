@@ -96,7 +96,6 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
         x_label = 'GPS Time [s]' 
 
     bias = np.asarray(reconstructed) - np.asarray(injected)
-    bias /= injected if normalize else bias 
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method) 
     mean_bias = np.mean(bias, axis=0) 
 
@@ -110,9 +109,6 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
     ax.set_ylabel('Bias', fontsize=plot_kwargs['fontsize'])
     ax.set_xlabel(x_label, fontsize=plot_kwargs['fontsize'])
-    
-    if normalize: 
-        ax.set_ylim(-4,4) 
 
     to_save = {'time': injected.sample_times,
         'mean_bias': mean_bias,
@@ -216,13 +212,7 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
     ax.set_ylabel('Cumulative HRSS (normalized)', fontsize=plot_kwargs['fontsize'])
-
-    if domain == 'time':
-        ax.set_xlabel('GPS Time [s]', fontsize=plot_kwargs['fontsize'])
-    elif domain == 'frequency':
-        ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
-    else: 
-        raise ValueError("Domain must be 'time' or 'frequency'")
+    ax.set_xlabel(x_label, fontsize=plot_kwargs['fontsize'])
 
     to_save = {'time': injected.sample_times,
       'injected_hrss': injected_hrss / injected_hrss[-1],
