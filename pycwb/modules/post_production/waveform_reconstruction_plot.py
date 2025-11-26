@@ -189,7 +189,7 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
     ax.plot(x_values, injected_hrss / injected_hrss[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
     ax.plot(x_values, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
-    ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{plot_kwargs["CL"]}% CI')
+    ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
     
     if plot_median:
         median_hrss = np.median(reconstructed_hrss, axis=0) 
