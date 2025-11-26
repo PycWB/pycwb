@@ -115,12 +115,12 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         np.savez(os.path.join(results_folder, f"frequency_waveform_reconstruction_{ifo}.npz"), **fwaveform_data)
 
         #Plot the frequency domain bias with CI
-        fbias_fig, fbias_data = plot_frequency_bias(reconstructed_waveforms, injected_waveform.fft(), confidence_level = confidence_level, percentile_method = ordering, normalize = False)
+        fbias_fig, fbias_data = plot_frequency_bias(reconstructed_waveforms, injected_waveform, confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         fbias_fig.savefig(os.path.join(plots_folder, f"frequency_bias_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_bias_{ifo}.npz"), **fbias_data) 
 
         #Plot the frequency domain cumulative hrss
-        fchrss_fig, fchrss_data = plot_frequency_cumulative_hrss(reconstructed_waveforms, injected_waveform.fft(), confidence_level = confidence_level, percentile_method = ordering,\
+        fchrss_fig, fchrss_data = plot_frequency_cumulative_hrss(reconstructed_waveforms, injected_waveform, confidence_level = confidence_level, percentile_method = ordering,\
                                  plot_median = plot_median)
         fchrss_fig.savefig(os.path.join(plots_folder, f"frequency_cumulative_hrss_{ifo}.png"), bbox_inches='tight')
         np.savez(os.path.join(results_folder, f"frequency_cumulative_hrss_{ifo}.npz"), **fchrss_data)
