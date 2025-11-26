@@ -191,14 +191,14 @@ def plot_frequency_bias(reconstructed, injected_fft, confidence_level = .95, per
     pos_mask = x_values >= 0
     x_pos = x_values[pos_mask]
 
-
+    print(reco_arr.shape, inj_arr.shape)
     bias = reco_arr - inj_arr
     lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method)
     mean_bias = np.mean(bias, axis=0)
 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
-    ax.fill_between(x_pos, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
-    ax.plot(x_pos, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.fill_between(x_pos, lower_bound[pos_mask], upper_bound[pos_mask], color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+    ax.plot(x_pos, mean_bias[pos_mask], label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.grid(True)
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
