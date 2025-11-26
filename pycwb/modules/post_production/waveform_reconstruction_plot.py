@@ -77,33 +77,92 @@ def plot_waveform_reconstruction(reconstructed, injected, domain, confidence_lev
 
 
     return fig, to_save
+def plot_time_waveform_reconstruction(reconstructed, injected, confidence_level = .95, percentile_method = 'percentiles', plot_median = False):
+    """Plot the time-domain waveform reconstruction with confidence intervals."""
+    fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
+    reco_arr = np.asarray(reconstructed)
+    lower_bound, upper_bound = compute_confidence_intervals(reco_arr, confidence_level, method = percentile_method)
+    mean = np.mean(reco_arr, axis=0)
+    ax.fill_between(injected.sample_times, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+    ax.plot(injected.sample_times, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.plot(injected.sample_times, injected, label='Injected', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'], alpha=plot_kwargs['injected_alpha'])
+    median = None
+    if plot_median:
+        median = np.median(reco_arr, axis=0)
+        ax.plot(injected.sample_times, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
+    ax.grid(True)
+    ax.set_ylabel('Strain', fontsize=plot_kwargs['fontsize'])
+    ax.legend(fontsize=plot_kwargs['fontsize'])
+    ax.tick_params(labelsize=plot_kwargs['fontsize'])
+    ax.set_xlabel('GPS Time [s]', fontsize=plot_kwargs['fontsize'])
+    to_save = {'time': injected.sample_times,
+        'injected': injected,
+        'mean': mean,
+        'median': median,
+        'lower_bound': lower_bound,
+        'upper_bound': upper_bound,
+        'CL': confidence_level
+    }
+    plt.close()
+    return fig, to_save
+
+def plot_frequency_waveform_reconstruction(reconstructed, injected_fft, confidence_level = .95, percentile_method = 'percentiles', plot_median = False):
+    """Plot the frequency-domain waveform reconstruction (positive frequencies only) with confidence intervals."""
+    fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
+    reco_arr = np.abs(np.asarray(reconstructed))
+    inj_arr = np.abs(np.asarray(injected_fft))
+    n = len(getattr(injected_fft, 'data', inj_arr))
+    dt = getattr(injected_fft, '_delta_t', None)
+    x_values = np.fft.fftfreq(n, d=dt)
+    pos_mask = x_values >= 0
+    x_pos = x_values[pos_mask]
+    if reco_arr.ndim == 1:
+        reco_pos = reco_arr[pos_mask]
+    else:
+        reco_pos = reco_arr[:, pos_mask]
+    if inj_arr.ndim == 1:
+        inj_pos = inj_arr[pos_mask]
+    else:
+        inj_pos = inj_arr[..., pos_mask]
+    lower_bound, upper_bound = compute_confidence_intervals(reco_pos, confidence_level, method = percentile_method)
+    mean = np.mean(reco_pos, axis=0)
+    ax.fill_between(x_pos, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+    ax.plot(x_pos, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.plot(x_pos, inj_pos, label='Injected', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'], alpha=plot_kwargs['injected_alpha'])
+    median = None
+    if plot_median:
+        median = np.median(reco_pos, axis=0)
+        ax.plot(x_pos, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
+    ax.grid(True)
+    ax.set_ylabel('Strain (magnitude)', fontsize=plot_kwargs['fontsize'])
+    ax.legend(fontsize=plot_kwargs['fontsize'])
+    ax.tick_params(labelsize=plot_kwargs['fontsize'])
+    ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
+    plt.xscale('log'); plt.yscale('log')
+    to_save = {'frequency': x_pos,
+        'injected': inj_pos,
+        'mean': mean,
+        'median': median,
+        'lower_bound': lower_bound,
+        'upper_bound': upper_bound,
+        'CL': confidence_level
+    }
+    plt.close()
+    return fig, to_save
 
 
-def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95', percentile_method='percentiles', normalize = True): 
-    """ 
-    Plot the bias of the reconstructed waveforms compared to the injected waveform.
-    """
-    #Compute bias, it mean and confidence intervals 
-
-    if domain == 'frequency':
-        reconstructed = np.abs(reconstructed)
-        injected = np.abs(injected) 
-        x_values = np.fft.fftfreq(len(injected.data), d=injected._delta_t)
-        x_label = 'Frequency [Hz]'
-
-    elif domain == 'time': 
-        x_values = injected.sample_times 
-        x_label = 'GPS Time [s]' 
+def plot_time_bias(reconstructed, injected, confidence_level = .95, percentile_method='percentiles', normalize = True):
+    """Plot the bias in the time domain between reconstructed and injected waveforms."""
+    x_values = injected.sample_times
+    x_label = 'GPS Time [s]'
 
     bias = np.asarray(reconstructed) - np.asarray(injected)
-    lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method) 
-    mean_bias = np.mean(bias, axis=0) 
+    lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method)
+    mean_bias = np.mean(bias, axis=0)
 
-
-    #Plot 
-    fig, ax = plt.subplots(figsize=plot_kwargs['figsize']) 
+    fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
     ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
-    ax.plot(x_values, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])  
+    ax.plot(x_values, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.grid(True)
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
@@ -116,7 +175,45 @@ def plot_bias(reconstructed, injected, domain = 'time', confidence_level = '.95'
         'upper_bound': upper_bound,
         'CL': confidence_level
     }
-    return fig, to_save 
+    plt.close()
+    return fig, to_save
+
+
+def plot_frequency_bias(reconstructed, injected_fft, confidence_level = .95, percentile_method='percentiles', normalize = True):
+    """Plot the bias in the frequency domain (positive frequencies only)."""
+    # Work with magnitudes
+    reco_arr = np.abs(np.asarray(reconstructed))
+    inj_arr = np.abs(np.asarray(injected_fft))
+
+    n = len(getattr(injected_fft, 'data', inj_arr))
+    dt = getattr(injected_fft, '_delta_t', None)
+    x_values = np.fft.fftfreq(n, d=dt)
+    pos_mask = x_values >= 0
+    x_pos = x_values[pos_mask]
+
+
+    bias = reco_arr - inj_arr
+    lower_bound, upper_bound = compute_confidence_intervals(bias, confidence_level, method=percentile_method)
+    mean_bias = np.mean(bias, axis=0)
+
+    fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
+    ax.fill_between(x_pos, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+    ax.plot(x_pos, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.legend(fontsize=plot_kwargs['fontsize'])
+    ax.grid(True)
+    ax.tick_params(labelsize=plot_kwargs['fontsize'])
+    ax.set_ylabel('Bias', fontsize=plot_kwargs['fontsize'])
+    ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
+    plt.xscale('log'); plt.yscale('log')
+
+    to_save = {'frequency': x_pos,
+        'mean_bias': mean_bias,
+        'lower_bound': lower_bound,
+        'upper_bound': upper_bound,
+        'CL': confidence_level
+    }
+    plt.close()
+    return fig, to_save
 
 
 
@@ -179,35 +276,28 @@ def plot_auto_overlap(reconstructed, injected):
     return fig, to_save 
 
 
-def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, percentile_method, plot_median=True):
-    """Plot the cumulative distribution of the reconstructed HRSS compared to the injected HRSS.
-    """
-    #Compute relevant statistics
-    mean_reconstructed = np.mean(reconstructed, axis=0)
-    median_reconstructed = np.median(reconstructed, axis=0)
-
-    injected_hrss = compute_cumulative_hrss(injected, injected._delta_t, axis=0) 
+def plot_time_cumulative_hrss(reconstructed, injected, confidence_level, percentile_method, plot_median=True):
+    """Plot the cumulative distribution of HRSS in the time domain."""
+    # Compute relevant statistics
+    injected_hrss = compute_cumulative_hrss(injected, injected._delta_t, axis=0)
     reconstructed_hrss = compute_cumulative_hrss(reconstructed, injected._delta_t, axis=1) / injected_hrss[-1]
-    mean_hrss = reconstructed_hrss.mean(axis=0) 
-    lower_bound, upper_bound = compute_confidence_intervals(reconstructed_hrss, confidence_level=confidence_level, method=percentile_method) 
+    mean_hrss = reconstructed_hrss.mean(axis=0)
+    lower_bound, upper_bound = compute_confidence_intervals(reconstructed_hrss, confidence_level=confidence_level, method=percentile_method)
 
-    if domain == 'frequency':
-        x_values = np.fft.fftfreq(len(injected.data), d=injected._delta_t)
-        x_label = 'Frequency [Hz]'
-    elif domain == 'time': 
-        x_values = injected.sample_times
-        x_label = 'GPS Time [s]'
+    x_values = injected.sample_times
+    x_label = 'GPS Time [s]'
 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
     ax.plot(x_values, injected_hrss / injected_hrss[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
     ax.plot(x_values, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
     ax.fill_between(x_values, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
-    
+
+    median_hrss = None
     if plot_median:
-        median_hrss = np.median(reconstructed_hrss, axis=0) 
+        median_hrss = np.median(reconstructed_hrss, axis=0)
         ax.plot(x_values, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
-    
-    #Visulization 
+
+    # Visualization
     ax.grid(True)
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
@@ -223,8 +313,60 @@ def plot_cumulative_hrss(reconstructed, injected, domain, confidence_level, perc
       'CL': confidence_level
     }
 
-    return fig, to_save 
+    plt.close()
+    return fig, to_save
 
+
+def plot_frequency_cumulative_hrss(reconstructed, injected_fft, confidence_level, percentile_method, plot_median=True):
+    """Plot the cumulative distribution of HRSS in the frequency domain (positive frequencies only)."""
+    # Work with magnitudes for frequency-domain HRSS
+    inj_arr = np.abs(np.asarray(injected_fft))
+
+    n = len(getattr(injected_fft, 'data', inj_arr))
+    dt = getattr(injected_fft, '_delta_t', None)
+    x_values = np.fft.fftfreq(n, d=dt)
+    pos_mask = x_values >= 0
+    x_pos = x_values[pos_mask]
+
+    injected_hrss = compute_cumulative_hrss(injected_fft, dt, axis=0)
+    reconstructed_hrss = compute_cumulative_hrss(reconstructed, dt, axis=1) / injected_hrss[-1]
+
+    # select positive frequencies
+    injected_hrss_pos = injected_hrss[pos_mask]
+    reconstructed_hrss_pos = reconstructed_hrss[..., pos_mask]
+
+    mean_hrss = reconstructed_hrss_pos.mean(axis=0)
+    lower_bound, upper_bound = compute_confidence_intervals(reconstructed_hrss_pos, confidence_level=confidence_level, method=percentile_method)
+
+    fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
+    ax.plot(x_pos, injected_hrss_pos / injected_hrss_pos[-1], label='Injected HRSS', color=plot_kwargs['injected_color'], linestyle=plot_kwargs['injected_linestyle'])
+    ax.plot(x_pos, mean_hrss, label='Mean Reconstructed HRSS', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
+    ax.fill_between(x_pos, lower_bound, upper_bound, color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
+
+    median_hrss = None
+    if plot_median:
+        median_hrss = np.median(reconstructed_hrss_pos, axis=0)
+        ax.plot(x_pos, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
+
+    # Visualization
+    ax.grid(True)
+    ax.legend(fontsize=plot_kwargs['fontsize'])
+    ax.tick_params(labelsize=plot_kwargs['fontsize'])
+    ax.set_ylabel('Cumulative HRSS (normalized)', fontsize=plot_kwargs['fontsize'])
+    ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
+    plt.xscale('log'); plt.yscale('log')
+
+    to_save = {'frequency': x_pos,
+      'injected_hrss': injected_hrss_pos / injected_hrss_pos[-1],
+      'mean_hrss': mean_hrss,
+      'median_hrss': median_hrss,
+      'lower_bound': lower_bound,
+      'upper_bound': upper_bound,
+      'CL': confidence_level
+    }
+
+    plt.close()
+    return fig, to_save
 
 
 def plot_hrss_histogram(reconstructed, injected): 
