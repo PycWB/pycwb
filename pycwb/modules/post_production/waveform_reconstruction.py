@@ -54,9 +54,7 @@ def load_waveforms(folder, ifo, load_injected = True, whitened = False, format =
     """
     trigger_folders = os.listdir(folder)
     reconstructed_waveforms, injected = [], [] 
-
     for f in tqdm(trigger_folders, desc="Loading waveforms"):
-
         try: 
             reconstructed_file_name = f"reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
             injected_file_name = f"injected_strain_{ifo}.{format}" 
@@ -172,15 +170,15 @@ def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "per
     """
     #Assuming waveforms are sliced to the same time range
     if method == "percentiles": 
-        lower_bound, upper_bound = np.percentile(waveforms, [(1-confidence_level)*100/2, (1+confidence_level)*100/2])
+        lower_bound, upper_bound = np.percentile(waveforms, [(1-confidence_level)*100/2, (1+confidence_level)*100/2], axis = 0)
     
     #Return lower datas and upper bound based on LC
     elif method == "upper": 
-        lower_bound, upper_bound = np.percentiles(waveforms, [0, confidence_level * 100], axis = 0)
+        lower_bound, upper_bound = np.percentile(waveforms, [0, confidence_level * 100], axis = 0)
 
     #Return lower datas and upper bound based on CL
     elif method == "lower": 
-        lower_bound, upper_bound = np.percentiles(waveforms, [(1-confidence_level) * 100, 100], axis = 0)
+        lower_bound, upper_bound = np.percentile(waveforms, [(1-confidence_level) * 100, 100], axis = 0)
         
     else: 
         raise ValueError("Unsupported ordering method.") 
