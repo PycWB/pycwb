@@ -78,13 +78,13 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
     
         #Plot the time domain waveforms with CI 
         logger.info("Plotting time domain waveforms")
-        twaveform_fig, twaveform_data = plot_waveform_reconstruction(reconstructed_waveforms, injected_waveform, domain = 'time',\
-                                                                     confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median) 
+        twaveform_fig, twaveform_data = plot_time_waveform_reconstruction(reconstructed_waveforms, injected_waveform, 
+                                          confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median) 
         twaveform_fig.savefig(os.path.join(plots_folder, f"time_waveform_reconstruction_{ifo}.png"), bbox_inches='tight')
         np.savez(os.path.join(results_folder, f"time_waveform_reconstruction_{ifo}.npz"), **twaveform_data)
 
         #Plot the time domain bias with CI 
-        tbias_fig, tbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'time', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
+        tbias_fig, tbias_data = plot_time_bias(reconstructed_waveforms, injected_waveform, confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         tbias_fig.savefig(os.path.join(plots_folder, f"time_bias_{ifo}.png")) 
         np.savez(os.path.join(results_folder, f"time_bias_{ifo}.npz"), **tbias_data) 
 
@@ -109,13 +109,13 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
 
         #Plot the frequency domain waveforms with CI
         logger.info('Plotting frequency domain waveforms')
-        fwaveform_fig, fwaveform_data = plot_waveform_reconstruction(reconstructed_waveforms, injected_waveform.fft(), domain = 'frequency',\
-                                                                     confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median)
+        fwaveform_fig, fwaveform_data = plot_frequency_waveform_reconstruction(reconstructed_waveforms, injected_waveform.fft(), 
+                                              confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median)
         fwaveform_fig.savefig(os.path.join(plots_folder, f"frequency_waveform_reconstruction_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_waveform_reconstruction_{ifo}.npz"), **fwaveform_data)
 
         #Plot the frequency domain bias with CI
-        fbias_fig, fbias_data = plot_bias(reconstructed_waveforms, injected_waveform, domain = 'frequency', confidence_level = confidence_level, percentile_method = ordering, normalize = False)
+        fbias_fig, fbias_data = plot_frequency_bias(reconstructed_waveforms, injected_waveform.fft(), confidence_level = confidence_level, percentile_method = ordering, normalize = False)
         fbias_fig.savefig(os.path.join(plots_folder, f"frequency_bias_{ifo}.png"), bbox_inches='tight') 
         np.savez(os.path.join(results_folder, f"frequency_bias_{ifo}.npz"), **fbias_data) 
 
