@@ -17,6 +17,7 @@ class Waveform(TimeSeries):
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
+        self.findStartEnd() 
 
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
@@ -114,16 +115,7 @@ class Waveform(TimeSeries):
         """
         Compute the cross-correlation between this waveform and another waveform.
         """
-
-        return correlate(reference_waveform.data, self.data, method='fft', mode='full')
-
-
-    def computeTimeDifference(self, reference_waveform):
-        """
-        Compute the time difference between this waveform and another waveform using cross-correlation.
-        """
-        cc = self._computeCrossCorrelation(reference_waveform)
-
+        
         # length of signals
         n1 = len(reference_waveform.data)
         n2 = len(self.data)
@@ -135,8 +127,18 @@ class Waveform(TimeSeries):
         # correct lag array: from -(n2-1) to (n1-1)
         lags = np.arange(-(n2-1), n1) / self.sample_rate + dt 
 
+        return lags, correlate(reference_waveform.data, self.data, method='fft', mode='full')
+
+
+    def computeTimeDifference(self, reference_waveform):
+        """
+        Compute the time difference between this waveform and another waveform using cross-correlation.
+        """
+
+        lags, cc = self._computeCrossCorrelation(reference_waveform)
         max_index = cc.argmax()
         time_shift = lags[max_index]
+
         return time_shift
 
     def timeShift(self, shift): 
@@ -230,7 +232,7 @@ class Waveform(TimeSeries):
         :return: RMS value
         :rtype: float
         """
-        squareSum = np.sum(self.data[self.istart:self.istop]**2)
+        squareSum = np.sum(self.data[self.istart:self.iend]**2)
 
         if norm:
             squareSum /= self.data.size 
@@ -247,7 +249,7 @@ class Waveform(TimeSeries):
         :return: rolling RMS array
         :rtype: np.ndarray
         """
-        cumsum = np.cumsum(self.data[self.istart:self.istop] ** 2) 
+        cumsum = np.cumsum(self.data[self.istart:self.iend] ** 2) 
         if norm: 
             cumsum /= self.data.size
         return np.sqrt(cumsum)    
