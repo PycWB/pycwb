@@ -114,9 +114,7 @@ class Waveform(TimeSeries):
         """
         Compute the cross-correlation between this waveform and another waveform.
         """
-        if self.start_time != reference_waveform.start_time:
-            raise ValueError("Waveforms must have the same start time for cross-correlation.")
-        
+
         return correlate(reference_waveform.data, self.data, method='fft', mode='full')
 
 
@@ -130,8 +128,12 @@ class Waveform(TimeSeries):
         n1 = len(reference_waveform.data)
         n2 = len(self.data)
 
+        dt = 0 
+        if reference_waveform.start_time != self.start_time:
+            dt = float(reference_waveform.start_time - self.start_time) 
+
         # correct lag array: from -(n2-1) to (n1-1)
-        lags = np.arange(-(n2-1), n1) / self.sample_rate  
+        lags = np.arange(-(n2-1), n1) / self.sample_rate + dt 
 
         max_index = cc.argmax()
         time_shift = lags[max_index]
