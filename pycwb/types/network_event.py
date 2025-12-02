@@ -11,6 +11,7 @@ class Event:
     """
     This class is used to store the results of an event.
     """
+    id: str = ""  # event ID
     nevent: int = 0  # number of events
     ndim: int = field(default_factory=int)  # number of dimensions
     run: int = field(default_factory=int)  # run ID
@@ -322,6 +323,7 @@ class Event:
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
+        self.id = self.long_id
     # def json(self):
     #     """
     #     Return a JSON representation of the event
@@ -380,6 +382,8 @@ class Event:
         :return: Long ID of the event
         :rtype: str
         """
+        if len(self.stop) == 0:
+            return "unknown"
         return f"{self.stop[0]}_{self.hash_id}"
 
     def dump(self):
