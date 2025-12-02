@@ -33,23 +33,23 @@ def read_triggers(work_dir, run_dir, prefilters=None, filters=None, file='catalo
     print(f"Reading results from {os.path.join(work_dir, run_dir, file)}")
     catalog = read_catalog(os.path.join(work_dir, run_dir, file))
 
-    events = []
-    n_events = len(catalog['events'])
-    # for i, event in enumerate(catalog['events']):
-    #     if i % 100 == 0:
-    #         print(f"Reading event {i}/{n_events}", end='\r')
-    #     event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
-    #     events.append(read_event(event_file))
-    if prefilters:
-        catalog['events'] = list_dict_filter(catalog['events'], prefilters, name='catalog triggers')
+    events = catalog['events']
+    # n_events = len(catalog['events'])
+    # # for i, event in enumerate(catalog['events']):
+    # #     if i % 100 == 0:
+    # #         print(f"Reading event {i}/{n_events}", end='\r')
+    # #     event_file = os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json")
+    # #     events.append(read_event(event_file))
+    # if prefilters:
+    #     catalog['events'] = list_dict_filter(catalog['events'], prefilters, name='catalog triggers')
 
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(read_event, os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json"))
-                   for event in catalog['events']]
-        for i, future in enumerate(futures):
-            if i % 100 == 0:
-                print(f"Reading event {i}/{n_events}", end='\r')
-            events.append(future.result())
+    # with ThreadPoolExecutor() as executor:
+    #     futures = [executor.submit(read_event, os.path.join(work_dir, run_dir, f"trigger/trigger_{event['job_id']}_{event['id']}/event.json"))
+    #                for event in catalog['events']]
+    #     for i, future in enumerate(futures):
+    #         if i % 100 == 0:
+    #             print(f"Reading event {i}/{n_events}", end='\r')
+    #         events.append(future.result())
     if filters:
         events = list_dict_filter(events, filters, name='triggers')
     return events
