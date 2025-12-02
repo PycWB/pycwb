@@ -185,7 +185,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
             for seg_list in slag_seg_lists[1:]:
                 merged_slag_seg_list = merge_seg_list(merged_slag_seg_list, seg_list)
 
-            if len(merged_slag_seg_list) == 0:
+            if len(merged_slag_seg_list) == 0 or len(merged_slag_seg_list[0]) == 0 or len(merged_slag_seg_list[1]) == 0:
                 logger.warning(f"No segments found for super lag {slag}")
                 raise ValueError(f"No segments found for super lag {slag}, please check the DQ files or periods")
 
