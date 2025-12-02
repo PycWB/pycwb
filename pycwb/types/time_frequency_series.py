@@ -352,6 +352,179 @@ class TimeFrequencyMap:
         
         pass
 
+    def _compute_bounds(self):
+        M = self.maxLayer()
+        J = self.size()
+        jb = int(self.edge * self.wavelet_rate / 4.0) * M
+        if jb < 4 * M:
+            jb = 4 * M
+        je = J - jb
+        df = self.df
+        mL = int(self.f_low / df + 0.1)
+        mH = int(self.f_high / df + 0.1)
+        return jb, je, mL, mH
+    
+    def wdm_packet(self, pattern: int, mode: str = 'e') -> float:
+        """
+        Vectorized implementation using numpy slicing (no Python-for loops over pixels).
+        Edge handling is non-wrapping (shifts produce zeros outside bounds).
+        This version aims for maximal speed on large arrays.
+        """
+        PATTERNS = {
+            0: [],  # single pixel
+            1: [(0, 1), (0, -1)],                         # "3|" vertical
+            2: [(1, 0), (-1, 0)],                         # "3-" horizontal
+            3: [(1, 1), (-1, -1)],                        # "3/" chirp
+            4: [(1, -1), (-1, 1)],                        # "3\\" ringdown
+            5: [(1, 1), (-1, -1), (2, 2), (-2, -2)],      # "5/"
+            6: [(1, -1), (-1, 1), (2, -2), (-2, 2)],      # "5\\"
+            7: [(0, 1), (0, -1), (1, 0), (-1, 0)],        # "3+"
+            8: [(1, 1), (1, -1), (-1, 1), (-1, -1)],      # "3x"
+            9: [(0, 1), (0, -1), (1, 0), (-1, 0),
+                (1, 1), (1, -1), (-1, 1), (-1, -1)]      # "9*"
+        }
+
+        pattern = abs(int(pattern))
+        mode = mode.lower()
+        M, T = self.M, self.T
+        jb, je, mL, mH = self._compute_bounds()
+
+        # Determine shape/mean like earlier
+        if pattern in (1, 3, 4):
+            shape = mean = 3.0
+            mL += 1; mH -= 1
+        elif pattern == 2:
+            shape = mean = 3.0
+        elif pattern in (5, 6):
+            shape = mean = 5.0
+            mL += 2; mH -= 2
+        elif pattern in (7, 8):
+            shape = mean = 5.0
+            mL += 1; mH -= 1
+        elif pattern == 9:
+            shape = mean = 9.0
+            mL += 1; mH -= 1
+        else:
+            shape = mean = 1.0
+
+        offsets = PATTERNS.get(pattern, [])
+        center_weight = mean - 8.0
+
+        # Initialize accumulators
+        ee = np.zeros((M, T), dtype=float)
+        EE = np.zeros((M, T), dtype=float)
+        ss = np.zeros((M, T), dtype=float)
+
+        # Center contribution (scaled)
+        ee += (self.c.real ** 2) * center_weight
+        EE += (self.c.imag ** 2) * center_weight
+        ss += (self.c.real * self.c.imag) * center_weight
+
+        # helper: add shifted contributions of offsets without wrap (zero outside)
+        def add_shift(dr: int, dt: int):
+            """Add contribution of self.c shifted by (dr, dt) into ee/EE/ss without wrap."""
+            src_m0 = max(0, -dr)
+            src_m1 = min(M, M - dr)
+            src_t0 = max(0, -dt)
+            src_t1 = min(T, T - dt)
+
+            dst_m0 = src_m0 + dr
+            dst_m1 = src_m1 + dr
+            dst_t0 = src_t0 + dt
+            dst_t1 = src_t1 + dt
+
+            if src_m1 <= src_m0 or src_t1 <= src_t0:
+                return  # nothing overlaps
+
+            block = self.c[src_m0:src_m1, src_t0:src_t1]
+            # add squared real/imag and real*imag properly to destination slice
+            ee[dst_m0:dst_m1, dst_t0:dst_t1] += np.real(block) ** 2
+            EE[dst_m0:dst_m1, dst_t0:dst_t1] += np.imag(block) ** 2
+            ss[dst_m0:dst_m1, dst_t0:dst_t1] += (np.real(block) * np.imag(block))
+
+        for dr, dt in offsets:
+            add_shift(dr, dt)
+
+        # Now compute cc, ss2, nn arrays vectorized
+        cc = ee - EE
+        ss2 = ss * 2.0
+        cc2 = cc
+
+        # compute nn = sqrt(cc^2 + ss2^2), but ensure numeric stability
+        nn = np.sqrt(cc2 * cc2 + ss2 * ss2)
+        sum_eeEE = ee + EE
+        # condition where sum_eeEE < nn -> nn = sum_eeEE
+        mask = sum_eeEE < nn
+        if mask.any():
+            nn[mask] = sum_eeEE[mask]
+
+        # compute aa elementwise safely
+        a1 = np.sqrt(np.clip((sum_eeEE + nn) / 2.0, 0.0, None))
+        a2 = np.sqrt(np.clip((sum_eeEE - nn) / 2.0, 0.0, None))
+        aa = a1 + a2
+
+        # compute em array
+        if (mode == 'e') or (mode == 'l') or (mean == 1.0):
+            em = sum_eeEE / 2.0
+        else:
+            em = (aa * aa) / 4.0
+
+        alp = shape - np.log(shape) / 3.0 if shape > 0 else shape
+
+        if mode == 'l':
+            em = em * (shape / mean)
+            # where em < alp, set to 0; otherwise apply the correction
+            mask2 = em < alp
+            em2 = em.copy()
+            # avoid log of zero or negative
+            pos_mask = ~mask2
+            if pos_mask.any():
+                em2[pos_mask] = em[pos_mask] - alp * (1.0 + np.log(em[pos_mask] / alp))
+            em2[mask2] = 0.0
+            em = em2
+
+        # amplitude branch: compute amplitude complex array
+        amplitudes = np.zeros((M, T), dtype=np.complex128)
+        if mode == 'a':
+            # avoid division by zero: where nn==0, amplitudes remain 0
+            safe_nn = nn.copy()
+            safe_nn[safe_nn == 0.0] = 1.0  # temporary to avoid division by zero
+            cc_norm = cc2 / safe_nn
+            ss_norm = ss2 / safe_nn
+            denom = np.sqrt((1.0 + cc_norm) * (1.0 + cc_norm) + ss_norm * ss_norm) / 2.0
+            # components:
+            real_part = aa * cc_norm
+            imag_part = aa * ss_norm / 2.0
+            amplitudes = real_part + 1j * imag_part
+            # fix locations where nn was zero to zero amplitude
+            amplitudes[nn == 0.0] = 0+0j
+
+        # apply frequency masks (mL..mH) and jb/je flattened semantics:
+        # For vectorized version we produce full matrices but then zero rows outside mL..mH
+        energy_out = em.copy()
+        amp_out = amplitudes.copy()
+
+        # zero frequency rows outside [mL, mH]
+        if mL > 0:
+            energy_out[:mL, :] = 0.0
+            amp_out[:mL, :] = 0+0j
+        if mH < M - 1:
+            energy_out[mH+1:, :] = 0.0
+            amp_out[mH+1:, :] = 0+0j
+
+        # mimic jb/je flattened skipping by zeroing time bins whose flattened j are out of range
+        # flattened j = m + t*M; compute min and max t allowed per m: we will set to zero where j<jb or j>=je
+        # vectorized construction:
+        m_idx = np.arange(M).reshape(M, 1)
+        t_idx = np.arange(T).reshape(1, T)
+        j_flat = m_idx + t_idx * M
+        invalid_mask = (j_flat < jb) | (j_flat >= je)
+        energy_out[invalid_mask] = 0.0
+        amp_out[invalid_mask] = 0+0j
+
+        self.last_energy = energy_out
+        self.last_amplitude = amp_out
+        return shape
 
 
 

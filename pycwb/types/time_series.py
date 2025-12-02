@@ -99,6 +99,47 @@ class TimeSeries:
         """
         from gwpy.timeseries import TimeSeries as GWPyTimeSeries
         return GWPyTimeSeries(self.data, t0=self.t0, dt=self.dt)
+
+    @classmethod
+    def time_slide_copy(cls, ts_in, length: int = 0, src_idx: int = 0, dst_idx: int = 0):
+        """
+        Classmethod version of C++ wavearray::cpf(), but always operating on
+        `ts_in` as both source and destination, returning a new modified copy.
+
+        Parameters
+        ----------
+        ts_in : TimeSeries
+            The input TimeSeries; used as both the source and destination.
+        length : int, optional
+            Number of samples to copy. 
+            If 0, automatically computed from available array length.
+        src_idx : int
+            Starting index in `ts_in.data` from which samples are copied.
+        dst_idx : int
+            Starting index in the output TimeSeries where samples are written.
+
+        Returns
+        -------
+        TimeSeries
+            A new TimeSeries whose data contains the copied segment.
+        """
+        data = ts_in.data
+
+        # Same auto-length logic as C++ cpf()
+        if length == 0:
+            length = min(len(data) - dst_idx, len(data) - src_idx)
+
+        # Create a fresh copy of the full input time series
+        new_ts = cls(
+            data=np.copy(data),
+            t0=ts_in.t0,
+            dt=ts_in.dt
+        )
+
+        # Vectorized segment copy (NumPy handles any boundary issues gracefully)
+        new_ts.data[dst_idx:dst_idx + length] = data[src_idx:src_idx + length]
+
+        return new_ts
     
     @classmethod
     def from_pycbc(cls, pycbc_ts):
