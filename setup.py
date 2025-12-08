@@ -17,7 +17,6 @@ install_requires = [
     "pyyaml",
     "jsonschema",
     "watchfiles",
-    "numpy",
     "numba",
     "jax",
     "gwpy",
@@ -26,12 +25,17 @@ install_requires = [
     "aiohttp",
     "pycbc",
     "filelock",
-    # "scipy", # required by healpy
+    "numpy>=2",
+    "scipy>=1.13",     # compatible with numpy 2.x
+    "h5py>=3.11",      # compatible with numpy 2.x
+    "lalsuite>=7.23",  # compatible with numpy 2.x
+    "healpy>=1.17",    # compatible with numpy 2.x
+    "scikit-learn>=1.4.2",  # compatible with numpy 2.x
+    "pyarrow>=17",     # compatible with numpy 2.x
     "pillow>=9.0.0",
     "click",
     "orjson",
     "dacite",
-    "lalsuite>=7.0.0",
     # "prefect",
     # "prefect-dask",
     # "dask",
