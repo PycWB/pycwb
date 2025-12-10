@@ -78,6 +78,7 @@ def sync_waveforms(waveforms, reference, sync_phase = True):
     Synchronize all waveforms to a reference waveform.
     """
     sync_waveforms = [] 
+    reference_waveforms = [] 
     discarded_waveforms = 0
     
     #If 1 reference waveform is given, sync all waveforms to it
@@ -96,6 +97,7 @@ def sync_waveforms(waveforms, reference, sync_phase = True):
             try: 
                 waveform.syncWaveform(reference[i], sync_phase = sync_phase)
                 sync_waveforms.append(waveform)
+                reference_waveforms.append(reference[i])
             except ValueError:
                 discarded_waveforms += 1
                 pass
@@ -105,7 +107,7 @@ def sync_waveforms(waveforms, reference, sync_phase = True):
     if discarded_waveforms > 0:
         logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization due to errors .")
 
-    return sync_waveforms 
+    return sync_waveforms, reference_waveforms 
 
 
 def slice_waveforms(waveforms, reference_waveforms): 
