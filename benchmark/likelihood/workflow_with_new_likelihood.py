@@ -18,7 +18,8 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, plot_skymap_flow
 from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluster, convert_netcluster_to_fragment_clusters
-
+from pycwb.types.network_event import Event
+from time import perf_counter
 logger = logging.getLogger(__name__)
 
 
@@ -106,8 +107,16 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
-            for i in range(len(fragment_cluster.clusters)):
-                pwc = network.get_cluster(0)
+            # events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
+            #                                                 lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
+            for k, selected_cluster in enumerate(fragment_cluster.clusters):
+                # skip if cluster is already rejected
+                if selected_cluster.cluster_status > 0:
+                    continue
+
+                cluster_id = k + 1
+                
+                pwc = network.get_cluster(lag)
                 wdm_list = network.get_wdm_list()
                 for wdm in wdm_list:
                     wdm.setTDFilter(config.TDSize, config.upTDF)
@@ -120,8 +129,28 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 pwc.setcore(False, 1)
                 pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
                 cluster = convert_netcluster_to_fragment_clusters(pwc)
+
+                network.net.MRA = True
+                start_time = perf_counter()
+                selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
+                end_time = perf_counter()
+                cluster_old = convert_netcluster_to_fragment_clusters(network.get_cluster(lag)).clusters[0]
+                event = Event()
+                event.output(network.net, k + 1, lag, shifts=sub_job_seg.shift)
+                start_time_new = perf_counter()
                 cluster = likelihood(network, config.nIFO, cluster.clusters[0], config.MRAcatalog)
-                print(cluster)
+                end_time_new = perf_counter()
+                print(f"[old] start: {event.left[0]}, stop: {event.duration[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
+                print(f"[new] start: {cluster.start_time}, stop: {cluster.duration}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
+                print(f"[old] ecor: {event.ecor}, subnet: {event.netcc[2]}, SUBNET: {event.netcc[3]}, rho0: {event.rho[0]}")
+                print(f"[new] ecor: {cluster.cluster_meta.net_ecor}, subnet: {cluster.cluster_meta.sub_net}, SUBNET: {cluster.cluster_meta.sub_net2}, rho0: {cluster.cluster_meta.net_rho}")
+                print(f"[old] a_net: {event.anet}, g_net: {event.gnet}, i_net: {event.inet}")
+                print(f"[new] a_net: {cluster.cluster_meta.a_net}, g_net: {cluster.cluster_meta.g_net}, i_net: {cluster.cluster_meta.i_net}")
+                print(f"[old] skysize: {event.size[0]}, {event.size[1]}")
+                print(f"[new] skysize: {cluster.get_analyzed_size()}, {cluster.cluster_meta.sky_size}")
+
+                print(f"Likelihood computation time (old): {end_time - start_time} seconds")
+                print(f"Likelihood computation time (new): {end_time_new - start_time_new} seconds")
                 logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
                 
            

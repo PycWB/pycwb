@@ -89,6 +89,14 @@ print(f"expected Gn: 83.9425, Ec: 7571.68, Dc: 0.441406, Rc: 0.999999, Eh: 9.454
 print(f"expected N = 83.0302, N2 = 83.9448")
 print(f"expected Np = 70.9542, Em = 1676.79, Lm = 1521.89, norm = 4.91776, Ec = 1539.66, Dc = 0.0897575, ch = 0.932774")
 print(f"expected cc = 1, rho = 27.7458, ecor = 1.4013e-45, penalty = 2.92971e-33, xrho = 4.2039e-45")
+
+print("Expected Eo = 8469.68, Lo = 7973.51, Ep = 1620.1, Lp = 1524.92")
+print("Expected Gn = 92.2829, Ec = 7705.1, Dc = 6.82031, Rc = 0.999999, Eh = 33.0292 , ES = 0 , NC = 422 , NS = 417")
+print("Expected N = 94.2876, N2 = 92.2847")
+print("Expected Np = 109.1, Em = 1741.43, Lm = 1540.04, norm = 4.84468, Ec = 1590.42, Dc = 1.40779, ch = 1.06792")
+print("Expected cc = 1.06792, rho = 28.1995, ecor = 4.30479e-42, penalty = 1328.17, xrho = 0")
+print("Expected Mw = 422, M = 417, Esub = 1967.29, Nmax = 107.095")
+print("Expected sky size: 422, sub_net: 0.948373, sub_net2: 0.933051, like_sky: 1741.43, energy_sky: 8469.68, net_ecor: 1590.42, norm_cor: 1590.42, g_net: 0.717639, a_net: 0.21022, i_net: 0, ndof: 94.2876, sky_chi2: 1.06188, g_noise: 92.2829")
 #############################################
 # Performance test
 #############################################
