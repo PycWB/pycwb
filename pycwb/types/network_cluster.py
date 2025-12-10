@@ -339,7 +339,7 @@ class Cluster:
         float
             cluster low frequency (Hz)
         """
-        return min([p.frequency for p in self.pixels])
+        return min([p.frequency_in_hz for p in self.pixels])
     
     @property
     def high_frequency(self):
@@ -351,7 +351,7 @@ class Cluster:
         float
             cluster high frequency (Hz)
         """
-        return max([p.frequency for p in self.pixels])
+        return max([p.frequency_in_hz for p in self.pixels])
 
 @dataclass
 class FragmentCluster:
