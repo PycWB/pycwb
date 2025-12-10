@@ -293,6 +293,65 @@ class Cluster:
         """
         return len([p for p in self.pixels if p.likelihood > 0 and p.core])
 
+    @property
+    def start_time(self):
+        """
+        Get cluster start time
+
+        Returns
+        -------
+        float
+            cluster start time (seconds)
+        """
+        return min([p.time_in_seconds for p in self.pixels])
+    
+    @property
+    def stop_time(self):
+        """
+        Get cluster stop time
+
+        Returns
+        -------
+        float
+            cluster stop time (seconds)
+        """
+        return max([p.time_in_seconds for p in self.pixels])
+    
+    @property
+    def duration(self):
+        """
+        Get cluster duration
+
+        Returns
+        -------
+        float
+            cluster duration (seconds)
+        """
+        return self.stop_time - self.start_time
+    
+    @property
+    def low_frequency(self):
+        """
+        Get cluster low frequency
+
+        Returns
+        -------
+        float
+            cluster low frequency (Hz)
+        """
+        return min([p.frequency for p in self.pixels])
+    
+    @property
+    def high_frequency(self):
+        """
+        Get cluster high frequency
+
+        Returns
+        -------
+        float
+            cluster high frequency (Hz)
+        """
+        return max([p.frequency for p in self.pixels])
 
 @dataclass
 class FragmentCluster:
