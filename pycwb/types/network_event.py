@@ -300,8 +300,9 @@ class Event:
             #    this->neted[3] = pcd->likesky;                         // total likelihood at all resolutions
             #    this->neted[4] = pcd->enrgsky;                         // total energy at all resolutions
 
-            for i in range(11):
-                self.erA.append(pcd.sArea[i])
+            
+            # for i in range(11):
+            self.erA.append(np.array(pwc.sArea[0]))
 
             self.ECOR = pcd.normcor  # normalized coherent energy
             self.netcc = [
