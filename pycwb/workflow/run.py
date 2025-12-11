@@ -31,8 +31,8 @@ def process_single_with_flag(working_dir, config, job_seg, compress_json, overwr
             logger.error(f"Failed to create job done flag file: {e}")
 
     except Exception as e:
-        logger.error(f"Error processing job segment: {job_seg}")
-        logger.error(e)
+        logger.error(f"Error processing job segment: {job_seg.index}")
+        logger.exception(e)
         # create a flag file to indicate the job is failed
         try:
             with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
