@@ -150,9 +150,9 @@ def load_data_from_ifo(network, nIFO):
     FP = []
     FX = []
     for i in range(nIFO):
-        ml.append(convert_wavearray_to_nparray(network.get_ifo(i).index, short=True))
-        FP.append(convert_wavearray_to_nparray(network.get_ifo(i).fp))
-        FX.append(convert_wavearray_to_nparray(network.get_ifo(i).fx))
+        ml.append(convert_wavearray_to_nparray(network.get_ifo(i).index, short=True, clean=False))
+        FP.append(convert_wavearray_to_nparray(network.get_ifo(i).fp, clean=False))
+        FX.append(convert_wavearray_to_nparray(network.get_ifo(i).fx, clean=False))
 
     ml = np.array(ml)
     FP = np.array(FP)
