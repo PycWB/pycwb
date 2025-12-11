@@ -292,6 +292,17 @@ class Cluster:
             analyzed pixels
         """
         return len([p for p in self.pixels if p.likelihood > 0 and p.core])
+    
+    def get_core_size(self):
+        """
+        Get core pixels
+
+        Returns
+        -------
+        int
+            core pixels
+        """
+        return len([p for p in self.pixels if p.core])
 
     @property
     def start_time(self):
@@ -303,7 +314,8 @@ class Cluster:
         float
             cluster start time (seconds)
         """
-        return min([p.time_in_seconds for p in self.pixels])
+        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB
+        return min([p.time_in_seconds + 1 / p.rate / 2 for p in self.pixels])
     
     @property
     def stop_time(self):
@@ -315,7 +327,8 @@ class Cluster:
         float
             cluster stop time (seconds)
         """
-        return max([p.time_in_seconds for p in self.pixels])
+        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB. The + 1 / p.rate need to be confirmed.
+        return max([p.time_in_seconds + 1 / p.rate / 2 + 1 / p.rate for p in self.pixels])
     
     @property
     def duration(self):
@@ -339,7 +352,8 @@ class Cluster:
         float
             cluster low frequency (Hz)
         """
-        return min([p.frequency_in_hz for p in self.pixels])
+        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
+        return min([(p.frequency - 0.5) * p.rate / 2 for p in self.pixels])
     
     @property
     def high_frequency(self):
@@ -351,7 +365,8 @@ class Cluster:
         float
             cluster high frequency (Hz)
         """
-        return max([p.frequency_in_hz for p in self.pixels])
+        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
+        return max([(p.frequency - 0.5) * p.rate / 2 + p.rate / 2 for p in self.pixels])
 
 @dataclass
 class FragmentCluster:
