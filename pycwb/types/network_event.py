@@ -4,6 +4,8 @@ import hashlib
 import numpy as np
 import json
 from dataclasses import dataclass, field
+from pycwb.types.network_cluster import Cluster
+from pycwb.types.job import WaveSegment
 
 
 @dataclass()
@@ -332,6 +334,33 @@ class Event:
     #     :rtype: str
     #     """
     #     return json.dumps(self.__dict__)
+
+    def output_py(self, job_segment: WaveSegment, cluster: Cluster):
+        #    print(f"[old] start: {event.left[0]}, stop: {event.stop[0] - event.gps[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
+        #         print(f"[new] start: {cluster.start_time}, stop: {cluster.stop_time}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
+        #         print(f"[old] ecor: {event.ecor:.6f}, subnet: {event.netcc[2]:.6f}, SUBNET: {event.netcc[3]:.6f}, rho0: {event.rho[0]:.6f}")
+        #         print(f"[new] ecor: {cluster.cluster_meta.net_ecor:.6f}, subnet: {cluster.cluster_meta.sub_net:.6f}, SUBNET: {cluster.cluster_meta.sub_net2:.6f}, rho0: {cluster.cluster_meta.net_rho:.6f}")
+        #         print(f"[old] a_net: {event.anet:.6f}, g_net: {event.gnet:.6f}, i_net: {event.inet:.6f}")
+        #         print(f"[new] a_net: {cluster.cluster_meta.a_net:.6f}, g_net: {cluster.cluster_meta.g_net:.6f}, i_net: {cluster.cluster_meta.i_net:.6f}")
+        #         print(f"[old] skysize: {event.size[0]}, {event.size[1]}")
+        #         print(f"[new] skysize: {cluster.get_core_size()}, {cluster.cluster_meta.sky_size}")
+        self.gps = np.array([job_segment.physical_start_times[ifo] for ifo in job_segment.ifos])
+        self.left = cluster.start_time
+        self.right = job_segment.duration - cluster.stop_time
+        self.start = cluster.start_time + self.gps
+        self.stop = cluster.stop_time + self.gps
+        self.low = cluster.low_frequency
+        self.high = cluster.high_frequency
+        self.ecor = cluster.cluster_meta.net_ecor
+        self.netcc = [None, None, cluster.cluster_meta.sub_net, cluster.cluster_meta.sub_net2]
+        self.rho = [cluster.cluster_meta.net_rho]
+        self.anet = cluster.cluster_meta.a_net
+        self.gnet = cluster.cluster_meta.g_net
+        self.inet = cluster.cluster_meta.i_net
+        self.size = [cluster.get_core_size(), cluster.cluster_meta.sky_size]
+        self.nevent = 1
+        self.job_id = job_segment.index
+
 
     def summary(self):
         """
