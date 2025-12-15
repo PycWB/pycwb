@@ -17,7 +17,6 @@ class Waveform(TimeSeries):
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
-        self.findStartEnd() 
 
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
@@ -102,7 +101,7 @@ class Waveform(TimeSeries):
         :return: (tstart, tend)
         :rtype: tuple containing the estimated start and end times
         """
-        non_zero_indices = np.where(np.abs(self.data) > self.data.max() * rtol)[0]
+        non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
         if non_zero_indices.size == 0:
             raise ValueError("Waveform data is all zeros or below the threshold.")
         self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
