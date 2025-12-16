@@ -193,8 +193,8 @@ class Waveform(TimeSeries):
         w2_90 = hilbert(w2)
 
         # Phase difference estimator
-        num = np.sum(w1 * w2_90 - w1_90 * w2)
-        den = np.sum(w1 * w2 + w1_90 * w2_90)
+        num = np.sum(w1 * w2_90 - w1_90 * w2).real() 
+        den = np.sum(w1 * w2 + w1_90 * w2_90).real() 
 
         # Deterministic fallback (never zero output)
         if num == 0 and den == 0:
