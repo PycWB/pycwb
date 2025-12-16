@@ -89,9 +89,34 @@ class Waveform(TimeSeries):
         if time_shift != 0:
             self.timeShift(time_shift)
 
-        
+    
+    def findStartEnd(self, rtol=1e-3):
+        """
+        Find start and end of the waveform as the contiguous segment
+        containing the global maximum above threshold.
+        """
+        threshold = np.max(np.abs(self.data)) * rtol
 
-    def findStartEnd(self, rtol = 1e-3): 
+        peak_idx = np.argmax(np.abs(self.data))
+
+        # Expand backwards
+        istart = peak_idx
+        while istart > 0 and np.abs(self.data[istart]) >= threshold:
+            istart -= 1
+
+        # Expand forwards
+        iend = peak_idx
+        while iend < len(self.data) - 1 and np.abs(self.data[iend]) >= threshold:
+            iend += 1
+
+        self.istart = istart
+        self.iend = iend
+        self.tstart = self.sample_times[istart]
+        self.tend = self.sample_times[iend]
+
+        return self.tstart, self.tend
+
+    def findStartEnd_OLD(self, rtol = 1e-3): 
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
         and creates relative attributes in the waveform object.
