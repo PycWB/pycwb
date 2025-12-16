@@ -11,9 +11,9 @@ class Waveform(TimeSeries):
     :param data: data
     :type data: pycbc.types.timeseries.TimeSeries
     """
-    def __init__(self, data: TimeSeries):
+    def __init__(self, data: TimeSeries, rtol = 1e-3):
         super().__init__(data, data._delta_t, data.start_time)
-        self.findStartEnd() 
+        self.findStartEnd(rtol  = rtol) 
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
@@ -34,8 +34,7 @@ class Waveform(TimeSeries):
         
         if self.sample_rate != reference_waveform.sample_rate:
             raise ValueError("Sample rates do not match.")
-        
-        self.alignStartTime(reference_waveform)
+
         self.timeShift(self.computeTimeDifference(reference_waveform)) 
         if sync_phase:
             self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
@@ -169,36 +168,79 @@ class Waveform(TimeSeries):
         """
         Shift the waveform in time by a specified amount.
         """
-        if shift == 0: return 
+        if shift == 0: 
+            return 
         self.start_time += shift 
         self._total_time_shift += shift
         #updated start, end indeces after time shifting 
         self.findStartEnd() 
 
-
-    def computePhaseDifference(self, reference_waveform): 
+    def computePhaseDifference(self, reference_waveform):
         """
-        Synchronize the phase of this waveform with another waveform.
+        Compute phase difference using samples starting from the maximum start time
+        and taking the maximum possible common length.
         """
-        #Reinitialize the waveforms to the same time slice
-        start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
-        this = self.__class__(self.time_slice(start, end)) 
-        reference = self.__class__(reference_waveform.time_slice(start,end))
-        #Compute 90_degree phase shifted versions of the waveforms
-        this_90 = this.phaseShift(np.pi / 2)
-        reference_90 = reference.phaseShift(np.pi / 2) 
 
-        num, den = 0, 0
-        for i in range(np.size(this)):
-            try: 
-                num += this[i] * reference_90[i] - this_90[i] * reference[i]
-                den += this[i] * reference[i] + this_90[i] * reference_90[i]
-            except IndexError: 
-                pass 
-        #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
-        phase_diff = - np.arctan2(num, den)
-    
-        return phase_diff   
+        # Sample times
+        t1 = self.sample_times
+        t2 = reference_waveform.sample_times
+        t_start = max(t1[0], t2[0])
+
+        # Indices corresponding to t_start
+        i1 = np.argmin(np.abs(t1 - t_start))
+        i2 = np.argmin(np.abs(t2 - t_start))
+
+        # Available lengths after t_start
+        n1, n2 = len(self) - i1, len(reference_waveform) - i2
+        N = min(n1, n2)
+
+        # Enforce minimum length
+        if N < 2:
+            N = 2
+            i1 = max(0, len(self) - N)
+            i2 = max(0, len(reference_waveform) - N)
+
+        # Extract equal-length segments
+        w1 = self.data[i1:i1 + N]
+        w2 = reference_waveform.data[i2:i2 + N]
+
+        # 90-degree phase-shifted versions
+        w1_90 = np.imag(np.fft.hilbert(w1))
+        w2_90 = np.imag(np.fft.hilbert(w2))
+
+        # Phase difference estimator
+        num = np.sum(w1 * w2_90 - w1_90 * w2)
+        den = np.sum(w1 * w2 + w1_90 * w2_90)
+
+        # Deterministic fallback (never zero output)
+        if num == 0 and den == 0:
+            num = np.finfo(float).eps
+
+        return -np.arctan2(num, den) 
+
+    def computePhaseDifferenceOld(self, reference_waveform): 
+            """
+            Synchronize the phase of this waveform with another waveform.
+            """
+            #Reinitialize the waveforms to the same time slice
+            start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
+            this = self.__class__(self.time_slice(start, end)) 
+            reference = self.__class__(reference_waveform.time_slice(start,end))
+            #Compute 90_degree phase shifted versions of the waveforms
+            this_90 = this.phaseShift(np.pi / 2)
+            reference_90 = reference.phaseShift(np.pi / 2) 
+
+            num, den = 0, 0
+            for i in range(np.size(this)):
+                try: 
+                    num += this[i] * reference_90[i] - this_90[i] * reference[i]
+                    den += this[i] * reference[i] + this_90[i] * reference_90[i]
+                except IndexError: 
+                    pass 
+            #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
+            phase_diff = - np.arctan2(num, den)
+        
+            return phase_diff   
 
 
     def phaseShift(self, shift):
@@ -305,7 +347,7 @@ class Waveform(TimeSeries):
         return len(self.data)
 
 
-def load_waveform(filename, resample = None):
+def load_waveform(filename, rtol = 1e-3, resample = None):
     """
     Load a waveform from a file.
     """
@@ -314,4 +356,4 @@ def load_waveform(filename, resample = None):
     data = load_timeseries(filename)
     if isinstance(resample, int) or isinstance(resample, float):
         data = data.resample(resample)
-    return Waveform(data) 
+    return Waveform(data, rtol = rtol) 
