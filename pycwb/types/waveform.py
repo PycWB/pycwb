@@ -238,7 +238,7 @@ class Waveform(TimeSeries):
                 except IndexError: 
                     pass 
             #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
-            phase_diff = - np.arctan2(num, den)
+            phase_diff = - np.arctan2(np.real(num), np.real(den))
         
             return phase_diff   
 
