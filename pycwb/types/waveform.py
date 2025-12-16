@@ -1,6 +1,6 @@
 from pycbc.types.timeseries import load_timeseries, TimeSeries 
 import numpy as np 
-from scipy.signal import correlate 
+from scipy.signal import correlate, hilbert 
 import cmath 
 
 
@@ -205,8 +205,8 @@ class Waveform(TimeSeries):
         w2 = reference_waveform.data[i2:i2 + N]
 
         # 90-degree phase-shifted versions
-        w1_90 = np.imag(np.fft.hilbert(w1))
-        w2_90 = np.imag(np.fft.hilbert(w2))
+        w1_90 = hilbert(w1)
+        w2_90 = hilbert(w2)
 
         # Phase difference estimator
         num = np.sum(w1 * w2_90 - w1_90 * w2)
