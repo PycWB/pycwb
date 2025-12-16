@@ -36,8 +36,9 @@ class Waveform(TimeSeries):
             raise ValueError("Sample rates do not match.")
 
         self.timeShift(self.computeTimeDifference(reference_waveform)) 
+        reference_padded = self.pad_to_same_length(reference_waveform)
         if sync_phase:
-            self.data = self.phaseShift(self.computePhaseDifference(reference_waveform))
+            self.data = self.phaseShift(self.computePhaseDifference(reference_padded))
 
 
     def retriveOnsourceTimes(self): 
@@ -76,18 +77,6 @@ class Waveform(TimeSeries):
         return self 
 
 
-    def alignStartTime(self, reference_waveform): 
-        """
-        Align the start time of this waveform with a reference waveform.
-
-        :param reference_waveform: The reference waveform to align with.
-        :type reference_waveform: Waveform
-        """
-
-        time_shift = reference_waveform.start_time - self.start_time
-        if time_shift != 0:
-            self.timeShift(time_shift)
-
     
     def findStartEnd(self, rtol=1e-3):
         """
@@ -115,24 +104,39 @@ class Waveform(TimeSeries):
 
         return self.tstart, self.tend
 
-    def findStartEnd_OLD(self, rtol = 1e-3): 
+
+    def pad_to_same_length(self, reference_waveform):
         """
-        Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
-        and creates relative attributes in the waveform object.
+        Pad this waveform and a reference waveform with zeros so they share
+        the same start and end times. Returns both padded waveforms.
 
-        :param rtol: relative tolerance to define non-zero values
-        :type rtol: float
-        :return: (tstart, tend)
-        :rtype: tuple containing the estimated start and end times
+        :param reference_waveform: Waveform to align with
+        :return: (padded_self, padded_reference)
         """
-        non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
-        if non_zero_indices.size == 0:
-            raise ValueError("Waveform data is all zeros or below the threshold.")
-        self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
-        self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
-        return self.tstart, self.tend     
+            # Make copies so we don’t modify originals
+        ref_pad = reference_waveform.copy()
+        dt = self.delta_t
 
+        # Determine combined start and end times
+        t_start = min(self.sample_times[0], ref_pad.sample_times[0])
+        t_end   = max(self.sample_times[-1],  ref_pad.sample_times[-1])
 
+        # Pad self waveform
+        n_pre_w  = int(round((self.sample_times[0] - t_start) / dt))
+        n_post_w = int(round((t_end - self.sample_times[-1]) / dt))
+        if n_pre_w > 0:
+            self.prepend_zeros(n_pre_w)
+        if n_post_w > 0:
+            self.append_zeros(n_post_w)
+        # Pad reference waveform
+        n_pre_r  = int(round((ref_pad.sample_times[0] - t_start) / dt))
+        n_post_r = int(round((t_end - ref_pad.sample_times[-1]) / dt))
+        if n_pre_r > 0:
+            ref_pad.prepend_zeros(n_pre_r)
+        if n_post_r > 0:
+            ref_pad.append_zeros(n_post_r)
+
+        return ref_pad
 
     def _computeCrossCorrelation(self, reference_waveform):
         """
@@ -181,28 +185,8 @@ class Waveform(TimeSeries):
         and taking the maximum possible common length.
         """
 
-        # Sample times
-        t1 = self.sample_times
-        t2 = reference_waveform.sample_times
-        t_start = max(t1[0], t2[0])
-
-        # Indices corresponding to t_start
-        i1 = np.argmin(np.abs(t1 - t_start))
-        i2 = np.argmin(np.abs(t2 - t_start))
-
-        # Available lengths after t_start
-        n1, n2 = len(self) - i1, len(reference_waveform) - i2
-        N = min(n1, n2)
-
-        # Enforce minimum length
-        if N < 2:
-            N = 2
-            i1 = max(0, len(self) - N)
-            i2 = max(0, len(reference_waveform) - N)
-
-        # Extract equal-length segments
-        w1 = self.data[i1:i1 + N]
-        w2 = reference_waveform.data[i2:i2 + N]
+        w1 = self.data
+        w2 = reference_waveform.data
 
         # 90-degree phase-shifted versions
         w1_90 = hilbert(w1)
@@ -218,29 +202,7 @@ class Waveform(TimeSeries):
 
         return -np.arctan2(num, den) 
 
-    def computePhaseDifferenceOld(self, reference_waveform): 
-            """
-            Synchronize the phase of this waveform with another waveform.
-            """
-            #Reinitialize the waveforms to the same time slice
-            start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
-            this = self.__class__(self.time_slice(start, end)) 
-            reference = self.__class__(reference_waveform.time_slice(start,end))
-            #Compute 90_degree phase shifted versions of the waveforms
-            this_90 = this.phaseShift(np.pi / 2)
-            reference_90 = reference.phaseShift(np.pi / 2) 
 
-            num, den = 0, 0
-            for i in range(np.size(this)):
-                try: 
-                    num += this[i] * reference_90[i] - this_90[i] * reference[i]
-                    den += this[i] * reference[i] + this_90[i] * reference_90[i]
-                except IndexError: 
-                    pass 
-            #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
-            phase_diff = - np.arctan2(np.real(num), np.real(den))
-        
-            return phase_diff   
 
 
     def phaseShift(self, shift):
@@ -357,3 +319,46 @@ def load_waveform(filename, rtol = 1e-3, resample = None):
     if isinstance(resample, int) or isinstance(resample, float):
         data = data.resample(resample)
     return Waveform(data, rtol = rtol) 
+
+
+
+def findStartEnd_OLD(self, rtol = 1e-3): 
+    """
+    Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
+    and creates relative attributes in the waveform object.
+
+    :param rtol: relative tolerance to define non-zero values
+    :type rtol: float
+    :return: (tstart, tend)
+    :rtype: tuple containing the estimated start and end times
+    """
+    non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
+    if non_zero_indices.size == 0:
+        raise ValueError("Waveform data is all zeros or below the threshold.")
+    self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
+    self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
+    return self.tstart, self.tend     
+
+def computePhaseDifferenceOld(self, reference_waveform): 
+        """
+        Synchronize the phase of this waveform with another waveform.
+        """
+        #Reinitialize the waveforms to the same time slice
+        start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
+        this = self.__class__(self.time_slice(start, end)) 
+        reference = self.__class__(reference_waveform.time_slice(start,end))
+        #Compute 90_degree phase shifted versions of the waveforms
+        this_90 = this.phaseShift(np.pi / 2)
+        reference_90 = reference.phaseShift(np.pi / 2) 
+
+        num, den = 0, 0
+        for i in range(np.size(this)):
+            try: 
+                num += this[i] * reference_90[i] - this_90[i] * reference[i]
+                den += this[i] * reference[i] + this_90[i] * reference_90[i]
+            except IndexError: 
+                pass 
+        #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
+        phase_diff = - np.arctan2(np.real(num), np.real(den))
+    
+        return phase_diff   
