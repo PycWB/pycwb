@@ -5,13 +5,10 @@ from pycwb.types.waveform import Waveform, load_waveform
 from tqdm import tqdm  # type: ignore
 import numpy as np  # type: ignore
 import logging 
-import os 
-
-
-#Put in a module ()
+import os
 
 #TODO: Implement whitened options 
-    
+
 logger = logging.getLogger(__name__) 
 
 def save(figure, results_dictionary, directory, filename, extension = 'pdf'): 
@@ -166,6 +163,88 @@ def _sync_one(args):
 
 
 
+def _pad_pair_to_same_length(args):
+    """
+    Pad two waveforms with zeros so they share the same start and end times.
+    Returns both padded waveforms.
+    """
+    try: 
+        w, ref_w = args
+        w_pad = w.copy()
+        ref_pad = ref_w.copy()
+        dt = w.delta_t
+
+        # Determine combined start and end times
+        t_start = min(w_pad.sample_times[0], ref_pad.sample_times[0])
+        t_end   = max(w_pad.sample_times[-1],   ref_pad.sample_times[-1])
+
+        # Pad or truncate w_pad
+        n_pre_w  = int(round((w_pad.sample_times[0] - t_start) / dt))
+        n_post_w = int(round((t_end - w_pad.sample_times[-1]) / dt))
+        if n_pre_w > 0:
+            w_pad.prepend_zeros(n_pre_w)
+        if n_post_w > 0:
+            w_pad.append_zeros(n_post_w)
+
+        # Pad or truncate ref_pad
+        n_pre_r  = int(round((ref_pad.sample_times[0] - t_start) / dt))
+        n_post_r = int(round((t_end - ref_pad.sample_times[-1]) / dt))
+        if n_pre_r > 0:
+            ref_pad.prepend_zeros(n_pre_r)
+        if n_post_r > 0:
+            ref_pad.append_zeros(n_post_r)
+
+        #Now both have exactly the same length
+        assert len(w_pad) == len(ref_pad)
+
+    except Exception:
+        return None 
+    
+    return w_pad, ref_pad
+
+
+
+def pad_waveforms(waveforms, reference, max_workers=None):
+    """
+    Pad all waveforms to have the same time support as reference waveform(s),
+    ensuring every output pair has exactly the same length.
+    
+    :param waveforms: list of TimeSeries to pad
+    :param reference: single TimeSeries or list of TimeSeries (same length)
+    :return: padded_waveforms, padded_references
+    """
+    if isinstance(reference, Waveform):
+        refs = [reference] * len(waveforms)
+    elif isinstance(reference, list) and len(reference) == len(waveforms):
+        refs = reference
+    else:
+        raise ValueError("Reference must be a single TimeSeries or a list of same length as waveforms.")
+
+    args = list(zip(waveforms, refs))
+    padded_waveforms = []
+    padded_refs = []
+    discarded = 0 
+    with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
+        results = list(
+            tqdm(
+                exe.map(_pad_pair_to_same_length, args),
+                total=len(args),
+                desc="Padding waveforms (parallel)"
+            )
+        )
+
+    # Collect results
+    for r in results:
+        if r is not None:
+            padded_waveforms.append(r[0])
+            padded_refs.append(r[1])
+        else:
+            discarded += 1
+    if discarded > 0:
+        print(f"{discarded} waveforms could not be padded and were discarded.")
+
+    return padded_waveforms, padded_refs
+
 def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
     """
     Slice all waveforms to the same time range as the reference waveforms. If len(reference_waveform) == 1, slice all waveforms to the same time range, 
@@ -227,25 +306,22 @@ def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
 def _slice_one(args):
     w, ref_w = args
 
-    try:
-        t_start, t_end = ref_w.tstart, ref_w.tend
-        ref_slice = ref_w.time_slice(t_start, t_end)
-        N = len(ref_slice)
 
-        start_idx = np.argmin(np.abs(w.sample_times - t_start))
-        end_idx = start_idx + N
+    t_start, t_end = ref_w.tstart, ref_w.tend
+    ref_slice = ref_w.time_slice(t_start, t_end)
+    N = len(ref_slice.data)
 
-        slice_w = Waveform(w[start_idx:end_idx])
-        slice_r = Waveform(ref_slice)
+    start_idx = np.argmin(np.abs(w.sample_times - t_start))
+    end_idx = start_idx + N
 
-        # Hard guarantee
-        if len(slice_w) != len(slice_r):
-            return None
+    slice_w = Waveform(w[start_idx:end_idx])
+    slice_r = Waveform(ref_slice)
 
-        return slice_w, slice_r
-
-    except Exception:
+    # Hard guarantee
+    if len(slice_w) != len(slice_r):
         return None
+
+    return slice_w, slice_r
 
 
 
