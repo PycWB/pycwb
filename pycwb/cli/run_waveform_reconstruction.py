@@ -68,6 +68,12 @@ def init_parser(parser):
     parser.add_argument("--use_relative_reference", 
                         action="store_true", 
                         help="Whether to use relative reference")
+
+    
+    parser.add_argument("--max_workers",
+                         type=int, 
+                         default=8, 
+                         help="Maximum number of workers for parallel processing")
     
 
 
@@ -87,4 +93,5 @@ def command(args):
                     use_relative_reference = args.use_relative_reference, 
                     waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
-                    plot_median = args.plot_median)
+                    plot_median = args.plot_median, 
+                    max_workers = args.max_workers)

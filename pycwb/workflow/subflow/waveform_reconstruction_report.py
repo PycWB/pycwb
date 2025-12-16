@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute_reference, use_relative_reference, waveform_format, ordering, plot_median):  
+def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute_reference, use_relative_reference, waveform_format, ordering, plot_median, max_workers):  
     """
     Process the folder containing the waveforms and perform analysis.
     Parameters: 
@@ -37,9 +37,9 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
     if use_relative_reference:
         logger.info("Using relative reference for waveform reconstruction analysis.")
         #Load all the reconstructed and injected waveforms, synchronize and slice them
-        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True, format = waveform_format) 
-        reconstructed_waveforms = sync_waveforms(reconstructed_waveforms, injected_waveforms, sync_phase = True)
-        reconstructed_waveforms_sliced, injected_waveforms = slice_waveforms(reconstructed_waveforms, injected_waveforms) 
+        reconstructed_waveforms, injected_waveforms = load_waveforms(triggers_folder, ifo, load_injected = True, format = waveform_format, max_workers=max_workers) 
+        reconstructed_waveforms, injected_waveforms = sync_waveforms(reconstructed_waveforms, injected_waveforms, sync_phase = True, max_workers=max_workers)
+        reconstructed_waveforms_sliced, injected_waveforms = slice_waveforms(reconstructed_waveforms, injected_waveforms, max_workers=max_workers) 
 
         #Plot the overlap wrt to the relative injected waveform
         logger.info("Plotting overlap against their relative reference")
@@ -55,7 +55,7 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
     
         #Load all the reconstructed waveforms if not already loaded in the previous step
         if "reconstructed_waveforms" not in locals():
-            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False, format = waveform_format) 
+            reconstructed_waveforms, reference_waveform = load_waveforms(triggers_folder, ifo, load_injected = False, format = waveform_format, max_workers=max_workers) 
             logger.info(f"Loaded {len(reconstructed_waveforms)} reconstructed waveforms for {ifo}.")
         #Load the reference injected waveform from a common trigger folder. If no folder is given, take the first one in the list 
         if reference_folder is None:
@@ -65,7 +65,7 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
     
         logger.info(f"Using absolute reference from folder: {reference_folder}")
         reference_waveform = load_waveform(os.path.join(reference_folder, f"injected_strain_{ifo}.{waveform_format}"), resample=reconstructed_waveforms[0]._delta_t)
-        reconstructed_waveforms = sync_waveforms(reconstructed_waveforms, reference_waveform, sync_phase = True)
+        reconstructed_waveforms, _ = sync_waveforms(reconstructed_waveforms, reference_waveform, sync_phase = True, max_workers=max_workers)
 
         #Plot time Leakage 
         logger.info("Plotting Leakage")
