@@ -49,14 +49,14 @@ def create_save_directories(analysis_directory):
 
 
 
-def load_waveforms(folder, ifo, load_injected=True,  whitened=False,  format="hdf",  max_workers=None):
+def load_waveforms(folder, ifo, load_injected=True,  whitened=False,  format="hdf", rtol = 1e-3, max_workers=None):
     
     trigger_folders = os.listdir(folder)
     reconstructed_waveforms = []
     injected = []
     discarded = 0
 
-    args = [(folder, f, ifo, load_injected, whitened, format) for f in trigger_folders]
+    args = [(folder, f, ifo, load_injected, whitened, format, rtol) for f in trigger_folders]
 
     with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
         results = list(tqdm(exe.map(_load_one_waveform, args), total=len(args), desc="Loading waveforms (parallel)"))
@@ -81,7 +81,7 @@ def load_waveforms(folder, ifo, load_injected=True,  whitened=False,  format="hd
 
 
 def _load_one_waveform(args):
-    folder, subfolder, ifo, load_injected, whitened, format = args
+    folder, subfolder, ifo, load_injected, whitened, format, rtol = args
 
     try:
         reconstructed_file_name = (
@@ -98,6 +98,7 @@ def _load_one_waveform(args):
         if load_injected:
             i_waveform = load_waveform(
                 os.path.join(folder, subfolder, injected_file_name),
+                rtol = rtol,
                 resample=r_waveform._delta_t
             )
             return r_waveform, i_waveform
@@ -154,12 +155,9 @@ def sync_waveforms(waveforms, reference, sync_phase=True, max_workers=None) :
 
 def _sync_one(args):
     waveform, reference, sync_phase = args
+    waveform.syncWaveform(reference, sync_phase=sync_phase)
+    return waveform, reference
 
-    try:
-        waveform.syncWaveform(reference, sync_phase=sync_phase)
-        return waveform, reference
-    except Exception:
-        return None
 
 
 
@@ -270,22 +268,14 @@ def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
             "reference_waveforms must be a single Waveform or a list "
             "with the same length as waveforms."
         )
-
-    # ------------------------------------------------------------
-    # Parallel execution
-    # ------------------------------------------------------------
+    #Parallel execution
     with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
-        results = list(
-            tqdm(
-                exe.map(_slice_one, pairs),
-                total=len(pairs),
-                desc="Slicing waveforms (parallel)"
+        results = list(tqdm(exe.map(_slice_one, pairs), total=len(pairs), desc="Slicing waveforms (parallel)"
             )
         )
 
-    # ------------------------------------------------------------
+    # 
     # Collect results (order preserved)
-    # ------------------------------------------------------------
     for r in results:
         if r is None:
             discarded_waveforms += 1
@@ -317,7 +307,7 @@ def _slice_one(args):
     slice_w = Waveform(w[start_idx:end_idx])
     slice_r = Waveform(ref_slice)
 
-    # Hard guarantee
+    # Hard guarante
     if len(slice_w) != len(slice_r):
         return None
 
