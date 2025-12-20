@@ -508,13 +508,13 @@ def compute_leakage(reconstructed, reference_waveform, time):
     for i, waveform in enumerate(reconstructed): 
         for j in range(20): 
             try: 
-                leaked_hrss[i,j] = np.sqrt(np.sum(np.square(waveform.time_slice(end_time + j*dt, end_time + (j+1)*dt).data))) / injected_hrss 
+                leaked_hrss[i,j] = np.sqrt(np.nansum(np.square(waveform.time_slice(end_time + j*dt, end_time + (j+1)*dt).data))) / injected_hrss 
             except IndexError: 
                 pass 
         
     #Return mean and std of leakage over all reconstructed waveforms
-    mean_leakage = np.mean(leaked_hrss, axis=0)
-    std_leakage = np.std(leaked_hrss, axis=0) / np.sqrt(len(reconstructed))
+    mean_leakage = np.nanmean(leaked_hrss, axis=0)
+    std_leakage = np.nanstd(leaked_hrss, axis=0) / np.sqrt(len(reconstructed))
     return mean_leakage, std_leakage 
 
 def compute_hrss(waveform, delta_t):
