@@ -19,6 +19,24 @@ class Waveform(TimeSeries):
         self._total_phase_shift = 0
 
 
+    def findStartEnd(self, rtol = 1e-3): 
+        """
+        Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
+        and creates relative attributes in the waveform object.
+
+        :param rtol: relative tolerance to define non-zero values
+        :type rtol: float
+        :return: (tstart, tend)
+        :rtype: tuple containing the estimated start and end times
+        """
+        non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
+        if non_zero_indices.size == 0:
+            raise ValueError("Waveform data is all zeros or below the threshold.")
+        self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
+        self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
+        return self.tstart, self.tend     
+    
+
     def syncWaveform(self, reference_waveform, sync_phase = True): 
         """
         Synchronize this waveform with a reference waveform.
@@ -75,34 +93,6 @@ class Waveform(TimeSeries):
             del(self.sample_frequencies)
 
         return self 
-
-
-    
-    def findStartEnd(self, rtol=1e-3):
-        """
-        Find start and end of the waveform as the contiguous segment
-        containing the global maximum above threshold.
-        """
-        threshold = np.max(np.abs(self.data)) * rtol
-
-        peak_idx = np.argmax(np.abs(self.data))
-
-        # Expand backwards
-        istart = peak_idx
-        while istart > 0 and np.abs(self.data[istart]) >= threshold:
-            istart -= 1
-
-        # Expand forwards
-        iend = peak_idx
-        while iend < len(self.data) - 1 and np.abs(self.data[iend]) >= threshold:
-            iend += 1
-
-        self.istart = istart
-        self.iend = iend
-        self.tstart = self.sample_times[istart]
-        self.tend = self.sample_times[iend]
-
-        return self.tstart, self.tend
 
 
     def pad_to_same_length(self, reference_waveform):
@@ -193,14 +183,14 @@ class Waveform(TimeSeries):
         w2_90 = hilbert(w2)
 
         # Phase difference estimator
-        num = np.sum(w1 * w2_90 - w1_90 * w2).real() 
-        den = np.sum(w1 * w2 + w1_90 * w2_90).real() 
+        num = np.sum(w1 * w2_90 - w1_90 * w2) 
+        den = np.sum(w1 * w2 + w1_90 * w2_90)
 
         # Deterministic fallback (never zero output)
         if num == 0 and den == 0:
             num = np.finfo(float).eps
 
-        return -np.arctan2(num, den) 
+        return -np.arctan2(np.real(num), np.real(den)) 
 
 
 
@@ -322,22 +312,7 @@ def load_waveform(filename, rtol = 1e-3, resample = None):
 
 
 
-def findStartEnd_OLD(self, rtol = 1e-3): 
-    """
-    Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
-    and creates relative attributes in the waveform object.
 
-    :param rtol: relative tolerance to define non-zero values
-    :type rtol: float
-    :return: (tstart, tend)
-    :rtype: tuple containing the estimated start and end times
-    """
-    non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
-    if non_zero_indices.size == 0:
-        raise ValueError("Waveform data is all zeros or below the threshold.")
-    self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
-    self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
-    return self.tstart, self.tend     
 
 def computePhaseDifferenceOld(self, reference_waveform): 
         """
@@ -362,3 +337,29 @@ def computePhaseDifferenceOld(self, reference_waveform):
         phase_diff = - np.arctan2(np.real(num), np.real(den))
     
         return phase_diff   
+           
+def findStartEnd(self, rtol=1e-3):
+    """
+    Find start and end of the waveform as the contiguous segment
+    containing the global maximum above threshold.
+    """
+    threshold = np.max(np.abs(self.data)) * rtol
+
+    peak_idx = np.argmax(np.abs(self.data))
+
+    # Expand backwards
+    istart = peak_idx
+    while istart > 0 and np.abs(self.data[istart]) >= threshold:
+        istart -= 1
+
+    # Expand forwards
+    iend = peak_idx
+    while iend < len(self.data) - 1 and np.abs(self.data[iend]) >= threshold:
+        iend += 1
+
+    self.istart = istart
+    self.iend = iend
+    self.tstart = self.sample_times[istart]
+    self.tend = self.sample_times[iend]
+
+    return self.tstart, self.tend
