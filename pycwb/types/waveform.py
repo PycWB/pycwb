@@ -19,20 +19,27 @@ class Waveform(TimeSeries):
         self._total_phase_shift = 0
 
 
-    def findStartEnd(self, rtol = 1e-3): 
+    def findStartEnd(self, rtol = 1e-3, clip = True): 
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
         and creates relative attributes in the waveform object.
 
         :param rtol: relative tolerance to define non-zero values
         :type rtol: float
+        :param clip: whether to clip the data to the found start and end indices at 2.5 berfore and after maximum
+        :type clip: bool
         :return: (tstart, tend)
         :rtype: tuple containing the estimated start and end times
+
         """
         non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
         if non_zero_indices.size == 0:
             raise ValueError("Waveform data is all zeros or below the threshold.")
         self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
+        if clip: 
+            max_index = np.argmax(np.abs(self.data)) 
+            self.istart = max(self.istart, max_index - 5 * int(1 / self.delta_t))
+            self.iend = min(self.iend, max_index + 5 * int(1 / self.delta_t))
         self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
         return self.tstart, self.tend     
     
