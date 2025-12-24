@@ -49,7 +49,7 @@ def create_save_directories(analysis_directory):
 
 
 
-def load_waveforms(folder, ifo, load_injected=True,  whitened=False,  format="hdf", rtol = 1e-3, max_workers=None):
+def load_waveforms(folder, ifo, load_injected=False,  whitened=False,  format="hdf", rtol = 1e-3, max_workers=None):
     
     trigger_folders = os.listdir(folder)
     reconstructed_waveforms = []
@@ -105,7 +105,7 @@ def _load_one_waveform(args):
 
         return r_waveform, None
 
-    except (ValueError, FileNotFoundError):
+    except Exception as e:
         return None
 
 
@@ -508,8 +508,7 @@ def compute_leakage(reconstructed, reference_waveform, time):
     for i, waveform in enumerate(reconstructed): 
         for j in range(20): 
             try:
-                excess_hrss = (waveform.time_slice(end_time + j*dt, end_time + (j+1)*dt).data) - (reference_waveform.time_slice(end_time + j*dt, end_time + (j+1)*dt).data) 
-                leaked_hrss[i,j] = np.sqrt(np.nansum(np.square(excess_hrss))) / injected_hrss 
+                leaked_hrss[i,j] = np.sqrt(np.nansum(waveform.time_slice(end_time + j*dt, end_time + (j+1)*dt).data ** 2)) / injected_hrss 
             except IndexError: 
                 pass 
         
