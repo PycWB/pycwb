@@ -1,5 +1,5 @@
 from pycwb.types.waveform import load_waveform
-from pycwb.modules.post_production.waveform_reconstruction import load_waveforms, sync_waveforms, slice_waveforms
+from pycwb.modules.post_production.waveform_reconstruction import load_waveforms, sync_waveforms, slice_waveforms, pad_waveforms
 from pycwb.modules.post_production.waveform_reconstruction_plot import *
 from numpy.linalg import norm 
 import os 
@@ -74,7 +74,8 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         np.savez(os.path.join(results_folder, f"leakage_{ifo}.npz"), **leakage_data) 
 
         #Slice the waveforms for further comparison 
-        reconstructed_waveforms, injected_waveform = slice_waveforms(reconstructed_waveforms, reference_waveform) 
+        reconstructed_waveforms, injected_waveforms = pad_waveforms(reconstructed_waveforms, reference_waveform, max_workers=max_workers)
+        reconstructed_waveforms, injected_waveform = slice_waveforms(reconstructed_waveforms, injected_waveforms, max_workers=max_workers) 
     
         #Plot the time domain waveforms with CI 
         logger.info("Plotting time domain waveforms")
