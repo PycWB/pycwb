@@ -13,13 +13,25 @@ class Waveform(TimeSeries):
     """
     def __init__(self, data: TimeSeries, rtol = 1e-3):
         super().__init__(data, data._delta_t, data.start_time)
-        self.findStartEnd(rtol  = rtol) 
+        self._findStartEnd(rtol  = rtol) 
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
 
 
-    def findStartEnd(self, rtol = 1e-3, clip = True): 
+    def estimateCentralTime(self): 
+        central_time = np.sum(self.data * self.sample_times) / np.sum(np.abs(self.data))
+        self.central_time = central_time 
+        return central_time 
+
+    def estimateDuration(self):
+        central_time = self.estimateCentralTime()
+        rel_time = self.sample_times - central_time
+        duration = np.sqrt(np.sum(self.data * rel_time * self.data * rel_time) / np.sum(self.data * self.data)) 
+        self.duration = duration
+        return duration
+
+    def _findStartEnd(self): 
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
         and creates relative attributes in the waveform object.
@@ -32,17 +44,12 @@ class Waveform(TimeSeries):
         :rtype: tuple containing the estimated start and end times
 
         """
-        non_zero_indices = np.where(np.abs(self.data) >= self.data.max() * rtol)[0]
-        if non_zero_indices.size == 0:
-            raise ValueError("Waveform data is all zeros or below the threshold.")
-        self.istart, self.iend = non_zero_indices[0], non_zero_indices[-1]
-        if clip: 
-            max_index = np.argmax(np.abs(self.data)) 
-            self.istart = max(self.istart, max_index - 5 * int(1 / self.delta_t))
-            self.iend = min(self.iend, max_index + 5 * int(1 / self.delta_t))
-        self.tstart, self.tend = self.sample_times[self.istart], self.sample_times[self.iend]
-        return self.tstart, self.tend     
-    
+        central_time = self.estimateCentralTime()
+        duration = self.estimateDuration()
+        self.tstart, self.tend = central_time - duration / 2, central_time + duration / 2 
+        self.istart = int(round((self.tstart - self.start_time) * self.sample_rate))
+        self.iend   = int(round((self.tend - self.start_time) * self.sample_rate))
+        
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
         """
@@ -165,6 +172,7 @@ class Waveform(TimeSeries):
 
         return time_shift
 
+
     def timeShift(self, shift): 
         """
         Shift the waveform in time by a specified amount.
@@ -174,7 +182,8 @@ class Waveform(TimeSeries):
         self.start_time += shift 
         self._total_time_shift += shift
         #updated start, end indeces after time shifting 
-        self.findStartEnd() 
+        self._findStartEnd() 
+
 
     def computePhaseDifference(self, reference_waveform):
         """
@@ -321,52 +330,3 @@ def load_waveform(filename, rtol = 1e-3, resample = None):
 
 
 
-def computePhaseDifferenceOld(self, reference_waveform): 
-        """
-        Synchronize the phase of this waveform with another waveform.
-        """
-        #Reinitialize the waveforms to the same time slice
-        start, end = max(self.tstart, reference_waveform.tstart), min(self.tend, reference_waveform.tend)
-        this = self.__class__(self.time_slice(start, end)) 
-        reference = self.__class__(reference_waveform.time_slice(start,end))
-        #Compute 90_degree phase shifted versions of the waveforms
-        this_90 = this.phaseShift(np.pi / 2)
-        reference_90 = reference.phaseShift(np.pi / 2) 
-
-        num, den = 0, 0
-        for i in range(np.size(this)):
-            try: 
-                num += this[i] * reference_90[i] - this_90[i] * reference[i]
-                den += this[i] * reference[i] + this_90[i] * reference_90[i]
-            except IndexError: 
-                pass 
-        #Compute the phase difference with - sign to call "Phase Shift" without changing sign 
-        phase_diff = - np.arctan2(np.real(num), np.real(den))
-    
-        return phase_diff   
-           
-def findStartEnd(self, rtol=1e-3):
-    """
-    Find start and end of the waveform as the contiguous segment
-    containing the global maximum above threshold.
-    """
-    threshold = np.max(np.abs(self.data)) * rtol
-
-    peak_idx = np.argmax(np.abs(self.data))
-
-    # Expand backwards
-    istart = peak_idx
-    while istart > 0 and np.abs(self.data[istart]) >= threshold:
-        istart -= 1
-
-    # Expand forwards
-    iend = peak_idx
-    while iend < len(self.data) - 1 and np.abs(self.data[iend]) >= threshold:
-        iend += 1
-
-    self.istart = istart
-    self.iend = iend
-    self.tstart = self.sample_times[istart]
-    self.tend = self.sample_times[iend]
-
-    return self.tstart, self.tend

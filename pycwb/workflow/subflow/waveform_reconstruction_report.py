@@ -74,9 +74,9 @@ def process_strain(folder, ifo, reference_folder, confidence_level, use_absolute
         np.savez(os.path.join(results_folder, f"leakage_{ifo}.npz"), **leakage_data) 
 
         #Slice the waveforms for further comparison 
-        reconstructed_waveforms, injected_waveforms = pad_waveforms(reconstructed_waveforms, reference_waveform, max_workers=max_workers)
-        reconstructed_waveforms, injected_waveform = slice_waveforms(reconstructed_waveforms, injected_waveforms, max_workers=max_workers) 
-    
+        reconstructed_waveforms, injected_waveform = pad_waveforms(reconstructed_waveforms, reference_waveform, max_workers=max_workers)
+        reconstructed_waveforms, injected_waveform = slice_waveforms(reconstructed_waveforms, injected_waveforms[0], max_workers=max_workers) 
+        
         #Plot the time domain waveforms with CI 
         logger.info("Plotting time domain waveforms")
         twaveform_fig, twaveform_data = plot_time_waveform_reconstruction(reconstructed_waveforms, injected_waveform, 
