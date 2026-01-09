@@ -11,9 +11,9 @@ class Waveform(TimeSeries):
     :param data: data
     :type data: pycbc.types.timeseries.TimeSeries
     """
-    def __init__(self, data: TimeSeries, rtol = 1e-3):
+    def __init__(self, data: TimeSeries):
         super().__init__(data, data._delta_t, data.start_time)
-        self._findStartEnd(rtol  = rtol) 
+        self._findStartEnd() 
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
@@ -35,14 +35,6 @@ class Waveform(TimeSeries):
         """
         Find the start and end of the waveform, as indeces (istart, iend) and times (tstart, tend)
         and creates relative attributes in the waveform object.
-
-        :param rtol: relative tolerance to define non-zero values
-        :type rtol: float
-        :param clip: whether to clip the data to the found start and end indices at 2.5 berfore and after maximum
-        :type clip: bool
-        :return: (tstart, tend)
-        :rtype: tuple containing the estimated start and end times
-
         """
         central_time = self.estimateCentralTime()
         duration = self.estimateDuration()
@@ -315,7 +307,7 @@ class Waveform(TimeSeries):
         return len(self.data)
 
 
-def load_waveform(filename, rtol = 1e-3, resample = None):
+def load_waveform(filename, resample = None):
     """
     Load a waveform from a file.
     """
@@ -324,7 +316,7 @@ def load_waveform(filename, rtol = 1e-3, resample = None):
     data = load_timeseries(filename)
     if isinstance(resample, int) or isinstance(resample, float):
         data = data.resample(resample)
-    return Waveform(data, rtol = rtol) 
+    return Waveform(data) 
 
 
 
