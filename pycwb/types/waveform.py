@@ -20,15 +20,23 @@ class Waveform(TimeSeries):
 
 
     def estimateCentralTime(self): 
-        central_time = np.sum(self.data * self.sample_times) / np.sum(np.abs(self.data))
+        """
+        Estimate the central time of the waveform as the weighted average of sample times, weighted by the signal energy.
+        """
+        central_time = np.sum(self.data * self.data * self.sample_times.data) / np.sum(self.data * self.data)
         self.central_time = central_time 
         return central_time 
 
-    def estimateDuration(self):
+    def estimateDuration(self, sigma = 3):
+        """
+        Estimate the duration of the wavefrom computing time variance around central time. The total duration is then sigma times this value.
+        Standard is 3sigma (~99.7% of the signal energy).
+        :param sigma: Multiplier for the duration estimate. Default is 3.
+        """
         central_time = self.estimateCentralTime()
-        rel_time = self.sample_times - central_time
-        duration = np.sqrt(np.sum(self.data * rel_time * self.data * rel_time) / np.sum(self.data * self.data)) 
-        self.duration = duration
+        rel_time = self.sample_times.data - central_time
+        duration = np.sqrt(np.sum(self.data * rel_time * self.data * rel_time) / np.sum(self.data * self.data)) * sigma
+        self.signalDuration = duration 
         return duration
 
     def _findStartEnd(self): 
@@ -39,8 +47,8 @@ class Waveform(TimeSeries):
         central_time = self.estimateCentralTime()
         duration = self.estimateDuration()
         self.tstart, self.tend = central_time - duration / 2, central_time + duration / 2 
-        self.istart = int(round((self.tstart - self.start_time) * self.sample_rate))
-        self.iend   = int(round((self.tend - self.start_time) * self.sample_rate))
+        self.istart = np.argmin(np.abs(self.sample_times.data - self.tstart))
+        self.iend   = np.argmin(np.abs(self.sample_times.data - self.tend))
         
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
