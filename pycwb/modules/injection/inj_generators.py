@@ -76,4 +76,4 @@ def compute_central_time(strain):
     """ 
     Computes the central time of the strain data.
     """ 
-    return (strain.data * strain.data * strain.sample_times.data).sum() / (strain.data * strain.data).sum() 
+    return (strain.data * strain.data * strain.sample_times.data).sum() / (strain.data * strain.data).sum() - strain.sample_times.data[0] 
