@@ -27,7 +27,8 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
         strain = load_timeseries(file)
-        strain.start_time = kwargs['gps_time']
+        central_time = compute_central_time(strain)
+        strain.start_time = kwargs['gps_time'] - central_time 
 
     
         if strain.sample_rate == sample_rate:
@@ -69,3 +70,10 @@ def resample_data(data, factor):
         resampled_data = data.data 
     resampled_data = TimeSeries(resampled_data, delta_t= data.delta_t / factor, epoch=data.start_time)
     return resampled_data
+
+
+def compute_central_time(strain): 
+    """ 
+    Computes the central time of the strain data.
+    """ 
+    return (strain.data * strain.data * strain.sample_times.data).sum() / (strain.data * strain.data).sum() 
