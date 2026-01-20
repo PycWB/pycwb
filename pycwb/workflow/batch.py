@@ -75,6 +75,7 @@ def process_single_with_flag(main_func, queue, working_dir, config, job_seg, com
         try:
             with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
                 f.write("")
+            return e
         except Exception as e:
             logger.error(f"Failed to create job failed flag file: {e}")
             return e
