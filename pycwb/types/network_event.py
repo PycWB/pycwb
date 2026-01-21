@@ -302,7 +302,13 @@ class Event:
 
             
             # for i in range(11):
-            self.erA.append(np.array(pwc.sArea[0]))
+            self.erA.append(np.array(pwc.sArea[ID - 1]))
+            # ind = pwc.sArea[ID - 1].size(); 
+            # for i in range(11):
+            #     if i < ind:
+            #         self.erA.append(pwc.sArea[ID - 1][i])
+            #     else:
+            #         self.erA.append(0)
 
             self.ECOR = pcd.normcor  # normalized coherent energy
             self.netcc = [
