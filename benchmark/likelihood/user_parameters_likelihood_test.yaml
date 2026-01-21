@@ -71,6 +71,10 @@ simulation: "all_inject_in_one_segment"
 nfactor: 1
 segment_processer: ./workflow_with_new_likelihood.process_job_segment
 
+
+gps_start: 1126258862.4
+gps_end: 1126260062.4
+
 injection:
   segment:
     start: 1126258862.4
@@ -93,3 +97,33 @@ injection:
       pol: 0
       f_lower: 16
       approximant: "IMRPhenomXPHM"
+    # - mass1: 15
+    #   mass2: 14
+    #   spin1x: 0.3
+    #   spin1z: 0.2
+    #   spin2z: 0.1
+    #   distance: 130
+    #   inclination: 0.2
+    #   polarization: 0
+    #   gps_time: 1126259162.4
+    #   coa_phase: 0
+    #   ra: -0.5
+    #   dec: 0.8
+    #   pol: 0
+    #   f_lower: 16
+    #   approximant: "IMRPhenomXPHM"
+    # - mass1: 60
+    #   mass2: 30
+    #   spin1x: 0.6
+    #   spin1z: 0.2
+    #   spin2z: 0.1
+    #   distance: 1500
+    #   inclination: 0.3
+    #   polarization: 0
+    #   gps_time: 1126259362.4
+    #   coa_phase: 0
+    #   ra: 0.5
+    #   dec: 0.2
+    #   pol: 0
+    #   f_lower: 16
+    #   approximant: "IMRPhenomXPHM"

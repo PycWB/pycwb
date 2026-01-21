@@ -21,7 +21,7 @@ from pycwb.modules.cwb_conversions import convert_fragment_clusters_to_netcluste
 from pycwb.types.network_event import Event
 from time import perf_counter
 logger = logging.getLogger(__name__)
-
+import numpy as np
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
                         catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
@@ -107,50 +107,83 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
-            # events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
-            #                                                 lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
+            print(f"Processing lag {lag+1}/{len(super_fragment_clusters)}")
             for k, selected_cluster in enumerate(fragment_cluster.clusters):
+                print(f"  Processing cluster {k+1}/{len(fragment_cluster.clusters)}")
                 # skip if cluster is already rejected
                 if selected_cluster.cluster_status > 0:
                     continue
 
                 cluster_id = k + 1
-                
-                pwc = network.get_cluster(lag)
+
                 wdm_list = network.get_wdm_list()
                 for wdm in wdm_list:
                     wdm.setTDFilter(config.TDSize, config.upTDF)
 
                 # load delay index
-                network.set_delay_index(config.TDRate)
+                network.set_delay_index(config.TDRate)                
+                pwc = network.get_cluster(lag)
+
 
                 # load time delay data
-                pwc.cpf(convert_fragment_clusters_to_netcluster(fragment_cluster.dump_cluster(0)), False)
+                pwc.cpf(convert_fragment_clusters_to_netcluster(fragment_cluster.dump_cluster(k)), False)
                 pwc.setcore(False, 1)
                 pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
                 cluster = convert_netcluster_to_fragment_clusters(pwc)
 
+                # Compute likelihood using old ROOT code
                 network.net.MRA = True
                 start_time = perf_counter()
                 selected_core_pixels = network.likelihoodWP(config.search, lag, config.Search)
-                end_time = perf_counter()
                 cluster_old = convert_netcluster_to_fragment_clusters(network.get_cluster(lag)).clusters[0]
+                if cluster_old.cluster_status > 0:
+                    logger.info(f"Cluster {k} at lag {lag} rejected by old likelihood computation.")
+                end_time = perf_counter()
+
+                # extract event information using old ROOT code
                 event = Event()
-                event.output(network.net, k + 1, lag, shifts=sub_job_seg.shift)
+                event.output(network.net, 1, lag, shifts=sub_job_seg.shift)
+                pwc.clean(1)
+                pwc.clear()
+
+                # Compute likelihood using new python code
                 start_time_new = perf_counter()
                 cluster = likelihood(network, config.nIFO, cluster.clusters[0], config.MRAcatalog)
                 end_time_new = perf_counter()
-                print(f"[old] start: {event.left[0]}, stop: {event.duration[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
-                print(f"[new] start: {cluster.start_time}, stop: {cluster.duration}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
-                print(f"[old] ecor: {event.ecor}, subnet: {event.netcc[2]}, SUBNET: {event.netcc[3]}, rho0: {event.rho[0]}")
-                print(f"[new] ecor: {cluster.cluster_meta.net_ecor}, subnet: {cluster.cluster_meta.sub_net}, SUBNET: {cluster.cluster_meta.sub_net2}, rho0: {cluster.cluster_meta.net_rho}")
-                print(f"[old] a_net: {event.anet}, g_net: {event.gnet}, i_net: {event.inet}")
-                print(f"[new] a_net: {cluster.cluster_meta.a_net}, g_net: {cluster.cluster_meta.g_net}, i_net: {cluster.cluster_meta.i_net}")
+                if cluster is None:
+                    logger.info(f"Cluster {k} at lag {lag} rejected by new likelihood computation.")
+                    continue
+                # compare the results
+                print(f"[old] start: {event.left[0]}, stop: {event.stop[0] - event.gps[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
+                print(f"[new] start: {cluster.start_time}, stop: {cluster.stop_time}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
+                print(f"[old] ecor: {event.ecor:.6f}, subnet: {event.netcc[2]:.6f}, SUBNET: {event.netcc[3]:.6f}, rho0: {event.rho[0]:.6f}")
+                print(f"[new] ecor: {cluster.cluster_meta.net_ecor:.6f}, subnet: {cluster.cluster_meta.sub_net:.6f}, SUBNET: {cluster.cluster_meta.sub_net2:.6f}, rho0: {cluster.cluster_meta.net_rho:.6f}")
+                print(f"[old] a_net: {event.anet:.6f}, g_net: {event.gnet:.6f}, i_net: {event.inet:.6f}")
+                print(f"[new] a_net: {cluster.cluster_meta.a_net:.6f}, g_net: {cluster.cluster_meta.g_net:.6f}, i_net: {cluster.cluster_meta.i_net:.6f}")
                 print(f"[old] skysize: {event.size[0]}, {event.size[1]}")
-                print(f"[new] skysize: {cluster.get_analyzed_size()}, {cluster.cluster_meta.sky_size}")
+                print(f"[new] skysize: {cluster.get_core_size()}, {cluster.cluster_meta.sky_size}")
+                print("likelihood pixels: ", len([p for p in cluster.pixels if p.likelihood > 0]))
+                print("core pixels: ", len([p for p in cluster.pixels if p.core]))
+                if np.isclose(event.left[0], cluster.start_time) and \
+                   np.isclose(event.stop[0] - event.gps[0], cluster.stop_time) and \
+                   np.isclose(event.low[0], cluster.low_frequency) and \
+                   np.isclose(event.high[0], cluster.high_frequency) and \
+                   np.isclose(event.ecor, cluster.cluster_meta.net_ecor) and \
+                   np.isclose(event.netcc[2], cluster.cluster_meta.sub_net) and \
+                   np.isclose(event.netcc[3], cluster.cluster_meta.sub_net2) and \
+                   np.isclose(event.rho[0], cluster.cluster_meta.net_rho) and \
+                   np.isclose(event.anet, cluster.cluster_meta.a_net) and \
+                   np.isclose(event.gnet, cluster.cluster_meta.g_net) and \
+                   np.isclose(event.inet, cluster.cluster_meta.i_net) and \
+                   event.size[0] == cluster.get_core_size() and \
+                   event.size[1] == cluster.cluster_meta.sky_size:
+                    print("✅ Results match between old and new likelihood code.")
+                else:
+                    print("❌ Results do NOT match between old and new likelihood code.")
 
-                print(f"Likelihood computation time (old): {end_time - start_time} seconds")
-                print(f"Likelihood computation time (new): {end_time_new - start_time_new} seconds")
+                # timer
+                logger.info(f"Old likelihood computation time: {end_time - start_time:.4f} s")
+                logger.info(f"New likelihood computation time: {end_time_new - start_time_new:.4f} s")
                 logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
                 
            
