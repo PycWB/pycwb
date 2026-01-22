@@ -12,6 +12,7 @@ def generate_injection_list_from_config(injection_config, start_gps_time, end_gp
     seed = injection_config.get('seed', None)
     repeat_injection = injection_config.get('repeat_injection', None)
     sky_distribution = injection_config.get('sky_distribution', None)
+    time_distribution = injection_config.get('time_distribution', None)
 
     # set random seed for reproducibility if specified
     if seed is not None:
@@ -30,24 +31,38 @@ def generate_injection_list_from_config(injection_config, start_gps_time, end_gp
         coordinate_system = sky_distribution.get('coordsys', 'icrs') 
         sky_locations = generate_sky_distribution(sky_distribution, len(injections))
         distribute_injections_on_sky(injections, sky_locations, coordsys = coordinate_system)
+    else:
+        # check if 'ra' and 'dec' are in injection or 'sky_loc' and 'coordsys' is specified
+        for inj in injections:
+            if not (('ra' in inj and 'dec' in inj) or ('sky_loc' in inj and 'coordsys' in inj)):
+                raise ValueError("Either 'ra' and 'dec' or 'sky_loc' and 'coordsys' must be specified in the injections when no sky_distribution is provided")
 
     # distribute injections in GPS time
-    time_distribution = injection_config.get('time_distribution', {})
-    time_distribution_type = time_distribution.get('type', None)
-    if time_distribution_type == 'rate':
-        time_distribution_rate = time_distribution.get('rate', None)
-        rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
-        jitter = time_distribution.get('jitter', 0)
-        injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
-    elif time_distribution_type == 'poisson':
-        time_distribution_rate = time_distribution.get('rate', None)
-        rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
-        max_trail = time_distribution.get('max_trail', None)
-        injections, n_trails = distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, max_trail=max_trail, shuffle=False)
-    elif time_distribution_type == 'custom':
-        max_trail = None
+    if time_distribution:
+        time_distribution_type = time_distribution.get('type', None)
+        if time_distribution_type == 'rate':
+            time_distribution_rate = time_distribution.get('rate', None)
+            rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
+            jitter = time_distribution.get('jitter', 0)
+            injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+        elif time_distribution_type == 'poisson':
+            time_distribution_rate = time_distribution.get('rate', None)
+            rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
+            max_trail = time_distribution.get('max_trail', None)
+            injections, n_trails = distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, max_trail=max_trail, shuffle=False)
+        elif time_distribution_type == 'custom':
+            raise ValueError('Custom time distribution is not supported anymore, if you want to use customized gps_time, simply remove the time_distribution field from the config')
+        else:
+            raise ValueError('Unknown time distribution, only support rate, poisson')
     else:
-        raise ValueError('Unknown time distribution, only support rate, poisson, custom')
+        # check if 'gps_time' is in injection
+        n_trails = 1
+        for inj in injections:
+            if 'gps_time' not in inj:
+                raise ValueError("'gps_time' must be specified in the injections when no time_distribution is provided")
+            # find the maximum trail index if 'trail_idx' is specified
+            if 'trail_idx' in inj:
+                n_trails = max(n_trails, inj['trail_idx'] + 1)
 
     return injections, n_trails
 
