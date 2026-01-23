@@ -17,13 +17,11 @@
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
 image: buildpack-deps:jammy
 
-include:
-  - project: computing/gitlab-ci-templates
-    file: docker.yml
 
 stages:          # List of stages for jobs, and their order of execution
   - build
-  - docker
+  - docker-build
+  - docker-publish
   - deploy
   #- post-deploy
 
@@ -69,22 +67,32 @@ publish:
     - pip install twine
     - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*.tar.gz
 
-docker:build:
-  extends:
-    - .docker:build
-  stage: docker
-  variables:
-    # tag using the branch name
-    CI_REGISTRY_TAG: "${CI_COMMIT_REF_SLUG}"
+include:
+  # - project: computing/gitlab-ci-templates
+  #   file: docker.yml
+  - component: git.ligo.org/computing/gitlab/components/docker/build@<VERSION>
+    inputs:
+      stage: docker-build
+  - component: git.ligo.org/computing/gitlab/components/docker/push@<VERSION>
+    inputs:
+      stage: docker-publish
 
-docker:push:
-  extends:
-    - .docker:push
-  stage: docker
-  needs:
-    - docker:build
-  variables:
-    PUSH_IMAGE: "$CI_REGISTRY_IMAGE:latest"
+# docker:build:
+#   extends:
+#     - .docker:build
+#   stage: docker
+#   variables:
+#     # tag using the branch name
+#     CI_REGISTRY_TAG: "${CI_COMMIT_REF_SLUG}"
+
+# docker:push:
+#   extends:
+#     - .docker:push
+#   stage: docker
+#   needs:
+#     - docker:build
+#   variables:
+#     PUSH_IMAGE: "$CI_REGISTRY_IMAGE:latest"
 
 #pages:
 #  stage: post-deploy
