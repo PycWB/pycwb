@@ -20,8 +20,8 @@ image: buildpack-deps:jammy
 
 stages:          # List of stages for jobs, and their order of execution
   - build
-  - test
   - docker-build
+  - test
   - docker-publish
   - deploy
   #- post-deploy
