@@ -29,6 +29,7 @@ def save(figure, results_dictionary, directory, filename, extension = 'pdf'):
     np.savez(results_path, **results_dictionary)
 
 
+
 def create_save_directories(analysis_directory): 
     """Create a directory for saving plots and results.
 
@@ -47,76 +48,79 @@ def create_save_directories(analysis_directory):
     os.makedirs(results_directory, exist_ok=True)
 
 
-
-
-def load_waveforms(folder, ifo, load_injected=False,  whitened=False,  format="hdf", rtol = 1e-3, max_workers=None):
-    
+def load_waveforms(folder, ifo, resample = None, load_injected=False, skip_trigger = False, whitened=False,  format="hdf", max_workers=None):
+    """
+    Load waveforms from the specified folder 
+    Parameters: 
+    :param folder: str, path to the folder containing waveform subfolders
+    :param ifo: str, interferometer name (e.g., 'H1', 'L1', 'V1')
+    :param resample: float or None, if specified, resample waveforms to this sampling rate
+    :param load_injected: bool, if True, load injected waveforms instead of reconstructed ones
+    :param skip_trigger: bool, if True, skip waveforms without injected trigger
+    :param whitened: bool, if True, load whitened waveforms
+    :param format: str, file format of the waveforms ('hdf', 'txt' or 'npy')
+    :param max_workers: int or None, maximum number of parallel workers 
+    :return: list of loaded Waveform objects
+    """
     trigger_folders = os.listdir(folder)
-    reconstructed_waveforms = []
-    injected = []
+    loaded_waveforms = []
     discarded = 0
-
-    args = [(folder, f, ifo, load_injected, whitened, format, rtol) for f in trigger_folders]
+    
+    args = [(folder, f, ifo, load_injected, whitened, format, resample, skip_trigger) for f in trigger_folders]
 
     with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
-        results = list(tqdm(exe.map(_load_one_waveform, args), total=len(args), desc="Loading waveforms (parallel)"))
+        results = list(tqdm(exe.map(_load_one_waveform, args), total=len(args), desc="Loading waveforms"))
 
-    for r in results:
-        if r is None:
-            discarded += 1
-            continue
-
-        r_waveform, i_waveform = r
-        reconstructed_waveforms.append(r_waveform)
-
-        if load_injected and i_waveform is not None:
-            injected.append(i_waveform)
-
+    loaded_waveforms = [r for r in results if r is not None]
+    discarded = len(trigger_folders) - len(loaded_waveforms) 
     if discarded > 0:
-        logger.warning(
-            f"{discarded} over {len(trigger_folders)} waveforms were discarded during loading."
-        )
+        logger.warning(f"{discarded} over {len(trigger_folders)} waveforms were discarded during loading.")
 
-    return reconstructed_waveforms, injected
+    return loaded_waveforms 
 
 
 def _load_one_waveform(args):
-    folder, subfolder, ifo, load_injected, whitened, format, rtol = args
+    """
+    Load a single waveform from the specified folder and subfolder.
+    :returns: Waveform object or None if loading fails 
+    """
+    folder, subfolder, ifo, load_injected, whitened, format, resample, skip_trigger = args
 
     try:
-        reconstructed_file_name = (
-            f"reconstructed_waveform_{ifo}_whitened.{format}"
-            if whitened else
-            f"reconstructed_waveform_{ifo}.{format}"
-        )
-        injected_file_name = f"injected_strain_{ifo}.{format}"
+        if not load_injected: 
+            file_name = "reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
+        else: 
+            file_name = f"injected_strain_{ifo}.{format}"
+      
+        waveform = load_waveform(os.path.join(folder, subfolder, file_name), resample = resample)
 
-        r_waveform = load_waveform(
-            os.path.join(folder, subfolder, reconstructed_file_name)
-        )
+        if np.any(np.isna(waveform.data)): 
+            return None 
 
-        if load_injected:
-            i_waveform = load_waveform(
-                os.path.join(folder, subfolder, injected_file_name),
-                rtol = rtol,
-                resample=r_waveform._delta_t
-            )
-            return r_waveform, i_waveform
+        if skip_trigger and f"injected_strain_{ifo}.{format}" not in os.listdir(os.path.join(folder, subfolder)): 
+            return None
 
-        return r_waveform, None
+        else: 
+            return waveform
 
     except Exception as e:
         return None
 
 
-def sync_waveforms(waveforms, reference, sync_phase=True, max_workers=None) :
+def sync_waveforms(waveforms, reference, sync_phase=True, max_workers=None):
+    """
+    Synchronize all waveforms to the reference waveform(s). If len(reference) == 1, synchronize all waveforms to the same reference, 
+    otherwise synchronize each waveform to its respective reference. 
+    :param waveforms: list of Waveform to synchronize
+    :param reference: single Waveform or list of Waveform (same length as waveforms)
+    :param sync_phase: bool, whether to synchronize phase
+    :return: sync_waveforms_, reference_waveforms_ 
+    """
     sync_waveforms_ = []
     reference_waveforms_ = []
     discarded_waveforms = 0
 
-    # ------------------------------------------------------------
-    # Build (waveform, reference) pairs
-    # ------------------------------------------------------------
+
     if isinstance(reference, Waveform):
         pairs = [(w, reference, sync_phase) for w in waveforms]
 
@@ -128,15 +132,9 @@ def sync_waveforms(waveforms, reference, sync_phase=True, max_workers=None) :
             "Reference must be a single Waveform or a list with the same length as waveforms."
         )
 
-    # ------------------------------------------------------------
-    # Parallel execution
-    # ------------------------------------------------------------
     with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
         results = list(tqdm( exe.map(_sync_one, pairs), total=len(pairs),desc="Synchronizing waveforms (parallel)"))
 
-    # ------------------------------------------------------------
-    # Collect results (order preserved)
-    # ------------------------------------------------------------
     for r in results:
         if r is None:
             discarded_waveforms += 1
@@ -147,19 +145,55 @@ def sync_waveforms(waveforms, reference, sync_phase=True, max_workers=None) :
         reference_waveforms_.append(ref)
 
     if discarded_waveforms > 0:
-        logger.warning(
-            f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization."
-        )
+        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization.")
 
     return sync_waveforms_, reference_waveforms_
 
 def _sync_one(args):
+    """
+    Synchronize a single waveform to the reference waveform.
+    :returns: synchronized waveform and reference waveform
+    """
     waveform, reference, sync_phase = args
     waveform.syncWaveform(reference, sync_phase=sync_phase)
     return waveform, reference
 
 
+def pad_waveforms(waveforms, reference, max_workers=None):
+    """
+    Pad all waveforms to have the same time support as reference waveform(s),
+    ensuring every output pair has exactly the same length.
+    
+    :param waveforms: list of TimeSeries to pad
+    :param reference: single TimeSeries or list of TimeSeries (same length)
+    :return: padded_waveforms, padded_references
+    """
+    if isinstance(reference, Waveform):
+        pairs = [(w, reference) for w in waveforms]
 
+    elif isinstance(reference, list) and len(reference) == len(waveforms):
+        pairs = list(zip(waveforms, reference))
+    else:
+        raise ValueError("Reference must be a single TimeSeries or a list of same length as waveforms.")
+
+    padded_waveforms = []
+    padded_refs = []
+    discarded = 0 
+    with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
+        results = list(tqdm(exe.map(_pad_pair_to_same_length, pairs), total=len(pairs), desc="Padding waveforms (parallel)")) 
+
+    # Collect results
+    for r in results:
+        if r is not None:
+            padded_waveforms.append(r[0])
+            padded_refs.append(r[1])
+        else:
+            discarded += 1
+
+    if discarded > 0:
+        print(f"{discarded} waveforms could not be padded and were discarded.")
+
+    return padded_waveforms, padded_refs
 
 def _pad_pair_to_same_length(args):
     """
@@ -202,48 +236,8 @@ def _pad_pair_to_same_length(args):
 
 
 
-def pad_waveforms(waveforms, reference, max_workers=None):
-    """
-    Pad all waveforms to have the same time support as reference waveform(s),
-    ensuring every output pair has exactly the same length.
-    
-    :param waveforms: list of TimeSeries to pad
-    :param reference: single TimeSeries or list of TimeSeries (same length)
-    :return: padded_waveforms, padded_references
-    """
-    if isinstance(reference, Waveform):
-        refs = [reference] * len(waveforms)
-    elif isinstance(reference, list) and len(reference) == len(waveforms):
-        refs = reference
-    else:
-        raise ValueError("Reference must be a single TimeSeries or a list of same length as waveforms.")
 
-    args = list(zip(waveforms, refs))
-    padded_waveforms = []
-    padded_refs = []
-    discarded = 0 
-    with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
-        results = list(
-            tqdm(
-                exe.map(_pad_pair_to_same_length, args),
-                total=len(args),
-                desc="Padding waveforms (parallel)"
-            )
-        )
-
-    # Collect results
-    for r in results:
-        if r is not None:
-            padded_waveforms.append(r[0])
-            padded_refs.append(r[1])
-        else:
-            discarded += 1
-    if discarded > 0:
-        print(f"{discarded} waveforms could not be padded and were discarded.")
-
-    return padded_waveforms, padded_refs
-
-def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
+def slice_waveforms(waveforms, reference, max_workers=None):
     """
     Slice all waveforms to the same time range as the reference waveforms. If len(reference_waveform) == 1, slice all waveforms to the same time range, 
     otherwise slice each waveform to its respective reference.
@@ -256,26 +250,20 @@ def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
     # ------------------------------------------------------------
     # Build (waveform, reference) pairs
     # ------------------------------------------------------------
-    if isinstance(reference_waveforms, Waveform):
-        ref = reference_waveforms
-        pairs = [(w, ref) for w in waveforms]
+    if isinstance(reference, Waveform):
+        pairs = [(w, reference) for w in waveforms]
 
-    elif isinstance(reference_waveforms, list) and len(reference_waveforms) == len(waveforms):
-        pairs = list(zip(waveforms, reference_waveforms))
+    elif isinstance(reference, list) and len(reference) == len(waveforms):
+        pairs = list(zip(waveforms, reference))
 
     else:
-        raise ValueError(
-            "reference_waveforms must be a single Waveform or a list "
-            "with the same length as waveforms."
+        raise ValueError("Reference must be a single Waveform or a list with the same length as waveforms."
         )
     #Parallel execution
     with ProcessPoolExecutor(max_workers=max_workers or os.cpu_count()) as exe:
-        results = list(tqdm(exe.map(_slice_one, pairs), total=len(pairs), desc="Slicing waveforms (parallel)"
-            )
-        )
+        results = list(tqdm(exe.map(_slice_one, pairs), total=len(pairs), desc="Slicing waveforms (parallel)"))
 
-    # 
-    # Collect results (order preserved)
+    #collect results 
     for r in results:
         if r is None:
             discarded_waveforms += 1
@@ -286,14 +274,37 @@ def slice_waveforms(waveforms, reference_waveforms, max_workers=None):
         reference_waveforms_.append(slice_r)
 
     if discarded_waveforms > 0:
-        logger.warning(
-            f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded."
-        )
+        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded.") 
 
     return sliced_list, reference_waveforms_
 
 
-def _slice_one(args):
+
+def _slice_one(args): 
+    """
+    Slice a single waveform to the time range of the reference waveform.
+    :returns: sliced waveform and reference waveform
+    """
+    w, ref_w = args
+    start, stop = w.istart, w.iend 
+
+    w_slice = Waveform(w[start:stop]) 
+    ref_slice = Waveform(ref_w[start:stop]) 
+
+    if len(w_slice) != len(ref_slice):
+        return None
+    
+    return w_slice, ref_slice 
+
+
+ 
+
+
+def _slice_one_OLD(args):
+    """
+    Slice a single waveform to the time range of the reference waveform.
+    :returns: sliced waveform and reference waveform
+    """
     w, ref_w = args
 
 
@@ -301,7 +312,7 @@ def _slice_one(args):
     ref_slice = ref_w.time_slice(t_start, t_end)
     N = len(ref_slice.data)
 
-    start_idx = np.argmin(np.abs(w.sample_times - t_start))
+    start_idx = int(round((t_start - ref_w.sample_times[0]) / ref_w.delta_t))
     end_idx = start_idx + N
 
     slice_w = Waveform(w[start_idx:end_idx])
@@ -316,166 +327,132 @@ def _slice_one(args):
 
 
 
-def load_waveforms_OLD(folder, ifo, load_injected = True, whitened = False, format = 'hdf'): 
-    """
-    Load reconstructed waveforms from a given folder.
-    """
-    trigger_folders = os.listdir(folder)
-    reconstructed_waveforms, injected = [], [] 
-    for f in tqdm(trigger_folders, desc="Loading waveforms"):
-        try: 
-            reconstructed_file_name = f"reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
-            injected_file_name = f"injected_strain_{ifo}.{format}" 
-           
-            #load reconstructed waveforms (r) for the selected trigger folder and ifo 
-            r_waveform = load_waveform(os.path.join(folder,f, reconstructed_file_name))
-            if load_injected: 
-                i_waveform = load_waveform(os.path.join(folder,f, injected_file_name), resample=r_waveform._delta_t)
-                injected.append(i_waveform) 
-            reconstructed_waveforms.append(r_waveform)
-
-        except (ValueError, FileNotFoundError): 
-            pass 
-
-    #TODO: IMPLEMENT WHITNENING OPTIONS AND POSTPROD 
-    return reconstructed_waveforms, injected
-
-
-
-def sync_waveforms_OLD(waveforms, reference, sync_phase = True):
-    """
-    Synchronize all waveforms to a reference waveform.
-    """
-    sync_waveforms = [] 
-    reference_waveforms = [] 
-    discarded_waveforms = 0
-    
-    #If 1 reference waveform is given, sync all waveforms to it
-    if type(reference) == Waveform:
-        for waveform in tqdm(waveforms, desc="Synchronizing waveforms"):
-            try: 
-                waveform.syncWaveform(reference, sync_phase = sync_phase)
-                sync_waveforms.append(waveform)
-            except ValueError:
-                discarded_waveforms += 1
-                pass 
-
-    #If the same number of waveforms and references is given, sync each waveform to its respective reference 
-    elif type(reference) == list and len(reference) == len(waveforms):
-        for i, waveform in tqdm(enumerate(waveforms), desc="Synchronizing waveforms"):
-            try: 
-                waveform.syncWaveform(reference[i], sync_phase = sync_phase)
-                sync_waveforms.append(waveform)
-                reference_waveforms.append(reference[i])
-            except ValueError:
-                discarded_waveforms += 1
-                pass
-    
-    else: 
-        raise ValueError("Reference waveform must either be a single Waveform or a list of Waveforms with the same length as the waveforms to be synchronized.") 
-    if discarded_waveforms > 0:
-        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization due to errors .")
-
-    return sync_waveforms, reference_waveforms 
-
-
-def slice_waveforms_OLD(waveforms, reference_waveforms): 
-    """
-    Slice all waveforms to the same time range as the reference waveforms. If len(reference_waveform) == 1, slice all waveforms to the same time range, 
-    otherwise slice each waveform to its respective reference.
-    """ 
-    sliced_list, reference_waveforms_ = [], [] 
-    
-    discarded_waveforms = 0
-    #Raise Value Error if the number of reference waveforms is not 1 or equal to the number of waveforms 
-    if type(reference_waveforms) == Waveform:
-        t_start = reference_waveforms.tstart 
-        t_end = reference_waveforms.tend 
-        N = np.size(reference_waveforms.time_slice(t_start, t_end)) 
-        reference_waveforms_ = Waveform(reference_waveforms.time_slice(t_start, t_end))
-        for w in tqdm(waveforms, desc = "Slicing waveforms"): 
-            #Find the start index in the waveform sample time
-            start_idx = np.argmin(np.abs(w.sample_times - t_start))
-            end_idx = start_idx + N
-
-            #Append the sliced waveform to the list
-            try: 
-                sliced_list.append(Waveform(w[start_idx:end_idx]))
-
-            except ValueError:
-                discarded_waveforms += 1
-
-    #If N reference waveforms are given, slice each waveform to its respective reference
-    elif type(reference_waveforms) == list and len(reference_waveforms) == len(waveforms):
-        for i, w in tqdm(enumerate(waveforms), desc = "Slicing waveforms"): 
-            #Find start and end time from the respective reference waveform
-            ref_w = reference_waveforms[i] 
-            t_start, t_end = ref_w.tstart, ref_w.tend
-            N = np.size(ref_w.time_slice(t_start, t_end))
-            #Find the start index in the waveform sample time
-            start_idx = np.argmin(np.abs(w.sample_times - t_start))
-            end_idx = start_idx + N
-
-            #Append the sliced waveform to the list
-            try: 
-                slice_w = Waveform(w[start_idx:end_idx])
-                slice_r = Waveform(ref_w.time_slice(t_start, t_end))
-                sliced_list.append(slice_w)
-                reference_waveforms_.append(slice_r)
-
-
-            except ValueError:
-                discarded_waveforms += 1
-                
-    else: 
-        raise ValueError("Reference waveform must either be a single Waveform or a list of Waveforms with the same length as the waveforms to be synchronized.")
-    if discarded_waveforms > 0:
-        logger.warning(f"{discarded_waveforms} over {len(waveforms)} waveforms were discarded during synchronization due to errors .")    
-
-    return sliced_list, reference_waveforms_
-
-
-def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "percentiles"):
+def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "percentiles", reference_waveform = None):
     """
     Compute the confidence intervals for a list of waveforms.
     """
     #Assuming waveforms are sliced to the same time range
     if method == "percentiles": 
-        lower_bound, upper_bound = np.percentile(waveforms, [(1-confidence_level)*100/2, (1+confidence_level)*100/2], axis = 0)
+        lower_bound, upper_bound = np.nanpercentile(waveforms, [(1-confidence_level)*100/2, (1+confidence_level)*100/2], axis = 0)
     
     #Return lower datas and upper bound based on LC
     elif method == "upper": 
-        lower_bound, upper_bound = np.percentile(waveforms, [0, confidence_level * 100], axis = 0)
+        lower_bound, upper_bound = np.nanpercentile(waveforms, [0, confidence_level * 100], axis = 0)
 
     #Return lower datas and upper bound based on CL
     elif method == "lower": 
-        lower_bound, upper_bound = np.percentile(waveforms, [(1-confidence_level) * 100, 100], axis = 0)
-        
+        lower_bound, upper_bound = np.nanpercentile(waveforms, [(1-confidence_level) * 100, 100], axis = 0)
+    
+    elif method == "BCa": 
+        if reference_waveform is None: 
+            raise ValueError("Reference waveform must be provided for BCa confidence intervals.")
+        lower_bound, upper_bound = BCa_confidence_intervals(waveforms, reference_waveform, confidence_level=confidence_level)
+    
+    elif method == "studentized_bootstrap": 
+        if reference_waveform is None: 
+            raise ValueError("Reference waveform must be provided for studentized bootstrap confidence intervals.")
+        lower_bound, upper_bound = studentized_bootstrap_confidence_intervals(waveforms, reference_waveform, confidence_level)
+    
     else: 
         raise ValueError("Unsupported ordering method.") 
     
     return lower_bound, upper_bound 
 
-def compute_overlap(reconstructed, injected):  
+
+def studentized_bootstrap_confidence_intervals(waveforms,reference_waveform,confidence_level): 
+    """
+    Compute studentized bootstrap confidence intervals for a list of waveforms.
+    """
+    waveforms = np.asarray(waveforms)
+    n_bootstrap, n_points = waveforms.shape
+
+    lower_bound = np.zeros(n_points)
+    upper_bound = np.zeros(n_points)
+    alpha = (1 - confidence_level) / 2
+
+    se = np.nanstd(waveforms, axis=0, ddof=1) #define standard error (se)
+    studentized_residuals = (waveforms - reference_waveform) / se 
+    print(se) 
+    print(studentized_residuals) 
+    t_up, t_low = np.nanpercentile(studentized_residuals, [100 * alpha, 100 * (1 - alpha)], axis=0) 
+    
+    print(t_up, t_low)
+    lower_bound = reference_waveform - t_low * se
+    upper_bound = reference_waveform - t_up * se 
+
+    return lower_bound, upper_bound
+
+def BCa_confidence_intervals(waveforms, reference_waveform, confidence_level=0.95):
+    """
+    Compute the bias-corrected and accelerated (BCa) confidence intervals for a list of waveforms.
+    """
+    from scipy.stats import norm  # type: ignore
+
+    alpha = (1 - confidence_level) / 2
+    lower_percentile = alpha * 100
+    upper_percentile = (1 - alpha) * 100
+
+    waveforms = np.array(waveforms)
+    n_waveforms, n_points = waveforms.shape
+
+    lower_bound = np.zeros(n_points)
+    upper_bound = np.zeros(n_points)
+
+    for i in range(n_points):
+        point_values = waveforms[:, i]
+        point_values = point_values[~np.isnan(point_values)]
+
+        if len(point_values) == 0:
+            lower_bound[i] = np.nan
+            upper_bound[i] = np.nan
+            continue
+
+        point_mean = reference_waveform[i] 
+
+        z0 = norm.ppf(np.sum(point_values < point_mean) / len(point_values))
+
+        jackknife_means = []
+        for j in range(len(point_values)):
+            jackknife_sample = np.delete(point_values, j)
+            jackknife_means.append(np.mean(jackknife_sample))
+        jackknife_means = np.array(jackknife_means)
+
+        mean_jackknife = np.mean(jackknife_means)
+        acc_numerator = np.sum((mean_jackknife - jackknife_means) ** 3)
+        acc_denominator = 6 * (np.sum((mean_jackknife - jackknife_means) ** 2)) ** 1.5
+        a = acc_numerator / acc_denominator if acc_denominator != 0 else 0
+
+        z_lower = norm.ppf(lower_percentile / 100)
+        z_upper = norm.ppf(upper_percentile / 100)
+
+        adj_lower = norm.cdf(2 * z0 + z_lower)#/ (1 - a * z_lower)) * 100
+        adj_upper = norm.cdf(2 * z0 + z_upper)#/ (1 - a * z_upper)) * 100 
+
+        lower_bound[i] = np.percentile(point_values, adj_lower * 100)
+        upper_bound[i] = np.percentile(point_values, adj_upper * 100)
+    return lower_bound, upper_bound
+    
+
+def compute_overlap(reconstructed, reference_waveform):  
     """
     Compute the overlap between the reconstructed waveforms and the injected waveform."""
     
     #Compute overlap of N waveforms against a single, reference  waveform 
-    if type(injected) == Waveform: 
+    if type(reference_waveform) == Waveform: 
         reconstructed = np.atleast_2d(reconstructed) 
         norm1 = np.linalg.norm(reconstructed, axis = 1)
-        norm2 = np.linalg.norm(injected)
-        overlaps = np.dot(reconstructed, injected) / (norm1 * norm2)
+        norm2 = np.linalg.norm(reference_waveform)
+        overlaps = np.dot(reconstructed, reference_waveform) / (norm1 * norm2)
 
     #Compute eoverlap of N waveforms against their respective injected waveform 
-    elif type(injected) == list and len(injected) == len(reconstructed): 
+    elif type(reference_waveform) == list and len(reference_waveform) == len(reconstructed): 
         overlaps = [] 
-        for reconstructed_waveform, injected_waveform in zip(reconstructed, injected): 
-            overlap = compute_overlap(reconstructed_waveform, injected_waveform)
+        for reconstructed_waveform, ref_waveform in zip(reconstructed, reference_waveform): 
+            overlap = compute_overlap(reconstructed_waveform, ref_waveform)
             overlaps.append(overlap)
-    #Raise error if lengths do not match
+
     else: 
-        raise ValueError("Injected waveform list length must be 1 or equal to the number of reconstructed waveforms.") 
+        raise ValueError("Reference waveform list length must be 1 or equal to the number of reconstructed waveforms.") 
     
     overlaps = np.array(overlaps)
 

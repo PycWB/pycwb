@@ -45,10 +45,11 @@ class Waveform(TimeSeries):
         and creates relative attributes in the waveform object.
         """
         central_time = self.estimateCentralTime()
-        duration = self.estimateDuration()
+        duration = max(self.estimateDuration(), 0.150) # Ensure minimum duration of 0.1s to avoid too narrow windows
+
         self.tstart, self.tend = central_time - duration / 2, central_time + duration / 2 
-        self.istart = np.argmin(np.abs(self.sample_times.data - self.tstart))
-        self.iend   = np.argmin(np.abs(self.sample_times.data - self.tend))
+        self.istart = int(round((self.tstart - self.sample_times.data[0]) / self.delta_t))
+        self.iend   = int(round((self.tend - self.sample_times.data[0]) / self.delta_t))
         
 
     def syncWaveform(self, reference_waveform, sync_phase = True): 
