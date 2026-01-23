@@ -85,7 +85,6 @@ docker:push:
     - docker:build
   variables:
     PUSH_IMAGE: "$CI_REGISTRY_IMAGE:latest"
-  when: manual
 
 #pages:
 #  stage: post-deploy
