@@ -70,10 +70,10 @@ publish:
 include:
   # - project: computing/gitlab-ci-templates
   #   file: docker.yml
-  - component: git.ligo.org/computing/gitlab/components/docker/build@<VERSION>
+  - component: git.ligo.org/computing/gitlab/components/docker/build@2.3.1
     inputs:
       stage: docker-build
-  - component: git.ligo.org/computing/gitlab/components/docker/push@<VERSION>
+  - component: git.ligo.org/computing/gitlab/components/docker/push@2.3.1
     inputs:
       stage: docker-publish
 
