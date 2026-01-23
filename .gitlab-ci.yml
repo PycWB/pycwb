@@ -19,6 +19,7 @@ image: buildpack-deps:jammy
 
 stages:          # List of stages for jobs, and their order of execution
   - build
+  - docker
   - deploy
   #- post-deploy
 
@@ -63,6 +64,19 @@ publish:
     - echo "Deploying to PyPI..."
     - pip install twine
     - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*.tar.gz
+
+docker:
+  image: docker:latest
+  stage: docker
+  variables:
+    APPLICATION: pycwb
+    BUILD_CONTEXT: .
+  before_script:
+    - docker login -u gitlab-ci-token -p ${CI_BUILD_TOKEN} ${CI_REGISTRY}
+  script:
+    - docker build --file envs/Dockerfile.ci --tag ${CI_REGISTRY_IMAGE}/${APPLICATION}:${CI_COMMIT_SHA} ${BUILD_CONTEXT}
+    - docker push ${CI_REGISTRY_IMAGE}/${APPLICATION}:${CI_COMMIT_SHA}
+  when: manual
 
 #pages:
 #  stage: post-deploy
