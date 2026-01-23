@@ -72,6 +72,7 @@ publish:
 docker:build:
   extends:
     - .docker:build
+  stage: docker
   variables:
     # tag using the branch name
     CI_REGISTRY_TAG: "${CI_COMMIT_REF_SLUG}"
@@ -79,6 +80,7 @@ docker:build:
 docker:push:
   extends:
     - .docker:push
+  stage: docker
   needs:
     - docker:build
   variables:
