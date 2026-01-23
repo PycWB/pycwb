@@ -17,6 +17,10 @@
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
 image: buildpack-deps:jammy
 
+include:
+  - project: computing/gitlab-ci-templates
+    file: docker.yml
+
 stages:          # List of stages for jobs, and their order of execution
   - build
   - docker
@@ -65,17 +69,20 @@ publish:
     - pip install twine
     - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload dist/*.tar.gz
 
-docker:
-  image: docker:latest
-  stage: docker
+docker:build:
+  extends:
+    - .docker:build
   variables:
-    APPLICATION: pycwb
-    BUILD_CONTEXT: .
-  before_script:
-    - docker login -u gitlab-ci-token -p ${CI_BUILD_TOKEN} ${CI_REGISTRY}
-  script:
-    - docker build --file envs/Dockerfile.ci --tag ${CI_REGISTRY_IMAGE}/${APPLICATION}:${CI_COMMIT_SHA} ${BUILD_CONTEXT}
-    - docker push ${CI_REGISTRY_IMAGE}/${APPLICATION}:${CI_COMMIT_SHA}
+    # tag using the branch name
+    CI_REGISTRY_TAG: "${CI_COMMIT_REF_SLUG}"
+
+docker:push:
+  extends:
+    - .docker:push
+  needs:
+    - docker:build
+  variables:
+    PUSH_IMAGE: "$CI_REGISTRY_IMAGE:latest"
   when: manual
 
 #pages:
