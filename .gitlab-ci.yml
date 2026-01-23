@@ -77,6 +77,7 @@ include:
   - component: git.ligo.org/computing/gitlab/components/docker/push@2.3.1
     inputs:
       stage: docker-publish
+      push_when: all
 
 # docker:build:
 #   extends:
