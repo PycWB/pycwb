@@ -15,10 +15,14 @@ import pycwb.cli.post_process as post_process
 import pycwb.cli.gwosc as gwosc
 import pycwb.cli.gwosc_data as gwosc_data
 import pycwb.cli.get_external_modules as get_external_modules
+from pycwb import __version__
 
 def main():
     parser = argparse.ArgumentParser(prog='pycwb')
     subparsers = parser.add_subparsers(help='commands')
+
+    # Show version
+    parser.add_argument('-v', '--version', action='version', version=f'pycwb {__version__}')
 
     # Create subcommand
     create_parser = subparsers.add_parser('server', help='Run a simple server to show the results')
