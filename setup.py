@@ -21,6 +21,7 @@ install_requires = [
     "numba",
     "gwpy",
     "ligo-segments",
+    "ligo-gracedb",
     "aiohttp",
     "pycbc",
     "filelock",
@@ -41,6 +42,10 @@ install_requires = [
     "scikit-learn",
     "jinja2",  # for template rendering
     "plotly",  # for plotting
+    "healpy",
+    "wdm-wavelet",
+    "burst-waveform",
+
     # "nds2-client",
     # "python-nds2-client"
 ]
