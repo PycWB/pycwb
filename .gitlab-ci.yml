@@ -22,7 +22,7 @@ include:
   - component: git.ligo.org/computing/gitlab/components/docker/test@2.3.1
     inputs:
       test_script:
-        - pycwb --version
+        - cd /opt && pycwb --version # change dir to prevent use the source code
 
 build-latest:
   rules:

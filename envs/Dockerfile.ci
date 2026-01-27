@@ -6,7 +6,6 @@ RUN wget -q https://root.cern/download/root_v6.32.20.Linux-ubuntu22.04-x86_64-gc
  && tar -xf root_v6.32.20.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz \
       --strip-components=1 -C /usr/local/
 
-
 # ---- Environment ----
 ENV ROOTSYS=/usr/local
 ENV PYTHONPATH=${ROOTSYS}/lib:${PYTHONPATH}
@@ -31,12 +30,32 @@ RUN wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx3
  && dpkg -i libhealpix-cxx3_3.80.0-5_amd64.deb \
  && dpkg -i libhealpix-cxx-dev_3.80.0-5_amd64.deb
 
-# ---- Install pycWB from current CI source ----
-WORKDIR /opt/pycwb
-COPY . .
+# Copy source to a temporary build directory
+WORKDIR /tmp/build
+COPY . /tmp/build
 
+# Build wheel and install into site-packages
 RUN python3 -m pip install --upgrade pip setuptools setuptools_scm build \
- && pip install .
+ && python3 -m build
 
-# ---- Sanity test ----
-CMD python3 -c "import pycwb; print(pycwb.__version__)"
+# Change to another dir to prevent not installing pycwb itself
+WORKDIR /opt/pycwb
+
+RUN python3 -m pip install /tmp/build/dist/*.whl -v
+
+# ----------------------------
+# Remove tmp files
+# ----------------------------
+RUN rm -rf /tmp/build
+
+# ----------------------------
+# Sanity checks
+# ----------------------------
+RUN python3 -m pip show pycwb
+
+RUN python3 - <<EOF
+import pycwb
+print("pycwb version:", pycwb.__version__)
+EOF
+
+RUN which pycwb && pycwb --version || true
