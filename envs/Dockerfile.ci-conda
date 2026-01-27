@@ -1,0 +1,74 @@
+FROM buildpack-deps:jammy
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /opt
+
+# ---- System dependencies (minimal) ----
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    wget \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---- Install Miniforge ----
+ENV CONDA_DIR=/opt/conda
+RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+ && bash Miniforge3-Linux-x86_64.sh -b -p ${CONDA_DIR} \
+ && rm Miniforge3-Linux-x86_64.sh
+
+ENV PATH=${CONDA_DIR}/bin:${PATH}
+
+# ---- Configure conda ----
+RUN conda config --set channel_priority strict \
+ && conda update -y conda
+
+# ---- Create pycwb environment ----
+RUN conda create -y -n pycwb "python>=3.9,<3.11"
+
+# ---- Install dependencies from conda-forge ----
+RUN conda install -y -n pycwb -c conda-forge \
+    root=6.26.10 \
+    healpix_cxx=3.81 \
+    nds2-client \
+    python-nds2-client \
+    lalsuite \
+    setuptools_scm \
+    cmake \
+    pkg-config \
+ && conda clean -afy
+
+# ---- Make pycwb env the default ----
+SHELL ["bash", "-c"]
+ENV CONDA_DEFAULT_ENV=pycwb
+ENV PATH=${CONDA_DIR}/envs/pycwb/bin:${PATH}
+
+# Copy source to a temporary build directory
+WORKDIR /tmp/build
+COPY . /tmp/build
+
+# Build wheel and install into site-packages
+RUN python3 -m pip install --upgrade pip setuptools setuptools_scm build \
+ && python3 -m build
+
+# Change to another dir to prevent not installing pycwb itself
+WORKDIR /opt/pycwb
+
+RUN python3 -m pip install /tmp/build/dist/*.whl -v
+
+# ----------------------------
+# Remove tmp files
+# ----------------------------
+RUN rm -rf /tmp/build
+
+# ----------------------------
+# Sanity checks
+# ----------------------------
+RUN python3 -m pip show pycwb
+
+RUN python3 - <<EOF
+import pycwb
+print("pycwb version:", pycwb.__version__)
+EOF
+
+RUN which pycwb && pycwb --version || true

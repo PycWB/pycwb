@@ -45,7 +45,6 @@ install_requires = [
     "healpy",
     "wdm-wavelet",
     "burst-waveform",
-
     # "nds2-client",
     # "python-nds2-client"
 ]
