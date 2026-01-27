@@ -58,7 +58,7 @@ def convert_td_amp_to_cwb(td_amps):
     c_double_p = ctypes.POINTER(ctypes.c_double)
 
     res = []
-    if td_amps and len(td_amps) > 0:
+    if td_amps is not None and len(td_amps) > 0:
         for i, data in enumerate(td_amps):
             h = ROOT.wavearray(np.double)(len(data))
             ROOT.pycwb_copy_to_wavearray(data.ctypes.data_as(c_double_p), h, len(data))
