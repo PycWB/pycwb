@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
-                compress_json=True, cluster="condor", conda_env=None, additional_init="",
-                accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
+                compress_json=True, cluster=None, conda_env=None, additional_init="",
+                accounting_group=None, job_per_worker=None, n_proc=1, memory=None, disk=None,
                 container_image = None, should_transfer_files = False,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
@@ -35,6 +35,28 @@ def batch_setup(file_name, working_dir='.',
     if dry_run:
         return job_segments
 
+    if not cluster: cluster = config.cluster
+    if not conda_env: conda_env = config.conda_env
+    if not additional_init: additional_init = config.additional_init
+    if not accounting_group: accounting_group = config.accounting_group
+    if not job_per_worker: job_per_worker = config.job_per_worker
+    if not memory: memory = config.job_memory
+    if not disk: disk = config.job_disk
+    if not container_image: container_image = config.container_image
+    if not should_transfer_files: should_transfer_files = config.should_transfer_files
+
+    logger.info(f"Job submission info:")
+    logger.info(f"  Cluster type: {cluster}")
+    logger.info(f"  Conda environment: {conda_env}")
+    logger.info(f"  Additional init script: {additional_init}")
+    logger.info(f"  Accounting group: {accounting_group}")
+    logger.info(f"  Jobs per worker: {job_per_worker}")
+    logger.info(f"  Number of processors per job: {n_proc}")
+    logger.info(f"  Memory per job: {memory}")
+    logger.info(f"  Disk per job: {disk}")
+    logger.info(f"  Container image: {container_image}")
+    logger.info(f"  Should transfer files: {should_transfer_files} (will be set true of image is defined)")
+    
     if cluster == "condor":
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
                           container_image, should_transfer_files,

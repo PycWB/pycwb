@@ -18,12 +18,17 @@ class HTCondor:
         self.dag_file = None
         self.container_image = container_image
         self.should_transfer_files = should_transfer_files
-        if accounting_group is None:
+
+        if container_image:
+            self.should_transfer_files = True
+
+        if not accounting_group:
             raise ValueError("Accounting group is required for condor batch submission")
+
         self.accounting_group = accounting_group
         self.job_per_worker = job_per_worker
-        if conda_init is None:
-            if container_image is None:
+        if not conda_init:
+            if not container_image:
                 self.conda_init = 'source /cvmfs/software.igwn.org/conda/etc/profile.d/conda.sh'
             else:
                 self.conda_init = ''
@@ -45,6 +50,7 @@ class HTCondor:
     def generate_job_script(self):
         working_dir = self.working_dir
         dag_dir = self.dag_dir
+        should_transfer_files = self.should_transfer_files
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -54,6 +60,7 @@ class HTCondor:
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
+{ 'mkdir -p job_status trigger output log' if should_transfer_files else ''}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
             """)
 
@@ -63,6 +70,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
     def generate_merge_script(self):
         working_dir = self.working_dir
         dag_dir = self.dag_dir
+        should_transfer_files = self.should_transfer_files
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -72,6 +80,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
+{ 'mkdir -p log' if should_transfer_files else ''}
 pycwb merge-catalog --work-dir={working_dir}
             """)
 
@@ -117,33 +126,38 @@ pycwb merge-catalog --work-dir={working_dir}
             "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         }
 
-        if container_image:
-            batch_job_config['universe'] = 'container'
-            batch_job_config['container_image'] = container_image
-
-        if should_transfer_files:
-            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog"
-            batch_job_config['transfer_output_files'] = "catalog, job_status, trigger, output, log"
-            batch_job_config['should_transfer_files'] = "yes"
-
-        batch_job = htcondor.Submit(batch_job_config)
-
         merge_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
-            "executable": "condor/merge.sh",
-            "transfer_input_files": f"{working_dir}/catalog",
-            "should_transfer_files": "yes",
+            "executable": "merge.sh",
+            "should_transfer_files": "no",
             "log": "log/merge.log",
             "output": "log/merge.out",
             "error": "log/merge.err",
             "accounting_group": accounting_group,
             "accounting_group_user": getpass.getuser(),
-            "request_cpus": self.n_proc,
-            "request_memory": "8GB",
-            "request_disk": "4GB",
+            "request_cpus": f"{self.n_proc}",
+            "request_memory": self.memory,
+            "request_disk": self.disk,
         }
 
+        if container_image:
+            batch_job_config['universe'] = 'container'
+            batch_job_config['container_image'] = container_image
+            merge_job_config['universe'] = 'container'
+            merge_job_config['container_image'] = container_image
+
+        if should_transfer_files:
+            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog"
+            batch_job_config['transfer_output_files'] = "catalog, job_status, trigger, output, log"
+            batch_job_config['should_transfer_files'] = "yes"
+            batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
+            merge_job_config['transfer_input_files'] = f"{working_dir}/catalog"
+            merge_job_config['transfer_output_files'] = "catalog, log"
+            merge_job_config['should_transfer_files'] = "yes"
+            merge_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
+
+        batch_job = htcondor.Submit(batch_job_config)
         merge_job = htcondor.Submit(merge_job_config)
 
         dag = dags.DAG()

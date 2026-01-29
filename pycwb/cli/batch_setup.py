@@ -26,7 +26,6 @@ def init_parser(parser):
                         metavar='job_submission_system',
                         type=str,
                         choices=['condor', 'slurm'],
-                        default='condor',
                         help='the submit option, the available options are condor and slurm')
 
     parser.add_argument('--submit',
@@ -55,7 +54,6 @@ def init_parser(parser):
                         '-e',
                         metavar='conda_env',
                         type=str,
-                        default=os.environ.get('CONDA_DEFAULT_ENV'),
                         help='the conda environment')
 
     # additional init
@@ -107,7 +105,6 @@ def init_parser(parser):
                         '-m',
                         metavar='memory',
                         type=str,
-                        default='6GB',
                         help='the memory for each job')
 
     # disk
@@ -115,7 +112,6 @@ def init_parser(parser):
                         '-k',
                         metavar='disk',
                         type=str,
-                        default='4GB',
                         help='the disk space for each job')
 
     # compress json
