@@ -3,12 +3,20 @@ import os
 import getpass
 import shutil
 import logging
+import sys
 from pathlib import Path
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
+
+# ExceptionGroup is available in Python 3.11+; use backport for earlier versions
+if sys.version_info >= (3, 11):
+    from builtins import ExceptionGroup
+else:
+    from exceptiongroup import ExceptionGroup
+
 logger = logging.getLogger(__name__)
 
 
