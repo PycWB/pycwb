@@ -24,6 +24,7 @@ def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster="condor", conda_env=None, additional_init="",
                 accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
+                container_image = None, should_transfer_files = False,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
     logger_init(log_file, log_level)
@@ -36,6 +37,7 @@ def batch_setup(file_name, working_dir='.',
 
     if cluster == "condor":
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
+                          container_image, should_transfer_files,
                           n_proc, memory, disk)
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":

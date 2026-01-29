@@ -88,6 +88,19 @@ def init_parser(parser):
                         type=int,
                         default=1,
                         help='the number of jobs per worker')
+    
+    # container_image
+    parser.add_argument('--container-image',
+                        '--image',
+                        metavar='container_image',
+                        type=str,
+                        help='the URI to the container image')
+
+    # should_transfer_files
+    parser.add_argument('--should-transfer-files',
+                        action='store_true',
+                        default=False,
+                        help='whether transfer files to computing node, set this if the shared file system does not exist')   
 
     # memory
     parser.add_argument('--memory',
@@ -158,6 +171,8 @@ def command(args):
                 disk=args.disk,
                 accounting_group=args.accounting_group,
                 job_per_worker=args.job_per_worker,
+                should_transfer_files=args.should_transfer_files,
+                container_image=args.container_image,
                 submit=args.submit,
                 overwrite=args.force_overwrite, 
                 config_vars=args.config_vars)
