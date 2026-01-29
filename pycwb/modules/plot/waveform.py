@@ -1,9 +1,37 @@
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
+from pycbc.types import TimeSeries
+from gwpy.plot.colors import GW_OBSERVATORY_COLORS
 import logging
 import matplotlib
 logger = logging.getLogger(__name__)
 
+# Update global settings
+plt.rcParams.update({
+    # 1. Tick Lengths
+    'xtick.major.size': 10,
+    'xtick.minor.size': 5,
+    'ytick.major.size': 10,
+    'ytick.minor.size': 5,
+    
+    # 2. Tick Direction (in/out/inout)
+    'xtick.direction': 'in',
+    'ytick.direction': 'in',
+    
+    # 3. Enable Minor Ticks by default
+    'xtick.minor.visible': True,
+    'ytick.minor.visible': True
+})
+
+def plot(wave: TimeSeries, ifo = None):
+    # set offset for gps offset
+    offset = round(float(wave.start_time), -3)
+
+    plt.plot(wave.sample_times - offset, wave.data, zorder=3, color=GW_OBSERVATORY_COLORS[ifo] if ifo else 'r', marker='.', markersize=0.6, linewidth=0.4)
+    plt.xlabel(f'Time (sec): GPS OFFSET = {offset:.3f}', fontsize=10)
+    plt.ylabel('magnitude', fontsize=10)
+    plt.grid(linestyle = ':', zorder=1)
+     
 
 def plot_reconstructed_waveforms(outputDir, reconstructed_waves, xlim):
     mplstyle.use('fast')
