@@ -110,6 +110,69 @@ schema = {
             "default": 4,
             "cwb": False
         },
+        "cluster": {
+            "type": "string",
+            "description": "cluster type for batch processing (condor or slurm)",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "conda_env": {
+            "type": "string",
+            "description": "conda environment name for batch jobs",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "additional_init": {
+            "type": "string",
+            "description": "additional initialization commands for batch jobs",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "accounting_group": {
+            "type": "string",
+            "description": "accounting group for HTCondor batch jobs",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "job_per_worker": {
+            "type": "integer",
+            "description": "number of jobs per worker in batch processing",
+            "default": 1,
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "job_memory": {
+            "type": "string",
+            "description": "memory allocation for batch jobs (e.g., '6GB')",
+            "default": "6GB",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "job_disk": {
+            "type": "string",
+            "description": "disk allocation for batch jobs (e.g., '8GB')",
+            "default": "8GB",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "container_image": {
+            "type": "string",
+            "description": "container image for HTCondor batch jobs",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "should_transfer_files": {
+            "type": "boolean",
+            "description": "whether to transfer files in HTCondor batch jobs",
+            "default": False,
+            "cwb": False,
+            "category": "job_submission"
+        },
         "skip_no_injection": {
             "type": "boolean",
             "description": "skip jobs without injection",

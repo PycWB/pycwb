@@ -26,7 +26,6 @@ def init_parser(parser):
                         metavar='job_submission_system',
                         type=str,
                         choices=['condor', 'slurm'],
-                        default='condor',
                         help='the submit option, the available options are condor and slurm')
 
     parser.add_argument('--submit',
@@ -55,7 +54,6 @@ def init_parser(parser):
                         '-e',
                         metavar='conda_env',
                         type=str,
-                        default=os.environ.get('CONDA_DEFAULT_ENV'),
                         help='the conda environment')
 
     # additional init
@@ -88,13 +86,25 @@ def init_parser(parser):
                         type=int,
                         default=1,
                         help='the number of jobs per worker')
+    
+    # container_image
+    parser.add_argument('--container-image',
+                        '--image',
+                        metavar='container_image',
+                        type=str,
+                        help='the URI to the container image')
+
+    # should_transfer_files
+    parser.add_argument('--should-transfer-files',
+                        action='store_true',
+                        default=False,
+                        help='whether transfer files to computing node, set this if the shared file system does not exist')   
 
     # memory
     parser.add_argument('--memory',
                         '-m',
                         metavar='memory',
                         type=str,
-                        default='6GB',
                         help='the memory for each job')
 
     # disk
@@ -102,7 +112,6 @@ def init_parser(parser):
                         '-k',
                         metavar='disk',
                         type=str,
-                        default='4GB',
                         help='the disk space for each job')
 
     # compress json
@@ -158,6 +167,8 @@ def command(args):
                 disk=args.disk,
                 accounting_group=args.accounting_group,
                 job_per_worker=args.job_per_worker,
+                should_transfer_files=args.should_transfer_files,
+                container_image=args.container_image,
                 submit=args.submit,
                 overwrite=args.force_overwrite, 
                 config_vars=args.config_vars)

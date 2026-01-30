@@ -50,9 +50,13 @@ if(NOT DEFINED XIFO)
    set(XIFO 4)
 endif()
 
-# Fix the macso cross-compilation issue, see git.ligo.org issue#4
-set(CWB_OPTS "XIFO=${XIFO}" "_USE_CPP" "_Float16=short")
-
+# Fix the macOS cross-compilation issue, see git.ligo.org issue#4
+# Only apply the `_Float16=short` workaround on Apple Silicon (arm64)
+# FIXME: could not find a robust way to detect Apple Silicon when rosseta is used
+set(CWB_OPTS "XIFO=${XIFO}" "_USE_CPP")
+if(APPLE)
+   list(APPEND CWB_OPTS "_Float16=short")
+endif()
 
 #Find ROOT
 list(APPEND CMAKE_PREFIX_PATH $ENV{ROOTSYS})
