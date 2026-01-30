@@ -1,22 +1,25 @@
 import logging
 import os
 import psutil
+import numpy as np
 from copy import copy
 from pycwb.config import Config
+from pycbc.types import TimeSeries
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
-from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
-from pycwb.modules.data_conditioning import data_conditioning
+from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
+from pycwb.modules.data_conditioning import data_conditioning, whitening_mdc
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
-from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, plot_skymap_flow
+from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
+from pycwb.modules.reconstruction import estimate_snr
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
     data = base_data
-    
     # get all the trail_idx from the injections, if there is no injections, use 0
     trail_idxs = {0}
     if job_seg.injections:
@@ -72,7 +74,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg = copy(job_seg)
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
-            data = generate_injections(config, sub_job_seg, base_data)
+            
+            mdc = [TimeSeries(np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), epoch = base_data[i].start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
+            # data = generate_injections(config, sub_job_seg, base_data) 
+            for injection in sub_job_seg.injections:
+                inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
+                mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
+                data = [base_data[i].add_into(inj[i]) for i in range(len(sub_job_seg.ifos))]
         else:
             logger.info(f"Processing trail_idx: {trail_idx} without injections")
             sub_job_seg = job_seg
@@ -86,6 +94,14 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # data conditioning
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+        # if injection, check and resample the mdc
+        if job_seg.injections:
+            mdc = [check_and_resample(mdc[i], config, i) for i in range(len(job_seg.ifos))]
+            
+            # whitening mdc using nRMS of data
+            tmp = [whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)]
+            mdc_maps, HoT_list = zip(*tmp)
 
         # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
@@ -153,11 +169,35 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 # FIXME: add gps time and segment time on the x ticks
                 event, cluster, event_skymap_statistics = trigger
+
+                # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
-                                        event, cluster,
-                                        save=config.save_waveform, plot=config.plot_waveform,
-                                        save_injection=config.save_injection, plot_injection=config.plot_injection)
+                                        event, cluster, epoch=data[0].start_time,
+                                        save=config.save_waveform, plot=config.plot_waveform)
                 
+                # if injection, estimate injected_waveforms and calculate related statistics
+                # FIXME: currently, only supported for 'wavelet' whitening method
+                if event.injection and config.whiteMethod == 'wavelet':
+                    injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
+                                                                HoT_list, mdc_maps, config.iwindow/2, config.segEdge, config.inRate,
+                                                                save=config.save_injection, plot=config.plot_injection)
+
+                    # if config.save_injection: 
+                    #     event.wf_sINJ   = injected_data['injected_strain']            # estimated injected strain
+                    #     event.wf_wINJ   = injected_data['whitened_injected_waveform'] # estimated injected whitened waveform
+                    event.hrss      += injected_data['hrss']                          # hrss[nifo+i]: injected hrss in ifo[i]
+                    event.time      += injected_data['central_time']                  # time[nifo+i]: estimated injected central_time in ifo[i]
+                    event.iSNR      = injected_data['snr']                            # estimated injected snr
+                    event.frequency += injected_data['central_freq']                  # frequency[nifo+i]:  estimated injected central frequency in ifo[i]
+                    event.bandwidth += injected_data['bandwidth']                     # bandwidth[nifo+i]:  estimated injected bandwidth in ifo[i]
+                    event.duration  += injected_data['duration']                      # duration[nifo+i]:   estimated injected duration
+                    
+                    # snr statistics
+                    inj_waveforms = injected_data['whitened_injected_waveform']
+                    rec_waveforms = [reconst_data[f'{ifo}_reconstructed_signals_whiten'] for ifo in sub_job_seg.ifos]
+                    event.oSNR     = [estimate_snr(rec_waveform) for rec_waveform in rec_waveforms]
+                    event.ioSNR    = [estimate_snr(inj_waveform, rec_waveform) if (inj_waveform is not None) and (rec_waveform is not None) else None for inj_waveform, rec_waveform in zip(inj_waveforms, rec_waveforms)]
+                    
                 # calculate Qveto and Qfactor, add to the event for dumping to the catalog
                 try:
                     min_qveto = 1e23
@@ -165,11 +205,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
                     # find the minimum Qveto and Qfactor for the event in all ifos and reconstructed strain/waves
                     for ifo in sub_job_seg.ifos:
-                        for type in ['strain', 'waves']:
-                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_reconstructed_{type}_whiten'])
+                        # for a_type in ['strain', 'waves']:
+                        for a_type in ['data', 'signals']:
+                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_reconstructed_{a_type}_whiten'])
                             min_qveto = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
-
+                    
+                    event.Qveto = [min_qfactor, min_qfactor]          # just for testing purpose
                     event.qveto = min_qveto
                     event.qfactor = min_qfactor
                     logger.info(f"Qveto for event {event.hash_id}: {event.qveto}, Qfactor: {event.qfactor}")
