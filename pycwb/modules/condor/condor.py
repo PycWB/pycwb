@@ -52,6 +52,9 @@ class HTCondor:
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
 
+        if should_transfer_files:
+            working_dir = '.'
+
         os.makedirs(dag_dir, exist_ok=True)
 
         # create run.sh
@@ -99,11 +102,6 @@ pycwb merge-catalog --work-dir={working_dir}
         container_image = self.container_image
         should_transfer_files = self.should_transfer_files
 
-        n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
-        jobs = [{
-            'jobs': f"{i * job_per_worker + 1}-{min((i + 1) * job_per_worker, len(job_segments))}"
-        } for i in range(n_workers)]
-
         os.makedirs(dag_dir, exist_ok=True)
 
         # create the submit description for the batch job
@@ -148,7 +146,7 @@ pycwb merge-catalog --work-dir={working_dir}
             merge_job_config['container_image'] = container_image
 
         if should_transfer_files:
-            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog"
+            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog, $(framefiles)"
             batch_job_config['transfer_output_files'] = "catalog, job_status, trigger, output, log"
             batch_job_config['should_transfer_files'] = "yes"
             batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
@@ -161,6 +159,24 @@ pycwb merge-catalog --work-dir={working_dir}
         merge_job = htcondor.Submit(merge_job_config)
 
         dag = dags.DAG()
+
+        n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
+        jobs = []
+        for i in range(n_workers):
+            job_start = i * job_per_worker
+            job_end = min((i + 1) * job_per_worker, len(job_segments))
+            
+            # Collect frame files for this batch of jobs
+            framefiles = set()
+            for seg in job_segments[job_start:job_end]:
+                if seg.frames:
+                    for frame in seg.frames:
+                        framefiles.add(frame.path)
+            
+            jobs.append({
+                'jobs': f"{job_start + 1}-{job_end}",
+                'framefiles': ','.join(sorted(framefiles)) if framefiles else ''
+            })
 
         batch_layer = dag.layer(
             name='pycwb_batch',

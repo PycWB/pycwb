@@ -2,6 +2,7 @@ import logging
 from warnings import warn
 import numpy as np
 import orjson
+import tqdm
 
 from .dq_segment import read_seg_list, get_job_list, merge_seg_list
 from .frame import get_frame_meta, select_frame_list, get_frame_files_from_gwdatafind
@@ -98,13 +99,21 @@ def create_job_segment_from_config(config):
     ## Load the frames if frFiles or gwdatafind specified
     ############################################
     # attach the frame files to the job segments if defined
-    if config.frFiles:
-        # if frFiles exist, attach the given framefiles to the job segments
-        attach_frame_files_to_job_segments(job_segments, config.ifo, config.frFiles, config.segEdge)
+    if config.frFiles or config.gwdatafind:
+        # Get frame file list
+        if config.frFiles:
+            logger.info("Loading frame files from given frFiles...")
+            frame_files = {}
+            for i, ifo in enumerate(config.ifo):
+                frame_files[ifo] = get_frame_meta(config.frFiles[i], ifo)
+        elif config.gwdatafind:
+            logger.info("Fetching frame files using gwdatafind...")
+            # if gwdatafind specified, use gwdatafind to fetch the frame files for each job segment
+            frame_files = gwdatafind_frames_for_job_segments(job_segments, config.ifo, config.gwdatafind, config.segEdge)
+        # attach the given framefiles to the job segments
+        logger.info("Attaching frame files to job segments...")
+        attach_frame_files_to_job_segments(job_segments, config.ifo, frame_files, config.segEdge)
 
-    if config.gwdatafind:
-        # if gwdatafind specified, use gwdatafind to fetch the frame files for each job segment
-        gwdatafind_frames_for_job_segments(job_segments, config.ifo, config.gwdatafind, config.segEdge)
 
     # attach the channel names to the job segments from config for self-contained information
     if config.channelNamesRaw:
@@ -238,12 +247,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     return job_segments
 
 
-def attach_frame_files_to_job_segments(job_segments, ifos, fr_files, seg_edge):
-    # Get frame file list
-    frame_files = {}
-    for i, ifo in enumerate(ifos):
-        frame_files[ifo] = get_frame_meta(fr_files[i], ifo)
-
+def attach_frame_files_to_job_segments(job_segments, ifos, frame_files, seg_edge):
     # Select frame files for each job segment
     for job_seg in job_segments:
         if job_seg.frames is None:
@@ -271,21 +275,44 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
 
     :return: None
     """
-    from gwdatafind import find_urls
-
     # prepare the gwdatafind.find_urls arguments
     if 'site' not in gwdatafind:
         gwdatafind['site'] = [ifo[0] for ifo in ifos]
     host = gwdatafind.get('host')
+    urltype = gwdatafind.get('urltype', None)
 
-    for job_seg in job_segments:
-        if job_seg.frames is None:
-            job_seg.frames = []
-        for i, ifo in enumerate(ifos):
-            job_seg.frames += get_frame_files_from_gwdatafind(ifo, gwdatafind['site'][i], gwdatafind['frametype'][i],
-                                                            job_seg.physical_start_times[ifo],
-                                                            job_seg.physical_end_times[ifo],
-                                                            seg_edge, host=host)
+    logger.info("Fetching frame files using gwdatafind...")
+    logger.info(f" - Host: {host}")
+    logger.info(f" - URL type: {urltype}")
+    logger.info(f" - Sites: {gwdatafind['site']}")
+    logger.info(f" - Frame types: {gwdatafind['frametype']}")
+
+    # find the min and max gps time to fetch frames in one request
+    min_gps = min([job_seg.physical_start_times[ifo] for job_seg in job_segments for ifo in ifos])
+    max_gps = max([job_seg.physical_end_times[ifo] for job_seg in job_segments for ifo in ifos])
+
+    framefiles = {}
+
+    for i, ifo in enumerate(ifos):
+        framefiles[ifo] = get_frame_files_from_gwdatafind(ifo, gwdatafind['site'][i], gwdatafind['frametype'][i],
+                                                         min_gps, max_gps, seg_edge, host=host, urltype=urltype)
+    return framefiles
+
+    # # warn user to prevent using too many requests
+    # n_requests = len(job_segments) * len(ifos)
+    # if n_requests > 100:
+    #     warn(f"You are about to make {n_requests} requests to the frame server. "
+    #          f"Consider generating frame file list first with `pycwb get-framefile-list` to reduce the number of requests.",
+    #          UserWarning)
+         
+    # for job_seg in tqdm.tqdm(job_segments, desc="Fetching frame files"):
+    #     if job_seg.frames is None:
+    #         job_seg.frames = []
+    #     for i, ifo in enumerate(ifos):
+    #         job_seg.frames += get_frame_files_from_gwdatafind(ifo, gwdatafind['site'][i], gwdatafind['frametype'][i],
+    #                                                         job_seg.physical_start_times[ifo],
+    #                                                         job_seg.physical_end_times[ifo],
+    #                                                         seg_edge, host=host, urltype=urltype)
         # job_seg.frames = get_frame_files_from_gwdatafind(ifos, gwdatafind['site'], gwdatafind['frametype'],
         #                                                  job_seg.start_time, job_seg.end_time, seg_edge, host=host)
 
