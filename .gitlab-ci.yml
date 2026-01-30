@@ -33,6 +33,18 @@ container_scanning:
     - job: build-latest
       optional: true
 
+build-sdist:
+  image: python:3.11
+  stage: build
+  script:
+    - python3 -m pip install build
+    - python3 -m build --sdist
+  only:
+    - tags
+  artifacts:
+    paths:
+      - dist/*
+
 publish:
   image: python:3.10
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
