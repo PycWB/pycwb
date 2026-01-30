@@ -52,6 +52,9 @@ class HTCondor:
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
 
+        if should_transfer_files:
+            working_dir = '.'
+
         os.makedirs(dag_dir, exist_ok=True)
 
         # create run.sh
