@@ -4,7 +4,6 @@ from typing import Dict, List
 import math
 from pycbc.types.timeseries import TimeSeries
 from pycwb.types.time_frequency_series import TimeFrequencySeries
-
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.plot_map.world_map import plot_skymap_contour
