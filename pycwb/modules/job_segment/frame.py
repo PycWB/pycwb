@@ -81,7 +81,7 @@ def select_frame_list(frame_list, start, stop, seg_edge):
     return frame_list
 
 
-def get_frame_files_from_gwdatafind(ifo, site, frametype, start, stop, seg_edge, urltype=None, host='datafind.gwosc.org'):
+def get_frame_files_from_gwdatafind(ifo, site, frametype, start, stop, seg_edge, urltype, host):
     """
     Use gwdatafind to get the frame files for the job segments
 
@@ -100,7 +100,7 @@ def get_frame_files_from_gwdatafind(ifo, site, frametype, start, stop, seg_edge,
     :param host: host name of the frame server
     :type host: str
     :param urltype: type of the url to find
-    :type urltype: str or None
+    :type urltype: str
 
     :return: list of frame files
     :rtype: list[FrameFile]

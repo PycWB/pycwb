@@ -279,7 +279,7 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
     if 'site' not in gwdatafind:
         gwdatafind['site'] = [ifo[0] for ifo in ifos]
     host = gwdatafind.get('host')
-    urltype = gwdatafind.get('urltype', None)
+    urltype = gwdatafind.get('urltype', 'file')
 
     logger.info("Fetching frame files using gwdatafind...")
     logger.info(f" - Host: {host}")
