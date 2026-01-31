@@ -253,10 +253,13 @@ def create_single_trigger_folder(working_dir: str, trigger_dir: str, job_seg: Wa
         The path to the trigger folder
     """
     trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event[0].stop[0]}_{event[0].hash_id}"
-    if not os.path.exists(trigger_folder):
-        os.makedirs(trigger_folder)
-    else:
-        logger.info(f"Trigger folder {trigger_folder} already exists, skip")
+ 
+    ## Do not create the folder here, let the save function create it to prevent too many folders
+    # if not os.path.exists(trigger_folder):
+    #     os.makedirs(trigger_folder)
+    # else:
+    #     logger.info(f"Trigger folder {trigger_folder} already exists, skip")
+
     return trigger_folder
 
 
@@ -270,6 +273,9 @@ def save_trigger(trigger_folder: str, trigger_data: tuple | list,
 
     # Save the event to the trigger folder
     if save_cluster or save_sky_map:
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+
         logger.info(f"Saving trigger {event.hash_id}")
 
         # save_dataclass_to_json(event, f"{trigger_folder}/event.json")
