@@ -1,0 +1,85 @@
+ifo_names:
+  H:
+    long_name: "LIGO Hanford Observatory"
+    short_name: "H1"
+  L:
+    long_name: "LIGO Livingston Observatory"
+    short_name: "L1"
+  V:
+    long_name: "Virgo Observatory"
+    short_name: "V1"
+  K:
+    long_name: "KAGRA Observatory"
+    short_name: "K1"
+
+# Maps network short codes to full interferometer names
+networks:
+  # Two-detector networks
+  L:
+    - L1
+  H:
+    - H1
+  V:
+    - V1
+  LH:
+    - L1
+    - H1
+  LV:
+    - L1
+    - V1
+  HV:
+    - H1
+    - V1
+  
+  # Three-detector network
+  HLV:
+    - H1
+    - L1
+    - V1
+
+data:
+  igwn-osg:
+    host: https://datafind.igwn.org
+    frametype:
+      C00:
+        H1: H1_HOFT_C00
+        L1: L1_HOFT_C00
+        V1: V1_HOFT_C00
+    channelNamesRaw:
+      C00:
+        H1: H1:GDS-CALIB_STRAIN_CLEAN
+        L1: L1:GDS-CALIB_STRAIN_CLEAN
+        V1: V1:GDS-CALIB_STRAIN_CLEAN
+    urltype: osdf
+  cit-local:
+    host: datafind.ldas.cit:80
+    frametype:
+      C00:
+        H1: H1_HOFT_C00
+        L1: L1_HOFT_C00
+        V1: V1_HOFT_C00
+    channelNamesRaw:
+      C00:
+        H1: H1:GDS-CALIB_STRAIN_CLEAN
+        L1: L1:GDS-CALIB_STRAIN_CLEAN
+        V1: V1:GDS-CALIB_STRAIN_CLEAN
+    urltype: file
+  gwosc:
+    host: https://datafind.gwosc.org
+    frametype:
+      C00:
+        H1: H1_GWOSC_O4a_16KHZ_R1
+        L1: L1_GWOSC_O4a_16KHZ_R1
+        V1: V1_GWOSC_O4a_16KHZ_R1
+    channelNamesRaw:
+      C00:
+        H1: H1:GWOSC-16KHZ_R1_STRAIN
+        L1: L1:GWOSC-16KHZ_R1_STRAIN
+        V1: V1:GWOSC-16KHZ_R1_STRAIN
+    urltype: osdf
+  local:
+    channelNamesRaw:
+      H1: H1_GWOSC_O4a_16KHZ_R1
+      L1: L1_GWOSC_O4a_16KHZ_R1
+      V1: V1_GWOSC_O4a_16KHZ_R1
+ # if user want to use it in other cluster, user frames.in
