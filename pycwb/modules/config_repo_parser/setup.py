@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 from jinja2 import Template
+import click
 
 from .config_repo_parser import parse_project, get_ifo_list, get_data_settings
 
@@ -65,6 +66,13 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         >>> print(f"Data source: {result['data_type']}")
     """
     work_path = Path(work_dir).resolve()
+    # ask user to confirm if work_path exists and is not empty
+    if work_path.exists() and any(work_path.iterdir()):
+        if not dry_run:
+            click.confirm(f"Working directory {work_path} already exists and is not empty. Continue?", abort=True)
+        else:
+            logger.info(f"[DRY RUN] Working directory {work_path} already exists and is not empty.")
+    
     project_name = work_path.name
     
     logger.info(f"Setting up project: {project_name}")
