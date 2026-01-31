@@ -102,7 +102,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
     
     # Copy and setup configuration files
     config_source = Path(parsed['full_path']) / "user_parameters.yaml"
-    config_dest = work_path / "user_parameters.yaml"
+    config_dest = work_path / "config/user_parameters.yaml"
     
     logger.info(f"Copying configuration from {config_source}")
     _copy_and_template_config(
