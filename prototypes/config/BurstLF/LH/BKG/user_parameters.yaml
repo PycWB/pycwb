@@ -1,10 +1,10 @@
 ####### job setting ########
 cluster: condor
-container_image: osdf:///igwn/cit/staging/yumeng.xu/images/pycwb/pycwb-v0.30.3.dev2.sif
+container_image: osdf:///igwn/cit/staging/yumeng.xu/images/pycwb/pycwb-v0.31.0.dev2.sif
 accounting_group: ligo.dev.o4.burst.allsky.cwboffline
 job_per_worker: 1
-job_memory: 6GB
-job_disk: 8GB
+job_memory: 12GB
+job_disk: 16GB
 
 # chunk_id: {{ CHUNK_ID }}
 
