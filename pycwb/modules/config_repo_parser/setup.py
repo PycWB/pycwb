@@ -117,7 +117,22 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         data_settings,
         dry_run
     )
-    
+
+    # user defined input files
+    input_files_source = Path(parsed['full_path']) / "input"
+    if input_files_source.exists() and input_files_source.is_dir():
+        for item in input_files_source.iterdir():
+            dest_item = work_path / "input" / item.name
+            if dry_run:
+                logger.info(f"[DRY RUN] Would copy input file {item} to {dest_item}")
+            else:
+                if item.is_file():
+                    shutil.copy2(item, dest_item)
+                    logger.debug(f"Copied input file: {item.name}")
+                elif item.is_dir():
+                    shutil.copytree(item, dest_item)
+                    logger.debug(f"Copied input directory: {item.name}")
+                    
     # Copy DQ files directly to input directory
     input_dir = work_path / "input"
     copied_dq_files = _copy_dq_files(dq_files, input_dir, dry_run)
