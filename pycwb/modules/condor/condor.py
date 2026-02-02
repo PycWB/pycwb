@@ -74,6 +74,8 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         working_dir = self.working_dir
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
+        if should_transfer_files:
+                    working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
