@@ -51,14 +51,9 @@ def init_parser(parser):
                         action="store_true", 
                         help="Whether to use absolute reference")
 
-        
-    parser.set_defaults(use_absolute_reference=True)
-
-
-    
-    parser.add_argument("-no_absolute_reference", dest="use_absolute_reference", action="store_false", help="Whether to not use absolute reference")
-
-
+    parser.add_argument("--whitened", 
+                        action="store_true", 
+                        help="Whether to use whitened waveforms")
 
     parser.add_argument("--reference_folder", 
                         type=str, 
@@ -78,18 +73,18 @@ def init_parser(parser):
 
 
 def command(args):
-    from pycwb.workflow.subflow.waveform_reconstruction_report import process_strain 
-
-    if not args.use_absolute_reference and not args.use_relative_reference:
-        raise ValueError("At least one of --use_absolute_reference or --use_relative_reference must be set to True.") 
+    import sys
+    sys.path.insert(0, '/home/alessandro.martini/pycwb/pycwb/workflow/subflow/')
+    from waveform_reconstruction_report import process_strain
+    #from pycwb.workflow.subflow.waveform_reconstruction_report import process_strain 
     
     for ifo in args.ifo:
         #check process_strain argumenta are correctly defined 
         process_strain(folder= args.folder, 
                     ifo = ifo, 
-                    reference_folder= args.reference_folder, 
+                    reference = args.reference_folder, 
                     confidence_level = args.confidence_level, 
-                    use_absolute_reference = args.use_absolute_reference, 
+                    whitened = args.whitened,
                     use_relative_reference = args.use_relative_reference, 
                     waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
