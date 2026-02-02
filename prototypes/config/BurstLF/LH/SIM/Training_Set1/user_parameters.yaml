@@ -22,15 +22,15 @@ refIFO: {{ REF_IFO_SHORT_NAME }}
 
 inRate: 16384
 # lags
-lagSize: 99
+lagSize: 1
 lagStep: 1.
 lagOff: 0
-lagMax: 99
+lagMax: 1
 
 # superlags
-slagSize: 15 
+slagSize: 2 
 slagMin: 0
-slagMax: 15
+slagMax: 2
 slagOff: 0
 
 # job
@@ -83,9 +83,11 @@ nfactor: 1
 injection:
   seed: 16
   parameters_from_python:
-    function: "./injection_parameters.get_injection_parameters"
+    function: "./input/injection_parameters.get_injection_parameters"
+    args:
+      seed: 16
   generator: "burst_waveform.interface.generate_waveform_pycwb.get_td_waveform"
-  repeat_injection: 300
+  repeat_injection: 1
   sky_distribution:
     type: UniformAllSky
   time_distribution:

@@ -42,7 +42,7 @@ def get_injection_parameters():
     
     # Repeat the waveforms to create a larger set
     # CAUTION: DO NOT simply use `SGE * 10` as it will create a shallow copy!!!
-    SGE = repeat(SGE, 10)
+    SGE = repeat(SGE, 1000)
 
     iota_list = np.random.uniform(0, np.pi/2, len(SGE))
 
