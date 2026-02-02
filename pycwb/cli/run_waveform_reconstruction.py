@@ -69,10 +69,9 @@ def command(args):
         #check process_strain argumenta are correctly defined 
         process_strain(folder= args.folder, 
                     ifo = ifo, 
-                    reference = args.reference_folder, 
+                    reference = args.reference, 
                     confidence_level = args.confidence_level, 
                     whitened = args.whitened,
-                    use_relative_reference = args.use_relative_reference, 
                     waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
                     plot_median = args.plot_median, 
