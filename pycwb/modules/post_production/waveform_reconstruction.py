@@ -1,5 +1,3 @@
-#Postprocessing for waveform reconstruction 
-
 from concurrent.futures import ProcessPoolExecutor
 from pycwb.types.waveform import Waveform, load_waveform 
 from tqdm import tqdm  # type: ignore
@@ -7,7 +5,6 @@ import numpy as np  # type: ignore
 import logging 
 import os
 
-#TODO: Implement whitened options 
 
 logger = logging.getLogger(__name__) 
 
@@ -48,7 +45,7 @@ def create_save_directories(analysis_directory):
     os.makedirs(results_directory, exist_ok=True)
 
 
-def load_waveforms(folder, ifo, resample = None, load_injected=False, skip_trigger = False, whitened=False,  format="hdf", max_workers=None):
+def load_waveforms(folder, ifo, resample = None, load_injected=False, skip_trigger = True, whitened=False,  format="hdf", max_workers=None):
     """
     Load waveforms from the specified folder 
     Parameters: 
@@ -88,13 +85,13 @@ def _load_one_waveform(args):
 
     try:
         if not load_injected: 
-            file_name = "reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
+            file_name = f"reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
         else: 
             file_name = f"injected_strain_{ifo}.{format}"
-      
+        
         waveform = load_waveform(os.path.join(folder, subfolder, file_name), resample = resample)
 
-        if np.any(np.isna(waveform.data)): 
+        if np.any(np.isnan(waveform.data)): 
             return None 
 
         if skip_trigger and f"injected_strain_{ifo}.{format}" not in os.listdir(os.path.join(folder, subfolder)): 
@@ -155,8 +152,11 @@ def _sync_one(args):
     :returns: synchronized waveform and reference waveform
     """
     waveform, reference, sync_phase = args
-    waveform.syncWaveform(reference, sync_phase=sync_phase)
-    return waveform, reference
+
+    w_copy = waveform.copy() 
+    r_copy = reference.copy()
+    w_copy.syncWaveform(r_copy, sync_phase=sync_phase)
+    return w_copy, r_copy
 
 
 def pad_waveforms(waveforms, reference, max_workers=None):
@@ -192,7 +192,6 @@ def pad_waveforms(waveforms, reference, max_workers=None):
 
     if discarded > 0:
         print(f"{discarded} waveforms could not be padded and were discarded.")
-
     return padded_waveforms, padded_refs
 
 def _pad_pair_to_same_length(args):
@@ -225,7 +224,8 @@ def _pad_pair_to_same_length(args):
             ref_pad.prepend_zeros(n_pre_r)
         if n_post_r > 0:
             ref_pad.append_zeros(n_post_r)
-
+        w_pad._findStartEnd() 
+        ref_pad._findStartEnd()
         #Now both have exactly the same length
         assert len(w_pad) == len(ref_pad)
 
@@ -285,46 +285,23 @@ def _slice_one(args):
     Slice a single waveform to the time range of the reference waveform.
     :returns: sliced waveform and reference waveform
     """
+    
     w, ref_w = args
-    start, stop = w.istart, w.iend 
+    w_copy = w.copy() 
+    r_copy = ref_w.copy() 
+    try: 
+        #Ensure both waveforms have been synchronized and padded to the same length
+        start, stop = r_copy.istart, r_copy.iend 
 
-    w_slice = Waveform(w[start:stop]) 
-    ref_slice = Waveform(ref_w[start:stop]) 
+        w_slice = Waveform(w_copy[start:stop]) 
+        ref_slice = Waveform(r_copy[start:stop]) 
+        if len(w_slice) != len(ref_slice):
+            return None
 
-    if len(w_slice) != len(ref_slice):
+    except Exception:
         return None
     
     return w_slice, ref_slice 
-
-
- 
-
-
-def _slice_one_OLD(args):
-    """
-    Slice a single waveform to the time range of the reference waveform.
-    :returns: sliced waveform and reference waveform
-    """
-    w, ref_w = args
-
-
-    t_start, t_end = ref_w.tstart, ref_w.tend
-    ref_slice = ref_w.time_slice(t_start, t_end)
-    N = len(ref_slice.data)
-
-    start_idx = int(round((t_start - ref_w.sample_times[0]) / ref_w.delta_t))
-    end_idx = start_idx + N
-
-    slice_w = Waveform(w[start_idx:end_idx])
-    slice_r = Waveform(ref_slice)
-
-    # Hard guarante
-    if len(slice_w) != len(slice_r):
-        return None
-
-    return slice_w, slice_r
-
-
 
 
 def compute_confidence_intervals(waveforms, confidence_level=0.95, method = "percentiles", reference_waveform = None):
