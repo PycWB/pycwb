@@ -11,16 +11,15 @@ def init_parser(parser):
                         help="Folder containing the analysis")
 
     
-   # parser.add_argument("--ifos", 
-   #                     type=list, 
-   #                     default=["H1","L1"],
-   #                     help="List of ifos used in the analysis")
-    
     parser.add_argument('--ifo',
                         action='append', 
                         help='Call IFO to perform analysis', 
                         required=True)
 
+    parser.add_argument("--reference", 
+                        type=str, 
+                        default=None, 
+                        help="Name of the folder to use as absolute reference")
 
 
     parser.add_argument("--plot_median", 
@@ -46,23 +45,11 @@ def init_parser(parser):
                         default="percentiles", 
                         help="Method to compute the confidence level. Options are 'percentile', 'lower', 'upper'")
 
-
-    parser.add_argument("--use_absolute_reference", 
-                        action="store_true", 
-                        help="Whether to use absolute reference")
-
     parser.add_argument("--whitened", 
                         action="store_true", 
                         help="Whether to use whitened waveforms")
 
-    parser.add_argument("--reference_folder", 
-                        type=str, 
-                        default=None, 
-                        help="Name of the folder to use as absolute reference")
-    
-    parser.add_argument("--use_relative_reference", 
-                        action="store_true", 
-                        help="Whether to use relative reference")
+
 
     
     parser.add_argument("--max_workers",
