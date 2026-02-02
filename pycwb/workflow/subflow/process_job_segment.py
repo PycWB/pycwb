@@ -143,17 +143,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             event.injection = injection
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-            # if in production mode, send the triggers to the queue instead of saving them here
-            if production_mode:
-                logger.info("In production mode, sending triggers to the queue instead of saving them in the processor")
-                queue.put({
-                    "job_seg": sub_job_seg,
-                    "lag": lag,
-                    "events": events_data,
-                    "clusters": clusters
-                })
-                continue
-
+            #################### Save triggers and post-process ####################
             # save triggers
             trigger_folders = []
             for trigger in events_data:
@@ -224,6 +214,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 if config.plot_sky_map:
                     plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
 
+            #################### Add event to catalog ####################
             # add event to catalog
             for trigger in events_data:
                 catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
