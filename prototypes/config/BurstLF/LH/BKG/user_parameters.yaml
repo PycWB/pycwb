@@ -1,10 +1,10 @@
 ####### job setting ########
 cluster: condor
-container_image: osdf:///igwn/cit/staging/yumeng.xu/images/pycwb/pycwb-v0.31.0.dev2.sif
+container_image: osdf:///igwn/cit/staging/yumeng.xu/images/pycwb/pycwb-v0.31.0.dev13.sif
 accounting_group: ligo.dev.o4.burst.allsky.cwboffline
 job_per_worker: 1
-job_memory: 12GB
-job_disk: 16GB
+job_memory: 8GB
+job_disk: 10GB
 
 # chunk_id: {{ CHUNK_ID }}
 
@@ -28,9 +28,9 @@ lagOff: 0
 lagMax: 99
 
 # superlags
-slagSize: 15 
+slagSize: 1 
 slagMin: 0
-slagMax: 15
+slagMax: 1
 slagOff: 0
 
 # job
