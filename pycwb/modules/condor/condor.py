@@ -186,6 +186,7 @@ pycwb merge-catalog --work-dir={working_dir}
             name='pycwb_batch',
             submit_description=batch_job,
             vars=jobs,
+            retries=5,
         )
 
         merge_layer = batch_layer.child_layer(
