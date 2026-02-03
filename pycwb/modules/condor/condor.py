@@ -74,6 +74,8 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         working_dir = self.working_dir
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
+        if should_transfer_files:
+                    working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -137,6 +139,8 @@ pycwb merge-catalog --work-dir={working_dir}
             "request_cpus": f"{self.n_proc}",
             "request_memory": self.memory,
             "request_disk": self.disk,
+            "use_oauth_services": "scitokens",
+            "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         }
 
         if container_image:
@@ -182,6 +186,7 @@ pycwb merge-catalog --work-dir={working_dir}
             name='pycwb_batch',
             submit_description=batch_job,
             vars=jobs,
+            retries=5,
         )
 
         merge_layer = batch_layer.child_layer(

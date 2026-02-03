@@ -191,6 +191,9 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
     
     if save:
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+            logger.info(f"Creating trigger folder: {trigger_folder}")
         try:
             for i, ifo in enumerate(ifos):
                 logger.info(f"Saving injected waveform for {ifos[i]}")
@@ -204,6 +207,10 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     if plot:
         from pycwb.modules.plot.waveform import plot
         from matplotlib import pyplot as plt
+
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+            logger.info(f"Creating trigger folder: {trigger_folder}")
 
         for i, ifo in enumerate(ifos):
             try:
@@ -224,6 +231,10 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
 
 def plot_trigger_flow(trigger_folder: str,
                  event: Event, cluster: Cluster) -> None:
+    if not os.path.exists(trigger_folder):
+        os.makedirs(trigger_folder)
+        logger.info(f"Creating trigger folder: {trigger_folder}")
+
     logger.info(f"Making plots for event {event.hash_id}")
 
     # plot the likelihood map
@@ -232,6 +243,10 @@ def plot_trigger_flow(trigger_folder: str,
 
 def plot_skymap_flow(trigger_folder: str,
                  event: Event, event_skymap_statistics: Dict[str, List[float]]) -> None:
+    if not os.path.exists(trigger_folder):
+        os.makedirs(trigger_folder)
+        logger.info(f"Creating trigger folder: {trigger_folder}")
+
     logger.info(f"Making skymap plots for event {event.hash_id}")
     # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
     for key in event_skymap_statistics.keys():

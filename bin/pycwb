@@ -8,6 +8,7 @@ import pycwb.cli.server as server
 import pycwb.cli.run as run
 import pycwb.cli.flow as flow
 import pycwb.cli.batch_setup as batch_setup
+import pycwb.cli.config_setup as config_setup
 import pycwb.cli.batch_runner as batch_runner
 import pycwb.cli.xtalk as xtalk
 import pycwb.cli.merge_catalog as merge_catalog
@@ -41,6 +42,10 @@ def main():
     batch_parser = subparsers.add_parser('batch-setup', help='Setup batch run')
     batch_setup.init_parser(batch_parser)
     batch_parser.set_defaults(func=batch_setup.command)
+
+    config_setup_parser = subparsers.add_parser('config-setup', help='Setup project configuration and submit batch job')
+    config_setup.init_parser(config_setup_parser)
+    config_setup_parser.set_defaults(func=config_setup.command)
 
     batch_runner_parser = subparsers.add_parser('batch-runner', help='Runner for batch run')
     batch_runner.init_parser(batch_runner_parser)
