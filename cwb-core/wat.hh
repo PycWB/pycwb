@@ -68,6 +68,10 @@ inline bool USE_ICC() {return false;}
 
 } // end namespace
 
+#ifndef XIFO
+#define XIFO 4
+#endif
+
 #define _ALIGNED        __attribute__((aligned(32)))
 
 #if XIFO < 5

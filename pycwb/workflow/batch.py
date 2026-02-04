@@ -3,19 +3,28 @@ import os
 import getpass
 import shutil
 import logging
+import sys
 from pathlib import Path
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
+
+# ExceptionGroup is available in Python 3.11+; use backport for earlier versions
+if sys.version_info >= (3, 11):
+    from builtins import ExceptionGroup
+else:
+    from exceptiongroup import ExceptionGroup
+
 logger = logging.getLogger(__name__)
 
 
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
-                compress_json=True, cluster="condor", conda_env=None, additional_init="",
-                accounting_group=None, job_per_worker=10, n_proc=1, memory="6GB", disk="4GB",
+                compress_json=True, cluster=None, conda_env=None, additional_init="",
+                accounting_group=None, job_per_worker=None, n_proc=1, memory=None, disk=None,
+                container_image = None, should_transfer_files = False,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
     logger_init(log_file, log_level)
@@ -26,8 +35,31 @@ def batch_setup(file_name, working_dir='.',
     if dry_run:
         return job_segments
 
+    if not cluster: cluster = config.cluster
+    if not conda_env: conda_env = config.conda_env
+    if not additional_init: additional_init = config.additional_init
+    if not accounting_group: accounting_group = config.accounting_group
+    if not job_per_worker: job_per_worker = config.job_per_worker
+    if not memory: memory = config.job_memory
+    if not disk: disk = config.job_disk
+    if not container_image: container_image = config.container_image
+    if not should_transfer_files: should_transfer_files = config.should_transfer_files
+
+    logger.info(f"Job submission info:")
+    logger.info(f"  Cluster type: {cluster}")
+    logger.info(f"  Conda environment: {conda_env}")
+    logger.info(f"  Additional init script: {additional_init}")
+    logger.info(f"  Accounting group: {accounting_group}")
+    logger.info(f"  Jobs per worker: {job_per_worker}")
+    logger.info(f"  Number of processors per job: {n_proc}")
+    logger.info(f"  Memory per job: {memory}")
+    logger.info(f"  Disk per job: {disk}")
+    logger.info(f"  Container image: {container_image}")
+    logger.info(f"  Should transfer files: {should_transfer_files} (will be set true of image is defined)")
+    
     if cluster == "condor":
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
+                          container_image, should_transfer_files,
                           n_proc, memory, disk)
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
@@ -75,6 +107,7 @@ def process_single_with_flag(main_func, queue, working_dir, config, job_seg, com
         try:
             with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
                 f.write("")
+            return e
         except Exception as e:
             logger.error(f"Failed to create job failed flag file: {e}")
             return e

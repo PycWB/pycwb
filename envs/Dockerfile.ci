@@ -1,0 +1,61 @@
+FROM buildpack-deps:jammy
+
+# ---- Install ROOT ----
+WORKDIR /tmp
+RUN wget -q https://root.cern/download/root_v6.32.20.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz \
+ && tar -xf root_v6.32.20.Linux-ubuntu22.04-x86_64-gcc11.4.tar.gz \
+      --strip-components=1 -C /usr/local/
+
+# ---- Environment ----
+ENV ROOTSYS=/usr/local
+ENV PYTHONPATH=${ROOTSYS}/lib:${PYTHONPATH}
+ENV CLING_STANDARD_PCH=none
+
+# ---- System dependencies ----
+RUN apt-get update && apt-get -y install \
+    git dpkg-dev cmake pkg-config g++ gcc binutils \
+    libx11-dev libxpm-dev libxft-dev libxext-dev \
+    tar gfortran subversion \
+    libfftw3-dev libcfitsio9 libsharp0 \
+    python3-pip python3-venv nlohmann-json3-dev libtbb12 \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---- OpenSSL 1.1 ----
+RUN wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+ && dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+# ---- HEALPix ----
+RUN wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx3_3.80.0-5_amd64.deb \
+ && wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx-dev_3.80.0-5_amd64.deb \
+ && dpkg -i libhealpix-cxx3_3.80.0-5_amd64.deb \
+ && dpkg -i libhealpix-cxx-dev_3.80.0-5_amd64.deb
+
+# Copy source to a temporary build directory
+WORKDIR /tmp/build
+COPY . /tmp/build
+
+# Build wheel and install into site-packages
+RUN python3 -m pip install --upgrade pip setuptools setuptools_scm build \
+ && python3 -m build
+
+# Change to another dir to prevent not installing pycwb itself
+WORKDIR /opt/pycwb
+
+RUN python3 -m pip install /tmp/build/dist/*.whl -v
+
+# ----------------------------
+# Remove tmp files
+# ----------------------------
+RUN rm -rf /tmp/build
+
+# ----------------------------
+# Sanity checks
+# ----------------------------
+RUN python3 -m pip show pycwb
+
+RUN python3 - <<EOF
+import pycwb
+print("pycwb version:", pycwb.__version__)
+EOF
+
+RUN which pycwb && pycwb --version || true

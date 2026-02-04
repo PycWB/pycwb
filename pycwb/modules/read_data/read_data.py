@@ -1,5 +1,6 @@
 from gwpy.timeseries import TimeSeries
 import numpy as np
+import os
 import pycbc.catalog
 import logging
 from multiprocessing import Pool
@@ -37,6 +38,12 @@ def read_from_gwf(filename, channel, start=None, end=None) -> TimeSeries:
         logger.info(f'Reading data from {filename} ({channel})')
 
     # Read gwf file
+    # if framefile is an osdf url, check if the file exist in current path or not, if so, read the local transferred file
+    if filename.startswith("osdf://"):
+        local_filename = os.path.basename(filename)
+        if os.path.exists(local_filename):
+            filename = local_filename
+            logger.info(f'Using local transferred file: {local_filename}')
     data = TimeSeries.read(filename, channel, start, end)
 
     # check if data contains NaN values

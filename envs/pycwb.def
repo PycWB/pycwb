@@ -1,0 +1,67 @@
+Bootstrap: docker
+From: buildpack-deps:jammy
+
+%labels
+    Author your-name
+    Description CI-ready image for PycWB (converted from Dockerfile)
+
+%environment
+    export ROOTSYS=/usr/local
+    export PYTHONPATH=${ROOTSYS}/lib:${PYTHONPATH}
+    export CLING_STANDARD_PCH=none
+    export WORKSPACE=/workspace
+
+%post
+    set -eux
+
+    # ---- build args (hard-coded in Singularity) ----
+    ROOT_VERSION=6.26.14
+    ROOT_ARCH=Linux-ubuntu22-x86_64-gcc11.4
+
+    echo "Installing ROOT"
+    cd /tmp
+    wget -q https://root.cern/download/root_v${ROOT_VERSION}.${ROOT_ARCH}.tar.gz
+    tar -xf root_v${ROOT_VERSION}.${ROOT_ARCH}.tar.gz --strip-components=1 -C /usr/local/
+
+    echo "Installing system dependencies"
+    apt-get update
+    apt-get -y install \
+        git dpkg-dev cmake pkg-config g++ gcc binutils \
+        libx11-dev libxpm-dev libxft-dev libxext-dev \
+        tar gfortran subversion \
+        libfftw3-dev libcfitsio9 libsharp0 \
+        python3-pip python3-venv
+
+    echo "Installing legacy OpenSSL 1.1"
+    wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+    dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+    echo "Installing HEALPix"
+    wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx3_3.80.0-5_amd64.deb
+    wget -q https://launchpad.net/ubuntu/+archive/primary/+files/libhealpix-cxx-dev_3.80.0-5_amd64.deb
+    dpkg -i libhealpix-cxx3_3.80.0-5_amd64.deb
+    dpkg -i libhealpix-cxx-dev_3.80.0-5_amd64.deb
+
+    echo "Python setup"
+    ln -sf /usr/bin/python3 /usr/bin/python
+    python3 -m pip install --upgrade pip setuptools
+    python3 -m pip install build 
+
+    echo "==== Install pycwb ===="
+    cd /opt
+    git clone https://git.ligo.org/yumeng.xu/pycwb.git
+    cd pycwb
+    python3 -m build --sdist
+    pip install dist/*.tar.gz
+
+    echo "Create workspace"
+    mkdir -p /workspace
+
+    echo "Cleanup"
+    rm -rf /var/lib/apt/lists/*
+    rm -rf /tmp/root_v6.26.04.Linux-ubuntu22-x86_64-gcc11.2.tar.gz
+    rm -rf /tmp/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+    rm -rf /tmp/libhealpix-cxx*.deb
+    
+%runscript
+    exec python3 --version

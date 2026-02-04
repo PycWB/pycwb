@@ -21,6 +21,7 @@ install_requires = [
     "numba",
     "gwpy",
     "ligo-segments",
+    "ligo-gracedb",
     "aiohttp",
     "pycbc",
     "filelock",
@@ -37,10 +38,14 @@ install_requires = [
     "htcondor",
     "psutil",
     "memspectrum",
+    "exceptiongroup>=1.0.0;python_version<'3.11'",  # Backport for Python < 3.11
     "python-ligo-lw<2.0.0",  # error for version > 2: FileNotFoundError: [Errno 2] No such file or directory: 'ligolw/version.py.in'
     "scikit-learn",
     "jinja2",  # for template rendering
     "plotly",  # for plotting
+    "healpy",
+    "wdm-wavelet",
+    "burst-waveform",
     # "nds2-client",
     # "python-nds2-client"
 ]
