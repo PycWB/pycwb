@@ -61,7 +61,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
-    data = base_data
     # get all the trail_idx from the injections, if there is no injections, use 0
     trail_idxs = {0}
     if job_seg.injections:
@@ -69,18 +68,21 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         
     # loop over all the trail_idx, if there is no injections or only one trail, only loop once for trail_idx=0
     for trail_idx in trail_idxs:
+        #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 
+        data = base_data
         if job_seg.injections:
-            # use sub_job_seg for each trail_idx to avoid passing the trail_idx to the following functions,
+            # use sub_job_seg for each trail_idx to avoid passing the trail_idx to the following functions. 
             sub_job_seg = copy(job_seg)
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
             mdc = [TimeSeries(np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), epoch = base_data[i].start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
-            # data = generate_injections(config, sub_job_seg, base_data) 
+
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
+                #default argument copy = True prevents original base_data to be modified due to aliasing 
                 mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
-                data = [base_data[i].add_into(inj[i]) for i in range(len(sub_job_seg.ifos))]
+                data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))] 
         else:
             logger.info(f"Processing trail_idx: {trail_idx} without injections")
             sub_job_seg = job_seg
