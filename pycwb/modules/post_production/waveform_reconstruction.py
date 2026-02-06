@@ -85,16 +85,16 @@ def _load_one_waveform(args):
 
     try:
         if not load_injected: 
-            file_name = f"reconstructed_waveform_{ifo}_whitened.{format}" if whitened else f"reconstructed_waveform_{ifo}.{format}"
+            file_name = f"{ifo}_wf_REC.{format}" if not whitened else f"{ifo}_wf_REC_whiten.{format}"
         else: 
-            file_name = f"injected_strain_{ifo}.{format}"
+            file_name = f"{ifo}_wf_INJ.{format}" if not whitened else f"{ifo}_wf_INJ_whiten.{format}"
         
         waveform = load_waveform(os.path.join(folder, subfolder, file_name), resample = resample)
 
         if np.any(np.isnan(waveform.data)): 
             return None 
 
-        if skip_trigger and f"injected_strain_{ifo}.{format}" not in os.listdir(os.path.join(folder, subfolder)): 
+        if skip_trigger and f"{ifo}_wf_INJ.{format}" not in os.listdir(os.path.join(folder, subfolder)): 
             return None
 
         else: 
@@ -237,7 +237,7 @@ def _pad_pair_to_same_length(args):
 
 
 
-def slice_waveforms(waveforms, reference, max_workers=None):
+def slice_waveforms(waveforms, reference, early_start = None, max_workers=None):
     """
     Slice all waveforms to the same time range as the reference waveforms. If len(reference_waveform) == 1, slice all waveforms to the same time range, 
     otherwise slice each waveform to its respective reference.
@@ -246,15 +246,15 @@ def slice_waveforms(waveforms, reference, max_workers=None):
     sliced_list = []
     reference_waveforms_ = []
     discarded_waveforms = 0
-
+    early_idx = early_start * reference[0].sample_rate if early_start is not None else None 
     # ------------------------------------------------------------
     # Build (waveform, reference) pairs
     # ------------------------------------------------------------
     if isinstance(reference, Waveform):
-        pairs = [(w, reference) for w in waveforms]
+        pairs = [(w, reference, early_idx) for w in waveforms]
 
     elif isinstance(reference, list) and len(reference) == len(waveforms):
-        pairs = list(zip(waveforms, reference))
+        pairs = list(zip(waveforms, reference, [early_idx]*len(waveforms)))
 
     else:
         raise ValueError("Reference must be a single Waveform or a list with the same length as waveforms."
@@ -286,15 +286,15 @@ def _slice_one(args):
     :returns: sliced waveform and reference waveform
     """
     
-    w, ref_w = args
+    w, ref_w, early_idx = args
     w_copy = w.copy() 
     r_copy = ref_w.copy() 
     try: 
         #Ensure both waveforms have been synchronized and padded to the same length
         start, stop = r_copy.istart, r_copy.iend 
-
-        w_slice = Waveform(w_copy[start:stop]) 
-        ref_slice = Waveform(r_copy[start:stop]) 
+        start -= early_idx if early_idx is not None else 0
+        w_slice = Waveform(w_copy[int(start):int(stop)]) 
+        ref_slice = Waveform(r_copy[int(start):int(stop)]) 
         if len(w_slice) != len(ref_slice):
             return None
 

@@ -14,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def process_strain(folder, ifo, reference_folder = None, whitened = False, confidence_level = .95, **kwargs):  
+def process_strain(folder, ifo, reference = None, whitened = False, confidence_level = .95, **kwargs):  
     """
     Process the folder containing the waveforms and perform analysis.
     Parameters: 
@@ -39,24 +39,9 @@ def process_strain(folder, ifo, reference_folder = None, whitened = False, confi
     os.makedirs(plots_folder, exist_ok=True)
     os.makedirs(results_folder, exist_ok=True) 
 
-    #Create reference folder. If None, choose a random folder. If starts with 'trigger_' consider it as a full path inside current folder. 
-    if reference_folder is None:
-        logger.warning("Reference folder not provided. Using the first folder in triggers as reference.")
-        reference_folder =  next(os.listdir(triggers_folder)) 
-        reference_folder = os.path.join(triggers_folder, reference_folder)
-
-    logger.info(f"Using absolute reference from folder: {reference_folder}")
-
-    if whitened: 
-        reference_name = f"reconstructed_waveform_{ifo}_whitened.{waveform_format}"
-    else:
-        reference_name = f"reconstructed_waveform_{ifo}.{waveform_format}" 
-
-
-
     #Load all the reconstructed waveforms if not already loaded in the previous step 
     reconstructed_waveforms = load_waveforms(triggers_folder, ifo, whitened = whitened, skip_trigger=True, load_injected = False, format = waveform_format, max_workers=max_workers) 
-    reference_waveform = load_waveform(os.path.join(reference_folder, reference_name), resample=reconstructed_waveforms[0]._delta_t)        
+    reference_waveform = load_waveform(reference, resample=reconstructed_waveforms[0]._delta_t)        
     reconstructed_waveforms, reference_waveforms = sync_waveforms(reconstructed_waveforms, reference_waveform, sync_phase = True, max_workers=max_workers)
 
 
@@ -69,11 +54,8 @@ def process_strain(folder, ifo, reference_folder = None, whitened = False, confi
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **leakage_data) 
 
     #Slice the waveforms for further comparison. Only store the reference waveform as a single object (they're N copies for the same waveform)
-    
-    
     reconstructed_waveforms, reference_waveforms = pad_waveforms(reconstructed_waveforms, reference_waveforms, max_workers=max_workers)
-    reconstructed_waveforms, reference_waveforms = slice_waveforms(reconstructed_waveforms, reference_waveforms, max_workers=max_workers) 
-    
+    reconstructed_waveforms, reference_waveforms = slice_waveforms(reconstructed_waveforms, reference_waveforms, early_start=kwargs.get('early_start', None), max_workers=max_workers) 
     reference_waveform = reference_waveforms[0]
 
     #Plot the time domain waveforms with CI 
