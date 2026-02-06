@@ -686,11 +686,6 @@ schema = {
             "description": "stride length [sec] between two consecutive MESA PSD estimates. Should be mesaWindow / 3", 
             "default": 5
         },
-        "mesaHalfSize": {
-            "type": "number", 
-            "description": "Half size - 1 of the rolling window for the PSD median. Must be >= 0. If zero, no median is used ",
-            "default": 4. 
-        }, 
         "whiteMethod": {
             "type": "string",
             "description": "Sets what type of whitening has to be used. if 'wavelet' WDM time-frequency domain is applied. if 'mesa', it whitens with a PSD estimate given by mesa in the frequency domain. If 'mixed', the whitening is performed in time frequency domain but the nRMS is substitued with a MESA estimate for the coefficients", 
@@ -699,7 +694,7 @@ schema = {
         "mesaReindex": { 
             "type": "boolean", 
             "description": "If True, Computes possible PSDs outliers that might affect PSDs via Isolation Forest and substitute them with closest in time estimate",
-            "default": False
+            "default": True
         },
         "simulation": {
             "type": "string",
