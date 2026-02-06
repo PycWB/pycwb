@@ -19,7 +19,7 @@ def init_parser(parser):
     parser.add_argument("--reference", 
                         type=str, 
                         default=None, 
-                        help="Name of the folder to use as absolute reference")
+                        help="File to be used as reference waveform. If None, the first folder in triggers is used.")
 
 
     parser.add_argument("--plot_median", 
@@ -50,6 +50,10 @@ def init_parser(parser):
                         help="Whether to use whitened waveforms")
 
 
+    parser.add_argument("--early_start",
+                        type=float,
+                        default=None,
+                        help="Early start time for slicing the waveforms (in seconds)")
 
     
     parser.add_argument("--max_workers",
@@ -75,4 +79,5 @@ def command(args):
                     waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
                     plot_median = args.plot_median, 
+                    early_start = args.early_start, 
                     max_workers = args.max_workers)
