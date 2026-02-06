@@ -8,15 +8,18 @@ from pycwb.types.wdm import WDM
 logger = logging.getLogger(__name__)
 
 
-def whitening_cwb(config, h):
+
+def whitening_mdc(config, h, nRMS):
     """
-    Performs whitening on the given strain data
+    Performs whitening on the given strain data with provided nRMS
 
     :param config: config object
     :type config: Config
     :param h: strain data
     :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
-    :return: (whitened strain, nRMS)
+    :param nRMS: noise rms data
+    :type nRMS: pycwb.types.time_frequency_series.TimeFrequencySeries or ROOT.WSeries<double>
+    :return: (whitened strain, original strain)
     :rtype: tuple[pycwb.types.time_frequency_series.TimeFrequencySeries, pycwb.types.time_frequency_series.TimeFrequencySeries]
     """
     layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
@@ -32,21 +35,18 @@ def whitening_cwb(config, h):
         raise ValueError("Filter scratch must be <= cwb scratch!!!")
     else:
         logger.info(f"WDM filter max length = {wdmFlen} (sec)")
-    ##########################################
-    # cWB2G whitening method
-    ##########################################
+    
     tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h), wdm_white.wavelet)
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
-    # calculate noise rms
-    # FIXME: should here be tf_map?
-    # FIXME: check the length of data and white parameters to prevent freezing
-    nRMS = tf_map.white(config.whiteWindow, 0, config.segEdge,
-                        config.whiteStride)
 
-    # high pass filtering at 16Hz
-    nRMS.bandpass(16., 0., 1)
+    if isinstance(nRMS, TimeFrequencySeries):
+        nRMS = convert_to_wseries(nRMS)
+            
+    # save original data
+    hot = ROOT.WSeries(np.double)(tf_map)
+    hot.Inverse()
 
     # whiten  0 phase WSeries
     tf_map.white(nRMS, 1)
@@ -60,10 +60,8 @@ def whitening_cwb(config, h):
     tf_map += wtmp
     tf_map *= 0.5
 
-    # hw = ut.convert_wseries_to_wavearray(tf_map)
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map)
-    n_rms = convert_wseries_to_time_frequency_series(nRMS)
+    HoT = convert_wseries_to_time_frequency_series(hot)
     wtmp.resize(0)
-    ##########################################
 
-    return tf_map_whitened, n_rms
+    return tf_map_whitened, HoT
