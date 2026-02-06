@@ -102,8 +102,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             mdc = [check_and_resample(mdc[i], config, i) for i in range(len(job_seg.ifos))]
             
             # whitening mdc using nRMS of data
-            tmp = [whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)]
-            mdc_maps, HoT_list = zip(*tmp)
+            mdc_maps, HoT_list = zip(*[whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)]) 
 
         # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
@@ -169,7 +168,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 
                 # if injection, estimate injected_waveforms and calculate related statistics
                 # FIXME: currently, only supported for 'wavelet' whitening method
-                if event.injection and config.whiteMethod == 'wavelet':
+                if event.injection: 
                     injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
                                                                 HoT_list, mdc_maps, config.iwindow/2, config.segEdge, config.inRate,
                                                                 save=config.save_injection, plot=config.plot_injection)
