@@ -81,10 +81,6 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
     waveform = estimate_waveform(windowed_w)
     waveform = apply_frequency_cut(waveform, tf_map.f_low, tf_map.f_high)
 
-    # rescale data when data are resampled (resample with wavelet change the amplitude)
-    rescale = 1. / np.sqrt(2) ** (np.log2(in_rate / waveform.sample_rate))
-    waveform.data *= rescale
-
     # estimate statistics
     snr = estimate_snr(waveform)                    # iSNR
     central_time = estimate_central_time(waveform)  # central time
@@ -96,6 +92,11 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
 
     windowed_hot = hot.time_slice(central_time2 - window, central_time2 + window)
     strain_waveform = estimate_waveform(windowed_hot)
+
+    # rescale data to preserve amplitude (when data are resampled (resample with wavelet change the amplitude))
+    rescale = 1. / np.sqrt(2) ** (np.log2(in_rate / waveform.sample_rate))
+    waveform.data *= rescale
+    strain_waveform.data *= rescale
 
     return  {'snr': snr, 'central_time': central_time, 'duration': duration,
              'central_freq': central_freq, 'bandwidth': bandwidth, 'hrss': hrss,
