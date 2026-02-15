@@ -55,7 +55,7 @@ def main():
     xtalk.init_parser(xtalk_parser)
     xtalk_parser.set_defaults(func=xtalk.command)
 
-    merge_catalog_parser = subparsers.add_parser('merge-catalog', help='Merge catalog files')
+    merge_catalog_parser = subparsers.add_parser('merge', help='Merge catalog or wave files')
     merge_catalog.init_parser(merge_catalog_parser)
     merge_catalog_parser.set_defaults(func=merge_catalog.command)
 
