@@ -65,7 +65,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     trail_idxs = {0}
     if job_seg.injections:
         trail_idxs = set([injection.get('trail_idx', 0) for injection in job_seg.injections])
-        
+
+    wave_file = os.path.basename(catalog_file).replace('catalog', 'wave').replace('.json','.h5') if catalog_file is not None else None
     # loop over all the trail_idx, if there is no injections or only one trail, only loop once for trail_idx=0
     for trail_idx in trail_idxs:
         #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 
@@ -164,14 +165,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
                                         event, cluster, epoch=data[0].start_time,
-                                        save=config.save_waveform, plot=config.plot_waveform)
+                                        wave_file=wave_file,save=config.save_waveform, plot=config.plot_waveform)
                 
                 # if injection, estimate injected_waveforms and calculate related statistics
-                # FIXME: currently, only supported for 'wavelet' whitening method
                 if event.injection: 
                     injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
                                                                 HoT_list, mdc_maps, config.iwindow/2, config.segEdge, config.inRate,
-                                                                save=config.save_injection, plot=config.plot_injection)
+                                                                wave_file=wave_file, save=config.save_injection, plot=config.plot_injection)
 
                     # if config.save_injection: 
                     #     event.wf_sINJ   = injected_data['injected_strain']            # estimated injected strain
@@ -185,7 +185,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     
                     # snr statistics
                     inj_waveforms = injected_data['whitened_injected_waveform']
-                    rec_waveforms = [reconst_data[f'{ifo}_reconstructed_signals_whiten'] for ifo in sub_job_seg.ifos]
+                    rec_waveforms = [reconst_data[f'{ifo}_wf_REC_whiten'] for ifo in sub_job_seg.ifos]
                     event.oSNR     = [estimate_snr(rec_waveform) for rec_waveform in rec_waveforms]
                     event.ioSNR    = [estimate_snr(inj_waveform, rec_waveform) if (inj_waveform is not None) and (rec_waveform is not None) else None for inj_waveform, rec_waveform in zip(inj_waveforms, rec_waveforms)]
                     
@@ -196,9 +196,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
                     # find the minimum Qveto and Qfactor for the event in all ifos and reconstructed strain/waves
                     for ifo in sub_job_seg.ifos:
-                        # for a_type in ['strain', 'waves']:
-                        for a_type in ['data', 'signals']:
-                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_reconstructed_{a_type}_whiten'])
+                        # for a_type in ['data', 'signals']:
+                        for a_type in ['DAT','REC']:
+                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_wf_{a_type}_whiten'])
                             min_qveto = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
                     
@@ -216,7 +216,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
 
             #################### Add event to catalog ####################
-            # add event to catalog
             for trigger in events_data:
                 catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
                                                     catalog_file=catalog_file)
@@ -290,7 +289,7 @@ def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple
         The working directory for the run
     catalog_dir : str
         The directory to save the catalog
-    event : tuple | list
+    trigger_data : tuple | list
         The event data
     catalog_file : str
         The catalog file to save the triggers

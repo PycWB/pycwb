@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Dict, List
 import math
+import pycwb
 from pycbc.types.timeseries import TimeSeries
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.config import Config
@@ -11,13 +12,14 @@ from pycwb.modules.plot_map.world_map import plot_skymap_contour
 from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
-
+from filelock import SoftFileLock
+import h5py as h5
 
 logger = logging.getLogger(__name__)
 
 def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[str],
                           event: Event, cluster: Cluster, epoch: float = 0.,
-                          save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
+                          wave_file: str = '', save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
 
     # vREC: reconstructed signal
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
@@ -67,140 +69,80 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
     #     ts.data *= rescale
 
+    data = {}
+    for i, ifo in enumerate(ifos):
+        data[f"{ifo}_wf_REC"] = reconstructed_signals[i]
+        data[f"{ifo}_wf_REC_whiten"] = reconstructed_signals_whiten[i]
+        data[f"{ifo}_wf_DAT"] = reconstructed_data[i]
+        data[f"{ifo}_wf_DAT_whiten"] = reconstructed_data_whiten[i]
+        data[f"{ifo}_wf_NUL"] = reconstructed_nulls[i]
+        data[f"{ifo}_wf_NUL_whiten"] = reconstructed_nulls_whiten[i]
+    
     if save:
-        if not os.path.exists(trigger_folder):
-            os.makedirs(trigger_folder)
-            logger.info(f"Creating trigger folder: {trigger_folder}")
-
-        for i, ts in enumerate(reconstructed_signals):
-            logger.info(f"Saving reconstructed SIGNAL for {ifos[i]}")
-            # ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}.{config.save_waveform_format}")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_REC.{config.save_waveform_format}")
-
-        for i, ts in enumerate(reconstructed_signals_whiten):
-            logger.info(f"Saving reconstructed SIGNAL for {ifos[i]} (whitened)")
-            # ts.save(f"{trigger_folder}/reconstructed_waveform_{ifos[i]}_whitened.{config.save_waveform_format}")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_REC_whiten.{config.save_waveform_format}")
-
-        for i, ts in enumerate(reconstructed_data):
-            logger.info(f"Saving reconstructed DATA for {ifos[i]}")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_DAT.{config.save_waveform_format}")
-
-        for i, ts in enumerate(reconstructed_data_whiten):
-            logger.info(f"Saving reconstructed DATA for {ifos[i]} (whitened)")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_DAT_whiten.{config.save_waveform_format}")
-
-        for i, ts in enumerate(reconstructed_nulls):
-            logger.info(f"Saving reconstructed NULL for {ifos[i]}")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_NUL.{config.save_waveform_format}")
-
-        for i, ts in enumerate(reconstructed_nulls_whiten):
-            logger.info(f"Saving reconstructed NULL for {ifos[i]} (whitened)")
-            ts.save(f"{trigger_folder}/{ifos[i]}_wf_NUL_whiten.{config.save_waveform_format}")
-
-        # for i, (hp, hc) in enumerate(zip(reconstructed_signals_whiten_00, reconstructed_signals_whiten_90)):
-        #     # save strain = hp + 1j hc
-        #     logger.info(f"Saving reconstructed strain for {ifos[i]} (whitened)")
-        #     hp = hp - 1j * hc
-        #     hp.save(f"{trigger_folder}/reconstructed_data_{ifos[i]}_whitened.txt")
-
+        logger.info(f"Save reconstructed waveforms of event {event.hash_id} to {wave_file}")
+        add_wf_to_wave(config, wave_file, event.hash_id, data)
+        
     if plot:
         from pycwb.modules.plot.waveform import plot
         from matplotlib import pyplot as plt
 
         for j, wave in enumerate(reconstructed_signals):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_signal_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_REC.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_signals_whiten):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_signal_whiten_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_REC_whiten.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_data):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_data_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_DAT.png')
             plt.close()
         
         for j, wave in enumerate(reconstructed_data_whiten):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_data_whiten_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_DAT_whiten.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_nulls):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_null_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL.png')
             plt.close()
         
         for j, wave in enumerate(reconstructed_nulls_whiten):
             plot(wave, ifo = ifos[j])
-            # plt.plot(wave.sample_times, wave.data)
-            # plt.xlim((event.left[0], event.left[0] + event.stop[0] - event.start[0]))
-            # plt.savefig(f'{trigger_folder}/reconstructed_null_whiten_ifo_{ifos[j]}.png')
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL_whiten.png')
             plt.close()
 
-    # if save_injection or plot_injection:
-    #     if event.injection:
-    #         strains = generate_strain_from_injection(event.injection, config, config.inRate, ifos)
-
-    #         if save_injection:
-    #             for i, strain in enumerate(strains):
-    #                 logger.info(f"Saving injected strain for {ifos[i]}")
-    #                 strain.save(f"{trigger_folder}/injected_strain_{ifos[i]}.{config.save_waveform_format}")
-
-    #         if plot_injection:
-    #             from matplotlib import pyplot as plt
-    #             for i, strain in enumerate(strains):
-    #                 plt.plot(strain.sample_times, strain.data)
-    #                 plt.savefig(f'{trigger_folder}/injected_strain_{ifos[i]}.png')
-    #                 plt.close()
-
-    data = {}
-    for i, ifo in enumerate(ifos):
-        data[f"{ifo}_reconstructed_signals"] = reconstructed_signals[i]
-        data[f"{ifo}_reconstructed_signals_whiten"] = reconstructed_signals_whiten[i]
-        data[f"{ifo}_reconstructed_data"] = reconstructed_data[i]
-        data[f"{ifo}_reconstructed_data_whiten"] = reconstructed_data_whiten[i]
-        data[f"{ifo}_reconstructed_nulls"] = reconstructed_nulls[i]
-        data[f"{ifo}_reconstructed_nulls_whiten"] = reconstructed_nulls_whiten[i]
-    
     return data
 
 def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: list[str], event: Event,
                                 HoT_list: list[TimeFrequencySeries], mdc_maps: list[TimeFrequencySeries], window: float, offset: float, inRate: float, 
-                                save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
-    # [get_INJ_waveform(hot, mdc_map, np.array([inj['gps_time'] for inj in sub_job_seg.injections]), 10/2, config.segEdge, config.inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
+                                wave_file: str = None, save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
+    
     logger.info(f"Reconstructing injected waveform for event {event.hash_id}")
     data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
     
     if save:
-        if not os.path.exists(trigger_folder):
-            os.makedirs(trigger_folder)
-            logger.info(f"Creating trigger folder: {trigger_folder}")
+        # if not os.path.exists(trigger_folder):
+            # os.makedirs(trigger_folder)
+            # logger.info(f"Creating trigger folder: {trigger_folder}")
         try:
+            tmp = {}
             for i, ifo in enumerate(ifos):
-                logger.info(f"Saving injected waveform for {ifos[i]}")
-                data[i]['injected_strain'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ.{config.save_waveform_format}")
+                logger.info(f"Saving injected waveform for {ifos[i]} in {wave_file}")
+                tmp[f'{ifo}_wf_INJ'] = data[i]['injected_strain']
+                tmp[f'{ifo}_wf_INJ_whiten'] = data[i]['whitened_injected_waveform']
+                
+                # logger.info(f"Saving whitened injected waveform for {ifos[i]}")    
+                # data[i]['injected_strain'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ.{config.save_waveform_format}")
+                # data[i]['whitened_injected_waveform'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ_whiten.{config.save_waveform_format}")
+            
+            logger.info(f"Save injected waveforms of event {event.hash_id} to {wave_file}")
+            add_wf_to_wave(config, wave_file, event.hash_id, tmp)
 
-                logger.info(f"Saving whitened injected waveform for {ifos[i]}")
-                data[i]['whitened_injected_waveform'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ_whiten.{config.save_waveform_format}")
         except Exception as e:
             logger.warning(f"Error saving waveform for {ifo}: {e}")
 
@@ -228,6 +170,49 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     data = {key: [d[key] for d in data] for key in data[0]}
     
     return data
+
+def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -> None:
+    """
+    Add events to waveform file
+
+    A soft lock is used (default filelock does not work on CIT)
+
+    Parameters
+    ----------
+    wave_file : str
+        wave_file of the waveform
+    event_id : str
+        event id to be added
+    waves : dict
+        dictionary of waveforms to be added, with keys as the waveform
+        names and values as the waveform data
+    Returns
+    -------
+    None
+    """
+    
+    if wave_file is None:
+        wave_file = 'wave.h5'
+    wave_file = f'{config.outputDir}/{wave_file}'
+
+    with SoftFileLock(wave_file + ".lock", timeout=10):
+        with h5.File(wave_file, 'a') as f:
+            # if event_id does not exist in the file, create a new group
+            if f'{event_id}' not in f:
+                grp = f.create_group(f'{event_id}')
+            else:
+                grp = f[f'{event_id}']
+            
+            # create datasets with waveform data
+            for key, value in waves.items():
+                if key in grp:
+                    # delete existing dataset if it exists
+                    del grp[key]              
+                
+                grp[key] = value.data
+                grp[key].attrs['sample_rate'] = value.sample_rate
+                grp[key].attrs['start_time'] = float(value.start_time)
+                logger.info(f"Added waveform {key} for event {event_id} to {wave_file}")
 
 def plot_trigger_flow(trigger_folder: str,
                  event: Event, cluster: Cluster) -> None:

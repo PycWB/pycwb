@@ -1,6 +1,6 @@
 import glob
+import h5py as h5
 import orjson
-
 
 def merge_catalog(working_dir: str = '.'):
     # config_file = f"{working_dir}/config/user_parameters.yaml"
@@ -37,3 +37,19 @@ def merge_catalog(working_dir: str = '.'):
     # write the merged catalog file
     with open(f"{working_dir}/catalog/catalog.json", 'w') as f:
         f.write(orjson.dumps(merged_catalog, option=orjson.OPT_INDENT_2).decode())
+    
+def merge_wave(working_dir: str = '.'):
+    # get the list of hdf5 files wave_*.h5
+    wave_files = glob.glob(f"{working_dir}/output/wave_*.h5")
+    if len(wave_files) == 0:
+        print("No waveform files found")
+        return
+
+    # read the merged file wave.h5
+    with h5.File(f"{working_dir}/output/wave.h5", 'w') as f:
+        # read the sub wave files
+        for wave_file in wave_files:
+            with h5.File(wave_file, 'r') as f_sub:
+                print(f"Adding waveforms of {len(f_sub.keys())} events from {wave_file}")
+                for event_id in f_sub.keys():
+                    f_sub.copy(event_id, f)
