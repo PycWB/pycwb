@@ -121,7 +121,6 @@ def whitening_mesa(config, h):
     nRMS_matrix = WSeries_to_matrix(tf_map) / WSeries_to_matrix(tf_map_white)
     
     #Compute the nRMS taking the median over "whiteStride" seconds segments and convert to array 
-
     n_freq, n_time = nRMS_matrix.shape
     data_per_batch = int(config.whiteStride // wdm_dt)
     n_batches = n_time // data_per_batch
@@ -131,7 +130,6 @@ def whitening_mesa(config, h):
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
     
 
-    
     #Compute the nRMS as the median over the segments ignoring nans if present
     nRMS = np.sqrt(np.nanmedian(nRMS_reshaped ** 2, axis = 2))
     nRMS = generate_nrms_wseries(config, h, nRMS.reshape(-1, order = 'F'))
@@ -261,8 +259,5 @@ def generate_nrms_wseries(config, data, nrms):
     #Substitute the cWB nRMS with the MESA nRMS 
     for i in range(len(nRMS)): 
         nRMS.data[i] = nrms[i]
-
-    #print(len(nrms))
-    #print(len(nRMS)) 
 
     return nRMS 
