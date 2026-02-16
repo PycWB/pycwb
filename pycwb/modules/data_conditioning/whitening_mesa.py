@@ -125,10 +125,9 @@ def whitening_mesa(config, h):
     n_freq, n_time = nRMS_matrix.shape
     data_per_batch = int(config.whiteStride // wdm_dt)
     n_batches = n_time // data_per_batch
+    #Only take an entire number of time batches to avoid reshaping errors
     nRMS_trimmed = nRMS_matrix[:, :n_batches * data_per_batch]
     nRMS_reshaped = nRMS_trimmed.reshape(n_freq, n_batches, data_per_batch)
-    #data_per_batch = int(config.whiteStride // wdm_dt)
-    #nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df)+1,-1,data_per_batch) 
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
     
 
