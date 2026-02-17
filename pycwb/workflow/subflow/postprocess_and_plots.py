@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Dict, List
 import math
+import numpy as np
 import pycwb
 from pycbc.types.timeseries import TimeSeries
 from pycwb.types.time_frequency_series import TimeFrequencySeries
@@ -24,22 +25,22 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     # vREC: reconstructed signal
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
     reconstructed_signals = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                               'signal', 0, True, whiten=False, in_rate=config.inRate)
+                                               'signal', 0, True, whiten=False)
     
     # whitened vREC: whitened reconstructed signal
     logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
     reconstructed_signals_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                      'signal', 0, True, whiten=True, in_rate=config.inRate)
+                                                      'signal', 0, True, whiten=True)
 
     # vDAT: reconstructed data (signal + noise)
     logger.info(f"Reconstructing strain for event {event.hash_id}")
     reconstructed_data  = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                'strain', 0, True, whiten=False, in_rate=config.inRate)
+                                                'strain', 0, True, whiten=False)
     
     # whitened_vDAT: whitened reconstructed data (signal+noise)
     logger.info(f"Reconstructing whitened strain for event {event.hash_id}")
     reconstructed_data_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
-                                                      'strain', 0, True, whiten=True, in_rate=config.inRate)
+                                                      'strain', 0, True, whiten=True)
 
     # vNUL: reconstructed noise (vDAT - vREC)
     reconstructed_nulls = [reconstructed_data[i] - reconstructed_signals[i] for i in range(len(ifos))]
@@ -79,40 +80,49 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
         data[f"{ifo}_wf_NUL_whiten"] = reconstructed_nulls_whiten[i]
     
     if save:
-        logger.info(f"Save reconstructed waveforms of event {event.hash_id} to {wave_file}")
-        add_wf_to_wave(config, wave_file, event.hash_id, data)
+        # rescaling factor to preserve amplitude
+        rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
+
+        logger.info(f"Save reconstructed waveforms of event {event.hash_id} to {wave_file}")     
+        rescaled_data = {}
+        for key, value in data.items():
+            rescaled_data[key] = value * rescale
+            
+        add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
         
     if plot:
         from pycwb.modules.plot.waveform import plot
         from matplotlib import pyplot as plt
+        # rescaling factor to preserve amplitude
+        rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
 
-        for j, wave in enumerate(reconstructed_signals):
-            plot(wave, ifo = ifos[j])
+        for j, wave in enumerate(reconstructed_signals):            
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_REC.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_signals_whiten):
-            plot(wave, ifo = ifos[j])
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_REC_whiten.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_data):
-            plot(wave, ifo = ifos[j])
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_DAT.png')
             plt.close()
         
         for j, wave in enumerate(reconstructed_data_whiten):
-            plot(wave, ifo = ifos[j])
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_DAT_whiten.png')
             plt.close()
 
         for j, wave in enumerate(reconstructed_nulls):
-            plot(wave, ifo = ifos[j])
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL.png')
             plt.close()
         
         for j, wave in enumerate(reconstructed_nulls_whiten):
-            plot(wave, ifo = ifos[j])
+            plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL_whiten.png')
             plt.close()
 
@@ -126,22 +136,18 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
     
     if save:
-        # if not os.path.exists(trigger_folder):
-            # os.makedirs(trigger_folder)
-            # logger.info(f"Creating trigger folder: {trigger_folder}")
         try:
-            tmp = {}
+            rescaled_data = {}
             for i, ifo in enumerate(ifos):
                 logger.info(f"Saving injected waveform for {ifos[i]} in {wave_file}")
-                tmp[f'{ifo}_wf_INJ'] = data[i]['injected_strain']
-                tmp[f'{ifo}_wf_INJ_whiten'] = data[i]['whitened_injected_waveform']
+                # rescaling factor to preserve amplitude
+                rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
+
+                rescaled_data[f'{ifo}_wf_INJ'] = data[i]['injected_strain']  * rescale
+                rescaled_data[f'{ifo}_wf_INJ_whiten'] = data[i]['whitened_injected_waveform'] * rescale
                 
-                # logger.info(f"Saving whitened injected waveform for {ifos[i]}")    
-                # data[i]['injected_strain'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ.{config.save_waveform_format}")
-                # data[i]['whitened_injected_waveform'].save(f"{trigger_folder}/{ifos[i]}_wf_INJ_whiten.{config.save_waveform_format}")
-            
             logger.info(f"Save injected waveforms of event {event.hash_id} to {wave_file}")
-            add_wf_to_wave(config, wave_file, event.hash_id, tmp)
+            add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
 
         except Exception as e:
             logger.warning(f"Error saving waveform for {ifo}: {e}")
@@ -154,13 +160,16 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
             os.makedirs(trigger_folder)
             logger.info(f"Creating trigger folder: {trigger_folder}")
 
+        # rescaling factor to preserve amplitude
+        rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
+        
         for i, ifo in enumerate(ifos):
             try:
-                plot(data[i]['injected_strain'], ifo = ifo)
+                plot(data[i]['injected_strain']*rescale, ifo = ifo)
                 plt.savefig(f'{trigger_folder}/{ifos[i]}_wf_INJ.png')
                 plt.close()
 
-                plot(data[i]['whitened_injected_waveform'], ifo = ifo)
+                plot(data[i]['whitened_injected_waveform']*rescale, ifo = ifo)
                 plt.savefig(f'{trigger_folder}/{ifos[i]}_wf_INJ_whiten.png')
                 plt.close()
             except Exception as e:
