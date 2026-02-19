@@ -23,10 +23,12 @@ def init_parser(parser):
 
 
     parser.add_argument("--plot_median", 
-                        type=bool, 
-                        default=True, 
+                        action = 'store_true', 
                         help="Whether to plot the median waveform")
     
+    parser.add_argument("--plot_mean", 
+                        action = 'store_true', 
+                        help="Whether to plot the mean waveform")
     
     parser.add_argument("--confidence_level", 
                         type=float, 
@@ -78,6 +80,7 @@ def command(args):
                     whitened = args.whitened,
                     waveform_format = args.waveform_format, 
                     ordering = args.ordering, 
-                    plot_median = args.plot_median, 
+                    plot_median = args.plot_median,
+                    plot_mean = args.plot_mean, 
                     early_start = args.early_start, 
                     max_workers = args.max_workers)
