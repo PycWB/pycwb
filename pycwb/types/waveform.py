@@ -1,8 +1,13 @@
 from pycbc.types.timeseries import load_timeseries, TimeSeries 
-import numpy as np 
+from pycbc.types.array import Array 
 from scipy.signal import correlate, hilbert 
+from pathlib import Path, PosixPath
+import numpy as np 
+import os
+import copy 
 import cmath 
-
+import logging 
+logger = logging.getLogger(__name__) 
 
 class Waveform(TimeSeries): 
     """
@@ -11,13 +16,16 @@ class Waveform(TimeSeries):
     :param data: data
     :type data: pycbc.types.timeseries.TimeSeries
     """
-    def __init__(self, data: TimeSeries):
+    def __init__(self, data: TimeSeries, folder = None):
         super().__init__(data, data._delta_t, data.start_time)
-        self._findStartEnd() 
         #Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0 
         self._total_phase_shift = 0
-
+        self.folder = os.path.abspath(folder) if folder is not None else None 
+        if np.any(np.isnan(self.data)): 
+            print('Data Contains NaNs') 
+        else: 
+            self._findStartEnd()
 
     def estimateCentralTime(self): 
         """
@@ -48,7 +56,7 @@ class Waveform(TimeSeries):
         duration = max(self.estimateDuration(), 0.150) # Ensure minimum duration of 0.1s to avoid too narrow windows
 
         self.tstart, self.tend = central_time - duration / 2, central_time + duration / 2 
-        self.istart = int(round((self.tstart - self.sample_times.data[0]) / self.delta_t))
+        self.istart = int(round((self.tstart - self.sample_times.data[0]) / self.delta_t)) 
         self.iend   = int(round((self.tend - self.sample_times.data[0]) / self.delta_t))
         
 
@@ -73,6 +81,7 @@ class Waveform(TimeSeries):
         if sync_phase:
             self.data = self.phaseShift(self.computePhaseDifference(reference_padded))
 
+        return self.copy(), reference_padded 
 
     def retriveOnsourceTimes(self): 
         """
@@ -141,6 +150,8 @@ class Waveform(TimeSeries):
         if n_post_r > 0:
             ref_pad.append_zeros(n_post_r)
 
+        ref_pad._findStartEnd()
+        self._findStartEnd()
         return ref_pad
 
     def _computeCrossCorrelation(self, reference_waveform):
@@ -307,25 +318,30 @@ class Waveform(TimeSeries):
         """
         Return a copy of the waveform.
         """
-        copy = self.__class__(self) 
-        copy._total_time_shift = self._total_time_shift
-        copy._total_phase_shift = self._total_phase_shift
-        return self.__class__(self)
-
+        return copy.deepcopy(self) 
+    
     def __len__(self):
         return len(self.data)
 
 
-def load_waveform(filename, resample = None):
+def load_waveform(filename, resample = None, skip_nans = True):
     """
     Load a waveform from a file.
     """
     # Assuming the waveform is stored in a file, you can use pycbc's load_timeseries
     # to load the waveform data.
-    data = load_timeseries(filename)
+    data = load_timeseries(filename)  
+
+    #Return None if data contain nans and skip nans is True 
+    if np.any(np.isnan(data.data)) and skip_nans: 
+       return None 
+    
+    #If resample is given as sampling rate, resample the waveform 
     if isinstance(resample, int) or isinstance(resample, float):
-        data = data.resample(resample)
-    return Waveform(data) 
+        data = data.resample(resample) 
+
+    folder = filename.parent if isinstance(filename, PosixPath) else os.path.dirname(filename)
+    return Waveform(data, folder = folder) 
 
 
 
