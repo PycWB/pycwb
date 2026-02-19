@@ -1,9 +1,14 @@
 from pycwb.types.waveform import load_waveform
+from concurrent.futures import ProcessPoolExecutor
 import sys 
 from pycwb.modules.post_production.waveform_reconstruction_plot import *
-from pycwb.modules.post_production.waveform_reconstruction import load_waveforms, sync_waveforms, slice_waveforms, pad_waveforms
+#from pycwb.modules.post_production.waveform_reconstruction import load_and_slice#, sync_waveforms, slice_waveforms, pad_waveforms
+sys.path.insert(0,'/home/alessandro.martini/pycwb/pycwb/modules/post_production')
+from waveform_reconstruction import load_and_slice
 from numpy.linalg import norm 
 import os 
+from pathlib import Path
+from scipy.stats import mode 
 import numpy as np  # pyright: ignore[reportMissingImports]
 import logging
 
@@ -25,7 +30,6 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
     """ 
     #Define parameters from kwargs 
     ordering = kwargs.get('ordering', 'percentiles')
-    plot_median = kwargs.get('plot_median', False)
     max_workers = kwargs.get('max_workers', 8)
     waveform_format = kwargs.get('waveform_format', 'hdf') 
 
@@ -34,34 +38,34 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
     #Define the folder for loadingthe data and saving the results 
     plots_folder = os.path.join(folder, "reports/plots")
     results_folder = os.path.join(folder, "reports/results")
-    triggers_folder = os.path.join(folder, "trigger")
-
     os.makedirs(plots_folder, exist_ok=True)
     os.makedirs(results_folder, exist_ok=True) 
+    triggers_folder = Path(folder) / "trigger"
 
-    #Load all the reconstructed waveforms if not already loaded in the previous step 
-    reconstructed_waveforms = load_waveforms(triggers_folder, ifo, whitened = whitened, skip_trigger=True, load_injected = False, format = waveform_format, max_workers=max_workers) 
-    reference_waveform = load_waveform(reference, resample=reconstructed_waveforms[0]._delta_t)        
-    reconstructed_waveforms, reference_waveforms = sync_waveforms(reconstructed_waveforms, reference_waveform, sync_phase = True, max_workers=max_workers)
+    filename = f'{ifo}_wf_REC.{waveform_format}' if not whitened else f'{ifo}_wf_REC_whiten.{waveform_format}'
+    triggers_directories = [str(d.resolve() / filename) for d in triggers_folder.iterdir() if d.is_dir() and f'{ifo}_wf_INJ.{waveform_format}' in [f.name for f in d.iterdir()]]
+
+    #Load and slice all wavefroms to be used for computations
+    early_start = kwargs.get('early_start', 0)
+    args = [(t_dir, reference, None, None, early_start) for t_dir in triggers_directories]
+    with ProcessPoolExecutor(max_workers=8 or os.cpu_count()) as exe:
+        reconstructed_waveforms = list(tqdm(exe.map(load_and_slice, args), total= len(args)))
+    reconstructed_waveforms, reference_waveform = map(list,zip(*[wf for wf in reconstructed_waveforms if wf is not None])) 
 
 
-    #Plot time Leakage 
-    logger.info("Plotting Leakage")
-    leakage_fig, leakage_data = plot_leakage(reconstructed_waveforms, reference_waveform)
-    leakage_fig.savefig(os.path.join(plots_folder, f"leakage_{ifo}.png"), bbox_inches='tight')
-    filename = f"leakage_{ifo}_wth" if whitened else f"leakage_{ifo}"
-    leakage_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight') 
-    np.savez(os.path.join(results_folder, f"{filename}.npz"), **leakage_data) 
+    tot_waveforms = len(reconstructed_waveforms) 
+    lengths = [len(wf) for wf in reconstructed_waveforms] 
+    mode_length = mode(lengths).mode
+    if not all(length == mode_length for length in lengths):
+        reconstructed_waveforms = [wf for wf in reconstructed_waveforms if len(wf) == mode_length] 
+        print(f"Removed waveforms with lengths different from the mode length. Number of waveforms removed: {tot_waveforms - len(reconstructed_waveforms)}. Mode length: {mode_length}")
 
-    #Slice the waveforms for further comparison. Only store the reference waveform as a single object (they're N copies for the same waveform)
-    reconstructed_waveforms, reference_waveforms = pad_waveforms(reconstructed_waveforms, reference_waveforms, max_workers=max_workers)
-    reconstructed_waveforms, reference_waveforms = slice_waveforms(reconstructed_waveforms, reference_waveforms, early_start=kwargs.get('early_start', None), max_workers=max_workers) 
-    reference_waveform = reference_waveforms[0]
+    reference_waveform = next((r for r in reference_waveform if len(r) == mode_length), None)  
 
     #Plot the time domain waveforms with CI 
     logger.info("Plotting time domain waveforms")
     twaveform_fig, twaveform_data = plot_time_waveform_reconstruction(reconstructed_waveforms, reference_waveform, 
-                                          confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median)  
+                                          confidence_level = confidence_level, percentile_method = ordering, **kwargs)  
     
     filename = f"time_waveform_reconstruction_{ifo}_wth" if whitened else f"time_waveform_reconstruction_{ifo}"
     twaveform_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight')
@@ -69,21 +73,22 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
 
     #Plot the time domain bias with CI 
 
-    tbias_fig, tbias_data = plot_time_bias(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering, normalize = False)
+    tbias_fig, tbias_data = plot_time_bias(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering, normalize = False,
+    **kwargs)
     
     filename = f"time_bias_{ifo}_wth" if whitened else f"time_bias_{ifo}"
     tbias_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight') 
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **tbias_data) 
 
     #Plot the overlap 
-    overlap_fig, overlap_data = plot_overlap(reconstructed_waveforms, reference_waveform)
+    overlap_fig, overlap_data = plot_overlap(reconstructed_waveforms, reference_waveform, **kwargs)
     filename = f"overlap_{ifo}_wth" if whitened else f"overlap_{ifo}"
     overlap_fig.savefig(os.path.join(plots_folder, f"{filename}.png"),  bbox_inches='tight')
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **overlap_data)
 
     #Plot the time domain cumulative hrss 
     chrss_fig, chrss_data = plot_time_cumulative_hrss(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering,\
-                                plot_median = plot_median)
+                                **kwargs)
     chrss_fig.savefig(os.path.join(plots_folder, f"cumulative_hrss_{ifo}.png"), bbox_inches='tight') 
     filename = f"cumulative_hrss_{ifo}_wth" if whitened else f"cumulative_hrss_{ifo}"
     chrss_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight')
@@ -102,26 +107,38 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
     #Plot the frequency domain waveforms with CI
     logger.info('Plotting frequency domain waveforms')
     fwaveform_fig, fwaveform_data = plot_frequency_waveform_reconstruction(reconstructed_waveforms, reference_waveform.fft(), 
-                                            confidence_level = confidence_level, percentile_method = ordering, plot_median = plot_median)
+                                            confidence_level = confidence_level, percentile_method = ordering, **kwargs)
     
     filename = f"frequency_waveform_reconstruction_{ifo}_wth" if whitened else f"frequency_waveform_reconstruction_{ifo}" 
     fwaveform_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight') 
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **fwaveform_data)
 
     #Plot the frequency domain bias with CI
-    fbias_fig, fbias_data = plot_frequency_bias(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering)
+    fbias_fig, fbias_data = plot_frequency_bias(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering, **kwargs)
     filename = f"frequency_bias_{ifo}_wth" if whitened else f"frequency_bias_{ifo}"
     fbias_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight') 
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **fbias_data) 
 
     #Plot the frequency domain cumulative hrss
     fchrss_fig, fchrss_data = plot_frequency_cumulative_hrss(reconstructed_waveforms, reference_waveform, confidence_level = confidence_level, percentile_method = ordering,\
-                                plot_median = plot_median)
+                                **kwargs)
 
     filename = f"frequency_cumulative_hrss_{ifo}_wth" if whitened else f"frequency_cumulative_hrss_{ifo}"
     fchrss_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight')
     np.savez(os.path.join(results_folder, f"{filename}.npz"), **fchrss_data)
     
-    plt.close('all') 
 
+    null_name = f"{ifo}_wf_NUL.{waveform_format}" if not whitened else f"{ifo}_wf_NUL_whiten.{waveform_format}"
+    args = [(Path(wf.folder) / null_name, reference, wf._total_time_shift, None, early_start) for wf in reconstructed_waveforms]
 
+    del(reconstructed_waveforms)
+    with ProcessPoolExecutor(max_workers = max_workers) as exe: 
+        null_waveforms = list(tqdm(exe.map(load_and_slice, args), total = len(args)))
+
+    null_waveforms, reference_waveform = zip(*[r for r in null_waveforms if r is not None]) 
+    reference_waveform = reference_waveform[0]
+    tnull_fig, tnull_results = plot_time_waveform_reconstruction(null_waveforms, confidence_level = confidence_level, 
+                                                percentile_method = ordering, **kwargs)  
+    filename=f"null_reconstruction_{ifo}_wth" if whitened else f"null_reconstruction_{ifo}" 
+    tnull_fig.savefig(os.path.join(plots_folder, f"{filename}.png"), bbox_inches='tight')
+    np.savez(os.path.join(results_folder, f"{filename}.npz"), **tnull_results)
