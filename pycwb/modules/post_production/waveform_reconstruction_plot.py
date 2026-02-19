@@ -5,12 +5,13 @@ from pycwb.modules.post_production.waveform_reconstruction import *
 
 #Put in the same module as PostProcess Functions  
 
-plot_kwargs = { 'ref_color': 'r', 
+plot_kwargs = { 'ref_color': 'darkgray', 
                 'ref_ls': '-', 
                 'inj_color': 'k', 
                 'inj_ls': '-',
                 'inj_alpha': .3,
-                'plot_mean': False, 
+                'plot_mean': True,
+                'plot_median': True,
                 'mean_linestyle': '-.',
                 'CL_color': 'lightgray',
                 'CL_alpha': 0.5, 
@@ -22,8 +23,6 @@ plot_kwargs = { 'ref_color': 'r',
                 'figsize': (10, 6),
                 'fontsize': 12, 
 }       
-
-
 
 
 
@@ -54,12 +53,12 @@ def plot_time_waveform_reconstruction(reconstructed, reference = None, injected 
     if injected: 
         ax.plot(time, injected, label='Injected', color=plot_kwargs['inj_color'], linestyle=plot_kwargs['inj_ls'], alpha=plot_kwargs['inj_alpha'])
 
-    if kwargs.get('plot_mean'):
+    if kwargs.get('plot_mean', True):
         mean = np.nanmean(reconstructed, axis=0)
         ax.plot(time, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle']) 
         to_save.update({'mean': mean}) 
 
-    if kwargs.get('plot_median'): 
+    if kwargs.get('plot_median', True): 
         median = np.nanmedian(reconstructed, axis=0) 
         ax.plot(time, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save.update({'median': median}) 
@@ -106,12 +105,12 @@ def plot_frequency_waveform_reconstruction(reconstructed, reference = None, inje
     if injected:
         ax.plot(frequency, injected, label='Injected', color=plot_kwargs['inj_color'], linestyle=plot_kwargs['inj_ls'], alpha=plot_kwargs['inj_alpha'])
     
-    if kwargs.get('plot_mean'):
+    if kwargs.get('plot_mean', True):
         mean = np.nanmean(reconstructed, axis=0)
         ax.plot(frequency, mean, label='Mean', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
         to_save.update({'mean': mean})
     
-    if kwargs.get('plot_median'):
+    if kwargs.get('plot_median', True):
         median = np.nanmedian(reconstructed, axis=0)
         ax.plot(frequency, median, label='Median', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save.update({'median': median})
@@ -161,7 +160,7 @@ def plot_time_bias(reconstructed, reference, confidence_level = .95, **kwargs):
     ax.plot(time, mean_bias, label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
     to_save.update({'mean_bias': mean_bias})
 
-    if kwargs.get('plot_median', False): 
+    if kwargs.get('plot_median', True): 
         median_bias = np.nanmedian(bias, axis=0)
         ax.plot(time, median_bias, label='Median Bias', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save.update({'median_bias': median_bias}) 
@@ -213,7 +212,7 @@ def plot_frequency_bias(reconstructed, reference, confidence_level = .95, **kwar
     ax.fill_between(frequencies, lower_bound[mask], upper_bound[mask], color=plot_kwargs['CL_color'], alpha=plot_kwargs['CL_alpha'], label=f'{confidence_level}% CI')
     ax.plot(frequencies, mean_bias[mask], label='Mean Bias', color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'])
     
-    if plot_kwargs.get('plot_median', False): 
+    if plot_kwargs.get('plot_median', True): 
         median_bias = np.nanmedian(bias, axis=0)[mask]
         ax.plot(frequencies, median_bias, label='Median Bias', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save.update({'median_bias': median_bias})
@@ -226,7 +225,7 @@ def plot_frequency_bias(reconstructed, reference, confidence_level = .95, **kwar
     ax.set_xlabel('Frequency [Hz]', fontsize=plot_kwargs['fontsize'])
     ax.set_xscale('log')
     ax.set_yscale('log')
-
+    plt.close() 
     return fig, to_save
 
 
@@ -248,13 +247,13 @@ def plot_overlap(reconstructed, reference, **kwargs):
     bins = int(np.sqrt(len(overlaps)))
     ax.hist(overlaps, bins=bins, density=True, histtype='step', label='Reconstructed Overlap', color=plot_kwargs['inj_color']) 
 
-    if kwargs.get('plot_mean', False):
+    if kwargs.get('plot_mean', True):
         mean_reconstructed = np.nanmean(reconstructed, axis=0)
         mean_overlap = compute_overlap(mean_reconstructed, reference)
         ax.axvline(mean_overlap, color=plot_kwargs['mean_color'], linestyle=plot_kwargs['mean_linestyle'], label='Overlap of the mean') 
         to_save.update({'mean_overlap': mean_overlap})
 
-    if kwargs.get('plot_median', False):
+    if kwargs.get('plot_median', True):
         median_reconstructed = np.nanmedian(reconstructed, axis=0) 
         median_overlap = compute_overlap(median_reconstructed, reference)
         ax.axvline(median_overlap, color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'], label='Overlap of the median')
@@ -266,7 +265,9 @@ def plot_overlap(reconstructed, reference, **kwargs):
     ax.legend(fontsize=plot_kwargs['fontsize'])
     ax.grid(True)
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
+    plt.close() 
     return fig, to_save
+
 
 
 def plot_auto_overlap(reconstructed, injected):
@@ -289,6 +290,7 @@ def plot_auto_overlap(reconstructed, injected):
     ax.tick_params(labelsize=plot_kwargs['fontsize'])
 
     to_save = {'overlaps': overlaps}  
+    plt.close() 
     return fig, to_save 
 
 
@@ -305,7 +307,7 @@ def plot_time_cumulative_hrss(reconstructed, reference, injected = None, confide
     mean_hrss = reconstructed_hrss.mean(axis=0)
     time = reference.sample_times.data 
 
-    to_save = {'CL': confidence_level, 'reference_hrss': reference_hrss, 'lower_bound': lower_bound, 'upper_bound': upper_bound, 'mean_hrss': mean_hrss, 'time': time}
+    to_save = {'CL': confidence_level, 'reference_hrss': reference_hrss / reference_hrss[-1], 'lower_bound': lower_bound, 'upper_bound': upper_bound, 'mean_hrss': mean_hrss, 'time': time}
 
     #Plot sequence 
     fig, ax = plt.subplots(figsize=plot_kwargs['figsize'])
@@ -321,7 +323,7 @@ def plot_time_cumulative_hrss(reconstructed, reference, injected = None, confide
         to_save['injected_hrss'] = injected_hrss 
 
 
-    if kwargs.get('plot_median', False):
+    if kwargs.get('plot_median', True):
         median_hrss = np.median(reconstructed_hrss, axis=0) 
         ax.plot(time, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save['median_hrss'] = median_hrss 
@@ -372,7 +374,7 @@ def plot_frequency_cumulative_hrss(reconstructed, reference, injected = None, co
         to_save['injected_hrss'] = injected_hrss[mask]
 
     #Plot median if requested
-    if plot_kwargs.get('plot_median', False):
+    if plot_kwargs.get('plot_median', True):
         median_hrss = np.median(reconstructed_hrss, axis=0)[mask]
         ax.plot(frequency, median_hrss, label='Median Reconstructed HRSS', color=plot_kwargs['median_color'], linestyle=plot_kwargs['median_linestyle'])
         to_save['median_hrss'] = median_hrss
@@ -416,6 +418,7 @@ def plot_leakage(reconstructed, injected):
         'leakage_std': leakage_std,
         'time': t
     }
+    plt.close()
     return fig, to_save
 
 
