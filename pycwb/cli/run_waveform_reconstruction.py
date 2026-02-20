@@ -54,7 +54,7 @@ def init_parser(parser):
 
     parser.add_argument("--early_start",
                         type=float,
-                        default=None,
+                        default=0,
                         help="Early start time for slicing the waveforms (in seconds)")
 
     
