@@ -24,14 +24,16 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     injections = {'type': 'strain'}
     sample_rate = 1 / delta_t 
     central_time = None 
-
+    distribute = kwargs.get('distribute', False)
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
         strain = load_timeseries(file)
         #Only compute central time once so that detector dT is preserved 
-        if central_time is None: 
-            central_time = compute_central_time(strain)
-        strain.start_time = kwargs['gps_time'] - central_time 
+        if distribute: 
+            if central_time is None: 
+                central_time = compute_central_time(strain)
+            
+            strain.start_time = kwargs['gps_time'] - central_time 
 
     
         if strain.sample_rate == sample_rate:
@@ -42,6 +44,7 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
 
         else: 
             logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
+            factor = sample_rate / strain.sample_rate 
             injections[ifo] = resample_data(strain, factor)
 
     return injections
