@@ -24,7 +24,7 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     injections = {'type': 'strain'}
     sample_rate = 1 / delta_t 
     central_time = None 
-    distribute = kwargs.get('distribute', False)
+    distribute = kwargs.get('distribute', True)
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
         strain = load_timeseries(file)
