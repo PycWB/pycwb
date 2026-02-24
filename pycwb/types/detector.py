@@ -1258,3 +1258,65 @@ def earth_centered_vectors(longitude, latitude,
         'y_response': resps[0],
         'response': full_resp,
     }
+
+
+def get_max_delay(detectors) -> float:
+    """
+    Return the network maximum delay using detector-level `tau` values.
+
+    This is a Python-native equivalent of cWB `getDelay("MAX")`: it scans the
+    available detector delay maps and returns the largest absolute value among
+    global extrema.
+
+    Parameters
+    ----------
+    detectors : sequence | object | None
+        Detector-like object(s). Each detector may expose:
+        - `tau.max()` / `tau.min()` (ROOT-like map), or
+        - an array-like `tau` (optionally via `tau.data`).
+
+    Returns
+    -------
+    float
+        Maximum absolute delay in seconds. Returns `0.0` when insufficient
+        detector data is available.
+    """
+    if detectors is None:
+        return 0.0
+
+    # Accept a single detector object for convenience.
+    if not isinstance(detectors, (list, tuple)):
+        detectors = [detectors]
+
+    if len(detectors) < 2:
+        return 0.0
+
+    max_tau = -np.inf
+    min_tau = np.inf
+
+    for detector in detectors:
+        tau = getattr(detector, "tau", None)
+        if tau is None:
+            continue
+
+        # Fast path for ROOT-like maps that already provide min/max methods.
+        if hasattr(tau, "max") and hasattr(tau, "min") and callable(tau.max) and callable(tau.min):
+            local_max = float(tau.max())
+            local_min = float(tau.min())
+        else:
+            # Generic path for numpy-compatible arrays.
+            tau_values = np.asarray(getattr(tau, "data", tau), dtype=float)
+            if tau_values.size == 0:
+                continue
+            local_max = float(np.max(tau_values))
+            local_min = float(np.min(tau_values))
+
+        if local_max > max_tau:
+            max_tau = local_max
+        if local_min < min_tau:
+            min_tau = local_min
+
+    if not np.isfinite(max_tau) or not np.isfinite(min_tau):
+        return 0.0
+
+    return float(max(abs(max_tau), abs(min_tau)))
