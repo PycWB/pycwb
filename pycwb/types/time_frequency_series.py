@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from dataclasses import dataclass
 from .wavelet import Wavelet
 from .time_series import TimeSeries
@@ -6,6 +7,10 @@ from .time_series import TimeSeries
 class TimeFrequencySeries:
     """
     Class for storing a time-frequency series. This class is a Python wrapper for ROOT.WSeries
+    
+    .. deprecated:: 
+        TimeFrequencySeries is obsolete. Use TimeFrequencyMap from wdm_wavelet instead.
+        TimeFrequencyMap provides a cleaner interface and better integration with pure-Python WDM operations.
 
     :param data: data
     :type data: pycbc.types.timeseries.TimeSeries
@@ -26,6 +31,14 @@ class TimeFrequencySeries:
 
     def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None, 
                  wseries=None):
+        # Issue deprecation warning
+        warnings.warn(
+            "TimeFrequencySeries is obsolete and will be removed in a future version. "
+            "Use TimeFrequencyMap from wdm_wavelet.wdm instead for better Python-native support.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         self._wavelet = None
         #: Time series data
         self.data = data
@@ -159,7 +172,6 @@ class TimeFrequencySeries:
     def f_low(self, value):
         self._f_low = value
 
-
 from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap as WDMTimeFrequencyMap
 
 @dataclass
@@ -229,7 +241,7 @@ class TimeFrequencyMap:
     
     @property
     def size(self):
-        return len(self.data)
+        return int(np.asarray(self.data).size)
     
     @property
     def maxLayer(self):
@@ -237,25 +249,38 @@ class TimeFrequencyMap:
 
     def wavecount(self, threshold, edge_length=None):
         """
-        Count the number of wavelet coefficients above a certain threshold.
-        Backward compatibility with ROOT.WaveArray::wavecount
+        Count coefficients above a threshold.
+
+        This is a Python-native compatibility helper for
+        `ROOT.WaveArray::wavecount`.
 
         :param threshold: threshold value
         :type threshold: float
-        :param edge_length: edge length to exclude
-        :type edge_length: int
+        :param edge_length: optional flattened edge width excluded on both sides
+        :type edge_length: int | None
         :return: number of coefficients above the threshold
         :rtype: int
         """
-        # np_array[np_array > 0.01].size
+        flat = np.asarray(self.data)
+        if np.iscomplexobj(flat):
+            flat = flat.real
+        flat = flat.ravel()
+
         if edge_length is not None:
-            return np.sum(self.data[edge_length:-edge_length] > threshold)
-        return np.sum(self.data > threshold)
+            n = int(edge_length)
+            if n <= 0:
+                return int(np.sum(flat > threshold))
+            if 2 * n >= flat.size:
+                return 0
+            return int(np.sum(flat[n:-n] > threshold))
+        return int(np.sum(flat > threshold))
 
     def wavesplit(self, start_index, end_index, split_index):
         """
-        Find the value at the split index in the sorted array segment.
-        Backward compatibility with ROOT.WaveArray::wavesplit
+        Return the order-statistics value in a flattened slice.
+
+        Uses `np.partition` for efficiency and keeps Python compatibility with
+        `ROOT.WaveArray::wavesplit` semantics.
 
         :param start_index: start index of the segment
         :type start_index: int
@@ -266,60 +291,91 @@ class TimeFrequencyMap:
         :return: value at the split index
         :rtype: float
         """
-        split_index = split_index - 1 # don't know why, it is consistent with ROOT
-        parted = np.partition(self.data[start_index:end_index], split_index)
+        flat = np.asarray(self.data)
+        if np.iscomplexobj(flat):
+            flat = flat.real
+        flat = flat.ravel()
+
+        section = flat[start_index:end_index]
+        if section.size == 0:
+            raise ValueError("wavesplit() empty input segment")
+        split_index = int(max(0, min(split_index, section.size - 1)))
+        parted = np.partition(section, split_index)
         value = parted[split_index]
         return value
     
     def Gamma2Gauss(self, hist=None):
-        M = self.maxLayer() + 1
-        nL = int(self.edge * self.wavelet_rate * M)
-        nn = len(self.data)
-        nR = nn - nL - 1
+        """
+        Apply gamma-to-Gaussian style normalization on TF energy values.
 
-        # fraction of near-zero values
-        fff = (nR - nL) * self.wavecount(0.001) / float(nn)
+        The transform updates `self.data` in place and optionally appends
+        intermediate/final values into `hist`.
 
-        # median estimate
-        med = self.wavesplit(nL, nR, nR - int(0.5 * fff))
+        :param hist: optional list-like accumulator for diagnostics
+        :type hist: list | None
+        :return: scaling pivot (`ALP`) used by the transform, or 0.0 on failure
+        :rtype: float
+        """
+        original = np.asarray(self.data)
+        shape = original.shape
+        flat = original.real if np.iscomplexobj(original) else original
+        flat = flat.ravel()
 
-        # Vectorized computation for Gamma parameter estimation
-        data_slice = self.data[nL:nR]
-        mask = (data_slice > 0.01) & (data_slice < 20 * med)
-        valid_data = data_slice[mask]
-        
-        if len(valid_data) == 0:
+        if flat.size < 4:
             return 0.0
-            
+
+        nL = int(float(self.edge or 0.0) * self.wavelet_rate)
+        nn = int(flat.size)
+        nL = max(0, min(nL, nn - 2))
+        nR = nn - nL
+        if nR <= nL + 1:
+            return 0.0
+
+        work = flat[nL:nR]
+        med = float(np.median(work))
+        if med <= 0:
+            return 0.0
+
+        mask = (work > 0.01) & (work < 20 * med)
+        valid_data = work[mask]
+        if valid_data.size == 0:
+            return 0.0
+
         aaa = np.sum(valid_data)
         bbb = np.sum(np.log(valid_data))
-        count = len(valid_data)
+        count = valid_data.size
 
-        # Estimate Gamma shape parameter (alpha)
         alp = np.log(aaa / count) - bbb / count
+        if alp <= 0:
+            return 0.0
         alp = (3 - alp + np.sqrt((alp - 3) * (alp - 3) + 24 * alp)) / (12 * alp)
 
-        # Gamma mean estimate
         avr = med * (3 * alp + 0.2) / (3 * alp - 0.8)
-
-        # Scaling parameter
         ALP = med * alp / avr
 
-        # Vectorized nonlinear Gamma → Gaussian transform
-        amp = self.data * alp / avr
-        self.data = np.where(amp < ALP, 0.0, amp - ALP * (1 + np.log(amp / ALP)))
-        
-        if hist is not None:
-            hist.extend(self.data[nL:nR].tolist())
+        amp = flat * alp / avr
+        transformed = np.where(amp < ALP, 0.0, amp - ALP * (1 + np.log(amp / ALP)))
 
-        # Renormalization
-        fff = self.wavecount(1.0e-5, nL)
-        rms = 1.0 / self.wavesplit(nL, nR, nR - int(0.3173 * fff))
-
-        self.data *= rms
-        
         if hist is not None:
-            hist.extend(np.sqrt(self.data[nL:nR]).tolist())
+            hist.extend(transformed[nL:nR].tolist())
+
+        core = transformed[nL:nR]
+        core = core[core > 1.0e-5]
+        if core.size == 0:
+            return 0.0
+        q68 = float(np.quantile(core, 0.6827))
+        if q68 <= 0:
+            return 0.0
+        rms = 1.0 / q68
+        transformed *= rms
+
+        if hist is not None:
+            hist.extend(np.sqrt(np.clip(transformed[nL:nR], 0.0, None)).tolist())
+
+        if len(shape) == 2:
+            self.data = transformed.reshape(shape)
+        else:
+            self.data = transformed
 
         return ALP
 
@@ -340,35 +396,166 @@ class TimeFrequencyMap:
 
         pass
 
-    def time_delay_max_energy(self, dt):
+    def time_delay_max_energy(self, dt, downsample=1, pattern=0, hist=None):
         """
-        Calculate the time delay with maximum energy.
+        Compute delayed max-energy map for a TF series.
 
-        :param dt: time delay
+        Python-native port of cWB `WSeries::maxEnergy`. The method updates
+        `self.data` in place with the maximum delayed-pixel statistic over
+        +/- time shifts in the range `[downsample, |dt| * rate]`.
+
+        :param dt: max time delay in seconds
         :type dt: float
-        :return: time delay with maximum energy
+        :param downsample: delay step in samples (cWB `N`)
+        :type downsample: int
+        :param pattern: wave-packet pattern (cWB `pattern`)
+        :type pattern: int
+        :param hist: optional list-like container to collect transformed samples
+        :type hist: list | None
+        :return: gamma-to-Gauss scaling parameter (`ALP`) if `pattern != 0`, else `1.0`
         :rtype: float
         """
-        
-        pass
+        if not hasattr(self.wavelet, "t2w") or not hasattr(self.wavelet, "w2t"):
+            raise ValueError("time_delay_max_energy requires a WDM wavelet with t2w/w2t APIs")
 
-    def _compute_bounds(self):
-        M = self.maxLayer()
-        J = self.size()
-        jb = int(self.edge * self.wavelet_rate / 4.0) * M
+        if downsample <= 0:
+            raise ValueError("downsample must be >= 1")
+
+        if not np.isfinite(dt):
+            raise ValueError("dt must be finite")
+
+        source_tf = WDMTimeFrequencyMap(
+            data=np.asarray(self.data),
+            df=float(self.df),
+            dt=float(self.dt),
+            t0=float(self.start),
+            len_timeseries=max(1, int(round((self.stop - self.start) / self.dt))),
+            wdm_params=dict(getattr(self.wavelet, "params", {})),
+        )
+
+        ts = self.wavelet.w2t(source_tf)
+        ts_data = np.ascontiguousarray(np.asarray(ts.value), dtype=np.float64)
+        sample_rate = float(ts.sample_rate.value)
+        t0 = float(ts.t0.value)
+        n_samples = int(ts_data.size)
+
+        max_delay = int(sample_rate * abs(float(dt)))
+        mm_mode = -1 if abs(int(pattern)) else 0
+
+        def _time_slide_copy(data, length=0, src_idx=0, dst_idx=0):
+            """Copy a contiguous time slice with zero-padded out-of-range behavior."""
+            out = np.array(data, copy=True)
+            if length == 0:
+                length = min(len(data) - dst_idx, len(data) - src_idx)
+            length = min(length, len(data) - dst_idx, len(data) - src_idx)
+            if length > 0:
+                out[dst_idx:dst_idx + length] = data[src_idx:src_idx + length]
+            return out
+
+        if abs(int(pattern)):
+            base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+            current_max = np.zeros_like(base_tf.data.real, dtype=np.float64)
+
+            packet_energy = self.wdm_packet(pattern, mode='e', coeffs=base_tf.data, return_map=True)
+            current_max = np.maximum(current_max, packet_energy)
+
+            for k in range(int(downsample), max_delay + 1, int(downsample)):
+                if k >= n_samples:
+                    break
+
+                shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
+                tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+                current_max = np.maximum(current_max, self.wdm_packet(pattern, mode='e', coeffs=tmp_tf.data, return_map=True))
+
+                shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
+                tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+                current_max = np.maximum(current_max, self.wdm_packet(pattern, mode='e', coeffs=tmp_tf.data, return_map=True))
+
+            n_freq = current_max.shape[0]
+            current_max[0, :] = 0.0
+            current_max[n_freq - 1, :] = 0.0
+
+            if abs(int(pattern)) in {5, 6, 9} and n_freq > 3:
+                current_max[1, :] = 0.0
+                current_max[n_freq - 2, :] = 0.0
+
+            self.data = current_max
+            return self.Gamma2Gauss(hist=hist)
+
+        base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+        current_max_real = np.array(base_tf.data.real, copy=True)
+        current_max_imag = np.array(base_tf.data.imag, copy=True)
+
+        for k in range(int(downsample), max_delay + 1, int(downsample)):
+            if k >= n_samples:
+                break
+
+            shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
+            tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+            current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
+            current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
+
+            shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
+            tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+            current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
+            current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
+
+        self.data = current_max_real + 1j * current_max_imag
+        n_freq = self.data.shape[0]
+        self.data[0, :] = 0.0
+        self.data[n_freq - 1, :] = 0.0
+        return 1.0
+
+    def _compute_bounds(self, n_freq=None, n_time=None):
+        """
+        Compute flattened/time-frequency bounds used by packet operations.
+
+        :param n_freq: number of frequency bins
+        :type n_freq: int | None
+        :param n_time: number of time bins
+        :type n_time: int | None
+        :return: `(jb, je, mL, mH)` flattened and frequency limits
+        :rtype: tuple[int, int, int, int]
+        """
+        if n_freq is None or n_time is None:
+            coeffs = np.asarray(self.data)
+            if coeffs.ndim != 2:
+                raise ValueError("_compute_bounds expects a 2D time-frequency map")
+            n_freq, n_time = coeffs.shape
+
+        M = int(n_freq)
+        J = int(n_freq * n_time)
+        edge = float(self.edge or 0.0)
+        jb = int(edge * self.wavelet_rate / 4.0) * M
         if jb < 4 * M:
             jb = 4 * M
         je = J - jb
         df = self.df
-        mL = int(self.f_low / df + 0.1)
-        mH = int(self.f_high / df + 0.1)
+        f_low = 0.0 if self.f_low is None else float(self.f_low)
+        f_high = (df * (M - 1)) if self.f_high is None else float(self.f_high)
+        mL = int(f_low / df + 0.1)
+        mH = int(f_high / df + 0.1)
+        mL = max(0, mL)
+        mH = min(M - 1, mH)
         return jb, je, mL, mH
     
-    def wdm_packet(self, pattern: int, mode: str = 'e') -> float:
+    def wdm_packet(self, pattern: int, mode: str = 'e', coeffs=None, return_map: bool = False):
         """
-        Vectorized implementation using numpy slicing (no Python-for loops over pixels).
-        Edge handling is non-wrapping (shifts produce zeros outside bounds).
-        This version aims for maximal speed on large arrays.
+        Compute WDM packet energy/amplitude map for a given pattern.
+
+        Vectorized NumPy implementation with non-wrapping edge handling.
+        Uses `self.data` by default, or external `coeffs` if provided.
+
+        :param pattern: packet pattern ID (compatible with cWB-style presets)
+        :type pattern: int
+        :param mode: output mode: `'e'` energy, `'l'` likelihood-like, `'a'` amplitude
+        :type mode: str
+        :param coeffs: optional complex TF coefficient map
+        :type coeffs: np.ndarray | None
+        :param return_map: if True, return computed map instead of shape scalar
+        :type return_map: bool
+        :return: packet shape (float) or computed map when `return_map=True`
+        :rtype: float | np.ndarray
         """
         PATTERNS = {
             0: [],  # single pixel
@@ -386,8 +573,15 @@ class TimeFrequencyMap:
 
         pattern = abs(int(pattern))
         mode = mode.lower()
-        M, T = self.M, self.T
-        jb, je, mL, mH = self._compute_bounds()
+        if mode not in {'e', 'l', 'a'}:
+            raise ValueError("mode must be one of {'e', 'l', 'a'}")
+
+        complex_map = np.asarray(self.data if coeffs is None else coeffs)
+        if complex_map.ndim != 2:
+            raise ValueError("wdm_packet expects a 2D time-frequency map")
+
+        M, T = complex_map.shape
+        jb, je, mL, mH = self._compute_bounds(M, T)
 
         # Determine shape/mean like earlier
         if pattern in (1, 3, 4):
@@ -416,13 +610,13 @@ class TimeFrequencyMap:
         ss = np.zeros((M, T), dtype=float)
 
         # Center contribution (scaled)
-        ee += (self.c.real ** 2) * center_weight
-        EE += (self.c.imag ** 2) * center_weight
-        ss += (self.c.real * self.c.imag) * center_weight
+        ee += (complex_map.real ** 2) * center_weight
+        EE += (complex_map.imag ** 2) * center_weight
+        ss += (complex_map.real * complex_map.imag) * center_weight
 
         # helper: add shifted contributions of offsets without wrap (zero outside)
         def add_shift(dr: int, dt: int):
-            """Add contribution of self.c shifted by (dr, dt) into ee/EE/ss without wrap."""
+            """Add contribution of shifted TF map by (dr, dt) into ee/EE/ss."""
             src_m0 = max(0, -dr)
             src_m1 = min(M, M - dr)
             src_t0 = max(0, -dt)
@@ -436,7 +630,7 @@ class TimeFrequencyMap:
             if src_m1 <= src_m0 or src_t1 <= src_t0:
                 return  # nothing overlaps
 
-            block = self.c[src_m0:src_m1, src_t0:src_t1]
+            block = complex_map[src_m0:src_m1, src_t0:src_t1]
             # add squared real/imag and real*imag properly to destination slice
             ee[dst_m0:dst_m1, dst_t0:dst_t1] += np.real(block) ** 2
             EE[dst_m0:dst_m1, dst_t0:dst_t1] += np.imag(block) ** 2
@@ -524,6 +718,13 @@ class TimeFrequencyMap:
 
         self.last_energy = energy_out
         self.last_amplitude = amp_out
+
+        if coeffs is None:
+            self.data = amp_out if mode == 'a' else energy_out
+
+        if return_map:
+            return amp_out if mode == 'a' else energy_out
+
         return shape
 
 
