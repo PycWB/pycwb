@@ -4,15 +4,18 @@ import numpy as np
 from scipy.special import gammainccinv
 from scipy.ndimage import label
 from pycwb.types.network import Network
+from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.detector import get_max_delay as detector_get_max_delay
+from pycwb.types.time_series import TimeSeries
+from pycwb.types.time_frequency_series import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
-from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
+from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, tf_maps, nRMS_list, net=None):
+def coherence(config, strains, nRMS_list):
     """
     Select the significant pixels
 
@@ -31,8 +34,8 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     ----------
     config : pycwb.config.Config
         Configuration object
-    tf_maps : list of pycwb.types.time_frequency_series.TimeFrequencySeries
-        List of time-frequency maps
+    strains : list
+        List of whitened strain time series (pycwb TimeSeries, gwpy, or pycbc)
     nRMS_list : list of pycwb.types.time_frequency_series.TimeFrequencySeries
         List of noise RMS
     net : pycwb.types.network.Network, optional
@@ -53,7 +56,9 @@ def coherence(config, tf_maps, nRMS_list, net=None):
         up_n = 1
 
   
-    fragment_clusters_multi_res = [coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
+    normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
+
+    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, nRMS_list, up_n) for i in
                                     range(config.nRES)]
 
     logger.info("----------------------------------------")
@@ -63,7 +68,7 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     return fragment_clusters_multi_res
 
 
-def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
+def coherence_single_res(i, config, strains, nRMS_list, up_n=None):
     """
     Calculate the coherence for a single resolution
 
@@ -73,8 +78,8 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     :type config: Config
     :param net: network
     :type net: ROOT.network
-    :param tf_maps: list of strain
-    :type tf_maps: list[TimeFrequencySeries]
+    :param strains: list of whitened strain time series
+    :type strains: list[TimeSeries]
     :param wdm: wdm used for current resolution
     :type wdm: WDM
     :param up_n: upsample factor
@@ -85,22 +90,31 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     # timer
     timer_start = time.perf_counter()
 
-    if up_n is None:
-        # upper sample factor
-        up_n = int(config.rateANA / 1024)
-        if up_n < 1:
-            up_n = 1
-
-    wdm = create_wdm_for_level(config, config.WDM_level[i])
-
-    if net is None:
-        net = Network(config, tf_maps, nRMS_list, silent=True)
-
-
     # print level infos
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
+
+    # use python-native wdm_wavelet for TF map generation and max-energy calculation
+    wdm_layers = max(1, layers)
+    wdm_wavelet = WDMWavelet(
+        M=wdm_layers,
+        K=wdm_layers,
+        beta_order=config.WDM_beta_order,
+        precision=config.WDM_precision,
+    )
+
+    tf_maps = [
+        TimeFrequencyMap.from_timeseries(
+            ts=strain,
+            wavelet=wdm_wavelet,
+            is_whitened=True,
+            f_low=getattr(config, "fLow", None),
+            f_high=getattr(config, "fHigh", None),
+            edge=getattr(config, "segEdge", None),
+        )
+        for strain in strains
+    ]
 
     # use string instead of directly logging to avoid messy output in parallel
     logger_info = "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f \n" % (
@@ -114,18 +128,15 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     # produce TF maps with max over the sky energy
     alp = 0.0
 
-    net_values = _extract_net_values(net, len(config.ifo), config.max_delay)
-    max_delay = net_values["max_delay"]
-    pattern = net_values["pattern"]
-    n_lag = net_values["n_lag"]
-    lag_shifts = net_values["lag_shifts"]
-    segment_list = net_values["segment_list"]
-    injection_times = net_values["injection_times"]
+    max_delay = config.max_delay
+    pattern = config.pattern
+    lag_plan = build_lag_plan_from_config(config, tf_maps)
+    n_lag = lag_plan.n_lag
+
 
     for n, tf_map in enumerate(tf_maps):
         alp += max_energy(
             tf_map=tf_map,
-            wavelet=wdm.wavelet,
             max_delay=max_delay,
             up_n=up_n,
             pattern=pattern,
@@ -149,18 +160,19 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
 
     # set veto array
-    TL, veto_mask = apply_veto(
-        config.iwindow,
-        tf_maps[0],
-        edge=config.segEdge,
-        segment_list=segment_list,
-        injection_times=injection_times,
-        return_mask=True,
-    )
-    logger_info += "live time in zero lag: %g \n" % TL
+    # TODO: the veto is applied to veto the non-injected periods. Will implement later
+    # TL, veto_mask = apply_veto(
+    #     config.iwindow,
+    #     tf_maps[0],
+    #     edge=config.segEdge,
+    #     segment_list=segment_list,
+    #     injection_times=injection_times,
+    #     return_mask=True,
+    # )
+    # logger_info += "live time in zero lag: %g \n" % TL
 
-    if TL <= 0.:
-        raise ValueError("live time is zero")
+    # if TL <= 0.:
+    #     raise ValueError("live time is zero")
 
     logger_info += "lag | clusters | pixels \n"
 
@@ -171,8 +183,8 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
             lag_index=j,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_shifts[j],
-            veto=veto_mask,
+            lag_shifts=lag_plan.lag_shifts[j],
+            veto=None,
             edge=config.segEdge,
         )
         # get pixel list
@@ -196,7 +208,7 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     return fragment_clusters
 
 
-def max_energy(tf_map, wavelet, max_delay, up_n, pattern,
+def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
                f_low=None, f_high=None, hist=None):
     """
     Decoupled max-energy computation for a detector TF map.
@@ -205,9 +217,7 @@ def max_energy(tf_map, wavelet, max_delay, up_n, pattern,
     This function is intentionally python-only for the cwb_coherence path.
 
     :param tf_map: detector TF map object
-    :type tf_map: object
-    :param wavelet: wavelet used for time-frequency transform
-    :type wavelet: object
+    :type tf_map: TimeFrequencyMap
     :param max_delay: maximum delay for the time series
     :type max_delay: float
     :param up_n: upsample factor

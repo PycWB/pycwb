@@ -164,3 +164,29 @@ class TimeSeries:
         :rtype: TimeSeries
         """
         return cls(data=gwpy_ts.value, t0=gwpy_ts.t0, dt=gwpy_ts.dt)
+
+    @classmethod
+    def from_input(cls, ts):
+        """
+        Create a TimeSeries from supported input types.
+
+        Supported inputs:
+        - pycwb.types.time_series.TimeSeries
+        - pycbc.types.TimeSeries
+        - gwpy.timeseries.TimeSeries
+
+        :param ts: input time series object
+        :type ts: object
+        :return: TimeSeries object
+        :rtype: TimeSeries
+        """
+        if isinstance(ts, cls):
+            return ts
+
+        if hasattr(ts, "delta_t") and hasattr(ts, "start_time"):
+            return cls.from_pycbc(ts)
+
+        if hasattr(ts, "value") and hasattr(ts, "t0") and hasattr(ts, "dt"):
+            return cls.from_gwpy(ts)
+
+        raise ValueError("input must be pycwb TimeSeries, pycbc TimeSeries, or gwpy TimeSeries")

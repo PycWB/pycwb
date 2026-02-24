@@ -190,6 +190,7 @@ class TimeFrequencyMap:
     f_high: float | None
     edge: float | None
     wavelet: Wavelet  # Replace 'object' with the actual type of wavelet if available
+    len_timeseries: int = None  # Original time series length before transform
 
     @classmethod
     def from_timeseries(cls, ts: TimeSeries, wavelet: Wavelet, 
@@ -228,7 +229,8 @@ class TimeFrequencyMap:
             f_low=f_low,
             f_high=f_high,
             edge=edge,
-            wavelet=wavelet
+            wavelet=wavelet,
+            len_timeseries=len(ts.data)
         )
     
     @property
@@ -319,54 +321,70 @@ class TimeFrequencyMap:
         original = np.asarray(self.data)
         shape = original.shape
         flat = original.real if np.iscomplexobj(original) else original
-        flat = flat.ravel()
+        flat = np.asarray(flat, dtype=np.float64).ravel()
 
         if flat.size < 4:
             return 0.0
 
-        nL = int(float(self.edge or 0.0) * self.wavelet_rate)
-        nn = int(flat.size)
-        nL = max(0, min(nL, nn - 2))
-        nR = nn - nL
-        if nR <= nL + 1:
+        nn_all = int(flat.size)
+        M = int(shape[0]) if len(shape) == 2 else 1
+        nL = int(float(self.edge or 0.0) * self.wavelet_rate * M)
+        nL = max(0, min(nL, nn_all - 2))
+        nR = nn_all - nL - 1
+        if nR <= nL:
             return 0.0
 
-        work = flat[nL:nR]
-        med = float(np.median(work))
-        if med <= 0:
+        region = flat[nL:nR]
+        if region.size == 0:
             return 0.0
 
-        mask = (work > 0.01) & (work < 20 * med)
-        valid_data = work[mask]
+        wavecount_1 = int(np.sum(region > 0.001))
+        fff = (nR - nL) * wavecount_1 / float(nn_all)
+
+        split_idx_med = nR - int(0.5 * fff)
+        split_idx_med = max(nL, min(split_idx_med, nR - 1))
+        rel_med = split_idx_med - nL
+        med = float(np.partition(region, rel_med)[rel_med])
+        if med <= 0.0:
+            return 0.0
+
+        mask = (region > 0.01) & (region < 20.0 * med)
+        valid_data = region[mask]
         if valid_data.size == 0:
             return 0.0
 
-        aaa = np.sum(valid_data)
-        bbb = np.sum(np.log(valid_data))
-        count = valid_data.size
-
+        aaa = float(np.sum(valid_data))
+        bbb = float(np.sum(np.log(valid_data)))
+        count = float(valid_data.size)
         alp = np.log(aaa / count) - bbb / count
-        if alp <= 0:
+        if alp <= 0.0:
             return 0.0
-        alp = (3 - alp + np.sqrt((alp - 3) * (alp - 3) + 24 * alp)) / (12 * alp)
+        alp = (3.0 - alp + np.sqrt((alp - 3.0) * (alp - 3.0) + 24.0 * alp)) / (12.0 * alp)
 
-        avr = med * (3 * alp + 0.2) / (3 * alp - 0.8)
+        avr = med * (3.0 * alp + 0.2) / (3.0 * alp - 0.8)
         ALP = med * alp / avr
 
         amp = flat * alp / avr
-        transformed = np.where(amp < ALP, 0.0, amp - ALP * (1 + np.log(amp / ALP)))
+        transformed = np.zeros_like(flat)
+        mask_pos = amp >= ALP
+        if np.any(mask_pos):
+            transformed[mask_pos] = amp[mask_pos] - ALP * (1.0 + np.log(amp[mask_pos] / ALP))
 
         if hist is not None:
             hist.extend(transformed[nL:nR].tolist())
 
-        core = transformed[nL:nR]
-        core = core[core > 1.0e-5]
-        if core.size == 0:
+        region2 = transformed[nL:nR]
+        if region2.size == 0:
             return 0.0
-        q68 = float(np.quantile(core, 0.6827))
-        if q68 <= 0:
+        wavecount_2 = int(np.sum(region2 > 1.0e-5))
+        split_idx_rms = nR - int(0.3173 * wavecount_2)
+        split_idx_rms = max(nL, min(split_idx_rms, nR - 1))
+        rel_rms = split_idx_rms - nL
+        qv = float(np.partition(region2, rel_rms)[rel_rms])
+        if qv <= 0.0:
             return 0.0
-        rms = 1.0 / q68
+
+        rms = 1.0 / qv
         transformed *= rms
 
         if hist is not None:
@@ -377,7 +395,7 @@ class TimeFrequencyMap:
         else:
             self.data = transformed
 
-        return ALP
+        return float(ALP)
 
 
     def bandpass(self, f_low=None, f_high=None):
@@ -424,12 +442,20 @@ class TimeFrequencyMap:
         if not np.isfinite(dt):
             raise ValueError("dt must be finite")
 
+        # Use stored original time series length if available, otherwise estimate from duration
+        if self.len_timeseries is not None:
+            len_ts = int(self.len_timeseries)
+        else:
+            # Fallback: estimate from sample rate (assuming original sample rate = 1/dt_original)
+            # This is less accurate but works when len_timeseries wasn't stored
+            len_ts = max(1, int(round((self.stop - self.start) / self.dt)))
+
         source_tf = WDMTimeFrequencyMap(
             data=np.asarray(self.data),
             df=float(self.df),
             dt=float(self.dt),
             t0=float(self.start),
-            len_timeseries=max(1, int(round((self.stop - self.start) / self.dt))),
+            len_timeseries=len_ts,
             wdm_params=dict(getattr(self.wavelet, "params", {})),
         )
 
@@ -442,40 +468,40 @@ class TimeFrequencyMap:
         max_delay = int(sample_rate * abs(float(dt)))
         mm_mode = -1 if abs(int(pattern)) else 0
 
-        def _time_slide_copy(data, length=0, src_idx=0, dst_idx=0):
-            """Copy a contiguous time slice with zero-padded out-of-range behavior."""
-            out = np.array(data, copy=True)
+        def _cpf_inplace(dst, src, length=0, src_idx=0, dst_idx=0):
+            """In-place copy matching cWB wavearray::cpf semantics."""
             if length == 0:
-                length = min(len(data) - dst_idx, len(data) - src_idx)
-            length = min(length, len(data) - dst_idx, len(data) - src_idx)
+                length = min(len(dst) - dst_idx, len(src) - src_idx)
+            length = min(length, len(dst) - dst_idx, len(src) - src_idx)
             if length > 0:
-                out[dst_idx:dst_idx + length] = data[src_idx:src_idx + length]
-            return out
+                dst[dst_idx:dst_idx + length] = src[src_idx:src_idx + length]
 
-        if abs(int(pattern)):
+        pattern_int = abs(int(pattern))
+        if pattern_int:
             base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-            current_max = np.zeros_like(base_tf.data.real, dtype=np.float64)
-
-            packet_energy = self.wdm_packet(pattern, mode='e', coeffs=base_tf.data, return_map=True)
-            current_max = np.maximum(current_max, packet_energy)
+            
+            # Initialize with the first transform's packet energy
+            packet_energy = self.wdm_packet(pattern_int, mode='e', coeffs=base_tf.data, return_map=True)
+            current_max = np.array(packet_energy, copy=True, dtype=np.float64)
+            xx_data = np.array(ts_data, copy=True)
 
             for k in range(int(downsample), max_delay + 1, int(downsample)):
                 if k >= n_samples:
                     break
 
-                shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
-                tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-                current_max = np.maximum(current_max, self.wdm_packet(pattern, mode='e', coeffs=tmp_tf.data, return_map=True))
+                _cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
+                tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+                current_max = np.maximum(current_max, self.wdm_packet(pattern_int, mode='e', coeffs=tmp_tf.data, return_map=True))
 
-                shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
-                tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-                current_max = np.maximum(current_max, self.wdm_packet(pattern, mode='e', coeffs=tmp_tf.data, return_map=True))
+                _cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
+                tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+                current_max = np.maximum(current_max, self.wdm_packet(pattern_int, mode='e', coeffs=tmp_tf.data, return_map=True))
 
             n_freq = current_max.shape[0]
             current_max[0, :] = 0.0
             current_max[n_freq - 1, :] = 0.0
 
-            if abs(int(pattern)) in {5, 6, 9} and n_freq > 3:
+            if pattern_int in {5, 6, 9} and n_freq > 3:
                 current_max[1, :] = 0.0
                 current_max[n_freq - 2, :] = 0.0
 
@@ -485,20 +511,35 @@ class TimeFrequencyMap:
         base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
         current_max_real = np.array(base_tf.data.real, copy=True)
         current_max_imag = np.array(base_tf.data.imag, copy=True)
+        xx_data = np.array(ts_data, copy=True)
 
         for k in range(int(downsample), max_delay + 1, int(downsample)):
             if k >= n_samples:
                 break
 
-            shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
-            tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-            current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
-            current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
+            _cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
+            tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+            try:
+                import jax.numpy as jnp
+                # Use JAX for faster max operations
+                current_max_real = np.asarray(jnp.maximum(jnp.asarray(current_max_real), jnp.asarray(tmp_tf.data.real)))
+                current_max_imag = np.asarray(jnp.maximum(jnp.asarray(current_max_imag), jnp.asarray(tmp_tf.data.imag)))
+            except ImportError:
+                # Fallback to NumPy
+                current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
+                current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
 
-            shifted = _time_slide_copy(ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
-            tmp_tf = self.wavelet.t2w(shifted, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-            current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
-            current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
+            _cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
+            tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+            try:
+                import jax.numpy as jnp
+                # Use JAX for faster max operations
+                current_max_real = np.asarray(jnp.maximum(jnp.asarray(current_max_real), jnp.asarray(tmp_tf.data.real)))
+                current_max_imag = np.asarray(jnp.maximum(jnp.asarray(current_max_imag), jnp.asarray(tmp_tf.data.imag)))
+            except ImportError:
+                # Fallback to NumPy
+                current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
+                current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
 
         self.data = current_max_real + 1j * current_max_imag
         n_freq = self.data.shape[0]
@@ -557,20 +598,6 @@ class TimeFrequencyMap:
         :return: packet shape (float) or computed map when `return_map=True`
         :rtype: float | np.ndarray
         """
-        PATTERNS = {
-            0: [],  # single pixel
-            1: [(0, 1), (0, -1)],                         # "3|" vertical
-            2: [(1, 0), (-1, 0)],                         # "3-" horizontal
-            3: [(1, 1), (-1, -1)],                        # "3/" chirp
-            4: [(1, -1), (-1, 1)],                        # "3\\" ringdown
-            5: [(1, 1), (-1, -1), (2, 2), (-2, -2)],      # "5/"
-            6: [(1, -1), (-1, 1), (2, -2), (-2, 2)],      # "5\\"
-            7: [(0, 1), (0, -1), (1, 0), (-1, 0)],        # "3+"
-            8: [(1, 1), (1, -1), (-1, 1), (-1, -1)],      # "3x"
-            9: [(0, 1), (0, -1), (1, 0), (-1, 0),
-                (1, 1), (1, -1), (-1, 1), (-1, -1)]      # "9*"
-        }
-
         pattern = abs(int(pattern))
         mode = mode.lower()
         if mode not in {'e', 'l', 'a'}:
@@ -583,7 +610,7 @@ class TimeFrequencyMap:
         M, T = complex_map.shape
         jb, je, mL, mH = self._compute_bounds(M, T)
 
-        # Determine shape/mean like earlier
+        # Determine shape/mean and offsets exactly as in cWB WSeries::wdmPacket
         if pattern in (1, 3, 4):
             shape = mean = 3.0
             mL += 1; mH -= 1
@@ -601,63 +628,92 @@ class TimeFrequencyMap:
         else:
             shape = mean = 1.0
 
-        offsets = PATTERNS.get(pattern, [])
-        center_weight = mean - 8.0
+        # p offsets in flattened indexing j = m + t*M (Fortran order)
+        p = [0] * 9
+        if pattern == 1:
+            p[1], p[2] = 1, -1
+        elif pattern == 2:
+            p[1], p[2] = M, -M
+        elif pattern == 3:
+            p[1], p[2] = M + 1, -M - 1
+        elif pattern == 4:
+            p[1], p[2] = -M + 1, M - 1
+        elif pattern == 5:
+            p[1], p[2], p[3], p[4] = M + 1, -M - 1, 2 * M + 2, -2 * M - 2
+        elif pattern == 6:
+            p[1], p[2], p[3], p[4] = -M + 1, M - 1, -2 * M + 2, 2 * M - 2
+        elif pattern == 7:
+            p[1], p[2], p[3], p[4] = 1, -1, M, -M
+        elif pattern == 8:
+            p[1], p[2], p[3], p[4] = M + 1, -M + 1, M - 1, -M - 1
+        elif pattern == 9:
+            p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8] = 1, -1, M, -M, M + 1, M - 1, -M + 1, -M - 1
 
-        # Initialize accumulators
-        ee = np.zeros((M, T), dtype=float)
-        EE = np.zeros((M, T), dtype=float)
-        ss = np.zeros((M, T), dtype=float)
+        real_f = np.asarray(np.real(complex_map), dtype=np.float64).reshape(-1, order='F')
+        imag_f = np.asarray(np.imag(complex_map), dtype=np.float64).reshape(-1, order='F')
+        J = real_f.size
 
-        # Center contribution (scaled)
-        ee += (complex_map.real ** 2) * center_weight
-        EE += (complex_map.imag ** 2) * center_weight
-        ss += (complex_map.real * complex_map.imag) * center_weight
+        energy_f = np.zeros(J, dtype=np.float64)
+        amp_real_f = np.zeros(J, dtype=np.float64)
+        amp_imag_f = np.zeros(J, dtype=np.float64)
 
-        # helper: add shifted contributions of offsets without wrap (zero outside)
-        def add_shift(dr: int, dt: int):
-            """Add contribution of shifted TF map by (dr, dt) into ee/EE/ss."""
-            src_m0 = max(0, -dr)
-            src_m1 = min(M, M - dr)
-            src_t0 = max(0, -dt)
-            src_t1 = min(T, T - dt)
+        if jb < 0:
+            jb = 0
+        if je > J:
+            je = J
+        if je <= jb:
+            self.last_energy = energy_f.reshape((M, T), order='F')
+            self.last_amplitude = (amp_real_f + 1j * amp_imag_f).reshape((M, T), order='F')
+            if coeffs is None:
+                self.data = self.last_amplitude if mode == 'a' else self.last_energy
+            if return_map:
+                return self.last_amplitude if mode == 'a' else self.last_energy
+            return shape
 
-            dst_m0 = src_m0 + dr
-            dst_m1 = src_m1 + dr
-            dst_t0 = src_t0 + dt
-            dst_t1 = src_t1 + dt
+        j = np.arange(jb, je, dtype=np.int64)
+        m = j % M
+        band_mask = (m >= mL) & (m <= mH)
+        if not np.any(band_mask):
+            self.last_energy = energy_f.reshape((M, T), order='F')
+            self.last_amplitude = (amp_real_f + 1j * amp_imag_f).reshape((M, T), order='F')
+            if coeffs is None:
+                self.data = self.last_amplitude if mode == 'a' else self.last_energy
+            if return_map:
+                return self.last_amplitude if mode == 'a' else self.last_energy
+            return shape
 
-            if src_m1 <= src_m0 or src_t1 <= src_t0:
-                return  # nothing overlaps
+        jv = j[band_mask]
 
-            block = complex_map[src_m0:src_m1, src_t0:src_t1]
-            # add squared real/imag and real*imag properly to destination slice
-            ee[dst_m0:dst_m1, dst_t0:dst_t1] += np.real(block) ** 2
-            EE[dst_m0:dst_m1, dst_t0:dst_t1] += np.imag(block) ** 2
-            ss[dst_m0:dst_m1, dst_t0:dst_t1] += (np.real(block) * np.imag(block))
+        # exact cWB accumulation: p[1..8] always contribute; unspecified p[n] are 0
+        ss = np.zeros_like(jv, dtype=np.float64)
+        ee = np.zeros_like(jv, dtype=np.float64)
+        EE = np.zeros_like(jv, dtype=np.float64)
+        for n in range(1, 9):
+            idx = jv + p[n]
+            qr = real_f[idx]
+            qi = imag_f[idx]
+            ss += qr * qi
+            ee += qr * qr
+            EE += qi * qi
 
-        for dr, dt in offsets:
-            add_shift(dr, dt)
+        q0r = real_f[jv]
+        q0i = imag_f[jv]
+        ss += q0r * q0i * (mean - 8.0)
+        ee += q0r * q0r * (mean - 8.0)
+        EE += q0i * q0i * (mean - 8.0)
 
-        # Now compute cc, ss2, nn arrays vectorized
         cc = ee - EE
         ss2 = ss * 2.0
-        cc2 = cc
-
-        # compute nn = sqrt(cc^2 + ss2^2), but ensure numeric stability
-        nn = np.sqrt(cc2 * cc2 + ss2 * ss2)
+        nn = np.sqrt(cc * cc + ss2 * ss2)
         sum_eeEE = ee + EE
-        # condition where sum_eeEE < nn -> nn = sum_eeEE
-        mask = sum_eeEE < nn
-        if mask.any():
-            nn[mask] = sum_eeEE[mask]
+        small_mask = sum_eeEE < nn
+        if np.any(small_mask):
+            nn[small_mask] = sum_eeEE[small_mask]
 
-        # compute aa elementwise safely
         a1 = np.sqrt(np.clip((sum_eeEE + nn) / 2.0, 0.0, None))
         a2 = np.sqrt(np.clip((sum_eeEE - nn) / 2.0, 0.0, None))
         aa = a1 + a2
 
-        # compute em array
         if (mode == 'e') or (mode == 'l') or (mean == 1.0):
             em = sum_eeEE / 2.0
         else:
@@ -678,43 +734,23 @@ class TimeFrequencyMap:
             em = em2
 
         # amplitude branch: compute amplitude complex array
-        amplitudes = np.zeros((M, T), dtype=np.complex128)
         if mode == 'a':
-            # avoid division by zero: where nn==0, amplitudes remain 0
             safe_nn = nn.copy()
-            safe_nn[safe_nn == 0.0] = 1.0  # temporary to avoid division by zero
-            cc_norm = cc2 / safe_nn
+            safe_nn[safe_nn == 0.0] = 1.0
+            cc_norm = cc / safe_nn
             ss_norm = ss2 / safe_nn
-            denom = np.sqrt((1.0 + cc_norm) * (1.0 + cc_norm) + ss_norm * ss_norm) / 2.0
-            # components:
-            real_part = aa * cc_norm
-            imag_part = aa * ss_norm / 2.0
-            amplitudes = real_part + 1j * imag_part
-            # fix locations where nn was zero to zero amplitude
-            amplitudes[nn == 0.0] = 0+0j
+            amp_real = aa * cc_norm
+            amp_imag = aa * ss_norm / 2.0
+            zero_mask = nn == 0.0
+            amp_real[zero_mask] = 0.0
+            amp_imag[zero_mask] = 0.0
+            amp_real_f[jv] = amp_real
+            amp_imag_f[jv] = amp_imag
+        else:
+            energy_f[jv] = em
 
-        # apply frequency masks (mL..mH) and jb/je flattened semantics:
-        # For vectorized version we produce full matrices but then zero rows outside mL..mH
-        energy_out = em.copy()
-        amp_out = amplitudes.copy()
-
-        # zero frequency rows outside [mL, mH]
-        if mL > 0:
-            energy_out[:mL, :] = 0.0
-            amp_out[:mL, :] = 0+0j
-        if mH < M - 1:
-            energy_out[mH+1:, :] = 0.0
-            amp_out[mH+1:, :] = 0+0j
-
-        # mimic jb/je flattened skipping by zeroing time bins whose flattened j are out of range
-        # flattened j = m + t*M; compute min and max t allowed per m: we will set to zero where j<jb or j>=je
-        # vectorized construction:
-        m_idx = np.arange(M).reshape(M, 1)
-        t_idx = np.arange(T).reshape(1, T)
-        j_flat = m_idx + t_idx * M
-        invalid_mask = (j_flat < jb) | (j_flat >= je)
-        energy_out[invalid_mask] = 0.0
-        amp_out[invalid_mask] = 0+0j
+        energy_out = energy_f.reshape((M, T), order='F')
+        amp_out = (amp_real_f + 1j * amp_imag_f).reshape((M, T), order='F')
 
         self.last_energy = energy_out
         self.last_amplitude = amp_out
