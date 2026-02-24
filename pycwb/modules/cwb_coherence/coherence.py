@@ -2,7 +2,6 @@ import time
 import logging
 import numpy as np
 from scipy.special import gammainccinv
-from scipy.ndimage import label
 from pycwb.types.network import Network
 from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.detector import get_max_delay as detector_get_max_delay
@@ -560,35 +559,96 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
         if shifts_sec.size != n_ifo:
             raise ValueError("lag_shifts size mismatch with number of detectors")
     ref = min(shifts_sec)
-    shift_bins = [int(round((s - ref) / dt)) for s in shifts_sec]
+    rate = 1.0 / dt
+    shift_bins = [int((s - ref) * rate + 0.001) for s in shifts_sec]
 
-    aligned = [np.roll(arrays[i], shift_bins[i], axis=1) for i in range(n_ifo)]
-    combined = np.sum(aligned, axis=0)
+    edge_bins = int(max(0, float(edge) * rate + 0.001))
+    valid_start = edge_bins
+    valid_stop = n_time - edge_bins
+    nn_valid = valid_stop - valid_start
+
+    aligned = [np.zeros_like(arrays[i]) for i in range(n_ifo)]
+    if nn_valid > 0:
+        out_idx = np.arange(nn_valid, dtype=np.int64)
+        for det_idx in range(n_ifo):
+            src_idx = valid_start + ((out_idx + shift_bins[det_idx]) % nn_valid)
+            aligned[det_idx][:, valid_start:valid_stop] = arrays[det_idx][:, src_idx]
+
+    combined_raw = np.sum(aligned, axis=0)
+    combined = np.array(combined_raw, copy=True)
 
     if veto is not None and len(veto) == n_time:
         combined = combined * veto.reshape(1, -1)
 
-    edge_bins = int(max(0, round(float(edge) / dt)))
     if edge_bins > 0 and n_time > 2 * edge_bins:
         combined[:, :edge_bins] = 0.0
         combined[:, -edge_bins:] = 0.0
 
     eo = float(energy_threshold)
     em = 2.0 * eo
-    core = combined >= eo
+    eh = em * em
 
-    top = np.zeros_like(combined)
-    bottom = np.zeros_like(combined)
-    top[:, :-1] += combined[:, 1:]
-    bottom[:, 1:] += combined[:, :-1]
-    top[1:, :] += combined[:-1, :]
-    bottom[:-1, :] += combined[1:, :]
+    # cWB-like frequency band handling
+    f_low = float(getattr(tf_maps[0], "f_low", 0.0) or 0.0)
+    f_high_attr = getattr(tf_maps[0], "f_high", None)
+    f_high = float(f_high_attr) if f_high_attr is not None else float((n_freq - 1) * tf_maps[0].df)
+    df = float(getattr(tf_maps[0], "df", 0.0) or 0.0)
 
-    support = ((top + bottom) * np.maximum(combined, 0.0)) >= (em * em)
-    selected = core & (support | (combined >= em))
+    ib = 1
+    ie = n_freq
+    if df > 0:
+        freqs = np.arange(n_freq, dtype=np.float64) * df
+        for idx_f, freq in enumerate(freqs):
+            if freq <= f_high:
+                ie = idx_f
+            if freq <= f_low:
+                ib = idx_f + 1
+    ie = min(ie, n_freq - 1)
+    ib = max(ib, 1)
+
+    # cWB-like thresholding and loud-pixel degradation before support test
+    combined[:ib, :] = 0.0
+    combined[combined < eo] = 0.0
+    combined[combined > em] = em + 0.1
+
+    selected = np.zeros_like(combined, dtype=bool)
+    ii = n_freq - 2
+
+    # Need +/-2 time halo and +/-2 freq accesses in the same pattern as cWB
+    t_start = max(edge_bins, 2)
+    t_end = n_time - max(edge_bins, 2)
+    f_start = ib
+    f_end = min(max(ie, f_start), n_freq - 1)
+
+    for t in range(t_start, t_end):
+        for f_idx in range(f_start, f_end):
+            e_val = combined[f_idx, t]
+            if e_val < eo:
+                continue
+
+            ct = combined[f_idx + 1, t] + combined[f_idx, t + 1] + combined[f_idx + 1, t + 1]
+            cb = combined[f_idx - 1, t] + combined[f_idx, t - 1] + combined[f_idx - 1, t - 1]
+
+            ht = combined[f_idx + 1, t + 2]
+            if f_idx < ii:
+                ht += combined[f_idx + 2, t + 2] + combined[f_idx + 2, t + 1]
+
+            hb = combined[f_idx - 1, t - 2]
+            if f_idx > 1:
+                hb += combined[f_idx - 2, t - 2] + combined[f_idx - 2, t - 1]
+
+            if (
+                (ct + cb) * e_val < eh
+                and (ct + ht) * e_val < eh
+                and (cb + hb) * e_val < eh
+                and e_val < em
+            ):
+                continue
+
+            selected[f_idx, t] = True
 
     freq_idx, time_idx = np.where(selected)
-    values = combined[freq_idx, time_idx]
+    values = combined_raw[freq_idx, time_idx]
 
     pixels = []
     coord_to_index = {}
@@ -596,7 +656,11 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
         pixel_time_index = int(t_idx * n_freq + f_idx)
         pixel_data = []
         for det_idx in range(n_ifo):
-            det_t = (int(t_idx) - shift_bins[det_idx]) % n_time
+            if nn_valid > 0 and valid_start <= int(t_idx) < valid_stop:
+                u = int(t_idx) - valid_start
+                det_t = int(valid_start + ((u + shift_bins[det_idx]) % nn_valid))
+            else:
+                det_t = int(t_idx)
             det_energy = float(max(arrays[det_idx][int(f_idx), det_t], 0.0))
             det_index = int(det_t * n_freq + f_idx)
             pixel_data.append(
@@ -662,39 +726,90 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     :rtype: FragmentCluster
     """
     mask = np.asarray(pixel_candidates["mask"], dtype=bool)
-    structure = np.ones((2 * int(max(1, kf)) + 1, 2 * int(max(1, kt)) + 1), dtype=np.int8)
-    labels, n_clusters = label(mask, structure=structure)
+
+    kt = int(max(1, kt))
+    kf = int(max(1, kf))
 
     pixels = pixel_candidates.get("pixels", [])
     coord_to_index = pixel_candidates.get("coord_to_index", {})
 
-    clusters = []
-    for cluster_id in range(1, int(n_clusters) + 1):
-        coords = np.argwhere(labels == cluster_id)
-        cluster_pixels = []
-        for f_idx, t_idx in coords:
-            key = (int(f_idx), int(t_idx))
-            if key in coord_to_index:
-                cluster_pixels.append(pixels[coord_to_index[key]])
+    if not pixels:
+        clusters = []
+    else:
+        n_points = len(pixels)
+        parent = np.arange(n_points, dtype=np.int32)
 
-        if not cluster_pixels:
-            continue
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
 
-        energy = float(np.sum([p.likelihood for p in cluster_pixels]))
-        size = len(cluster_pixels)
-        subnet = energy / (energy + size + 1.0e-12)
-        subrho = float(np.sqrt(max(energy, 0.0)))
+        def union(a, b):
+            ra = find(a)
+            rb = find(b)
+            if ra != rb:
+                parent[rb] = ra
 
-        cluster_meta = ClusterMeta(
-            energy=energy,
-            like_net=energy,
-            sub_net=subnet,
-            net_rho=subrho,
-            c_time=float(np.mean([p.time_in_seconds for p in cluster_pixels])),
-            c_freq=float(np.mean([p.frequency_in_hz for p in cluster_pixels])),
-        )
+        # cWB-like sort and neighbor linking
+        order = list(range(n_points))
+        order.sort(key=lambda idx: float(pixels[idx].time) / pixels[idx].rate / pixels[idx].layers)
 
-        clusters.append(Cluster(pixels=cluster_pixels, cluster_meta=cluster_meta))
+        m_layers = int(pixels[0].layers)
+        r_rate = float(pixels[0].rate)
+        cluster_rate = float(pixel_candidates.get("rate", r_rate))
+        is_wavelet = (int(cluster_rate / r_rate + 0.1) == m_layers)
+
+        for i_ord in range(n_points):
+            p_idx = order[i_ord]
+            p = pixels[p_idx]
+            for j_ord in range(i_ord + 1, n_points):
+                q_idx = order[j_ord]
+                q = pixels[q_idx]
+
+                if is_wavelet:
+                    dt_index = int(q.time) - int(p.time)
+                else:
+                    dt_index = int(q.time / m_layers) - int(p.time / m_layers)
+
+                if dt_index < 0:
+                    continue
+
+                if is_wavelet:
+                    if dt_index / m_layers > kt:
+                        break
+                else:
+                    if dt_index > kt:
+                        break
+
+                if abs(int(q.frequency) - int(p.frequency)) <= kf:
+                    union(p_idx, q_idx)
+
+        grouped = {}
+        for idx in range(n_points):
+            root = find(idx)
+            grouped.setdefault(root, []).append(pixels[idx])
+
+        clusters = []
+        for cluster_pixels in grouped.values():
+            if not cluster_pixels:
+                continue
+
+            energy = float(np.sum([p.likelihood for p in cluster_pixels]))
+            size = len(cluster_pixels)
+            subnet = energy / (energy + size + 1.0e-12)
+            subrho = float(np.sqrt(max(energy, 0.0)))
+
+            cluster_meta = ClusterMeta(
+                energy=energy,
+                like_net=energy,
+                sub_net=subnet,
+                net_rho=subrho,
+                c_time=float(np.mean([p.time_in_seconds for p in cluster_pixels])),
+                c_freq=float(np.mean([p.frequency_in_hz for p in cluster_pixels])),
+            )
+
+            clusters.append(Cluster(pixels=cluster_pixels, cluster_meta=cluster_meta))
 
     return FragmentCluster(
         rate=float(pixel_candidates.get("rate", 0.0)),

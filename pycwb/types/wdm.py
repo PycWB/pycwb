@@ -68,9 +68,11 @@ class WDM:
         """
         destructor of the WDM object
         """
-        pass
-        self.release()
-        self.release_ptr()
+        try:
+            self.release()
+            self.release_ptr()
+        except Exception:
+            pass
 
 
     def set_td_filter(self, coeff_factor, upsample_factor):
@@ -117,7 +119,9 @@ class WDM:
         """
         release memory of the WDM sliced array
         """
-        self.wavelet.release()
+        wavelet = getattr(self, 'wavelet', None)
+        if wavelet is not None and hasattr(wavelet, 'release'):
+            wavelet.release()
 
     def release_ptr(self):
         """

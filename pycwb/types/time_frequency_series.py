@@ -74,12 +74,15 @@ class TimeFrequencySeries:
         return new
 
     def __del__(self):
-        if self._wseries:
-            self._wseries.resize(0)
-            del self._wseries
-        if self._wavelet:
-            self._wavelet.release()
-            del self._wavelet
+        try:
+            wseries = getattr(self, '_wseries', None)
+            if wseries is not None and hasattr(wseries, 'resize'):
+                wseries.resize(0)
+            wavelet = getattr(self, '_wavelet', None)
+            if wavelet is not None and hasattr(wavelet, 'release'):
+                wavelet.release()
+        except Exception:
+            pass
 
     __copy__ = copy
 

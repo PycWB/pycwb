@@ -66,11 +66,20 @@ class Network:
         """
         Destructor to clean up the network object.
         """
-        for i in range(self.ifo_size):
-            ifo = self.net.getifo(i)
-            ifo.HoT.resize(0)
-            ifo.TFmap.resize(0)
-            ifo.nRMS.resize(0)
+        try:
+            net = getattr(self, 'net', None)
+            if net is None or not hasattr(net, 'ifoListSize'):
+                return
+            for i in range(net.ifoListSize()):
+                ifo = net.getifo(i)
+                if hasattr(ifo, 'HoT') and hasattr(ifo.HoT, 'resize'):
+                    ifo.HoT.resize(0)
+                if hasattr(ifo, 'TFmap') and hasattr(ifo.TFmap, 'resize'):
+                    ifo.TFmap.resize(0)
+                if hasattr(ifo, 'nRMS') and hasattr(ifo.nRMS, 'resize'):
+                    ifo.nRMS.resize(0)
+        except Exception:
+            pass
 
     def load_strains(self, tf_maps, nRMS_list, segEdge):
         """
