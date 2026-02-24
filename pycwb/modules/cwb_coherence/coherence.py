@@ -733,6 +733,62 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     pixels = pixel_candidates.get("pixels", [])
     coord_to_index = pixel_candidates.get("coord_to_index", {})
 
+    def _compute_subnet_subrho(cluster_pixels):
+        if not cluster_pixels:
+            return 0.0, 0.0
+
+        n_ifo_local = len(cluster_pixels[0].data) if cluster_pixels[0].data else 0
+        if n_ifo_local <= 1:
+            return 0.0, 0.0
+
+        n_sub = 2.0 * _igamma_inv_upper(float(n_ifo_local - 1), 0.314)
+
+        rho = 0.0
+        e_sub = 0.0
+        e_max_sum = 0.0
+        subnet_acc = 0.0
+
+        for p in cluster_pixels:
+            amp_sum = 0.0
+            e_max = 0.0
+            e_tot = 0.0
+            nsd = 0.0
+            msd = 0.0
+
+            for det in p.data:
+                amp = float(det.asnr)
+                x = amp * amp
+                v = float(det.noise_rms) * float(det.noise_rms)
+
+                amp_sum += abs(amp)
+                if x > e_max:
+                    e_max = x
+                    msd = v
+                e_tot += x
+                if v > 0:
+                    nsd += 1.0 / v
+
+            a_fac = (e_tot / (amp_sum * amp_sum)) if amp_sum > 0 else 1.0
+            rho += (1.0 - a_fac) * (e_tot - n_sub * 2.0)
+
+            y_val = e_tot - e_max
+            x_corr = y_val * (1.0 + y_val / (e_max + 1.0e-5))
+
+            if msd > 0:
+                nsd -= 1.0 / msd
+            v_corr = (2.0 * e_max - e_tot) * msd * nsd / 10.0
+
+            e_sub += (e_tot - e_max)
+            e_max_sum += e_max
+
+            a_cut = x_corr / (x_corr + n_sub) if (x_corr + n_sub) != 0 else 0.0
+            denom = x_corr + (v_corr if v_corr > 0 else 1.0e-5)
+            subnet_acc += (e_tot * x_corr / denom) * (a_cut if a_cut > 0.5 else 0.0)
+
+        subnet = subnet_acc / (e_max_sum + e_sub + 0.01)
+        subrho = float(np.sqrt(rho)) if rho >= 0 else float("nan")
+        return float(subnet), subrho
+
     if not pixels:
         clusters = []
     else:
@@ -796,9 +852,7 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
                 continue
 
             energy = float(np.sum([p.likelihood for p in cluster_pixels]))
-            size = len(cluster_pixels)
-            subnet = energy / (energy + size + 1.0e-12)
-            subrho = float(np.sqrt(max(energy, 0.0)))
+            subnet, subrho = _compute_subnet_subrho(cluster_pixels)
 
             cluster_meta = ClusterMeta(
                 energy=energy,
