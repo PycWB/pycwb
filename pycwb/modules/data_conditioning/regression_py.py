@@ -234,10 +234,10 @@ def regression_python(config, h):
     target_ts = np.array(wdm.w2t(tf_map), dtype=np.float64)
     tf_map.data = noise_coeff
     noise_ts = np.array(wdm.w2t(tf_map), dtype=np.float64)
-    # cWB combines two inverse passes (Inverse() and Inverse(-2)) and averages.
-    # In wdm_wavelet we only have one inverse path, so apply a 0.5 factor to match
-    # the cWB effective subtraction scale more closely.
-    cleaned_data = target_ts - 0.5 * noise_ts
+    noiseQ_ts = np.array(wdm.w2tQ(tf_map), dtype=np.float64)
+    # cWB usage: combine two phase reconstructions (w2t=normal, w2tQ=quadrature)
+    # The 0.5 factor averages the two channels as in WSeries Inverse() + Inverse(-2)
+    cleaned_data = target_ts - 0.5 * (noise_ts + noiseQ_ts)
 
     cleaned_pycbc = pycbc.types.TimeSeries(
         cleaned_data,
