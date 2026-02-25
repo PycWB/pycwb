@@ -41,13 +41,37 @@ def build_lag_plan_from_network(net, n_ifo):
 
 def _get_segment_duration_seconds(tf_maps):
     tf0 = tf_maps[0]
-    data = np.asarray(getattr(tf0, "data", []))
+    data_obj = getattr(tf0, "data", None)
+
+    # Resolve timeline samples from several possible containers
+    if data_obj is None:
+        data = np.asarray(tf0) if tf0 is not None else np.array([])
+    elif hasattr(data_obj, "data"):
+        data = np.asarray(data_obj.data)
+    else:
+        data = np.asarray(data_obj)
+
     if data.ndim == 2:
         n_time = int(data.shape[1])
     else:
         n_time = int(data.size)
 
-    dt = float(getattr(tf0, "dt", 0.0))
+    dt = 0.0
+    if hasattr(tf0, "dt"):
+        dt = float(getattr(tf0, "dt"))
+    elif hasattr(tf0, "delta_t"):
+        dt = float(getattr(tf0, "delta_t"))
+    elif hasattr(tf0, "sample_rate"):
+        sr = float(getattr(tf0, "sample_rate"))
+        dt = 1.0 / sr if sr > 0 else 0.0
+    elif data_obj is not None and hasattr(data_obj, "dt"):
+        dt = float(getattr(data_obj, "dt"))
+    elif data_obj is not None and hasattr(data_obj, "delta_t"):
+        dt = float(getattr(data_obj, "delta_t"))
+    elif data_obj is not None and hasattr(data_obj, "sample_rate"):
+        sr = float(getattr(data_obj, "sample_rate"))
+        dt = 1.0 / sr if sr > 0 else 0.0
+
     if n_time <= 0 or dt <= 0:
         raise ValueError("tf_maps must provide positive-duration timeline via data and dt")
     return float(n_time) * dt

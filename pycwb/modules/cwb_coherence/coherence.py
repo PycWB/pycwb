@@ -14,7 +14,7 @@ from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, strains, nRMS_list):
+def coherence(config, strains, return_rejected: bool = False):
     """
     Select the significant pixels
 
@@ -57,7 +57,7 @@ def coherence(config, strains, nRMS_list):
   
     normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
 
-    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, nRMS_list, up_n) for i in
+    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected) for i in
                                     range(config.nRES)]
 
     logger.info("----------------------------------------")
@@ -67,7 +67,7 @@ def coherence(config, strains, nRMS_list):
     return fragment_clusters_multi_res
 
 
-def coherence_single_res(i, config, strains, nRMS_list, up_n=None):
+def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False):
     """
     Calculate the coherence for a single resolution
 
@@ -83,6 +83,8 @@ def coherence_single_res(i, config, strains, nRMS_list, up_n=None):
     :type wdm: WDM
     :param up_n: upsample factor
     :type up_n: int
+    :param return_rejected: if True, keep rejected clusters in output; if False, remove them
+    :type return_rejected: bool
     :return: (sparse_table, fragment_clusters)
     :rtype: (ROOT.SSeries, list[ROOT.netcluster])
     """
@@ -195,6 +197,9 @@ def coherence_single_res(i, config, strains, nRMS_list, up_n=None):
             c.select("subnet", config.select_subnet)
         else:
             c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
+
+        if not return_rejected:
+            c.remove_rejected()
 
         fragment_cluster = c
         fragment_clusters.append(fragment_cluster)

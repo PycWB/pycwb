@@ -154,6 +154,14 @@ class TimeFrequencySeries:
         return self.data.sample_rate
 
     @property
+    def dt(self):
+        """
+        time resolution (inverse of sample rate)
+        """
+        sr = self.sample_rate
+        return 1.0 / sr if sr > 0 else 0.0
+
+    @property
     def f_high(self):
         """
         high frequency cutoff

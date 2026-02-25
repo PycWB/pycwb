@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib import cm
+from scipy.special import gammaincc, gammainccinv
 
 
 @dataclass
@@ -1320,3 +1321,115 @@ def get_max_delay(detectors) -> float:
         return 0.0
 
     return float(max(abs(max_tau), abs(min_tau)))
+
+
+def calculate_e2or_from_acore(acore: float, n_ifo: int) -> float:
+    """
+    Compute cWB-like subnetwork energy threshold (`e2or`) from `Acore`.
+
+    This follows the C++ relation in `network::setAcore`:
+      p = 1 - Gamma(nIFO, acore^2 * nIFO)
+      e2or = iGamma(nIFO - 1, p)
+
+    Here `Gamma` / `iGamma` are implemented via regularized upper incomplete
+    gamma and its inverse (`gammaincc`, `gammainccinv`).
+
+    Parameters
+    ----------
+    acore : float
+        Core pixel amplitude threshold.
+    n_ifo : int
+        Number of detectors in network.
+
+    Returns
+    -------
+    float
+        Subnetwork energy threshold `e2or`.
+    """
+    n_ifo = int(max(1, n_ifo))
+    if n_ifo < 2:
+        return float(max(0.0, acore))
+
+    prob = float(gammaincc(float(n_ifo), float(acore) * float(acore) * float(n_ifo)))
+    prob = float(np.clip(prob, 1.0e-12, 1.0 - 1.0e-12))
+    return float(gammainccinv(float(n_ifo - 1), prob))
+
+
+def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
+    """Build sky directions as (ra, dec) arrays in radians."""
+    if healpix_order is not None and int(healpix_order) > 0:
+        try:
+            import healpy as hp
+            nside = 2 ** int(healpix_order)
+            npix = hp.nside2npix(nside)
+            theta, phi = hp.pix2ang(nside, np.arange(npix, dtype=np.int64), nest=False)
+            ra = np.asarray(phi, dtype=np.float64)
+            dec = (np.pi / 2.0) - np.asarray(theta, dtype=np.float64)
+            return ra, dec
+        except Exception:
+            pass
+
+    n_sky = int(max(1, n_sky))
+    idx = np.arange(n_sky, dtype=np.float64)
+    z = 1.0 - 2.0 * (idx + 0.5) / float(n_sky)
+    phi = (np.pi * (3.0 - np.sqrt(5.0)) * idx) % (2.0 * np.pi)
+    dec = np.arcsin(np.clip(z, -1.0, 1.0))
+    ra = phi
+    return ra.astype(np.float64), dec.astype(np.float64)
+
+
+def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time,
+                                   healpix_order=None, n_sky=None):
+    """
+    Compute pure-Python sky delay indices and antenna patterns.
+
+    Returns arrays compatible with `load_data_from_ifo` output:
+      - `ml`: int32 delay index, shape `(nIFO, nSky)`
+      - `FP`: float64 plus pattern, shape `(nIFO, nSky)`
+      - `FX`: float64 cross pattern, shape `(nIFO, nSky)`
+    """
+    detector_objs = [Detector(ifo) if isinstance(ifo, str) else ifo for ifo in ifos]
+    if len(detector_objs) == 0:
+        raise ValueError("No detectors provided")
+
+    n_ifo = len(detector_objs)
+    rate = float(sample_rate)
+    td_size = int(max(1, td_size))
+    if n_sky is None:
+        if healpix_order is not None and int(healpix_order) > 0:
+            n_sky = int(12 * (2 ** int(healpix_order)) ** 2)
+        else:
+            n_sky = 3072
+
+    ra, dec = _build_sky_directions(n_sky=n_sky, healpix_order=healpix_order)
+    n_sky = int(ra.size)
+
+    ref_idx = 0
+    for i, det in enumerate(detector_objs):
+        if det.name == ref_ifo:
+            ref_idx = i
+            break
+
+    sin_dec = np.sin(dec)
+    cos_dec = np.cos(dec)
+    cos_ra = np.cos(ra)
+    sin_ra = np.sin(ra)
+    n_hat = np.vstack((cos_dec * cos_ra, cos_dec * sin_ra, sin_dec)).T
+
+    c_light = float(constants.c.value)
+    ref_pos = detector_objs[ref_idx].vertex_vec_earth_centered
+
+    ml = np.zeros((n_ifo, n_sky), dtype=np.int32)
+    FP = np.zeros((n_ifo, n_sky), dtype=np.float64)
+    FX = np.zeros((n_ifo, n_sky), dtype=np.float64)
+
+    for i, det in enumerate(detector_objs):
+        dt = np.einsum('ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos) / c_light
+        delay_idx = np.rint(dt * rate).astype(np.int32)
+        ml[i] = np.clip(delay_idx, -td_size, td_size)
+
+        f_plus, f_cross = det.atenna_pattern(ra, dec, 0.0, float(gps_time))
+        FP[i] = np.asarray(f_plus, dtype=np.float64)
+        FX[i] = np.asarray(f_cross, dtype=np.float64)
+
+    return ml, FP, FX
