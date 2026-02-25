@@ -1,7 +1,16 @@
 import numpy as np
-import ROOT
-import cppyy
 
+try:
+    import ROOT
+    import cppyy
+except ImportError:
+    ROOT = None
+    import warnings
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 
 def convert_sparse_series_to_sseries(sparse_series):
     ss = ROOT.SSeries(np.double)()

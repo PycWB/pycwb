@@ -13,10 +13,6 @@ import logging
 
 from .regression_py import (
     regression_python,
-    _cwb_percentile_mean,
-    _cwb_rotated_products,
-    _build_correlation_matrix,
-    _build_crosscorr_vector,
 )
 from .whitening_py import (
     whitening_python,

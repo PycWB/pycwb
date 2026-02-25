@@ -6,7 +6,7 @@ from pycwb.types.network import Network
 from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.detector import get_max_delay as detector_get_max_delay
 from pycwb.types.time_series import TimeSeries
-from pycwb.types.time_frequency_series import TimeFrequencyMap
+from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config

@@ -1,5 +1,14 @@
-import ROOT
 import numpy as np
+try:
+    import ROOT
+except ImportError:
+    ROOT = None
+    import warnings
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 from gwpy.timeseries import TimeSeries
 from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
 import logging

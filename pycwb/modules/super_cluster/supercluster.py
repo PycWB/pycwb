@@ -140,7 +140,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         if network.pattern == 0:
             # TODO: pythonize this
             pwc.defragment(config.Tgap, config.Fgap)
-            logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+            logger.info("   defrag clusters|pixels      : %6d|%d", network.n_events, pwc.psize(-1))
 
         # convert to FragmentCluster and append to list
         fragment_cluster = convert_netcluster_to_fragment_clusters(pwc)

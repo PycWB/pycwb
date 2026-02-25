@@ -1,6 +1,15 @@
-import ROOT
+try:
+    import ROOT
+    import cppyy
+except ImportError:
+    ROOT = None
+    import warnings
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 import numpy as np
-import cppyy
 from pycwb.modules.cwb_conversions import convert_numpy_to_wavearray
 from ctypes import c_double
 

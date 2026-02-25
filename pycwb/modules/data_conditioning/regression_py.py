@@ -6,19 +6,274 @@ using TimeFrequencyMap methods and NumPy operations.
 """
 
 import logging
+from functools import partial
 
 import numpy as np
+import jax
+import jax.numpy as jnp
+from jax import config as jax_config
 from wdm_wavelet.wdm import WDM
+
+jax_config.update("jax_enable_x64", True)
 
 logger = logging.getLogger(__name__)
 
 
+@jax.jit
+def _jax_eigh(matrix):
+    """Compute eigendecomposition and return eigenpairs sorted descending."""
+    evals, evecs = jnp.linalg.eigh(matrix)
+    order = jnp.argsort(evals)[::-1]
+    return evals[order], evecs[:, order]
+
+
+@jax.jit
+def _jax_apply_filters(wq, wQ, filt00, filt90):
+    """Apply 00/90 regression filters to stacked sliding windows."""
+    val_core = wq @ filt00 - wQ @ filt90
+    valq_core = wq @ filt90 + wQ @ filt00
+    return val_core, valq_core
+
+
+def _jax_percentile_mean(arr, fraction, edge_samples):
+    """
+    JAX equivalent of cWB percentile mean used in matrix/vector statistics.
+
+    For positive fractions, keeps the lowest-|x| fraction after optional
+    edge trimming. Implemented without Python control flow so it is JIT-safe.
+    """
+    n = arr.shape[0]
+    ff = jnp.clip(jnp.abs(fraction), 0.0, 1.0)
+    nn = jnp.maximum(0, edge_samples)
+    idx = jnp.arange(n)
+    use_full = (nn == 0) | (2 * nn >= n - 2)
+    core_mask = (idx >= nn) & (idx < (n - nn))
+    core_mask = jnp.where(use_full, jnp.ones_like(core_mask, dtype=bool), core_mask)
+    core_count = jnp.sum(core_mask)
+    mean_all = jnp.mean(arr)
+
+    def _compute(_):
+        keep = jnp.maximum(1, (core_count * ff).astype(jnp.int32))
+        keep = jnp.minimum(keep, core_count)
+        abs_vals = jnp.where(core_mask, jnp.abs(arr), jnp.inf)
+        threshold = jnp.sort(abs_vals)[keep - 1]
+        select = core_mask & (abs_vals <= threshold)
+        select_count = jnp.sum(select)
+        select_sum = jnp.sum(jnp.where(select, arr, 0.0))
+        return jnp.where(select_count > 0, select_sum / select_count, mean_all)
+
+    return jax.lax.cond(core_count > 0, _compute, lambda _: mean_all, operand=None)
+
+
+def _jax_rotated_products(real, imag, lag, boundary):
+    """
+    Compute rotated products (ww, WW) at one lag, in JAX.
+
+    Mirrors the cWB ww/WW definitions used to build cross/autocorrelation
+    statistics in the regression solver.
+    """
+    n = real.shape[0]
+    j = jnp.arange(boundary, n - boundary)
+
+    def _neg(_):
+        rn = real[j]
+        in_ = imag[j]
+        jm = j - lag
+        rm = real[jm]
+        im = imag[jm]
+        return rn, in_, rm, im
+
+    def _pos(_):
+        jn = j + lag
+        rn = real[jn]
+        in_ = imag[jn]
+        rm = real[j]
+        im = imag[j]
+        return rn, in_, rm, im
+
+    rn, in_, rm, im = jax.lax.cond(lag < 0, _neg, _pos, operand=None)
+    ww = rn * rm + in_ * im
+    WW = im * rn - rm * in_
+    return ww, WW
+
+
+def _jax_build_matrix(acf, ccf, K, K2, fltr):
+    """
+    Build the real block matrix from ACF/CCF vectors for one TF layer.
+
+    Matrix layout matches the cWB single-witness LPE system.
+    """
+    ii = jnp.arange(-K, K + 1)
+    jj = jnp.arange(-K, K + 1)
+    lag_idx = ii[:, None] - jj[None, :] + K2
+
+    aa = acf[lag_idx]
+    cc = ccf[lag_idx]
+    zero_mask = (ii[:, None] == 0) | (jj[None, :] == 0)
+    aa = jnp.where(zero_mask, aa * fltr, aa)
+    cc = jnp.where(zero_mask, cc * fltr, cc)
+
+    top = jnp.concatenate([aa, cc], axis=1)
+    bottom = jnp.concatenate([-cc, aa], axis=1)
+    return jnp.concatenate([top, bottom], axis=0)
+
+
+@partial(jax.jit, static_argnames=("K", "K2", "K4", "half"))
+def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
+                           eigen_threshold, eigen_num, regulator_code,
+                           apply_threshold, rate_tf, edge_seconds):
+    """
+    Process one TF layer end-to-end in JAX.
+
+    Steps: build statistics -> construct matrix -> solve regularized system ->
+    apply filter -> threshold by non-edge RMS -> return predicted noise layer.
+    """
+    n_time = real.shape[0]
+    power = real * real + imag * imag
+    norm0_sq = _jax_percentile_mean(power, fm, edge_samples)
+    norm0 = jnp.sqrt(norm0_sq)
+    valid_norm = jnp.isfinite(norm0) & (norm0 > 0)
+    safe_norm = jnp.where(valid_norm, norm0, 1.0)
+
+    # Build cWB cross vector V over lags [-K, K].
+    def _build_v(i, v_cross):
+        lag = i - K
+        ww, WW = _jax_rotated_products(real, imag, lag, K)
+        idx = K + lag
+        base = safe_norm * safe_norm
+        v0 = _jax_percentile_mean(ww, fm, edge_samples) / base
+        v1 = _jax_percentile_mean(WW, fm, edge_samples) / base
+        scale = jnp.where(lag == 0, fltr, 1.0)
+        v_cross = v_cross.at[idx].set(v0 * scale)
+        v_cross = v_cross.at[idx + half].set(v1 * scale)
+        return v_cross
+
+    # Build cWB autocorrelation/cross-correlation vectors over [-2K, 2K].
+    def _build_acf(i, state):
+        acf, ccf = state
+        lag = i - K2
+        ww, WW = _jax_rotated_products(real, imag, lag, K2)
+        idx = lag + K2
+        base = safe_norm * safe_norm
+        acf = acf.at[idx].set(_jax_percentile_mean(ww, fm, edge_samples) / base)
+        ccf = ccf.at[idx].set(_jax_percentile_mean(WW, fm, edge_samples) / base)
+        return acf, ccf
+
+    v_cross = jax.lax.fori_loop(0, 2 * K + 1, _build_v, jnp.zeros((K4,), dtype=jnp.float64))
+    acf, ccf = jax.lax.fori_loop(
+        0,
+        4 * K + 1,
+        _build_acf,
+        (jnp.zeros((4 * K + 1,), dtype=jnp.float64), jnp.zeros((4 * K + 1,), dtype=jnp.float64)),
+    )
+
+    # Solve regularized linear system in eigen basis.
+    matrix = _jax_build_matrix(acf, ccf, K, K2, fltr)
+    evals, evecs = _jax_eigh(matrix)
+
+    th = jnp.where(eigen_threshold < 0, -eigen_threshold * evals[0], eigen_threshold + 1.0e-12)
+    nlast = jnp.sum(evals >= th) - 1
+    nlast = jnp.maximum(nlast, 1)
+
+    ne = jnp.where(eigen_num <= 0, K4, eigen_num - 1)
+    ne = jnp.minimum(ne, K4 - 1)
+    ne = jnp.maximum(ne, 1)
+    nlast = jnp.minimum(nlast, ne)
+
+    last_s = jnp.where(evals[nlast] > 0, 1.0 / evals[nlast], 0.0)
+    last_m = jnp.where(evals[0] > 0, 1.0 / evals[0], 0.0)
+    last = jnp.where(regulator_code == 1, last_s, jnp.where(regulator_code == 2, last_m, 0.0))
+
+    idxs = jnp.arange(K4)
+    inv_evals = jnp.where(evals > 0, 1.0 / evals, 0.0)
+    lam = jnp.where(idxs <= nlast, inv_evals, last)
+
+    vv = (evecs.T @ v_cross) * lam
+    aa = evecs @ vv
+    filt00 = aa[:2 * K + 1]
+    filt90 = aa[half:half + 2 * K + 1]
+
+    # Apply filters using explicit sliding windows in JAX.
+    qq = real / safe_norm
+    QQ = imag / safe_norm
+    centers = jnp.arange(K, n_time - K)
+
+    def _window_at(center):
+        start = center - K
+        q_slice = jax.lax.dynamic_slice(qq, (start,), (2 * K + 1,))
+        Q_slice = jax.lax.dynamic_slice(QQ, (start,), (2 * K + 1,))
+        return q_slice, Q_slice
+
+    wq, wQ = jax.vmap(_window_at)(centers)
+    val_core, VAL_core = _jax_apply_filters(wq, wQ, filt00, filt90)
+
+    nn = jnp.zeros((n_time,), dtype=jnp.float64).at[K:n_time - K].set(val_core)
+    NN = jnp.zeros((n_time,), dtype=jnp.float64).at[K:n_time - K].set(VAL_core)
+
+    # RMS-based gate over non-edge region, matching cWB threshold behavior.
+    kk = jnp.int32(rate_tf * edge_seconds)
+    kk = jnp.maximum(kk, K)
+    kk = kk + 1
+    s0 = jnp.minimum(jnp.maximum(kk, 0), n_time)
+    s1 = jnp.maximum(s0, n_time - kk)
+    valid_range = s1 > s0
+
+    tidx = jnp.arange(n_time)
+    mask = (tidx >= s0) & (tidx < s1)
+    count = jnp.maximum(jnp.sum(mask), 1)
+
+    nn_mean = jnp.sum(jnp.where(mask, nn, 0.0)) / count
+    NN_mean = jnp.sum(jnp.where(mask, NN, 0.0)) / count
+    nn_var = jnp.sum(jnp.where(mask, (nn - nn_mean) ** 2, 0.0)) / count
+    NN_var = jnp.sum(jnp.where(mask, (NN - NN_mean) ** 2, 0.0)) / count
+    layer_power = nn_var + NN_var
+
+    included = valid_norm & valid_range & (layer_power >= apply_threshold * apply_threshold)
+    noise = (nn + 1j * NN) * norm0
+    noise = jnp.where(included, noise, jnp.zeros_like(noise))
+    return noise, included
+
+
+@partial(jax.jit, static_argnames=("K", "K2", "K4", "half"))
+def _jax_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samples, fltr,
+                        eigen_threshold, eigen_num, regulator_code,
+                        apply_threshold, rate_tf, edge_seconds):
+    """Vectorized JAX execution of `_jax_process_one_layer` across layers."""
+    return jax.vmap(
+        _jax_process_one_layer,
+        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        out_axes=(0, 0),
+    )(
+        real_layers,
+        imag_layers,
+        K,
+        K2,
+        K4,
+        half,
+        fm,
+        edge_samples,
+        fltr,
+        eigen_threshold,
+        eigen_num,
+        regulator_code,
+        apply_threshold,
+        rate_tf,
+        edge_seconds,
+    )
+
+
 def regression_python(config, h):
     """
-    Clean data with regression method (pure-Python implementation).
+        Clean data with regression method (JAX-accelerated implementation).
 
     This follows the cWB LPE regression path used in `regression.py`:
-    target TF map + self-witness ("target"), then setFilter/setMatrix/solve/apply.
+        target TF map + self-witness ("target"), then setFilter/setMatrix/solve/apply.
+
+        Notes
+        -----
+        - JAX is required and used for the heavy per-layer computation path.
+        - Legacy NumPy helper functions are kept below for compatibility with
+            `data_conditioning_python.py` imports.
     """
     import pycbc.types
 
@@ -98,131 +353,36 @@ def regression_python(config, h):
     fltr = 0.0
 
     noise_coeff = np.zeros_like(coeff, dtype=np.complex128)
-    included_layers = 0
+    regulator_code = 1 if regulator == 's' else (2 if regulator == 'm' else 0)
 
-    for layer in selected_layers:
-        real = np.asarray(coeff[layer].real, dtype=np.float64)
-        imag = np.asarray(coeff[layer].imag, dtype=np.float64)
+    # Pack selected layers and run batched JAX processing in one call.
+    selected_layers_arr = np.asarray(selected_layers, dtype=np.int32)
+    real_layers = jnp.asarray(np.asarray(coeff[selected_layers_arr].real, dtype=np.float64))
+    imag_layers = jnp.asarray(np.asarray(coeff[selected_layers_arr].imag, dtype=np.float64))
 
-        power = real * real + imag * imag
-        norm0 = np.sqrt(_cwb_percentile_mean(power, fm, edge_samples))
-        norm1 = norm0  # self-witness for LPE
-        if not np.isfinite(norm0) or norm0 <= 0:
-            continue
+    noise_layers_jax, include_mask_jax = _jax_process_layers(
+        real_layers,
+        imag_layers,
+        K,
+        K2,
+        K4,
+        half,
+        fm,
+        int(edge_samples),
+        fltr,
+        float(eigen_threshold),
+        int(eigen_num),
+        int(regulator_code),
+        float(apply_threshold),
+        float(rate_tf),
+        float(edge_seconds),
+    )
 
-        # Build cross vector V and symmetric matrix M (single-witness case).
-        v_cross = np.zeros(K4, dtype=np.float64)
-        acf = np.zeros(4 * K + 1, dtype=np.float64)
-        ccf = np.zeros(4 * K + 1, dtype=np.float64)
-
-        for lag in range(-K, K + 1):
-            ww, WW = _cwb_rotated_products(real, imag, lag, K)
-            idx = K + lag
-            v_cross[idx] = _cwb_percentile_mean(ww, fm, edge_samples) / (norm0 * norm1)
-            v_cross[idx + half] = _cwb_percentile_mean(WW, fm, edge_samples) / (norm0 * norm1)
-            if lag == 0:
-                v_cross[idx] *= fltr
-                v_cross[idx + half] *= fltr
-
-        for lag in range(-K2, K2 + 1):
-            ww, WW = _cwb_rotated_products(real, imag, lag, K2)
-            idx = lag + K2
-            acf[idx] = _cwb_percentile_mean(ww, fm, edge_samples) / (norm1 * norm1)
-            ccf[idx] = _cwb_percentile_mean(WW, fm, edge_samples) / (norm1 * norm1)
-
-        matrix = np.zeros((K4, K4), dtype=np.float64)
-        for ii in range(-K, K + 1):
-            row_r = ii + K
-            row_i = row_r + half
-            for jj in range(-K, K + 1):
-                col_r = jj + K
-                col_i = col_r + half
-                lag_idx = ii - jj + K2
-                aa = acf[lag_idx]
-                cc = ccf[lag_idx]
-                if ii == 0 or jj == 0:
-                    aa *= fltr
-                    cc *= fltr
-
-                matrix[row_r, col_r] = aa
-                matrix[col_r, row_r] = aa
-                matrix[row_r, col_i] = cc
-                matrix[col_i, row_r] = cc
-                matrix[row_i, col_r] = -cc
-                matrix[col_r, row_i] = -cc
-                matrix[row_i, col_i] = aa
-                matrix[col_i, row_i] = aa
-
-        # cWB solve(): eigen decomposition + regulator in eigen basis.
-        try:
-            evals, evecs = np.linalg.eigh(matrix)
-        except np.linalg.LinAlgError:
-            continue
-
-        # ROOT implementation expects eigenvalues sorted descending.
-        order = np.argsort(evals)[::-1]
-        evals = evals[order]
-        evecs = evecs[:, order]
-
-        th = (-eigen_threshold * evals[0]) if eigen_threshold < 0 else (eigen_threshold + 1.0e-12)
-        nlast = int(np.sum(evals >= th) - 1)
-        if nlast < 1:
-            nlast = 1
-
-        ne = K4 if eigen_num <= 0 else (eigen_num - 1)
-        if ne >= K4:
-            ne = K4 - 1
-        if ne < 1:
-            ne = 1
-        if nlast > ne:
-            nlast = ne
-
-        if regulator == 's':
-            last = 1.0 / evals[nlast] if evals[nlast] > 0 else 0.0
-        elif regulator == 'm':
-            last = 1.0 / evals[0] if evals[0] > 0 else 0.0
-        else:  # hard
-            last = 0.0
-
-        lam = np.full(K4, last, dtype=np.float64)
-        positive = evals[:nlast + 1] > 0
-        lam[:nlast + 1] = 0.0
-        lam[:nlast + 1][positive] = 1.0 / evals[:nlast + 1][positive]
-
-        vv = (evecs.T @ v_cross) * lam
-        aa = evecs @ vv
-        filt00 = aa[:2 * K + 1]
-        filt90 = aa[half:half + 2 * K + 1]
-
-        # cWB _apply_: produce predicted 00/90 witness noise for this layer.
-        qq = real / norm1
-        QQ = imag / norm1
-        wq = np.lib.stride_tricks.sliding_window_view(qq, 2 * K + 1)
-        wQ = np.lib.stride_tricks.sliding_window_view(QQ, 2 * K + 1)
-        val_core = wq @ filt00 - wQ @ filt90
-        VAL_core = wq @ filt90 + wQ @ filt00
-
-        nn = np.zeros(n_time, dtype=np.float64)
-        NN = np.zeros(n_time, dtype=np.float64)
-        nn[K:n_time - K] = val_core
-        NN[K:n_time - K] = VAL_core
-
-        # cWB apply threshold: per-layer RMS gate over non-edge region.
-        kk = int(rate_tf * edge_seconds)
-        if kk < K:
-            kk = K
-        kk += 1
-        s0 = min(max(kk, 0), n_time)
-        s1 = max(s0, n_time - kk)
-        if s1 <= s0:
-            continue
-
-        layer_power = np.std(nn[s0:s1])**2 + np.std(NN[s0:s1])**2
-        if layer_power < apply_threshold * apply_threshold:
-            continue
-
-        included_layers += 1
-        noise_coeff[layer] = (nn * norm0) + 1j * (NN * norm0)
+    # Bring results back to NumPy for downstream WDM/PyCBC integration.
+    noise_layers = np.asarray(noise_layers_jax)
+    include_mask = np.asarray(include_mask_jax, dtype=bool)
+    included_layers = int(np.sum(include_mask))
+    noise_coeff[selected_layers_arr] = noise_layers
 
     if included_layers == 0:
         logger.info("  Regression complete: no layers passed threshold")
@@ -248,153 +408,3 @@ def regression_python(config, h):
     logger.info(f"  Regression complete: {len(cleaned_pycbc)} output samples")
     return cleaned_pycbc
 
-
-def _cwb_percentile_mean(data, fraction, edge_samples):
-    """
-    Approximate wavearray::mean(double f) used in cWB matrix building.
-
-    For positive f: keep the lowest |x| fraction after removing edge samples.
-    """
-    arr = np.asarray(data, dtype=np.float64)
-    n = arr.size
-    if n == 0:
-        return 0.0
-
-    ff = abs(float(fraction))
-    if ff > 1.0:
-        ff = 1.0
-
-    nn = int(max(0, edge_samples))
-    if nn == 0 or 2 * nn >= n - 2:
-        return float(np.mean(arr))
-
-    core = arr[nn:n - nn]
-    if core.size == 0:
-        return float(np.mean(arr))
-
-    if ff == 0.0:
-        return float(np.median(core))
-
-    if fraction > 0:
-        keep = int(core.size * ff)
-        if keep < 1:
-            keep = 1
-        if keep >= core.size:
-            return float(np.mean(core))
-        idx = np.argpartition(np.abs(core), keep - 1)[:keep]
-        return float(np.mean(core[idx]))
-
-    # Two-sided percentile mean for negative fraction (unused in current regression path).
-    keep = int(core.size * ff)
-    if keep < 1:
-        keep = 1
-    if keep >= core.size:
-        return float(np.mean(core))
-    sorted_core = np.sort(core)
-    left = (core.size - keep) // 2
-    right = left + keep
-    return float(np.mean(sorted_core[left:right]))
-
-
-def _cwb_rotated_products(real, imag, lag, boundary):
-    """
-    Compute cWB ww/WW products for one layer at a given lag.
-    """
-    n = real.size
-    if n <= 2 * boundary + 1:
-        return np.zeros(1, dtype=np.float64), np.zeros(1, dtype=np.float64)
-
-    j = np.arange(boundary, n - boundary, dtype=np.int64)
-    if lag < 0:
-        rn = real[j]
-        in_ = imag[j]
-        jm = j - lag
-        rm = real[jm]
-        im = imag[jm]
-    else:
-        jn = j + lag
-        rn = real[jn]
-        in_ = imag[jn]
-        rm = real[j]
-        im = imag[j]
-
-    ww = rn * rm + in_ * im
-    WW = im * rn - rm * in_
-    return ww, WW
-
-
-def _build_correlation_matrix(signal, K):
-    """
-    Build Toeplitz autocorrelation matrix R(i,j) = E[x(n) * x(n+j-i)].
-
-    This creates a symmetric positive semi-definite autocorrelation matrix
-    suitable for Wiener filter design via eigenvalue decomposition.
-
-    Parameters
-    ----------
-    signal : np.ndarray
-        1D signal array.
-    K : int
-        Maximum lag (filter half-length).
-
-    Returns
-    -------
-    np.ndarray
-        (2*K+1, 2*K+1) symmetric autocorrelation matrix (Toeplitz structure).
-    """
-    signal = np.asarray(signal, dtype=np.float64)
-    n = len(signal)
-
-    # Compute autocorrelation at lags 0 to 2K
-    # r[k] = E[x(n) * x(n-k)]
-    autocorr = np.zeros(2 * K + 1)
-
-    for lag in range(2 * K + 1):
-        if lag == 0:
-            autocorr[lag] = np.mean(signal**2)
-        else:
-            # Correlation at positive lag
-            if lag < n:
-                autocorr[lag] = np.mean(signal[lag:] * signal[:-lag])
-
-    # Build Toeplitz matrix from autocorrelation values
-    # R[i,j] depends on |i - j|, creating a Hermitian Toeplitz matrix
-    R = np.zeros((2 * K + 1, 2 * K + 1))
-    for i in range(2 * K + 1):
-        for j in range(2 * K + 1):
-            lag = np.abs(i - j)
-            R[i, j] = autocorr[lag]
-
-    # Ensure positive semi-definiteness by adding small regularization
-    eigvals = np.linalg.eigvalsh(R)
-    if eigvals[0] < 0:
-        R += np.eye(2 * K + 1) * (np.abs(eigvals[0]) + 1e-10)
-
-    return R
-
-
-def _build_crosscorr_vector(signal, K):
-    """
-    Build cross-correlation vector p(i) = E[x(n) * x(n-i)] for i in [-K, K].
-
-    Parameters
-    ----------
-    signal : np.ndarray
-        1D signal array.
-    K : int
-        Maximum lag.
-
-    Returns
-    -------
-    np.ndarray
-        (2*K+1,) cross-correlation vector.
-    """
-    p = np.zeros(2 * K + 1)
-
-    p[K] = np.mean(signal**2)  # Lag 0
-
-    for lag in range(1, K + 1):
-        p[K + lag] = np.mean(signal[lag:] * signal[:-lag])
-        p[K - lag] = np.mean(signal[:-lag] * signal[lag:])
-
-    return p

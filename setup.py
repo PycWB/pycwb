@@ -2,6 +2,8 @@ import os, shutil
 import re
 import subprocess, platform
 import sys
+import importlib.util
+import warnings
 
 from setuptools import setup, Command, Extension
 from setuptools import find_packages
@@ -51,6 +53,7 @@ install_requires = [
     "healpy",
     "wdm-wavelet",
     "burst-waveform",
+    "jsonschema"
     # "nds2-client",
     # "python-nds2-client"
 ]
@@ -176,17 +179,38 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', '--build', '.', '--target', 'install'] + build_args, cwd=self.build_temp)
 
 
+def has_pyroot():
+    spec = importlib.util.find_spec("ROOT")
+    print(f"sys.path: {sys.path[:3]}...")  # First few paths
+    print(f"ROOT spec: {spec}")
+    print(f"sys.modules has ROOT: {'ROOT' in sys.modules}")
+    return spec is not None
+
+
+HAS_PYROOT = has_pyroot()
+
+cmdclass = {
+    'build_cwb': BuildCWB,
+    'clean': Clean
+}
+
+ext_modules = []
+if HAS_PYROOT:
+    cmdclass['build_ext'] = CMakeBuild
+    ext_modules = [CMakeExtension('wavelet', 'cwb-core')]
+else:
+    message = "PyROOT not found: skipping C++ wavelet extension build"
+    warnings.warn(message)
+    sys.stderr.write(message + "\n")
+
+
 setup(
     long_description=read('README.md'),
     long_description_content_type="text/markdown",
     url="https://git.ligo.org/yumeng.xu/pycwb",
     install_requires=install_requires,
-    cmdclass={
-        'build_cwb': BuildCWB,
-        'build_ext': CMakeBuild,
-        'clean': Clean
-    },
-    ext_modules=[CMakeExtension('wavelet', 'cwb-core')],
+    cmdclass=cmdclass,
+    ext_modules=ext_modules,
     scripts=["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,
