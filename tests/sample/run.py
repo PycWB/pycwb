@@ -42,6 +42,33 @@ xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
 
 super_fragment_clusters = supercluster_wrapper(config, None, fragment_clusters, strains,
                                             xtalk_coeff, xtalk_lookup_table, layers)
+
+from pycwb.modules.likelihoodWP.likelihood import likelihood
+
+checked = False
+for fragment_cluster in super_fragment_clusters:
+    for k, selected_cluster in enumerate(fragment_cluster.clusters):
+        if selected_cluster.cluster_status > 0:
+            continue
+        result_cluster = likelihood(
+            config.nIFO,
+            selected_cluster,
+            config.MRAcatalog,
+            strains=strains,
+            config=config,
+            cluster_id=k + 1,
+        )
+        if result_cluster is not None:
+            print("likelihood td_amp reloaded:", getattr(result_cluster, "_td_amp_reloaded", False))
+        else:
+            print("likelihood rejected cluster; td_amp reloaded:", getattr(selected_cluster, "_td_amp_reloaded", False))
+        checked = True
+        break
+    if checked:
+        break
+
+if not checked:
+    print("No accepted clusters found for likelihood check")
 ## ignore the release error below
 # Exception ignored in: <function TimeFrequencySeries.__del__ at 0x1c932ee80>
 # Traceback (most recent call last):

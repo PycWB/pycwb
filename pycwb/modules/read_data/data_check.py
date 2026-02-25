@@ -1,9 +1,7 @@
 import numpy as np
 from gwpy.timeseries import TimeSeries
 import logging
-
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries, \
-    convert_wavearray_to_pycbc_timeseries
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +30,20 @@ def data_check(data: TimeSeries, sample_rate: int):
 
 def check_and_resample(data, config, ifo_index):
     """
-    Check data and resample it
+    Check data and resample it.
+
+    Input is normalized to pycwb TimeSeries via TimeSeries.from_input.
+
     :param data:
-    :type data: gwpy.timeseries.TimeSeries or pycbc.types.timeseries.TimeSeries
+    :type data: pycwb.types.time_series.TimeSeries or pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries
     :param config:
     :param ifo_index:
-    :return:
+    :return: pycwb TimeSeries
     """
-    if isinstance(data, TimeSeries):
-        data = data.to_pycbc()
+    data = PycwbTimeSeries.from_input(data)
 
     # check if data contains NaNs
-    if data.data.any() == np.nan:
+    if np.isnan(np.asarray(data.data)).any():
         raise ValueError('Data contains NaNs')
     # check if the sample rate is consitent with configuation
     if data.sample_rate != config.inRate:
@@ -51,23 +51,18 @@ def check_and_resample(data, config, ifo_index):
 
     # DC correction
     if config.dcCal[ifo_index] > 0 and config.dcCal[ifo_index] != 1.0:
-        data.data *= config.dcCal[config.ifo.indexof(ifo_index)]
+        data.data *= config.dcCal[ifo_index]
         logger.info(f"DC correction: {config.dcCal[ifo_index]}")
 
     # resampling
     if config.fResample > 0:
         logger.info(f"Resampling data from {data.sample_rate} to {config.fResample}")
-        # data = data.resample(1.0 / config.fResample)
-        w = convert_to_wavearray(data)
-        w.Resample(config.fResample)
-        data = convert_wavearray_to_pycbc_timeseries(w)
+        data = data.cwb_resampling(float(config.fResample))
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
     if new_sample_rate != config.inRate:
         logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
-        w = convert_to_wavearray(data)
-        w.Resample(new_sample_rate)
-        data = convert_wavearray_to_pycbc_timeseries(w)
+        data = data.cwb_resampling(float(new_sample_rate))
     # data = data.resample(1.0 / new_sample_rate)
 
     # rescaling

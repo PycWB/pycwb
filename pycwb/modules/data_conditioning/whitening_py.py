@@ -26,7 +26,11 @@ def whitening_python(config, h):
     import pycbc.types
 
     if not isinstance(h, pycbc.types.TimeSeries):
-        h_ts = pycbc.types.TimeSeries(h.value, delta_t=h.dt.value, epoch=h.t0.value)
+        h_ts = pycbc.types.TimeSeries(
+            h.value if hasattr(h, 'value') else h.data,
+            delta_t=h.dt.value if hasattr(h, 'dt') and hasattr(h.dt, 'value') else h.dt,
+            epoch=h.t0.value if hasattr(h, 't0') and hasattr(h.t0, 'value') else h.t0,
+        )
     else:
         h_ts = h
 

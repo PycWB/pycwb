@@ -10,7 +10,7 @@ import logging
 import pathlib
 
 from ..modules.xtalk.xtalk_data import check_and_download_xtalk_data
-from ..types.wdm_xtalk import WDMXTalkCatalog
+from ..modules.xtalk.monster import read_catalog_metadata
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
@@ -223,15 +223,37 @@ class Config:
         FileNotFoundError: if MRAcatalog does not exist
         """
         logger.info("Checking MRA catalog")
-        wdm_MRA = WDMXTalkCatalog(self.MRAcatalog)
+        metadata = read_catalog_metadata(self.MRAcatalog)
+        layers = metadata['layers'].tolist() if hasattr(metadata['layers'], 'tolist') else [int(x) for x in metadata['layers']]
+        n_res = int(metadata['nRes'])
 
-        # check layers
-        wdm_MRA.check_layers_with_MRAcatalog(self.l_low, self.l_high, self.nRES)
+        check_layers = 0
+        for i in range(self.l_low, self.l_high + 1):
+            level = self.l_high + self.l_low - i
+            expected_layers = 2 ** level if level > 0 else 0
+            for j in range(n_res):
+                if expected_layers == int(layers[j]):
+                    check_layers += 1
 
-        # update beta order and precision
-        if wdm_MRA.tag != 0:
-            logger.info(f"MRA catalog has tag {wdm_MRA.tag}, updating beta order and precision from MRA catalog")
-            self.WDM_beta_order, self.WDM_precision = int(wdm_MRA.beta_order), int(wdm_MRA.precision)
+        if check_layers != self.nRES:
+            logger.error("analysis layers do not match the MRA catalog")
+            logger.error("analysis layers : ")
+            for level in range(self.l_high, self.l_low - 1, -1):
+                layers_level = 1 << level if level > 0 else 0
+                logger.error("level : %s layers : %s", level, layers_level)
+
+            logger.error("MRA catalog layers : ")
+            for i in range(n_res):
+                logger.error("layers : %s", int(layers[i]))
+            raise ValueError("analysis layers do not match the MRA catalog")
+
+        if float(metadata.get('tag', 0.0)) != 0.0:
+            logger.info(
+                "MRA catalog has tag %s, updating beta order and precision from MRA catalog",
+                metadata.get('tag', 0.0),
+            )
+            self.WDM_beta_order = int(metadata.get('beta_order', self.WDM_beta_order or 0))
+            self.WDM_precision = int(metadata.get('precision', self.WDM_precision or 0))
 
     @staticmethod
     def get_precision(cluster_size_threshold, healpix_order):

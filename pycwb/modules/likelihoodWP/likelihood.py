@@ -1,9 +1,12 @@
 from math import sqrt
+import logging
 import numpy as np
 from numba import njit, prange, float32
 from numba.typed import List
-from pycwb.modules.cwb_conversions import convert_wavearray_to_nparray
+from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.network_cluster import Cluster
+from pycwb.types.time_series import TimeSeries
+from pycwb.types.detector import compute_sky_delay_and_patterns
 from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
@@ -11,12 +14,129 @@ from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps
 from pycwb.modules.xtalk.type import XTalk
 from .typing import SkyStatistics, SkyMapStatistics
 
-def likelihood(network, nIFO, cluster, MRAcatalog):
+
+logger = logging.getLogger(__name__)
+
+
+def _expected_td_vec_len(td_size):
+    return 4 * int(td_size) + 2
+
+
+def _normalize_wdm_layers(layer_tag):
+    layer_tag = int(layer_tag)
+    if layer_tag <= 1:
+        return 1
+    candidate = layer_tag - 1
+    return candidate if candidate % 2 == 0 else layer_tag
+
+
+def _normalize_strains(strains):
+    normalized = []
+    for strain in strains:
+        if isinstance(strain, TimeSeries):
+            normalized.append(strain)
+        elif hasattr(strain, "data") and isinstance(getattr(strain, "data"), TimeSeries):
+            normalized.append(getattr(strain, "data"))
+        else:
+            normalized.append(TimeSeries.from_input(strain))
+    return normalized
+
+
+def _resolve_runtime_parameters(config, nIFO):
+    if config is None:
+        raise ValueError("config is required for pure-Python likelihood")
+    acor = float(getattr(config, "Acore"))
+    gamma = float(getattr(config, "gamma", 0.0))
+    delta = float(getattr(config, "delta", 0.0))
+    net_rho = float(getattr(config, "netRHO", 0.0))
+    net_cc = float(getattr(config, "netCC", 0.0))
+
+    network_energy_threshold = 2 * acor * acor * nIFO
+    gamma_regulator = gamma * gamma * 2 / 3
+    delta_regulator = abs(delta) if abs(delta) < 1 else 1
+    netEC_threshold = net_rho * net_rho * 2
+    return network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, net_cc
+
+
+def _ensure_td_amp(cluster, nIFO, strains=None, config=None):
+    if len(cluster.pixels) == 0:
+        return False
+
+    has_td = True
+    for pixel in cluster.pixels:
+        td_amp = getattr(pixel, "td_amp", None)
+        if td_amp is None or len(td_amp) < nIFO:
+            has_td = False
+            break
+
+    if has_td:
+        return False
+
+    if strains is None or config is None:
+        raise ValueError("likelihood requires `strains` and `config` when cluster pixels do not contain td_amp")
+
+    normalized_strains = _normalize_strains(strains)
+
+    unique_layers = sorted({int(_normalize_wdm_layers(pixel.layers)) for pixel in cluster.pixels})
+    wdm_context_by_layers = {}
+
+    for layer_count in unique_layers:
+        wdm = WDMWavelet(
+            M=int(layer_count),
+            K=int(layer_count),
+            beta_order=config.WDM_beta_order,
+            precision=config.WDM_precision,
+        )
+        wdm.set_td_filter(int(config.TDSize), 1)
+
+        detector_tf_maps = []
+        for n in range(nIFO):
+            strain = normalized_strains[n]
+            detector_tf_maps.append(
+                wdm.t2w(
+                    np.asarray(strain.data, dtype=np.float64),
+                    sample_rate=float(strain.sample_rate),
+                    t0=float(strain.t0),
+                    MM=-1,
+                )
+            )
+
+        context = {"wdm": wdm, "tf_maps": detector_tf_maps}
+        wdm_context_by_layers[int(layer_count)] = context
+        wdm_context_by_layers[int(layer_count) + 1] = context
+
+    td_vec_default = np.zeros(_expected_td_vec_len(config.TDSize), dtype=np.float32)
+    for pixel in cluster.pixels:
+        layer_key = int(pixel.layers)
+        context = wdm_context_by_layers.get(layer_key)
+        if context is None:
+            context = wdm_context_by_layers.get(layer_key - 1)
+        if context is None:
+            raise ValueError(f"Missing WDM context for pixel layer {layer_key}")
+
+        wdm = context["wdm"]
+        detector_tf_maps = context["tf_maps"]
+        pixel_td_amp = []
+        for n in range(nIFO):
+            try:
+                td_vec = wdm.get_td_vec(
+                    detector_tf_maps[n],
+                    pixel_index=int(pixel.data[n].index),
+                    K=int(config.TDSize),
+                    mode="a",
+                )
+                pixel_td_amp.append(np.asarray(td_vec, dtype=np.float32))
+            except Exception:
+                pixel_td_amp.append(td_vec_default.copy())
+        pixel.td_amp = pixel_td_amp
+
+    return True
+
+def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
 
     Args:
-        network (Network): The cWB network object containing interferometer data.
         nIFO (int): Number of interferometers.
         cluster (Cluster): The cluster object containing pixel data.
         MRAcatalog (str): Path to the MRA catalog for xtalk information.
@@ -24,18 +144,15 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     Returns:
         Cluster: The updated cluster object with filled detection statistics.
     """
-    # load network parameters
+    td_amp_reloaded = _ensure_td_amp(cluster, nIFO, strains=strains, config=config)
+    setattr(cluster, "_td_amp_reloaded", bool(td_amp_reloaded))
 
-    # prepare the variables from cWB objects
-    acor = network.net.acor
-    network_energy_threshold = 2 * acor * acor * nIFO
-    gamma_regulator = network.net.gamma * network.net.gamma * 2 / 3
-    delta_regulator = abs(network.net.delta) if abs(network.net.delta) < 1 else 1
+    # prepare runtime parameters
+    network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, netCC = _resolve_runtime_parameters(
+        config, nIFO
+    )
+
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.])
-    netEC_threshold = network.net.netRHO * network.net.netRHO * 2
-    netCC = network.net.netCC
-
-    n_sky = network.net.index.size()
     n_pix = len(cluster.pixels)
 
     # Load xtalk catalog
@@ -44,7 +161,15 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
 
     # Extract data from python object to numpy arrays for numba
-    ml, FP, FX = load_data_from_ifo(network, nIFO)
+    ml, FP, FX = load_data_from_ifo(
+        nIFO=nIFO,
+        strains=strains,
+        config=config,
+        ml=ml,
+        FP=FP,
+        FX=FX,
+    )
+    n_sky = int(ml.shape[1])
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
 
     # Transpose array and convert to float32 for speedup
@@ -73,9 +198,14 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
 
     # Check if the cluster is rejected based on the threshold cuts, 
     # the function will return the reason for rejection. If the cluster is not rejected, it will return None.
+    selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
+    logger.info("Selected core pixels: %d", selected_core_pixels)
+
     rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
     if rejected:
-        print(f"Cluster rejected due to threshold cuts: {rejected}")
+        logger.info("Cluster rejected due to threshold cuts: %s", rejected)
+        logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+        logger.info("\t <- rejected    ")
         return None
 
     # Fill the detection statistics into the cluster and pixels for return
@@ -88,6 +218,13 @@ def likelihood(network, nIFO, cluster, MRAcatalog):
 
     # Placeholder: Get the error region
     get_error_region(cluster)
+
+    detected = cluster.cluster_status == -1
+    logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+    if detected:
+        logger.info("\t -> SELECTED !!!")
+    else:
+        logger.info("\t <- rejected    ")
 
     return cluster
 
@@ -133,11 +270,10 @@ def load_data_from_pixels(pixels, nifo):
     return rms, td00, td90, td_energy
 
 
-def load_data_from_ifo(network, nIFO):
+def load_data_from_ifo(nIFO, strains=None, config=None, ml=None, FP=None, FX=None):
     """
-    Load the data from cWB ROOT objects into numpy arrays for numba processing.
+    Load the sky delay/pattern data into numpy arrays for numba processing.
     Args:
-        network (Network): The cWB network object containing interferometer data.
         nIFO (int): Number of interferometers.
 
     Returns:
@@ -146,19 +282,24 @@ def load_data_from_ifo(network, nIFO):
             - FP (np.ndarray): Array of f+ polarization data for each interferometer.
             - FX (np.ndarray): Array of fx polarization data for each interferometer.
     """
-    ml = []
-    FP = []
-    FX = []
-    for i in range(nIFO):
-        ml.append(convert_wavearray_to_nparray(network.get_ifo(i).index, short=True, clean=False))
-        FP.append(convert_wavearray_to_nparray(network.get_ifo(i).fp, clean=False))
-        FX.append(convert_wavearray_to_nparray(network.get_ifo(i).fx, clean=False))
+    if ml is not None and FP is not None and FX is not None:
+        return np.asarray(ml), np.asarray(FP), np.asarray(FX)
 
-    ml = np.array(ml)
-    FP = np.array(FP)
-    FX = np.array(FX)
+    if strains is None or config is None:
+        raise ValueError("strains and config are required when ml/FP/FX are not provided")
 
-    return ml, FP, FX
+    normalized_strains = _normalize_strains(strains)
+    gps_time = float(normalized_strains[0].t0)
+    ml_arr, fp_arr, fx_arr = compute_sky_delay_and_patterns(
+        ifos=getattr(config, "ifo"),
+        ref_ifo=getattr(config, "refIFO"),
+        sample_rate=float(getattr(config, "rateANA")),
+        td_size=int(getattr(config, "TDSize")),
+        gps_time=gps_time,
+        healpix_order=int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None,
+        n_sky=None,
+    )
+    return ml_arr, fp_arr, fx_arr
 
 
 @njit(cache=True, parallel=True)
