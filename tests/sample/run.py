@@ -5,7 +5,7 @@ sys.path.insert(0, "../..")
 
 from pycwb.config import Config
 from pycwb.modules.logger import logger_init
-from pycwb.modules.read_data.data_check import check_and_resample
+from pycwb.modules.read_data.data_check import check_and_resample_py
 
 logger_init()
 
@@ -23,7 +23,7 @@ data = generate_injection(config, job_segments[0], data)
 
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
 
-data = [check_and_resample(data[i], config, i) for i in range(len(job_segments[0].ifos))]
+data = [check_and_resample_py(data[i], config, i) for i in range(len(job_segments[0].ifos))]
 
 strains, nRMS = data_conditioning(config, data)
 

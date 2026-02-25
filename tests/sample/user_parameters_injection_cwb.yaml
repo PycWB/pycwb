@@ -76,7 +76,6 @@ iwindow: 100
 
 gps_start: 1126258862.4
 gps_end: 1126260062.4
-segment_processer: pycwb.workflow.subflow.process_job_segment_native.process_job_segment
 
 injection:
   seed: 150914
