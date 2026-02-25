@@ -2,7 +2,6 @@ import time
 import logging
 import numpy as np
 from scipy.special import gammainccinv
-from pycwb.types.network import Network
 from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.detector import get_max_delay as detector_get_max_delay
 from pycwb.types.time_series import TimeSeries

@@ -1,10 +1,284 @@
 import numpy as np
+from functools import partial
 from dataclasses import dataclass
-from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap as WDMTimeFrequencyMap
+from wdm_wavelet.wdm import t2w_jax as _wdm_t2w_jax
+from wdm_wavelet.wdm import w2t_jax as _wdm_w2t_jax
+
+try:
+	from wdm_wavelet.core.t2w import _t2w_jax_impl as _wdm_t2w_jax_impl
+except Exception:
+	_wdm_t2w_jax_impl = None
 
 from .wavelet import Wavelet
 from .time_series import TimeSeries
 
+try:
+	import jax
+	import jax.numpy as jnp
+	_HAS_JAX = True
+	_JAX_IMPORT_ERROR = None
+except Exception as exc:
+	jax = None
+	jnp = None
+	_HAS_JAX = False
+	_JAX_IMPORT_ERROR = exc
+
+
+if _HAS_JAX:
+	def _shift_right_zero(x, k):
+		idx = jnp.arange(x.shape[0], dtype=jnp.int32)
+		rolled = jnp.roll(x, k)
+		return jnp.where(idx >= k, rolled, jnp.zeros_like(rolled))
+
+
+	def _shift_left_zero(x, k):
+		idx = jnp.arange(x.shape[0], dtype=jnp.int32)
+		rolled = jnp.roll(x, -k)
+		return jnp.where(idx < (x.shape[0] - k), rolled, jnp.zeros_like(rolled))
+
+
+	def _t2w_data_jax(wavelet, ts_data, mm_mode):
+		if _wdm_t2w_jax_impl is None:
+			m_l, _, tf_map = _wdm_t2w_jax(int(wavelet.M), int(wavelet.m_H), np.asarray(ts_data), np.asarray(wavelet.filter), int(mm_mode))
+			return jnp.asarray(tf_map[0] + 1j * tf_map[1], dtype=jnp.complex128).T
+
+		M = int(wavelet.M)
+		n_filter_taps = int(wavelet.m_H)
+		mm_eff = M if int(mm_mode) <= 0 else int(mm_mode)
+		return_quadrature = bool(int(mm_mode) < 0)
+
+		n_input = int(ts_data.shape[0])
+		aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
+		n_time_bins = aligned_length // mm_eff
+
+		ext_len = aligned_length + 2 * n_filter_taps
+		extended_signal = jnp.zeros((ext_len,), dtype=jnp.float64)
+
+		left_mirror_max = min(n_filter_taps, n_input - 1)
+		if left_mirror_max >= 0:
+			idx = jnp.arange(left_mirror_max + 1, dtype=jnp.int32)
+			extended_signal = extended_signal.at[n_filter_taps - idx].set(ts_data[idx])
+
+		extended_signal = extended_signal.at[n_filter_taps:n_filter_taps + n_input].set(ts_data)
+
+		n_right = ext_len - n_filter_taps - n_input
+		if n_right > 0:
+			idx = jnp.arange(n_right, dtype=jnp.int32)
+			extended_signal = extended_signal.at[n_filter_taps + n_input + idx].set(ts_data[n_input - idx - 1])
+
+		tf_map = _wdm_t2w_jax_impl(
+			M=M,
+			n_filter_taps=n_filter_taps,
+			mm_eff=mm_eff,
+			return_quadrature=return_quadrature,
+			n_time_bins=n_time_bins,
+			extended_signal=extended_signal,
+			filter_taps=jnp.asarray(np.asarray(wavelet.filter)[:n_filter_taps], dtype=jnp.float64),
+		)
+
+		return (tf_map[0] + 1j * tf_map[1]).T
+
+
+	def _w2t_data_jax(data_complex, wavelet, output_length):
+		n_freq = int(data_complex.shape[0])
+		flat = jnp.stack([jnp.real(data_complex).T, jnp.imag(data_complex).T], axis=0).reshape(-1)
+		out = _wdm_w2t_jax(
+			np.asarray(flat),
+			n_freq,
+			np.asarray(wavelet.filter),
+			output_length=int(output_length),
+		)
+		return jnp.asarray(out, dtype=jnp.float64)
+
+
+	@partial(jax.jit, static_argnames=("pattern", "edge", "wavelet_rate", "f_low", "f_high", "df"))
+	def _wdm_packet_energy_jax(coeffs, pattern, edge, wavelet_rate, f_low, f_high, df):
+		pattern = abs(int(pattern))
+		complex_map = jnp.asarray(coeffs)
+		if complex_map.ndim != 2:
+			raise ValueError("wdm_packet expects a 2D time-frequency map")
+
+		M = int(complex_map.shape[0])
+		T = int(complex_map.shape[1])
+		J = M * T
+
+		edge_v = jnp.asarray(edge, dtype=jnp.float64)
+		jb = (jnp.floor(edge_v * float(wavelet_rate) / 4.0)).astype(jnp.int32) * jnp.int32(M)
+		jb = jnp.maximum(jb, jnp.int32(4 * M))
+		je = jnp.int32(J) - jb
+
+		f_low_v = jnp.asarray(f_low, dtype=jnp.float64)
+		f_high_v = jnp.asarray(f_high, dtype=jnp.float64)
+		df_v = jnp.asarray(df, dtype=jnp.float64)
+		mL = jnp.floor(f_low_v / df_v + 0.1).astype(jnp.int32)
+		mH = jnp.floor(f_high_v / df_v + 0.1).astype(jnp.int32)
+		mL = jnp.maximum(mL, jnp.int32(0))
+		mH = jnp.minimum(mH, jnp.int32(M - 1))
+
+		if pattern in (1, 3, 4):
+			mean = 3.0
+			mL += 1
+			mH -= 1
+		elif pattern == 2:
+			mean = 3.0
+		elif pattern in (5, 6):
+			mean = 5.0
+			mL += 2
+			mH -= 2
+		elif pattern in (7, 8):
+			mean = 5.0
+			mL += 1
+			mH -= 1
+		elif pattern == 9:
+			mean = 9.0
+			mL += 1
+			mH -= 1
+		else:
+			mean = 1.0
+
+		p = [0] * 9
+		if pattern == 1:
+			p[1], p[2] = 1, -1
+		elif pattern == 2:
+			p[1], p[2] = M, -M
+		elif pattern == 3:
+			p[1], p[2] = M + 1, -M - 1
+		elif pattern == 4:
+			p[1], p[2] = -M + 1, M - 1
+		elif pattern == 5:
+			p[1], p[2], p[3], p[4] = M + 1, -M - 1, 2 * M + 2, -2 * M - 2
+		elif pattern == 6:
+			p[1], p[2], p[3], p[4] = -M + 1, M - 1, -2 * M + 2, 2 * M - 2
+		elif pattern == 7:
+			p[1], p[2], p[3], p[4] = 1, -1, M, -M
+		elif pattern == 8:
+			p[1], p[2], p[3], p[4] = M + 1, -M + 1, M - 1, -M - 1
+		elif pattern == 9:
+			p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8] = 1, -1, M, -M, M + 1, M - 1, -M + 1, -M - 1
+
+		real_f = jnp.ravel(jnp.real(complex_map).T)
+		imag_f = jnp.ravel(jnp.imag(complex_map).T)
+
+		jb = jnp.maximum(jb, jnp.int32(0))
+		je = jnp.minimum(je, jnp.int32(J))
+		j = jnp.arange(J, dtype=jnp.int32)
+
+		m = j % M
+		band = (m >= mL) & (m <= mH)
+		inside = (j >= jb) & (j < je)
+		active = inside & band
+
+		ss = jnp.zeros_like(j, dtype=jnp.float64)
+		ee = jnp.zeros_like(j, dtype=jnp.float64)
+		EE = jnp.zeros_like(j, dtype=jnp.float64)
+		for n in range(1, 9):
+			idx = jnp.clip(j + p[n], 0, J - 1)
+			qr = real_f[idx]
+			qi = imag_f[idx]
+			ss += qr * qi
+			ee += qr * qr
+			EE += qi * qi
+
+		q0r = real_f[j]
+		q0i = imag_f[j]
+		ss += q0r * q0i * (mean - 8.0)
+		ee += q0r * q0r * (mean - 8.0)
+		EE += q0i * q0i * (mean - 8.0)
+
+		cc = ee - EE
+		ss2 = ss * 2.0
+		nn = jnp.sqrt(cc * cc + ss2 * ss2)
+		sum_eeEE = ee + EE
+		nn = jnp.where(sum_eeEE < nn, sum_eeEE, nn)
+
+		a1 = jnp.sqrt(jnp.clip((sum_eeEE + nn) / 2.0, a_min=0.0))
+		a2 = jnp.sqrt(jnp.clip((sum_eeEE - nn) / 2.0, a_min=0.0))
+		aa = a1 + a2
+
+		em = jnp.where(mean == 1.0, sum_eeEE / 2.0, (aa * aa) / 4.0)
+		energy_f = jnp.where(active, em, 0.0)
+		return jnp.reshape(energy_f, (T, M)).T
+
+
+	@partial(jax.jit, static_argnames=("wavelet", "mm_mode", "pattern", "edge", "wavelet_rate", "f_low", "f_high", "df", "coeff_shape"))
+	def _time_delay_max_energy_pattern_jit(wavelet, ts_data, sample_rate, t0, downsample, max_delay, mm_mode,
+								   pattern, edge, wavelet_rate, f_low, f_high, df, coeff_shape):
+		base_data = _t2w_data_jax(wavelet, ts_data, mm_mode)
+		current_max = _wdm_packet_energy_jax(base_data, pattern, edge, wavelet_rate, f_low, f_high, df)
+
+		def cond_fn(state):
+			k, _ = state
+			return jnp.logical_and(k <= max_delay, k < ts_data.shape[0])
+
+		def body_fn(state):
+			k, cur = state
+
+			xx_pos = _shift_right_zero(ts_data, k)
+			tmp_pos = _t2w_data_jax(wavelet, xx_pos, mm_mode)
+			cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_pos, pattern, edge, wavelet_rate, f_low, f_high, df))
+
+			xx_neg = _shift_left_zero(ts_data, k)
+			tmp_neg = _t2w_data_jax(wavelet, xx_neg, mm_mode)
+			cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_neg, pattern, edge, wavelet_rate, f_low, f_high, df))
+
+			return k + downsample, cur
+
+		_, current_max = jax.lax.while_loop(cond_fn, body_fn, (jnp.int32(downsample), current_max))
+
+		current_max = current_max.at[0, :].set(0.0)
+		current_max = current_max.at[current_max.shape[0] - 1, :].set(0.0)
+		if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+			current_max = current_max.at[1, :].set(0.0)
+			current_max = current_max.at[current_max.shape[0] - 2, :].set(0.0)
+
+		return current_max
+
+
+	@partial(jax.jit, static_argnames=("wavelet", "mm_mode", "coeff_shape"))
+	def _time_delay_max_energy_complex_jit(wavelet, ts_data, sample_rate, t0, downsample, max_delay, mm_mode,
+								   coeff_shape):
+		base_data = _t2w_data_jax(wavelet, ts_data, mm_mode)
+		current_max_real = jnp.array(jnp.real(base_data))
+		current_max_imag = jnp.array(jnp.imag(base_data))
+
+		def cond_fn(state):
+			k, _, _ = state
+			return jnp.logical_and(k <= max_delay, k < ts_data.shape[0])
+
+		def body_fn(state):
+			k, cur_r, cur_i = state
+
+			xx_pos = _shift_right_zero(ts_data, k)
+			tmp_pos = _t2w_data_jax(wavelet, xx_pos, mm_mode)
+			cur_r = jnp.maximum(cur_r, jnp.real(tmp_pos))
+			cur_i = jnp.maximum(cur_i, jnp.imag(tmp_pos))
+
+			xx_neg = _shift_left_zero(ts_data, k)
+			tmp_neg = _t2w_data_jax(wavelet, xx_neg, mm_mode)
+			cur_r = jnp.maximum(cur_r, jnp.real(tmp_neg))
+			cur_i = jnp.maximum(cur_i, jnp.imag(tmp_neg))
+
+			return k + downsample, cur_r, cur_i
+
+		_, current_max_real, current_max_imag = jax.lax.while_loop(
+			cond_fn,
+			body_fn,
+			(jnp.int32(downsample), current_max_real, current_max_imag),
+		)
+
+		out = current_max_real + 1j * current_max_imag
+		out = out.at[0, :].set(0.0)
+		out = out.at[out.shape[0] - 1, :].set(0.0)
+		return out
+else:
+	def _time_delay_max_energy_pattern_jit(*args, **kwargs):
+		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
+
+	def _time_delay_max_energy_complex_jit(*args, **kwargs):
+		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
+
+	def _wdm_packet_energy_jax(*args, **kwargs):
+		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
 @dataclass
 class TimeFrequencyMap:
@@ -265,115 +539,66 @@ class TimeFrequencyMap:
 		if not hasattr(self.wavelet, "t2w") or not hasattr(self.wavelet, "w2t"):
 			raise ValueError("time_delay_max_energy requires a WDM wavelet with t2w/w2t APIs")
 
+		if not _HAS_JAX:
+			raise RuntimeError(f"time_delay_max_energy JAX JIT path requires JAX/JAXLIB: {_JAX_IMPORT_ERROR}")
+
 		if downsample <= 0:
 			raise ValueError("downsample must be >= 1")
 
 		if not np.isfinite(dt):
 			raise ValueError("dt must be finite")
 
-		# Use stored original time series length if available, otherwise estimate from duration
 		if self.len_timeseries is not None:
 			len_ts = int(self.len_timeseries)
 		else:
-			# Fallback: estimate from sample rate (assuming original sample rate = 1/dt_original)
-			# This is less accurate but works when len_timeseries wasn't stored
 			len_ts = max(1, int(round((self.stop - self.start) / self.dt)))
 
-		source_tf = WDMTimeFrequencyMap(
-			data=np.asarray(self.data),
-			df=float(self.df),
-			dt=float(self.dt),
-			t0=float(self.start),
-			len_timeseries=len_ts,
-			wdm_params=dict(getattr(self.wavelet, "params", {})),
-		)
+		ts_data = _w2t_data_jax(jnp.asarray(self.data, dtype=jnp.complex128), self.wavelet, len_ts)
+		sample_rate_val = float(2.0 * float(self.df) * (int(np.asarray(self.data).shape[0]) - 1))
+		sample_rate = jnp.asarray(sample_rate_val, dtype=jnp.float64)
+		t0 = jnp.asarray(float(self.start), dtype=jnp.float64)
 
-		ts = self.wavelet.w2t(source_tf)
-		ts_data = np.ascontiguousarray(np.asarray(ts.value), dtype=np.float64)
-		sample_rate = float(ts.sample_rate.value)
-		t0 = float(ts.t0.value)
-		n_samples = int(ts_data.size)
-
-		max_delay = int(sample_rate * abs(float(dt)))
-		mm_mode = -1 if abs(int(pattern)) else 0
-
-		def _cpf_inplace(dst, src, length=0, src_idx=0, dst_idx=0):
-			"""In-place copy matching cWB wavearray::cpf semantics."""
-			if length == 0:
-				length = min(len(dst) - dst_idx, len(src) - src_idx)
-			length = min(length, len(dst) - dst_idx, len(src) - src_idx)
-			if length > 0:
-				dst[dst_idx:dst_idx + length] = src[src_idx:src_idx + length]
-
+		max_delay = jnp.int32(int(sample_rate_val * abs(float(dt))))
+		downsample = jnp.int32(int(downsample))
 		pattern_int = abs(int(pattern))
+		mm_mode = -1 if pattern_int else 0
+
 		if pattern_int:
-			base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
+			f_low = 0.0 if self.f_low is None else float(self.f_low)
+			f_high = (float(self.df) * (int(np.asarray(self.data).shape[0]) - 1)) if self.f_high is None else float(self.f_high)
 
-			# Initialize with the first transform's packet energy
-			packet_energy = self.wdm_packet(pattern_int, mode='e', coeffs=base_tf.data, return_map=True)
-			current_max = np.array(packet_energy, copy=True, dtype=np.float64)
-			xx_data = np.array(ts_data, copy=True)
+			current_max = _time_delay_max_energy_pattern_jit(
+				self.wavelet,
+				ts_data,
+				sample_rate,
+				t0,
+				downsample,
+				max_delay,
+				mm_mode,
+				pattern_int,
+				float(self.edge or 0.0),
+				int(self.wavelet_rate),
+				f_low,
+				f_high,
+				float(self.df),
+				tuple(np.asarray(self.data).shape),
+			)
 
-			for k in range(int(downsample), max_delay + 1, int(downsample)):
-				if k >= n_samples:
-					break
-
-				_cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
-				tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-				current_max = np.maximum(current_max, self.wdm_packet(pattern_int, mode='e', coeffs=tmp_tf.data, return_map=True))
-
-				_cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
-				tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-				current_max = np.maximum(current_max, self.wdm_packet(pattern_int, mode='e', coeffs=tmp_tf.data, return_map=True))
-
-			n_freq = current_max.shape[0]
-			current_max[0, :] = 0.0
-			current_max[n_freq - 1, :] = 0.0
-
-			if pattern_int in {5, 6, 9} and n_freq > 3:
-				current_max[1, :] = 0.0
-				current_max[n_freq - 2, :] = 0.0
-
-			self.data = current_max
+			self.data = np.asarray(current_max)
 			return self.Gamma2Gauss(hist=hist)
 
-		base_tf = self.wavelet.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-		current_max_real = np.array(base_tf.data.real, copy=True)
-		current_max_imag = np.array(base_tf.data.imag, copy=True)
-		xx_data = np.array(ts_data, copy=True)
+		max_complex = _time_delay_max_energy_complex_jit(
+			self.wavelet,
+			ts_data,
+			sample_rate,
+			t0,
+			downsample,
+			max_delay,
+			mm_mode,
+			tuple(np.asarray(self.data).shape),
+		)
 
-		for k in range(int(downsample), max_delay + 1, int(downsample)):
-			if k >= n_samples:
-				break
-
-			_cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=0, dst_idx=k)
-			tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-			try:
-				import jax.numpy as jnp
-				# Use JAX for faster max operations
-				current_max_real = np.asarray(jnp.maximum(jnp.asarray(current_max_real), jnp.asarray(tmp_tf.data.real)))
-				current_max_imag = np.asarray(jnp.maximum(jnp.asarray(current_max_imag), jnp.asarray(tmp_tf.data.imag)))
-			except ImportError:
-				# Fallback to NumPy
-				current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
-				current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
-
-			_cpf_inplace(xx_data, ts_data, length=n_samples - k, src_idx=k, dst_idx=0)
-			tmp_tf = self.wavelet.t2w(xx_data, sample_rate=sample_rate, t0=t0, MM=mm_mode)
-			try:
-				import jax.numpy as jnp
-				# Use JAX for faster max operations
-				current_max_real = np.asarray(jnp.maximum(jnp.asarray(current_max_real), jnp.asarray(tmp_tf.data.real)))
-				current_max_imag = np.asarray(jnp.maximum(jnp.asarray(current_max_imag), jnp.asarray(tmp_tf.data.imag)))
-			except ImportError:
-				# Fallback to NumPy
-				current_max_real = np.maximum(current_max_real, tmp_tf.data.real)
-				current_max_imag = np.maximum(current_max_imag, tmp_tf.data.imag)
-
-		self.data = current_max_real + 1j * current_max_imag
-		n_freq = self.data.shape[0]
-		self.data[0, :] = 0.0
-		self.data[n_freq - 1, :] = 0.0
+		self.data = np.asarray(max_complex)
 		return 1.0
 
 	def _compute_bounds(self, n_freq=None, n_time=None):

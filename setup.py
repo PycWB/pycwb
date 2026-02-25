@@ -38,6 +38,7 @@ install_requires = [
     "click",
     "orjson",
     "dacite",
+    "cartopy",
     # "prefect",
     # "prefect-dask",
     # "dask",

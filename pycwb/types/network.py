@@ -1,5 +1,10 @@
 import argparse, shlex
-import logging, ROOT
+import logging
+try:
+    import ROOT
+except ImportError:
+    import warnings
+    warnings.warn("ROOT module not found. Please install ROOT to use the Network class.")
 
 import numpy as np
 from pycwb.modules.cwb_conversions import convert_to_wseries
