@@ -1,5 +1,49 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
+
+from functools import partial
+import jax
+import jax.numpy as _jnp
+
+
+@partial(jax.jit, static_argnames=("new_n",))
+def _cwb_resample_jax(data, new_n):
+    old_n = data.shape[0]
+    old_n2 = old_n // 2
+
+    old_fft = _jnp.fft.fft(data)
+    packed = _jnp.zeros((old_n,), dtype=_jnp.float64)
+
+    idx_old = _jnp.arange(old_n2, dtype=_jnp.int32)
+    packed = packed.at[2 * idx_old].set(_jnp.real(old_fft[:old_n2]) / old_n)
+    packed = packed.at[2 * idx_old + 1].set(_jnp.imag(old_fft[:old_n2]) / old_n)
+    packed = packed.at[1].set(_jnp.real(old_fft[old_n2]) / old_n)
+    if old_n & 1:
+        packed = packed.at[old_n - 1].set(_jnp.imag(old_fft[old_n2]) / old_n)
+
+    if new_n > old_n:
+        packed_resized = _jnp.pad(packed, (0, new_n - old_n), mode="constant")
+    else:
+        packed_resized = packed[:new_n]
+
+    new_n2 = new_n // 2
+    spec = _jnp.zeros((new_n,), dtype=_jnp.complex128)
+
+    idx_new = _jnp.arange(1, new_n2, dtype=_jnp.int32)
+    re = packed_resized[2 * idx_new]
+    im = packed_resized[2 * idx_new + 1]
+
+    spec = spec.at[idx_new].set(re + 1j * im)
+    spec = spec.at[new_n - idx_new].set(re - 1j * im)
+    spec = spec.at[0].set(packed_resized[0])
+
+    if new_n & 1:
+        nyquist = packed_resized[1] + 1j * packed_resized[new_n - 1]
+    else:
+        nyquist = packed_resized[1] + 0j
+    spec = spec.at[new_n2].set(nyquist)
+
+    return _jnp.real(_jnp.fft.ifft(spec)) * new_n
 
 
 @dataclass
@@ -10,7 +54,10 @@ class TimeSeries:
 
     def __post_init__(self):
         # Ensure the data is stored as a contiguous float64 NumPy array
-        self.data = np.ascontiguousarray(self.data, dtype=np.float64)
+        arr = np.ascontiguousarray(self.data, dtype=np.float64)
+        if not arr.flags.writeable:
+            arr = arr.copy()
+        self.data = arr
 
     @property
     def times(self) -> np.ndarray:
@@ -130,38 +177,8 @@ class TimeSeries:
         if new_n == old_n:
             return TimeSeries(data=self.data.copy(), t0=self.t0, dt=self.dt)
 
-        old_fft = np.fft.fft(self.data.astype(np.float64, copy=False))
-        old_n2 = old_n // 2
-        packed = np.zeros(old_n, dtype=np.float64)
+        resampled = np.asarray(_cwb_resample_jax(_jnp.asarray(self.data), new_n), dtype=np.float64)
 
-        for i in range(old_n2):
-            packed[2 * i] = old_fft[i].real / old_n
-            packed[2 * i + 1] = old_fft[i].imag / old_n
-
-        packed[1] = old_fft[old_n2].real / old_n
-        if old_n & 1:
-            packed[old_n - 1] = old_fft[old_n2].imag / old_n
-
-        if new_n > old_n:
-            packed_resized = np.pad(packed, (0, new_n - old_n), mode='constant')
-        else:
-            packed_resized = packed[:new_n].copy()
-
-        new_n2 = new_n // 2
-        spec = np.zeros(new_n, dtype=np.complex128)
-        for i in range(1, new_n2):
-            re = packed_resized[2 * i]
-            im = packed_resized[2 * i + 1]
-            spec[i] = re + 1j * im
-            spec[new_n - i] = re - 1j * im
-
-        spec[0] = packed_resized[0]
-        if new_n & 1:
-            spec[new_n2] = packed_resized[1] + 1j * packed_resized[new_n - 1]
-        else:
-            spec[new_n2] = packed_resized[1] + 0j
-
-        resampled = np.fft.ifft(spec).real * new_n
         return TimeSeries(data=resampled, t0=self.t0, dt=1.0 / float(target_rate))
 
     @classmethod
