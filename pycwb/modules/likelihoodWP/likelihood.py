@@ -1,5 +1,6 @@
 from math import sqrt
 import logging
+import time
 import numpy as np
 from numba import njit, prange, float32
 from numba.typed import List
@@ -144,8 +145,14 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     Returns:
         Cluster: The updated cluster object with filled detection statistics.
     """
+    timer_start = time.perf_counter()
+    logger.info("-------------------------------------------------------")
+    logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+    logger.info("   ----------------------------------------------------")
+
     td_amp_reloaded = _ensure_td_amp(cluster, nIFO, strains=strains, config=config)
     setattr(cluster, "_td_amp_reloaded", bool(td_amp_reloaded))
+    logger.info("likelihood td_amp reloaded: %s", bool(td_amp_reloaded))
 
     # prepare runtime parameters
     network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, netCC = _resolve_runtime_parameters(
@@ -206,6 +213,11 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         logger.info("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
         logger.info("\t <- rejected    ")
+        timer_end = time.perf_counter()
+        logger.info("-------------------------------------------------------")
+        logger.info("Total events: %d", 0)
+        logger.info("Total time: %.2f s", timer_end - timer_start)
+        logger.info("-------------------------------------------------------")
         return None
 
     # Fill the detection statistics into the cluster and pixels for return
@@ -225,6 +237,12 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         logger.info("\t -> SELECTED !!!")
     else:
         logger.info("\t <- rejected    ")
+
+    timer_end = time.perf_counter()
+    logger.info("-------------------------------------------------------")
+    logger.info("Total events: %d", 1 if detected else 0)
+    logger.info("Total time: %.2f s", timer_end - timer_start)
+    logger.info("-------------------------------------------------------")
 
     return cluster
 

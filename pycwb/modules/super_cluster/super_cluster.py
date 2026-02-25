@@ -1,5 +1,7 @@
 import copy
 
+import logging
+import time
 import numpy as np
 from wdm_wavelet.wdm import WDM as WDMWavelet
 
@@ -10,6 +12,9 @@ from .utils import get_cluster_links, calculate_statistics, get_defragment_link,
 from ...types.detector import compute_sky_delay_and_patterns, calculate_e2or_from_acore
 from ...types.network_cluster import Cluster, ClusterMeta
 from ...types.time_series import TimeSeries
+
+
+logger = logging.getLogger(__name__)
 
 
 def supercluster(clusters, atype, gap, threshold, n_ifo, mini_pix = 3, core=False, pair=False):
@@ -155,6 +160,8 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
 
 
 def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers):
+    timer_start = time.perf_counter()
+
     def _extract_timeseries_data(strain):
         values = np.asarray(strain.data, dtype=np.float64)
         sample_rate = float(strain.sample_rate)
@@ -191,7 +198,11 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
             )
 
             if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
-                print(f"Cluster {i} ({len(c.pixels)} pixels) passed subnet, subrho, and subthr cut")
+                logger.info(
+                    "Cluster %d (%d pixels) passed subnet, subrho, and subthr cut",
+                    i,
+                    len(c.pixels),
+                )
                 c.cluster_status = -1
             else:
                 log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
@@ -201,7 +212,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
                     log_output += f"subrho cut condition: {results['subrho_condition']}, "
                 if not results['subthr_passed']:
                     log_output += f"subthr cut condition: {results['subthr_condition']}, "
-                print(log_output)
+                logger.info(log_output)
                 c.cluster_status = 1
 
         return [c for c in superclusters if c.cluster_status <= 0]
@@ -211,6 +222,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     lag_plan = build_lag_plan_from_config(config, strains)
     n_lag = int(lag_plan.n_lag)
     if n_lag == 0:
+        logger.info("Supercluster wrapper skipped: n_lag=0")
         return None
 
     if len(fragment_clusters) == 0 or len(fragment_clusters[0]) < n_lag:
@@ -218,7 +230,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 
     ########################
     # build wdm_wavelet contexts for each resolution and detector
-    print("Building wdm_wavelet TF maps for TD amplitude preparation")
+    logger.info("Building wdm_wavelet TF maps for TD amplitude preparation")
     wdm_context_by_layers = {}
     for level in config.WDM_level:
         layers_at_level = 2 ** level if level > 0 else 0
@@ -242,7 +254,11 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
         wdm_context_by_layers[int(wdm_layers) + 1] = context
 
     # merge cluster
-    print(f"Merging clusters with {len(fragment_clusters)} layers and {len(fragment_clusters[0])} lags")
+    logger.info(
+        "Merging clusters with %d layers and %d lags",
+        len(fragment_clusters),
+        len(fragment_clusters[0]),
+    )
 
     clusters_by_lag = []
     for j in range(n_lag):
@@ -251,13 +267,13 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
         if len(fragment_clusters) > 1:
             for fragment_cluster in fragment_clusters[1:]:
                 cluster.clusters += [c for c in fragment_cluster[j].clusters if c.cluster_status < 1]
-        print(f"Number of clusters for lag {j}: {len(cluster.clusters)}")
+        logger.info("Number of clusters for lag %d: %d", j, len(cluster.clusters))
         clusters_by_lag.append(cluster)
 
     td_vec_default = np.zeros(_expected_td_vec_len(config.TDSize), dtype=np.float32)
     fragment_clusters = clusters_by_lag
     for lag, fragment_cluster in enumerate(fragment_clusters):
-        print(f"Constructing TD vectors with wdm_wavelet for lag {lag} of {n_lag}")
+        logger.info("Constructing TD vectors with wdm_wavelet for lag %d of %d", lag, n_lag)
         for cluster in fragment_cluster.clusters:
             for pixel in cluster.pixels:
                 context = _resolve_wdm_context(pixel.layers, wdm_context_by_layers)
@@ -280,7 +296,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 
                 pixel.td_amp = pixel_td_amp
 
-    print("wdm_wavelet TD vector preparation finished")
+    logger.info("wdm_wavelet TD vector preparation finished")
     ########################
 
     # prepare user parameters
@@ -312,7 +328,12 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     pattern = int(getattr(config, "pattern", 0))
 
     for fragment_cluster, lag in zip(fragment_clusters, range(n_lag)):
-        print(f"Processing fragment cluster for lag {lag} with {len(fragment_cluster.clusters)} clusters")
+        logger.info(
+            "-> Processing lag=%d with %d clusters",
+            lag,
+            len(fragment_cluster.clusters),
+        )
+        logger.info("   --------------------------------------------------")
         clusters = fragment_cluster.clusters
 
         superclusters = supercluster(clusters, 'L', gap, super_e2or, n_ifo)
@@ -325,11 +346,16 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 
         # filter out the rejected superclusters
         accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
-        print(f"Total number of superclusters: {len(superclusters)}, total pixels: {total_pixels}, "
-              f"accepted clusters: {len(accepted_superclusters)}")
+        logger.info(
+            "   super clusters|pixels      : %6d|%d",
+            len(superclusters),
+            total_pixels,
+        )
+        logger.info("   accepted superclusters     : %6d", len(accepted_superclusters))
 
         # if there are no accepted superclusters, return None
         if len(accepted_superclusters) == 0:
+            logger.warning("No accepted superclusters after supercluster stage (lag=%d)", lag)
             return None
 
         selected_superclusters = _apply_subnet_cut(
@@ -351,20 +377,36 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
         for i, c in enumerate(superclusters):
             total_pixels += len(c.pixels)
             # print(f'supercluster {i} has {n_pix} pixels and {"rejected" if c.cluster_status != 0 else "accepted"}')
-        print(f"Total number of superclusters after defragment: {len(new_superclusters)}, total pixels: {total_pixels}")
+        logger.info(
+            "   post-cut clusters|pixels   : %6d|%d",
+            len(new_superclusters),
+            total_pixels,
+        )
 
         fragment_cluster.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
 
         total_pixels = 0
         for i, c in enumerate(fragment_cluster.clusters):
             total_pixels += len(c.pixels)
-        print(f"Total number of superclusters for lag {lag} after sub_net_cut: "
-              f"{len(fragment_cluster.clusters)}, total pixels: {total_pixels}")
+        logger.info(
+            "   final clusters|pixels      : %6d|%d",
+            len(fragment_cluster.clusters),
+            total_pixels,
+        )
 
         for c in fragment_cluster.clusters:
             for p in c.pixels:
                 p.core = 1
                 p.td_amp = None
+
+    total_clusters = sum(len(fc.clusters) for fc in fragment_clusters)
+    total_pixels = sum(len(c.pixels) for fc in fragment_clusters for c in fc.clusters)
+    timer_stop = time.perf_counter()
+    logger.info("Supercluster wrapper done")
+    logger.info("total  clusters|pixels : %6d|%d", total_clusters, total_pixels)
+    logger.info("----------------------------------------")
+    logger.info("Supercluster time: %.2f s", timer_stop - timer_start)
+    logger.info("----------------------------------------")
 
     return fragment_clusters
 
