@@ -644,7 +644,7 @@ def regression_python(config, h):
     """
     import pycbc.types
 
-    backend = str(getattr(config, "REGRESSION_ENGINE", os.getenv("PYCWB_REGRESSION_ENGINE", "numba"))).lower()
+    backend = str(getattr(config, "REGRESSION_ENGINE", os.getenv("PYCWB_REGRESSION_ENGINE", "jax"))).lower()
 
     # Match cWB defaults from schema/regression.cc
     filter_length = int(getattr(config, "REGRESSION_FILTER_LENGTH", 8))

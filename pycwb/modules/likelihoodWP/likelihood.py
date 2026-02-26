@@ -12,6 +12,7 @@ from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps
+from .pixel_batch_ops import load_data_from_pixels_vectorized, batch_ensure_td_amp
 from pycwb.modules.xtalk.type import XTalk
 from .typing import SkyStatistics, SkyMapStatistics
 
@@ -76,62 +77,8 @@ def _ensure_td_amp(cluster, nIFO, strains=None, config=None):
     if strains is None or config is None:
         raise ValueError("likelihood requires `strains` and `config` when cluster pixels do not contain td_amp")
 
-    normalized_strains = _normalize_strains(strains)
-
-    unique_layers = sorted({int(_normalize_wdm_layers(pixel.layers)) for pixel in cluster.pixels})
-    wdm_context_by_layers = {}
-
-    for layer_count in unique_layers:
-        wdm = WDMWavelet(
-            M=int(layer_count),
-            K=int(layer_count),
-            beta_order=config.WDM_beta_order,
-            precision=config.WDM_precision,
-        )
-        wdm.set_td_filter(int(config.TDSize), 1)
-
-        detector_tf_maps = []
-        for n in range(nIFO):
-            strain = normalized_strains[n]
-            detector_tf_maps.append(
-                wdm.t2w(
-                    np.asarray(strain.data, dtype=np.float64),
-                    sample_rate=float(strain.sample_rate),
-                    t0=float(strain.t0),
-                    MM=-1,
-                )
-            )
-
-        context = {"wdm": wdm, "tf_maps": detector_tf_maps}
-        wdm_context_by_layers[int(layer_count)] = context
-        wdm_context_by_layers[int(layer_count) + 1] = context
-
-    td_vec_default = np.zeros(_expected_td_vec_len(config.TDSize), dtype=np.float32)
-    for pixel in cluster.pixels:
-        layer_key = int(pixel.layers)
-        context = wdm_context_by_layers.get(layer_key)
-        if context is None:
-            context = wdm_context_by_layers.get(layer_key - 1)
-        if context is None:
-            raise ValueError(f"Missing WDM context for pixel layer {layer_key}")
-
-        wdm = context["wdm"]
-        detector_tf_maps = context["tf_maps"]
-        pixel_td_amp = []
-        for n in range(nIFO):
-            try:
-                td_vec = wdm.get_td_vec(
-                    detector_tf_maps[n],
-                    pixel_index=int(pixel.data[n].index),
-                    K=int(config.TDSize),
-                    mode="a",
-                )
-                pixel_td_amp.append(np.asarray(td_vec, dtype=np.float32))
-            except Exception:
-                pixel_td_amp.append(td_vec_default.copy())
-        pixel.td_amp = pixel_td_amp
-
-    return True
+    # Batch JAX extraction replaces the per-pixel serial loop
+    return batch_ensure_td_amp(cluster, nIFO, strains, config)
 
 def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None):
     """
@@ -250,42 +197,11 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
 def load_data_from_pixels(pixels, nifo):
     """
     Load data from pixels into numpy arrays for numba processing.
-    
-    Args:
-        pixels (List[Pixel]): List of pixel objects containing time delayed data.
-        nifo (int): Number of interferometers.
 
-    Returns:
-        tuple: rms, td00, td90, td_energy
-            - rms (np.ndarray): RMS values for each interferometer and pixel.
-            - td00 (np.ndarray): Time delayed data for 00 polarization.
-            - td90 (np.ndarray): Time delayed data for 90 polarization.
-            - td_energy (np.ndarray): Energy of the time delayed data.
-    
+    Delegates to the vectorised implementation in pixel_batch_ops which
+    avoids the per-pixel Python loops and uses bulk numpy operations.
     """
-    tsize = len(pixels[0].td_amp[0])
-
-    rms = np.zeros((nifo, len(pixels)))
-    td00 = np.zeros((nifo, len(pixels), int(tsize / 2)))
-    td90 = np.zeros((nifo, len(pixels), int(tsize / 2)))
-    td_energy = np.zeros((nifo, len(pixels), int(tsize / 2)))
-    for pid, pix in enumerate(pixels):
-        rms_pix = 0
-        rms_array = np.zeros(nifo)
-
-        for i in range(nifo):
-            xx = 1. / pix.data[i].noise_rms
-            rms_pix += xx * xx
-            rms_array[i] = xx
-
-        rms_pix = np.sqrt(1. / rms_pix)
-
-        for i in range(nifo):
-            rms[i, pid] = rms_array[i] * rms_pix
-            td00[i, pid] = pix.td_amp[i][0:int(tsize / 2)]
-            td90[i, pid] = pix.td_amp[i][int(tsize / 2):tsize]
-            td_energy[i, pid] = td00[i, pid] ** 2 + td90[i, pid] ** 2
-    return rms, td00, td90, td_energy
+    return load_data_from_pixels_vectorized(pixels, nifo)
 
 
 def load_data_from_ifo(nIFO, strains=None, config=None, ml=None, FP=None, FX=None):

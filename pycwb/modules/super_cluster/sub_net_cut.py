@@ -1,7 +1,8 @@
 import numpy as np
+import time
 # from numba import float32
 from numba import njit
-from numpy import float32, float64
+from numpy import float32
 from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
 from pycwb.modules.xtalk.monster import getXTalk_pixels
 from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
@@ -15,9 +16,13 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     network_energy_threshold = np.float32(2 * acor * acor * n_ifo)
     n_pix = len(pixels)
 
+    t0 = time.perf_counter()
     rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
+    print(f"[timing] load_data_from_pixels: {time.perf_counter() - t0:.6f}s")
 
+    t0 = time.perf_counter()
     cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, True, layers, xtalk_coeff, xtalk_lookup_table)
+    print(f"[timing] getXTalk_pixels: {time.perf_counter() - t0:.6f}s")
 
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
@@ -26,15 +31,19 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
 
+    t0 = time.perf_counter()
     l_max, stat, Em, Am, lm, Vm, suball, EE = optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy,
                                                               ml, network_energy_threshold, e2or, subcut)
+    print(f"[timing] optimze_sky_loc: {time.perf_counter() - t0:.6f}s")
 
+    t0 = time.perf_counter()
     submra, rHo, Eo, Lo, Ls, m = mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
                                                       network_energy_threshold, e2or, subcut,
                                                       cluster_xtalk, cluster_xtalk_lookup, l_max)
+    print(f"[timing] mra_statistics: {time.perf_counter() - t0:.6f}s")
     subnet_pass = min(suball, submra) > subnet
     subrho_pass = rHo > subrho
-    subthr_pass = Em > subnorm * network_energy_threshold
+    subthr_pass = Em > subnorm * Eo
 
     return {
         'subnet_passed': subnet_pass,
@@ -42,7 +51,7 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
         'subthr_passed': subthr_pass,
         'subnet_condition': f"min(suball = {suball:.4f}, submra = {submra:.4f}) > subnet = {subnet:.4f}",
         'subrho_condition': f"rho = {rHo:.4f} > subrho = {subrho:.4f}",
-        'subthr_condition': f"Em = {Em:.4f} > subnorm = {subnorm:.4f} * network_energy_threshold = {network_energy_threshold:.4f}"
+        'subthr_condition': f"Em = {Em:.4f} > subnorm = {subnorm:.4f} * Eo = {Eo:.4f}"
     }
 
 
@@ -140,7 +149,7 @@ def optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml,
         if Eo <= 0:
             continue
 
-        Lo = 0
+        Lo = float32(0.0)
         # calculate dpf
         # TODO: check if the dpf is the same as the one in the likelihood module
         _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l], FX[l], reduced_rms[:m, :])
@@ -250,7 +259,7 @@ def mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
         if ee - em > Es:
             Ln += ee  # network energy above subnet threshold
 
-    Lo = 0
+    Lo = float32(0.0)
     _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l_max], FX[l_max], reduced_rms[:m, :])
 
     # calculate likelihood
@@ -302,9 +311,9 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
 
     # ee = rNRG  # residual energy
     pNRG = np.full(n_pix, float32(-1.0))  # Initialize pp with -1, assuming it's the purpose of pNRG in this context
-    EE = 0.0  # extracted energy
-    mam = np.zeros(n_ifo)
-    mAM = np.zeros(n_ifo)
+    EE = float32(0.0)  # extracted energy
+    mam = np.zeros(n_ifo, dtype=float32)
+    mAM = np.zeros(n_ifo, dtype=float32)
 
     amp = np.zeros((n_ifo, n_pix), dtype=float32)
     AMP = np.zeros((n_ifo, n_pix), dtype=float32)
@@ -325,7 +334,7 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
             break
 
         # get PC energy
-        E = 0
+        E = float32(0.0)
         for i in range(n_ifo):
             E += a_00[i][m] * a_00[i][m] + a_90[i][m] * a_90[i][m]
         EE += E
@@ -362,7 +371,7 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
                     rNRG[n] += a_00[i][n] * a_00[i][n] + a_90[i][n] * a_90[i][n]
 
         # store PC energy
-        pp = 0
+        pp = float32(0.0)
         for i in range(n_ifo):
             pp += amp[i][m] * amp[i][m] + AMP[i][m] * AMP[i][m]
         pNRG[m] = pp

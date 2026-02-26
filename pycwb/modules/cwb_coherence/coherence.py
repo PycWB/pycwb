@@ -9,6 +9,7 @@ from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
+from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +105,41 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
         precision=config.WDM_precision,
     )
 
-    tf_maps = [
-        TimeFrequencyMap.from_timeseries(
-            ts=strain,
-            wavelet=wdm_wavelet,
-            is_whitened=True,
-            f_low=getattr(config, "fLow", None),
-            f_high=getattr(config, "fHigh", None),
-            edge=getattr(config, "segEdge", None),
-        )
-        for strain in strains
-    ]
+    # Batch t2w over all detectors in one JAX vmap call instead of a serial loop.
+    t_t2w_batch = time.perf_counter()
+    try:
+        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
+        tf_maps = [
+            TimeFrequencyMap(
+                data=batch_data_list[n],
+                is_whitened=True,
+                dt=dt,
+                df=df,
+                start=float(strains[n].t0),
+                stop=float(strains[n].end_time),
+                f_low=getattr(config, "fLow", None),
+                f_high=getattr(config, "fHigh", None),
+                edge=getattr(config, "segEdge", None),
+                wavelet=wdm_wavelet,
+                len_timeseries=len(strains[n].data),
+            )
+            for n in range(len(strains))
+        ]
+        logger.info("Batch t2w timing (JAX vmap, %d detectors): %.4f s",
+                    len(strains), time.perf_counter() - t_t2w_batch)
+    except Exception as exc:
+        logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
+        tf_maps = [
+            TimeFrequencyMap.from_timeseries(
+                ts=strain,
+                wavelet=wdm_wavelet,
+                is_whitened=True,
+                f_low=getattr(config, "fLow", None),
+                f_high=getattr(config, "fHigh", None),
+                edge=getattr(config, "segEdge", None),
+            )
+            for strain in strains
+        ]
 
     # use string instead of directly logging to avoid messy output in parallel
     logger_info = "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f \n" % (
