@@ -125,8 +125,14 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             )
             for n in range(len(strains))
         ]
+        t2w_elapsed = time.perf_counter() - t_t2w_batch
         logger.info("Batch t2w timing (JAX vmap, %d detectors): %.4f s",
-                    len(strains), time.perf_counter() - t_t2w_batch)
+                    len(strains), t2w_elapsed)
+        for _n, _tfm in enumerate(tf_maps):
+            _sh = _tfm.data.shape if hasattr(_tfm, "data") and hasattr(_tfm.data, "shape") else "unknown"
+            logger.info("  TF map[%d] shape (freq x time): %s  (%.3f MB)",
+                        _n, _sh,
+                        (_tfm.data.nbytes / 1e6) if hasattr(_tfm, "data") and hasattr(_tfm.data, "nbytes") else 0.0)
     except Exception as exc:
         logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
         tf_maps = [
@@ -158,7 +164,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
     lag_plan = build_lag_plan_from_config(config, tf_maps)
     n_lag = lag_plan.n_lag
 
-
+    t_maxenergy = time.perf_counter()
     for n, tf_map in enumerate(tf_maps):
         alp += max_energy(
             tf_map=tf_map,
@@ -168,21 +174,23 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             f_low=config.fLow,
             f_high=config.fHigh,
         )
-
+    logger_info += "max_energy (%d ifo): %.4f s\n" % (len(tf_maps), time.perf_counter() - t_maxenergy)
     logger_info += "max energy in units of noise variance: %g \n" % alp
 
     alp = alp / config.nIFO
 
     # set threshold
     # threshold is calculated based on the data layers and rate of the default ifo data
+    t_thresh = time.perf_counter()
     Eo = compute_threshold(
         config.bpp,
         alp if pattern != 0 else None,
         tf_maps=tf_maps,
         edge=config.segEdge,
     )
-
+    logger_info += "compute_threshold: %.4f s\n" % (time.perf_counter() - t_thresh)
     logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
+    logger_info += "lag_plan: n_lag=%d\n" % n_lag
 
     # set veto array
     # TODO: the veto is applied to veto the non-injected periods. Will implement later
@@ -199,11 +207,15 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
     # if TL <= 0.:
     #     raise ValueError("live time is zero")
 
-    logger_info += "lag | clusters | pixels \n"
+    logger_info += "lag | clusters | pixels | select_t(s) | cluster_t(s)\n"
+
+    t_pixel_select_total = 0.0
+    t_cluster_total = 0.0
 
     # loop over time lags
     for j in range(n_lag):
         # select pixels above Eo
+        t_sel = time.perf_counter()
         candidates = select_network_pixels(
             lag_index=j,
             energy_threshold=Eo,
@@ -212,7 +224,12 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             veto=None,
             edge=config.segEdge,
         )
+        t_sel_elapsed = time.perf_counter() - t_sel
+        t_pixel_select_total += t_sel_elapsed
+        n_candidates = len(candidates["pixels"]) if isinstance(candidates, dict) and "pixels" in candidates else -1
+
         # get pixel list
+        t_cl = time.perf_counter()
         if pattern != 0:
             c = cluster_pixels(min_size=2, max_size=3, pixel_candidates=candidates)
             # remove pixels below subrho
@@ -221,6 +238,8 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             c.select("subnet", config.select_subnet)
         else:
             c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
+        t_cl_elapsed = time.perf_counter() - t_cl
+        t_cluster_total += t_cl_elapsed
 
         if not return_rejected:
             c.remove_rejected()
@@ -228,8 +247,12 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
         fragment_cluster = c
         fragment_clusters.append(fragment_cluster)
 
-        logger_info += "%3d |%9d |%7d \n" % (j, fragment_cluster.event_count(), fragment_cluster.pixel_count())
+        logger_info += "%3d |%9d |%7d | cand=%d sel=%.4fs clust=%.4fs\n" % (
+            j, fragment_cluster.event_count(), fragment_cluster.pixel_count(),
+            n_candidates, t_sel_elapsed, t_cl_elapsed)
 
+    logger_info += "pixel_select cumulative: %.4f s  cluster cumulative: %.4f s\n" % (
+        t_pixel_select_total, t_cluster_total)
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
     logger.info(logger_info)

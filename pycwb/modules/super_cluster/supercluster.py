@@ -38,7 +38,11 @@ def supercluster(config, network, fragment_clusters, tf_maps):
     # timer
     timer_start = time.perf_counter()
 
+    t_sparse = time.perf_counter()
     sparse_table_list = sparse_table_from_fragment_clusters(config, tf_maps, fragment_clusters)
+    logger.info("sparse_table_from_fragment_clusters: %.4f s  (tables=%d, detectors=%d)",
+                time.perf_counter() - t_sparse, len(sparse_table_list),
+                len(sparse_table_list[0]) if sparse_table_list else 0)
 
     # decrease skymap resolution to improve subNetCut performances
     if config.healpix > 0:
@@ -46,6 +50,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
     else:
         raise NotImplementedError("Only healpix is supported")
 
+    t_net_setup = time.perf_counter()
     if skyres > 0:
         network.update_sky_map(config, skyres)
         network.net.setAntenna()
@@ -62,6 +67,8 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         wdm.set_td_filter(config.TDSize, 1)
         # add wavelets to network
         network.add_wavelet(wdm)
+    logger.info("network setup (skymap + WDM filters, %d levels): %.4f s",
+                len(config.WDM_level), time.perf_counter() - t_net_setup)
 
 
     pwc_list = []
@@ -89,6 +96,7 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         cycle = int(network.get_cluster(j).shift)
         cycle_name = f"lag={cycle}"
 
+        t_lag = time.perf_counter()
         logger.info("-> Processing %s ...", cycle_name)
         logger.info("   --------------------------------------------------")
         logger.info("    coher clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
@@ -98,13 +106,17 @@ def supercluster(config, network, fragment_clusters, tf_maps):
         if network.pattern != 0:
             cluster.pair = False
 
+        t_sc = time.perf_counter()
         cluster.supercluster('L',network.net.e2or,config.TFgap,False)
-        logger.info("    super clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+        logger.info("    super clusters|pixels      : %6d|%d  (%.4f s)",
+                    cluster.esize(0), cluster.psize(0), time.perf_counter() - t_sc)
 
         # defragmentation for pattern != 0
         if network.pattern != 0:
+            t_defrag1 = time.perf_counter()
             cluster.defragment(config.Tgap, config.Fgap)
-            logger.info("   defrag clusters|pixels      : %6d|%d", cluster.esize(0), cluster.psize(0))
+            logger.info("   defrag clusters|pixels      : %6d|%d  (%.4f s)",
+                        cluster.esize(0), cluster.psize(0), time.perf_counter() - t_defrag1)
 
         # copy selected clusters to network
         pwc = network.get_cluster(j)
@@ -122,14 +134,19 @@ def supercluster(config, network, fragment_clusters, tf_maps):
             pwc.setcore(False)
 
             psel = 0
+            t_tdamp = time.perf_counter()
+            n_tdamp_iters = 0
             # TODO: why is there a while loop here? the count is normally smaller than 10000
             while True:
                 # TODO: pythonize this
                 count = pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.LOUD)
+                n_tdamp_iters += 1
                 psel += network.sub_net_cut(j, config.subnet, config.subcut, config.subnorm)
                 if count < 10000:
                     break
-            logger.info("   subnet clusters|pixels      : %6d|%d", network.n_events, pwc.psize(-1))
+            t_tdamp_elapsed = time.perf_counter() - t_tdamp
+            logger.info("   subnet clusters|pixels      : %6d|%d  loadTDampSSE iters=%d (%.4f s)",
+                        network.n_events, pwc.psize(-1), n_tdamp_iters, t_tdamp_elapsed)
 
             # restore Acore and netRHO
             if config.subacor > 0:
@@ -139,8 +156,12 @@ def supercluster(config, network, fragment_clusters, tf_maps):
 
         if network.pattern == 0:
             # TODO: pythonize this
+            t_defrag2 = time.perf_counter()
             pwc.defragment(config.Tgap, config.Fgap)
-            logger.info("   defrag clusters|pixels      : %6d|%d", network.n_events, pwc.psize(-1))
+            logger.info("   defrag clusters|pixels      : %6d|%d  (%.4f s)",
+                        network.n_events, pwc.psize(-1), time.perf_counter() - t_defrag2)
+
+        logger.info("   lag %s total: %.4f s", cycle_name, time.perf_counter() - t_lag)
 
         # convert to FragmentCluster and append to list
         fragment_cluster = convert_netcluster_to_fragment_clusters(pwc)
