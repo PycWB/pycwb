@@ -177,8 +177,7 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
     return superclusters
 
 
-def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers,
-                         return_td_cache: bool = False):
+def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers):
     timer_start = time.perf_counter()
 
     def _extract_timeseries_data(strain):
@@ -253,7 +252,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     n_lag = int(lag_plan.n_lag)
     if n_lag == 0:
         logger.info("Supercluster wrapper skipped: n_lag=0")
-        return (None, {}) if return_td_cache else None
+        return None
 
     if len(fragment_clusters) == 0 or len(fragment_clusters[0]) < n_lag:
         raise ValueError("Fragment clusters are inconsistent with lag plan")
@@ -499,7 +498,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
         # if there are no accepted superclusters, return None
         if len(accepted_superclusters) == 0:
             logger.warning("No accepted superclusters after supercluster stage (lag=%d)", lag)
-            return (None, td_inputs_cache) if return_td_cache else None
+            return None
 
         t_apply_subnet = time.perf_counter()
         selected_superclusters = _apply_subnet_cut(
@@ -552,6 +551,6 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     logger.info("Supercluster time: %.2f s", timer_stop - timer_start)
     logger.info("----------------------------------------")
 
-    return (fragment_clusters, td_inputs_cache) if return_td_cache else fragment_clusters
+    return fragment_clusters
 
 

@@ -104,11 +104,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         stage_timer = time.perf_counter()
         xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-        # return_td_cache=True: always returns (clusters, td_inputs_cache) tuple
-        super_fragment_clusters, wdm_td_cache = supercluster_wrapper(
+        super_fragment_clusters = supercluster_wrapper(
             config, None, fragment_clusters, strains,
             xtalk_coeff, xtalk_lookup_table, layers,
-            return_td_cache=True,
         )
         logger.info("Native supercluster_wrapper time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
@@ -135,18 +133,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     strains=strains,
                     config=config,
                     cluster_id=k + 1,
-                    wdm_td_cache=wdm_td_cache,
                 )
-                if result_cluster is not None:
-                    logger.info(
-                        "likelihood td_amp reloaded: %s",
-                        getattr(result_cluster, "_td_amp_reloaded", False),
-                    )
-                else:
-                    logger.info(
-                        "likelihood rejected cluster; td_amp reloaded: %s",
-                        getattr(selected_cluster, "_td_amp_reloaded", False),
-                    )
                 checked = True
                 break
 

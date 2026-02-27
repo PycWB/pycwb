@@ -60,7 +60,7 @@ def _resolve_runtime_parameters(config, nIFO):
     return network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, net_cc
 
 
-def _ensure_td_amp(cluster, nIFO, strains=None, config=None, wdm_td_cache=None):
+def _ensure_td_amp(cluster, nIFO, strains=None, config=None):
     if len(cluster.pixels) == 0:
         return False
 
@@ -78,10 +78,9 @@ def _ensure_td_amp(cluster, nIFO, strains=None, config=None, wdm_td_cache=None):
         raise ValueError("likelihood requires `strains` and `config` when cluster pixels do not contain td_amp")
 
     # Batch JAX extraction replaces the per-pixel serial loop
-    return batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=wdm_td_cache)
+    return batch_ensure_td_amp(cluster, nIFO, strains, config)
 
-def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,
-               wdm_td_cache=None):
+def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
 
@@ -89,9 +88,6 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         nIFO (int): Number of interferometers.
         cluster (Cluster): The cluster object containing pixel data.
         MRAcatalog (str): Path to the MRA catalog for xtalk information.
-        wdm_td_cache (dict | None): Optional pre-built TD-input cache from
-            supercluster_wrapper (Priority 2 optimisation).  When provided,
-            ``batch_ensure_td_amp`` skips the expensive WDM context rebuild.
 
     Returns:
         Cluster: The updated cluster object with filled detection statistics.
@@ -102,7 +98,7 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     logger.info("   ----------------------------------------------------")
 
     t_tdamp = time.perf_counter()
-    td_amp_reloaded = _ensure_td_amp(cluster, nIFO, strains=strains, config=config, wdm_td_cache=wdm_td_cache)
+    td_amp_reloaded = _ensure_td_amp(cluster, nIFO, strains=strains, config=config)
     setattr(cluster, "_td_amp_reloaded", bool(td_amp_reloaded))
     logger.info("td_amp reload: %s  (%.4f s)", bool(td_amp_reloaded), time.perf_counter() - t_tdamp)
 
