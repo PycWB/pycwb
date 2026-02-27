@@ -270,11 +270,101 @@ if _HAS_JAX:
 		out = out.at[0, :].set(0.0)
 		out = out.at[out.shape[0] - 1, :].set(0.0)
 		return out
+
+
+	@partial(jax.jit, static_argnames=("pattern", "edge", "wavelet_rate", "f_low", "f_high", "df"))
+	def _time_delay_max_energy_phase_jit(base_data, sample_rate, downsample, max_delay,
+										  pattern, edge, wavelet_rate, f_low, f_high, df):
+		"""
+		Phase-shift based time-delay max energy (JIT compiled).
+
+		.. warning::
+		    **NOT USED IN PRODUCTION.** This function produces physically different
+		    results from the reference implementation. WDM is NOT a simple analytic
+		    signal representation, so a time-domain shift is NOT equivalent to a
+		    per-frequency-bin phase rotation. Using this function causes ``alp``
+		    values to be ~2-5% lower than reference values, leading to significantly
+		    fewer coherence pixels (e.g. level-4: 89 → 34 pixels). Do NOT call this
+		    function in ``time_delay_max_energy`` until it has been validated against
+		    the cWB C++ reference. See ``docs/dev/Plans_to_review.md``.
+
+		Applies frequency-domain phase rotations to the complex WDM TF map for
+		each candidate time delay, avoiding the per-delay w2t → time-shift →
+		t2w round-trip of ``_time_delay_max_energy_pattern_jit``.
+
+		For WDM layer *m* the phase factor for a delay of *k* samples is::
+
+		    exp(-i · 2π · (m · df) · (k / sample_rate))
+
+		This is exact in the analytic-signal / narrow-band approximation used
+		by cWB and equivalent to the time-domain shift for well-separated WDM
+		frequency bands.
+
+		Parameters
+		----------
+		base_data : jnp.ndarray, complex128, shape (n_freq, n_time)
+		    Complex WDM TF map (real = 00-phase, imag = 90-phase).
+		sample_rate : jnp.ndarray scalar (float64)
+		    Sample rate of the underlying time series in Hz.
+		downsample : jnp.ndarray int32
+		    Delay step in samples.
+		max_delay : jnp.ndarray int32
+		    Maximum delay in samples.
+		pattern, edge, wavelet_rate, f_low, f_high, df : static args
+		    Forwarded to ``_wdm_packet_energy_jax``.
+		"""
+		n_freq = base_data.shape[0]
+		# Frequency for WDM layer m: f_m = m * df  (Hz)
+		freq_bins = jnp.arange(n_freq, dtype=jnp.float64) * df  # (n_freq,)
+
+		# Zero-delay energy map
+		current_max = _wdm_packet_energy_jax(base_data, pattern, edge, wavelet_rate, f_low, f_high, df)
+
+		def cond_fn(state):
+			k, _ = state
+			return k <= max_delay
+
+		def body_fn(state):
+			k, cur = state
+			# Phase rotation: exp(-i·2π·f_m·τ), τ = k / sample_rate
+			phase = jnp.exp(
+				-1j * 2.0 * jnp.pi * freq_bins * (k.astype(jnp.float64) / sample_rate)
+			)  # shape (n_freq,)
+			# Positive delay
+			shifted_pos = base_data * phase[:, None]
+			cur = jnp.maximum(
+				cur,
+				_wdm_packet_energy_jax(shifted_pos, pattern, edge, wavelet_rate, f_low, f_high, df),
+			)
+			# Negative delay: conjugate phase = exp(+i·2π·f_m·τ)
+			shifted_neg = base_data * jnp.conj(phase)[:, None]
+			cur = jnp.maximum(
+				cur,
+				_wdm_packet_energy_jax(shifted_neg, pattern, edge, wavelet_rate, f_low, f_high, df),
+			)
+			return k + downsample, cur
+
+		_, current_max = jax.lax.while_loop(
+			cond_fn, body_fn, (jnp.int32(downsample), current_max)
+		)
+
+		# Zero out DC and Nyquist edge bins (matches _time_delay_max_energy_pattern_jit)
+		current_max = current_max.at[0, :].set(0.0)
+		current_max = current_max.at[current_max.shape[0] - 1, :].set(0.0)
+		if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+			current_max = current_max.at[1, :].set(0.0)
+			current_max = current_max.at[current_max.shape[0] - 2, :].set(0.0)
+
+		return current_max
+
 else:
 	def _time_delay_max_energy_pattern_jit(*args, **kwargs):
 		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
 	def _time_delay_max_energy_complex_jit(*args, **kwargs):
+		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
+
+	def _time_delay_max_energy_phase_jit(*args, **kwargs):
 		raise RuntimeError(f"JAX is required for jitted time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
 	def _wdm_packet_energy_jax(*args, **kwargs):

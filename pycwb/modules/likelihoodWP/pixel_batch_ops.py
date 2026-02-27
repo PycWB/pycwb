@@ -70,7 +70,7 @@ def load_data_from_pixels_vectorized(pixels, nifo):
 # Batch TD amplitude computation (fallback path in _ensure_td_amp)
 # ---------------------------------------------------------------------------
 
-def batch_ensure_td_amp(cluster, nIFO, strains, config):
+def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     """
     Batch replacement for the per-pixel ``wdm.get_td_vec()`` loop inside
     ``_ensure_td_amp``.
@@ -86,6 +86,11 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
     nIFO    : int
     strains : list of TimeSeries
     config  : Config
+    wdm_td_cache : dict | None
+        Optional pre-built TD-input cache from supercluster_wrapper
+        (``{layer_key: [per_ifo_td_inputs_dict, ...]}``) .  When provided,
+        the expensive ``set_td_filter`` + ``t2w`` + ``prepare_td_inputs``
+        steps are skipped for any layer found in the cache.
 
     Returns
     -------
@@ -98,6 +103,7 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
     from pycwb.modules.super_cluster.td_vector_batch import (
         prepare_td_inputs,
         batch_extract_td_vecs,
+        batch_get_td_vecs_jax,
     )
 
     if len(cluster.pixels) == 0:
@@ -128,10 +134,21 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
         cand = layer_tag - 1
         return cand if cand % 2 == 0 else layer_tag
 
-    # Build WDM contexts once per unique layer
+    # Build WDM contexts once per unique layer, reusing the pre-built cache
+    # from supercluster_wrapper when available (Priority 2 optimisation).
     unique_layers = sorted({int(_normalize_layers(pix.layers)) for pix in cluster.pixels})
     wdm_contexts = {}
     for lc in unique_layers:
+        # Check if supercluster already built td_inputs for this layer
+        cached_td_inputs = None
+        if wdm_td_cache:
+            cached_td_inputs = wdm_td_cache.get(lc) or wdm_td_cache.get(lc + 1)
+        if cached_td_inputs is not None:
+            logger.debug("batch_ensure_td_amp: using cached td_inputs for layer %d", lc)
+            wdm_contexts[lc] = {"td_inputs": cached_td_inputs}
+            wdm_contexts[lc + 1] = wdm_contexts[lc]
+            continue
+
         wdm = WDMWavelet(
             M=lc, K=lc,
             beta_order=config.WDM_beta_order,
@@ -153,6 +170,9 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
         wdm_contexts[lc] = {"td_inputs": td_inputs_per_ifo}
         wdm_contexts[lc + 1] = wdm_contexts[lc]
 
+    import jax
+    import jax.numpy as jnp
+
     K = int(config.TDSize)
     td_vec_default = np.zeros(4 * K + 2, dtype=np.float32)
 
@@ -162,31 +182,67 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
     for pix in cluster.pixels:
         pixels_by_layer[int(pix.layers)].append(pix)
 
+    # -----------------------------------------------------------------------
+    # Priority 5 optimisation: dispatch ALL JAX kernels (every layer × ifo)
+    # before calling jax.block_until_ready, so the accelerator can pipeline
+    # them without a CPU stall between each (layer, ifo) pair.
+    # -----------------------------------------------------------------------
+
+    # Pass 1 — collect inputs and fire kernels
+    layer_jobs = []   # list of (layer_pixels, pixel_indices_np, futures_per_ifo)
     for layer_key, layer_pixels in pixels_by_layer.items():
         ctx = wdm_contexts.get(layer_key) or wdm_contexts.get(layer_key - 1)
         if ctx is None:
-            for pix in layer_pixels:
-                pix.td_amp = [td_vec_default.copy() for _ in range(nIFO)]
+            layer_jobs.append((layer_pixels, None, None))
             continue
 
         td_inputs_per_ifo = ctx["td_inputs"]
         n_layer = len(layer_pixels)
 
-        # Pre-extract all pixel indices for this layer
+        # Pre-extract pixel indices for all IFOs in this layer
         pixel_indices = np.array(
             [[int(pix.data[n].index) for n in range(nIFO)] for pix in layer_pixels],
             dtype=np.int32,
         )  # (n_layer, nIFO)
 
-        # Batch extract for all detectors
-        td_results = np.zeros((n_layer, nIFO, 4 * K + 2), dtype=np.float32)
+        # Dispatch without blocking — returns unresolved JAX arrays
+        futures = []
         for ifo_idx in range(nIFO):
-            indices_np = pixel_indices[:, ifo_idx]
-            td_results[:, ifo_idx, :] = batch_extract_td_vecs(
-                indices_np, td_inputs_per_ifo[ifo_idx], K
+            inp = td_inputs_per_ifo[ifo_idx]
+            idx_jax = jnp.asarray(pixel_indices[:, ifo_idx], dtype=jnp.int32)
+            futures.append(
+                batch_get_td_vecs_jax(
+                    idx_jax,
+                    inp["padded00"],
+                    inp["padded90"],
+                    inp["T0"],
+                    inp["Tx"],
+                    inp["M"],
+                    inp["n_coeffs"],
+                    K,
+                    inp["J"],
+                )
             )
+        layer_jobs.append((layer_pixels, pixel_indices, futures))
 
-        # Write back to pixels
+    # Pass 2 — single synchronisation barrier for all outstanding kernels
+    all_futures = [f for _, _, futures in layer_jobs if futures is not None for f in futures]
+    if all_futures:
+        jax.block_until_ready(all_futures)
+
+    # Pass 3 — collect results and write back to pixels
+    for layer_pixels, pixel_indices, futures in layer_jobs:
+        if futures is None:
+            # No valid WDM context for this layer — fill with zeros
+            for pix in layer_pixels:
+                pix.td_amp = [td_vec_default.copy() for _ in range(nIFO)]
+            continue
+
+        n_layer = len(layer_pixels)
+        td_results = np.zeros((n_layer, nIFO, 4 * K + 2), dtype=np.float32)
+        for ifo_idx, result in enumerate(futures):
+            td_results[:, ifo_idx, :] = np.asarray(result, dtype=np.float32)
+
         for pid, pix in enumerate(layer_pixels):
             pix.td_amp = [td_results[pid, ifo_idx, :] for ifo_idx in range(nIFO)]
 
