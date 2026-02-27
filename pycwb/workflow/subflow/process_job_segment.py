@@ -18,8 +18,9 @@ from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
-from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
+from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow, reconstruct_residuals_flow
 from pycwb.modules.reconstruction import estimate_snr
+
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +93,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # check and resample the data
         data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
         # data conditioning
+
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -166,6 +167,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                         event, cluster, epoch=data[0].start_time,
                                         save=config.save_waveform, plot=config.plot_waveform)
                 
+                if config.save_residuals or config.plot_residuals: 
+                    reconstruct_residuals_flow(trigger_folder, config, sub_job_seg.ifos, event, 
+                                               data, tf_maps, reconst_data,
+                                                save=config.save_residuals, save_gwf = config.save_residuals_gwf, 
+                                                plot=config.plot_residuals) 
                 # if injection, estimate injected_waveforms and calculate related statistics
                 # FIXME: currently, only supported for 'wavelet' whitening method
                 if event.injection: 
