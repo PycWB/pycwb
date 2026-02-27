@@ -674,6 +674,8 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     event_size = 0 # defined as Mw in cwb
     n_coherent_pixels = 0
 
+    # --- First pass: set core/likelihood/null flags and per-ifo data arrays ---
+    n_pix = len(cluster.pixels)
     for i, pixel in enumerate(cluster.pixels):
         pixel.core = False
         pixel.likelihood = 0.0
@@ -681,7 +683,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
 
         if pixel_mask[i] > 0:
             pixel.core = True
-            # TODO: what is the use of this?
             pixel.likelihood = - (energy_array_plus[i] + energy_array_cross[i]) / 2.0
 
         for j in range(n_ifo):
@@ -690,25 +691,51 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
             pixel.data[j].asnr = ps[j][i]
             pixel.data[j].a_90 = pS[j][i]
 
-        if not pixel.core:
+    # Pre-convert amplitude arrays to 2-D NumPy for fast column access
+    pn_arr = np.asarray(pn, dtype=np.float64)  # (n_ifo, n_pix)
+    pN_arr = np.asarray(pN, dtype=np.float64)
+    ps_arr = np.asarray(ps, dtype=np.float64)
+    pS_arr = np.asarray(pS, dtype=np.float64)
+
+    # Precompute per-pixel xtalk once using the vectorised lookup
+    xtalks_lookup, xtalks = xtalk.get_xtalk_pixels(cluster.pixels)
+
+    # Prefilter outer-loop eligible pixels (avoids the inner xpix.core test each time)
+    # null inner condition : core AND gnc <= 0
+    null_k_set = np.array(
+        [k for k, xpix in enumerate(cluster.pixels)
+         if xpix.core and gaussian_noise_correction[k] <= 0],
+        dtype=np.int64
+    )
+    # likelihood inner condition : core AND coherent_energy <= 0
+    like_k_set = np.array(
+        [k for k, xpix in enumerate(cluster.pixels)
+         if xpix.core and coherent_energy[k] <= 0],
+        dtype=np.int64
+    )
+
+    # --- Second pass: compute null and likelihood using vectorised inner sums ---
+    for i, pixel in enumerate(cluster.pixels):
+        if not pixel.core or gaussian_noise_correction[i] <= 0:
             continue
-        if gaussian_noise_correction[i] <= 0:
-            continue    # skip satellites
-            
+
         event_size += 1
 
-        for k, xpix in enumerate(cluster.pixels):
-            if not xpix.core or not gaussian_noise_correction[k] <= 0:
-                continue
-            xt = xtalk.get_xtalk(pix1=pixel, pix2=xpix)
-            if xt[0] > 2:
-                continue
-
-            for j in range(n_ifo):
-                pixel.null += xt[0] * pn[j][i] * pn[j][k] 
-                pixel.null += xt[1] * pn[j][i] * pN[j][k]
-                pixel.null += xt[2] * pN[j][i] * pn[j][k]
-                pixel.null += xt[3] * pN[j][i] * pN[j][k]
+        # null computation — inner loop over (core, gnc<=0) pixels
+        if len(null_k_set) > 0:
+            null_acc = 0.0
+            pn_i = pn_arr[:, i]   # (n_ifo,)
+            pN_i = pN_arr[:, i]
+            for k in null_k_set:
+                xt = xtalk.get_xtalk(pix1=pixel, pix2=cluster.pixels[k])
+                if xt[0] > 2:
+                    continue
+                # Vectorised over ifo dimension
+                null_acc += (xt[0] * np.dot(pn_i, pn_arr[:, k])
+                             + xt[1] * np.dot(pn_i, pN_arr[:, k])
+                             + xt[2] * np.dot(pN_i, pn_arr[:, k])
+                             + xt[3] * np.dot(pN_i, pN_arr[:, k]))
+            pixel.null = null_acc
 
         if coherent_energy[i] <= 0:
             continue    # skip the incoherent pixels
@@ -716,18 +743,20 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         n_coherent_pixels += 1
         pixel.likelihood = 0
 
-        for k, xpix in enumerate(cluster.pixels):
-            if not xpix.core or not coherent_energy[k] <= 0:
-                continue
-            xt = xtalk.get_xtalk(pix1=pixel, pix2=xpix)
-            if xt[0] > 2:
-                continue
-
-            for j in range(n_ifo):
-                pixel.likelihood += xt[0] * ps[j][i] * ps[j][k]
-                pixel.likelihood += xt[1] * ps[j][i] * pS[j][k]
-                pixel.likelihood += xt[2] * pS[j][i] * ps[j][k]
-                pixel.likelihood += xt[3] * pS[j][i] * pS[j][k]
+        # likelihood computation — inner loop over (core, coherent_energy<=0) pixels
+        if len(like_k_set) > 0:
+            like_acc = 0.0
+            ps_i = ps_arr[:, i]   # (n_ifo,)
+            pS_i = pS_arr[:, i]
+            for k in like_k_set:
+                xt = xtalk.get_xtalk(pix1=pixel, pix2=cluster.pixels[k])
+                if xt[0] > 2:
+                    continue
+                like_acc += (xt[0] * np.dot(ps_i, ps_arr[:, k])
+                             + xt[1] * np.dot(ps_i, pS_arr[:, k])
+                             + xt[2] * np.dot(pS_i, ps_arr[:, k])
+                             + xt[3] * np.dot(pS_i, pS_arr[:, k]))
+            pixel.likelihood = like_acc
 
     # subnetwork statistic
     Nmax = 0.0

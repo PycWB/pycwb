@@ -649,32 +649,49 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
     f_start = ib
     f_end = min(max(ie, f_start), n_freq - 1)
 
-    for t in range(t_start, t_end):
-        for f_idx in range(f_start, f_end):
-            e_val = combined[f_idx, t]
-            if e_val < eo:
-                continue
+    # --- Vectorized pixel selection (replaces the double Python for-loop) ---
+    # All slices operate on the subregion [f_start:f_end, t_start:t_end]
+    if f_end > f_start and t_end > t_start:
+        # Core energy in the valid region
+        e_val = combined[f_start:f_end, t_start:t_end]          # (nf, nt)
 
-            ct = combined[f_idx + 1, t] + combined[f_idx, t + 1] + combined[f_idx + 1, t + 1]
-            cb = combined[f_idx - 1, t] + combined[f_idx, t - 1] + combined[f_idx - 1, t - 1]
+        # Only examine pixels above the base threshold
+        above_thresh = e_val >= eo                                # (nf, nt)
 
-            ht = combined[f_idx + 1, t + 2]
-            if f_idx < ii:
-                ht += combined[f_idx + 2, t + 2] + combined[f_idx + 2, t + 1]
+        # Neighbourhood sums (ct = top halo, cb = bottom halo)
+        ct = (combined[f_start + 1:f_end + 1, t_start:t_end]
+              + combined[f_start:f_end,     t_start + 1:t_end + 1]
+              + combined[f_start + 1:f_end + 1, t_start + 1:t_end + 1])  # (nf, nt)
 
-            hb = combined[f_idx - 1, t - 2]
-            if f_idx > 1:
-                hb += combined[f_idx - 2, t - 2] + combined[f_idx - 2, t - 1]
+        cb = (combined[f_start - 1:f_end - 1, t_start:t_end]
+              + combined[f_start:f_end,     t_start - 1:t_end - 1]
+              + combined[f_start - 1:f_end - 1, t_start - 1:t_end - 1])  # (nf, nt)
 
-            if (
-                (ct + cb) * e_val < eh
-                and (ct + ht) * e_val < eh
-                and (cb + hb) * e_val < eh
-                and e_val < em
-            ):
-                continue
+        # ht: base term always present, extra terms only when f < ii (= n_freq-2)
+        ht = combined[f_start + 1:f_end + 1, t_start + 2:t_end + 2].copy()  # (nf, nt)
+        f_end_ht = min(f_end, ii)        # rows [f_start, f_end_ht) have extra ht
+        nf_ht = f_end_ht - f_start
+        if nf_ht > 0:
+            ht[:nf_ht] += (combined[f_start + 2:f_end_ht + 2, t_start + 2:t_end + 2]
+                           + combined[f_start + 2:f_end_ht + 2, t_start + 1:t_end + 1])
 
-            selected[f_idx, t] = True
+        # hb: base term always present, extra terms only when f > 1
+        hb = combined[f_start - 1:f_end - 1, t_start - 2:t_end - 2].copy()  # (nf, nt)
+        f_start_hb = max(f_start, 2)    # rows [f_start_hb, f_end) have extra hb
+        nf_hb_skip = f_start_hb - f_start
+        if f_start_hb < f_end:
+            hb[nf_hb_skip:] += (combined[f_start_hb - 2:f_end - 2, t_start - 2:t_end - 2]
+                                 + combined[f_start_hb - 2:f_end - 2, t_start - 1:t_end - 1])
+
+        # A pixel is selected when at least one neighbourhood condition is satisfied
+        # (negation of "all conditions fail → skip")
+        not_selected = (
+            ((ct + cb) * e_val < eh)
+            & ((ct + ht) * e_val < eh)
+            & ((cb + hb) * e_val < eh)
+            & (e_val < em)
+        )
+        selected[f_start:f_end, t_start:t_end] = above_thresh & ~not_selected
 
     freq_idx, time_idx = np.where(selected)
     values = combined_raw[freq_idx, time_idx]
@@ -760,7 +777,8 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     kf = int(max(1, kf))
 
     pixels = pixel_candidates.get("pixels", [])
-    coord_to_index = pixel_candidates.get("coord_to_index", {})
+    freq_arr = pixel_candidates.get("frequency", np.array([], dtype=np.int64))
+    time_arr = pixel_candidates.get("time", np.array([], dtype=np.int64))
 
     def _compute_subnet_subrho(cluster_pixels):
         if not cluster_pixels:
@@ -821,59 +839,43 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     if not pixels:
         clusters = []
     else:
-        n_points = len(pixels)
-        parent = np.arange(n_points, dtype=np.int32)
+        # --- Connected-components labeling with rectangular (kf, kt) connectivity ---
+        # scipy.ndimage.label requires structure shape (3, 3) for 2D inputs in
+        # newer scipy versions, so we build a sparse adjacency graph instead.
+        # Two pixels are directly connected if |Δfreq| ≤ kf AND |Δtime| ≤ kt.
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.csgraph import connected_components as _cc
 
-        def find(x):
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
+        f_idx_arr = freq_arr[:len(pixels)].astype(np.int64)
+        t_idx_arr = time_arr[:len(pixels)].astype(np.int64)
+        n_pix = len(f_idx_arr)
 
-        def union(a, b):
-            ra = find(a)
-            rb = find(b)
-            if ra != rb:
-                parent[rb] = ra
+        # Build sparse adjacency (upper triangle only; undirected)
+        if n_pix > 0:
+            df = np.abs(f_idx_arr[:, None] - f_idx_arr[None, :])
+            dt = np.abs(t_idx_arr[:, None] - t_idx_arr[None, :])
+            adj = csr_matrix((df <= kf) & (dt <= kt))
+            _, raw_labels = _cc(adj, directed=False, connection='weak')
+            # raw_labels is 0-indexed; shift to 1-indexed to match ndimage convention
+            raw_labels = raw_labels + 1
+        else:
+            raw_labels = np.array([], dtype=np.int64)
 
-        # cWB-like sort and neighbor linking
-        order = list(range(n_points))
-        order.sort(key=lambda idx: float(pixels[idx].time) / pixels[idx].rate / pixels[idx].layers)
+        # Build a labeled 2D array (same shape as mask) for downstream code
+        labeled = np.zeros(mask.shape, dtype=np.int64)
+        for pix_idx in range(n_pix):
+            labeled[int(f_idx_arr[pix_idx]), int(t_idx_arr[pix_idx])] = int(raw_labels[pix_idx])
 
-        m_layers = int(pixels[0].layers)
-        r_rate = float(pixels[0].rate)
-        cluster_rate = float(pixel_candidates.get("rate", r_rate))
-        is_wavelet = (int(cluster_rate / r_rate + 0.1) == m_layers)
-
-        for i_ord in range(n_points):
-            p_idx = order[i_ord]
-            p = pixels[p_idx]
-            for j_ord in range(i_ord + 1, n_points):
-                q_idx = order[j_ord]
-                q = pixels[q_idx]
-
-                if is_wavelet:
-                    dt_index = int(q.time) - int(p.time)
-                else:
-                    dt_index = int(q.time / m_layers) - int(p.time / m_layers)
-
-                if dt_index < 0:
-                    continue
-
-                if is_wavelet:
-                    if dt_index / m_layers > kt:
-                        break
-                else:
-                    if dt_index > kt:
-                        break
-
-                if abs(int(q.frequency) - int(p.frequency)) <= kf:
-                    union(p_idx, q_idx)
-
-        grouped = {}
-        for idx in range(n_points):
-            root = find(idx)
-            grouped.setdefault(root, []).append(pixels[idx])
+        # Group pixel objects by their 2D label (O(n) instead of O(n²))
+        grouped: dict = {}
+        for pix_idx, px in enumerate(pixels):
+            f_idx = int(freq_arr[pix_idx]) if pix_idx < len(freq_arr) else int(px.frequency)
+            t_idx = int(time_arr[pix_idx]) if pix_idx < len(time_arr) else (
+                (int(px.time) - int(px.frequency)) // max(1, int(px.layers))
+            )
+            lbl = int(labeled[f_idx, t_idx])
+            if lbl > 0:
+                grouped.setdefault(lbl, []).append(px)
 
         clusters = []
         for cluster_pixels in grouped.values():

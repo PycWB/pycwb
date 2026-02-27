@@ -116,74 +116,41 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
     tuple
         - NS : float
     """
-    n_pixels = len(p[0])
-    n_ifos = len(p)
+    # Vectorized implementation — no Python pixel loop
+    p_arr = np.asarray(p, dtype=np.float64)  # (n_ifo, n_pix)
+    q_arr = np.asarray(q, dtype=np.float64)
 
-    # TODO: Simplify the computation
-    EC = 0
-    NC = 0
-    ES = 0
-    SC = 0
-    RC = 0
-    GN = 0
-    EH = 0
-    NS = 0
+    n_ifos = p_arr.shape[0]
 
-    for i in range(n_pixels):
-        ns = 0
-        nx = 0
-            
-        for j in range(n_ifos):
-            ns += p[j][i]
-            nx += q[j][i]
-        ns /= n_ifos
-        nx /= n_ifos
-        # # DEBUG:
-        # if i in [392, 393, 394, 395]:
-        #     print(f"Pixel {i}: ns = {ns}, nx = {nx}")
-        # if i == 393:
-        #     ns = -ns
-        #     nx = -nx
-    
-        mk = 1.0 if MK[i] > 0 else 0.0  # event mask
-        nm = 1.0 if nx > 0 else 0.0  # data norm mask
-        nm = mk * nm  # norm x event mask
+    ns = p_arr.sum(axis=0) / n_ifos   # average signal energy per pixel
+    nx = q_arr.sum(axis=0) / n_ifos   # average norm per pixel
 
-        EC += nm * ec[i]  # coherent energy
-        NC += nm
+    mk = (MK > 0).astype(np.float64)           # event mask
+    nm_core = mk * (nx > 0).astype(np.float64) # norm x event mask (core)
 
-        nm = mk - nm                    # halo mask
-        ES += nm * rn[i]                # residual sattelite noise
-        rc = 1.0 if gn[i] < 2 else 0.0  # rc=1 if gn<2, or rc=0 if gn>=2
-        nn = gn[i] * (1 - rc)           # _nn = [_1 - _rc] * _gn
-        rc += nn * 0.5                  # Ec normalization
-        rc = ec[i] / (rc + 1e-9)        # normalized EC
+    EC = float(np.sum(nm_core * ec))
+    NC = float(np.sum(nm_core))
 
-        nm = 1.0 if ns > 0 else 0.0  # signal norm mask
-        nm = mk * nm  # norm x event mask
-        gn[i] = mk * gn[i] * nx  # normalize Gaussian noise ecorrection
-        SC += nm * ec[i]  # signal coherent energy
-        RC += nm * rc  # total normalized EC
-        GN += nm * gn[i]  # G-noise correction in time domain
-        NS += nm # number of signal pixels
+    nm_halo = mk - nm_core                     # halo mask
+    ES = float(np.sum(nm_halo * rn))
 
-        nm = mk - nm  # satellite mask
-        # # DEBUG:
-        # if nm > 0:
-        #     print(f"Warning: nm > 0 for pixel {i}, nm = {nm}, et = {et[i]}")
-        #     print(f"ns = {ns}, nx = {nx}, mk = {mk}, ec = {ec[i]}, gn = {gn[i]}")
-        EH += nm * et[i]  # halo energy in TF domain
+    rc = np.where(gn < 2.0, 1.0, 0.0)
+    nn = gn * (1.0 - rc)
+    rc = rc + nn * 0.5
+    rc = ec / (rc + 1e-9)
 
-    es = ES / 2  # residual satellite energy in time domain
-    eh = EH / 2  # halo energy in TF domain
-    gn = GN  # G-noise correction
-    nc = NC  # number of core pixels
-    ns = NS  # number of signal pixels
-    rc = RC  # normalized EC x 2
-    ec = EC  # signal coherent energy x 2
-    sc = SC  # core coherent energy x 2
+    nm_sig = mk * (ns > 0).astype(np.float64)  # signal norm mask
+    gn[:] = mk * gn * nx                        # in-place update (same as original)
 
-    return gn, ec, sc - ec, rc / (sc + 0.01), eh, es, nc, ns
+    SC = float(np.sum(nm_sig * ec))
+    RC = float(np.sum(nm_sig * rc))
+    GN = float(np.sum(nm_sig * gn))
+    NS = float(np.sum(nm_sig))
+
+    nm_sat = mk - nm_sig                        # satellite mask
+    EH = float(np.sum(nm_sat * et))
+
+    return GN, EC, SC - EC, RC / (SC + 0.01), EH / 2, ES / 2, NC, NS
 
 
 # static inline float _avx_setAMP_ps(float** p, float** q, 
@@ -296,28 +263,25 @@ def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
         - new_q : np.ndarray
             Updated q component.
     """
-    new_p = np.zeros_like(p)
-    new_q = np.zeros_like(q)
+    p_arr   = np.asarray(p)       # (n_ifo, n_pix)
+    q_arr   = np.asarray(q)
+    qn_arr  = np.asarray(q_norm)   # (n_ifo, n_pix)
 
-    n_pix = len(p[0])
-    n_ifo = len(p)
+    n_ifo = p_arr.shape[0]
+    aA    = np.asarray(q_a) + np.asarray(q_A)  # (n_ifo,)
+    q_si_arr = np.asarray(q_si)               # (n_ifo,)
+    q_co_arr = np.asarray(q_co)               # (n_ifo,)
 
-    aA = q_a + q_A
-    
-    _Np = 0.0  # number of effective pixels per detector
+    mk = 0.5 * (np.asarray(MK) > 0).astype(p_arr.dtype)  # (n_pix,)
 
-    for i in range(n_pix):
-        mk = 0.5 * (1.0 if MK[i] > 0 else 0.0)  # event mask
-        _nn = 0.0  # norm x event mask
-        for j in range(n_ifo):
-            _nn += q_norm[j][i]
-            # here the q_E is different from the q_II4
-            _n = aA[j] * mk * q_norm[j][i]  # norm x event mask
-            new_p[j][i] = _n * (p[j][i] * q_co[j] - q[j][i] * q_si[j])
-            new_q[j][i] = _n * (q[j][i] * q_co[j] + p[j][i] * q_si[j])
-        
-        _nn *= mk  # norm x event mask
-        _Np += _nn  # accumulate effective pixels
+    # n[j,i] = aA[j] * mk[i] * q_norm[j,i]
+    n_arr = aA[:, np.newaxis] * mk[np.newaxis, :] * qn_arr  # (n_ifo, n_pix)
+
+    new_p = n_arr * (p_arr * q_co_arr[:, np.newaxis] - q_arr * q_si_arr[:, np.newaxis])
+    new_q = n_arr * (q_arr * q_co_arr[:, np.newaxis] + p_arr * q_si_arr[:, np.newaxis])
+
+    # _Np = sum_i(sum_j(q_norm[j,i]) * mk[i])
+    _Np = float(np.sum(qn_arr.sum(axis=0) * mk))
     return _Np * 4 / n_ifo, new_p, new_q
 
 
@@ -390,16 +354,9 @@ def avx_loadNULL_ps(d, D, h, H):
     -------
     None
     """
-    n = np.array([d[i].copy() for i in range(len(d))], dtype=np.float32)
-    N = np.array([D[i].copy() for i in range(len(D))], dtype=np.float32)
-
-    n_pix = len(d[0])
-
-    for i in range(n_pix):
-        for j in range(len(n)):
-            n[j][i] = d[j][i] - h[j][i]
-            N[j][i] = D[j][i] - H[j][i]
-
+    # Vectorized: no Python pixel loop
+    n = np.asarray(d, dtype=np.float32) - np.asarray(h, dtype=np.float32)
+    N = np.asarray(D, dtype=np.float32) - np.asarray(H, dtype=np.float32)
     return n, N
 
 
@@ -638,60 +595,62 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
 
     new_p = np.empty((n_ifo, n_pix), dtype=np.float32)
     new_q = np.empty((n_ifo, n_pix), dtype=np.float32)
-    
-    r = np.empty(n_pix, dtype=np.float32)
-    a = np.empty(n_pix, dtype=np.float32)
-    R = np.empty(n_pix, dtype=np.float32)
-    A = np.empty(n_pix, dtype=np.float32)
 
     _o = float(1.e-5)
 
-    for i in range(n_pix):
-        mk = float(1.0) if MK[i] > 0 else float(0.0)
+    # Vectorized pixel loop — replaces the interpreted for i in range(n_pix) loop
+    p_arr = np.asarray(p, dtype=np.float64)   # (n_ifo, n_pix)
+    q_arr = np.asarray(q, dtype=np.float64)
+    f_arr = np.asarray(f, dtype=np.float64)   # (n_pix, n_ifo)
+    F_arr = np.asarray(F, dtype=np.float64)
 
-        xp = 0.
-        XP = 0.
-        xx = 0.
-        XX = 0.
+    mk = (np.asarray(MK) > 0).astype(np.float64)  # (n_pix,)
+    mk_p = p_arr * mk[np.newaxis, :]               # (n_ifo, n_pix)
+    mk_q = q_arr * mk[np.newaxis, :]
 
-        for j in range(n_ifo):
-            xp += f[i][j] * (mk * p[j][i])
-            XP += f[i][j] * (mk * q[j][i])
-            xx += F[i][j] * (mk * p[j][i])
-            XX += F[i][j] * (mk * q[j][i])
+    # Dot products: (f_arr * mk_p.T).sum(axis=1) => xp[i] = sum_j f[i,j]*mk*p[j,i]
+    xp = (f_arr * mk_p.T).sum(axis=1)   # (n_pix,)
+    XP = (f_arr * mk_q.T).sum(axis=1)
+    xx = (F_arr * mk_p.T).sum(axis=1)
+    XX = (F_arr * mk_q.T).sum(axis=1)
 
-        # 00/90 components in polar coordinates (pol00/90[0] : radius, pol00/90[1] : angle in radians)
-        cpol = xp / (np.sqrt(fp[i]) + _o)
-        spol = xx / (np.sqrt(fx[i]) + _o)
-        rpol = (xp * xp) / (fp[i] + _o) + (xx * xx) / (fx[i] + _o)
+    fp_arr = np.asarray(fp, dtype=np.float64)
+    fx_arr = np.asarray(fx, dtype=np.float64)
+    sqrt_fp = np.sqrt(fp_arr) + _o
+    sqrt_fx = np.sqrt(fx_arr) + _o
 
-        CPOL = XP / (np.sqrt(fp[i]) + _o)
-        SPOL = XX / (np.sqrt(fx[i]) + _o)
-        RPOL = (XP * XP) / (fp[i] + _o) + (XX * XX) / (fx[i] + _o)
+    cpol = xp / sqrt_fp
+    spol = xx / sqrt_fx
+    CPOL = XP / sqrt_fp
+    SPOL = XX / sqrt_fx
 
-        r[i] = np.sqrt(rpol)
-        a[i] = np.arctan2(spol, cpol)
-        R[i] = np.sqrt(RPOL)
-        A[i] = np.arctan2(SPOL, CPOL)
+    rpol = xp * xp / (fp_arr + _o) + xx * xx / (fx_arr + _o)
+    RPOL = XP * XP / (fp_arr + _o) + XX * XX / (fx_arr + _o)
 
-    # PnP - Projection to network Plane
-    cpol /= (np.sqrt(fp[i]) + _o)   # (x,f+) / {|f+|^2+epsilon}
-    spol /= (np.sqrt(fx[i]) + _o)  # (x,fx) / {|fx|^2+epsilon}
-    CPOL /= (np.sqrt(fp[i]) + _o)  # (X,f+) / {|f+|^2+epsilon}
-    SPOL /= (np.sqrt(fx[i]) + _o)  # (X,fx) / {|fx|^2+epsilon}  
+    r = np.sqrt(rpol).astype(np.float32)
+    a = np.arctan2(spol, cpol).astype(np.float32)
+    R = np.sqrt(RPOL).astype(np.float32)
+    A = np.arctan2(SPOL, CPOL).astype(np.float32)
+
+    # PnP & DSP sections below preserve the original (last-pixel-only) behaviour
+    # to avoid changing any existing output semantics — i is the last pixel index.
+    i = n_pix - 1
+    cpol_s = cpol[i] / (sqrt_fp[i])    # scalar for last pixel
+    spol_s = spol[i] / (sqrt_fx[i])
+    CPOL_s = CPOL[i] / (sqrt_fp[i])
+    SPOL_s = SPOL[i] / (sqrt_fx[i])
 
     for j in range(n_ifo):
-        new_p[j][i] = (f[i][j] * cpol + F[i][j] * spol)
-        new_q[j][i] = (f[i][j] * CPOL + F[i][j] * SPOL)
+        new_p[j][i] = f_arr[i][j] * cpol_s + F_arr[i][j] * spol_s
+        new_q[j][i] = f_arr[i][j] * CPOL_s + F_arr[i][j] * SPOL_s
 
-    # DSP - Dual Stream Phase Transform
-    N = np.sqrt(cpol * cpol + CPOL * CPOL)
-    cpol /= (N + _o)  # cos_dsp = N * (x,f+)/|f+|^2
-    CPOL /= (N + _o)  # sin_dsp = N * (X,f+)/|f+|^2
+    Nval = np.sqrt(cpol_s * cpol_s + CPOL_s * CPOL_s)
+    cpol_s /= (Nval + _o)
+    CPOL_s /= (Nval + _o)
 
     for j in range(n_ifo):
-        new_p[j][i] = new_p[j][i] * cpol + new_q[j][i] * CPOL
-        new_q[j][i] = new_q[j][i] * cpol - new_p[j][i] * CPOL
+        new_p[j][i] = new_p[j][i] * cpol_s + new_q[j][i] * CPOL_s
+        new_q[j][i] = new_q[j][i] * cpol_s - new_p[j][i] * CPOL_s
 
     return new_p, new_q, (r, a), (R, A)
 
@@ -827,7 +786,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     """
     n_pixels = len(p[0])
     n_ifos = len(p)
-    _o = float32(1.e-12)
+    _o = np.float64(1.e-12)
 
     q_norm = np.zeros((n_ifos, n_pixels))
     norm = np.zeros(n_ifos)
@@ -838,10 +797,10 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         xtalk_range = xtalks_lookup[i]
         xtalk = xtalks[xtalk_range[0]:xtalk_range[1]]
         xtalk_indexes = xtalk[:,0].astype(np.int32)
-        xtalk_cc = np.vstack((xtalk[:,4], xtalk[:,5], xtalk[:,6], xtalk[:,7]))  # 4xM matrix
+        xtalk_cc = np.vstack((xtalk[:,4], xtalk[:,5], xtalk[:,6], xtalk[:,7])).astype(np.float64)  # 4xM matrix
         # Select elements from p and q based on xtalk_indexes
-        p_vec = p[:, xtalk_indexes]  # N*M matrix
-        q_vec = q[:, xtalk_indexes]  # N*M matrix
+        p_vec = p[:, xtalk_indexes].astype(np.float64)  # N*M matrix
+        q_vec = q[:, xtalk_indexes].astype(np.float64)  # N*M matrix
         # Compute the sums using a vectorized approach
         # x = np.sum(xtalk_cc * np.array([q_vec, p_vec, q_vec, p_vec]), axis=1)  # 4-d vector
 
@@ -852,7 +811,9 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
                       np.dot(q_vec, xtalk_cc[3].T)))  # 4xN matrix
 
         # Summing all components together
-        t = (x[0] * p[:, i]) + (x[1] * q[:, i]) + (x[2] * p[:, i]) + (x[3] * q[:, i])
+        pi = p[:, i].astype(np.float64)
+        qi = q[:, i].astype(np.float64)
+        t = (x[0] * pi) + (x[1] * qi) + (x[2] * pi) + (x[3] * qi)
 
         # if i == 0:
         #     print('xtalk_cc: ', xtalk_cc)
@@ -866,7 +827,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         # set t to 0 if t < 0
         norm += np.where(t < 0, 0, t)
 
-        e = (p[:, i] * p[:, i] + q[:, i] * q[:, i]) / (t + _o)  # 1-d vector
+        e = (pi * pi + qi * qi) / (t + _o)  # 1-d vector
 
         q_norm[:, i] = np.where(e > 1, 0, e)
 
@@ -875,8 +836,8 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         rn[i] = np.sum(u * u + v * v)
 
     # print('q: ', norm)
-    e = q_E * 2   # TF-Domain SNR
-    norm = np.where(norm < float32(2.), float32(2.), norm)  # set norm to 2 if norm < 2
+    e = q_E.astype(np.float64) * 2.0   # TF-Domain SNR
+    norm = np.where(norm < 2.0, 2.0, norm)  # set norm to 2 if norm < 2
     detector_snr = e / norm  # detector {0:NIFO} SNR
 
     return detector_snr, norm, rn, q_norm

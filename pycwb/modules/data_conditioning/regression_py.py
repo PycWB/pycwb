@@ -195,7 +195,8 @@ if _NUMBA_AVAILABLE:
             return np.mean(core)
 
         abs_core = np.abs(core)
-        threshold = np.sort(abs_core)[keep - 1]
+        # np.partition gives O(n) selection vs O(n log n) for np.sort
+        threshold = np.partition(abs_core, keep - 1)[keep - 1]
 
         select_sum = 0.0
         select_count = 0
