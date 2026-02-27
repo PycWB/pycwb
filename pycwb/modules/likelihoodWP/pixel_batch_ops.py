@@ -70,7 +70,7 @@ def load_data_from_pixels_vectorized(pixels, nifo):
 # Batch TD amplitude computation (fallback path in _ensure_td_amp)
 # ---------------------------------------------------------------------------
 
-def batch_ensure_td_amp(cluster, nIFO, strains, config):
+def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     """
     Batch replacement for the per-pixel ``wdm.get_td_vec()`` loop inside
     ``_ensure_td_amp``.
@@ -86,6 +86,11 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
     nIFO    : int
     strains : list of TimeSeries
     config  : Config
+    wdm_td_cache : dict | None
+        Optional pre-built TD-input cache from supercluster_wrapper
+        (``{layer_key: [per_ifo_td_inputs_dict, ...]}``) .  When provided,
+        the expensive ``set_td_filter`` + ``t2w`` + ``prepare_td_inputs``
+        steps are skipped for any layer found in the cache.
 
     Returns
     -------
@@ -129,10 +134,21 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config):
         cand = layer_tag - 1
         return cand if cand % 2 == 0 else layer_tag
 
-    # Build WDM contexts once per unique layer
+    # Build WDM contexts once per unique layer, reusing the pre-built cache
+    # from supercluster_wrapper when available (Priority 2 optimisation).
     unique_layers = sorted({int(_normalize_layers(pix.layers)) for pix in cluster.pixels})
     wdm_contexts = {}
     for lc in unique_layers:
+        # Check if supercluster already built td_inputs for this layer
+        cached_td_inputs = None
+        if wdm_td_cache:
+            cached_td_inputs = wdm_td_cache.get(lc) or wdm_td_cache.get(lc + 1)
+        if cached_td_inputs is not None:
+            logger.debug("batch_ensure_td_amp: using cached td_inputs for layer %d", lc)
+            wdm_contexts[lc] = {"td_inputs": cached_td_inputs}
+            wdm_contexts[lc + 1] = wdm_contexts[lc]
+            continue
+
         wdm = WDMWavelet(
             M=lc, K=lc,
             beta_order=config.WDM_beta_order,

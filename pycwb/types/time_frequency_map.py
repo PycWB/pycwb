@@ -626,6 +626,13 @@ class TimeFrequencyMap:
 		:return: gamma-to-Gauss scaling parameter (`ALP`) if `pattern != 0`, else `1.0`
 		:rtype: float
 		"""
+		import time
+		import logging
+		logger = logging.getLogger(__name__)
+		
+		t_tdme_start = time.perf_counter()
+		logger.info("time_delay_max_energy: dt=%.6f, downsample=%d, pattern=%d", dt, downsample, pattern)
+		
 		if not hasattr(self.wavelet, "t2w") or not hasattr(self.wavelet, "w2t"):
 			raise ValueError("time_delay_max_energy requires a WDM wavelet with t2w/w2t APIs")
 
@@ -643,26 +650,34 @@ class TimeFrequencyMap:
 		else:
 			len_ts = max(1, int(round((self.stop - self.start) / self.dt)))
 
+		t_w2t = time.perf_counter()
 		ts_data = _w2t_data_jax(jnp.asarray(self.data, dtype=jnp.complex128), self.wavelet, len_ts)
+		logger.info("  w2t_data_jax: output shape=%s (%.3f MB), %.4f s", 
+		            ts_data.shape, ts_data.nbytes / 1e6 if hasattr(ts_data, 'nbytes') else 0, 
+		            time.perf_counter() - t_w2t)
+		
 		sample_rate_val = float(2.0 * float(self.df) * (int(np.asarray(self.data).shape[0]) - 1))
 		sample_rate = jnp.asarray(sample_rate_val, dtype=jnp.float64)
 		t0 = jnp.asarray(float(self.start), dtype=jnp.float64)
 
 		max_delay = jnp.int32(int(sample_rate_val * abs(float(dt))))
-		downsample = jnp.int32(int(downsample))
+		downsample_val = jnp.int32(int(downsample))
 		pattern_int = abs(int(pattern))
 		mm_mode = -1 if pattern_int else 0
+		logger.info("  params: max_delay=%d, sample_rate=%.1f Hz, len_ts=%d", int(max_delay), sample_rate_val, len_ts)
 
 		if pattern_int:
 			f_low = 0.0 if self.f_low is None else float(self.f_low)
 			f_high = (float(self.df) * (int(np.asarray(self.data).shape[0]) - 1)) if self.f_high is None else float(self.f_high)
+			logger.info("  pattern-based path: f_low=%.2f, f_high=%.2f", f_low, f_high)
 
+			t_jit = time.perf_counter()
 			current_max = _time_delay_max_energy_pattern_jit(
 				self.wavelet,
 				ts_data,
 				sample_rate,
 				t0,
-				downsample,
+				downsample_val,
 				max_delay,
 				mm_mode,
 				pattern_int,
@@ -673,22 +688,33 @@ class TimeFrequencyMap:
 				float(self.df),
 				tuple(np.asarray(self.data).shape),
 			)
+			logger.info("  _time_delay_max_energy_pattern_jit: output shape=%s, %.4f s", 
+			            current_max.shape, time.perf_counter() - t_jit)
 
 			self.data = np.asarray(current_max)
-			return self.Gamma2Gauss(hist=hist)
+			t_gamma = time.perf_counter()
+			result = self.Gamma2Gauss(hist=hist)
+			logger.info("  Gamma2Gauss: %.4f s, result=%.6f", time.perf_counter() - t_gamma, result)
+			logger.info("time_delay_max_energy total (pattern): %.4f s", time.perf_counter() - t_tdme_start)
+			return result
 
+		logger.info("  complex-only path")
+		t_jit = time.perf_counter()
 		max_complex = _time_delay_max_energy_complex_jit(
 			self.wavelet,
 			ts_data,
 			sample_rate,
 			t0,
-			downsample,
+			downsample_val,
 			max_delay,
 			mm_mode,
 			tuple(np.asarray(self.data).shape),
 		)
+		logger.info("  _time_delay_max_energy_complex_jit: output shape=%s, %.4f s", 
+		            max_complex.shape, time.perf_counter() - t_jit)
 
 		self.data = np.asarray(max_complex)
+		logger.info("time_delay_max_energy total (complex): %.4f s", time.perf_counter() - t_tdme_start)
 		return 1.0
 
 	def _compute_bounds(self, n_freq=None, n_time=None):
