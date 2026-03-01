@@ -10,6 +10,7 @@ from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
+from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 
     t_maxenergy = time.perf_counter()
     for n, tf_map in enumerate(tf_maps):
-        alp += max_energy(
+        tf_maps[n], alp_n = max_energy(
             tf_map=tf_map,
             max_delay=max_delay,
             up_n=up_n,
@@ -174,6 +175,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             f_low=config.fLow,
             f_high=config.fHigh,
         )
+        alp += alp_n
     logger_info += "max_energy (%d ifo): %.4f s\n" % (len(tf_maps), time.perf_counter() - t_maxenergy)
     logger_info += "max energy in units of noise variance: %g \n" % alp
 
@@ -264,8 +266,9 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
     """
     Decoupled max-energy computation for a detector TF map.
 
-    Python-native path is used when `tf_map` exposes `time_delay_max_energy`.
-    This function is intentionally python-only for the cwb_coherence path.
+    Calls :func:`time_delay_max_energy` from the module-level pure-function
+    implementation and returns a new TF map together with the Gamma-to-Gauss
+    scaling parameter.
 
     :param tf_map: detector TF map object
     :type tf_map: TimeFrequencyMap
@@ -281,26 +284,23 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
     :type f_high: float | None
     :param hist: optional histogram container
     :type hist: list | None
-    :return: maximum energy in units of noise variance
-    :rtype: float
+    :return: ``(new_tf_map, alp)`` — updated TF map and Gamma-to-Gauss scaling
+    :rtype: tuple[TimeFrequencyMap, float]
     """
     t_maxe = time.perf_counter()
-    
+
     if hasattr(tf_map, "bandpass"):
         t_bp = time.perf_counter()
         tf_map.bandpass(f_low=f_low, f_high=f_high)
         logger.info("  max_energy.bandpass: %.4f s", time.perf_counter() - t_bp)
 
-    if hasattr(tf_map, "time_delay_max_energy"):
-        t_tde = time.perf_counter()
-        tf_shape = tf_map.data.shape if hasattr(tf_map, 'data') and hasattr(tf_map.data, 'shape') else 'unknown'
-        result = float(tf_map.time_delay_max_energy(max_delay, downsample=up_n, pattern=pattern, hist=hist))
-        logger.info("  max_energy.time_delay_max_energy: %.4f s (shape=%s, max_delay=%.4f, up_n=%d, pattern=%d)",
-                    time.perf_counter() - t_tde, tf_shape, max_delay, up_n, pattern)
-        logger.info("  max_energy total: %.4f s", time.perf_counter() - t_maxe)
-        return result
-
-    raise ValueError("max_energy requires python TimeFrequencyMap with time_delay_max_energy")
+    t_tde = time.perf_counter()
+    tf_shape = tf_map.data.shape if hasattr(tf_map, 'data') and hasattr(tf_map.data, 'shape') else 'unknown'
+    new_tf_map, result = time_delay_max_energy(tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist)
+    logger.info("  max_energy.time_delay_max_energy: %.4f s (shape=%s, max_delay=%.4f, up_n=%d, pattern=%d)",
+                time.perf_counter() - t_tde, tf_shape, max_delay, up_n, pattern)
+    logger.info("  max_energy total: %.4f s", time.perf_counter() - t_maxe)
+    return new_tf_map, result
 
 
 def compute_threshold(bpp, alp=None, tf_maps=None, edge=None):

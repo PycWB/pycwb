@@ -17,4 +17,14 @@ except ImportError:
 import matplotlib as mpl
 mpl.use('Agg')
 
+try:
+    import os as _os
+    import jax as _jax
+    _jax_cache_dir = _os.path.expanduser("~/.cache/pycwb/jax_compilation_cache")
+    _os.makedirs(_jax_cache_dir, exist_ok=True)
+    _jax.config.update("jax_compilation_cache_dir", _jax_cache_dir)
+    _jax.config.update("jax_persistent_cache_min_compile_time_secs", 1.0)
+except Exception:
+    pass
+
 
