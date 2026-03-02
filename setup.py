@@ -180,15 +180,34 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', '--build', '.', '--target', 'install'] + build_args, cwd=self.build_temp)
 
 
-def has_pyroot():
-    spec = importlib.util.find_spec("ROOT")
-    print(f"sys.path: {sys.path[:3]}...")  # First few paths
-    print(f"ROOT spec: {spec}")
-    print(f"sys.modules has ROOT: {'ROOT' in sys.modules}")
-    return spec is not None
+def has_root():
+    if os.environ.get("PYCWB_DISABLE_WAT", "").lower() in {"1", "true", "yes"}:
+        return False
+
+    if os.environ.get("PYCWB_FORCE_WAT", "").lower() in {"1", "true", "yes"}:
+        return True
+
+    if importlib.util.find_spec("ROOT") is not None:
+        return True
+
+    root_config = shutil.which("root-config")
+    if root_config:
+        try:
+            subprocess.check_output([root_config, "--version"], stderr=subprocess.STDOUT)
+            return True
+        except Exception:
+            pass
+
+    root_sys = os.environ.get("ROOTSYS")
+    if root_sys:
+        root_bin = os.path.join(root_sys, "bin", "root")
+        if os.path.exists(root_bin):
+            return True
+
+    return False
 
 
-HAS_PYROOT = has_pyroot()
+HAS_ROOT = has_root()
 
 cmdclass = {
     'build_cwb': BuildCWB,
@@ -196,11 +215,11 @@ cmdclass = {
 }
 
 ext_modules = []
-if HAS_PYROOT:
+if HAS_ROOT:
     cmdclass['build_ext'] = CMakeBuild
     ext_modules = [CMakeExtension('wavelet', 'cwb-core')]
 else:
-    message = "PyROOT not found: skipping C++ wavelet extension build"
+    message = "ROOT not found in build environment: skipping C++ wavelet extension build"
     warnings.warn(message)
     sys.stderr.write(message + "\n")
 
