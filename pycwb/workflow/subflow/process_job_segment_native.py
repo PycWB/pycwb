@@ -13,9 +13,16 @@ from pycwb.modules.read_data import generate_strain_from_injection, generate_noi
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
 from pycwb.modules.likelihoodWP.likelihood import likelihood
+from pycwb.modules.qveto.qveto import get_qveto
+from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
+from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.workflow.subflow.process_job_segment import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.workflow.subflow.postprocess_and_plots import (
+    plot_trigger_flow, reconstruct_waveforms_flow,
+    reconstruct_INJwaveforms_flow, plot_skymap_flow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,18 +124,30 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.warning("No supercluster results for job segment %s trail_idx=%s", job_seg.index, trail_idx)
             continue
 
-        checked = False
+        # pre-condition the mdc (whitened injection maps) if needed for reconstruction
+        mdc_maps = None
+        HoT_list = None
+        if job_seg.injections and hasattr(sub_job_seg, 'injections') and sub_job_seg.injections:
+            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc_py
+            mdc_cond = [check_and_resample_py(mdc[i], config, i) for i in range(len(sub_job_seg.ifos))]
+            mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc_cond, nRMS)])
+
+        # compute likelihood for each lag; build events_data for downstream processing
         likelihood_timer = time.perf_counter()
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
             if skip_lags and lag in skip_lags:
                 logger.info("Skipping lag %d due to skip_lags", lag)
                 continue
 
+            events_data = []
             for k, selected_cluster in enumerate(fragment_cluster.clusters):
                 if selected_cluster.cluster_status > 0:
                     continue
 
-                result_cluster = likelihood(
+                # Tag the cluster with its sequential 1-based ID for the event record
+                selected_cluster.cluster_id = k + 1
+
+                result_cluster, sky_stats = likelihood(
                     config.nIFO,
                     selected_cluster,
                     config.MRAcatalog,
@@ -136,23 +155,106 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     config=config,
                     cluster_id=k + 1,
                     wdm_td_cache=wdm_td_cache,
+                    nRMS=nRMS,
                 )
-                if result_cluster is not None:
-                    logger.info(
-                        "likelihood td_amp reloaded: %s",
-                        getattr(result_cluster, "_td_amp_reloaded", False),
-                    )
-                else:
-                    logger.info(
-                        "likelihood rejected cluster; td_amp reloaded: %s",
-                        getattr(selected_cluster, "_td_amp_reloaded", False),
-                    )
-                checked = True
-                break
 
-            if checked:
-                break
+                if result_cluster is None or result_cluster.cluster_status != -1:
+                    logger.info("likelihood rejected cluster %d in lag %d", k + 1, lag)
+                    continue
 
-        logger.info("Native likelihood check time: %.2f s", time.perf_counter() - likelihood_timer)
-        if not checked:
-            logger.warning("No accepted clusters found for likelihood check")
+                logger.info("likelihood accepted cluster %d in lag %d (td_amp_reloaded=%s)",
+                            k + 1, lag, getattr(result_cluster, "_td_amp_reloaded", False))
+
+                # Construct Event from native cluster
+                event = Event()
+                event.output_py(sub_job_seg, result_cluster, config)
+                event.job_id = sub_job_seg.index
+
+                # Associate injections by GPS time overlap
+                if sub_job_seg.injections:
+                    for injection in sub_job_seg.injections:
+                        # FIXME: for overlap signal, this won't work
+                        if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
+                            event.injection = injection
+
+                events_data.append((event, result_cluster, sky_stats))
+
+            logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+            #################### Save triggers and post-process ####################
+            trigger_folders = []
+            for trigger in events_data:
+                trigger_folder = create_single_trigger_folder(working_dir, config.trigger_dir, sub_job_seg, trigger)
+                trigger_folders.append(trigger_folder)
+                save_trigger(trigger_folder=trigger_folder, trigger_data=trigger,
+                             save_cluster=config.save_cluster, save_sky_map=config.save_sky_map)
+
+            logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+            # post-process and plot
+            for trigger_folder, trigger in zip(trigger_folders, events_data):
+                event, cluster_out, event_skymap_statistics = trigger
+                epoch = float(getattr(data[0], 'start_time', getattr(data[0], 't0', 0.0)))
+
+                # estimate reconstructed waveforms
+                reconst_data = reconstruct_waveforms_flow(
+                    trigger_folder, config, sub_job_seg.ifos,
+                    event, cluster_out, epoch=epoch,
+                    wave_file=wave_file, save=config.save_waveform, plot=config.plot_waveform,
+                )
+
+                # if injection, estimate injected waveforms and calculate statistics
+                if event.injection:
+                    injected_data = reconstruct_INJwaveforms_flow(
+                        trigger_folder, config, sub_job_seg.ifos, event,
+                        HoT_list, mdc_maps, config.iwindow / 2, config.segEdge, config.inRate,
+                        wave_file=wave_file, save=config.save_injection, plot=config.plot_injection,
+                    )
+                    event.hrss      += injected_data['hrss']
+                    event.time      += injected_data['central_time']
+                    event.iSNR       = injected_data['snr']
+                    event.frequency += injected_data['central_freq']
+                    event.bandwidth += injected_data['bandwidth']
+                    event.duration  += injected_data['duration']
+
+                    inj_waveforms = injected_data['whitened_injected_waveform']
+                    rec_waveforms = [reconst_data[f'{ifo}_wf_REC_whiten'] for ifo in sub_job_seg.ifos]
+                    event.oSNR  = [estimate_snr(rec) for rec in rec_waveforms]
+                    event.ioSNR = [
+                        estimate_snr(inj, rec)
+                        if (inj is not None) and (rec is not None) else None
+                        for inj, rec in zip(inj_waveforms, rec_waveforms)
+                    ]
+
+                # Q-veto and Q-factor
+                try:
+                    min_qveto = 1e23
+                    min_qfactor = 1e23
+                    for ifo in sub_job_seg.ifos:
+                        for a_type in ['DAT', 'REC']:
+                            [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_wf_{a_type}_whiten'])
+                            min_qveto = min(min_qveto, qveto)
+                            min_qfactor = min(min_qfactor, qfactor)
+                    event.Qveto = [min_qfactor, min_qfactor]
+                    event.qveto = min_qveto
+                    event.qfactor = min_qfactor
+                    logger.info("Qveto for event %s: %s, Qfactor: %s",
+                                event.hash_id, event.qveto, event.qfactor)
+                except Exception as e:
+                    logger.error("Error calculating Qveto for event %s: %s", event.hash_id, e)
+
+                if config.plot_trigger:
+                    plot_trigger_flow(trigger_folder, event, cluster_out)
+
+                if config.plot_sky_map:
+                    plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
+
+            #################### Add events to catalog ####################
+            for trigger in events_data:
+                catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
+                                                    trigger_data=trigger,
+                                                    catalog_file=catalog_file)
+
+            logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+        logger.info("Native likelihood loop time: %.2f s", time.perf_counter() - likelihood_timer)

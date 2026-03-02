@@ -89,6 +89,7 @@ class SkyMapStatistics:
     nNetIndex: np.array  # cc
     nEllipticity: np.array  # Cr
     nPolarisation: np.array  # Mp
+    nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
 
     @classmethod
     def from_tuple(cls, t):

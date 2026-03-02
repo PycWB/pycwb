@@ -1,5 +1,5 @@
 from pycwb.modules.logger import logger_init
-from pycwb.workflow.subflow import prepare_job_runs
+from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
 from pycwb.utils.module import import_function
 import multiprocessing
 import logging

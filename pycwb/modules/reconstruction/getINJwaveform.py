@@ -2,6 +2,8 @@ import logging
 import numpy as np
 from pycwb.modules.cwb_conversions import convert_to_wseries, WSeries_to_matrix, convert_to_wavearray, convert_wavearray_to_timeseries
 from pycwb.types.wdm import WDM
+from pycwb.types.time_frequency_series import TimeFrequencySeries
+
 
 def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
     """
@@ -34,10 +36,16 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
         list of dictionaries containing injection statistics and waveforms
     """
     
-    hot = hot.data                              # original timeseries
-    w = tf_map.data                             # whitened timeseries
-    tf_map = convert_to_wseries(tf_map)         # whitened wseries
-    tf_map.Forward()
+    # Support both legacy TimeFrequencySeries wrappers and plain pycbc TimeSeries
+    if isinstance(hot, TimeFrequencySeries):
+        hot = hot.data
+    if isinstance(tf_map, TimeFrequencySeries):
+        w = tf_map.data
+        tf_map_wseries = convert_to_wseries(tf_map)  # ROOT WSeries for TF analysis
+        tf_map_wseries.Forward()
+    else:
+        w = tf_map
+        tf_map_wseries = None  # no ROOT WSeries available; TF frequency analysis skipped
 
     # seg_start = w.span[0] + offset + 1.         # analysed start time
     # seg_end = w.span[1] - offset - 1.           # analysed end time
@@ -73,13 +81,17 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
     hrss = calculate_hrss(windowed_hot, in_rate)     # injected hrss
 
     # calculate central frequency and bandwidth in wavelet domain
-    central_freq, bandwidth = estimate_central_frequency(tf_map, t_start, t_stop) # central_frequency, bandwidth
+    if tf_map_wseries is not None:
+        central_freq, bandwidth = estimate_central_frequency(tf_map_wseries, t_start, t_stop)
+    else:
+        central_freq, bandwidth = None, None  # TF analysis unavailable without ROOT WSeries
 
     # estimate final waveform
     # FIXME: add padding
     windowed_w = w.time_slice(central_time - window, central_time + window)
     waveform = estimate_waveform(windowed_w)
-    waveform = apply_frequency_cut(waveform, tf_map.f_low, tf_map.f_high)
+    if hasattr(tf_map, "f_low") and hasattr(tf_map, "f_high"):
+        waveform = apply_frequency_cut(waveform, tf_map.f_low, tf_map.f_high)
 
     # estimate statistics
     snr = estimate_snr(waveform)                    # iSNR

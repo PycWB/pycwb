@@ -107,6 +107,7 @@ class ClusterMeta:
     ndof: float = 0.
     sky_size: int = 0
     sky_index: int = 0
+    l_max: int = 0
 
 
 @dataclass
@@ -140,6 +141,7 @@ class Cluster:
     pixels: list[Pixel]
     cluster_meta: ClusterMeta
     cluster_status: int = 0
+    cluster_id: int = 0
     cluster_rate: list[int] = field(default_factory=list)
     cluster_time: float = 0.0
     cluster_freq: float = 0.0
