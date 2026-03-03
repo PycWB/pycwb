@@ -1,6 +1,7 @@
 import time
 import logging
 from .regression import regression
+from .fake_conditioning import fake_conditioning
 from .whitening_mesa import whitening_mesa
 from .whitening_cwb import whitening_cwb
 from multiprocessing import Pool
@@ -21,6 +22,10 @@ def data_conditioning(config, strains, nproc=1):
     """
     # timer
     timer_start = time.perf_counter()
+    if config.bootstrap: 
+        logger.info("Performing fake data conditioning for bootstrap analysis")
+        strain, nRMS_list = fake_conditioning(config, strains)
+        return strain, nRMS_list 
 
     if nproc > 1:
         logger.info("Start data conditioning in parallel")
