@@ -64,7 +64,11 @@ def init_parser(parser):
                          help="Maximum number of workers for parallel processing")
     
 
-
+    parser.add_argument("--scale", 
+                        type=int,
+                        default=0,
+                        help="Whether to rescale the residuals by the standard deviation of the noise in the segment. The scale factor is applied as sqrt(2) ** scale")
+    
 def command(args):
     import sys
     sys.path.insert(0, '/home/alessandro.martini/pycwb/pycwb/workflow/subflow/')
@@ -82,5 +86,6 @@ def command(args):
                     ordering = args.ordering, 
                     plot_median = args.plot_median,
                     plot_mean = args.plot_mean, 
-                    early_start = args.early_start, 
+                    early_start = args.early_start,
+                    scale = args.scale,  
                     max_workers = args.max_workers)

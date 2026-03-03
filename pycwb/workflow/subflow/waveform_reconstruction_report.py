@@ -47,7 +47,10 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
 
     #Load and slice all wavefroms to be used for computations
     early_start = kwargs.get('early_start', 0)
-    args = [(t_dir, reference, None, None, early_start) for t_dir in triggers_directories]
+    scale = kwargs.get('scale', 0)
+    print(scale)
+    args = [(t_dir, reference, None, None, early_start, scale) for t_dir in triggers_directories]
+
     with ProcessPoolExecutor(max_workers=8 or os.cpu_count()) as exe:
         reconstructed_waveforms = list(tqdm(exe.map(load_and_slice, args), total= len(args)))
     reconstructed_waveforms, reference_waveform = map(list,zip(*[wf for wf in reconstructed_waveforms if wf is not None])) 
@@ -129,7 +132,7 @@ def process_strain(folder, ifo, reference = None, whitened = False, confidence_l
     
 
     null_name = f"{ifo}_wf_NUL.{waveform_format}" if not whitened else f"{ifo}_wf_NUL_whiten.{waveform_format}"
-    args = [(Path(wf.folder) / null_name, reference, wf._total_time_shift, None, early_start) for wf in reconstructed_waveforms]
+    args = [(Path(wf.folder) / null_name, reference, wf._total_time_shift, None, early_start, scale) for wf in reconstructed_waveforms]
 
     del(reconstructed_waveforms)
     with ProcessPoolExecutor(max_workers = max_workers) as exe: 

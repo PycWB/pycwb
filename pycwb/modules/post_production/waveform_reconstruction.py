@@ -51,7 +51,7 @@ def create_save_directories(analysis_directory):
 
 def load_and_slice(args):
 
-    file, reference, time_shift, phase_shift, early_start = args 
+    file, reference, time_shift, phase_shift, early_start, scale = args 
 
     if time_shift is None and phase_shift is None and reference is None: 
         raise ValueError(f"Either one among reference, time_shift or phase_shift is needed, while ({reference}, {time_shift}, {phase_shift})")
@@ -59,7 +59,12 @@ def load_and_slice(args):
     waveform = load_waveform(file, skip_nans = True) 
     if waveform is None: 
         return None 
-    reference = load_waveform(reference)#, resample = waveform.sample_rate) 
+    reference = load_waveform(reference)#, resample = waveform.sample_rate)  
+
+    #rescale the data. If scale < 0, the waveform is downscaled, if > 0, the waveform is upscaled. The scale factor is applied as sqrt(2) ** scale
+    if scale != 0:
+        waveform.data *= np.sqrt(2) ** scale  
+          
     try: 
         waveform, reference = sync_waveforms(waveform, reference, time_shift, phase_shift) 
         #reference = waveform.syncWaveform(reference, sync_phase = True)
@@ -70,7 +75,7 @@ def load_and_slice(args):
     except Exception as e: 
         return None 
 
-    return waveform, reference
+    return waveform, reference 
 
 def sync_waveforms(waveform, reference, time_shift = None, phase_shift = None):
     """
