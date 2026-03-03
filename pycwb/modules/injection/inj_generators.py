@@ -1,6 +1,7 @@
 from pycbc.types.timeseries import TimeSeries, load_timeseries
 from scipy.signal import resample_poly
 import logging 
+from numpy import sqrt 
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +36,24 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
             
             strain.start_time = kwargs['gps_time'] - central_time 
 
-    
+        if kwargs.get('rescale', None):
+            rescale_factor = sqrt(2) ** kwargs['rescale'] 
+            logger.info(f"Rescaling strain data by a factor of sqrt(2) ** {kwargs['rescale']}")
+            strain.data *= rescale_factor 
+
         if strain.sample_rate == sample_rate:
             injections[ifo] = strain
 
-        elif not allow_resampling and strain.sample_rate != sample_rate:
-            raise ValueError(f"Strain sample rate ({strain.sample_rate} Hz) does not match target sample rate ({sample_rate} Hz). Set allow_resampling = True to enable resampling.")
+        #resample the data if injection sample rate and target time series sample rate do not match 
+        if strain.sample_rate != sample_rate: 
+            if not allow_resampling and distribute:
+                raise ValueError(f"Strain sample rate ({strain.sample_rate} Hz) does not match target sample rate ({sample_rate} Hz). Set allow_resampling = True to enable resampling, or set distribute = False to disable resampling and preserve original sample rate.")
+            else: 
+                logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
+                factor = sample_rate / strain.sample_rate 
+                strain = resample_data(strain, factor)
 
-        else: 
-            logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
-            factor = sample_rate / strain.sample_rate 
-            injections[ifo] = resample_data(strain, factor)
-
+        injections[ifo] = strain  
     return injections
 
 def resample_data(data, factor): 
