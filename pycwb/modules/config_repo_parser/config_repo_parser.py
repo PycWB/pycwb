@@ -12,6 +12,7 @@ Features:
 
 import os
 import glob
+import re
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -242,8 +243,12 @@ def get_gps_time_from_chunk(obs: str, chunk_id: str, search: str, config_base_pa
             file_obs = parts[0]
             file_chunk_id = parts[1]
             
-            # Convert chunk_id to string without leading zeros for comparison
-            if file_obs == obs and file_chunk_id == str(int(chunk_id)):
+            # Normalize chunk_id by stripping leading zeros from numeric prefix,
+            # preserving any trailing suffix characters (e.g., "01a" -> "1a", "01" -> "1")
+            def _normalize_chunk_id(s):
+                return re.sub(r'^0+(\w)', r'\1', s)
+
+            if file_obs == obs and _normalize_chunk_id(file_chunk_id) == _normalize_chunk_id(chunk_id):
                 try:
                     start = int(parts[2])
                     stop = int(parts[3])
