@@ -3,7 +3,6 @@ import logging
 import time
 import numpy as np
 from numba import njit, prange, float32
-from numba.typed import List
 from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.time_series import TimeSeries
@@ -131,8 +130,80 @@ def _populate_pixel_noise_rms(pixels, nRMS):
                 pass  # keep noise_rms=1.0 on failure
 
 
+def setup_likelihood(config, strains, nIFO, MRAcatalog):
+    """
+    Pre-compute all job-segment-level (lag/cluster-independent) inputs for likelihood.
+
+    Call this once per job segment, then pass the returned dict as ``setup=`` to
+    every :func:`likelihood` call.  This avoids repeating:
+
+    - XTalk catalog loading from disk
+    - Runtime parameter resolution from config
+    - Sky delay / antenna pattern computation
+    - ``_build_sky_directions`` healpix grid construction
+    - FP / FX transpose + float32 cast
+
+    Parameters
+    ----------
+    config : Config
+        Analysis configuration.
+    strains : list[TimeSeries]
+        Whitened strain data (one per IFO); used only to determine GPS time and
+        sample rate for sky-delay computation.
+    nIFO : int
+        Number of interferometers.
+    MRAcatalog : str
+        Path to the MRA xtalk catalog.
+
+    Returns
+    -------
+    dict
+        Keys: ``xtalk``, ``network_energy_threshold``, ``gamma_regulator``,
+        ``delta_regulator``, ``netEC_threshold``, ``netCC``, ``ml``, ``FP``,
+        ``FX``, ``FP_t``, ``FX_t``, ``n_sky``, ``healpix_order``, ``ra_arr``,
+        ``dec_arr``.
+    """
+    xtalk = XTalk.load(MRAcatalog, dump=True)
+
+    (
+        network_energy_threshold,
+        gamma_regulator,
+        delta_regulator,
+        netEC_threshold,
+        netCC,
+    ) = _resolve_runtime_parameters(config, nIFO)
+
+    ml_raw, FP_raw, FX_raw = load_data_from_ifo(nIFO, strains, config)
+    n_sky = int(ml_raw.shape[1])
+
+    # Pre-transpose and cast to float32 so per-cluster calls skip that work
+    FP_t = FP_raw.T.astype(np.float32)  # (n_sky, nIFO)
+    FX_t = FX_raw.T.astype(np.float32)  # (n_sky, nIFO)
+
+    healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
+    ra_arr, dec_arr = _build_sky_directions(n_sky, healpix_order)
+
+    return {
+        "xtalk": xtalk,
+        "network_energy_threshold": network_energy_threshold,
+        "gamma_regulator": gamma_regulator,
+        "delta_regulator": delta_regulator,
+        "netEC_threshold": netEC_threshold,
+        "netCC": netCC,
+        "ml": ml_raw,          # (nIFO, n_sky) — integer time-delay indices
+        "FP": FP_raw,          # (nIFO, n_sky) — raw, pre-transpose
+        "FX": FX_raw,          # (nIFO, n_sky) — raw, pre-transpose
+        "FP_t": FP_t,          # (n_sky, nIFO) float32 — ready for numba
+        "FX_t": FX_t,          # (n_sky, nIFO) float32 — ready for numba
+        "n_sky": n_sky,
+        "healpix_order": healpix_order,
+        "ra_arr": ra_arr,
+        "dec_arr": dec_arr,
+    }
+
+
 def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,
-               wdm_td_cache=None, nRMS=None):
+               wdm_td_cache=None, nRMS=None, setup=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
 
@@ -147,6 +218,9 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
             data conditioning.  When provided, each pixel's ``noise_rms`` field
             is populated from the TF map so that downstream physical-unit
             quantities (hrss, noise) are correct.
+        setup (dict | None): Pre-computed segment-level inputs from
+            :func:`setup_likelihood`.  When provided, XTalk loading, sky-pattern
+            computation, and runtime-parameter resolution are all skipped.
 
     Returns:
         tuple[Cluster | None, SkyMapStatistics | None]: 
@@ -158,47 +232,57 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
     logger.info("   ----------------------------------------------------")
 
-    t_tdamp = time.perf_counter()
-    td_amp_reloaded = _ensure_td_amp(cluster, nIFO, strains=strains, config=config, wdm_td_cache=wdm_td_cache)
-    setattr(cluster, "_td_amp_reloaded", bool(td_amp_reloaded))
-    logger.info("td_amp reload: %s  (%.4f s)", bool(td_amp_reloaded), time.perf_counter() - t_tdamp)
+    # td_amp is guaranteed to be set by supercluster_single_lag before likelihood
+    # is called in the streaming per-lag path; no reload needed.
 
     # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
     # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
     if nRMS is not None and len(nRMS) == nIFO:
         _populate_pixel_noise_rms(cluster.pixels, nRMS)
 
-    # prepare runtime parameters
-    network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, netCC = _resolve_runtime_parameters(
-        config, nIFO
-    )
+    # Segment-level constants — reuse precomputed setup when available, otherwise compute here
+    if setup is not None:
+        network_energy_threshold = setup["network_energy_threshold"]
+        gamma_regulator          = setup["gamma_regulator"]
+        delta_regulator          = setup["delta_regulator"]
+        netEC_threshold          = setup["netEC_threshold"]
+        netCC                    = setup["netCC"]
+        xtalk                    = setup["xtalk"]
+        ml                       = setup["ml"]    # (nIFO, n_sky)
+        FP                       = setup["FP_t"]  # (n_sky, nIFO) float32 — already transposed
+        FX                       = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
+        n_sky                    = setup["n_sky"]
+    else:
+        network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, netCC = _resolve_runtime_parameters(
+            config, nIFO
+        )
+        xtalk = XTalk.load(MRAcatalog, dump=True)
+        ml, FP, FX = load_data_from_ifo(
+            nIFO=nIFO,
+            strains=strains,
+            config=config,
+            ml=ml,
+            FP=FP,
+            FX=FX,
+        )
+        n_sky = int(ml.shape[1])
 
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.])
     n_pix = len(cluster.pixels)
 
-    # Load xtalk catalog
-    xtalk = XTalk.load(MRAcatalog, dump=True)
+    # Per-cluster xtalk pixel selection
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
-
-    # Extract data from python object to numpy arrays for numba
-    ml, FP, FX = load_data_from_ifo(
-        nIFO=nIFO,
-        strains=strains,
-        config=config,
-        ml=ml,
-        FP=FP,
-        FX=FX,
-    )
-    n_sky = int(ml.shape[1])
 
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
 
-    # Transpose array and convert to float32 for speedup
+    # Transpose pixel arrays and convert to float32 for numba
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    FP = FP.T.astype(np.float32)
-    FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
+    # FP / FX are already (n_sky, nIFO) float32 when coming from setup; transpose+cast otherwise
+    if setup is None:
+        FP = FP.T.astype(np.float32)
+        FX = FX.T.astype(np.float32)
 
     # Note: What are the two regulators for?
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
@@ -216,9 +300,14 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     _exp_stat = np.exp(_sky_stat_shifted)
     skymap_statistics.nProbability = (_exp_stat / _exp_stat.sum()).astype(np.float32)
 
-    # Compute sky direction angles at l_max from the same grid used by load_data_from_ifo
-    _healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
-    _ra_arr, _dec_arr = _build_sky_directions(n_sky, _healpix_order)
+    # Sky direction angles at l_max — reuse precomputed arrays when available
+    if setup is not None:
+        _healpix_order = setup["healpix_order"]
+        _ra_arr        = setup["ra_arr"]
+        _dec_arr       = setup["dec_arr"]
+    else:
+        _healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
+        _ra_arr, _dec_arr = _build_sky_directions(n_sky, _healpix_order)
     _l_max = int(skymap_statistics.l_max)
     # cWB theta: co-latitude in degrees [0, 180]; phi: longitude in degrees [0, 360)
     _theta_rad = float(np.pi / 2.0 - _dec_arr[_l_max])  # co-latitude from declination

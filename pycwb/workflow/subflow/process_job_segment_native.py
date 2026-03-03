@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 import time
@@ -6,13 +7,14 @@ import numpy as np
 from copy import copy
 from pycwb.config import Config
 from pycbc.types import TimeSeries
-from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
+from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.cwb_coherence import coherence
+from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
-from pycwb.modules.likelihoodWP.likelihood import likelihood
+from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
@@ -103,26 +105,24 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # coherence
+        # ---- One-time lag-independent setup ----------------------------------------
         stage_timer = time.perf_counter()
-        fragment_clusters = coherence(config, strains)
-        logger.info("Coherence time: %.2f s", time.perf_counter() - stage_timer)
+        coherence_setup = setup_coherence(config, strains)
+        logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
         xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-        # return_td_cache=True: always returns (clusters, td_inputs_cache) tuple
-        super_fragment_clusters, wdm_td_cache = supercluster_wrapper(
-            config, None, fragment_clusters, strains,
-            xtalk_coeff, xtalk_lookup_table, layers,
-            return_td_cache=True,
-        )
-        logger.info("Native supercluster_wrapper time: %.2f s", time.perf_counter() - stage_timer)
+        sc_setup = setup_supercluster(config, strains, xtalk_coeff, xtalk_lookup_table, layers)
+        wdm_td_cache = sc_setup["td_inputs_cache"]
+        n_lag = sc_setup["n_lag"]
+        logger.info("Supercluster setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        if super_fragment_clusters is None:
-            logger.warning("No supercluster results for job segment %s trail_idx=%s", job_seg.index, trail_idx)
-            continue
+        stage_timer = time.perf_counter()
+        lh_setup = setup_likelihood(config, strains, config.nIFO, config.MRAcatalog)
+        logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # pre-condition the mdc (whitened injection maps) if needed for reconstruction
         mdc_maps = None
@@ -132,11 +132,29 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             mdc_cond = [check_and_resample_py(mdc[i], config, i) for i in range(len(sub_job_seg.ifos))]
             mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc_cond, nRMS)])
 
-        # compute likelihood for each lag; build events_data for downstream processing
+        # ---- Streaming per-lag loop ---------------------------------------------------
+        # For each lag: coherence (pixel selection + clustering) →
+        #               supercluster (TD amps + subnet cut) →
+        #               likelihood + output.
+        # Expensive lag-independent work (TF maps, WDM decomposition, sky patterns)
+        # was done once above and is reused here.
         likelihood_timer = time.perf_counter()
-        for lag, fragment_cluster in enumerate(super_fragment_clusters):
+        for lag in range(n_lag):
             if skip_lags and lag in skip_lags:
                 logger.info("Skipping lag %d due to skip_lags", lag)
+                continue
+
+            # coherence for this lag only
+            frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
+
+            # supercluster for this lag only
+            fragment_cluster = supercluster_single_lag(sc_setup, frag_clusters_this_lag, lag)
+
+            if fragment_cluster is None:
+                logger.warning(
+                    "No supercluster results for lag %d (job segment %s trail_idx=%s)",
+                    lag, job_seg.index, trail_idx,
+                )
                 continue
 
             events_data = []
@@ -151,19 +169,17 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     config.nIFO,
                     selected_cluster,
                     config.MRAcatalog,
-                    strains=strains,
-                    config=config,
                     cluster_id=k + 1,
                     wdm_td_cache=wdm_td_cache,
                     nRMS=nRMS,
+                    setup=lh_setup,
                 )
 
                 if result_cluster is None or result_cluster.cluster_status != -1:
                     logger.info("likelihood rejected cluster %d in lag %d", k + 1, lag)
                     continue
 
-                logger.info("likelihood accepted cluster %d in lag %d (td_amp_reloaded=%s)",
-                            k + 1, lag, getattr(result_cluster, "_td_amp_reloaded", False))
+                logger.info("likelihood accepted cluster %d in lag %d", k + 1, lag)
 
                 # Construct Event from native cluster
                 event = Event()
@@ -256,5 +272,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                                     catalog_file=catalog_file)
 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+            # Release JAX device buffers and Python objects from this lag before
+            # the next iteration.  JAX kernels hold device memory until GC runs;
+            # with 100+ background lags this accumulates to GB of device memory.
+            del frag_clusters_this_lag, fragment_cluster, events_data
+            gc.collect()
 
         logger.info("Native likelihood loop time: %.2f s", time.perf_counter() - likelihood_timer)

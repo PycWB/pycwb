@@ -139,9 +139,14 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             for strain in strains
         ]
 
-    # use string instead of directly logging to avoid messy output in parallel
-    logger_info = "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f \n" % (
-        level, rate, layers, config.rateANA / 2. / (2 ** level), 1000. / rate)
+    logger.info(
+        "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
+        level,
+        rate,
+        layers,
+        config.rateANA / 2. / (2 ** level),
+        1000. / rate,
+    )
 
     fragment_clusters = []
     ###############################
@@ -176,8 +181,8 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
         tf_maps=tf_maps,
         edge=config.segEdge,
     )
-    logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
-    logger_info += "lag_plan: n_lag=%d\n" % n_lag
+    logger.info("thresholds in units of noise variance: Eo=%g Emax=%g", Eo, Eo * 2)
+    logger.info("lag_plan: n_lag=%d", n_lag)
 
     # set veto array
     # TODO: the veto is applied to veto the non-injected periods. Will implement later
@@ -194,7 +199,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
     # if TL <= 0.:
     #     raise ValueError("live time is zero")
 
-    logger_info += "lag | clusters | pixels | select_t(s) | cluster_t(s)\n"
+    logger.info("lag | clusters | pixels | select_t(s) | cluster_t(s)")
 
     # loop over time lags
     for j in range(n_lag):
@@ -229,13 +234,251 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
         fragment_cluster = c
         fragment_clusters.append(fragment_cluster)
 
-        logger_info += "%3d |%9d |%7d | cand=%d sel=%.4fs clust=%.4fs\n" % (
-            j, fragment_cluster.event_count(), fragment_cluster.pixel_count(),
-            n_candidates, t_sel_elapsed, t_cl_elapsed)
+        logger.info(
+            "%3d |%9d |%7d | cand=%d sel=%.4fs clust=%.4fs",
+            j,
+            fragment_cluster.event_count(),
+            fragment_cluster.pixel_count(),
+            n_candidates,
+            t_sel_elapsed,
+            t_cl_elapsed,
+        )
 
-    logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
+    logger.info("Coherence time for single level: %f s", time.perf_counter() - timer_start)
+    return fragment_clusters
 
-    logger.info(logger_info)
+
+# ---------------------------------------------------------------------------
+# Streaming-friendly API: setup once, iterate over lags
+# ---------------------------------------------------------------------------
+
+def setup_coherence(config, strains):
+    """
+    Compute all lag-independent coherence data (TF maps after max_energy,
+    threshold, lag plan) for every resolution level.
+
+    Call this once per job segment, then pass the returned list to
+    :func:`coherence_single_lag` for each lag.
+
+    Parameters
+    ----------
+    config : Config
+    strains : list
+        Whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
+
+    Returns
+    -------
+    list[dict]
+        One setup dict per resolution, keyed by ``tf_maps``, ``Eo``,
+        ``lag_plan``, ``pattern``, ``level``, ``layers``, ``rate``,
+        ``select_subrho``, ``select_subnet``, ``segEdge``.
+    """
+    timer_start = time.perf_counter()
+
+    up_n = int(config.rateANA / 1024)
+    if up_n < 1:
+        up_n = 1
+
+    normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
+
+    setups = [
+        _setup_coherence_single_res(i, config, normalized_strains, up_n)
+        for i in range(config.nRES)
+    ]
+
+    logger.info("Coherence setup time: %.2f s", time.perf_counter() - timer_start)
+    return setups
+
+
+def _setup_coherence_single_res(i, config, strains, up_n):
+    """
+    Lag-independent coherence setup for one resolution level.
+
+    Builds the WDM wavelet, TF maps, applies max_energy, computes the
+    energy threshold, and builds the lag plan.  Nothing here depends on
+    which lag is being processed.
+
+    Returns
+    -------
+    dict
+        Keys: ``tf_maps``, ``Eo``, ``lag_plan``, ``pattern``, ``level``,
+        ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
+        ``segEdge``.
+    """
+    timer_start = time.perf_counter()
+
+    level = config.l_high - i
+    layers = 2 ** level if level > 0 else 0
+    rate = config.rateANA // 2 ** level
+
+    wdm_layers = max(1, layers)
+    wdm_wavelet = WDMWavelet(
+        M=wdm_layers,
+        K=wdm_layers,
+        beta_order=config.WDM_beta_order,
+        precision=config.WDM_precision,
+    )
+
+    # Build TF maps
+    try:
+        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
+        tf_maps = [
+            TimeFrequencyMap(
+                data=batch_data_list[n],
+                is_whitened=True,
+                dt=dt,
+                df=df,
+                start=float(strains[n].t0),
+                stop=float(strains[n].end_time),
+                f_low=getattr(config, "fLow", None),
+                f_high=getattr(config, "fHigh", None),
+                edge=getattr(config, "segEdge", None),
+                wavelet=wdm_wavelet,
+                len_timeseries=len(strains[n].data),
+            )
+            for n in range(len(strains))
+        ]
+    except Exception as exc:
+        logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
+        tf_maps = [
+            TimeFrequencyMap.from_timeseries(
+                ts=strain,
+                wavelet=wdm_wavelet,
+                is_whitened=True,
+                f_low=getattr(config, "fLow", None),
+                f_high=getattr(config, "fHigh", None),
+                edge=getattr(config, "segEdge", None),
+            )
+            for strain in strains
+        ]
+
+    logger.info(
+        "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
+        level, rate, layers,
+        config.rateANA / 2. / (2 ** level),
+        1000. / rate,
+    )
+
+    # Apply max_energy over the sky (modifies tf-map data in place)
+    max_delay = config.max_delay
+    pattern = config.pattern
+    alp = 0.0
+    for n, tf_map in enumerate(tf_maps):
+        tf_maps[n], alp_n = max_energy(
+            tf_map=tf_map,
+            max_delay=max_delay,
+            up_n=up_n,
+            pattern=pattern,
+            f_low=config.fLow,
+            f_high=config.fHigh,
+        )
+        alp += alp_n
+    alp = alp / config.nIFO
+
+    # Compute energy threshold (lag-independent)
+    Eo = compute_threshold(
+        config.bpp,
+        alp if pattern != 0 else None,
+        tf_maps=tf_maps,
+        edge=config.segEdge,
+    )
+
+    # Build lag plan from the (now max-energy-processed) TF maps
+    lag_plan = build_lag_plan_from_config(config, tf_maps)
+
+    logger.info(
+        "level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)",
+        level, Eo, lag_plan.n_lag, time.perf_counter() - timer_start,
+    )
+
+    return {
+        "tf_maps": tf_maps,
+        "Eo": Eo,
+        "lag_plan": lag_plan,
+        "pattern": pattern,
+        "level": level,
+        "layers": layers,
+        "rate": rate,
+        "select_subrho": config.select_subrho,
+        "select_subnet": config.select_subnet,
+        "segEdge": config.segEdge,
+    }
+
+
+def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
+    """
+    Compute coherence for one lag index, using pre-built per-resolution setups
+    from :func:`setup_coherence`.
+
+    This is the per-lag cheap counterpart: only pixel selection and clustering
+    are performed here; all expensive TF/WDM work is already done.
+
+    Parameters
+    ----------
+    coherence_setups : list[dict]
+        Returned by :func:`setup_coherence`.
+    lag_idx : int
+        Zero-based lag index.
+    return_rejected : bool
+        If True keep rejected clusters in the output.
+
+    Returns
+    -------
+    list[FragmentCluster]
+        One FragmentCluster per resolution for this lag.
+    """
+    fragment_clusters = []
+    for setup in coherence_setups:
+        tf_maps = setup["tf_maps"]
+        Eo = setup["Eo"]
+        lag_plan = setup["lag_plan"]
+        pattern = setup["pattern"]
+
+        if lag_idx >= lag_plan.n_lag:
+            raise IndexError(
+                f"lag_idx={lag_idx} is out of range n_lag={lag_plan.n_lag}"
+            )
+
+        t_sel = time.perf_counter()
+        candidates = select_network_pixels(
+            lag_index=lag_idx,
+            energy_threshold=Eo,
+            tf_maps=tf_maps,
+            lag_shifts=lag_plan.lag_shifts[lag_idx],
+            veto=None,
+            edge=setup["segEdge"],
+        )
+        t_sel_elapsed = time.perf_counter() - t_sel
+        n_candidates = (
+            len(candidates["pixels"])
+            if isinstance(candidates, dict) and "pixels" in candidates
+            else -1
+        )
+
+        t_cl = time.perf_counter()
+        if pattern != 0:
+            c = cluster_pixels(min_size=2, max_size=3, pixel_candidates=candidates)
+            c.select("subrho", setup["select_subrho"])
+            c.select("subnet", setup["select_subnet"])
+        else:
+            c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
+        t_cl_elapsed = time.perf_counter() - t_cl
+
+        if not return_rejected:
+            c.remove_rejected()
+
+        logger.info(
+            "lag=%3d level=%d |%9d |%7d | cand=%d sel=%.4fs clust=%.4fs",
+            lag_idx,
+            setup["level"],
+            c.event_count(),
+            c.pixel_count(),
+            n_candidates,
+            t_sel_elapsed,
+            t_cl_elapsed,
+        )
+        fragment_clusters.append(c)
+
     return fragment_clusters
 
 

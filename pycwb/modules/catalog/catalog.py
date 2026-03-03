@@ -68,9 +68,11 @@ def add_events_to_catalog(filename: str, events: list[Event]) -> None:
                 catalog = orjson.loads(f.read())
                 # append events
                 catalog["events"].extend(events)
-                # write the json file
+                # write the json file; truncate to remove stale bytes if the
+                # new content is ever shorter than the old (defensive)
                 f.seek(0)
                 f.write(orjson.dumps(catalog, option=orjson.OPT_SERIALIZE_NUMPY))
+                f.truncate()
     else:
         logger.warning("Catalog file does not exist. Event will not be saved to catalog.")
 

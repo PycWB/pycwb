@@ -1,6 +1,11 @@
 import numpy as np
+import logging
 from numba.typed import List
 from numba import jit, njit, types
+from .sub_net_cut import sub_net_cut
+
+
+logger = logging.getLogger(__name__)
 
 
 # @njit
@@ -343,3 +348,61 @@ def aggregate_clusters_from_links(cluster_ids, cluster_links):
     aggregated_clusters = [list(c) for c in aggregated_clusters] + [[c] for c in standalone_clusters]
 
     return aggregated_clusters
+
+
+def extract_timeseries_data(strain):
+    values = np.asarray(strain.data, dtype=np.float64)
+    sample_rate = float(strain.sample_rate)
+    start = float(strain.t0)
+    return values, sample_rate, start
+
+
+def expected_td_vec_len(td_size):
+    return 4 * int(td_size) + 2
+
+
+def resolve_wdm_context(layer_tag, context_map):
+    layer_tag = int(layer_tag)
+    context = context_map.get(layer_tag)
+    if context is not None:
+        return context
+
+    context = context_map.get(layer_tag - 1)
+    if context is not None:
+        return context
+
+    raise ValueError(f"Missing WDM context for pixel layer {layer_tag}")
+
+
+def apply_subnet_cut(superclusters, n_loudest_local, ml_local, FP_local, FX_local,
+                     acor_local, e2or_local, n_ifo_local, n_sky_local,
+                     subnet_local, subcut_local, subnorm_local, subrho_local,
+                     xtalk_coeff_local, xtalk_lookup_table_local, layers_local):
+    for i, c in enumerate(superclusters):
+        c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
+        results = sub_net_cut(
+            c.pixels[:n_loudest_local], ml_local, FP_local, FX_local,
+            acor_local, e2or_local, n_ifo_local, n_sky_local,
+            subnet_local, subcut_local, subnorm_local, subrho_local,
+            xtalk_coeff_local, xtalk_lookup_table_local, layers_local,
+        )
+
+        if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
+            logger.info(
+                "Cluster %d (%d pixels) passed subnet, subrho, and subthr cut",
+                i,
+                len(c.pixels),
+            )
+            c.cluster_status = -1
+        else:
+            log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
+            if not results['subnet_passed']:
+                log_output += f"subnet cut condition: {results['subnet_condition']}, "
+            if not results['subrho_passed']:
+                log_output += f"subrho cut condition: {results['subrho_condition']}, "
+            if not results['subthr_passed']:
+                log_output += f"subthr cut condition: {results['subthr_condition']}, "
+            logger.info(log_output)
+            c.cluster_status = 1
+
+    return [c for c in superclusters if c.cluster_status <= 0]
