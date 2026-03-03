@@ -1,11 +1,13 @@
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import faulthandler
 import os
 import getpass
 import logging
 import sys
 from pathlib import Path
 from pycwb.modules.logger import logger_init, log_prints
-from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
+from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
@@ -69,6 +71,11 @@ def batch_setup(file_name, working_dir='.',
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")
 
 
+def _worker_initializer():
+    """Enable faulthandler in each worker to capture segmentation violations."""
+    faulthandler.enable()
+
+
 def data_collector(working_dir, queue):
     logger_init(log_file=None, log_level="INFO", worker_prefix=f'DataCollector')
     while True:
@@ -128,34 +135,53 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, queue))
     data_collector_worker.start()
 
+    # Use ProcessPoolExecutor for modern parallel processing with segfault capture via faulthandler.
+    # max_tasks_per_child=1 restarts workers after each task to avoid memory leaks (requires Python 3.11+).
+    # _worker_initializer enables faulthandler so segmentation violations print a native traceback
+    # to stderr instead of silently terminating the worker.
     exceptions = []
-    with multiprocessing.Pool(
-        n_workers,
-        maxtasksperchild=1,  # Restart workers after each task to avoid memory leaks
-        ) as pool:
+    executor = ProcessPoolExecutor(
+        max_workers=n_workers,
+        max_tasks_per_child=1,  # Restart workers after each task to avoid memory leaks
+        initializer=_worker_initializer,
+    )
+    try:
         logger.info(f"Starting {n_workers} workers")
-        results = []
-        for job_seg in job_segments:
-            r = pool.apply_async(process_single_with_flag,
-                                    args=(main_func, queue, working_dir, config, job_seg,
-                                        compress_json, catalog_file))
-            results.append(r)
+        futures = {
+            executor.submit(process_single_with_flag, main_func, queue, working_dir, config, job_seg,
+                            compress_json, catalog_file): job_seg
+            for job_seg in job_segments
+        }
 
-        for r in results:
+        for future in as_completed(futures):
+            job_seg = futures[future]
             try:
-                err = r.get()
+                err = future.result()
                 if err:
                     exceptions.append(err)
             except Exception as e:
+                logger.error(f"Job segment {job_seg.index} raised an exception: {e}")
                 exceptions.append(e)
+    finally:
+        # Explicitly terminate all worker processes before shutdown.
+        # ProcessPoolExecutor's internal management thread is non-daemon and can hang
+        # indefinitely waiting on a pipe from workers killed by a signal (e.g. SIGSEGV).
+        # Terminating the processes unblocks the management thread so it can exit cleanly.
+        print("Terminating worker processes...")
+        for proc in list(executor._processes.values()):
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        executor.shutdown(wait=False, cancel_futures=True)
+        if exceptions:
+            os._exit(1)  # nuclear option: skip ExceptionGroup, just die
 
-        pool.close()
-        pool.join()
-        logger.info("All jobs are done, waiting for data collector to finish")
+    logger.info("All jobs are done, waiting for data collector to finish")
 
-        # send a sentinel to terminate the data collector
-        queue.put(None)
-        data_collector_worker.join()
+    # send a sentinel to terminate the data collector
+    queue.put(None)
+    data_collector_worker.join()
 
     if exceptions:
         raise ExceptionGroup("JobFailure", exceptions)

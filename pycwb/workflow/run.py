@@ -2,10 +2,17 @@ from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
 from pycwb.utils.module import import_function
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import faulthandler
 import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+
+def _worker_initializer():
+    """Enable faulthandler in each worker to capture segmentation violations."""
+    faulthandler.enable()
 
 
 def process_single_with_flag(working_dir, config, job_seg, compress_json, overwrite):
@@ -70,31 +77,47 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
         main_func(working_dir, config, job_segments[0], compress_json=compress_json)
         return
     
-    # use multiprocessing to process the job segments in parallel and prevent memory leak
-    # the maxtasksperchild=1 should be removed if the memory leak is fixed in the future
+    # Use ProcessPoolExecutor for modern parallel processing with segfault capture via faulthandler.
+    # max_tasks_per_child=1 restarts workers after each task to avoid memory leaks (requires Python 3.11+).
+    # _worker_initializer enables faulthandler so segmentation violations print a native traceback
+    # to stderr instead of silently terminating the worker.
     exceptions = []
-    with multiprocessing.Pool(
-        n_proc,
-        maxtasksperchild=1,  # Restart workers after each task to avoid memory leaks
-        ) as pool:
+    executor = ProcessPoolExecutor(
+        max_workers=n_proc,
+        max_tasks_per_child=1,  # Restart workers after each task to avoid memory leaks
+        initializer=_worker_initializer,
+    )
+    try:
         logger.info(f"Starting {n_proc} workers")
-        results = []
-        for job_seg in job_segments:
-            r = pool.apply_async(process_single_with_flag,
-                                    args=(working_dir, config, job_seg, compress_json, overwrite))
-            results.append(r)
+        futures = {
+            executor.submit(process_single_with_flag, working_dir, config, job_seg, compress_json, overwrite): job_seg
+            for job_seg in job_segments
+        }
 
-        for r in results:
+        for future in as_completed(futures):
+            job_seg = futures[future]
             try:
-                err = r.get()
+                err = future.result()
                 if err:
                     exceptions.append(err)
             except Exception as e:
+                logger.error(f"Job segment {job_seg.index} raised an exception: {e}")
                 exceptions.append(e)
 
-        pool.close()
-        pool.join()
-        logger.info("All jobs are done, waiting for data collector to finish")
+        logger.info("All jobs are done")
+    finally:
+        # Explicitly terminate all worker processes before shutdown.
+        # ProcessPoolExecutor's internal management thread is non-daemon and can hang
+        # indefinitely waiting on a pipe from workers killed by a signal (e.g. SIGSEGV).
+        print("Terminating worker processes...")
+        for proc in list(executor._processes.values()):
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        executor.shutdown(wait=False, cancel_futures=True)
+        if exceptions:
+            os._exit(1)  # nuclear option: skip ExceptionGroup, just die
 
     if exceptions:
         raise ExceptionGroup("JobFailure", exceptions)
