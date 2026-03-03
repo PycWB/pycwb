@@ -1,5 +1,4 @@
 import numpy as np
-import time
 # from numba import float32
 from numba import njit
 from numpy import float32
@@ -16,13 +15,9 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     network_energy_threshold = np.float32(2 * acor * acor * n_ifo)
     n_pix = len(pixels)
 
-    t0 = time.perf_counter()
     rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
-    print(f"[timing] load_data_from_pixels: {time.perf_counter() - t0:.6f}s")
 
-    t0 = time.perf_counter()
     cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, True, layers, xtalk_coeff, xtalk_lookup_table)
-    print(f"[timing] getXTalk_pixels: {time.perf_counter() - t0:.6f}s")
 
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
@@ -31,16 +26,12 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
 
-    t0 = time.perf_counter()
     l_max, stat, Em, Am, lm, Vm, suball, EE = optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy,
                                                               ml, network_energy_threshold, e2or, subcut)
-    print(f"[timing] optimze_sky_loc: {time.perf_counter() - t0:.6f}s")
 
-    t0 = time.perf_counter()
     submra, rHo, Eo, Lo, Ls, m = mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
                                                       network_energy_threshold, e2or, subcut,
                                                       cluster_xtalk, cluster_xtalk_lookup, l_max)
-    print(f"[timing] mra_statistics: {time.perf_counter() - t0:.6f}s")
     subnet_pass = min(suball, submra) > subnet
     subrho_pass = rHo > subrho
     subthr_pass = Em > subnorm * Eo

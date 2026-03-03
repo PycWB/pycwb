@@ -17,7 +17,6 @@ time (zero runtime cost after the first compile).
 
 import dataclasses
 import math
-import time
 import logging
 import numpy as np
 from functools import partial
@@ -634,9 +633,6 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
              parameter ``ALP``) where ``ALP == 1.0`` when ``pattern == 0``.
     :rtype: tuple[TimeFrequencyMap, float]
     """
-    t_tdme_start = time.perf_counter()
-    logger.info("time_delay_max_energy: dt=%.6f, downsample=%d, pattern=%d", dt, downsample, pattern)
-
     if not hasattr(tf_map.wavelet, "t2w") or not hasattr(tf_map.wavelet, "w2t"):
         raise ValueError("time_delay_max_energy requires a WDM wavelet with t2w/w2t APIs")
 
@@ -654,11 +650,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     else:
         len_ts = max(1, int(round((tf_map.stop - tf_map.start) / tf_map.dt)))
 
-    t_w2t = time.perf_counter()
     ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts)
-    logger.info("  w2t_data_jax: output shape=%s (%.3f MB), %.4f s",
-                ts_data.shape, ts_data.nbytes / 1e6 if hasattr(ts_data, 'nbytes') else 0,
-                time.perf_counter() - t_w2t)
 
     sample_rate_val = float(2.0 * float(tf_map.df) * (int(np.asarray(tf_map.data).shape[0]) - 1))
     sample_rate = jnp.asarray(sample_rate_val, dtype=jnp.float64)
@@ -668,7 +660,6 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     downsample_val = jnp.int32(int(downsample))
     pattern_int = abs(int(pattern))
     mm_mode = -1 if pattern_int else 0
-    logger.info("  params: max_delay=%d, sample_rate=%.1f Hz, len_ts=%d", int(max_delay), sample_rate_val, len_ts)
 
     wdm_M = int(tf_map.wavelet.M)
     wdm_m_H = int(tf_map.wavelet.m_H)
@@ -682,9 +673,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     if pattern_int:
         f_low = 0.0 if tf_map.f_low is None else float(tf_map.f_low)
         f_high = (float(tf_map.df) * (int(np.asarray(tf_map.data).shape[0]) - 1)) if tf_map.f_high is None else float(tf_map.f_high)
-        logger.info("  pattern-based path: f_low=%.2f, f_high=%.2f", f_low, f_high)
 
-        t_jit = time.perf_counter()
         current_max = _time_delay_max_energy_pattern_jit(
             ts_data,
             sample_rate,
@@ -703,18 +692,11 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
             wdm_M,
             wdm_m_H,
         )
-        logger.info("  _time_delay_max_energy_pattern_jit: output shape=%s, %.4f s",
-                    current_max.shape, time.perf_counter() - t_jit)
 
         new_tf_map = dataclasses.replace(tf_map, data=np.asarray(current_max))
-        t_gamma = time.perf_counter()
         result = new_tf_map.Gamma2Gauss(hist=hist)
-        logger.info("  Gamma2Gauss: %.4f s, result=%.6f", time.perf_counter() - t_gamma, result)
-        logger.info("time_delay_max_energy total (pattern): %.4f s", time.perf_counter() - t_tdme_start)
         return new_tf_map, result
 
-    logger.info("  complex-only path")
-    t_jit = time.perf_counter()
     max_complex = _time_delay_max_energy_complex_jit(
         ts_data,
         sample_rate,
@@ -727,11 +709,8 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
         wdm_M,
         wdm_m_H,
     )
-    logger.info("  _time_delay_max_energy_complex_jit: output shape=%s, %.4f s",
-                max_complex.shape, time.perf_counter() - t_jit)
 
     new_tf_map = dataclasses.replace(tf_map, data=np.asarray(max_complex))
-    logger.info("time_delay_max_energy total (complex): %.4f s", time.perf_counter() - t_tdme_start)
     return new_tf_map, 1.0
 
 
@@ -779,9 +758,6 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
     if not np.isfinite(dt):
         raise ValueError("dt must be finite")
 
-    t_start = time.perf_counter()
-    logger.info("time_delay_max_energy_numba: dt=%.6f, downsample=%d, pattern=%d", dt, downsample, pattern)
-
     # --- decode TF map → time series ---
     if tf_map.len_timeseries is not None:
         len_ts = int(tf_map.len_timeseries)
@@ -796,10 +772,8 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
     flat = np.stack([re_map.T, im_map.T], axis=0).reshape(-1).astype(np.float64)
     wavelet_filter = np.asarray(tf_map.wavelet.filter, dtype=np.float64)
 
-    t_w2t = time.perf_counter()
     ts_data = _wdm_w2t_numba(flat, n_freq, wavelet_filter, output_length=len_ts)
     ts_data = np.asarray(ts_data, dtype=np.float64)
-    logger.info("  w2t_numba: shape=%s, %.4f s", ts_data.shape, time.perf_counter() - t_w2t)
 
     # --- compute params ---
     sample_rate_val = float(2.0 * float(tf_map.df) * (n_freq - 1))
@@ -811,10 +785,8 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
 
     f_low = 0.0 if tf_map.f_low is None else float(tf_map.f_low)
     f_high = (float(tf_map.df) * (n_freq - 1)) if tf_map.f_high is None else float(tf_map.f_high)
-    logger.info("  f_low=%.2f, f_high=%.2f, max_delay=%d samples", f_low, f_high, max_delay_samples)
 
     # --- main numba loop ---
-    t_nb = time.perf_counter()
     current_max = _time_delay_max_energy_pattern_nb(
         ts_data, wavelet_M, wavelet_m_H, wavelet_filter,
         max_delay_samples, int(downsample), mm_mode,
@@ -824,12 +796,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
         f_low, f_high,
         float(tf_map.df),
     )
-    logger.info("  _time_delay_max_energy_pattern_nb: shape=%s, %.4f s",
-                current_max.shape, time.perf_counter() - t_nb)
 
     new_tf_map = dataclasses.replace(tf_map, data=current_max)
-    t_gamma = time.perf_counter()
     result = new_tf_map.Gamma2Gauss(hist=hist)
-    logger.info("  Gamma2Gauss: %.4f s, result=%.6f", time.perf_counter() - t_gamma, result)
-    logger.info("time_delay_max_energy_numba total: %.4f s", time.perf_counter() - t_start)
     return new_tf_map, result

@@ -1,7 +1,11 @@
 import struct
+import logging
 import numpy as np
 import pathlib
 from numba import njit
+
+
+logger = logging.getLogger(__name__)
 
 
 def _read_catalog_header_and_layers(data):
@@ -81,7 +85,7 @@ def load_catalog(fn, dump=True):
 
     # if ext of fn is .npz, then load the file as npz
     if pathlib.Path(fn).suffix == ".npz":
-        print(f"Loading {fn}")
+        logger.info("Loading %s", fn)
         data = np.load(fn)
         return data['xtalk_coeff'], data['xtalk_lookup_table'], data['layers'], data['nRes']
 
@@ -89,11 +93,11 @@ def load_catalog(fn, dump=True):
     # if ext of fn is .bin, search if there is a .npz file with the same name
     # under the same directory and working directory
     if pathlib.Path(fn).suffix == ".bin" or pathlib.Path(fn).suffix == ".xbin":
-        print(f"A .bin file is detected, searching for .npz file with the same name.")
+        logger.info("A .bin file is detected, searching for .npz file with the same name.")
         # npz_fn = fn.replace(".bin", ".npz")
         npz_fn = pathlib.Path(fn).with_suffix(".npz")
         if pathlib.Path(npz_fn).exists():
-            print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
+            logger.info(".npz file found: %s, loading the catalog from the .npz file.", npz_fn)
             return load_catalog(npz_fn)
 
         # npz_fn = pathlib.Path(fn).name.replace(".bin", ".npz")

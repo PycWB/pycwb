@@ -177,15 +177,10 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     n_pix = len(cluster.pixels)
 
     # Load xtalk catalog
-    t_xtalk = time.perf_counter()
     xtalk = XTalk.load(MRAcatalog, dump=True)
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
-    logger.info("xtalk load+lookup: %.4f s  (pixels=%d, xtalk_entries=%d)",
-                time.perf_counter() - t_xtalk, n_pix,
-                len(cluster_xtalk) if hasattr(cluster_xtalk, '__len__') else -1)
 
     # Extract data from python object to numpy arrays for numba
-    t_ifo = time.perf_counter()
     ml, FP, FX = load_data_from_ifo(
         nIFO=nIFO,
         strains=strains,
@@ -195,13 +190,8 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         FX=FX,
     )
     n_sky = int(ml.shape[1])
-    logger.info("load_data_from_ifo: %.4f s  (n_sky=%d, nIFO=%d, FP=%s)",
-                time.perf_counter() - t_ifo, n_sky, nIFO, list(FP.shape))
 
-    t_pixels = time.perf_counter()
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
-    logger.info("load_data_from_pixels: %.4f s  (n_pix=%d, td shape before transpose=%s)",
-                time.perf_counter() - t_pixels, n_pix, list(td00.shape))
 
     # Transpose array and convert to float32 for speedup
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
@@ -210,20 +200,13 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     FX = FX.T.astype(np.float32)
     rms = rms.T.astype(np.float32)
 
-    logger.info("array sizes: n_pix=%d  n_sky=%d  n_delay=%d  nIFO=%d  td00=%s  rms=%s",
-                n_pix, n_sky, td00.shape[0], nIFO, list(td00.shape), list(rms.shape))
-
     # Note: What are the two regulators for?
-    t_dpf = time.perf_counter()
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
-    logger.info("calculate_dpf: %.4f s", time.perf_counter() - t_dpf)
 
     # loop over the sky locations to find the optimal sky localization, 
     # l_max and sky statistics will be returned in tuple due to the limitations of numba
-    t_skyopt = time.perf_counter()
     skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
-    logger.info("find_optimal_sky_localization: %.4f s  (n_sky=%d)", time.perf_counter() - t_skyopt, n_sky)
     # Convert the tuple to SkyMapStatistics dataclass for better structure and IDE friendly
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
@@ -245,12 +228,10 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
 
     # calculate sky statistics for the cluster at the optimal sky location l_max,
     # dozens of parameters will be returned in SkyStatistics dataclass
-    t_skystat = time.perf_counter()
     sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
                                                              FP, FX, rms, td00, td90, ml, REG, 
                                                              network_energy_threshold, 
                                                              cluster_xtalk, cluster_xtalk_lookup)
-    logger.info("calculate_sky_statistics (l_max=%d): %.4f s", skymap_statistics.l_max, time.perf_counter() - t_skystat)
 
     # Check if the cluster is rejected based on the threshold cuts, 
     # the function will return the reason for rejection. If the cluster is not rejected, it will return None.
@@ -270,11 +251,9 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         return None, None
 
     # Fill the detection statistics into the cluster and pixels for return
-    t_fill = time.perf_counter()
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
                              n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold)
-    logger.info("fill_detection_statistic: %.4f s", time.perf_counter() - t_fill)
     
     # Placeholder: Get the chirp mass
     get_chirp_mass(cluster)
@@ -819,27 +798,37 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     xtalks_lookup, xtalks = xtalk.get_xtalk_pixels(cluster.pixels)
 
     # Prefilter outer-loop eligible pixels (avoids the inner xpix.core test each time)
-    # null inner condition : core AND gnc <= 0
+    # null inner condition : core AND gnc > 0  (mirrors C++: skip if !core || p_gn[k]<=0)
     null_k_set = np.array(
         [k for k, xpix in enumerate(cluster.pixels)
-         if xpix.core and gaussian_noise_correction[k] <= 0],
+         if xpix.core and gaussian_noise_correction[k] > 0],
         dtype=np.int64
     )
-    # likelihood inner condition : core AND coherent_energy <= 0
+    # likelihood inner condition : core AND coherent_energy > 0  (mirrors C++: skip if !core || p_ec[k]<=0)
     like_k_set = np.array(
         [k for k, xpix in enumerate(cluster.pixels)
-         if xpix.core and coherent_energy[k] <= 0],
+         if xpix.core and coherent_energy[k] > 0],
         dtype=np.int64
     )
 
     # --- Second pass: compute null and likelihood using vectorised inner sums ---
+    logger.debug("fill_detection_statistic: null_k_set size=%d, like_k_set size=%d, n_pix=%d",
+                 len(null_k_set), len(like_k_set), n_pix)
+    logger.debug("fill_detection_statistic: pn_arr shape=%s, pn range=[%g, %g]",
+                 str(pn_arr.shape), float(np.min(np.abs(pn_arr))), float(np.max(np.abs(pn_arr))))
+    logger.debug("fill_detection_statistic: gn range=[%g, %g], ec range=[%g, %g]",
+                 float(np.min(gaussian_noise_correction)),
+                 float(np.max(gaussian_noise_correction)),
+                 float(np.min(coherent_energy)),
+                 float(np.max(coherent_energy)))
+
     for i, pixel in enumerate(cluster.pixels):
         if not pixel.core or gaussian_noise_correction[i] <= 0:
             continue
 
         event_size += 1
 
-        # null computation — inner loop over (core, gnc<=0) pixels
+        # null computation — inner loop over (core, gnc > 0) pixels
         if len(null_k_set) > 0:
             null_acc = 0.0
             pn_i = pn_arr[:, i]   # (n_ifo,)
@@ -849,10 +838,11 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                 if xt[0] > 2:
                     continue
                 # Vectorised over ifo dimension
-                null_acc += (xt[0] * np.dot(pn_i, pn_arr[:, k])
-                             + xt[1] * np.dot(pn_i, pN_arr[:, k])
-                             + xt[2] * np.dot(pN_i, pn_arr[:, k])
-                             + xt[3] * np.dot(pN_i, pN_arr[:, k]))
+                term = (xt[0] * np.dot(pn_i, pn_arr[:, k])
+                        + xt[1] * np.dot(pn_i, pN_arr[:, k])
+                        + xt[2] * np.dot(pN_i, pn_arr[:, k])
+                        + xt[3] * np.dot(pN_i, pN_arr[:, k]))
+                null_acc += term
             pixel.null = null_acc
 
         if coherent_energy[i] <= 0:

@@ -107,7 +107,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
     )
 
     # Batch t2w over all detectors in one JAX vmap call instead of a serial loop.
-    t_t2w_batch = time.perf_counter()
     try:
         batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
         tf_maps = [
@@ -126,14 +125,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             )
             for n in range(len(strains))
         ]
-        t2w_elapsed = time.perf_counter() - t_t2w_batch
-        logger.info("Batch t2w timing (JAX vmap, %d detectors): %.4f s",
-                    len(strains), t2w_elapsed)
-        for _n, _tfm in enumerate(tf_maps):
-            _sh = _tfm.data.shape if hasattr(_tfm, "data") and hasattr(_tfm.data, "shape") else "unknown"
-            logger.info("  TF map[%d] shape (freq x time): %s  (%.3f MB)",
-                        _n, _sh,
-                        (_tfm.data.nbytes / 1e6) if hasattr(_tfm, "data") and hasattr(_tfm.data, "nbytes") else 0.0)
     except Exception as exc:
         logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
         tf_maps = [
@@ -165,7 +156,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
     lag_plan = build_lag_plan_from_config(config, tf_maps)
     n_lag = lag_plan.n_lag
 
-    t_maxenergy = time.perf_counter()
     for n, tf_map in enumerate(tf_maps):
         tf_maps[n], alp_n = max_energy(
             tf_map=tf_map,
@@ -176,21 +166,16 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             f_high=config.fHigh,
         )
         alp += alp_n
-    logger_info += "max_energy (%d ifo): %.4f s\n" % (len(tf_maps), time.perf_counter() - t_maxenergy)
-    logger_info += "max energy in units of noise variance: %g \n" % alp
-
     alp = alp / config.nIFO
 
     # set threshold
     # threshold is calculated based on the data layers and rate of the default ifo data
-    t_thresh = time.perf_counter()
     Eo = compute_threshold(
         config.bpp,
         alp if pattern != 0 else None,
         tf_maps=tf_maps,
         edge=config.segEdge,
     )
-    logger_info += "compute_threshold: %.4f s\n" % (time.perf_counter() - t_thresh)
     logger_info += "thresholds in units of noise variance: Eo=%g Emax=%g \n" % (Eo, Eo * 2)
     logger_info += "lag_plan: n_lag=%d\n" % n_lag
 
@@ -211,9 +196,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 
     logger_info += "lag | clusters | pixels | select_t(s) | cluster_t(s)\n"
 
-    t_pixel_select_total = 0.0
-    t_cluster_total = 0.0
-
     # loop over time lags
     for j in range(n_lag):
         # select pixels above Eo
@@ -227,7 +209,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             edge=config.segEdge,
         )
         t_sel_elapsed = time.perf_counter() - t_sel
-        t_pixel_select_total += t_sel_elapsed
         n_candidates = len(candidates["pixels"]) if isinstance(candidates, dict) and "pixels" in candidates else -1
 
         # get pixel list
@@ -241,7 +222,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
         else:
             c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
         t_cl_elapsed = time.perf_counter() - t_cl
-        t_cluster_total += t_cl_elapsed
 
         if not return_rejected:
             c.remove_rejected()
@@ -253,8 +233,6 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             j, fragment_cluster.event_count(), fragment_cluster.pixel_count(),
             n_candidates, t_sel_elapsed, t_cl_elapsed)
 
-    logger_info += "pixel_select cumulative: %.4f s  cluster cumulative: %.4f s\n" % (
-        t_pixel_select_total, t_cluster_total)
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
     logger.info(logger_info)
@@ -287,19 +265,10 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
     :return: ``(new_tf_map, alp)`` — updated TF map and Gamma-to-Gauss scaling
     :rtype: tuple[TimeFrequencyMap, float]
     """
-    t_maxe = time.perf_counter()
-
     if hasattr(tf_map, "bandpass"):
-        t_bp = time.perf_counter()
         tf_map.bandpass(f_low=f_low, f_high=f_high)
-        logger.info("  max_energy.bandpass: %.4f s", time.perf_counter() - t_bp)
 
-    t_tde = time.perf_counter()
-    tf_shape = tf_map.data.shape if hasattr(tf_map, 'data') and hasattr(tf_map.data, 'shape') else 'unknown'
     new_tf_map, result = time_delay_max_energy(tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist)
-    logger.info("  max_energy.time_delay_max_energy: %.4f s (shape=%s, max_delay=%.4f, up_n=%d, pattern=%d)",
-                time.perf_counter() - t_tde, tf_shape, max_delay, up_n, pattern)
-    logger.info("  max_energy total: %.4f s", time.perf_counter() - t_maxe)
     return new_tf_map, result
 
 
@@ -464,7 +433,6 @@ def _get_tf_energy_array(tf_map, edge=None):
     :rtype: np.ndarray
     """
     arr = np.asarray(tf_map.data)
-    orig_shape = arr.shape
     if np.iscomplexobj(arr):
         arr = arr.real
     arr = np.asarray(arr, dtype=np.float64)
@@ -473,10 +441,6 @@ def _get_tf_energy_array(tf_map, edge=None):
         e = int(max(0, round(float(edge) / float(tf_map.dt))))
         if e > 0 and arr.shape[1] > 2 * e:
             arr = arr[:, e:-e]
-            logger.info("  _get_tf_energy_array: cropped from %s to %s (edge=%.4f s, %d bins)",
-                        orig_shape, arr.shape, edge, e)
-    else:
-        logger.info("  _get_tf_energy_array: shape=%s bytes=%.3f MB", arr.shape, arr.nbytes / 1e6)
     return arr
 
 
@@ -495,49 +459,32 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
     :return: detection threshold in energy units
     :rtype: float
     """
-    t_thresh = time.perf_counter()
-    logger.info("_threshold_python: processing %d TF maps, bpp=%.6f, shape=%s", len(tf_maps), bpp, shape)
-    
     energies = [_get_tf_energy_array(tfm, edge=edge) for tfm in tf_maps]
     combined = np.sum(energies, axis=0)
-    logger.info("  combined array shape: %s, bytes: %.3f MB", combined.shape, combined.nbytes / 1e6)
-    
     work = combined.ravel()
     n_ifo = len(tf_maps)
     if work.size == 0:
-        logger.info("_threshold_python: empty work array, returning 0.0")
         return 0.0
 
     work = np.clip(work, 0.0, n_ifo * 100.0)
     positive = work[work > 1.0e-3]
-    logger.info("  positive elements: %d / %d (%.2f %%)", positive.size, work.size, 
-                100.0 * positive.size / max(work.size, 1))
     if positive.size == 0:
-        logger.info("_threshold_python: no positive elements, returning 0.0")
         return 0.0
 
     if shape is not None:
-        t_shape = time.perf_counter()
         avr = float(np.mean(positive))
         bbb = float(np.mean(np.log(positive)))
         alp = np.log(avr) - bbb
         alp = (3 - alp + np.sqrt((alp - 3) * (alp - 3) + 24 * alp)) / (12 * alp)
         bpp_corr = float(bpp) * alp / float(shape)
         result = avr * _igamma_inv_upper(alp, bpp_corr) / alp / 2.0
-        logger.info("  shape-based threshold: avr=%.6f, alp=%.6f, bpp_corr=%.6e, result=%.6f (%.4f s)",
-                    avr, alp, bpp_corr, result, time.perf_counter() - t_shape)
-        logger.info("_threshold_python total: %.4f s", time.perf_counter() - t_thresh)
         return result
 
-    t_nosmape = time.perf_counter()
     med = float(np.quantile(positive, 0.8))
     m = max(1.0, med / max(_igamma_inv_upper(n_ifo, 0.2), 1.0e-12))
     p_eff = float(np.clip(bpp, 1.0e-8, 0.2))
     val = float(np.quantile(positive, 1.0 - p_eff))
     result = (0.3 * (_igamma_inv_upper(n_ifo * m, p_eff) + val)) + n_ifo * np.log(m)
-    logger.info("  no-shape threshold: med=%.6f, m=%.6f, val=%.6f, result=%.6f (%.4f s)",
-                med, m, val, result, time.perf_counter() - t_nosmape)
-    logger.info("_threshold_python total: %.4f s", time.perf_counter() - t_thresh)
     return result
 
 
@@ -629,18 +576,13 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
     :return: candidate payload for clustering
     :rtype: dict
     """
-    t_pixel_select = time.perf_counter()
-    logger.info("_get_network_pixels_python: lag=%d, threshold=%.6f, edge=%.4f", lag_index, energy_threshold, edge)
-    
     arrays = [_get_tf_energy_array(tfm, edge=None) for tfm in tf_maps]
     if not all(arr.ndim == 2 for arr in arrays):
         raise ValueError("python get_network_pixels expects 2D TF arrays")
-    logger.info("  loaded %d detector arrays, shapes: %s", len(arrays), [arr.shape for arr in arrays])
 
     n_ifo = len(arrays)
     n_freq, n_time = arrays[0].shape
     dt = float(tf_maps[0].dt)
-    logger.info("  TF grid: %d freq x %d time = %d pixels/detector, dt=%.6f s", n_freq, n_time, n_freq*n_time, dt)
 
     if lag_shifts is None:
         shifts_sec = np.zeros(n_ifo, dtype=float)
@@ -658,14 +600,11 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
     nn_valid = valid_stop - valid_start
 
     aligned = [np.zeros_like(arrays[i]) for i in range(n_ifo)]
-    logger.info("  lag shifts (bins): %s", shift_bins)
     if nn_valid > 0:
-        t_align = time.perf_counter()
         out_idx = np.arange(nn_valid, dtype=np.int64)
         for det_idx in range(n_ifo):
             src_idx = valid_start + ((out_idx + shift_bins[det_idx]) % nn_valid)
             aligned[det_idx][:, valid_start:valid_stop] = arrays[det_idx][:, src_idx]
-        logger.info("  alignment loop (%d detectors, %d valid times): %.4f s", n_ifo, nn_valid, time.perf_counter() - t_align)
 
     combined_raw = np.sum(aligned, axis=0)
     combined = np.array(combined_raw, copy=True)
@@ -715,9 +654,6 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
 
     # --- Vectorized pixel selection (replaces the double Python for-loop) ---
     # All slices operate on the subregion [f_start:f_end, t_start:t_end]
-    t_vect = time.perf_counter()
-    logger.info("  vectorized selection region: f[%d:%d] x t[%d:%d] = %d x %d",
-                f_start, f_end, t_start, t_end, max(0, f_end - f_start), max(0, t_end - t_start))
     if f_end > f_start and t_end > t_start:
         # Core energy in the valid region
         e_val = combined[f_start:f_end, t_start:t_end]          # (nf, nt)
@@ -759,16 +695,9 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
             & (e_val < em)
         )
         selected[f_start:f_end, t_start:t_end] = above_thresh & ~not_selected
-        logger.info("  vectorized selection: %.4f s", time.perf_counter() - t_vect)
 
     freq_idx, time_idx = np.where(selected)
     values = combined_raw[freq_idx, time_idx]
-    n_selected = len(freq_idx)
-    logger.info("  selected pixels: %d / %d (%.2f %%)", n_selected, combined_raw.size,
-                100.0 * n_selected / max(combined_raw.size, 1))
-    logger.info("  pixel energy: min=%.6f max=%.6f mean=%.6f", 
-                values.min() if n_selected > 0 else 0, values.max() if n_selected > 0 else 0,
-                values.mean() if n_selected > 0 else 0)
 
     pixels = []
     coord_to_index = {}
@@ -816,8 +745,6 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
         coord_to_index[(int(f_idx), int(t_idx))] = idx
 
     tf0 = tf_maps[0]
-    logger.info("_get_network_pixels_python total: %.4f s, pixels=%d, rate=%.1f Hz, layers=%d",
-                time.perf_counter() - t_pixel_select, len(pixels), 1.0 / dt, n_freq)
     return {
         "mask": selected,
         "time": time_idx,
@@ -847,7 +774,6 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     :return: clustered fragment payload
     :rtype: FragmentCluster
     """
-    t_cluster_start = time.perf_counter()
     mask = np.asarray(pixel_candidates["mask"], dtype=bool)
 
     kt = int(max(1, kt))
@@ -856,7 +782,6 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     pixels = pixel_candidates.get("pixels", [])
     freq_arr = pixel_candidates.get("frequency", np.array([], dtype=np.int64))
     time_arr = pixel_candidates.get("time", np.array([], dtype=np.int64))
-    logger.info("_cluster_pixels_python: kt=%d, kf=%d, n_pixels=%d, mask_shape=%s", kt, kf, len(pixels), mask.shape)
 
     def _compute_subnet_subrho(cluster_pixels):
         if not cluster_pixels:
@@ -915,7 +840,6 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
         return float(subnet), subrho
 
     if not pixels:
-        logger.info("_cluster_pixels_python: no pixels, returning empty clusters")
         clusters = []
     else:
         # --- Connected-components labeling with rectangular (kf, kt) connectivity ---
@@ -928,20 +852,13 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
         f_idx_arr = freq_arr[:len(pixels)].astype(np.int64)
         t_idx_arr = time_arr[:len(pixels)].astype(np.int64)
         n_pix = len(f_idx_arr)
-        logger.info("  building adjacency for %d pixels, connectivity (kf=%d, kt=%d)", n_pix, kf, kt)
 
         # Build sparse adjacency (upper triangle only; undirected)
         if n_pix > 0:
-            t_adj = time.perf_counter()
             df = np.abs(f_idx_arr[:, None] - f_idx_arr[None, :])
             dt = np.abs(t_idx_arr[:, None] - t_idx_arr[None, :])
             adj = csr_matrix((df <= kf) & (dt <= kt))
-            logger.info("  adjacency matrix: %dx%d sparse (%d nonzero), %.4f s", 
-                        adj.shape[0], adj.shape[1], adj.nnz, time.perf_counter() - t_adj)
-            t_cc = time.perf_counter()
             _, raw_labels = _cc(adj, directed=False, connection='weak')
-            n_clusters_raw = int(np.max(raw_labels) + 1) if len(raw_labels) > 0 else 0
-            logger.info("  connected components: %d clusters (%.4f s)", n_clusters_raw, time.perf_counter() - t_cc)
             # raw_labels is 0-indexed; shift to 1-indexed to match ndimage convention
             raw_labels = raw_labels + 1
         else:
@@ -963,7 +880,6 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
             if lbl > 0:
                 grouped.setdefault(lbl, []).append(px)
 
-        t_group = time.perf_counter()
         clusters = []
         for group_idx, cluster_pixels in enumerate(grouped.values()):
             if not cluster_pixels:
@@ -982,12 +898,8 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
             )
 
             clusters.append(Cluster(pixels=cluster_pixels, cluster_meta=cluster_meta))
-        
-        logger.info("  grouped & computed metrics for %d clusters (%.4f s)", len(clusters), time.perf_counter() - t_group)
 
     n_pix_final = int(sum(len(c.pixels) for c in clusters))
-    logger.info("_cluster_pixels_python total: %.4f s, final_clusters=%d, final_pixels=%d",
-                time.perf_counter() - t_cluster_start, len(clusters), n_pix_final)
     return FragmentCluster(
         rate=float(pixel_candidates.get("rate", 0.0)),
         start=float(pixel_candidates.get("start", 0.0)),
