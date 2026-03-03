@@ -56,6 +56,21 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "save_residuals": {
+            "type": "boolean",
+            "description": "save residuals from triggers",
+            "default": False,
+        },
+        "plot_residuals": {
+            "type": "boolean",
+            "description": "plot residuals from triggers",
+            "default": False,
+        },
+        "save_residuals_gwf": {
+            "type": "boolean",
+            "description": "save residuals to GWF format",
+            "default": False,
+        },
         "save_injection": {
             "type": "boolean",
             "description": "save injected waveform",
@@ -184,6 +199,11 @@ schema = {
             "description": "injection parameters",
             "default": {},
             "cwb": False
+        },
+        "bootstrap": {
+            "type": "object",
+            "description": "enable bootstrap mode. Include bootstrap parameters",
+            "default": {},
         },
         "gps_start": {
             "type": "number",
