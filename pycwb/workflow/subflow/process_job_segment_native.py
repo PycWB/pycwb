@@ -20,6 +20,7 @@ from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info
+from pycwb.modules.catalog import Catalog
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
@@ -71,7 +72,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.injections:
         trail_idxs = set([injection.get('trail_idx', 0) for injection in job_seg.injections])
 
-    wave_file = os.path.basename(catalog_file).replace('catalog', 'wave').replace('.json','.h5') if catalog_file is not None else None
+    if catalog_file is not None:
+        base = os.path.basename(catalog_file)
+        stem, _ = os.path.splitext(base)
+        wave_file = stem.replace('catalog', 'wave') + '.h5'
+    else:
+        wave_file = None
     # loop over all the trail_idx, if there is no injections or only one trail, only loop once for trail_idx=0
     for trail_idx in trail_idxs:
         #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 

@@ -1,8 +1,10 @@
 import logging
 import os
 
-from pycwb.modules.catalog import add_events_to_catalog
+from pycwb.types import BaseCatalog
+from pycwb.modules.catalog import Catalog
 from pycwb.types.job import WaveSegment
+from pycwb.types.trigger import Trigger
 from pycwb.utils.dataclass_object_io import save_dataclass_to_json
 
 logger = logging.getLogger(__name__)
@@ -67,9 +69,10 @@ def save_trigger(trigger_folder: str, trigger_data: tuple | list,
 
 
 def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple | list,
-                         catalog_file: str = "catalog.json", index: int = None):
+                         catalog_file: str = Catalog.DEFAULT_FILENAME, index: int = None):
     """
-    Add an event to the catalog.
+    Convert an event to a :class:`~pycwb.types.trigger.Trigger` and append it
+    to the Arrow/Parquet catalog.
 
     Parameters
     ----------
@@ -78,9 +81,9 @@ def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple
     catalog_dir : str
         The directory to save the catalog
     trigger_data : tuple | list
-        The event data
+        The event data tuple ``(event, cluster, sky_stats)``
     catalog_file : str
-        The catalog file to save the triggers
+        The catalog file to save the triggers (default ``catalog.parquet``)
     index : int
         The index of the event in the list of events
 
@@ -90,7 +93,7 @@ def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple
         The path to the catalog file
     """
     if catalog_file is None:
-        catalog_file = "catalog.json"
+        catalog_file = Catalog.DEFAULT_FILENAME
 
     if index is None:
         event, _, _ = trigger_data
@@ -101,7 +104,8 @@ def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple
     if not catalog_file.startswith("/"):
         catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
 
-    add_events_to_catalog(catalog_file, event)
+    trigger = Trigger.from_event(event)
+    Catalog.open(catalog_file).add_triggers(trigger)
     logger.info(f"Event {event.hash_id} added to catalog {catalog_file}")
 
     return catalog_file

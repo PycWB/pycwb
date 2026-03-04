@@ -1,5 +1,4 @@
 import os
-import orjson
 import uuid
 import tempfile
 import shutil
@@ -8,7 +7,7 @@ from typing import List
 from dacite import from_dict
 from jinja2 import Template 
 from pycwb.config import Config
-from pycwb.modules.catalog import create_catalog
+from pycwb.modules.catalog import Catalog, read_catalog_metadata
 from pycwb.modules.job_segment import create_job_segment_from_config
 from pycwb.modules.web_viewer.create import create_web_viewer
 from pycwb.modules.workflow_utils.job_setup import create_working_directory, \
@@ -108,10 +107,10 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
         create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                                 config.trigger_dir, file_name)
 
-        catalog_file = f"{working_dir}/{config.catalog_dir}/catalog.json"
+        catalog_file = f"{working_dir}/{config.catalog_dir}/{Catalog.DEFAULT_FILENAME}"
 
         if not os.path.exists(catalog_file):
-            create_catalog(catalog_file, config, job_segments)
+            Catalog.create(catalog_file, config, job_segments)
         create_web_viewer(f"{working_dir}/public")
         # save_job_segments_to_json(job_segments, f"{working_dir}/config/job_segments.json")
 
@@ -152,7 +151,7 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # # TODO: load job segments from catalog
     # job_segments = create_job_segment_from_config(config)
 
-    catalog = orjson.loads(open('catalog/catalog.json', 'rb').read())
+    catalog = read_catalog_metadata(f'catalog/{Catalog.DEFAULT_FILENAME}')
     config = Config()
     config.load_from_dict(catalog['config'])
     logger.info(f"Loaded config from catalog: {config}")
@@ -168,10 +167,10 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)
 
-    catalog_file = f"{working_dir}/{config.catalog_dir}/catalog_{jobs}.json"
+    catalog_file = f"{working_dir}/{config.catalog_dir}/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}"
 
     if not os.path.exists(catalog_file):
-        create_catalog(catalog_file, config, selected_job_segments)
+        Catalog.create(catalog_file, config, selected_job_segments)
 
     return selected_job_segments, config, working_dir, catalog_file
 
