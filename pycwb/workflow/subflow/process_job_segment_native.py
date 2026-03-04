@@ -88,7 +88,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            mdc = [TimeSeries(np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), epoch = base_data[i].start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
+            mdc = [TimeSeries(np.zeros(int(sub_job_seg.duration * base_data[i].sample_rate)), epoch = sub_job_seg.start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
@@ -108,6 +108,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # data conditioning
         stage_timer = time.perf_counter()
         strains, nRMS = data_conditioning(config, data)
+        del data
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -216,12 +217,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             # post-process and plot
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 event, cluster_out, event_skymap_statistics = trigger
-                epoch = float(getattr(data[0], 'start_time', getattr(data[0], 't0', 0.0)))
 
                 # estimate reconstructed waveforms
                 reconst_data = reconstruct_waveforms_flow(
                     trigger_folder, config, sub_job_seg.ifos,
-                    event, cluster_out, epoch=epoch,
+                    event, cluster_out, epoch=sub_job_seg.start_time,
                     wave_file=wave_file, save=config.save_waveform, plot=config.plot_waveform,
                 )
 
