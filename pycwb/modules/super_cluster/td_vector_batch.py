@@ -1,190 +1,190 @@
 """
-JAX-native batch time-delay vector extraction for super_cluster.
+Batch time-delay vector extraction for super_cluster.
 
 Replaces the serial per-pixel loop:
     for pixel in pixels:
         for ifo in range(n_ifo):
             td_vec = wdm.get_td_vec(tf_map, pixel_index=idx, K=K, mode="a")
 
-with a single vmap'd JAX call per (layer, ifo) group:
-    batch_get_td_vecs_jax(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J, L)
+with a single Numba-parallelised call per (layer, ifo) group:
+    batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J)
 
 Notes
 -----
 - L=1 is assumed (set_td_filter called with L=1), so J = M.
 - K < J must hold (always true in practice: TDSize << M).
-- This replicates core.time_delay.get_pixel_amplitude + get_td_vec(mode="a")
-  in JAX for vmap compatibility.
+- This replicates core.time_delay.get_pixel_amplitude + get_td_vec(mode="a").
+- Numba compiles once per dtype signature (not per array shape), so there is
+  no per-lag JIT-trace-cache accumulation and no associated memory leak.
 - Call ``prepare_td_inputs`` to extract numpy arrays from the TF map and
   filter bank before invoking the batch function.
 """
 
 import logging
 import math
-from functools import partial
 
-import jax
-import jax.numpy as jnp
 import numpy as np
+from numba import njit, prange
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Pure JAX math (no @jax.jit — called inside outer jitted scope)
+# Numba kernels
 # ---------------------------------------------------------------------------
 
-def _get_pixel_amplitude_jax(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad):
+@njit(cache=True)
+def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad):
     """
-    JAX reimplementation of core.time_delay.get_pixel_amplitude.
+    Numba reimplementation of core.time_delay.get_pixel_amplitude.
 
     Parameters
     ----------
-    n : traced int  — time-bin index of the pixel
-    m : traced int  — frequency-layer index of the pixel
-    dT : traced int — delay index in [-J, J]
-    padded_plane : jax.Array, shape (n_time + 2*n_coeffs, M+1)
-        Zero-padded TF plane (00-phase or 90-phase).
-    T0 : jax.Array, shape (2*J+1, 2*n_coeffs+1)  — same-band TD filter table
-    Tx : jax.Array, shape (2*J+1, 2*n_coeffs+1)  — cross-band TD filter table
-    M, n_coeffs, J : static ints
-    quad : bool (Python)  — False → 00-phase, True → 90-phase result
+    n, m   : int  — time-bin and frequency-layer of the pixel
+    dT     : int  — delay index in [-J, J]
+    padded_plane : float64 array (n_time + 2*n_coeffs, M+1)  — zero-padded TF plane
+    T0, Tx : float64 arrays (2*J+1, 2*n_coeffs+1)  — TD filter tables
+    M, n_coeffs, J : int  — static filter dimensions
+    quad   : bool  — False → 00-phase result, True → 90-phase result
 
     Returns
     -------
-    scalar float
+    float64 scalar
     """
-    is_odd_n = (n & 1).astype(jnp.bool_)
-    is_odd_mn = ((m + n) & 1).astype(jnp.bool_)
-    cancel_even = jnp.logical_xor(is_odd_n, jnp.asarray(quad, dtype=jnp.bool_))
-    is_edge_layer = (m == 0) | (m == M)
-
-    offsets = jnp.arange(2 * n_coeffs + 1)
-    even_mask = (offsets % 2) == 0  # (2*n_coeffs+1,)
+    is_odd_n   = (n & 1) != 0
+    is_odd_mn  = ((m + n) & 1) != 0
+    cancel_even = is_odd_n ^ quad  # XOR
+    is_edge_layer = (m == 0) or (m == M)
 
     dT_idx = dT + J
-    t0_row = T0[dT_idx]   # (2*n_coeffs+1,)
-    tx_row = Tx[dT_idx]   # (2*n_coeffs+1,)
-
-    # L=1, so dt = dT / 1.0 = dT (as float)
-    dt_val = dT.astype(jnp.float64)
+    win_len = 2 * n_coeffs + 1
+    dt_val = float(dT)
 
     # ---- Same-band term (layer m) ----
-    # padded_plane is zero-padded by n_coeffs on each side along axis-0.
-    # For original time index n, the padded window starts at index n.
-    col_same = padded_plane[:, m]   # shape (n_time + 2*n_coeffs,) — dynamic m
-    window_same = jax.lax.dynamic_slice_in_dim(col_same, n, 2 * n_coeffs + 1)
+    sum_even_same = 0.0
+    sum_odd_same = 0.0
+    for k in range(win_len):
+        val = padded_plane[n + k, m] * T0[dT_idx, k]
+        if k % 2 == 0:
+            sum_even_same += val
+        else:
+            sum_odd_same += val
 
-    sum_even_same = jnp.sum(jnp.where(even_mask, window_same * t0_row, 0.0))
-    sum_odd_same  = jnp.sum(jnp.where(~even_mask, window_same * t0_row, 0.0))
+    if is_edge_layer and cancel_even:
+        sum_even_same = 0.0
+    if is_edge_layer and not cancel_even:
+        sum_odd_same = 0.0
 
-    # Edge parity: for edge layers, suppress one parity contribution
-    sum_even_same = jnp.where(is_edge_layer & cancel_even,  0.0, sum_even_same)
-    sum_odd_same  = jnp.where(is_edge_layer & ~cancel_even, 0.0, sum_odd_same)
-
-    same_phase = m.astype(jnp.float64) * jnp.pi * dt_val / M
-    result = jnp.where(
-        is_odd_n,
-        sum_even_same * jnp.cos(same_phase) - sum_odd_same * jnp.sin(same_phase),
-        sum_even_same * jnp.cos(same_phase) + sum_odd_same * jnp.sin(same_phase),
-    )
+    same_phase = m * math.pi * dt_val / M
+    if is_odd_n:
+        result = sum_even_same * math.cos(same_phase) - sum_odd_same * math.sin(same_phase)
+    else:
+        result = sum_even_same * math.cos(same_phase) + sum_odd_same * math.sin(same_phase)
 
     # ---- Cross-band low term (layer m-1), active when m > 0 ----
-    col_low = padded_plane[:, jnp.maximum(m - 1, 0)]  # clamp to avoid OOB
-    window_low = jax.lax.dynamic_slice_in_dim(col_low, n, 2 * n_coeffs + 1)
+    if m > 0:
+        m_low = m - 1 if m > 0 else 0
+        low_even = 0.0
+        low_odd = 0.0
+        for k in range(win_len):
+            val = padded_plane[n + k, m_low] * Tx[dT_idx, k]
+            if k % 2 == 0:
+                low_even += val
+            else:
+                low_odd += val
 
-    low_even = jnp.sum(jnp.where(even_mask, window_low * tx_row, 0.0))
-    low_odd  = jnp.sum(jnp.where(~even_mask, window_low * tx_row, 0.0))
+        if m == 1 and cancel_even:
+            low_even = 0.0
+        if m == 1 and not cancel_even:
+            low_odd = 0.0
 
-    # m==1: low band is layer 0, which is an edge
-    low_even = jnp.where((m == 1) & cancel_even,  0.0, low_even)
-    low_odd  = jnp.where((m == 1) & ~cancel_even, 0.0, low_odd)
+        low_phase = (2.0 * m - 1.0) * dt_val * math.pi / (2.0 * M)
+        if is_odd_n:
+            low_term = (low_even - low_odd) * math.sin(low_phase)
+        else:
+            low_term = (low_even + low_odd) * math.sin(low_phase)
 
-    low_phase = (2.0 * m.astype(jnp.float64) - 1.0) * dt_val * jnp.pi / (2.0 * M)
-    low_term = jnp.where(
-        is_odd_n,
-        (low_even - low_odd) * jnp.sin(low_phase),
-        (low_even + low_odd) * jnp.sin(low_phase),
-    )
-    # sqrt(2) when low band or current band touches an edge (m==1 or m==M)
-    low_term = low_term * jnp.where((m == 1) | (m == M), math.sqrt(2.0), 1.0)
-    result = result + jnp.where(m > 0, jnp.where(is_odd_mn, -low_term, low_term), 0.0)
+        if m == 1 or m == M:
+            low_term *= math.sqrt(2.0)
+
+        if is_odd_mn:
+            result -= low_term
+        else:
+            result += low_term
 
     # ---- Cross-band high term (layer m+1), active when m < M ----
-    col_high = padded_plane[:, jnp.minimum(m + 1, M)]  # clamp to avoid OOB
-    window_high = jax.lax.dynamic_slice_in_dim(col_high, n, 2 * n_coeffs + 1)
+    if m < M:
+        m_high = m + 1 if m < M else M
+        high_even = 0.0
+        high_odd = 0.0
+        for k in range(win_len):
+            val = padded_plane[n + k, m_high] * Tx[dT_idx, k]
+            if k % 2 == 0:
+                high_even += val
+            else:
+                high_odd += val
 
-    high_even = jnp.sum(jnp.where(even_mask, window_high * tx_row, 0.0))
-    high_odd  = jnp.sum(jnp.where(~even_mask, window_high * tx_row, 0.0))
+        if m == M - 1 and cancel_even:
+            high_even = 0.0
+        if m == M - 1 and not cancel_even:
+            high_odd = 0.0
 
-    # m==M-1: high band is layer M, which is an edge
-    high_even = jnp.where((m == M - 1) & cancel_even,  0.0, high_even)
-    high_odd  = jnp.where((m == M - 1) & ~cancel_even, 0.0, high_odd)
+        high_phase = (2.0 * m + 1.0) * dt_val * math.pi / (2.0 * M)
+        if is_odd_n:
+            high_term = (high_even + high_odd) * math.sin(high_phase)
+        else:
+            high_term = (high_even - high_odd) * math.sin(high_phase)
 
-    high_phase = (2.0 * m.astype(jnp.float64) + 1.0) * dt_val * jnp.pi / (2.0 * M)
-    high_term = jnp.where(
-        is_odd_n,
-        (high_even + high_odd) * jnp.sin(high_phase),
-        (high_even - high_odd) * jnp.sin(high_phase),
-    )
-    # sqrt(2) when high band or current band touches an edge (m==0 or m==M-1)
-    high_term = high_term * jnp.where((m == 0) | (m == M - 1), math.sqrt(2.0), 1.0)
-    result = result + jnp.where(m < M, jnp.where(is_odd_mn, -high_term, high_term), 0.0)
+        if m == 0 or m == M - 1:
+            high_term *= math.sqrt(2.0)
 
-    # Zero out if edge+cancel condition
-    return jnp.where(is_edge_layer & cancel_even, 0.0, result)
+        if is_odd_mn:
+            result -= high_term
+        else:
+            result += high_term
+
+    # Zero out if edge + cancel condition
+    if is_edge_layer and cancel_even:
+        return 0.0
+    return result
 
 
-@partial(jax.jit, static_argnames=("M", "n_coeffs", "K", "J"))
-def _get_td_vec_single_jax(pixel_index, padded00, padded90, T0, Tx, M, n_coeffs, K, J):
+@njit(cache=True, parallel=True)
+def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J):
     """
-    Compute the mode="a" TD vector for one pixel.
+    Batch TD vector extraction over all pixels in parallel.
 
-    Returns
-    -------
-    jax.Array, shape (4*K+2,)
-        Concatenation of [a00(-K..K), a90(-K..K)].
-    """
-    M1 = M + 1
-    n = pixel_index // M1
-    m = pixel_index % M1
-    delays = jnp.arange(-K, K + 1, dtype=jnp.int32)  # (2K+1,)
-
-    # a00: 00-phase amplitudes over delays (uses padded00 plane)
-    a00 = jax.vmap(
-        lambda dT: _get_pixel_amplitude_jax(n, m, dT, padded00, T0, Tx, M, n_coeffs, J, quad=False)
-    )(delays)
-
-    # a90: 90-phase amplitudes over delays (uses padded90 plane)
-    a90 = jax.vmap(
-        lambda dT: _get_pixel_amplitude_jax(n, m, dT, padded90, T0, Tx, M, n_coeffs, J, quad=True)
-    )(delays)
-
-    return jnp.concatenate([a00, a90])  # (4K+2,)
-
-
-@partial(jax.jit, static_argnames=("M", "n_coeffs", "K", "J"))
-def batch_get_td_vecs_jax(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J):
-    """
-    Batch TD vector extraction using jax.vmap over pixel_indices.
+    Compiled once per dtype signature (int32/float64) regardless of the
+    number of pixels, so there is no per-shape JIT trace cache accumulation.
 
     Parameters
     ----------
-    pixel_indices : jax.Array, shape (n_pixels,)  — linear pixel indices
-    padded00 : jax.Array, shape (n_time + 2*n_coeffs, M+1)
-    padded90 : jax.Array, shape (n_time + 2*n_coeffs, M+1)
-    T0 : jax.Array, shape (2*J+1, 2*n_coeffs+1)
-    Tx : jax.Array, shape (2*J+1, 2*n_coeffs+1)
-    M, n_coeffs, K, J : static ints
+    pixel_indices : int32 array (n_pixels,)
+    padded00      : float64 array (n_time + 2*n_coeffs, M+1)
+    padded90      : float64 array (n_time + 2*n_coeffs, M+1)
+    T0, Tx        : float64 arrays (2*J+1, 2*n_coeffs+1)
+    M, n_coeffs, K, J : int
 
     Returns
     -------
-    jax.Array, shape (n_pixels, 4*K+2)
+    float32 array (n_pixels, 4*K+2)
+        Concatenation of [a00(-K..K), a90(-K..K)] for each pixel.
     """
-    return jax.vmap(
-        lambda idx: _get_td_vec_single_jax(idx, padded00, padded90, T0, Tx, M, n_coeffs, K, J),
-        in_axes=(0,),
-    )(pixel_indices)
+    n_pixels = len(pixel_indices)
+    td_len = 4 * K + 2
+    M1 = M + 1
+    out = np.empty((n_pixels, td_len), dtype=np.float32)
+
+    for p in prange(n_pixels):
+        idx = pixel_indices[p]
+        n = idx // M1
+        m = idx % M1
+        half = 2 * K + 1  # number of delay steps per phase
+        for ki in range(2 * K + 1):
+            dT = ki - K
+            out[p, ki]        = _get_pixel_amplitude_nb(n, m, dT, padded00, T0, Tx, M, n_coeffs, J, False)
+            out[p, half + ki] = _get_pixel_amplitude_nb(n, m, dT, padded90, T0, Tx, M, n_coeffs, J, True)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def batch_get_td_vecs_jax(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs
 
 def prepare_td_inputs(tf_map, wdm):
     """
-    Extract JAX arrays from a TimeFrequencyMap and WDM instance for batch TD extraction.
+    Extract numpy arrays from a TimeFrequencyMap and WDM instance for batch TD extraction.
 
     Parameters
     ----------
@@ -203,10 +203,10 @@ def prepare_td_inputs(tf_map, wdm):
     Returns
     -------
     dict with keys:
-        padded00 : jnp.Array  shape (n_time + 2*n_coeffs, M+1)
-        padded90 : jnp.Array  shape (n_time + 2*n_coeffs, M+1)
-        T0       : jnp.Array  shape (2*J+1, 2*n_coeffs+1)
-        Tx       : jnp.Array  shape (2*J+1, 2*n_coeffs+1)
+        padded00 : float64 ndarray  shape (n_time + 2*n_coeffs, M+1)
+        padded90 : float64 ndarray  shape (n_time + 2*n_coeffs, M+1)
+        T0       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
+        Tx       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
         M        : int
         n_coeffs : int
         J        : int
@@ -222,11 +222,11 @@ def prepare_td_inputs(tf_map, wdm):
     J = int(td_filters.max_delay)   # = M * L; for L=1, J=M
 
     pad = [(n_coeffs, n_coeffs), (0, 0)]
-    padded00 = jnp.asarray(np.pad(tf00, pad), dtype=jnp.float64)
-    padded90 = jnp.asarray(np.pad(tf90, pad), dtype=jnp.float64)
+    padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float64)
+    padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float64)
 
-    T0 = jnp.asarray(td_filters.T0, dtype=jnp.float64)
-    Tx = jnp.asarray(td_filters.Tx, dtype=jnp.float64)
+    T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
+    Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
 
     return {
         "padded00": padded00,
@@ -241,7 +241,10 @@ def prepare_td_inputs(tf_map, wdm):
 
 def batch_extract_td_vecs(pixel_indices_np, tf_inputs, K):
     """
-    Run the batch JAX TD extraction and return a numpy array.
+    Run the batch Numba TD extraction and return a numpy array.
+
+    Numba compiles ``batch_get_td_vecs`` once per dtype signature (int32/float64),
+    not per array shape, so there is no per-lag JIT trace cache accumulation.
 
     Parameters
     ----------
@@ -253,9 +256,8 @@ def batch_extract_td_vecs(pixel_indices_np, tf_inputs, K):
     -------
     np.ndarray, shape (n_pixels, 4*K+2), dtype float32
     """
-    pixel_indices_jax = jnp.asarray(pixel_indices_np, dtype=jnp.int32)
-    result = batch_get_td_vecs_jax(
-        pixel_indices_jax,
+    return batch_get_td_vecs(
+        np.asarray(pixel_indices_np, dtype=np.int32),
         tf_inputs["padded00"],
         tf_inputs["padded90"],
         tf_inputs["T0"],
@@ -265,5 +267,3 @@ def batch_extract_td_vecs(pixel_indices_np, tf_inputs, K):
         K,
         tf_inputs["J"],
     )
-    result = jax.block_until_ready(result)
-    return np.asarray(result, dtype=np.float32)

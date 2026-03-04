@@ -76,8 +76,11 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     ``_ensure_td_amp``.
 
     Groups pixels by WDM layer, builds TF maps once per layer, then calls
-    JAX vmap'd batch TD extraction (from super_cluster.td_vector_batch) for
-    all pixels in a layer simultaneously.
+    Numba-parallelised batch TD extraction (from super_cluster.td_vector_batch)
+    for all pixels in a layer simultaneously.
+
+    Numba compiles the kernel once per dtype signature regardless of array
+    shape, so there is no per-lag JIT trace cache accumulation.
 
     Parameters
     ----------
@@ -103,7 +106,6 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     from pycwb.modules.super_cluster.td_vector_batch import (
         prepare_td_inputs,
         batch_extract_td_vecs,
-        batch_get_td_vecs_jax,
     )
 
     if len(cluster.pixels) == 0:
@@ -170,9 +172,6 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
         wdm_contexts[lc] = {"td_inputs": td_inputs_per_ifo}
         wdm_contexts[lc + 1] = wdm_contexts[lc]
 
-    import jax
-    import jax.numpy as jnp
-
     K = int(config.TDSize)
     td_vec_default = np.zeros(4 * K + 2, dtype=np.float32)
 
@@ -182,66 +181,28 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     for pix in cluster.pixels:
         pixels_by_layer[int(pix.layers)].append(pix)
 
-    # -----------------------------------------------------------------------
-    # Priority 5 optimisation: dispatch ALL JAX kernels (every layer × ifo)
-    # before calling jax.block_until_ready, so the accelerator can pipeline
-    # them without a CPU stall between each (layer, ifo) pair.
-    # -----------------------------------------------------------------------
-
-    # Pass 1 — collect inputs and fire kernels
-    layer_jobs = []   # list of (layer_pixels, pixel_indices_np, futures_per_ifo)
+    # Numba batch_get_td_vecs compiles once per dtype signature (not per shape),
+    # so simply call batch_extract_td_vecs per (layer, ifo) — no async dispatch needed.
     for layer_key, layer_pixels in pixels_by_layer.items():
         ctx = wdm_contexts.get(layer_key) or wdm_contexts.get(layer_key - 1)
         if ctx is None:
-            layer_jobs.append((layer_pixels, None, None))
+            for pix in layer_pixels:
+                pix.td_amp = [td_vec_default.copy() for _ in range(nIFO)]
             continue
 
         td_inputs_per_ifo = ctx["td_inputs"]
         n_layer = len(layer_pixels)
 
-        # Pre-extract pixel indices for all IFOs in this layer
         pixel_indices = np.array(
             [[int(pix.data[n].index) for n in range(nIFO)] for pix in layer_pixels],
             dtype=np.int32,
         )  # (n_layer, nIFO)
 
-        # Dispatch without blocking — returns unresolved JAX arrays
-        futures = []
-        for ifo_idx in range(nIFO):
-            inp = td_inputs_per_ifo[ifo_idx]
-            idx_jax = jnp.asarray(pixel_indices[:, ifo_idx], dtype=jnp.int32)
-            futures.append(
-                batch_get_td_vecs_jax(
-                    idx_jax,
-                    inp["padded00"],
-                    inp["padded90"],
-                    inp["T0"],
-                    inp["Tx"],
-                    inp["M"],
-                    inp["n_coeffs"],
-                    K,
-                    inp["J"],
-                )
-            )
-        layer_jobs.append((layer_pixels, pixel_indices, futures))
-
-    # Pass 2 — single synchronisation barrier for all outstanding kernels
-    all_futures = [f for _, _, futures in layer_jobs if futures is not None for f in futures]
-    if all_futures:
-        jax.block_until_ready(all_futures)
-
-    # Pass 3 — collect results and write back to pixels
-    for layer_pixels, pixel_indices, futures in layer_jobs:
-        if futures is None:
-            # No valid WDM context for this layer — fill with zeros
-            for pix in layer_pixels:
-                pix.td_amp = [td_vec_default.copy() for _ in range(nIFO)]
-            continue
-
-        n_layer = len(layer_pixels)
         td_results = np.zeros((n_layer, nIFO, 4 * K + 2), dtype=np.float32)
-        for ifo_idx, result in enumerate(futures):
-            td_results[:, ifo_idx, :] = np.asarray(result, dtype=np.float32)
+        for ifo_idx in range(nIFO):
+            td_results[:, ifo_idx, :] = batch_extract_td_vecs(
+                pixel_indices[:, ifo_idx], td_inputs_per_ifo[ifo_idx], K
+            )
 
         for pid, pix in enumerate(layer_pixels):
             pix.td_amp = [td_results[pid, ifo_idx, :] for ifo_idx in range(nIFO)]

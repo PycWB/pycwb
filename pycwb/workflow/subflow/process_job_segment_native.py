@@ -247,6 +247,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                         if (inj is not None) and (rec is not None) else None
                         for inj, rec in zip(inj_waveforms, rec_waveforms)
                     ]
+                    del injected_data, inj_waveforms, rec_waveforms
 
                 # Q-veto and Q-factor
                 try:
@@ -271,6 +272,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 if config.plot_sky_map:
                     plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
 
+                del reconst_data
+
             #################### Add events to catalog ####################
             for trigger in events_data:
                 catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
@@ -282,7 +285,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             # Release JAX device buffers and Python objects from this lag before
             # the next iteration.  JAX kernels hold device memory until GC runs;
             # with 100+ background lags this accumulates to GB of device memory.
-            del frag_clusters_this_lag, fragment_cluster, events_data
+            del frag_clusters_this_lag, fragment_cluster, events_data, trigger_folders
             gc.collect()
 
         logger.info("Native likelihood loop time: %.2f s", time.perf_counter() - likelihood_timer)
