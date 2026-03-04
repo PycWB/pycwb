@@ -82,6 +82,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     for trail_idx in trail_idxs:
         #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 
         data = base_data
+        # if only one trail_idxs, remove the base_data reference to save memory
+        if len(trail_idxs) == 1:
+            base_data = None
         if job_seg.injections:
             # use sub_job_seg for each trail_idx to avoid passing the trail_idx to the following functions. 
             sub_job_seg = copy(job_seg)
@@ -108,7 +111,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # data conditioning
         stage_timer = time.perf_counter()
         strains, nRMS = data_conditioning(config, data)
-        del data
+        data = None  # remove reference to original data to save memory
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
