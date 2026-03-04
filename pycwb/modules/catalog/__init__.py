@@ -8,3 +8,4 @@ from .catalog import (
     read_catalog_triggers,
 )
 from .catalog_json import JSONCatalog
+from .convert_root import convert_root_to_catalog, read_root_triggers
