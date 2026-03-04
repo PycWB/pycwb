@@ -426,7 +426,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_supercluster(config, strains, xtalk_coeff, xtalk_lookup_table, layers):
+def setup_supercluster(config, strains):
     """
     Compute every lag-independent supercluster resource once per job segment.
 
@@ -439,8 +439,6 @@ def setup_supercluster(config, strains, xtalk_coeff, xtalk_lookup_table, layers)
     config : Config
     strains : list
         Whitened strain time series.
-    xtalk_coeff, xtalk_lookup_table, layers : objects
-        Cross-talk catalog as returned by ``load_catalog``.
 
     Returns
     -------
@@ -543,13 +541,10 @@ def setup_supercluster(config, strains, xtalk_coeff, xtalk_lookup_table, layers)
         "subrho": config.subrho if config.subrho > 0 else config.netRHO,
         "pattern": int(getattr(config, "pattern", 0)),
         "TDSize": config.TDSize,
-        "xtalk_coeff": xtalk_coeff,
-        "xtalk_lookup_table": xtalk_lookup_table,
-        "layers": layers,
     }
 
 
-def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx):
+def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk):
     """
     Run the full supercluster pipeline for a single lag.
 
@@ -562,6 +557,8 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx):
         (i.e. the output of :func:`~pycwb.modules.cwb_coherence.coherence.coherence_single_lag`).
     lag_idx : int
         Zero-based lag index (used for logging only).
+    xtalk : XTalk
+        Pre-loaded cross-talk catalog instance.
 
     Returns
     -------
@@ -663,9 +660,9 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx):
         setup["subcut"],
         setup["subnorm"],
         setup["subrho"],
-        setup["xtalk_coeff"],
-        setup["xtalk_lookup_table"],
-        setup["layers"],
+        xtalk.coeff,
+        xtalk.lookup_table,
+        xtalk.layers,
     )
 
     if setup["pattern"] == 0:

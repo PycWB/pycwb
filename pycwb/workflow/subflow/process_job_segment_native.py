@@ -8,7 +8,7 @@ from copy import copy
 from pycwb.config import Config
 from pycbc.types import TimeSeries
 from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
-from pycwb.modules.xtalk.monster import load_catalog
+from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.cwb_coherence import coherence
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
@@ -122,15 +122,15 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
-        xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-        sc_setup = setup_supercluster(config, strains, xtalk_coeff, xtalk_lookup_table, layers)
+        xtalk = XTalk.load(config.MRAcatalog)
+        sc_setup = setup_supercluster(config, strains)
         wdm_td_cache = sc_setup["td_inputs_cache"]
         n_lag = sc_setup["n_lag"]
         logger.info("Supercluster setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
-        lh_setup = setup_likelihood(config, strains, config.nIFO, config.MRAcatalog)
+        lh_setup = setup_likelihood(config, strains, config.nIFO)
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -158,7 +158,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
 
             # supercluster for this lag only
-            fragment_cluster = supercluster_single_lag(sc_setup, frag_clusters_this_lag, lag)
+            fragment_cluster = supercluster_single_lag(sc_setup, frag_clusters_this_lag, lag, xtalk=xtalk)
 
             if fragment_cluster is None:
                 logger.warning(
@@ -183,6 +183,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     wdm_td_cache=wdm_td_cache,
                     nRMS=nRMS,
                     setup=lh_setup,
+                    xtalk=xtalk,
                 )
 
                 if result_cluster is None or result_cluster.cluster_status != -1:

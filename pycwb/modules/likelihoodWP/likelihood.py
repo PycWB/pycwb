@@ -130,14 +130,13 @@ def _populate_pixel_noise_rms(pixels, nRMS):
                 pass  # keep noise_rms=1.0 on failure
 
 
-def setup_likelihood(config, strains, nIFO, MRAcatalog):
+def setup_likelihood(config, strains, nIFO):
     """
     Pre-compute all job-segment-level (lag/cluster-independent) inputs for likelihood.
 
     Call this once per job segment, then pass the returned dict as ``setup=`` to
     every :func:`likelihood` call.  This avoids repeating:
 
-    - XTalk catalog loading from disk
     - Runtime parameter resolution from config
     - Sky delay / antenna pattern computation
     - ``_build_sky_directions`` healpix grid construction
@@ -152,18 +151,15 @@ def setup_likelihood(config, strains, nIFO, MRAcatalog):
         sample rate for sky-delay computation.
     nIFO : int
         Number of interferometers.
-    MRAcatalog : str
-        Path to the MRA xtalk catalog.
 
     Returns
     -------
     dict
-        Keys: ``xtalk``, ``network_energy_threshold``, ``gamma_regulator``,
+        Keys: ``network_energy_threshold``, ``gamma_regulator``,
         ``delta_regulator``, ``netEC_threshold``, ``netCC``, ``ml``, ``FP``,
         ``FX``, ``FP_t``, ``FX_t``, ``n_sky``, ``healpix_order``, ``ra_arr``,
         ``dec_arr``.
     """
-    xtalk = XTalk.load(MRAcatalog, dump=True)
 
     (
         network_energy_threshold,
@@ -184,7 +180,6 @@ def setup_likelihood(config, strains, nIFO, MRAcatalog):
     ra_arr, dec_arr = _build_sky_directions(n_sky, healpix_order)
 
     return {
-        "xtalk": xtalk,
         "network_energy_threshold": network_energy_threshold,
         "gamma_regulator": gamma_regulator,
         "delta_regulator": delta_regulator,
@@ -203,7 +198,7 @@ def setup_likelihood(config, strains, nIFO, MRAcatalog):
 
 
 def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,
-               wdm_td_cache=None, nRMS=None, setup=None):
+               wdm_td_cache=None, nRMS=None, setup=None, xtalk=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
 
@@ -247,7 +242,6 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         delta_regulator          = setup["delta_regulator"]
         netEC_threshold          = setup["netEC_threshold"]
         netCC                    = setup["netCC"]
-        xtalk                    = setup["xtalk"]
         ml                       = setup["ml"]    # (nIFO, n_sky)
         FP                       = setup["FP_t"]  # (n_sky, nIFO) float32 — already transposed
         FX                       = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
@@ -256,7 +250,8 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, netCC = _resolve_runtime_parameters(
             config, nIFO
         )
-        xtalk = XTalk.load(MRAcatalog, dump=True)
+        if xtalk is None:
+            xtalk = XTalk.load(MRAcatalog, dump=True)
         ml, FP, FX = load_data_from_ifo(
             nIFO=nIFO,
             strains=strains,
