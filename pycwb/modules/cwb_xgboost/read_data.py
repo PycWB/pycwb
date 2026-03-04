@@ -300,6 +300,18 @@ def apply_training_cuts(df: pd.DataFrame, cuts: str) -> pd.DataFrame:
     if not cuts:
         return df
     before = len(df)
-    df = df.query(cuts)
+    # Build a namespace from all DataFrame columns plus numpy and common
+    # bare aliases (sqrt, max, …) so cut strings work whether the caller
+    # writes 'max(...)' or 'np.maximum(...)'.  A single eval() handles the
+    # whole expression, comparison operator included.
+    ns = dict(df.items())          # column name → Series
+    ns['np'] = np
+    ns.update({
+        'sqrt': np.sqrt,  'abs': np.abs,
+        'log':  np.log,   'log10': np.log10,  'exp': np.exp,
+        'max':  np.maximum, 'min': np.minimum,
+    })
+    mask = eval(cuts, {"__builtins__": {}}, ns)  # noqa: S307
+    df = df[mask]
     logger.info("Training cuts '%s': %d → %d events", cuts, before, len(df))
     return df.reset_index(drop=True)
