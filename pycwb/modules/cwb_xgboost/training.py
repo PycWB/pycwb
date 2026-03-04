@@ -446,7 +446,11 @@ def train_classifier(
     # override here to use all available CPUs when training locally.
     # ------------------------------------------------------------------
     if nthread is not None:
-        resolved_nthread = _os.cpu_count() if nthread == -1 else int(nthread)
+        if nthread == -1:
+            cpu_count = _os.cpu_count() or 1
+            resolved_nthread = min(cpu_count, 8) if cpu_count > 8 else cpu_count
+        else:
+            resolved_nthread = int(nthread)
         params["nthread"] = resolved_nthread
         logger.info("nthread overridden → %d", resolved_nthread)
 
