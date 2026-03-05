@@ -108,6 +108,10 @@ class ClusterMeta:
     sky_size: int = 0
     sky_index: int = 0
     l_max: int = 0
+    # Per-IFO xtalk-corrected waveform energies (getMRAwave equivalents, set by fill_detection_statistic)
+    wave_snr: list = field(default_factory=list)    # data energy per IFO (C++ d->enrg = get_XX())
+    signal_snr: list = field(default_factory=list)  # signal energy per IFO (C++ d->sSNR = get_SS())
+    cross_snr: list = field(default_factory=list)   # xSNR per IFO (C++ d->xSNR = get_XS())
 
 
 @dataclass

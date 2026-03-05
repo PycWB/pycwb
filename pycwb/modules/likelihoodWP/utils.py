@@ -753,6 +753,63 @@ def avx_packet_ps(v00, v90, mask):
     return Ep/float32(2.), v00_updated, v90_updated, E, si, co, a_save, A_save
 
 
+def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
+    """Compute the raw xtalk-convolved energy sum (C++ _avx_norm_ps with I<0).
+
+    Mirrors the I<0 branch of network::_avx_norm_ps: accumulates the xtalk-
+    convolved inner products for each IFO WITHOUT the SNR-ratio computation
+    and WITHOUT clamping to >=2.  Used for Em (data energy, C++ D_snr[0])
+    and Np (null energy, C++ N_snr[0]) in the pixel-domain statistics.
+
+    Parameters
+    ----------
+    p : array-like, shape (n_ifo, n_pix)
+    q : array-like, shape (n_ifo, n_pix)
+    xtalks : 2-D array  — packed xtalk entries
+    xtalks_lookup : 2-D array  — (start, end) slice indices per pixel
+    mk : array-like, length n_pix  — event mask (>0 → active pixel)
+
+    Returns
+    -------
+    float
+        Total xtalk-convolved energy: sum over IFOs and masked pixels.
+    """
+    p_arr = np.asarray(p, dtype=np.float64)   # (n_ifo, n_pix)
+    q_arr = np.asarray(q, dtype=np.float64)
+    mk_arr = np.asarray(mk)
+    n_ifos = p_arr.shape[0]
+
+    g = np.zeros(n_ifos, dtype=np.float64)    # per-IFO accumulator
+
+    for i in range(p_arr.shape[1]):
+        if mk_arr[i] <= 0.0:
+            continue
+
+        r0, r1 = xtalks_lookup[i]
+        xt = xtalks[r0:r1]
+        idx = xt[:, 0].astype(np.int32)
+        cc = xt[:, 4:8].T.astype(np.float64)   # shape (4, n_nbr)
+
+        p_nbr = p_arr[:, idx]   # (n_ifo, n_nbr)
+        q_nbr = q_arr[:, idx]
+
+        # x = [cc[0]*p, cc[1]*p, cc[2]*q, cc[3]*q] summed over neighbours
+        x = np.vstack((p_nbr @ cc[0],
+                       p_nbr @ cc[1],
+                       q_nbr @ cc[2],
+                       q_nbr @ cc[3]))   # (4, n_ifo)
+
+        pi = p_arr[:, i]
+        qi = q_arr[:, i]
+        t = x[0] * pi + x[1] * qi + x[2] * pi + x[3] * qi   # (n_ifo,)
+
+        for j in range(n_ifos):
+            if t[j] > 0.0:
+                g[j] += t[j]
+
+    return float(np.sum(g))   # = C++ N_snr[0] or D_snr[0] for I<0 case
+
+
 @njit(cache=True)
 def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     """Compute the norm of a packet of pixels.
@@ -824,10 +881,11 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         #     print('q[0, i]: ', q[0, i])
 
 
-        # set t to 0 if t < 0
-        norm += np.where(t < 0, 0, t)
+        # set t to 0 if t < 0 (same as C++ _avx_norm_ps: t=t>0?t:0)
+        t_clamped = np.where(t < 0, 0, t)
+        norm += t_clamped
 
-        e = (pi * pi + qi * qi) / (t + _o)  # 1-d vector
+        e = (pi * pi + qi * qi) / (t_clamped + _o)  # 1-d vector
 
         q_norm[:, i] = np.where(e > 1, 0, e)
 

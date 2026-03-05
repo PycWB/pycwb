@@ -460,27 +460,43 @@ class Event:
             all_pixels = cluster.pixels
             core_pixels = [p for p in all_pixels if p.core]
 
+            # Prefer xtalk-corrected per-IFO energies from fill_detection_statistic
+            # (mirrors C++ getMRAwave 'W'/'S' + get_XX()/get_SS()/get_XS()).
+            # Fall back to diagonal pixel sums when not set (backwards compatibility).
+            have_xtalk_snr = (len(meta.wave_snr) == n_ifo
+                              and len(meta.signal_snr) == n_ifo
+                              and len(meta.cross_snr) == n_ifo)
+
             for i in range(n_ifo):
-                asnr_sq = 0.0  # signal energy (sSNR): sum asnr^2+a_90^2  [= C++ pd->sSNR]
-                wave_sq = 0.0  # data energy   (snr):  sum wave^2+w_90^2  [= C++ pd->enrg]
                 hrss_sq = 0.0
                 null_acc = 0.0
                 for p in all_pixels:
                     pd_i = p.data[i]
-                    asnr_sq += pd_i.asnr ** 2 + pd_i.a_90 ** 2
-                    wave_sq += pd_i.wave ** 2 + pd_i.w_90 ** 2
                     # hrss uses physical noise_rms (populated from nRMS TF map in likelihood)
                     hrss_sq += ((pd_i.asnr * pd_i.noise_rms) ** 2
                                 + (pd_i.a_90 * pd_i.noise_rms) ** 2)
                     null_acc += p.null / n_ifo  # scalar null split evenly across IFOs
 
-                # C++ netevent: snr[i]=pd->enrg (data energy), sSNR[i]=pd->sSNR (signal), xSNR[i]=pd->xSNR
-                self.snr.append(float(wave_sq))   # data energy (enrg = wave^2+w_90^2)
-                self.sSNR.append(float(asnr_sq))  # signal energy (sSNR = asnr^2+a_90^2)
-                self.xSNR.append(float(wave_sq))  # cross-energy (approx = data energy)
+                if have_xtalk_snr:
+                    # Xtalk-corrected energies: mirrors C++ d->enrg, d->sSNR, d->xSNR
+                    wave_sq_xt  = float(meta.wave_snr[i])    # C++ d->enrg = get_XX()
+                    asnr_sq_xt  = float(meta.signal_snr[i])  # C++ d->sSNR = get_SS()
+                    xsnr_sq_xt  = float(meta.cross_snr[i])   # C++ d->xSNR = get_XS()
+                    self.snr.append(wave_sq_xt)
+                    self.sSNR.append(asnr_sq_xt)
+                    self.xSNR.append(xsnr_sq_xt)
+                    self.nill.append(float(wave_sq_xt - asnr_sq_xt))
+                else:
+                    # Fallback: diagonal pixel sum (no xtalk cross-terms)
+                    asnr_sq = sum(p.data[i].asnr ** 2 + p.data[i].a_90 ** 2 for p in all_pixels)
+                    wave_sq = sum(p.data[i].wave ** 2 + p.data[i].w_90 ** 2 for p in all_pixels)
+                    self.snr.append(float(wave_sq))
+                    self.sSNR.append(float(asnr_sq))
+                    self.xSNR.append(float(np.sqrt(max(wave_sq * asnr_sq, 0.0))))
+                    self.nill.append(float(wave_sq - asnr_sq))
+
                 self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
                 self.null.append(float(null_acc))
-                self.nill.append(float(wave_sq - asnr_sq))
 
                 # Noise floor: mean noise_rms across core pixels for this IFO, scaled to strain/rtHz
                 rms_vals = [p.data[i].noise_rms for p in core_pixels
