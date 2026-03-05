@@ -39,6 +39,10 @@ from .config import xgb_config
 from .read_data import apply_training_cuts, preprocess_events, read_catalog_to_dataframe
 from .utils import getcapname
 from .utils_extended import get_balanced_bulk, get_balanced_tail, update_ML_list
+from .plots import (
+    plot_hist_rho, plot_hist_mchirp, plot_hist_freq,
+    plot_QaQp, mplot1d, mplot2d, plot_roc, plot_pr,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +225,47 @@ def train(
     if rho0_capvalue < 0:
         raise ValueError("rho0 cap not found in ML_caps; it is required for training.")
 
+    model_dir  = os.path.dirname(model_file) or "."
+    model_stem = os.path.splitext(os.path.basename(model_file))[0]
+    ofile_tag  = os.path.join(model_dir, model_stem)
+
+    # ------------------------------------------------------------------
+    # Pre-training diagnostic plots (dump=True)
+    # ------------------------------------------------------------------
+    if dump:
+        _dump_config(ofile_tag, xgb_params, ML_list, ML_caps, ML_balance, ML_options)
+        import logging as _logging
+        _logging.getLogger("matplotlib.font_manager").disabled = True
+        try:
+            plot_hist_rho(ofile_tag + "_bkg_sim_rho0_hist.png", npd, spd, '0')
+        except Exception as _e:
+            logger.warning("plot_hist_rho failed: %s", _e)
+        if search in ('bbh', 'imbhb'):
+            try:
+                plot_hist_mchirp(ofile_tag + "_bkg_sim_chirp_hist.png", npd, spd)
+            except Exception as _e:
+                logger.warning("plot_hist_mchirp failed: %s", _e)
+        try:
+            plot_hist_freq(ofile_tag + "_bkg_sim_frequency0_hist.png", npd, spd)
+        except Exception as _e:
+            logger.warning("plot_hist_freq failed: %s", _e)
+        if rho0_capname is not None:
+            try:
+                plot_QaQp(ofile_tag + "_bkg_sim_QaQp_plot.png", npd, spd,
+                          rho_name=rho0_capname, rho_thr=rho0_capvalue)
+            except Exception as _e:
+                logger.warning("plot_QaQp failed: %s", _e)
+        try:
+            mplot1d(npd, spd, odir=os.path.join(model_dir, "mplot1d"),
+                    utag=model_stem, goptions=ML_options)
+        except Exception as _e:
+            logger.warning("mplot1d failed: %s", _e)
+        try:
+            mplot2d(npd, spd, odir=os.path.join(model_dir, "mplot2d"),
+                    utag=model_stem, goptions=ML_options)
+        except Exception as _e:
+            logger.warning("mplot2d failed: %s", _e)
+
     tpd = pd.concat([spd, npd], ignore_index=True)
     ncount = (tpd["classifier"] == 0).sum()
     scount = (tpd["classifier"] == 1).sum()
@@ -255,10 +300,6 @@ def train(
         f"\nTrain/eval split: X_train={X_train.shape[0]}, X_eval={X_eval.shape[0]}"
     )
 
-    model_dir  = os.path.dirname(model_file) or "."
-    model_stem = os.path.splitext(os.path.basename(model_file))[0]
-    ofile_tag  = os.path.join(model_dir, model_stem)
-
     if ML_balance.get("bulk(training)", False):
         X_train, weight = get_balanced_bulk(
             X_train, ML_caps, ML_balance, "training", dump, ofile_tag
@@ -274,16 +315,20 @@ def train(
     # ------------------------------------------------------------------
     # Fit XGBoost
     # ------------------------------------------------------------------
-    XGB_clf = xgb.XGBClassifier(**xgb_params)
+    # XGBoost 2.x: eval_metric and early_stopping_rounds must be constructor
+    # parameters; use_label_encoder was removed in XGBoost 2.x.
+    _train_params = dict(xgb_params)
+    _train_params.pop("use_label_encoder", None)
+    _train_params.setdefault("eval_metric", ["logloss", "auc", "aucpr"])
+    _train_params.setdefault("early_stopping_rounds", 50)
+    XGB_clf = xgb.XGBClassifier(**_train_params)
     print("\nStart XGBoost training …\n")
     start = time.time()
     XGB_clf.fit(
         X_train_feat, y_train,
         sample_weight=weight,
         eval_set=[(X_eval_feat, y_eval)],
-        eval_metric=["logloss", "auc", "aucpr"],
         verbose=verbose,
-        early_stopping_rounds=50,
     )
     elapsed = time.time() - start
     print(f"\nTraining done. Elapsed time: {elapsed:.1f} s")
@@ -314,6 +359,7 @@ def train(
 
     if dump:
         _dump_plots(XGB_clf, ofile_tag, X_eval_feat, y_eval)
+        _dump_output(XGB_clf, ofile_tag)
 
     return XGB_clf
 
@@ -501,11 +547,10 @@ def _dump_plots(XGB_clf, ofile_tag: str, X_eval, y_eval) -> None:
     import logging as _logging
     _logging.getLogger("matplotlib.font_manager").disabled = True
 
+    # Feature importance
     try:
         import matplotlib.pyplot as plt
         from matplotlib import rcParams
-
-        # Feature importance
         rcParams["text.usetex"] = False
         fig, ax = plt.subplots(figsize=(18, 12))
         xgb.plot_importance(XGB_clf, max_num_features=50, height=0.8, ax=ax)
@@ -514,39 +559,139 @@ def _dump_plots(XGB_clf, ofile_tag: str, X_eval, y_eval) -> None:
         plt.savefig(ofile)
         plt.close()
         print(f"Saved feature importance plot: {ofile}")
-
-        # ROC curve
-        from sklearn.metrics import roc_curve, roc_auc_score
-        y_scores = XGB_clf.predict_proba(X_eval)[:, 1]
-        fpr, tpr, _ = roc_curve(y_eval, y_scores)
-        auc_val = roc_auc_score(y_eval, y_scores)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(fpr, tpr, label=f"AUC = {auc_val:.4f}")
-        ax.set_xlabel("False Positive Rate")
-        ax.set_ylabel("True Positive Rate")
-        ax.legend()
-        ax.set_title("ROC Curve")
-        ofile = ofile_tag + "_roc.png"
-        plt.tight_layout()
-        plt.savefig(ofile)
-        plt.close()
-        print(f"Saved ROC plot: {ofile}")
-
-        # PR curve
-        from sklearn.metrics import precision_recall_curve, auc as sk_auc
-        prec, rec, _ = precision_recall_curve(y_eval, y_scores)
-        pr_auc = sk_auc(rec, prec)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(rec, prec, label=f"PR-AUC = {pr_auc:.4f}")
-        ax.set_xlabel("Recall")
-        ax.set_ylabel("Precision")
-        ax.legend()
-        ax.set_title("Precision-Recall Curve")
-        ofile = ofile_tag + "_pr.png"
-        plt.tight_layout()
-        plt.savefig(ofile)
-        plt.close()
-        print(f"Saved PR plot: {ofile}")
-
     except Exception as exc:
-        logger.warning("Could not save diagnostic plots: %s", exc)
+        logger.warning("Could not save feature importance plot: %s", exc)
+
+    # ROC and PR curves — delegate to plots.py for consistent style and correct
+    # handling of DataFrame y_eval (single-column) vs 1-D array.
+    try:
+        plot_roc(ofile_tag + "_roc.png", XGB_clf, X_eval, y_eval)
+    except Exception as exc:
+        logger.warning("Could not save ROC plot: %s", exc)
+
+    try:
+        plot_pr(ofile_tag + "_pr.png", XGB_clf, X_eval, y_eval)
+    except Exception as exc:
+        logger.warning("Could not save PR plot: %s", exc)
+
+
+def _dump_config(
+    ofile_tag: str,
+    xgb_params: dict,
+    ML_list: list,
+    ML_caps: dict,
+    ML_balance: dict,
+    ML_options: dict,
+) -> None:
+    """Write a human-readable ``.cfg`` file with all XGBoost training parameters.
+
+    Parameters
+    ----------
+    ofile_tag : str
+        Base path (no extension); the file ``ofile_tag + ".cfg"`` is created.
+    xgb_params : dict
+        XGBoost hyper-parameters passed to :class:`xgb.XGBClassifier`.
+    ML_list : list[str]
+        Feature list used for training.
+    ML_caps : dict
+        Feature cap dictionary.
+    ML_balance : dict
+        Balance / cuts configuration.
+    ML_options : dict
+        Per-feature options (plot ranges, enable flags …).
+    """
+    ofile = ofile_tag + ".cfg"
+    lines = [
+        "# XGBoost training configuration",
+        "# Generated by pycwb.modules.cwb_xgboost.training",
+        "",
+        "[xgb_params]",
+    ]
+    for k, v in sorted(xgb_params.items()):
+        lines.append(f"  {k} = {v!r}")
+    lines += ["", "[ML_list]"]
+    for item in ML_list:
+        lines.append(f"  {item!r}")
+    lines += ["", "[ML_caps]"]
+    for k, v in sorted(ML_caps.items()):
+        lines.append(f"  {k!r} = {v!r}")
+    lines += ["", "[ML_balance]"]
+    for k, v in sorted(ML_balance.items()):
+        lines.append(f"  {k!r} = {v!r}")
+    lines += ["", "[ML_options]"]
+    for k, v in sorted(ML_options.items()):
+        lines.append(f"  {k!r} = {v!r}")
+    lines.append("")
+
+    try:
+        with open(ofile, "w") as fh:
+            fh.write("\n".join(lines))
+        print(f"Config saved to {ofile}")
+    except Exception as exc:
+        logger.warning("Could not write config file %s: %s", ofile, exc)
+
+
+def _dump_output(XGB_clf: "xgb.XGBClassifier", ofile_tag: str) -> None:
+    """Write a ``.out`` file with tree statistics and all five feature-importance types.
+
+    The five importance types reported are the standard XGBoost types:
+
+    * **weight**      – number of times a feature is used to split across all trees.
+    * **gain**        – average training-loss reduction gained when a feature is used.
+    * **cover**       – average number of samples affected by splits on that feature.
+    * **total_gain**  – total (summed) gain across all splits on that feature.
+    * **total_cover** – total (summed) cover across all splits on that feature.
+
+    Parameters
+    ----------
+    XGB_clf : xgb.XGBClassifier
+        Trained classifier.
+    ofile_tag : str
+        Base path (no extension); the file ``ofile_tag + ".out"`` is created.
+    """
+    ofile = ofile_tag + ".out"
+    booster = XGB_clf.get_booster()
+
+    # --- tree statistics ---------------------------------------------------
+    try:
+        n_trees = booster.num_boosted_rounds()
+    except Exception:
+        # best_iteration is 0-based; add 1 for count
+        n_trees = getattr(XGB_clf, "best_iteration", 0) + 1
+
+    lines = [
+        "# XGBoost training output",
+        "# Generated by pycwb.modules.cwb_xgboost.training",
+        "",
+        "[tree_statistics]",
+        f"  num_trees          = {n_trees}",
+        f"  best_iteration     = {getattr(XGB_clf, 'best_iteration', 'N/A')}",
+        f"  best_score         = {getattr(XGB_clf, 'best_score', 'N/A')}",
+        f"  feature_names      = {booster.feature_names}",
+        "",
+    ]
+
+    # --- feature importances (all five types) ------------------------------
+    importance_types = ["weight", "gain", "cover", "total_gain", "total_cover"]
+    for itype in importance_types:
+        try:
+            scores = booster.get_score(importance_type=itype)
+        except Exception as exc:
+            lines.append(f"[feature_importance_{itype}]")
+            lines.append(f"  # could not compute: {exc}")
+            lines.append("")
+            continue
+
+        # Sort descending by score value
+        sorted_scores = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        lines.append(f"[feature_importance_{itype}]")
+        for feat, val in sorted_scores:
+            lines.append(f"  {feat:<30s} = {val:.6g}")
+        lines.append("")
+
+    try:
+        with open(ofile, "w") as fh:
+            fh.write("\n".join(lines))
+        print(f"Output saved to {ofile}")
+    except Exception as exc:
+        logger.warning("Could not write output file %s: %s", ofile, exc)

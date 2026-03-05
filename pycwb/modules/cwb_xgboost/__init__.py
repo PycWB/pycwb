@@ -40,7 +40,22 @@ from .read_data import (
     preprocess_events,
     apply_training_cuts,
 )
-from .plots import evaluate_classifier
+from .plots import (
+    evaluate_classifier,
+    plot_hist_rho,
+    plot_hist_mchirp,
+    plot_hist_freq,
+    plot_QaQp,
+    plot1d,
+    mplot1d,
+    plot2d,
+    mplot2d,
+    plot_roc,
+    plot_pr,
+    plot_balance_weight,
+    plot_balance_hist,
+    plot_balance_weight_hist,
+)
 from .config import xgb_config
 from .utils import load_model, getcapname
 from .utils_extended import get_balanced_tail, get_balanced_bulk, update_ML_list
@@ -59,8 +74,21 @@ __all__ = [
     "read_catalog_to_dataframe",
     "preprocess_events",
     "apply_training_cuts",
-    # Evaluation
+    # Evaluation / plotting
     "evaluate_classifier",
+    "plot_hist_rho",
+    "plot_hist_mchirp",
+    "plot_hist_freq",
+    "plot_QaQp",
+    "plot1d",
+    "mplot1d",
+    "plot2d",
+    "mplot2d",
+    "plot_roc",
+    "plot_pr",
+    "plot_balance_weight",
+    "plot_balance_hist",
+    "plot_balance_weight_hist",
     # Config
     "xgb_config",
     # Utilities

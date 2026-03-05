@@ -77,32 +77,41 @@ def get_balanced_tail(tpd, ML_caps, seed):
 def update_ML_list(ML_list, ML_defcaps, ML_caps):
     """
     Update ML_list based on changes to ML_caps.
-    
-    When caps are changed in custom configuration, update the feature names in ML_list.
-    
+
+    Mirrors the two-pass logic of the legacy ``cwb_xgboost.update_ML_list``:
+
+    1. Remove every entry in ``ML_list`` that corresponds to any feature in
+       ``ML_defcaps`` (whether capped or bare).
+    2. Re-add entries for all features in the *updated* ``ML_caps``.
+
     Parameters
     ----------
     ML_list : list
         List of ML features to be updated in place.
     ML_defcaps : dict
-        Default ML caps.
+        Default ML caps (deep-copied before user overrides are applied).
     ML_caps : dict
-        Updated ML caps.
+        Updated ML caps (after user ``update_config`` has run).
     """
-    for feature in list(ML_list):
-        # Check if this is a capped feature
-        for orig_feature, orig_cap in ML_defcaps.items():
-            if orig_cap > 0:
-                orig_capname = getcapname(orig_feature, orig_cap)
-                if feature == orig_capname:
-                    # Found a capped feature - check if cap changed
-                    new_cap = ML_caps.get(orig_feature, orig_cap)
-                    if new_cap != orig_cap:
-                        new_capname = getcapname(orig_feature, new_cap)
-                        # Replace old cap name with new cap name
-                        idx = ML_list.index(feature)
-                        ML_list[idx] = new_capname
-                        print(f'  Updated feature: {feature} -> {new_capname}')
+    # Pass 1 – remove all entries that come from the default caps
+    for cap_name, cap_value in ML_defcaps.items():
+        if cap_value > 0:
+            full_cap_name = getcapname(cap_name, cap_value)
+        else:  # cap == 0 → bare feature name
+            full_cap_name = cap_name
+        if full_cap_name in ML_list:
+            ML_list.remove(full_cap_name)
+            print(f'  Removed feature: {full_cap_name}')
+
+    # Pass 2 – add entries for the (possibly updated) caps
+    for cap_name, cap_value in ML_caps.items():
+        if cap_value > 0:
+            new_name = getcapname(cap_name, cap_value)
+        else:
+            new_name = cap_name
+        if new_name not in ML_list:
+            ML_list.append(new_name)
+            print(f'  Added feature: {new_name}')
 
 
 def get_balanced_bulk(X_train, ML_caps, ML_balance, balance_type, dump=False, ofile_tag=""):

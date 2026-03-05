@@ -42,7 +42,9 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
     # Extract per-IFO scalar columns from list columns only when they are not
     # already present as flat scalars (e.g. when loading from a flat Parquet
     # produced by uproot rather than the pycwb Catalog).
-    _list_cols = ['rho', 'sSNR', 'duration', 'bandwidth', 'netcc', 'noise']
+    # NOTE: 'chirp' and 'Lveto' are handled separately below because their
+    # useful indices (e.g. chirp1, chirp3, Lveto2) are NOT bounded by nifo.
+    _list_cols = ['rho', 'sSNR', 'duration', 'bandwidth', 'netcc', 'noise', 'frequency']
     for n in range(nifo):
         for col in _list_cols:
             dest = col + str(n)
@@ -55,6 +57,17 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
             if hasattr(arr.iloc[0], '__len__'):
                 events[dest] = arr.apply(lambda x, _n=n: x[_n] if len(x) > _n else None)
             # scalar column that was already named differently — nothing to do
+
+    # ── chirp flat indices (NOT per-IFO; indices go up to 5+ independent of nifo) ──
+    # ML_list uses chirp1, chirp3 for bbh/imbhb searches.
+    if 'chirp' in events.columns:
+        chirp_arr = events['chirp']
+        first_chirp = chirp_arr.iloc[0]
+        n_chirp = len(first_chirp) if hasattr(first_chirp, '__len__') else 0
+        for i in range(n_chirp):
+            dest = f'chirp{i}'
+            if dest not in events.columns:
+                events[dest] = chirp_arr.apply(lambda x, _i=i: float(x[_i]) if len(x) > _i else np.nan)
 
     # add chunk = 1
     events['chunk'] = 0

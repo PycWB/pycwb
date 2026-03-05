@@ -37,7 +37,13 @@ def xgb_predict(events: DataFrame, config_file: str, model_file: str, search: st
 
     # preprocess the events DataFrame
     events = preprocess_events(events, nifo, ML_options, ML_caps)
-    
+
+    # build config dict expected by predict()
+    config = {
+        'ML_options': ML_options,
+        'add_ranking_statistics': add_ranking_statistics,
+    }
+
     # predict the ranking statistics
-    predict(events, model, xgb_params, ML_list, add_ranking_statistics)
+    predict(events, model, config)
     
