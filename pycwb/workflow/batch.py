@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster=None, conda_env=None, additional_init="",
-                accounting_group=None, job_per_worker=None, n_proc=1, memory=None, disk=None,
+                accounting_group=None, job_per_worker=None, n_proc=None, memory=None, disk=None,
                 container_image = None, should_transfer_files = False,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
@@ -41,6 +41,7 @@ def batch_setup(file_name, working_dir='.',
     if not additional_init: additional_init = config.additional_init
     if not accounting_group: accounting_group = config.accounting_group
     if not job_per_worker: job_per_worker = config.job_per_worker
+    if not n_proc: n_proc = config.nproc
     if not memory: memory = config.job_memory
     if not disk: disk = config.job_disk
     if not container_image: container_image = config.container_image

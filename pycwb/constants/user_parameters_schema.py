@@ -107,7 +107,7 @@ schema = {
         "nproc": {
             "type": "integer",
             "description": "number of processes",
-            "default": 4,
+            "default": 1,
             "cwb": False
         },
         "cluster": {

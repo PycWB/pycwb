@@ -75,9 +75,7 @@ def init_parser(parser):
                         '-n',
                         metavar='n_proc',
                         type=int,
-                        default=1,
-                        help='the number of cpu to use, default to 1. If it set to 0, '
-                             'it will use the value from the user parameter file.')
+                        help='the number of cpu to use for each condor/slurm job')
 
     # job_per_worker
     parser.add_argument('--job-per-worker',
@@ -151,9 +149,9 @@ def command(args):
 
         return 0
 
-    if args.cluster is 'slurm':
-        print("Slurm is not supported yet.")
-        return 1
+    # if args.cluster is 'slurm':
+        # print("Slurm is not supported yet.")
+        # return 1
 
     # Run the search function with the specified user parameter file
     batch_setup(args.user_parameter_file, working_dir=args.work_dir,

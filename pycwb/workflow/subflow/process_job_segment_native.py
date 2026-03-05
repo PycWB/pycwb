@@ -290,9 +290,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
                                                     trigger_data=trigger,
                                                     catalog_file=catalog_file)
-
+            logger.info("-------------------------------------------")
             logger.info("Lag %d processing time: %.2f s", lag, time.perf_counter() - lag_timer)
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+            logger.info("-------------------------------------------")
 
             # Release JAX device buffers and Python objects from this lag before
             # the next iteration.  JAX kernels hold device memory until GC runs;

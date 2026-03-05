@@ -80,8 +80,12 @@ class DQFile:
                 _start = float(_start)
                 _stop = float(_stop)
 
-                if _stop <= _start:
-                    raise Exception("Error Ranges : %s %s", _start, _stop)
+                if _stop == _start:
+                    raise Exception(f"Invalid segment in {self.file}: start equals end ({_start}). "
+                                    f"Please check your DQ file.")
+                if _stop < _start:
+                    raise Exception(f"Invalid segment in {self.file}: start ({_start}) is greater than end ({_stop}). "
+                                    f"Please check your DQ file.")
 
                 start.append(_start + self.shift)
                 stop.append(_stop + self.shift)

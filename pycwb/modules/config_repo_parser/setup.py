@@ -135,7 +135,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
                     
     # Copy frames files for local data sources
     if data_settings['is_local']:
-        frames_source_dir = Path(parsed['full_path']) / "frames"
+        frames_source_dir = Path(config_base_path) / "frames"
         for ifo in ifo_list:
             frames_file = frames_source_dir / f"{ifo}.frames"
             dest_frames = work_path / "input" / f"{ifo}.frames"

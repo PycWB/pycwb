@@ -42,8 +42,7 @@ def init_parser(parser):
                         metavar='job_submission_system',
                         type=str,
                         choices=['condor', 'slurm'],
-                        default='condor',
-                        help='Job submission system (default: condor)')
+                        help='Job submission system to use for batch setup (e.g., condor, slurm)')
     
     # Submit flag
     parser.add_argument('--submit',
@@ -63,8 +62,7 @@ def init_parser(parser):
                         '-n',
                         metavar='n_proc',
                         type=int,
-                        default=1,
-                        help='Number of CPUs to use (default: 1)')
+                        help='The number of cpu to use for each condor/slurm job')
     
     # Memory
     parser.add_argument('--memory',
