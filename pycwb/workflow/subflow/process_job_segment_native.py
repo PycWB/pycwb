@@ -130,7 +130,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
-        lh_setup = setup_likelihood(config, strains, config.nIFO)
+        # Reuse ml/FP/FX already computed by setup_supercluster to avoid a second
+        # compute_sky_delay_and_patterns call (which is identical — same GPS time, same config).
+        lh_setup = setup_likelihood(config, strains, config.nIFO,
+                                    ml=sc_setup["ml"],
+                                    FP=sc_setup["FP"],
+                                    FX=sc_setup["FX"])
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -150,6 +155,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # was done once above and is reused here.
         likelihood_timer = time.perf_counter()
         for lag in range(n_lag):
+            # timer for each lag iteration, not including the one-time setup above
+            lag_timer = time.perf_counter()
             if skip_lags and lag in skip_lags:
                 logger.info("Skipping lag %d due to skip_lags", lag)
                 continue
@@ -284,6 +291,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                                     trigger_data=trigger,
                                                     catalog_file=catalog_file)
 
+            logger.info("Lag %d processing time: %.2f s", lag, time.perf_counter() - lag_timer)
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
             # Release JAX device buffers and Python objects from this lag before

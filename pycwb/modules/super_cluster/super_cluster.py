@@ -487,12 +487,19 @@ def setup_supercluster(config, strains):
         wdm_obj = context["wdm"]
         per_ifo = [prepare_td_inputs(context["tf_maps"][n], wdm_obj) for n in range(config.nIFO)]
         td_inputs_cache[layer_key] = per_ifo
+        # Free the TF maps immediately after extracting padded planes (~1.1 GB total).
+        # The padded arrays in td_inputs_cache are the only data needed downstream;
+        # there is no reason to keep the raw complex TF maps alive.
+        context["tf_maps"] = None
     for layer_key in list(wdm_context_by_layers.keys()):
         if td_inputs_cache.get(layer_key) is None:
             alt = (
                 td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
             )
             td_inputs_cache[layer_key] = alt
+    # Release the entire WDM context dict (WDM objects + any remaining TF map refs).
+    # After this point only td_inputs_cache is needed.
+    wdm_context_by_layers.clear()
 
     # ---- Sky delay / antenna-pattern matrices ----
     if hasattr(config, "healpix") and int(config.healpix) > 0:
@@ -512,6 +519,8 @@ def setup_supercluster(config, strains):
         healpix_order=healpix_order,
         n_sky=None,
     )
+    # Strain data no longer needed after sky delay computation.
+    strains_ts = None
 
     super_acor = config.Acore
     super_e2or = calculate_e2or_from_acore(super_acor, config.nIFO)

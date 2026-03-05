@@ -130,7 +130,7 @@ def _populate_pixel_noise_rms(pixels, nRMS):
                 pass  # keep noise_rms=1.0 on failure
 
 
-def setup_likelihood(config, strains, nIFO):
+def setup_likelihood(config, strains, nIFO, ml=None, FP=None, FX=None):
     """
     Pre-compute all job-segment-level (lag/cluster-independent) inputs for likelihood.
 
@@ -148,9 +148,17 @@ def setup_likelihood(config, strains, nIFO):
         Analysis configuration.
     strains : list[TimeSeries]
         Whitened strain data (one per IFO); used only to determine GPS time and
-        sample rate for sky-delay computation.
+        sample rate for sky-delay computation when ``ml``/``FP``/``FX`` are not
+        provided.
     nIFO : int
         Number of interferometers.
+    ml : np.ndarray, optional
+        Pre-computed sky-delay index array (nIFO, n_sky) from ``setup_supercluster``.
+        When provided, ``compute_sky_delay_and_patterns`` is skipped entirely.
+    FP : np.ndarray, optional
+        Pre-computed f+ antenna patterns (nIFO, n_sky) from ``setup_supercluster``.
+    FX : np.ndarray, optional
+        Pre-computed fx antenna patterns (nIFO, n_sky) from ``setup_supercluster``.
 
     Returns
     -------
@@ -169,7 +177,12 @@ def setup_likelihood(config, strains, nIFO):
         netCC,
     ) = _resolve_runtime_parameters(config, nIFO)
 
-    ml_raw, FP_raw, FX_raw = load_data_from_ifo(nIFO, strains, config)
+    if ml is not None and FP is not None and FX is not None:
+        # Reuse pre-computed arrays from setup_supercluster to avoid a duplicate
+        # compute_sky_delay_and_patterns call (~same GPS time, same config).
+        ml_raw, FP_raw, FX_raw = np.asarray(ml), np.asarray(FP), np.asarray(FX)
+    else:
+        ml_raw, FP_raw, FX_raw = load_data_from_ifo(nIFO, strains, config)
     n_sky = int(ml_raw.shape[1])
 
     # Pre-transpose and cast to float32 so per-cluster calls skip that work
