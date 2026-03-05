@@ -42,13 +42,13 @@ class Slurm:
         # create run.sh
         with open(f"{slurm_dir}/run.sh", 'w') as f:
             f.write(f"""#!/bin/bash
-#SBATCH --job-name=my_job_array
+#SBATCH --job-name={os.path.basename(working_dir)}
 #SBATCH --output=log/output_%A_%a.out
 #SBATCH --error=log/error_%A_%a.err
 #SBATCH --array=0-{n_workers-1}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={n_proc}
-#SBATCH --time=24:00:00
+#SBATCH --time=72:00:00
 #SBATCH --constraint=cal
 #SBATCH --mem={memory}
 
