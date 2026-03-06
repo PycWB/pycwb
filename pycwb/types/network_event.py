@@ -432,79 +432,121 @@ class Event:
         # --- Timing and frequency per IFO (network-level in slot [0]) ---
         c_time = meta.c_time if meta.c_time != 0.0 else cluster.cluster_time
         c_freq = meta.c_freq if meta.c_freq != 0.0 else cluster.cluster_freq
-        duration = cluster.stop_time - cluster.start_time
-        bw = cluster.high_frequency - cluster.low_frequency
+        net_bw = cluster.high_frequency - cluster.low_frequency
 
-        # Compute per-IFO statistics from pixels (C++ gets these from wavecluster per-IFO arrays)
-        # For each IFO, compute energy-weighted mean time/frequency and ranges
+        # Pre-extract core pixels (used below)
         all_pixels = cluster.pixels
         core_pixels = [p for p in all_pixels if p.core]
-        per_ifo_time = []
-        per_ifo_duration = []
-        per_ifo_frequency = []
-        per_ifo_bandwidth = []
-        
-        for ifo_idx in range(n_ifo):
-            # Get energy-weighted statistics per IFO
-            times = []
-            freqs = []
-            energies = []
-            for p in core_pixels:
-                # Time in seconds
-                t_sec = float(p.time) / (float(p.rate) * float(p.layers)) if (p.rate > 0 and p.layers > 0) else 0.0
-                # Frequency in Hz
-                f_hz = float(p.frequency) * float(p.rate) / 2.0 if p.rate > 0 else 0.0
-                # Energy for this pixel and IFO
-                e = p.data[ifo_idx].asnr ** 2 + p.data[ifo_idx].a_90 ** 2
-                if e > 0:
-                    times.append(t_sec)
-                    freqs.append(f_hz)
-                    energies.append(e)
-            
-            if times and energies:
-                # Energy-weighted means
-                total_e = sum(energies)
-                mean_t = sum(t * e for t, e in zip(times, energies)) / total_e
-                mean_f = sum(f * e for f, e in zip(freqs, energies)) / total_e
-                # Ranges
-                dur = max(times) - min(times)
-                bw_ifo = max(freqs) - min(freqs)
-                per_ifo_time.append(mean_t)
-                per_ifo_duration.append(dur)
-                per_ifo_frequency.append(mean_f)
-                per_ifo_bandwidth.append(bw_ifo)
-            else:
-                # Fallback to cluster values
-                per_ifo_time.append(c_time)
-                per_ifo_duration.append(duration)
-                per_ifo_frequency.append(c_freq)
-                per_ifo_bandwidth.append(bw)
 
-        # Sky-time delays (used for ToF-corrected event time per IFO)
+        # Sky-time delays: ml[i, l_max] are integer lag indices
         sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
         td_rate = float(config.TDRate) if config is not None else 1.0
-        lag_sec = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
+        # C++ lag correction: tau_i(theta,phi) - tau_0(theta,phi) in seconds
+        # For IFO 0: no correction; for IFO i>0: (sky_td[i] - sky_td[0]) / TDRate
+        tau_ref = float(sky_td[0]) / td_rate if sky_td else 0.0
+        tau_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
                    for i in range(n_ifo)]
         # C++ lag: [pwc->shift]*n_ifo + [pd->lagShift.data[LAG]]*n_ifo
         # lagShift = data stream lag (0 for zero-lag); ToF delays only go into self.time.
         self.lag = [0.0] * (2 * n_ifo)
 
-        # Time per IFO: pixel-based time + GPS + ToF delay
-        self.time = [float(per_ifo_time[i]) + float(self.gps[i]) + lag_sec[i] for i in range(n_ifo)]
-        # slots [n_ifo .. 2*n_ifo-1] will be filled by injection-reconstruction postprocess
+        # Time per IFO (mirrors C++ netevent.cc):
+        #   time[0] = pcd->cTime + gps[0]                          (no delay for ref)
+        #   time[i] = pcd->cTime + gps[i] + tau_i - tau_0          (ToF correction)
+        self.time = [c_time + float(self.gps[i]) + (tau_ifo[i] - tau_ref if i > 0 else 0.0)
+                     for i in range(n_ifo)]
 
-        # frequency / bandwidth / duration: per-IFO pixel-derived values
-        # C++ fills these in loop, then overwrites [0] with network value
-        self.frequency = per_ifo_frequency[:]
-        self.bandwidth = per_ifo_bandwidth[:]
+        # Duration per IFO: min/max of per-IFO pixel time bins using p.data[i].index
+        # (mirrors C++ pwc->get("start",i,'L',0) / pwc->get("stop",i,'L',0))
+        # start = min of (1/rate * floor(data[i].index / layers))
+        # stop  = max of (1/rate * (floor(data[i].index / layers) + 1))
+        per_ifo_duration = []
+        for ifo_idx in range(n_ifo):
+            t_starts = []
+            t_stops = []
+            for p in core_pixels:
+                if p.rate > 0 and p.layers > 0 and ifo_idx < len(p.data):
+                    dt = 1.0 / float(p.rate)
+                    time_bin = int(p.data[ifo_idx].index) // int(p.layers)
+                    t_starts.append(dt * time_bin)
+                    t_stops.append(dt * (time_bin + 1))
+            if t_starts:
+                per_ifo_duration.append(max(t_stops) - min(t_starts))
+            else:
+                per_ifo_duration.append(cluster.stop_time - cluster.start_time)
+
+        # Frequency per IFO:
+        # C++ sets frequency[i] = cFreq_net.data[kid] for all IFOs (WDM sub-bin likelihood-weighted mean),
+        # then overwrites frequency[0] = pcd->cFreq (supercluster central freq from supercluster stage).
+        # We compute the WDM sub-bin mean below (a_f/b_f) for slots [1+],
+        # and use cluster.cluster_freq for slot [0].
+        # Placeholder until the sub-bin accumulators are filled below:
+        self.frequency = [c_freq] * n_ifo  # will be updated after sub-bin loop
+
+        # Bandwidth per IFO: C++ uses high-low for all IFOs, overwrites [0] with energy-weighted RMS
+        self.bandwidth = [net_bw] * n_ifo
+
+        # Duration: per-IFO from pixel index ranges; [0] overwritten below with energy-weighted value
         self.duration = per_ifo_duration[:]
-        # Override slot[0] with network-level values (from postprocess; use cluster for now)
-        if len(self.frequency) > 0:
-            self.frequency[0] = c_freq
-        if len(self.bandwidth) > 0:
-            self.bandwidth[0] = bw
-        if len(self.duration) > 0:
-            self.duration[0] = duration
+
+        # Compute energy-weighted duration (RMS) and bandwidth (RMS) for slot [0]
+        # Mirrors C++ pwc->get("duration",0,'L',0) and pwc->get("bandwidth",0,'L',0)
+        # Case 'D': a = sum(t*x), b = sum(x), d = sum(t^2*x); result = sqrt((d-a^2/b)/b) * b / b
+        # = sqrt(variance) (actually it's the weighted RMS)
+        if core_pixels:
+            # Duration RMS
+            a_t = b_t = d_t = 0.0
+            a_f = b_f = d_f = 0.0
+            max_rate = max((p.rate for p in core_pixels), default=0)
+            min_rate = min((p.rate for p in core_pixels if p.rate > 0), default=1)
+            for p in core_pixels:
+                dt = 1.0 / float(p.rate) if p.rate > 0 else 0.0
+                mm = int(p.layers)
+                mp = int(max_rate * dt + 0.5) if dt > 0 else 1  # n sub-time bins
+                # WDM: dT=0.5 bin offset (C++: dT = mm==mp ? 0 : 0.5)
+                dT = 0.0 if mm == mp else 0.5
+                # C++ uses INTEGER division: pList[M].time/mm (both size_t)
+                time_bin = int(p.time) // mm
+                iT = (float(time_bin) - dT) * dt
+                n_sub = max(mp, 1)
+                sub_dt = 1.0 / float(max_rate) if max_rate > 0 else dt
+                iT += sub_dt / 2.0  # central bin
+                x = p.likelihood / (n_sub * n_sub) if p.likelihood > 0 else 0.0
+                for _ in range(n_sub):
+                    a_t += iT * x
+                    b_t += x
+                    d_t += iT * iT * x
+                    iT += sub_dt
+
+                # Frequency sub-bins
+                mp_f = int(1.0 / (float(min_rate) * dt) + 0.5) if dt > 0 else 1
+                dF = 0.5  # WDM offset
+                iF = (float(p.frequency) - dF) / dt / 2.0
+                df = float(min_rate) / 2.0
+                n_sub_f = max(mp_f, 1)
+                iF += df / 2.0
+                x_f = p.likelihood / (n_sub_f * n_sub_f) if p.likelihood > 0 else 0.0
+                for _ in range(n_sub_f):
+                    a_f += iF * x_f
+                    b_f += x_f
+                    d_f += iF * iF * x_f
+                    iF += df
+
+            if b_t > 0:
+                var_t = (d_t - a_t * a_t / b_t) / b_t
+                dur0 = float(np.sqrt(var_t) * b_t / b_t) if var_t > 0 else 1.0 / (max_rate if max_rate > 0 else 1.0)
+                self.duration[0] = dur0
+            if b_f > 0:
+                var_f = (d_f - a_f * a_f / b_f) / b_f
+                bw0 = float(np.sqrt(var_f) * b_f / b_f) if var_f > 0 else float(min_rate) / 2.0
+                self.bandwidth[0] = bw0
+                # cFreq_net = likelihood-weighted WDM sub-bin mean frequency (C++ case 'f' / 'L')
+                # used for frequency[i>0]; frequency[0] is overwritten with c_freq (= meta.c_freq) below
+                lh_freq_net = a_f / b_f
+                self.frequency = [lh_freq_net] * n_ifo
+
+        # frequency[0] = pcd->cFreq = Fo from likelihoodWP (MRA spectral centroid) = meta.c_freq
+        self.frequency[0] = c_freq
 
         # --- Per-IFO amplitude fields from pixel data ---
         if config is not None:

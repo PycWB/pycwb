@@ -311,47 +311,110 @@ self.bx.append(float(fx / 2.0))
 
 **Note**: The remaining differences may be due to coordinate transformation differences between C++ detector-frame calculations and Python equatorial-frame transformations, or additional implementation details in the C++ `detector::antenna()` method that need further investigation.
 
-### 8d. `time`, `duration`, `frequency`, `bandwidth` — using cluster-level values instead of per-IFO
+### 8d. `time`, `duration`, `frequency`, `bandwidth` — multiple root-cause bugs
 
-**Bug**: The Python `output_py()` was using the same cluster-level time/frequency values for all IFOs:
+#### 8d-i. `c_time` / `c_freq` wrong normalization (`likelihood.py`)
+
+**Bug**: `To` (centroid time) and `Fo` (centroid frequency) were divided by `Lw` — the MRA
+waveform likelihood which includes WDM cross-pixel overlap terms (~7.6× larger than the
+diagonal pixel energy). This gave `c_time ≈ 38s` instead of the correct `~289s`.
+
+**Original broken code**:
 ```python
-self.time.append(c_time + self.gps[i] + lag_sec[i])  # Same c_time for all IFOs
-self.duration = [duration] * n_ifo
-self.frequency = [c_freq] * n_ifo
-self.bandwidth = [bw] * n_ifo
+To /= Lw   # Lw ≈ 1543 (includes cross-pixel overlaps)
+Fo /= Lw
 ```
 
-C++ `netevent.cc` computes these per-IFO from pixel distributions in `wavecluster` arrays.
+**Fix**: C++ computes `To` and `Fo` as `getWFtime()` / `getWFfreq()` — energy-weighted
+centroids of the time-domain MRA-reconstructed waveform, then normalises by `Lw` (sum of
+per-IFO `sSNR`). Replaced the pixel-based centroid with exact C++ equivalents using FFT:
 
-**Fix** (`network_event.py`): Added per-IFO computation from pixel energy distributions in `output_py()`:
 ```python
-# Move core_pixels extraction before per-IFO loop
-all_pixels = cluster.pixels
-core_pixels = [p for p in all_pixels if p.core]
-
-for ifo_idx in range(n_ifo):
-    times, freqs, energies = [], [], []
-    for p in core_pixels:
-        t_sec = float(p.time) / (float(p.rate) * float(p.layers))
-        f_hz = float(p.frequency) * float(p.rate) / 2.0
-        e = p.data[ifo_idx].asnr ** 2 + p.data[ifo_idx].a_90 ** 2
-        if e > 0:
-            times.append(t_sec); freqs.append(f_hz); energies.append(e)
-    # Energy-weighted means
-    mean_t = sum(t * e for t, e in zip(times, energies)) / sum(energies)
-    mean_f = sum(f * e for f, e in zip(freqs, energies)) / sum(energies)
-    dur = max(times) - min(times)
-    bw_ifo = max(freqs) - min(freqs)
+# For each IFO, after get_MRA_wave():
+e_sig = z_sig ** 2
+wf_time_ifo = t_start + np.dot(e_sig, np.arange(n)) / (E_sig * rate_wf)  # getWFtime()
+Z_fft = np.fft.rfft(z_sig)
+power = Z_fft.real**2 + Z_fft.imag**2
+wf_freq_ifo = np.dot(power, np.arange(len(power))) * rate_wf / n / E_fft  # getWFfreq()
+To += sSNR_ifo[ifo_i] * wf_time_ifo
+Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
+...
+To /= Lw; Fo /= Lw  # Lw = sum(sSNR_ifo), mirrors C++ netevent.cc line 931
 ```
 
-**Impact**: Per-IFO values now differ between detectors (as expected), but still show differences from C++:
-- `time[0]`: C++ `1126259162.326904` → Python `1126259162.332543` (~0.006s diff)
-- `time[1]`: C++ `1126259162.324538` → Python `1126259162.312703` (~0.012s diff)
-- `duration[0]`: C++ `0.076357` → Python `1.750000` 
-- `frequency[0]`: C++ `110.805565` → Python `16.020898` 
-- `bandwidth[0]`: C++ `60.234792` → Python `336.000000`
+**Impact**: `c_time` corrected from `38.07s` to `289.327s` (~0.006s remaining diff vs C++).
 
-**Note**: These fields likely require access to the C++ `wavecluster` per-IFO arrays which store pre-computed time/frequency ranges. The pixel-based computation approximation may not exactly match the C++ implementation which uses different data structures.
+#### 8d-ii. `time` per IFO — sky-delay correction (`network_event.py`)
+
+**Bug**: The sky time-delay offset (`tau_i - tau_0`) was not applied per IFO, so all IFOs
+shared the same `c_time + gps[i]`.
+
+**Fix**: 
+```python
+sky_td = list(cluster.sky_time_delay)
+td_rate = float(config.TDRate)
+tau_ref = float(sky_td[0]) / td_rate
+tau_ifo = [float(sky_td[i]) / td_rate for i in range(n_ifo)]
+self.time = [c_time + float(self.gps[i]) + (tau_ifo[i] - tau_ref if i > 0 else 0.0)
+             for i in range(n_ifo)]
+```
+
+**Impact**: `time[0]`: C++ `1126259162.326904` → Python `1126259162.326891` ✅ (<15μs)
+
+#### 8d-iii. `duration` per IFO — wrong data field and rounding (`network_event.py`)
+
+**Bug 1**: Used energy-weighted mean from `p.data[i].asnr`; C++ uses min/max of per-IFO
+pixel time bins from `p.data[i].index // p.layers * (1/rate)`.
+
+**Bug 2**: Python used float division `p.time / mm` where C++ uses integer division
+`pList[M].time / mm` (both `size_t`).
+
+**Bug 3**: WDM time offset `dT` was always `0.5`; C++ uses `dT = (mm == mp) ? 0 : 0.5`.
+
+**Fix** (per-IFO range, then WDM sub-bin RMS for slot [0]):
+```python
+# Per-IFO range (slots 1+):
+time_bin = int(p.data[ifo_idx].index) // int(p.layers)  # integer division
+t_starts.append(dt * time_bin); t_stops.append(dt * (time_bin + 1))
+per_ifo_duration.append(max(t_stops) - min(t_starts))
+
+# WDM sub-bin energy-weighted RMS for slot [0]:
+dT = 0.0 if mm == mp else 0.5          # correct WDM offset flag
+time_bin = int(p.time) // mm           # integer division (matches C++ size_t/size_t)
+iT = (float(time_bin) - dT) * dt
+```
+
+**Impact**:
+- `duration[0]`: C++ `0.076357` → Python `0.076357` ✅ exact
+- `duration[1]`: C++ `1.750000` → Python `1.750000` ✅ exact
+
+#### 8d-iv. `frequency` per IFO — two different source values (`network_event.py`)
+
+**Bug**: All IFOs received `c_freq` (pixel-centroid Fo, ~121.75 Hz). C++ uses two different
+values:
+- `frequency[i>0]` = `cFreq_net.data[kid]` = WDM sub-bin likelihood-weighted mean (case `'f'`/`'L'` in `netcluster::get()`)
+- `frequency[0]` = `pcd->cFreq` = `Fo` from likelihood (MRA spectral centroid = `meta.c_freq`)
+
+**Fix**: The WDM sub-bin accumulators `a_f, b_f` are already computed in the duration/bandwidth
+block. `a_f/b_f` is the likelihood-weighted sub-bin mean frequency = C++ `cFreq_net.data[kid]`.
+```python
+lh_freq_net = a_f / b_f          # C++ cFreq_net (slots 1+)
+self.frequency = [lh_freq_net] * n_ifo
+self.frequency[0] = c_freq        # C++ pcd->cFreq = meta.c_freq (MRA spectral centroid)
+```
+
+**Impact**:
+- `frequency[0]`: C++ `110.805565` → Python `110.805571` ✅ (<6e-6 rel err)
+- `frequency[1]`: C++ `77.210429` → Python `77.210429` ✅ exact
+
+#### 8d-v. `bandwidth` per IFO — correct after WDM sub-bin fix
+
+The bandwidth sub-bin formula was already correct in structure; fixing the integer division and
+`dT` flag (see 8d-iii) brought it into agreement.
+
+**Impact**:
+- `bandwidth[0]`: C++ `60.234792` → Python `60.234790` ✅ (<3e-8 rel err)
+- `bandwidth[1]`: C++ `336.000000` → Python `336.000000` ✅ exact
 
 ### 8e. `noise` (noise RMS) — different values
 
@@ -370,15 +433,12 @@ for ifo_idx in range(n_ifo):
 - **Per-IFO energies**: `snr`, `sSNR`, `xSNR` (< 0.00002% error)
 - **Strain fields**: `hrss` (< 0.0001% error), `strain` (< 4e-06% error)
 - **Null statistics**: `null` (< 0.03% error), `nill` (< 0.3% error)
+- **`time`**: < 15 μs error per IFO ✅
+- **`duration`**: exact match for both IFOs ✅
+- **`frequency`**: < 6e-6 relative error for slot [0]; exact for slot [1] ✅
+- **`bandwidth`**: < 3e-8 relative error for slot [0]; exact for slot [1] ✅
 
 ### ⚠️ Fields with Remaining Differences:
-- **`bp`, `bx`** (antenna patterns): Some differences remain, likely due to coordinate transformation implementation details
+- **`bp`, `bx`** (antenna patterns): Differences remain; likely due to coordinate transformation implementation details or GPS-epoch corrections in C++ `detector::antenna()`
 - **`noise`** (RMS): ~12% difference, requires investigation of C++ noise computation
-- **`time`**: 0.006-0.012 second differences per IFO
-- **`duration`, `frequency`, `bandwidth`**: Per-IFO values computed but don't match C++, likely need access to `wavecluster` arrays
-
-### Implementation Notes:
-1. The Python native path (`output_py()`) now correctly computes all critical physical quantities (strain, hrss, energies, null statistics)
-2. The antenna pattern and per-IFO timing/frequency fields show remaining differences that may require deeper alignment with C++ implementation details or different data structure access patterns
-3. All fixes maintain backward compatibility by using fallback values when metadata fields are not available
 

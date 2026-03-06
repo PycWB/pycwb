@@ -1107,14 +1107,24 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                 z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
                 signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
 
-        # Pixel-based centroid (Lw-weighted mean time and frequency)
-        for ci in core_indices:
-            pix = cluster.pixels[ci]
-            s_snr_pix = float(np.sum(ps_arr_np[:, ci] ** 2 + pS_arr_np[:, ci] ** 2))
-            pix_time  = float(pix.time) / (float(pix.rate) * float(pix.layers)) if (pix.rate > 0 and pix.layers > 0) else 0.0
-            pix_freq  = float(pix.frequency) * float(pix.rate) / 2.0 if pix.rate > 0 else 0.0
-            To += s_snr_pix * pix_time
-            Fo += s_snr_pix * pix_freq
+            # getWFtime() / getWFfreq() equivalents (mirrors C++ detector::getWFtime/getWFfreq)
+            # Used to compute To/Fo exactly as C++: Fo += sSNR_i * getWFfreq_i; To /= Lw
+            n_fft = len(z_sig)
+            rate_wf = float(z_sig_ts.sample_rate)
+            e_sig = z_sig ** 2
+            E_sig = float(np.sum(e_sig))
+            if E_sig > 0.0:
+                t_start = float(z_sig_ts.start_time)
+                wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
+                Z_fft = np.fft.rfft(z_sig)
+                power = Z_fft.real ** 2 + Z_fft.imag ** 2
+                E_fft = float(np.sum(power))
+                if E_fft > 0.0:
+                    wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
+                else:
+                    wf_freq_ifo = 0.0
+                To += sSNR_ifo[ifo_i] * wf_time_ifo
+                Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
 
         Lw    = float(np.sum(sSNR_ifo))
         Ew_wf = float(np.sum(snr_ifo))
