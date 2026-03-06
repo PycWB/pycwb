@@ -141,11 +141,21 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
         print(f"[new] xSNR: {[f'{v:.6f}' for v in event2.xSNR]}")
         print(f"[old] skysize: {event.size[0]}, {event.size[1]}")
         print(f"[new] skysize: {cluster.get_core_size()}, {cluster.cluster_meta.sky_size}")
+        print(f"[old] hrss: {[f'{v:.6e}' for v in event.hrss]}")
+        print(f"[new] hrss: {[f'{v:.6e}' for v in event2.hrss]}")
+        print(f"[old] strain: {event.strain[0]:.6f}, phi: {event.phi[0]:.4f}, theta: {event.theta[0]:.4f}")
+        print(f"[new] strain: {event2.strain[0]:.6f}, phi: {event2.phi[0]:.4f}, theta: {event2.theta[0]:.4f}")
         print("likelihood pixels: ", len([p for p in cluster.pixels if p.likelihood > 0]))
         print("core pixels: ", len([p for p in cluster.pixels if p.core]))
-        # snr/sSNR/xSNR use xtalk-catalog approximation (vs C++ getMRAwave exact WDM),
-        # so allow ~1% relative tolerance for those fields.
-        snr_rtol = 0.01
+        # Compare strain values with scientific notation (can be very small, e.g. 1e-44)
+        print(f"[old] strain: {[f'{v:.6e}' for v in event.strain]}")
+        print(f"[new] strain: {[f'{v:.6e}' for v in event2.strain]}")
+        strain_rel_err = [abs(event.strain[i] - event2.strain[i]) / abs(event.strain[i]) if abs(event.strain[i]) > 1e-50 else abs(event.strain[i] - event2.strain[i]) 
+                          for i in range(len(event.strain))]
+        print(f"[strain] relative errors: {[f'{v:.6e}' for v in strain_rel_err]}")
+        # snr/sSNR/xSNR now use get_MRA_wave (exact WDM reconstruction equivalent to C++),
+        # so they should match to floating-point precision (default rtol=1e-5).
+        snr_rtol = 1e-4  # small tolerance for float32/float64 accumulation differences
         if np.isclose(event.left[0], cluster.start_time) and \
             np.isclose(event.stop[0] - event.gps[0], cluster.stop_time) and \
             np.isclose(event.low[0], cluster.low_frequency) and \
@@ -160,6 +170,7 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             all(np.isclose(event.snr[i], event2.snr[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.sSNR[i], event2.sSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.xSNR[i], event2.xSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
+            all(np.isclose(event.strain[i], event2.strain[i], rtol=snr_rtol, atol=1e-50) for i in range(len(event.strain))) and \
             np.isclose(event.anet, cluster.cluster_meta.a_net) and \
             np.isclose(event.gnet, cluster.cluster_meta.g_net) and \
             np.isclose(event.inet, cluster.cluster_meta.i_net) and \
