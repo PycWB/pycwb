@@ -435,6 +435,51 @@ class Event:
         duration = cluster.stop_time - cluster.start_time
         bw = cluster.high_frequency - cluster.low_frequency
 
+        # Compute per-IFO statistics from pixels (C++ gets these from wavecluster per-IFO arrays)
+        # For each IFO, compute energy-weighted mean time/frequency and ranges
+        all_pixels = cluster.pixels
+        core_pixels = [p for p in all_pixels if p.core]
+        per_ifo_time = []
+        per_ifo_duration = []
+        per_ifo_frequency = []
+        per_ifo_bandwidth = []
+        
+        for ifo_idx in range(n_ifo):
+            # Get energy-weighted statistics per IFO
+            times = []
+            freqs = []
+            energies = []
+            for p in core_pixels:
+                # Time in seconds
+                t_sec = float(p.time) / (float(p.rate) * float(p.layers)) if (p.rate > 0 and p.layers > 0) else 0.0
+                # Frequency in Hz
+                f_hz = float(p.frequency) * float(p.rate) / 2.0 if p.rate > 0 else 0.0
+                # Energy for this pixel and IFO
+                e = p.data[ifo_idx].asnr ** 2 + p.data[ifo_idx].a_90 ** 2
+                if e > 0:
+                    times.append(t_sec)
+                    freqs.append(f_hz)
+                    energies.append(e)
+            
+            if times and energies:
+                # Energy-weighted means
+                total_e = sum(energies)
+                mean_t = sum(t * e for t, e in zip(times, energies)) / total_e
+                mean_f = sum(f * e for f, e in zip(freqs, energies)) / total_e
+                # Ranges
+                dur = max(times) - min(times)
+                bw_ifo = max(freqs) - min(freqs)
+                per_ifo_time.append(mean_t)
+                per_ifo_duration.append(dur)
+                per_ifo_frequency.append(mean_f)
+                per_ifo_bandwidth.append(bw_ifo)
+            else:
+                # Fallback to cluster values
+                per_ifo_time.append(c_time)
+                per_ifo_duration.append(duration)
+                per_ifo_frequency.append(c_freq)
+                per_ifo_bandwidth.append(bw)
+
         # Sky-time delays (used for ToF-corrected event time per IFO)
         sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
         td_rate = float(config.TDRate) if config is not None else 1.0
@@ -444,16 +489,22 @@ class Event:
         # lagShift = data stream lag (0 for zero-lag); ToF delays only go into self.time.
         self.lag = [0.0] * (2 * n_ifo)
 
-        self.time = [float(c_time) + float(self.gps[i]) + lag_sec[i] for i in range(n_ifo)]
+        # Time per IFO: pixel-based time + GPS + ToF delay
+        self.time = [float(per_ifo_time[i]) + float(self.gps[i]) + lag_sec[i] for i in range(n_ifo)]
         # slots [n_ifo .. 2*n_ifo-1] will be filled by injection-reconstruction postprocess
 
-        # frequency / bandwidth / duration:
-        # slot[0]: reconstructed-waveform value (filled by postprocess; pixel-derived for now)
-        # slot[1..n_ifo-1]: per-IFO pixel-derived
-        # slots [n_ifo .. 2*n_ifo-1]: injection values, appended by postprocess
-        self.frequency = [c_freq] * n_ifo
-        self.bandwidth = [bw] * n_ifo
-        self.duration = [duration] * n_ifo
+        # frequency / bandwidth / duration: per-IFO pixel-derived values
+        # C++ fills these in loop, then overwrites [0] with network value
+        self.frequency = per_ifo_frequency[:]
+        self.bandwidth = per_ifo_bandwidth[:]
+        self.duration = per_ifo_duration[:]
+        # Override slot[0] with network-level values (from postprocess; use cluster for now)
+        if len(self.frequency) > 0:
+            self.frequency[0] = c_freq
+        if len(self.bandwidth) > 0:
+            self.bandwidth[0] = bw
+        if len(self.duration) > 0:
+            self.duration[0] = duration
 
         # --- Per-IFO amplitude fields from pixel data ---
         if config is not None:
@@ -471,10 +522,6 @@ class Event:
                               and len(meta.cross_snr) == n_ifo)
 
             for i in range(n_ifo):
-                null_acc = 0.0
-                for p in all_pixels:
-                    null_acc += p.null / n_ifo  # scalar null split evenly across IFOs
-
                 if have_xtalk_snr:
                     # Xtalk-corrected energies: mirrors C++ d->enrg, d->sSNR, d->xSNR
                     wave_sq_xt  = float(meta.wave_snr[i])    # C++ d->enrg = get_XX()
@@ -483,7 +530,14 @@ class Event:
                     self.snr.append(wave_sq_xt)
                     self.sSNR.append(asnr_sq_xt)
                     self.xSNR.append(xsnr_sq_xt)
-                    self.nill.append(float(wave_sq_xt - asnr_sq_xt))
+                    self.nill.append(float(xsnr_sq_xt - asnr_sq_xt))  # C++ pd.xSNR - pd.sSNR
+                    # Use per-IFO null from cluster metadata (C++ pd.null)
+                    if hasattr(meta, 'null_energy') and len(meta.null_energy) > i:
+                        null_val = float(meta.null_energy[i])
+                    else:
+                        # Fallback: split total null evenly (backwards compatibility)
+                        null_val = sum(p.null for p in all_pixels) / n_ifo
+                    self.null.append(null_val)
                     # hrss from physical strain energy (not whitened)
                     if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
                         hrss_sq_physical = float(meta.signal_energy_physical[i])
@@ -498,13 +552,15 @@ class Event:
                     self.snr.append(float(wave_sq))
                     self.sSNR.append(float(asnr_sq))
                     self.xSNR.append(float(np.sqrt(max(wave_sq * asnr_sq, 0.0))))
-                    self.nill.append(float(wave_sq - asnr_sq))
+                    xsnr_sq = float(np.sqrt(max(wave_sq * asnr_sq, 0.0)))
+                    self.nill.append(float(xsnr_sq - asnr_sq))
+                    # null: split total evenly
+                    null_val = sum(p.null for p in all_pixels) / n_ifo
+                    self.null.append(null_val)
                     # hrss from pixel-based signal energy (whitened amplitudes * noise_rms)
                     hrss_sq = sum((p.data[i].asnr * p.data[i].noise_rms) ** 2 
                                   + (p.data[i].a_90 * p.data[i].noise_rms) ** 2 for p in all_pixels)
                     self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
-
-                self.null.append(float(null_acc))
 
                 # Noise floor: mean noise_rms across core pixels for this IFO, scaled to strain/rtHz
                 rms_vals = [p.data[i].noise_rms for p in core_pixels
@@ -525,12 +581,14 @@ class Event:
                 theta_rad = float(np.radians(theta_deg))
                 dec_rad = float(np.radians(dec_deg))
                 ra_rad = float(np.radians(ra_deg))
+                psi_rad = float(np.radians(meta.psi))  # Use psi from cluster metadata
                 gps_t = float(self.gps[0])
                 for ifo in job_segment.ifos:
                     det = Detector(ifo)
-                    fp, fx = det.atenna_pattern(ra_rad, dec_rad, 0.0, gps_t)
-                    self.bp.append(float(fp))
-                    self.bx.append(float(fx))
+                    fp, fx = det.atenna_pattern(ra_rad, dec_rad, psi_rad, gps_t)
+                    # C++ antenna() returns wavecomplex(fp/2, fx/2), so divide by 2
+                    self.bp.append(float(fp / 2.0))
+                    self.bx.append(float(fx / 2.0))
             except Exception:
                 self.bp = [0.0] * n_ifo
                 self.bx = [0.0] * n_ifo

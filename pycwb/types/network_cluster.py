@@ -113,6 +113,7 @@ class ClusterMeta:
     signal_snr: list = field(default_factory=list)  # signal energy per IFO (C++ d->sSNR = get_SS())
     cross_snr: list = field(default_factory=list)   # xSNR per IFO (C++ d->xSNR = get_XS())
     signal_energy_physical: list = field(default_factory=list)  # physical strain energy per IFO for hrss
+    null_energy: list = field(default_factory=list)  # null energy per IFO (C++ d->null)
 
 
 @dataclass

@@ -143,6 +143,24 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
         print(f"[new] skysize: {cluster.get_core_size()}, {cluster.cluster_meta.sky_size}")
         print(f"[old] hrss: {[f'{v:.6e}' for v in event.hrss]}")
         print(f"[new] hrss: {[f'{v:.6e}' for v in event2.hrss]}")
+        print(f"[old] noise: {[f'{v:.6e}' for v in event.noise]}")
+        print(f"[new] noise: {[f'{v:.6e}' for v in event2.noise]}")
+        print(f"[old] null: {[f'{v:.6e}' for v in event.null]}")
+        print(f"[new] null: {[f'{v:.6e}' for v in event2.null]}")
+        print(f"[old] nill: {[f'{v:.6e}' for v in event.nill]}")
+        print(f"[new] nill: {[f'{v:.6e}' for v in event2.nill]}")
+        print(f"[old] bp: {[f'{v:.6f}' for v in event.bp]}")
+        print(f"[new] bp: {[f'{v:.6f}' for v in event2.bp]}")
+        print(f"[old] bx: {[f'{v:.6f}' for v in event.bx]}")
+        print(f"[new] bx: {[f'{v:.6f}' for v in event2.bx]}")
+        print(f"[old] time: {[f'{v:.6f}' for v in event.time]}")
+        print(f"[new] time: {[f'{v:.6f}' for v in event2.time]}")
+        print(f"[old] duration: {[f'{v:.6f}' for v in event.duration]}")
+        print(f"[new] duration: {[f'{v:.6f}' for v in event2.duration]}")
+        print(f"[old] frequency: {[f'{v:.6f}' for v in event.frequency]}")
+        print(f"[new] frequency: {[f'{v:.6f}' for v in event2.frequency]}")
+        print(f"[old] bandwidth: {[f'{v:.6f}' for v in event.bandwidth]}")
+        print(f"[new] bandwidth: {[f'{v:.6f}' for v in event2.bandwidth]}")
         print(f"[old] strain: {event.strain[0]:.6f}, phi: {event.phi[0]:.4f}, theta: {event.theta[0]:.4f}")
         print(f"[new] strain: {event2.strain[0]:.6f}, phi: {event2.phi[0]:.4f}, theta: {event2.theta[0]:.4f}")
         print("likelihood pixels: ", len([p for p in cluster.pixels if p.likelihood > 0]))
@@ -153,6 +171,9 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
         strain_rel_err = [abs(event.strain[i] - event2.strain[i]) / abs(event.strain[i]) if abs(event.strain[i]) > 1e-50 else abs(event.strain[i] - event2.strain[i]) 
                           for i in range(len(event.strain))]
         print(f"[strain] relative errors: {[f'{v:.6e}' for v in strain_rel_err]}")
+        hrss_rel_err = [abs(event.hrss[i] - event2.hrss[i]) / abs(event.hrss[i]) if abs(event.hrss[i]) > 1e-50 else abs(event.hrss[i] - event2.hrss[i]) 
+                        for i in range(min(len(event.hrss), len(event2.hrss)))]
+        print(f"[hrss] relative errors: {[f'{v:.6e}' for v in hrss_rel_err]}")
         # snr/sSNR/xSNR now use get_MRA_wave (exact WDM reconstruction equivalent to C++),
         # so they should match to floating-point precision (default rtol=1e-5).
         snr_rtol = 1e-4  # small tolerance for float32/float64 accumulation differences
@@ -170,6 +191,16 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             all(np.isclose(event.snr[i], event2.snr[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.sSNR[i], event2.sSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.xSNR[i], event2.xSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
+            all(np.isclose(event.hrss[i], event2.hrss[i], rtol=snr_rtol, atol=1e-50) for i in range(config.nIFO)) and \
+            all(np.isclose(event.noise[i], event2.noise[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
+            all(np.isclose(event.null[i], event2.null[i], rtol=snr_rtol, atol=1e-10) for i in range(config.nIFO)) and \
+            all(np.isclose(event.nill[i], event2.nill[i], rtol=snr_rtol, atol=1e-10) for i in range(config.nIFO)) and \
+            all(np.isclose(event.bp[i], event2.bp[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.bx[i], event2.bx[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.time[i], event2.time[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.duration[i], event2.duration[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.frequency[i], event2.frequency[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.bandwidth[i], event2.bandwidth[i], rtol=1e-5) for i in range(config.nIFO)) and \
             all(np.isclose(event.strain[i], event2.strain[i], rtol=snr_rtol, atol=1e-50) for i in range(len(event.strain))) and \
             np.isclose(event.anet, cluster.cluster_meta.a_net) and \
             np.isclose(event.gnet, cluster.cluster_meta.g_net) and \

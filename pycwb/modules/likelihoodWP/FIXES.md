@@ -229,3 +229,156 @@ this->strain[0] = sqrt(this->strain[0]);
 | **`hrss[0]`** | **1.237311e-22** | **1.237310e-22** | ✅ **< 0.0001%** |
 | **`hrss[1]`** | **1.118782e-22** | **1.118782e-22** | ✅ **exact** |
 | **`strain[0]`** | **1.668116e-22** | **1.668116e-22** | ✅ **< 4e-06%** |
+
+---
+
+## 8. Per-IFO fields: `null`, `nill`, `bp`, `bx`, `time`, `duration`, `frequency`, `bandwidth`
+
+**Context**: After adding comprehensive field comparison with scientific notation logging (for fields that can be as small as 1e-44), additional discrepancies were discovered in per-IFO output fields.
+
+### 8a. `nill` (null stream energy) — wrong formula
+
+**Bug**: The Python `output_py()` was computing `nill = wave_snr - signal_snr`, but C++ `netevent.cc` uses:
+```cpp
+this->nill[i] = pd.xSNR - pd.sSNR;  // cross SNR - signal SNR
+```
+This caused `nill` to be off by a factor of ~2.
+
+**Fix**: Changed formula in `output_py()` (`network_event.py`):
+```python
+# Before: self.nill.append(float(wave_sq_xt - asnr_sq_xt))
+# After:  self.nill.append(float(xsnr_sq_xt - asnr_sq_xt))
+```
+
+**Impact**: Fixes `nill` to match C++ (< 0.3% error):
+- `nill[0]`: C++ `4.241943e-02` → Python `4.253490e-02` ✅
+- `nill[1]`: C++ `2.880859e-01` → Python `2.880252e-01` ✅
+
+### 8b. `null` (null energy per IFO) — not using per-IFO null from getMRAwave
+
+**Bug**: The Python code was splitting the total pixel null energy evenly across IFOs:
+```python
+null_val = sum(p.null for p in all_pixels) / n_ifo
+```
+But C++ `netevent.cc` uses the per-detector null energy from `getMRAwave()`:
+```cpp
+this->null[i] = pd.null;  // from getMRAwave reconstruction
+```
+The C++ `network::getMRAwave()` computes null energy per IFO by reconstructing the null stream wavelet and computing its energy.
+
+**Fix**: 
+1. Added `null_energy: list` field to `ClusterMeta` in `network_cluster.py`
+2. In `likelihood.py`, store per-IFO null from `getMRAwave`:
+   ```python
+   cluster.cluster_meta.null_energy = null_ifo.tolist()
+   ```
+3. In `output_py()` (`network_event.py`), use per-IFO null:
+   ```python
+   null_val = float(meta.null_energy[i])
+   ```
+
+**Impact**: Fixes `null` to match C++ (< 0.03% error):
+- `null[0]`: C++ `4.290383e-05` → Python `4.291500e-05` ✅
+- `null[1]`: C++ `2.361072e-03` → Python `2.361077e-03` ✅
+
+### 8c. `bp`, `bx` (antenna patterns) — wrong polarization angle and scaling
+
+**Bug 1**: The Python code was using `psi=0.0` (default) instead of the cluster's polarization angle:
+```python
+fp, fx = det.atenna_pattern(ra_rad, dec_rad, 0.0, gps_t)  # WRONG: psi=0.0
+```
+
+**Bug 2**: The C++ `detector::antenna()` returns `wavecomplex(fp/2, fx/2)` — the antenna patterns divided by 2:
+```cpp
+wavecomplex z(fp/2., fx/2.);
+return z;
+```
+But the Python code was not applying this scaling.
+
+**Fix** (`network_event.py`): 
+```python
+psi_rad = float(np.radians(meta.psi))  # Use cluster psi
+fp, fx = det.atenna_pattern(ra_rad, dec_rad, psi_rad, gps_t)
+self.bp.append(float(fp / 2.0))  # Divide by 2 to match C++ convention
+self.bx.append(float(fx / 2.0))
+```
+
+**Impact**: Antenna patterns are now closer after applying psi and /2 scaling, but still show some differences:
+- `bp[0]`: C++ `0.398082` → Python `0.427151` (~7% diff)
+- `bp[1]`: C++ `-0.167759` → Python `-0.317525` 
+- `bx[0]`: C++ `0.420414` → Python `-0.212679` 
+- `bx[1]`: C++ `-0.435123` → Python `0.178662` 
+
+**Note**: The remaining differences may be due to coordinate transformation differences between C++ detector-frame calculations and Python equatorial-frame transformations, or additional implementation details in the C++ `detector::antenna()` method that need further investigation.
+
+### 8d. `time`, `duration`, `frequency`, `bandwidth` — using cluster-level values instead of per-IFO
+
+**Bug**: The Python `output_py()` was using the same cluster-level time/frequency values for all IFOs:
+```python
+self.time.append(c_time + self.gps[i] + lag_sec[i])  # Same c_time for all IFOs
+self.duration = [duration] * n_ifo
+self.frequency = [c_freq] * n_ifo
+self.bandwidth = [bw] * n_ifo
+```
+
+C++ `netevent.cc` computes these per-IFO from pixel distributions in `wavecluster` arrays.
+
+**Fix** (`network_event.py`): Added per-IFO computation from pixel energy distributions in `output_py()`:
+```python
+# Move core_pixels extraction before per-IFO loop
+all_pixels = cluster.pixels
+core_pixels = [p for p in all_pixels if p.core]
+
+for ifo_idx in range(n_ifo):
+    times, freqs, energies = [], [], []
+    for p in core_pixels:
+        t_sec = float(p.time) / (float(p.rate) * float(p.layers))
+        f_hz = float(p.frequency) * float(p.rate) / 2.0
+        e = p.data[ifo_idx].asnr ** 2 + p.data[ifo_idx].a_90 ** 2
+        if e > 0:
+            times.append(t_sec); freqs.append(f_hz); energies.append(e)
+    # Energy-weighted means
+    mean_t = sum(t * e for t, e in zip(times, energies)) / sum(energies)
+    mean_f = sum(f * e for f, e in zip(freqs, energies)) / sum(energies)
+    dur = max(times) - min(times)
+    bw_ifo = max(freqs) - min(freqs)
+```
+
+**Impact**: Per-IFO values now differ between detectors (as expected), but still show differences from C++:
+- `time[0]`: C++ `1126259162.326904` → Python `1126259162.332543` (~0.006s diff)
+- `time[1]`: C++ `1126259162.324538` → Python `1126259162.312703` (~0.012s diff)
+- `duration[0]`: C++ `0.076357` → Python `1.750000` 
+- `frequency[0]`: C++ `110.805565` → Python `16.020898` 
+- `bandwidth[0]`: C++ `60.234792` → Python `336.000000`
+
+**Note**: These fields likely require access to the C++ `wavecluster` per-IFO arrays which store pre-computed time/frequency ranges. The pixel-based computation approximation may not exactly match the C++ implementation which uses different data structures.
+
+### 8e. `noise` (noise RMS) — different values
+
+**Bug**: The Python code samples noise RMS from the TF map at pixel locations, but shows ~12% difference from C++:
+- `noise[0]`: C++ `4.471662e-24` → Python `3.913027e-24` (~12% diff)
+- `noise[1]`: C++ `4.307999e-24` → Python `3.829385e-24` (~11% diff)
+
+**Status**: This may be due to different TF map sampling methods or noise estimation procedures. Requires further investigation of C++ `netevent.cc` noise computation details.
+
+---
+
+## Current Test Status Summary
+
+### ✅ Fields Matching Well (< 0.5% error):
+- **Network statistics**: `net_ecor`, `sub_net`, `sub_net2`, `net_rho`, `net_rho2`, `net_ed`, `net_null`, `energy`, `like_sky`, `energy_sky`
+- **Per-IFO energies**: `snr`, `sSNR`, `xSNR` (< 0.00002% error)
+- **Strain fields**: `hrss` (< 0.0001% error), `strain` (< 4e-06% error)
+- **Null statistics**: `null` (< 0.03% error), `nill` (< 0.3% error)
+
+### ⚠️ Fields with Remaining Differences:
+- **`bp`, `bx`** (antenna patterns): Some differences remain, likely due to coordinate transformation implementation details
+- **`noise`** (RMS): ~12% difference, requires investigation of C++ noise computation
+- **`time`**: 0.006-0.012 second differences per IFO
+- **`duration`, `frequency`, `bandwidth`**: Per-IFO values computed but don't match C++, likely need access to `wavecluster` arrays
+
+### Implementation Notes:
+1. The Python native path (`output_py()`) now correctly computes all critical physical quantities (strain, hrss, energies, null statistics)
+2. The antenna pattern and per-IFO timing/frequency fields show remaining differences that may require deeper alignment with C++ implementation details or different data structure access patterns
+3. All fixes maintain backward compatibility by using fallback values when metadata fields are not available
+

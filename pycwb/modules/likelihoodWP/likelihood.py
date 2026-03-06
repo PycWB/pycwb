@@ -1261,6 +1261,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     cluster.cluster_meta.wave_snr   = snr_ifo.tolist()    # C++ d->enrg = get_XX() per IFO
     cluster.cluster_meta.cross_snr  = xSNR_ifo.tolist()   # C++ d->xSNR = get_XS() per IFO
     cluster.cluster_meta.signal_energy_physical = signal_energy_physical.tolist()  # physical strain energy for hrss
+    cluster.cluster_meta.null_energy = null_ifo.tolist()  # null energy per IFO (C++ d->null)
 
     logger.debug(
         "fill_detection_statistic: sky_size=%d sub_net=%.4f net_cc=%.4f sky_cc=%.4f "
