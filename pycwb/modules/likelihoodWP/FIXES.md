@@ -82,33 +82,67 @@ never updated and defaulted to the raw `net_rho` value.
 
 ---
 
-## Known Approximation Gap (not a bug)
+## 6. `snr`/`sSNR`/`xSNR` — getMRAwave exact reconstruction (`likelihood.py`)
 
-`snr`, `sSNR`, `xSNR`, and `neted[2]` differ from the C++ reference by **~0.7%**.
+**Bug**: Initial implementation used sparse TF map + `w2t` inverse transform, which only
+computed the **diagonal** WDM energy (single-pixel contributions) and missed the huge
+cross-pixel overlap terms from adjacent WDM basis functions. For a real GW event with
+406 coherent pixels, the missing cross terms were 7.5× larger than the diagonal, giving
+`snr ≈ [99, 106]` instead of the correct `[806, 736]`.
 
-C++ computes these via `getMRAwave()`, which performs an exact time-domain WDM
-reconstruction using the full wavelet filter bank. Python uses the TF-domain
-xtalk-catalog energy directly. The two approaches are mathematically equivalent
-only in the limit of a complete, untruncated xtalk catalog.
+**Root Cause**: WDM basis functions have long filter tails (length `m_H ≈ 12289` samples
+for M=1024) that cause significant overlaps between neighboring time-frequency pixels.
+The sparse TF map approach (`w2t` on a minimal TF grid) failed to capture these overlaps
+because the output length was only `M × n_time_bins` where `n_time_bins` covered just the
+cluster span, not the filter tail extent.
 
-The test in `tests/sample/run_mix.py` uses `rtol=0.01` (1 %) for these fields to
-acknowledge this known approximation.
+**Fix**: Replaced the sparse TF map block with direct calls to `get_MRA_wave()` from the
+existing `getMRAwaveform.py` module. This function correctly accumulates all basis function
+contributions (including cross-pixel overlaps) via full time-domain reconstruction:
+```python
+z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo, a_type='signal', mode=0, ...)
+z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo, a_type='strain', mode=0, ...)
+sSNR_ifo[ifo] = np.sum(z_sig ** 2)  # Σ_t [Σ_j a_j ψ_j(t)]²
+snr_ifo[ifo]  = np.sum(z_dat ** 2)
+```
+This exactly mirrors C++ `getMRAwave('W')` + `getMRAwave('S')` + `avx_norm`.
+
+**Secondary Fix**: Fixed bug in `getMRAwaveform.py::_create_wdm_set_python()` where
+`max_layer` was incorrectly set to `M-1` instead of `M`, causing:
+1. WDM kernel lookup to fail (`pix.layers = M+1`, but lookup key was only `M`)
+2. Wrong modulus in `get_base_wave()` (`m = time % M` instead of `time % (M+1)`)
+
+**Impact**: Fixes `snr`, `sSNR`, `xSNR`, and `neted[2]` (Ew). Now match to floating-point
+precision (< 0.01%):
+- `snr[0]`: C++ `806.666077` → Python `806.666082` ✅
+- `snr[1]`: C++ `736.834106` → Python `736.834140` ✅
+- `sSNR[0]`: C++ `806.581177` → Python `806.581010` ✅
+- `sSNR[1]`: C++ `736.257874` → Python `736.257977` ✅
+- `neted[2]` (Ew): C++ `1543.500244` → Python `1543.500222` ✅
 
 ---
 
 ## Final Test Results
 
-All other statistics match C++ to floating-point precision:
+**All statistics now match C++ to floating-point precision**:
 
-| Field | C++ | Python | Status |
+| Field | C++ | Python | Match |
 |---|---|---|---|
-| `net_ecor` | 1362.918457 | 1362.918457 | ✅ |
-| `sub_net` (subnet) | 0.932312 | 0.932312 | ✅ |
-| `sub_net2` (SUBNET) | 0.941579 | 0.941579 | ✅ |
-| `net_rho` (rho0) | 18.370497 | 18.370498 | ✅ |
-| `net_rho2` (rho1) | 17.236593 | 17.236594 | ✅ |
+| `net_ecor` | 1362.918457 | 1362.918457 | ✅ exact |
+| `sub_net` (subnet) | 0.932312 | 0.932312 | ✅ exact |
+| `sub_net2` (SUBNET) | 0.941579 | 0.941579 | ✅ exact |
+| `net_rho` (rho0) | 18.370497 | 18.370498 | ✅ exact |
+| `net_rho2` (rho1) | 17.236593 | 17.236594 | ✅ exact |
 | `net_ed` (neted[0]) | 1.885818 | 1.885835 | ✅ ~0.001% |
+| `net_null` (neted[1]) | 187.076309 | 187.076302 | ✅ float rounding |
+| `energy` (neted[2]) | **1543.500244** | **1543.500222** | ✅ **< 0.00002%** |
 | `like_sky` (neted[3]) | 1553.985596 | 1553.985352 | ✅ float32 |
-| `a_net`, `g_net`, `i_net` | match | match | ✅ |
-| `sky_size` | 406 | 406 | ✅ |
-| `snr`, `sSNR`, `xSNR` | — | ~0.7% | ⚠️ getMRAwave approx |
+| `energy_sky` (neted[4]) | 7452.100098 | 7452.098145 | ✅ ~0.00003% |
+| `a_net`, `g_net`, `i_net` | match | match | ✅ exact |
+| `sky_size` | 406 | 406 | ✅ exact |
+| **`snr[0]`** | **806.666077** | **806.666082** | ✅ **< 0.000001%** |
+| **`snr[1]`** | **736.834106** | **736.834140** | ✅ **< 0.000005%** |
+| **`sSNR[0]`** | **806.581177** | **806.581010** | ✅ **< 0.00002%** |
+| **`sSNR[1]`** | **736.257874** | **736.257977** | ✅ **< 0.00001%** |
+| **`xSNR[0]`** | **806.623596** | **806.623545** | ✅ **< 0.000006%** |
+| **`xSNR[1]`** | **736.545959** | **736.546002** | ✅ **< 0.000006%** |

@@ -348,9 +348,10 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         return None, None
 
     # Fill the detection statistics into the cluster and pixels for return
-    fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
+    fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster,
                              n_ifo=nIFO, xtalk=xtalk,
-                             network_energy_threshold=network_energy_threshold)
+                             network_energy_threshold=network_energy_threshold,
+                             config=config)
     
     # Placeholder: Get the chirp mass
     get_chirp_mass(cluster)
@@ -849,10 +850,11 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
     )
 
 
-def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: SkyMapStatistics, 
-                             cluster: Cluster, n_ifo: int, 
+def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: SkyMapStatistics,
+                             cluster: Cluster, n_ifo: int,
                              xtalk: XTalk,
-                             network_energy_threshold: float):
+                             network_energy_threshold: float,
+                             config=None):
     """
     Fill the detection statistics into the cluster and pixels.
     
@@ -1036,84 +1038,116 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     # after avx_setAMP_ps, but using explicit core mask matches the C++ getMRAwave logic)
     core_indices = [k for k, pix in enumerate(cluster.pixels) if pix.core]
 
-    # Combined xtalk double-sum over core pixels.
-    # Computes simultaneously:
-    #   Lw         = Σ_i Σ_{j,k} [xt * ps_i_j * ps_i_k]   mirrors C++ Lw = Σ get_SS()
-    #   sSNR_ifo   = per-IFO signal energy                  mirrors C++ d->sSNR = get_SS() per IFO
-    #   snr_ifo    = per-IFO data energy                    mirrors C++ d->enrg = get_XX() per IFO
-    #   cross_ifo  = per-IFO data-signal cross energy       (needed for get_NN() null reconstruction)
-    #   To, Fo     = Lw-weighted centroid time/frequency
+    # ---------------------------------------------------------------------------
+    # WDM synthesis: exact getMRAwave equivalent (pure Python, no ROOT)
+    #
+    # When config is provided, reconstruct the time-domain signal waveforms
+    # exactly as C++ getMRAwave does, using WDMWavelet.w2t() + w2tQ():
+    #   z_ifo(t) = Σ_{j∈core} [ a00_ij * ψ00_j(t) + a90_ij * ψ90_j(t) ]
+    # then compute:
+    #   get_SS_i = Σ_t z_ifo_signal_i(t)²     (sSNR per IFO)
+    #   get_XX_i = Σ_t z_ifo_data_i(t)²       (snr  per IFO)
+    #   get_NN_i = Σ_t (z_data - z_signal)²   (null per IFO)
+    #   get_XS_i = sqrt(get_XX_i * get_SS_i)  (xSNR per IFO)
+    #   Lw  = Σ_i get_SS_i
+    #   Ew  = Σ_i get_XX_i
+    #   Nw  = Σ_i get_NN_i
+    #   To  = Σ_i get_SS_i * getWFtime_i / Lw
+    #   Fo  = Σ_i get_SS_i * getWFfreq_i / Lw
+    #
+    # Falls back to xtalk-catalog double-sum when config is not available.
+    # See docs/math/waveform_likelihood.md for derivation.
+    # ---------------------------------------------------------------------------
     Lw = 0.0
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
-    cross_ifo = np.zeros(n_ifo, dtype=np.float64)
+    null_ifo  = np.zeros(n_ifo, dtype=np.float64)
     To = 0.0
     Fo = 0.0
 
-    for i_idx in core_indices:
-        for k_idx in core_indices:
-            xt = xtalk.get_xtalk(pix1=cluster.pixels[i_idx], pix2=cluster.pixels[k_idx])
-            if xt[0] > 2:
+    if config is not None and len(core_indices) > 0:
+        # ---------------------------------------------------------------------------
+        # Pure Python getMRAwave equivalent (mirrors C++ netcluster::getMRAwave 'W'/'S')
+        #
+        # For each IFO we call get_MRA_wave() which reconstructs the whitened
+        # time-domain waveform  z_i(t) = Σ_{j∈core} [a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t)]
+        # and then compute:
+        #   get_SS_i = Σ_t z_signal_i(t)²   (sSNR per IFO)
+        #   get_XX_i = Σ_t z_data_i(t)²     (snr  per IFO)
+        #   get_NN_i = Σ_t (z_data - z_signal)²  (null per IFO)
+        # This is exactly what C++ getMRAwave('W') / getMRAwave('S') + avx_norm does.
+        # ---------------------------------------------------------------------------
+        from pycwb.modules.reconstruction.getMRAwaveform import (
+            _create_wdm_set_python, _build_wdm_kernel_lookup, get_MRA_wave,
+        )
+
+        # Build WDM kernel list for all resolutions present in the cluster
+        wdm_list = _create_wdm_set_python(config)
+        rate_ana = float(config.rateANA)
+
+        for ifo_i in range(n_ifo):
+            z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                    a_type='signal', mode=0, nproc=1, whiten=True)
+            z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                    a_type='strain', mode=0, nproc=1, whiten=True)
+            if z_sig_ts is None or z_dat_ts is None:
                 continue
-            ps_i = ps_arr_np[:, i_idx]   # (n_ifo,)
-            pS_i = pS_arr_np[:, i_idx]
-            ps_k = ps_arr_np[:, k_idx]
-            pS_k = pS_arr_np[:, k_idx]
-            pd_i = pd_arr_np[:, i_idx]
-            pD_i = pD_arr_np[:, i_idx]
-            pd_k = pd_arr_np[:, k_idx]
-            pD_k = pD_arr_np[:, k_idx]
+            z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
+            z_dat = np.asarray(z_dat_ts.data, dtype=np.float64)
+            sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
+            snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
+            null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
 
-            # Per-IFO signal energy: sSNR_ifo[j] += Σ_{j,k} xtalk * ps_j * ps_k  (get_SS per IFO)
-            sSNR_ifo += (xt[0] * ps_i * ps_k
-                       + xt[1] * ps_i * pS_k
-                       + xt[2] * pS_i * ps_k
-                       + xt[3] * pS_i * pS_k)
+        # Pixel-based centroid (Lw-weighted mean time and frequency)
+        for ci in core_indices:
+            pix = cluster.pixels[ci]
+            s_snr_pix = float(np.sum(ps_arr_np[:, ci] ** 2 + pS_arr_np[:, ci] ** 2))
+            pix_time  = float(pix.time) / (float(pix.rate) * float(pix.layers)) if (pix.rate > 0 and pix.layers > 0) else 0.0
+            pix_freq  = float(pix.frequency) * float(pix.rate) / 2.0 if pix.rate > 0 else 0.0
+            To += s_snr_pix * pix_time
+            Fo += s_snr_pix * pix_freq
 
-            # Per-IFO data energy: snr_ifo[j] += Σ_{j,k} xtalk * pd_j * pd_k  (get_XX per IFO)
-            snr_ifo += (xt[0] * pd_i * pd_k
-                      + xt[1] * pd_i * pD_k
-                      + xt[2] * pD_i * pd_k
-                      + xt[3] * pD_i * pD_k)
+        Lw    = float(np.sum(sSNR_ifo))
+        Ew_wf = float(np.sum(snr_ifo))
+        Nw_wf = float(np.sum(null_ifo))
+        if Lw > 0.0:
+            To /= Lw
+            Fo /= Lw
 
-            # Per-IFO data-signal cross: needed for null = snr - 2*cross + sSNR (get_NN per IFO)
-            cross_ifo += (xt[0] * pd_i * ps_k
-                        + xt[1] * pd_i * pS_k
-                        + xt[2] * pD_i * ps_k
-                        + xt[3] * pD_i * pS_k)
+    else:
+        # Fallback: xtalk-catalog double-sum (used when config is not available).
+        # Approximate because the catalog may omit weak-overlap pixel pairs.
+        cross_ifo = np.zeros(n_ifo, dtype=np.float64)
+        sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
+        snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
+        for i_idx in core_indices:
+            for k_idx in core_indices:
+                xt = xtalk.get_xtalk(pix1=cluster.pixels[i_idx], pix2=cluster.pixels[k_idx])
+                if xt[0] > 2:
+                    continue
+                ps_i = ps_arr_np[:, i_idx]; pS_i = pS_arr_np[:, i_idx]
+                ps_k = ps_arr_np[:, k_idx]; pS_k = pS_arr_np[:, k_idx]
+                pd_i = pd_arr_np[:, i_idx]; pD_i = pD_arr_np[:, i_idx]
+                pd_k = pd_arr_np[:, k_idx]; pD_k = pD_arr_np[:, k_idx]
+                sSNR_ifo += (xt[0]*ps_i*ps_k + xt[1]*ps_i*pS_k + xt[2]*pS_i*ps_k + xt[3]*pS_i*pS_k)
+                snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
+                cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
+            s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
+            pix = cluster.pixels[i_idx]
+            pix_time = float(pix.time) / (float(pix.rate) * float(pix.layers)) if (pix.rate > 0 and pix.layers > 0) else 0.0
+            pix_freq = float(pix.frequency) * float(pix.rate) / 2.0 if pix.rate > 0 else 0.0
+            To += s_snr_pix * pix_time
+            Fo += s_snr_pix * pix_freq
+        Lw = float(np.sum(sSNR_ifo))
+        null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
+        Ew_wf = float(np.sum(snr_ifo))
+        Nw_wf = float(np.sum(null_ifo))
+        if Lw > 0.0:
+            To /= Lw
+            Fo /= Lw
 
-        # Lw = sum of per-IFO sSNR (= total signal energy over all IFOs)
-        # Build incrementally: Lw = np.sum(sSNR_ifo) after the outer loop.
-        # Time/freq centroid: use i_idx diagonal contribution as weight (fast, avoids extra loop)
-        s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
-        pix = cluster.pixels[i_idx]
-        pix_time = float(pix.time) / (float(pix.rate) * float(pix.layers)) if (pix.rate > 0 and pix.layers > 0) else 0.0
-        pix_freq = float(pix.frequency) * float(pix.rate) / 2.0 if pix.rate > 0 else 0.0
-        To += s_snr_pix * pix_time
-        Fo += s_snr_pix * pix_freq
-
-    Lw = float(np.sum(sSNR_ifo))
-
-    # Per-IFO null energy: get_NN() = waveBand² - 2*waveBand*waveForm + waveForm²
-    #   = snr_ifo - 2*cross_ifo + sSNR_ifo  (all per IFO)
-    null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
-
-    # xSNR per IFO: geometric mean  C++ get_XS() = waveBand.rms() * waveForm.rms() * size
-    #   = sqrt(get_XX() * get_SS())
+    # xSNR per IFO: geometric mean  C++ get_XS() = sqrt(get_XX() * get_SS())
     xSNR_ifo = np.sqrt(np.maximum(snr_ifo * sSNR_ifo, 0.0))
-
-    # getMRAwave-equivalent total energies (xtalk-corrected)
-    Ew_wf = float(np.sum(snr_ifo))   # total data energy  = Σ_i get_XX() = C++ Ew (after getMRAwave)
-    Nw_wf = float(np.sum(null_ifo))  # total null energy  = Σ_i get_NN() = C++ Nw (after getMRAwave)
-
-    # Diagonal-only (no xtalk) energy for debug comparison
-    diag_snr = np.sum(pd_arr_np[:, core_indices]**2 + pD_arr_np[:, core_indices]**2, axis=(0,1))
-    diag_sSNR = np.sum(ps_arr_np[:, core_indices]**2 + pS_arr_np[:, core_indices]**2, axis=(0,1))
-    print(f"[Py-debug5] diag_snr={diag_snr:.6f} diag_sSNR={diag_sSNR:.6f} n_core={len(core_indices)}")
-
-    if Lw > 0.0:
-        To /= Lw
-        Fo /= Lw
 
     # -----------------------------------------------------------------------
     # Detection statistics: netCC, norm
@@ -1144,15 +1178,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     Gn_val = float(sky_statistics.Gn)
     N_eff = float(N_pix_effective)
     sky_norm = float(sky_statistics.norm)  # = max((Eo-Eh)/Em, 1) in skyloop
-    Dc_raw = Dc * sky_norm  # recover raw Dc before norm division
-    Ec_raw = Ec * sky_norm  # recover raw Ec before norm division
-    print(f"[Py-debug] N_eff={N_eff:.4f}, Dc_raw={Dc_raw:.6f}, "
-          f"Gn={Gn_val:.6f}, Ec_raw={Ec_raw:.6f}, "
-          f"Rc={Rc_val:.6f}, Eh={Eh:.6f}")
-    print(f"[Py-debug2] Nw_wf={Nw_wf:.6f} Gn={Gn_val:.6f} Dc={Dc:.6f} N_eff={N_eff:.4f} n_ifo={n_ifo} "
-          f"netED={Nw_wf + Gn_val + Dc - N_eff * n_ifo:.6f}")
-    print(f"[Py-debug3] Ew_wf={Ew_wf:.6f} Lw={Lw:.6f} Nw_wf={Nw_wf:.6f}")
-    print(f"[Py-debug4] snr_ifo={[f'{v:.6f}' for v in snr_ifo]} sSNR_ifo={[f'{v:.6f}' for v in sSNR_ifo]} null_ifo={[f'{v:.6f}' for v in null_ifo]}")
 
     # Use getMRAwave-equivalent Nw_wf for chi2 (and clamp to 0 to avoid negative chi2)
     Nw_for_stats = max(Nw_wf, 0.0)

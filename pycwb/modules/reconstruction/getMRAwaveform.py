@@ -74,7 +74,7 @@ def _create_wdm_set_python(config):
 
         wdm_list.append(
             _PyWDMKernel(
-                max_layer=layers - 1,
+                max_layer=layers,
                 m_H=m_h,
                 wavelet_filter=wavelet_filter,
             )
