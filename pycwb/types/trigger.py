@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dc_fields
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -705,6 +705,22 @@ class Trigger:
             "injection": self.injection.to_dict() if self.injection is not None else None,
         }
 
+        # Serialize any dynamic attributes (set after construction, not declared as dataclass fields).
+        # Values are cast to float/int/str based on their Python type.
+        _declared = {f.name for f in dc_fields(self)}
+        for k, v in self.__dict__.items():
+            if k in _declared or k in d:
+                continue
+            if isinstance(v, bool):
+                d[k] = bool(v)
+            elif isinstance(v, int):
+                d[k] = int(v)
+            elif isinstance(v, float):
+                d[k] = float(v)
+            elif isinstance(v, str):
+                d[k] = str(v)
+            # skip non-scalar types (lists, dicts, objects)
+
         # per-IFO fields: flat scalars or list columns
         if ifo_list:
             for name in _PER_IFO_F64:
@@ -909,6 +925,15 @@ class Trigger:
             inj.mass         = _fl(getattr(ev, "mass", []))
             inj.spin         = _fl(getattr(ev, "spin", []))
             t.injection = inj
+
+        # --- q-veto ---
+        qveto_arr = getattr(ev, "Qveto", [])
+        if len(qveto_arr) >= 2:
+            t.q_veto   = float(qveto_arr[0])
+            t.q_factor = float(qveto_arr[1])
+        else:
+            t.q_veto   = float(getattr(ev, "qveto",   0.0))
+            t.q_factor = float(getattr(ev, "qfactor", 0.0))
 
         if not t.id:
             t.id = t.long_id

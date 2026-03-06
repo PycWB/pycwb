@@ -197,7 +197,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             min_qveto = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
                     
-                    event.Qveto = [min_qfactor, min_qfactor]          # just for testing purpose
+                    event.Qveto = [min_qveto, min_qfactor]
                     event.qveto = min_qveto
                     event.qfactor = min_qfactor
                     logger.info(f"Qveto for event {event.hash_id}: {event.qveto}, Qfactor: {event.qfactor}")

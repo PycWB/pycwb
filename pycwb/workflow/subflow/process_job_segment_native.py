@@ -269,7 +269,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_wf_{a_type}_whiten'])
                             min_qveto = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
-                    event.Qveto = [min_qfactor, min_qfactor]
+                    event.Qveto = [min_qveto, min_qfactor]
                     event.qveto = min_qveto
                     event.qfactor = min_qfactor
                     logger.info("Qveto for event %s: %s, Qfactor: %s",
