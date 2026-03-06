@@ -1085,11 +1085,17 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         wdm_list = _create_wdm_set_python(config)
         rate_ana = float(config.rateANA)
 
+        # Also store un-whitened signal energy for hrss calculation (physical strain units)
+        signal_energy_physical = np.zeros(n_ifo, dtype=np.float64)
+
         for ifo_i in range(n_ifo):
             z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
                                     a_type='signal', mode=0, nproc=1, whiten=True)
             z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
                                     a_type='strain', mode=0, nproc=1, whiten=True)
+            # For hrss: get un-whitened signal energy (physical strain units)
+            z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                          a_type='signal', mode=0, nproc=1, whiten=False)
             if z_sig_ts is None or z_dat_ts is None:
                 continue
             z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
@@ -1097,6 +1103,9 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
             sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
             snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
             null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
+            if z_sig_physical is not None:
+                z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
+                signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
 
         # Pixel-based centroid (Lw-weighted mean time and frequency)
         for ci in core_indices:
@@ -1251,6 +1260,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     cluster.cluster_meta.signal_snr = sSNR_ifo.tolist()   # C++ d->sSNR = get_SS() per IFO
     cluster.cluster_meta.wave_snr   = snr_ifo.tolist()    # C++ d->enrg = get_XX() per IFO
     cluster.cluster_meta.cross_snr  = xSNR_ifo.tolist()   # C++ d->xSNR = get_XS() per IFO
+    cluster.cluster_meta.signal_energy_physical = signal_energy_physical.tolist()  # physical strain energy for hrss
 
     logger.debug(
         "fill_detection_statistic: sky_size=%d sub_net=%.4f net_cc=%.4f sky_cc=%.4f "

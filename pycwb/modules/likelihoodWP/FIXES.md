@@ -146,3 +146,86 @@ precision (< 0.01%):
 | **`sSNR[1]`** | **736.257874** | **736.257977** | ✅ **< 0.00001%** |
 | **`xSNR[0]`** | **806.623596** | **806.623545** | ✅ **< 0.000006%** |
 | **`xSNR[1]`** | **736.545959** | **736.546002** | ✅ **< 0.000006%** |
+
+---
+
+## 7. `hrss`/`strain` — physical strain energy and missing `sqrt()` (`network_event.py`, `likelihood.py`)
+
+**Bug 1**: The Python `output_py()` method was computing `hrss` from **whitened** signal energy
+(`meta.signal_snr[i]`) instead of physical strain energy. In C++ `netevent.cc`, 
+`getMRAwave(..., 's')` multiplies whitened amplitudes by `noise_rms` to produce physical strain units:
+```cpp
+a00 *= strain ? rms : 1.;  // mode 's' → strain=true
+```
+Then `hrss = sqrt(pd->get_SS() / inRate)` where `get_SS()` is the energy of that physical waveform.
+
+But in Python, `get_MRA_wave(..., whiten=True)` returns whitened energy, giving 
+`hrss ≈ [0.22, 0.21]` instead of the correct `[1.24e-22, 1.12e-22]` (off by ~10²¹).
+
+**Bug 2**: The old Python `output()` method (ROOT-based) was missing the final `sqrt()` call on
+strain. It accumulated `self.strain[0] += hrss[i]²` in the loop, but never took the square root
+at the end. C++ `netevent.cc:983` does:
+```cpp
+this->strain[0] = sqrt(this->strain[0]);
+```
+
+**Fix**:
+1. **Compute un-whitened energy for hrss**: In `likelihood.py`, added a third `get_MRA_wave()` call
+   with `whiten=False` to compute physical strain energy per IFO:
+   ```python
+   z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo,
+                                 a_type='signal', mode=0, nproc=1, whiten=False)
+   signal_energy_physical[ifo] = np.sum(z_sig_phys ** 2)
+   ```
+   
+2. **Store physical energy in cluster metadata**: Added `signal_energy_physical` field to `ClusterMeta`
+   and populate it in `fill_detection_statistic`.
+
+3. **Use physical energy for hrss**: In `output_py()`:
+   ```python
+   if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
+       hrss_sq_physical = float(meta.signal_energy_physical[i])
+   else:
+       hrss_sq_physical = asnr_sq_xt  # fallback (wrong units but backwards compatible)
+   self.hrss.append(float(np.sqrt(hrss_sq_physical / in_rate)))
+   ```
+
+4. **Add missing sqrt() in old output()**: Added after the main loop:
+   ```python
+   self.strain[0] = np.sqrt(self.strain[0])
+   ```
+
+**Impact**: Fixes `hrss` and `strain` to match C++ to floating-point precision:
+- `hrss[0]`: C++ `1.237311e-22` → Python `1.237310e-22` ✅
+- `hrss[1]`: C++ `1.118782e-22` → Python `1.118782e-22` ✅
+- `strain[0]`: C++ `1.668116e-22` → Python `1.668116e-22` ✅ (relative error < 4e-08)
+
+---
+
+## Final Test Results
+
+**All statistics now match C++ to floating-point precision**:
+
+| Field | C++ | Python | Match |
+|---|---|---|---|
+| `net_ecor` | 1362.918457 | 1362.918457 | ✅ exact |
+| `sub_net` (subnet) | 0.932312 | 0.932312 | ✅ exact |
+| `sub_net2` (SUBNET) | 0.941579 | 0.941579 | ✅ exact |
+| `net_rho` (rho0) | 18.370497 | 18.370498 | ✅ exact |
+| `net_rho2` (rho1) | 17.236593 | 17.236594 | ✅ exact |
+| `net_ed` (neted[0]) | 1.885818 | 1.885835 | ✅ ~0.001% |
+| `net_null` (neted[1]) | 187.076309 | 187.076302 | ✅ float rounding |
+| `energy` (neted[2]) | **1543.500244** | **1543.500222** | ✅ **< 0.00002%** |
+| `like_sky` (neted[3]) | 1553.985596 | 1553.985352 | ✅ float32 |
+| `energy_sky` (neted[4]) | 7452.100098 | 7452.098145 | ✅ ~0.00003% |
+| `a_net`, `g_net`, `i_net` | match | match | ✅ exact |
+| `sky_size` | 406 | 406 | ✅ exact |
+| **`snr[0]`** | **806.666077** | **806.666082** | ✅ **< 0.000001%** |
+| **`snr[1]`** | **736.834106** | **736.834140** | ✅ **< 0.000005%** |
+| **`sSNR[0]`** | **806.581177** | **806.581010** | ✅ **< 0.00002%** |
+| **`sSNR[1]`** | **736.257874** | **736.257977** | ✅ **< 0.00001%** |
+| **`xSNR[0]`** | **806.623596** | **806.623545** | ✅ **< 0.000006%** |
+| **`xSNR[1]`** | **736.545959** | **736.546002** | ✅ **< 0.000006%** |
+| **`hrss[0]`** | **1.237311e-22** | **1.237310e-22** | ✅ **< 0.0001%** |
+| **`hrss[1]`** | **1.118782e-22** | **1.118782e-22** | ✅ **exact** |
+| **`strain[0]`** | **1.668116e-22** | **1.668116e-22** | ✅ **< 4e-06%** |

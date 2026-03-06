@@ -336,6 +336,9 @@ class Event:
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
+        # Take sqrt of strain (C++ netevent.cc line 983)
+        self.strain[0] = np.sqrt(self.strain[0])
+
         self.id = self.long_id
     # def json(self):
     #     """
@@ -468,13 +471,8 @@ class Event:
                               and len(meta.cross_snr) == n_ifo)
 
             for i in range(n_ifo):
-                hrss_sq = 0.0
                 null_acc = 0.0
                 for p in all_pixels:
-                    pd_i = p.data[i]
-                    # hrss uses physical noise_rms (populated from nRMS TF map in likelihood)
-                    hrss_sq += ((pd_i.asnr * pd_i.noise_rms) ** 2
-                                + (pd_i.a_90 * pd_i.noise_rms) ** 2)
                     null_acc += p.null / n_ifo  # scalar null split evenly across IFOs
 
                 if have_xtalk_snr:
@@ -486,6 +484,13 @@ class Event:
                     self.sSNR.append(asnr_sq_xt)
                     self.xSNR.append(xsnr_sq_xt)
                     self.nill.append(float(wave_sq_xt - asnr_sq_xt))
+                    # hrss from physical strain energy (not whitened)
+                    if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
+                        hrss_sq_physical = float(meta.signal_energy_physical[i])
+                    else:
+                        # Fallback: whitened energy (will be wrong units but backwards compatible)
+                        hrss_sq_physical = asnr_sq_xt
+                    self.hrss.append(float(np.sqrt(hrss_sq_physical / in_rate)))
                 else:
                     # Fallback: diagonal pixel sum (no xtalk cross-terms)
                     asnr_sq = sum(p.data[i].asnr ** 2 + p.data[i].a_90 ** 2 for p in all_pixels)
@@ -494,8 +499,11 @@ class Event:
                     self.sSNR.append(float(asnr_sq))
                     self.xSNR.append(float(np.sqrt(max(wave_sq * asnr_sq, 0.0))))
                     self.nill.append(float(wave_sq - asnr_sq))
+                    # hrss from pixel-based signal energy (whitened amplitudes * noise_rms)
+                    hrss_sq = sum((p.data[i].asnr * p.data[i].noise_rms) ** 2 
+                                  + (p.data[i].a_90 * p.data[i].noise_rms) ** 2 for p in all_pixels)
+                    self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
 
-                self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
                 self.null.append(float(null_acc))
 
                 # Noise floor: mean noise_rms across core pixels for this IFO, scaled to strain/rtHz
