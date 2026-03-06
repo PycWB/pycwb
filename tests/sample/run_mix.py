@@ -177,6 +177,13 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
         # snr/sSNR/xSNR now use get_MRA_wave (exact WDM reconstruction equivalent to C++),
         # so they should match to floating-point precision (default rtol=1e-5).
         snr_rtol = 1e-4  # small tolerance for float32/float64 accumulation differences
+        # null and nill rely on MRA waveform reconstruction energy differences.
+        # Python avx_setAMP_ps runs in float64 while C++ _avx_setAMP_ps uses float32 SSE;
+        # this causes tiny waveform reconstruction differences that are amplified in:
+        #   null  (= sum((data-signal)²)), which is tiny relative to signal energy → ~1e-3 rel err
+        #   nill  (= xSNR - sSNR), catastrophic cancellation (xSNR ≈ sSNR ~ 806) → ~1e-2 rel err
+        null_rtol = 1e-3   # limited by float32 vs float64 in avx_setAMP_ps waveform reconstruction
+        nill_rtol = 1e-2   # limited by catastrophic cancellation in xSNR-sSNR (≈ 0.042 vs 806)
         if np.isclose(event.left[0], cluster.start_time) and \
             np.isclose(event.stop[0] - event.gps[0], cluster.stop_time) and \
             np.isclose(event.low[0], cluster.low_frequency) and \
@@ -193,8 +200,8 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             all(np.isclose(event.xSNR[i], event2.xSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.hrss[i], event2.hrss[i], rtol=snr_rtol, atol=1e-50) for i in range(config.nIFO)) and \
             all(np.isclose(event.noise[i], event2.noise[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
-            all(np.isclose(event.null[i], event2.null[i], rtol=snr_rtol, atol=1e-10) for i in range(config.nIFO)) and \
-            all(np.isclose(event.nill[i], event2.nill[i], rtol=snr_rtol, atol=1e-10) for i in range(config.nIFO)) and \
+            all(np.isclose(event.null[i], event2.null[i], rtol=null_rtol, atol=1e-10) for i in range(config.nIFO)) and \
+            all(np.isclose(event.nill[i], event2.nill[i], rtol=nill_rtol, atol=1e-10) for i in range(config.nIFO)) and \
             all(np.isclose(event.bp[i], event2.bp[i], rtol=1e-5) for i in range(config.nIFO)) and \
             all(np.isclose(event.bx[i], event2.bx[i], rtol=1e-5) for i in range(config.nIFO)) and \
             all(np.isclose(event.time[i], event2.time[i], rtol=1e-5) for i in range(config.nIFO)) and \
@@ -210,3 +217,31 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             print("✅ Results match between old and new likelihood code.")
         else:
             print("❌ Results do NOT match between old and new likelihood code.")
+
+        # ---- Qveto / Qfactor comparison ----
+        # Reconstruct whitened waveforms from both old (ROOT) and new (Python) clusters,
+        # then compute Qveto/Qfactor using the same get_qveto function used in production.
+        print("\n--- Qveto / Qfactor ---")
+        reconst_old = reconstruct_waveforms_flow(
+            None, config, job_segments[0].ifos, event, cluster_old,
+            epoch=0., wave_file='', save=False, plot=False,
+        )
+        reconst_new = reconstruct_waveforms_flow(
+            None, config, job_segments[0].ifos, event2, cluster,
+            epoch=0., wave_file='', save=False, plot=False,
+        )
+        qveto_match = True
+        for ifo in job_segments[0].ifos:
+            for a_type in ['DAT', 'REC']:
+                key = f'{ifo}_wf_{a_type}_whiten'
+                qveto_old, qfactor_old = get_qveto(reconst_old[key])
+                qveto_new, qfactor_new = get_qveto(reconst_new[key])
+                print(f"[old] {ifo} {a_type}: qveto={qveto_old:.6f}, qfactor={qfactor_old:.6f}")
+                print(f"[new] {ifo} {a_type}: qveto={qveto_new:.6f}, qfactor={qfactor_new:.6f}")
+                if not np.isclose(qveto_old, qveto_new, rtol=1e-2, atol=1e-6) or \
+                   not np.isclose(qfactor_old, qfactor_new, rtol=1e-2, atol=1e-6):
+                    qveto_match = False
+        if qveto_match:
+            print("✅ Qveto/Qfactor match between old and new likelihood code.")
+        else:
+            print("❌ Qveto/Qfactor do NOT match between old and new likelihood code.")

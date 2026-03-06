@@ -604,10 +604,12 @@ class Event:
                                   + (p.data[i].a_90 * p.data[i].noise_rms) ** 2 for p in all_pixels)
                     self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
 
-                # Noise floor: mean noise_rms across core pixels for this IFO, scaled to strain/rtHz
+                # Noise floor: RMS of noiserms across core pixels for this IFO, scaled to strain/rtHz
+                # C++ get("noise",i,'S',0): sum += r*r; sum/=mp → log10(sqrt(sum)) → pow(10,...)/sqrt(inRate)
+                # = sqrt(mean(noiserms^2)) / sqrt(inRate)
                 rms_vals = [p.data[i].noise_rms for p in core_pixels
                             if p.data[i].noise_rms > 0]
-                mean_nrms = float(np.mean(rms_vals)) if rms_vals else 1.0
+                mean_nrms = float(np.sqrt(np.mean(np.array(rms_vals) ** 2))) if rms_vals else 1.0
                 # Convert from TF-domain noise amplitude to strain/rtHz: divide by sqrt(inRate)
                 self.noise.append(float(mean_nrms / np.sqrt(in_rate)))
 
@@ -618,19 +620,39 @@ class Event:
             self.strain = [float(np.sqrt(sum(h ** 2 for h in self.hrss[:n_ifo])))]
 
             # Antenna patterns at best-fit sky location
+            # C++ uses detector::antenna(theta, phi, psi) in GEOGRAPHIC coordinates:
+            #   theta = co-latitude (0-180 deg), phi = longitude (0-360 deg)
+            # These are CWB's meta.theta / meta.phi (Earth-fixed frame, NOT equatorial RA/Dec).
+            # Formula: fp = -(a·D·a - b·D·b), fx = 2*(a·D·b), return (fp/2, fx/2)
+            # where D = Det tensor (Ex⊗Ex - Ey⊗Ey, no 1/2), a=e_theta, b=e_phi (geographic).
+            # Python det.response = 0.5*(x⊗x - y⊗y), so already carries the /2:
+            #   fp/2 = -(a·D_py·a - b·D_py·b), fx/2 = 2*(a·D_py·b)
             try:
                 from pycwb.types.detector import Detector
-                theta_rad = float(np.radians(theta_deg))
-                dec_rad = float(np.radians(dec_deg))
-                ra_rad = float(np.radians(ra_deg))
-                psi_rad = float(np.radians(meta.psi))  # Use psi from cluster metadata
-                gps_t = float(self.gps[0])
+                theta_geo = float(np.radians(theta_deg))  # C++ theta (geographic co-latitude)
+                phi_geo = float(np.radians(phi_deg))      # C++ phi (geographic longitude)
+                psi_rad = float(np.radians(meta.psi)) if hasattr(meta, 'psi') else 0.0
+                cT = np.cos(theta_geo); sT = np.sin(theta_geo)
+                cP = np.cos(phi_geo);  sP = np.sin(phi_geo)
+                # Polarization basis vectors in geographic Cartesian frame
+                e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
+                e_ph = np.array([-sP, cP, 0.0])            # e_phi   (C++ b)
                 for ifo in job_segment.ifos:
                     det = Detector(ifo)
-                    fp, fx = det.atenna_pattern(ra_rad, dec_rad, psi_rad, gps_t)
-                    # C++ antenna() returns wavecomplex(fp/2, fx/2), so divide by 2
-                    self.bp.append(float(fp / 2.0))
-                    self.bx.append(float(fx / 2.0))
+                    D = det.response  # 0.5*(x⊗x - y⊗y), respects the C++ /2 factor
+                    Da = D @ e_th
+                    Db = D @ e_ph
+                    f_plus  = np.dot(e_th, Da) - np.dot(e_ph, Db)   # a·D·a - b·D·b (= fp_C++/2)
+                    f_cross = 2.0 * np.dot(e_th, Db)                 # 2*(a·D·b)      (= fx_C++/2)
+                    # C++ convention: fp = -fp (LIGO-T010110), before psi rotation
+                    fp = -f_plus
+                    fx = f_cross
+                    if abs(psi_rad) > 1e-15:
+                        a_rot = fp * np.cos(2 * psi_rad) + fx * np.sin(2 * psi_rad)
+                        b_rot = -fp * np.sin(2 * psi_rad) + fx * np.cos(2 * psi_rad)
+                        fp, fx = a_rot, b_rot
+                    self.bp.append(float(fp))
+                    self.bx.append(float(fx))
             except Exception:
                 self.bp = [0.0] * n_ifo
                 self.bx = [0.0] * n_ifo
