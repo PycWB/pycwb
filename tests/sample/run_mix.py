@@ -111,13 +111,40 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
 
         # Compute likelihood using new python code
         start_time_new = perf_counter()
-        cluster, _ = likelihood(config.nIFO, cluster.clusters[0], config.MRAcatalog, ml=ml, FP=FP, FX=FX, config=config)
+        cluster, skymap_stats = likelihood(config.nIFO, cluster.clusters[0], config.MRAcatalog, ml=ml, FP=FP, FX=FX, config=config)
         event2 = Event()
         event2.output_py(job_segments[0], cluster, config)
         end_time_new = perf_counter()
         if cluster is None:
             logger.info(f"Cluster {k} at lag {lag} rejected by new likelihood computation.")
             continue
+
+        # --- Sky pixel mismatch diagnostics ---
+        from pycwb.types.detector import _build_sky_directions
+        _healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
+        n_sky_diag = int(ml.shape[1])
+        _ra_diag, _dec_diag = _build_sky_directions(n_sky_diag, _healpix_order)
+        _phi_arr_deg = np.degrees(_ra_diag) % 360.0
+        _theta_arr_deg = (90.0 - np.degrees(_dec_diag)) % 180.0
+        l_max_py = int(cluster.cluster_meta.l_max)
+        l_max_py_sky = skymap_stats.nSkyStat[l_max_py]
+        # Find top-5 nSkyStat indices to compare with C++
+        top5_idx = np.argsort(skymap_stats.nSkyStat)[-5:][::-1]
+        print(f"[sky-debug] Python l_max={l_max_py}: phi={_phi_arr_deg[l_max_py]:.4f} theta={_theta_arr_deg[l_max_py]:.4f} nSkyStat={l_max_py_sky:.6f}")
+        print(f"[sky-debug] Top-5 sky pixels by nSkyStat:")
+        for idx in top5_idx:
+            print(f"  l={idx}: phi={_phi_arr_deg[idx]:.4f} theta={_theta_arr_deg[idx]:.4f} nSkyStat={skymap_stats.nSkyStat[idx]:.6f}")
+        # Find all pixels within 2 degrees of the C++ phi/theta
+        cpp_phi = event.phi[0]
+        cpp_theta = event.theta[0]
+        print(f"[sky-debug] C++ selected: phi={cpp_phi:.4f} theta={cpp_theta:.4f}")
+        # Find the sky pixel closest to C++ phi/theta
+        diffs = ((_phi_arr_deg - cpp_phi + 180) % 360 - 180)**2 + (_theta_arr_deg - cpp_theta)**2
+        l_max_cpp_approx = int(np.argmin(diffs))
+        print(f"[sky-debug] Closest Python pixel to C++ sky: l={l_max_cpp_approx}: phi={_phi_arr_deg[l_max_cpp_approx]:.4f} theta={_theta_arr_deg[l_max_cpp_approx]:.4f} nSkyStat={skymap_stats.nSkyStat[l_max_cpp_approx]:.6f}")
+        print(f"[sky-debug] nSkyStat diff: py_max={skymap_stats.nSkyStat[l_max_py]:.8f} vs cpp_approx={skymap_stats.nSkyStat[l_max_cpp_approx]:.8f} (diff={skymap_stats.nSkyStat[l_max_py]-skymap_stats.nSkyStat[l_max_cpp_approx]:.2e})")
+        # --- End sky diagnostics ---
+
         # compare the results
         print(f"[old] start: {event.left[0]}, stop: {event.stop[0] - event.gps[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
         print(f"[new] start: {cluster.start_time}, stop: {cluster.stop_time}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
@@ -184,6 +211,56 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
         #   nill  (= xSNR - sSNR), catastrophic cancellation (xSNR ≈ sSNR ~ 806) → ~1e-2 rel err
         null_rtol = 1e-3   # limited by float32 vs float64 in avx_setAMP_ps waveform reconstruction
         nill_rtol = 1e-2   # limited by catastrophic cancellation in xSNR-sSNR (≈ 0.042 vs 806)
+        # Debug: print each comparison result
+        checks = {
+            'start': np.isclose(event.left[0], cluster.start_time),
+            'stop': np.isclose(event.stop[0] - event.gps[0], cluster.stop_time),
+            'low_freq': np.isclose(event.low[0], cluster.low_frequency),
+            'high_freq': np.isclose(event.high[0], cluster.high_frequency),
+            'ecor': np.isclose(event.ecor, cluster.cluster_meta.net_ecor),
+            'sub_net': np.isclose(event.netcc[2], cluster.cluster_meta.sub_net),
+            'sub_net2': np.isclose(event.netcc[3], cluster.cluster_meta.sub_net2),
+            'rho0': np.isclose(event.rho[0], cluster.cluster_meta.net_rho),
+            'rho1': np.isclose(event.rho[1], cluster.cluster_meta.net_rho2),
+            'net_ed': np.isclose(event.neted[0], cluster.cluster_meta.net_ed, rtol=snr_rtol),
+            'like_sky': np.isclose(event.neted[3], cluster.cluster_meta.like_sky),
+            'snr': all(np.isclose(event.snr[i], event2.snr[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'sSNR': all(np.isclose(event.sSNR[i], event2.sSNR[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'xSNR': all(np.isclose(event.xSNR[i], event2.xSNR[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'hrss': all(np.isclose(event.hrss[i], event2.hrss[i], rtol=snr_rtol, atol=1e-50) for i in range(config.nIFO)),
+            'noise': all(np.isclose(event.noise[i], event2.noise[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'null': all(np.isclose(event.null[i], event2.null[i], rtol=null_rtol, atol=1e-10) for i in range(config.nIFO)),
+            'nill': all(np.isclose(event.nill[i], event2.nill[i], rtol=nill_rtol, atol=1e-10) for i in range(config.nIFO)),
+            'bp': all(np.isclose(event.bp[i], event2.bp[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'bx': all(np.isclose(event.bx[i], event2.bx[i], rtol=snr_rtol) for i in range(config.nIFO)),
+            'time': all(np.isclose(event.time[i], event2.time[i], rtol=1e-5) for i in range(config.nIFO)),
+            'duration': all(np.isclose(event.duration[i], event2.duration[i], rtol=1e-5) for i in range(config.nIFO)),
+            'frequency': all(np.isclose(event.frequency[i], event2.frequency[i], rtol=1e-5) for i in range(config.nIFO)),
+            'bandwidth': all(np.isclose(event.bandwidth[i], event2.bandwidth[i], rtol=1e-5) for i in range(config.nIFO)),
+            'strain': all(np.isclose(event.strain[i], event2.strain[i], rtol=snr_rtol, atol=1e-50) for i in range(len(event.strain))),
+            'anet': np.isclose(event.anet, cluster.cluster_meta.a_net),
+            'gnet': np.isclose(event.gnet, cluster.cluster_meta.g_net),
+            'inet': np.isclose(event.inet, cluster.cluster_meta.i_net),
+            'core_size': event.size[0] == cluster.get_core_size(),
+            'sky_size': event.size[1] == cluster.cluster_meta.sky_size,
+        }
+        failed = [k for k, v in checks.items() if not v]
+        if failed:
+            print(f"[diag] Failing checks: {failed}")
+            for k in failed:
+                if k in ('anet', 'gnet', 'inet'):
+                    print(f"  {k}: old={getattr(event, k):.10f} new={getattr(cluster.cluster_meta, {'anet':'a_net','gnet':'g_net','inet':'i_net'}[k]):.10f}")
+                elif k in ('net_ed', 'like_sky'):
+                    field = 'net_ed' if k == 'net_ed' else 'like_sky'
+                    print(f"  {k}: old={event.neted[0 if k=='net_ed' else 3]:.10f} new={getattr(cluster.cluster_meta, field):.10f}")
+                elif k == 'bp':
+                    for i in range(config.nIFO):
+                        rel = abs(event.bp[i] - event2.bp[i]) / abs(event.bp[i]) if event.bp[i] != 0 else abs(event.bp[i] - event2.bp[i])
+                        print(f"  bp[{i}]: old={event.bp[i]:.12f} new={event2.bp[i]:.12f} rel={rel:.3e}")
+                elif k == 'bx':
+                    for i in range(config.nIFO):
+                        rel = abs(event.bx[i] - event2.bx[i]) / abs(event.bx[i]) if event.bx[i] != 0 else abs(event.bx[i] - event2.bx[i])
+                        print(f"  bx[{i}]: old={event.bx[i]:.12f} new={event2.bx[i]:.12f} rel={rel:.3e}")
         if np.isclose(event.left[0], cluster.start_time) and \
             np.isclose(event.stop[0] - event.gps[0], cluster.stop_time) and \
             np.isclose(event.low[0], cluster.low_frequency) and \
@@ -193,7 +270,7 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             np.isclose(event.netcc[3], cluster.cluster_meta.sub_net2) and \
             np.isclose(event.rho[0], cluster.cluster_meta.net_rho) and \
             np.isclose(event.rho[1], cluster.cluster_meta.net_rho2) and \
-            np.isclose(event.neted[0], cluster.cluster_meta.net_ed) and \
+            np.isclose(event.neted[0], cluster.cluster_meta.net_ed, rtol=snr_rtol) and \
             np.isclose(event.neted[3], cluster.cluster_meta.like_sky) and \
             all(np.isclose(event.snr[i], event2.snr[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.sSNR[i], event2.sSNR[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
@@ -202,8 +279,8 @@ for lag, fragment_cluster in enumerate(super_fragment_clusters):
             all(np.isclose(event.noise[i], event2.noise[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.null[i], event2.null[i], rtol=null_rtol, atol=1e-10) for i in range(config.nIFO)) and \
             all(np.isclose(event.nill[i], event2.nill[i], rtol=nill_rtol, atol=1e-10) for i in range(config.nIFO)) and \
-            all(np.isclose(event.bp[i], event2.bp[i], rtol=1e-5) for i in range(config.nIFO)) and \
-            all(np.isclose(event.bx[i], event2.bx[i], rtol=1e-5) for i in range(config.nIFO)) and \
+            all(np.isclose(event.bp[i], event2.bp[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
+            all(np.isclose(event.bx[i], event2.bx[i], rtol=snr_rtol) for i in range(config.nIFO)) and \
             all(np.isclose(event.time[i], event2.time[i], rtol=1e-5) for i in range(config.nIFO)) and \
             all(np.isclose(event.duration[i], event2.duration[i], rtol=1e-5) for i in range(config.nIFO)) and \
             all(np.isclose(event.frequency[i], event2.frequency[i], rtol=1e-5) for i in range(config.nIFO)) and \

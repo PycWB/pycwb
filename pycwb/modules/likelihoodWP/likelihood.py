@@ -373,6 +373,9 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     # Retrieve the original (pre-transpose) ml via the closure variable
     cluster.sky_time_delay = [float(ml[i, _l_max]) for i in range(nIFO)]
 
+    # Mirror C++ sCuts[id-1] = -1: mark the cluster as accepted after all cuts have passed.
+    cluster.cluster_status = -1
+
     detected = cluster.cluster_status == -1
     logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
     if detected:
@@ -585,8 +588,15 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         #
         # if nProbability[l] > sky:
         #     sky = nProbability[l]  # find max of skyloc stat
-    STAT = np.max(AA_array)
-    l_max = np.argmax(AA_array)
+    # Mirror C++ tie-breaking: C++ uses `if (AA >= STAT)` in a forward loop,
+    # so the LAST pixel with the maximum value wins on ties.
+    # np.argmax returns the FIRST, so scan forward explicitly.
+    STAT = np.float32(-1.e12)
+    l_max = 0
+    for _l in range(n_sky):
+        if AA_array[_l] >= STAT:
+            STAT = AA_array[_l]
+            l_max = _l
     sky = np.max(nProbability)
 
     return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \

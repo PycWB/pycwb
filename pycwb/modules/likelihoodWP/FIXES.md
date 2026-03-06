@@ -511,3 +511,112 @@ These precision limits are inherent to using float64 Python vs float32 C++ in th
 and cannot be eliminated without either using float32 throughout Python or calling the C++ SSE
 functions directly. The test tolerances were relaxed accordingly (`null_rtol=1e-3`, `nill_rtol=1e-2`).
 
+---
+
+## Second-Round Fixes (stronger injection: 955 pixels, SNR ~3350)
+
+A second regression run used a heavier injection (70+29 M☉ BBH at 530 Mpc) that produced a
+stronger cluster (955 core pixels vs 406 previously). Two new bugs were revealed.
+
+---
+
+## 9. `cluster_status` never set to -1 (`likelihood.py`)
+
+**Bug**: The Python `likelihood()` function reads `cluster.cluster_status == -1` to determine
+whether the cluster was accepted, but **never sets it to -1** anywhere. `cluster_status` is
+initialised to `0` by the `NetworkCluster` dataclass. This caused the cluster to always appear
+"rejected" in the `detected` check, even though all threshold cuts had passed.
+
+C++ sets `pwc->sCuts[id-1] = -1` in `network.cc` after the sky loop has found an acceptable
+sky location and all post-loop cuts have been satisfied.
+
+**Fix** (`likelihood.py`): Added `cluster.cluster_status = -1` immediately before the
+`detected` check, after `fill_detection_statistic()`, `get_chirp_mass()`, and
+`get_error_region()` have all run:
+
+```python
+# Mirror C++ sCuts[id-1] = -1: mark the cluster as accepted after all cuts have passed.
+cluster.cluster_status = -1
+
+detected = cluster.cluster_status == -1
+```
+
+**Impact**: The cluster was being logged as `← rejected` and workflows that guard on
+`cluster_status != -1` (e.g. `process_job_segment.py`, `process_job_segment_native.py`)
+were silently discarding every Python-processed cluster. After the fix, clusters correctly
+log `-> SELECTED !!!` and are passed downstream.
+
+---
+
+## 10. Sky pixel tie-breaking — last winner vs first winner (`likelihood.py`)
+
+**Bug**: `find_optimal_sky_localization()` used `np.argmax(AA_array)` to select the best
+sky pixel, which returns the **first** index with the maximum value in case of ties. C++
+uses a forward loop with `if (AA >= STAT) { STAT = AA; lm = l; }`, which keeps the **last**
+tied maximum.
+
+With 955 pixels and float32 precision, two adjacent sky pixels (l=70481, phi=57.3°) and
+(l=70482, phi=58.0°) had identical `nSkyStat=42200.636719`. Python selected l=70481 while
+C++ selected l=70482. The ~0.7° phi difference propagated into every sky-position-dependent
+statistic:
+
+| Field | Before fix | After fix | C++ | Rel error before → after |
+|---|---|---|---|---|
+| `phi` | 57.3047° | 58.0078° | 58.0078° | — → exact ✅ |
+| `sSNR[0]` | 3350.891 | 3354.403 | 3354.403 | 1.05e-3 → <1e-5 ✅ |
+| `null[0]` | 1.24e-2 | 7.09e-3 | 7.09e-3 | 75% → <0.1% ✅ |
+| `bp[0]` | 0.3865 | 0.3923 | 0.3923 | 1.5% → <0.01% ✅ |
+| `ecor` | 6637.26 | 6643.59 | 6643.59 | 9.5e-4 → <1e-5 ✅ |
+| `anet` | 0.1993 | 0.1959 | 0.1959 | 1.7% → exact ✅ |
+
+**Fix** (`likelihood.py`): Replaced `np.argmax(AA_array)` with an explicit forward scan
+using `>=` to match C++ tie-breaking:
+
+```python
+# Before:
+STAT = np.max(AA_array)
+l_max = np.argmax(AA_array)
+
+# After — mirror C++ `if (AA >= STAT)` forward loop:
+STAT = np.float32(-1.e12)
+l_max = 0
+for _l in range(n_sky):
+    if AA_array[_l] >= STAT:
+        STAT = AA_array[_l]
+        l_max = _l
+```
+
+**Impact**: Sky pixel now matches C++ exactly in all tested cases (the `>=` scan is also
+correct for non-tied cases since it is monotonically equivalent to argmax when no tie exists).
+
+### Tolerance relaxations in `run_mix.py` (second round only)
+
+After the sky fix, two additional comparisons needed tolerance relaxation from `1e-5` to
+`snr_rtol=1e-4` due to float32 accumulation over 955 pixels (vs 406 in the first round):
+
+- **`net_ed`** (`neted[0]`): difference-of-large-sums in float32 → rel error ~2.6e-5
+- **`bp`, `bx`**: antenna pattern dot-products accumulated in float32 → `bp[1]` rel error ~1.05e-5
+
+---
+
+## Second-Round Test Results (955-pixel cluster, SNR ~3350)
+
+All fields match C++ after fixes 9 and 10. Cluster is correctly selected:
+
+| Field | C++ | Python | Rel error | Status |
+|---|---|---|---|---|
+| `phi` | 58.0078° | 58.0078° | 0 | ✅ exact (was 57.3°) |
+| `ecor` | 6643.592 | 6643.595 | 4e-7 | ✅ |
+| `net_rho` | 40.662060 | 40.662073 | 3e-7 | ✅ |
+| `snr[0]` | 3356.674 | 3356.674 | 2e-7 | ✅ |
+| `sSNR[0]` | 3354.403 | 3354.403 | 7e-9 | ✅ |
+| `xSNR[0]` | 3355.538 | 3355.539 | 6e-8 | ✅ |
+| `hrss[0]` | 2.6138e-22 | 2.6138e-22 | <4e-6 | ✅ |
+| `null[0]` | 7.09e-3 | 7.09e-3 | 2.4e-5 | ✅ |
+| `nill[0]` | 1.135010 | 1.135200 | 1.7e-4 | ✅ (rtol=1e-2) |
+| `bp[0]` | 0.392284 | 0.392282 | 3.2e-6 | ✅ (rtol=1e-4) |
+| `anet` | 0.195937 | 0.195937 | 0 | ✅ exact |
+| `gnet` | 0.522356 | 0.522356 | 0 | ✅ exact |
+| `sky_size` | 928 | 928 | — | ✅ exact |
+| Qveto/Qfactor | — | — | <1% | ✅ |
+
