@@ -723,11 +723,32 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
         result = avr * _igamma_inv_upper(alp, bpp_corr) / alp / 2.0
         return result
 
-    med = float(np.quantile(positive, 0.8))
-    m = max(1.0, med / max(_igamma_inv_upper(n_ifo, 0.2), 1.0e-12))
-    p_eff = float(np.clip(bpp, 1.0e-8, 0.2))
-    val = float(np.quantile(positive, 1.0 - p_eff))
-    result = (0.3 * (_igamma_inv_upper(n_ifo * m, p_eff) + val)) + n_ifo * np.log(m)
+    # CWB THRESHOLD(p) exact algorithm: iterative search for Gamma shape m
+    # fff = fill fraction (fraction of pixels with energy > 0.0001, matching CWB wavecount)
+    fff = float(np.sum(work > 1.0e-4) / work.size)
+    if fff <= 0.0:
+        return 0.0
+    n_total = work.size
+    sorted_work = np.sort(work)
+
+    # CWB waveSplit(nL, nR, nR-k): returns (k+1)-th largest in range, i.e., sorted_work[n_total-k-1]
+    k_val = int(float(bpp) * fff * n_total)
+    k_med = int(0.2 * fff * n_total)
+    val = float(sorted_work[max(0, n_total - k_val - 1)]) if k_val > 0 else float(sorted_work[-1])
+    med = float(sorted_work[max(0, n_total - k_med - 1)]) if k_med > 0 else float(sorted_work[-1])
+
+    # Find smallest m >= 1.0 (in 0.01 steps) where P(Gamma(N*m) >= med) >= 0.2
+    # Matches CWB: while(p00<0.2) {p00 = 1-Gamma(N*m,med); m+=0.01;} if(m>1) m-=0.01;
+    from scipy.special import gammaincc as _scipy_gammaincc
+    m = 1.0
+    p00 = 0.0
+    while p00 < 0.2:
+        p00 = float(_scipy_gammaincc(n_ifo * m, med))
+        m += 0.01
+    if m > 1.01:
+        m -= 0.01
+
+    result = 0.3 * (_igamma_inv_upper(n_ifo * m, float(bpp)) + val) + n_ifo * np.log(m)
     return result
 
 

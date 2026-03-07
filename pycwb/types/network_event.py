@@ -411,11 +411,21 @@ class Event:
             self.penalty = meta.net_null / max(n_ifo_val * ndof_val, 1e-10)
 
         # --- Sky localisation ---
-        theta_deg = meta.theta  # co-latitude [0, 180] degrees
-        phi_deg = meta.phi      # longitude [0, 360) degrees
-        dec_deg = 90.0 - theta_deg   # declination (equatorial)
-        ra_deg = phi_deg             # RA (equatorial)
-        # [skymap_value, 0, equatorial, detector_frame]
+        # meta.theta / meta.phi are in the Earth-fixed (geographic) frame,
+        # matching CWB's convention: phi_geo = geographic longitude,
+        # theta_geo = geographic co-latitude (0 = N pole, 180 = S pole).
+        # Equatorial RA = phi_geo + GMST(t_event), dec = 90 - theta_geo.
+        theta_deg = meta.theta  # geographic co-latitude [0, 180] degrees
+        phi_deg = meta.phi      # geographic longitude [0, 360) degrees
+        dec_deg = 90.0 - theta_deg   # declination (equatorial; same Z-axis)
+        # Convert geographic longitude to equatorial RA using GMST at event time.
+        # mirrors CWB skymap::phi2RA = fmod(phi_geo + GMST, 360)
+        from pycwb.types.detector import gmst_accurate as _gmst_accurate
+        _t_event_gps = float(meta.c_time if meta.c_time != 0.0 else cluster.cluster_time) + float(self.gps[0])
+        _gmst_deg = np.degrees(_gmst_accurate(_t_event_gps)) % 360.0
+        ra_deg = (phi_deg + _gmst_deg) % 360.0
+        # [skymap_value, 0, equatorial, detector_frame]  — matches CWB output() layout:
+        #   phi[0] = geographic phi;  phi[2] = equatorial RA
         self.theta = [theta_deg, 0.0, dec_deg, theta_deg]
         self.phi = [phi_deg, 0.0, ra_deg, phi_deg]
 

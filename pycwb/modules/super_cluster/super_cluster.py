@@ -194,6 +194,9 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 
     ########################
     # build wdm_wavelet contexts for each resolution and detector
+    upTDF = int(getattr(config, 'upTDF', 1))
+    TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
+
     wdm_context_by_layers = {}
     for level in config.WDM_level:
         layers_at_level = 2 ** level if level > 0 else 0
@@ -204,7 +207,8 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
             beta_order=config.WDM_beta_order,
             precision=config.WDM_precision,
         )
-        wdm.set_td_filter(int(config.TDSize), 1)
+        # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
+        wdm.set_td_filter(int(config.TDSize), upTDF)
 
         detector_tf_maps = []
         for n in range(config.nIFO):
@@ -246,7 +250,11 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
                 cluster.clusters += [c for c in fragment_cluster[j].clusters if c.cluster_status < 1]
         clusters_by_lag.append(cluster)
 
-    td_vec_default = np.zeros(expected_td_vec_len(config.TDSize), dtype=np.float32)
+    # K_td: delay range at TDRate resolution matching CWB's loadTDamp behaviour.
+    K_td = max(int(config.TDSize) * upTDF,
+               int(getattr(config, 'max_delay', 0.0) * float(TDRate)) + 1)
+
+    td_vec_default = np.zeros(expected_td_vec_len(K_td), dtype=np.float32)
     fragment_clusters = clusters_by_lag
     for lag, fragment_cluster in enumerate(fragment_clusters):
         # Batch processing: collect all pixels and pre-extract indices using numpy
@@ -276,11 +284,11 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
         pixels_by_layer = {int(layer): np.where(pixel_layers == layer)[0] for layer in unique_layers}
 
         # Pre-allocate output array: (n_pixels, n_ifo, td_vec_len)
-        td_vec_len = expected_td_vec_len(config.TDSize)
+        td_vec_len = expected_td_vec_len(K_td)
         all_td_amps = np.zeros((n_pixels, config.nIFO, td_vec_len), dtype=np.float32)
         
         # Process pixels grouped by layer using JAX batch extraction
-        K = int(config.TDSize)
+        K = K_td
         for layer_key, pixel_idxs in pixels_by_layer.items():
             per_ifo_inputs = td_inputs_cache.get(layer_key)
             if per_ifo_inputs is None:
@@ -323,11 +331,16 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     else:
         healpix_order = None
 
+    # Use K_td at TDRate resolution for ml clipping (matches CWB precision)
+    _upTDF_sc = int(getattr(config, 'upTDF', 1))
+    _TDRate_sc = int(getattr(config, 'TDRate', int(config.rateANA) * _upTDF_sc))
+    K_td_sc = max(int(config.TDSize) * _upTDF_sc,
+                  int(getattr(config, 'max_delay', 0.0) * float(_TDRate_sc)) + 1)
     ml, FP, FX = compute_sky_delay_and_patterns(
         ifos=config.ifo,
         ref_ifo=config.refIFO,
-        sample_rate=config.rateANA,
-        td_size=int(config.TDSize),
+        sample_rate=_TDRate_sc,
+        td_size=K_td_sc,
         gps_time=float(strains[0].t0),
         healpix_order=healpix_order,
         n_sky=None,
@@ -453,6 +466,9 @@ def setup_supercluster(config, strains):
     n_lag = int(lag_plan.n_lag)
 
     # ---- WDM contexts and TD-input cache (same logic as supercluster_wrapper) ----
+    upTDF = int(getattr(config, 'upTDF', 1))
+    TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
+
     wdm_context_by_layers = {}
     for level in config.WDM_level:
         layers_at_level = 2 ** level if level > 0 else 0
@@ -463,7 +479,8 @@ def setup_supercluster(config, strains):
             beta_order=config.WDM_beta_order,
             precision=config.WDM_precision,
         )
-        wdm.set_td_filter(int(config.TDSize), 1)
+        # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
+        wdm.set_td_filter(int(config.TDSize), upTDF)
 
         detector_tf_maps = []
         for n in range(config.nIFO):
@@ -513,12 +530,18 @@ def setup_supercluster(config, strains):
         healpix_order_full = None
         healpix_order_subnet = None
 
-    # Full-resolution sky arrays (for likelihood)
+    # K_td: delay range at TDRate resolution matching CWB's loadTDamp behaviour.
+    # CWB: L = int(max_delay * TDRate) + 1 at TDRate steps.
+    # Python must use the same resolution so nSkyStat discriminates directions.
+    K_td = max(int(config.TDSize) * upTDF,
+               int(getattr(config, 'max_delay', 0.0) * float(TDRate)) + 1)
+
+    # Full-resolution sky arrays (for likelihood) — delays at TDRate resolution
     ml, FP, FX = compute_sky_delay_and_patterns(
         ifos=config.ifo,
         ref_ifo=config.refIFO,
-        sample_rate=config.rateANA,
-        td_size=int(config.TDSize),
+        sample_rate=TDRate,
+        td_size=K_td,
         gps_time=float(strains_ts[0].t0),
         healpix_order=healpix_order_full,
         n_sky=None,
@@ -529,8 +552,8 @@ def setup_supercluster(config, strains):
         ml_subnet, FP_subnet, FX_subnet = compute_sky_delay_and_patterns(
             ifos=config.ifo,
             ref_ifo=config.refIFO,
-            sample_rate=config.rateANA,
-            td_size=int(config.TDSize),
+            sample_rate=TDRate,
+            td_size=K_td,
             gps_time=float(strains_ts[0].t0),
             healpix_order=healpix_order_subnet,
             n_sky=None,
@@ -577,6 +600,7 @@ def setup_supercluster(config, strains):
         "subrho": config.subrho if config.subrho > 0 else config.netRHO,
         "pattern": int(getattr(config, "pattern", 0)),
         "TDSize": config.TDSize,
+        "K_td": K_td,
     }
 
 
@@ -604,7 +628,9 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
     """
     td_inputs_cache = setup["td_inputs_cache"]
     n_ifo = setup["n_ifo"]
-    K = int(setup["TDSize"])
+    # Use K_td (max inter-detector delay in rateANA samples) when available;
+    # fall back to TDSize for backwards compatibility with old setup dicts.
+    K = int(setup.get("K_td", setup["TDSize"]))
 
     # Merge all resolutions for this lag into one FragmentCluster.
     # No deepcopy needed: fragment_clusters_single_lag is freshly built per lag

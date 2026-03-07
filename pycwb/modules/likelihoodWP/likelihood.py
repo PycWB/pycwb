@@ -427,11 +427,14 @@ def load_data_from_ifo(nIFO, strains=None, config=None, ml=None, FP=None, FX=Non
 
     normalized_strains = _normalize_strains(strains)
     gps_time = float(normalized_strains[0].t0)
+    _upTDF_lh = int(getattr(config, 'upTDF', 1))
+    _TDRate_lh = int(getattr(config, 'TDRate', int(getattr(config, 'rateANA')) * _upTDF_lh))
     ml_arr, fp_arr, fx_arr = compute_sky_delay_and_patterns(
         ifos=getattr(config, "ifo"),
         ref_ifo=getattr(config, "refIFO"),
-        sample_rate=float(getattr(config, "rateANA")),
-        td_size=int(getattr(config, "TDSize")),
+        sample_rate=float(_TDRate_lh),
+        td_size=max(int(getattr(config, "TDSize")) * _upTDF_lh,
+                    int(getattr(config, "max_delay", 0.0) * float(_TDRate_lh)) + 1),
         gps_time=gps_time,
         healpix_order=int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None,
         n_sky=None,

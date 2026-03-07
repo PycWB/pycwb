@@ -620,3 +620,53 @@ All fields match C++ after fixes 9 and 10. Cluster is correctly selected:
 | `sky_size` | 928 | 928 | — | ✅ exact |
 | Qveto/Qfactor | — | — | <1% | ✅ |
 
+---
+
+## 11. `load_data_from_ifo` — TDRate-based `td_size` (`likelihood.py`)
+
+**Context**: `load_data_from_ifo` is the fallback path that calls `compute_sky_delay_and_patterns`
+when pre-computed `ml/FP/FX` arrays are not supplied (e.g., during the likelihood stage when
+running without `setup_supercluster`).  The sky-index array `ml` stores integer time-delay steps
+at the `TDRate` sample rate (`rateANA × upTDF`).  The `td_size` argument passed to
+`compute_sky_delay_and_patterns` must match the value used by `setup_supercluster` exactly, or
+the resulting `ml` lookup table will be under-sized and sky pixels near the maximum delay will
+map to out-of-range indices.
+
+**Bug**: The original code computed `td_size` with `rateANA` resolution and no `upTDF` scaling:
+```python
+# Before
+td_size = int(getattr(config, "TDSize"))     # rateANA-scale only
+ml, FP, FX = compute_sky_delay_and_patterns(
+    ...,
+    sample_rate=float(getattr(config, 'rateANA')),
+    td_size=td_size,
+)
+```
+This under-sized the index range by a factor of `upTDF` (typically ×4), so detectors with
+large light-travel delays (> `TDSize / TDRate`) returned the wrong sky-fractional indices.
+
+**Fix**: Mirror the exact expression used in `setup_supercluster`:
+```python
+# After
+_upTDF_lh  = int(getattr(config, 'upTDF', 1))
+_TDRate_lh = int(getattr(config, 'TDRate',
+                          int(getattr(config, 'rateANA')) * _upTDF_lh))
+ml, FP, FX = compute_sky_delay_and_patterns(
+    ...,
+    sample_rate=float(_TDRate_lh),
+    td_size=max(int(getattr(config, "TDSize")) * _upTDF_lh,
+                int(getattr(config, "max_delay", 0.0) * float(_TDRate_lh)) + 1),
+)
+```
+The `max(TDSize×upTDF, ⌊max_delay×TDRate⌋+1)` formula is identical to the one in
+`super_cluster.py` so both stages produce consistent lookup tables.
+
+**Parameters** (typical 2G analysis):
+- `rateANA = 2048 Hz`, `upTDF = 4` → `TDRate = 8192 Hz`
+- `TDSize = 12` → `TDSize × upTDF = 48`
+- `max_delay ≈ 0.010 s` → `⌊0.010 × 8192⌋ + 1 = 83`
+- Result: `td_size = 83` (was `12` before the fix)
+
+**Impact**: Sky look-up tables now agree between the super-cluster and likelihood stages,
+eliminating mismatched `ml` index arrays when `load_data_from_ifo` is called directly.
+

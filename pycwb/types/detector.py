@@ -1423,12 +1423,30 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
     FP = np.zeros((n_ifo, n_sky), dtype=np.float64)
     FX = np.zeros((n_ifo, n_sky), dtype=np.float64)
 
+    # CWB maps HEALPix pixel angles to the Earth-fixed (geographic) frame:
+    #   phi_hp  = geographic longitude  (NOT equatorial RA)
+    #   theta_hp = geographic colatitude (same Z-axis as equatorial)
+    #
+    # The time-delay n_hat is already correct:
+    #   n_hat = (sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta))
+    # is valid as a geographic/ECEF unit vector and is dotted against
+    # the ECEF detector positions — no GMST rotation needed.
+    #
+    # For antenna patterns, atenna_pattern computes
+    #   gha = GMST(t) - ra_arg
+    # We want gha = -phi_geo (CWB convention), so we pass
+    #   ra_arg = GMST(t) + phi_geo = GMST(t) + ra
+    # The GMST cancels: gha = GMST - (GMST + phi_geo) = -phi_geo
+    # Result is independent of the actual GPS time value chosen.
+    gmst_rad = gmst_accurate(float(gps_time))
+    ra_eff = ra + gmst_rad  # effective equatorial RA that gives gha = -phi_geo
+
     for i, det in enumerate(detector_objs):
         dt = np.einsum('ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos) / c_light
         delay_idx = np.rint(dt * rate).astype(np.int32)
         ml[i] = np.clip(delay_idx, -td_size, td_size)
 
-        f_plus, f_cross = det.atenna_pattern(ra, dec, 0.0, float(gps_time))
+        f_plus, f_cross = det.atenna_pattern(ra_eff, dec, 0.0, float(gps_time))
         FP[i] = np.asarray(f_plus, dtype=np.float64)
         FX[i] = np.asarray(f_cross, dtype=np.float64)
 

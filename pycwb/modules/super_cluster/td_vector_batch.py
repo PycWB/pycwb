@@ -58,7 +58,9 @@ def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad
 
     dT_idx = dT + J
     win_len = 2 * n_coeffs + 1
-    dt_val = float(dT)
+    # CWB divides dT by LWDM = L = J/M to convert from TDRate steps to rateANA units.
+    # For L=1 this is a no-op; for L>1 it corrects the phase calculation.
+    dt_val = float(dT) * float(M) / float(J)  # = dT / L in rateANA sample units
 
     # ---- Same-band term (layer m) ----
     sum_even_same = 0.0
@@ -157,6 +159,13 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
     Compiled once per dtype signature (int32/float64) regardless of the
     number of pixels, so there is no per-shape JIT trace cache accumulation.
 
+    Mirrors CWB's ``WDM::getTDamp`` including the pixel-level wdmShift:
+    when ``|dT| >= J`` (= M for L=1), the delay is decomposed as
+    ``dT = wdm_shift * J + sub_dT`` using C++-style truncation (rounds
+    toward zero), and the amplitude is read from the time-bin shifted by
+    ``wdm_shift``.  For odd ``wdm_shift`` the two quadratures are swapped
+    and a sign correction is applied, exactly as in CWB's ``getTDamp``.
+
     Parameters
     ----------
     pixel_indices : int32 array (n_pixels,)
@@ -182,8 +191,32 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
         half = 2 * K + 1  # number of delay steps per phase
         for ki in range(2 * K + 1):
             dT = ki - K
-            out[p, ki]        = _get_pixel_amplitude_nb(n, m, dT, padded00, T0, Tx, M, n_coeffs, J, False)
-            out[p, half + ki] = _get_pixel_amplitude_nb(n, m, dT, padded90, T0, Tx, M, n_coeffs, J, True)
+
+            # Decompose dT into whole-pixel shift + sub-pixel remainder using
+            # C++-style truncation (rounds toward zero, matching WDM::getTDamp).
+            if dT >= 0:
+                wdm_shift = dT // J
+            else:
+                wdm_shift = -((-dT) // J)
+            sub_dT = dT - wdm_shift * J   # sub_dT in (-J, J)
+            n_eff  = n - wdm_shift         # effective time-bin after pixel shift
+
+            if wdm_shift % 2 != 0:
+                # Odd pixel shift: quadratures swap with sign from (n+m) parity,
+                # identical to CWB getTDamp() odd-wdmShift branch.
+                if (n + m) % 2 != 0:
+                    a00 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
+                    a90 =  _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
+                else:
+                    a00 =  _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
+                    a90 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
+            else:
+                # Even pixel shift (including 0): standard per-quadrature paths.
+                a00 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
+                a90 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
+
+            out[p, ki]        = a00
+            out[p, half + ki] = a90
     return out
 
 
