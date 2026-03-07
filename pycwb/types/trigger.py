@@ -231,6 +231,9 @@ class Trigger:
     ifo_list: list[str] = field(default_factory=list)
     """Ordered list of detector names, e.g. ``["H1", "L1", "V1"]``."""
 
+    hybrid: bool = False
+    """True when the event was produced by the legacy CWB-based (hybrid) pipeline."""
+
     # ------------------------------------------------------------------
     # 2a. Network coherent SNR and correlation
     # ------------------------------------------------------------------
@@ -564,6 +567,7 @@ class Trigger:
             pa.field("event_index",              i32),
             pa.field("n_detectors",              pa.int8()),
             pa.field("ifo_list",                 ls),
+            pa.field("hybrid",                   pa.bool_()),
             # coherent SNR
             pa.field("rho",                      f32),
             pa.field("rho_alt",                  f32),
@@ -658,6 +662,7 @@ class Trigger:
             "event_index":              int(self.event_index),
             "n_detectors":              int(self.n_detectors),
             "ifo_list":                 list(self.ifo_list),
+            "hybrid":                   bool(self.hybrid),
             "rho":                      float(self.rho),
             "rho_alt":                  float(self.rho_alt),
             "net_cc":                   float(self.net_cc),
@@ -840,7 +845,7 @@ class Trigger:
 
         # --- per-IFO ---
         def _fl(lst):
-            return [float(v) for v in (lst if lst is not None else [])]
+            return [float(v) for v in (lst if lst is not None else []) if v is not None]
 
         t.time             = _fl(getattr(ev, "time",      []))
         t.segment_start    = _fl(getattr(ev, "gps",       []))
@@ -937,4 +942,16 @@ class Trigger:
 
         if not t.id:
             t.id = t.long_id
+
+        # Forward any dynamic (non-declared) attributes set on the legacy Event
+        # object onto the Trigger instance so that to_arrow_dict() can serialise
+        # them via its own dynamic-attribute fallback.
+        _declared = {f.name for f in dc_fields(t)}
+        for k, v in ev.__dict__.items():
+            if k not in _declared and not k.startswith("_"):
+                try:
+                    setattr(t, k, v)
+                except Exception:
+                    pass
+
         return t

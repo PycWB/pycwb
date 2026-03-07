@@ -210,7 +210,7 @@ def setup_likelihood(config, strains, nIFO, ml=None, FP=None, FX=None):
     }
 
 
-def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,
+def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,  # noqa: keep config optional for legacy callers but warn
                wdm_td_cache=None, nRMS=None, setup=None, xtalk=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
@@ -235,6 +235,11 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
             The updated cluster object with filled detection statistics and the full skymap statistics.
             Returns ``(None, None)`` if the cluster is rejected by threshold cuts.
     """
+    if config is None:
+        raise ValueError(
+            "likelihood(): config must be provided. Without it, hrss/strain are zero and "
+            "gps_time/central_freq fall back to coarser supercluster estimates."
+        )
     timer_start = time.perf_counter()
     logger.info("-------------------------------------------------------")
     logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
@@ -864,7 +869,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                              cluster: Cluster, n_ifo: int,
                              xtalk: XTalk,
                              network_energy_threshold: float,
-                             config=None):
+                             config):
     """
     Fill the detection statistics into the cluster and pixels.
     
@@ -875,10 +880,17 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         n_ifo (int): Number of interferometers.
         xtalk (XTalk): The XTalk object for cross-talk calculations.
         network_energy_threshold (float): Energy threshold for the network.
+        config: Pipeline configuration object. Required for MRA waveform reconstruction
+            (hrss, strain, accurate gps_time and central_freq). Raises ValueError if None.
     
     Returns:
         None: The function modifies the cluster and skymap_statistics in place.
     """
+    if config is None:
+        raise ValueError(
+            "fill_detection_statistic(): config is required. Without it, hrss/strain "
+            "are zero and gps_time/central_freq use inaccurate supercluster fallback values."
+        )
     pixel_mask = sky_statistics.pixel_mask
     energy_array_plus = sky_statistics.energy_array_plus
     energy_array_cross = sky_statistics.energy_array_cross
@@ -1072,6 +1084,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
     null_ifo  = np.zeros(n_ifo, dtype=np.float64)
+    signal_energy_physical = np.zeros(n_ifo, dtype=np.float64)
     To = 0.0
     Fo = 0.0
 
@@ -1094,9 +1107,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         # Build WDM kernel list for all resolutions present in the cluster
         wdm_list = _create_wdm_set_python(config)
         rate_ana = float(config.rateANA)
-
-        # Also store un-whitened signal energy for hrss calculation (physical strain units)
-        signal_energy_physical = np.zeros(n_ifo, dtype=np.float64)
 
         for ifo_i in range(n_ifo):
             z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,

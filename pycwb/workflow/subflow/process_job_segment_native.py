@@ -91,10 +91,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            mdc = [TimeSeries(np.zeros(int(sub_job_seg.duration * base_data[i].sample_rate)), epoch = sub_job_seg.start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
+            mdc = [TimeSeries(np.zeros(int(sub_job_seg.duration * sub_job_seg.sample_rate)), epoch = sub_job_seg.start_time, delta_t = 1/sub_job_seg.sample_rate) for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:
-                inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
+                inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos) 
                 #default argument copy = True prevents original base_data to be modified due to aliasing 
                 mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
                 data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))] 
@@ -130,12 +130,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
-        # Reuse ml/FP/FX already computed by setup_supercluster to avoid a second
-        # compute_sky_delay_and_patterns call (which is identical — same GPS time, same config).
+        # Reuse sky arrays already computed by setup_supercluster; use the full-resolution
+        # arrays (ml_likelihood/FP_likelihood/FX_likelihood) so the likelihood sky scan runs
+        # at config.healpix resolution, not the reduced MIN_SKYRES_HEALPIX resolution.
         lh_setup = setup_likelihood(config, strains, config.nIFO,
-                                    ml=sc_setup["ml"],
-                                    FP=sc_setup["FP"],
-                                    FX=sc_setup["FX"])
+                                    ml=sc_setup.get("ml_likelihood", sc_setup["ml"]),
+                                    FP=sc_setup.get("FP_likelihood", sc_setup["FP"]),
+                                    FX=sc_setup.get("FX_likelihood", sc_setup["FX"]))
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -191,6 +192,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     nRMS=nRMS,
                     setup=lh_setup,
                     xtalk=xtalk,
+                    config=config,
                 )
 
                 if result_cluster is None or result_cluster.cluster_status != -1:

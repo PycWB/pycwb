@@ -502,24 +502,47 @@ def setup_supercluster(config, strains):
     wdm_context_by_layers.clear()
 
     # ---- Sky delay / antenna-pattern matrices ----
+    # Compute TWO sky-array sets that mirror ROOT/CWB behaviour:
+    #   • full resolution (healpix order from config) → used by likelihood sky scan
+    #   • reduced resolution (MIN_SKYRES_HEALPIX cap)  → used by apply_subnet_cut only
     if hasattr(config, "healpix") and int(config.healpix) > 0:
-        healpix_order = int(config.healpix)
-        min_skyres = int(getattr(config, "MIN_SKYRES_HEALPIX", healpix_order))
-        if healpix_order > min_skyres:
-            healpix_order = min_skyres
+        healpix_order_full = int(config.healpix)
+        min_skyres = int(getattr(config, "MIN_SKYRES_HEALPIX", healpix_order_full))
+        healpix_order_subnet = min_skyres if healpix_order_full > min_skyres else healpix_order_full
     else:
-        healpix_order = None
+        healpix_order_full = None
+        healpix_order_subnet = None
 
+    # Full-resolution sky arrays (for likelihood)
     ml, FP, FX = compute_sky_delay_and_patterns(
         ifos=config.ifo,
         ref_ifo=config.refIFO,
         sample_rate=config.rateANA,
         td_size=int(config.TDSize),
         gps_time=float(strains_ts[0].t0),
-        healpix_order=healpix_order,
+        healpix_order=healpix_order_full,
         n_sky=None,
     )
-    # Strain data no longer needed after sky delay computation.
+
+    # Reduced-resolution sky arrays (for subnet cut) — only recompute if different
+    if healpix_order_subnet != healpix_order_full:
+        ml_subnet, FP_subnet, FX_subnet = compute_sky_delay_and_patterns(
+            ifos=config.ifo,
+            ref_ifo=config.refIFO,
+            sample_rate=config.rateANA,
+            td_size=int(config.TDSize),
+            gps_time=float(strains_ts[0].t0),
+            healpix_order=healpix_order_subnet,
+            n_sky=None,
+        )
+    else:
+        ml_subnet, FP_subnet, FX_subnet = ml, FP, FX
+
+    logger.info(
+        "[setup_supercluster] sky pixels: full=%d (healpix=%s), subnet=%d (healpix=%s)",
+        int(ml.shape[1]), healpix_order_full,
+        int(ml_subnet.shape[1]), healpix_order_subnet,
+    )
     strains_ts = None
 
     super_acor = config.Acore
@@ -532,10 +555,14 @@ def setup_supercluster(config, strains):
     return {
         "n_lag": n_lag,
         "td_inputs_cache": td_inputs_cache,
-        "ml": ml,
-        "FP": FP,
-        "FX": FX,
-        "n_sky": int(ml.shape[1]),
+        "ml": ml_subnet,              # reduced resolution for apply_subnet_cut
+        "FP": FP_subnet,
+        "FX": FX_subnet,
+        "n_sky": int(ml_subnet.shape[1]),
+        "ml_likelihood": ml,          # full resolution for likelihood sky scan
+        "FP_likelihood": FP,
+        "FX_likelihood": FX,
+        "n_sky_likelihood": int(ml.shape[1]),
         "super_e2or": super_e2or,
         "subnet_acor": subnet_acor,
         "subnet_e2or": subnet_e2or,

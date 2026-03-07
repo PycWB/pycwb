@@ -156,7 +156,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 # FIXME: add gps time and segment time on the x ticks
                 event, cluster, event_skymap_statistics = trigger
-
+                event.hybrid = True
                 # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
                                         event, cluster, epoch=data[0].start_time,

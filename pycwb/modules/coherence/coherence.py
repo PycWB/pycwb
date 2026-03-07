@@ -10,7 +10,7 @@ from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, tf_maps, nRMS_list, net=None):
+def coherence(config, tf_maps, nRMS_list, net=None, return_eo=False):
     """
     Select the significant pixels
 
@@ -35,11 +35,15 @@ def coherence(config, tf_maps, nRMS_list, net=None):
         List of noise RMS
     net : pycwb.types.network.Network, optional
         Network object, by default None
+    return_eo : bool, optional
+        If True, return ``(fragment_clusters, eo_per_level)``; if False
+        (default) return only ``fragment_clusters`` for backward
+        compatibility.
 
     Returns
     -------
     fragment_clusters: list[list[pycwb.types.network_cluster.FragmentCluster]]
-        List of fragment clusters
+        List of fragment clusters (or 2-tuple when return_eo=True)
     """
     # calculate upsample factor
     timer_start = time.perf_counter()
@@ -52,12 +56,15 @@ def coherence(config, tf_maps, nRMS_list, net=None):
 
     if config.nproc > 1:
         with Pool(processes=min(config.nproc, config.nRES)) as pool:
-            fragment_clusters_multi_res = pool.starmap(coherence_single_res,
-                                                       [(i, config, tf_maps, nRMS_list, up_n) for i in
-                                                        range(config.nRES)])
+            results = pool.starmap(coherence_single_res,
+                                   [(i, config, tf_maps, nRMS_list, up_n) for i in
+                                    range(config.nRES)])
     else:
-        fragment_clusters_multi_res = [coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
-                                       range(config.nRES)]
+        results = [coherence_single_res(i, config, tf_maps, nRMS_list, up_n, net) for i in
+                   range(config.nRES)]
+
+    fragment_clusters_multi_res = [r[0] for r in results]
+    eo_per_level = [r[1] for r in results]
 
     # flat the array
     # fragment_clusters = [item for sublist in fragment_clusters_multi_res for item in sublist]
@@ -66,6 +73,8 @@ def coherence(config, tf_maps, nRMS_list, net=None):
     logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
     logger.info("----------------------------------------")
 
+    if return_eo:
+        return fragment_clusters_multi_res, eo_per_level
     return fragment_clusters_multi_res
 
 
@@ -199,7 +208,7 @@ def coherence_single_res(i, config, tf_maps, nRMS_list, up_n=None, net=None):
     logger_info += "Coherence time for single level: %f s" % (time.perf_counter() - timer_start)
 
     logger.info(logger_info)
-    return fragment_clusters
+    return fragment_clusters, Eo
 
 
 coherence_parallel = coherence

@@ -226,7 +226,7 @@ class Catalog(BaseCatalog):
         with SoftFileLock(self.filename + ".lock", timeout=30):
             existing = pq.read_table(self.filename)
             meta = existing.schema.metadata or {}
-            combined = pa.concat_tables([existing, new_rows], promote_options="none")
+            combined = pa.concat_tables([existing, new_rows], promote_options="default")
             combined = combined.replace_schema_metadata(meta)
             pq.write_table(combined, self.filename, compression="snappy")
 
