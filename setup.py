@@ -2,6 +2,8 @@ import os, shutil
 import re
 import subprocess, platform
 import sys
+import importlib.util
+import warnings
 
 from setuptools import setup, Command, Extension
 from setuptools import find_packages
@@ -17,24 +19,30 @@ install_requires = [
     "pyyaml",
     "jsonschema",
     "watchfiles",
-    "numpy",
     "numba",
+    "jax",
     "gwpy",
     "ligo-segments",
     "ligo-gracedb",
     "aiohttp",
     "pycbc",
     "filelock",
-    "scipy<1.14", # required by healpy
+    "numpy>=2",
+    "scipy>=1.13",     # compatible with numpy 2.x
+    "h5py>=3.11",      # compatible with numpy 2.x
+    "lalsuite>=7.23",  # compatible with numpy 2.x
+    "healpy>=1.17",    # compatible with numpy 2.x
+    "scikit-learn>=1.4.2",  # compatible with numpy 2.x
+    "pyarrow>=17",     # compatible with numpy 2.x
     "pillow>=9.0.0",
     "click",
     "orjson",
     "dacite",
-    "lalsuite>=7.0.0",
-    "prefect",
-    "prefect-dask",
-    "dask",
-    "dask_jobqueue",
+    "cartopy",
+    # "prefect",
+    # "prefect-dask",
+    # "dask",
+    # "dask_jobqueue",
     "htcondor",
     "psutil",
     "memspectrum",
@@ -46,6 +54,7 @@ install_requires = [
     "healpy",
     "wdm-wavelet",
     "burst-waveform",
+    "jsonschema"
     # "nds2-client",
     # "python-nds2-client"
 ]
@@ -171,17 +180,57 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', '--build', '.', '--target', 'install'] + build_args, cwd=self.build_temp)
 
 
+def has_root():
+    if os.environ.get("PYCWB_DISABLE_WAT", "").lower() in {"1", "true", "yes"}:
+        return False
+
+    if os.environ.get("PYCWB_FORCE_WAT", "").lower() in {"1", "true", "yes"}:
+        return True
+
+    if importlib.util.find_spec("ROOT") is not None:
+        return True
+
+    root_config = shutil.which("root-config")
+    if root_config:
+        try:
+            subprocess.check_output([root_config, "--version"], stderr=subprocess.STDOUT)
+            return True
+        except Exception:
+            pass
+
+    root_sys = os.environ.get("ROOTSYS")
+    if root_sys:
+        root_bin = os.path.join(root_sys, "bin", "root")
+        if os.path.exists(root_bin):
+            return True
+
+    return False
+
+
+HAS_ROOT = has_root()
+
+cmdclass = {
+    'build_cwb': BuildCWB,
+    'clean': Clean
+}
+
+ext_modules = []
+if HAS_ROOT:
+    cmdclass['build_ext'] = CMakeBuild
+    ext_modules = [CMakeExtension('wavelet', 'cwb-core')]
+else:
+    message = "ROOT not found in build environment: skipping C++ wavelet extension build"
+    warnings.warn(message)
+    sys.stderr.write(message + "\n")
+
+
 setup(
     long_description=read('README.md'),
     long_description_content_type="text/markdown",
     url="https://git.ligo.org/yumeng.xu/pycwb",
     install_requires=install_requires,
-    cmdclass={
-        'build_cwb': BuildCWB,
-        'build_ext': CMakeBuild,
-        'clean': Clean
-    },
-    ext_modules=[CMakeExtension('wavelet', 'cwb-core')],
+    cmdclass=cmdclass,
+    ext_modules=ext_modules,
     scripts=["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"],  # find_files('bin', relpath='./'),
     packages=find_packages(),
     include_package_data=True,

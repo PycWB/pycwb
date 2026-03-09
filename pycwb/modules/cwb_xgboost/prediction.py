@@ -36,7 +36,7 @@ def predict(events: DataFrame, model: xgb.Booster, config: dict, verbose: bool =
     add_ranking_statistics = config['add_ranking_statistics']
 
     # set the number of threads for prediction
-    model._Booster.set_param('nthread', ML_options['nthread(prediction)'])
+    model.get_booster().set_param('nthread', ML_options['nthread(prediction)'])
     logger.info(model.get_xgb_params())
 
     # get the list of cWB parameters used in training

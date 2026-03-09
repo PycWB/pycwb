@@ -6,7 +6,19 @@ from pycwb.types.wdm import WDM
 from pycwb.modules.cwb_conversions import WSeries_to_matrix, convert_wavearray_to_timeseries
 from gwpy.spectrogram import Spectrogram
 import numpy as np
-import ROOT
+import warnings
+try:
+    import ROOT
+    # load wavelet library if not loaded
+    from pycwb.utils.check_ROOT import check_and_load_wavelet
+    check_and_load_wavelet(ROOT)
+except ImportError:
+    ROOT = None
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 
 
 def plot_spectrogram(wavearray, xmin=None, xmax=None, figsize=(24, 6), gwpy_plot=True):

@@ -1,11 +1,90 @@
 import logging
 import numpy as np
 from pycbc.types import TimeSeries
-from pycwb.modules.multi_resolution_wdm import create_wdm_set
-from multiprocessing import Pool
-from numba import njit
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PyWDMKernel:
+    max_layer: int
+    m_H: int
+    wavelet_filter: np.ndarray
+
+
+def _extract_wdm_filter_and_mh(wdm_obj):
+    wavelet_filter = None
+    for attr in ("wavelet_filter", "wdmFilter", "wdm_filter", "filter"):
+        if hasattr(wdm_obj, attr):
+            value = getattr(wdm_obj, attr)
+            if value is not None:
+                wavelet_filter = np.asarray(value, dtype=np.float64)
+                break
+
+    if wavelet_filter is None and hasattr(wdm_obj, "get_wavelet_filter"):
+        wavelet_filter = np.asarray(wdm_obj.get_wavelet_filter(), dtype=np.float64)
+
+    if wavelet_filter is None:
+        raise ValueError("Cannot extract wavelet filter from WDM object")
+
+    m_h = None
+    for attr in ("m_H", "m_h", "filter_len", "n_filter_taps"):
+        if hasattr(wdm_obj, attr):
+            value = getattr(wdm_obj, attr)
+            if value is not None:
+                m_h = int(value)
+                break
+    if m_h is None:
+        m_h = int(len(wavelet_filter))
+
+    return wavelet_filter, m_h
+
+
+def _create_wdm_set_python(config):
+    from wdm_wavelet.wdm import WDM as WDMWavelet
+
+    l_low = int(config.l_low)
+    l_high = int(config.l_high)
+    rate_ana = float(config.rateANA)
+    seg_edge = float(config.segEdge)
+    td_size = int(config.TDSize)
+    beta_order = int(getattr(config, "WDM_beta_order", 6))
+    precision = int(getattr(config, "WDM_precision", 10))
+
+    wdm_list = []
+    for i in range(l_low, l_high + 1):
+        level = l_high + l_low - i
+        layers = max(1, 2 ** level)
+
+        wdm = WDMWavelet(M=layers, K=layers, beta_order=beta_order, precision=precision)
+        wavelet_filter, m_h = _extract_wdm_filter_and_mh(wdm)
+
+        wdm_f_len = float(m_h) / rate_ana
+        if wdm_f_len > seg_edge + 0.001:
+            raise ValueError(
+                f"Filter length must be <= segEdge (filter={wdm_f_len} sec, segEdge={seg_edge} sec)"
+            )
+
+        rate = max(1.0, rate_ana / float(layers))
+        if seg_edge < int(1.5 * (td_size / rate) + 0.5):
+            raise ValueError(
+                "segEdge must be > 1.5x the length for time delay amplitudes"
+            )
+
+        wdm_list.append(
+            _PyWDMKernel(
+                max_layer=layers,
+                m_H=m_h,
+                wavelet_filter=wavelet_filter,
+            )
+        )
+
+    return wdm_list
+
+
+def _build_wdm_kernel_lookup(wdm_list):
+    return {int(w.max_layer) + 1: w for w in wdm_list}
 
 
 def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False) -> TimeSeries:
@@ -59,7 +138,8 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False)
 
     z_len = len(z.data)
 
-    results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len, whiten) for pix in cluster.pixels]
+    wdm_lookup = _build_wdm_kernel_lookup(wdmList)
+    results = [_process_pixels(pix, ifo, a_type, mode, wdm_lookup, io, z_len, whiten) for pix in cluster.pixels]
     # if min(nproc, len(cluster.pixels)) == 1:
     #     results = [_process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len) for pix in cluster.pixels]
     # else:
@@ -111,7 +191,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
     waveforms : list of pycbc.types.timeseries.TimeSeries
         reconstructed waveform
     """
-    wdm_list = create_wdm_set(config)
+    wdm_list = _create_wdm_set_python(config)
 
     v = cluster.sky_time_delay  # backward time delay configuration
 
@@ -143,7 +223,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
     return waveforms
 
 
-def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len, whiten=False):
+def _process_pixels(pix, ifo, a_type, mode, wdm_lookup, io, z_len, whiten=False):
     if not pix.core:
         return
 
@@ -153,10 +233,11 @@ def _process_pixels(pix, ifo, a_type, mode, wdmList, io, z_len, whiten=False):
     a00 *= 1 if whiten else rms
     a90 *= 1 if whiten else rms
 
-    # find the object which pix.layers == wdm.max_layers + 1
-    wdm = [w for w in wdmList if w.max_layer + 1 == pix.layers][0]
-    j00, x00 = get_base_wave(wdm.max_layer, np.array(wdm.wavelet.wdmFilter), pix.time, False) # wdm.get_base_wave(pix.time, False)
-    j90, x90 = get_base_wave(wdm.max_layer, np.array(wdm.wavelet.wdmFilter), pix.time, True) #wdm.get_base_wave(pix.time, True)
+    wdm = wdm_lookup.get(int(pix.layers))
+    if wdm is None:
+        return
+    j00, x00 = get_base_wave(wdm.max_layer, wdm.wavelet_filter, pix.time, False)
+    j90, x90 = get_base_wave(wdm.max_layer, wdm.wavelet_filter, pix.time, True)
     j00 -= io
     j90 -= io
     if mode < 0:

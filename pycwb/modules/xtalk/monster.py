@@ -1,7 +1,61 @@
 import struct
+import logging
 import numpy as np
 import pathlib
 from numba import njit
+
+
+logger = logging.getLogger(__name__)
+
+
+def _read_catalog_header_and_layers(data):
+    offset = 0
+
+    def unpack(fmt):
+        nonlocal offset
+        result = struct.unpack_from(fmt, data, offset)
+        offset += struct.calcsize(fmt)
+        return result
+
+    nRes = int(unpack('f')[0])
+
+    if nRes < 0:
+        nRes = -nRes
+        tag, BetaOrder, precision, KWDM = unpack('4f')
+    else:
+        tag, BetaOrder, precision, KWDM = 0, 0, 0, 0
+
+    layers = [int(unpack('f')[0]) for _ in range(nRes)]
+    return {
+        'nRes': nRes,
+        'tag': tag,
+        'beta_order': BetaOrder,
+        'precision': precision,
+        'kwdm': KWDM,
+        'layers': np.array(layers, dtype=np.int32),
+        'offset': offset,
+    }
+
+
+def read_catalog_metadata(fn):
+    fn = pathlib.Path(fn)
+
+    if fn.suffix == ".npz":
+        data = np.load(fn)
+        return {
+            'nRes': int(data['nRes']),
+            'tag': float(data['tag']) if 'tag' in data.files else 0.0,
+            'beta_order': float(data['beta_order']) if 'beta_order' in data.files else 0.0,
+            'precision': float(data['precision']) if 'precision' in data.files else 0.0,
+            'kwdm': float(data['kwdm']) if 'kwdm' in data.files else 0.0,
+            'layers': np.array(data['layers'], dtype=np.int32),
+        }
+
+    with open(fn, "rb") as f:
+        data = f.read()
+    metadata = _read_catalog_header_and_layers(data)
+    metadata.pop('offset', None)
+    return metadata
 
 
 def load_catalog(fn, dump=True):
@@ -31,7 +85,7 @@ def load_catalog(fn, dump=True):
 
     # if ext of fn is .npz, then load the file as npz
     if pathlib.Path(fn).suffix == ".npz":
-        print(f"Loading {fn}")
+        logger.info("Loading %s", fn)
         data = np.load(fn)
         return data['xtalk_coeff'], data['xtalk_lookup_table'], data['layers'], data['nRes']
 
@@ -39,11 +93,11 @@ def load_catalog(fn, dump=True):
     # if ext of fn is .bin, search if there is a .npz file with the same name
     # under the same directory and working directory
     if pathlib.Path(fn).suffix == ".bin" or pathlib.Path(fn).suffix == ".xbin":
-        print(f"A .bin file is detected, searching for .npz file with the same name.")
+        logger.info("A .bin file is detected, searching for .npz file with the same name.")
         # npz_fn = fn.replace(".bin", ".npz")
         npz_fn = pathlib.Path(fn).with_suffix(".npz")
         if pathlib.Path(npz_fn).exists():
-            print(f".npz file found: {npz_fn}, loading the catalog from the .npz file.")
+            logger.info(".npz file found: %s, loading the catalog from the .npz file.", npz_fn)
             return load_catalog(npz_fn)
 
         # npz_fn = pathlib.Path(fn).name.replace(".bin", ".npz")
@@ -54,7 +108,14 @@ def load_catalog(fn, dump=True):
     with open(fn, "rb") as f:
         data = f.read()  # Read the entire file into memory
 
-    offset = 0
+    metadata = _read_catalog_header_and_layers(data)
+    offset = metadata['offset']
+    nRes = metadata['nRes']
+    tag = metadata['tag']
+    BetaOrder = metadata['beta_order']
+    precision = metadata['precision']
+    KWDM = metadata['kwdm']
+    layers = metadata['layers'].tolist()
 
     def unpack(fmt):
         nonlocal offset
@@ -62,15 +123,6 @@ def load_catalog(fn, dump=True):
         offset += struct.calcsize(fmt)
         return result
 
-    nRes = int(unpack('f')[0])
-
-    if nRes < 0:
-        nRes = -nRes
-        tag, BetaOrder, precision, KWDM = unpack('4f')
-    else:
-        tag, BetaOrder, precision, KWDM = 0, 0, 0, 0
-
-    layers = [int(unpack('f')[0]) for _ in range(nRes)]
     max_layers = max(layers)
     lookup_table = np.zeros((nRes, nRes, max_layers + 1, 2, 2), dtype=np.int32)
     xtalk_coeff = []
@@ -95,7 +147,7 @@ def load_catalog(fn, dump=True):
         # filename = pathlib.Path(fn).name.replace(".bin", ".npz")
         filename = pathlib.Path(fn).with_suffix(".npz")
         np.savez(filename, xtalk_coeff=xtalk_coeff, xtalk_lookup_table=lookup_table, layers=layers,
-                 nRes=nRes)
+                 nRes=nRes, tag=tag, beta_order=BetaOrder, precision=precision, kwdm=KWDM)
     return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes
 
 

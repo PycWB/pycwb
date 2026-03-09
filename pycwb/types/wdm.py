@@ -1,6 +1,15 @@
-import ROOT
+try:
+    import ROOT
+    import cppyy
+except ImportError:
+    ROOT = None
+    import warnings
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 import numpy as np
-import cppyy
 from pycwb.modules.cwb_conversions import convert_numpy_to_wavearray
 from ctypes import c_double
 
@@ -68,8 +77,11 @@ class WDM:
         """
         destructor of the WDM object
         """
-        self.release()
-        self.release_ptr()
+        try:
+            self.release()
+            self.release_ptr()
+        except Exception:
+            pass
 
 
     def set_td_filter(self, coeff_factor, upsample_factor):
@@ -116,7 +128,9 @@ class WDM:
         """
         release memory of the WDM sliced array
         """
-        self.wavelet.release()
+        wavelet = getattr(self, 'wavelet', None)
+        if wavelet is not None and hasattr(wavelet, 'release'):
+            wavelet.release()
 
     def release_ptr(self):
         """

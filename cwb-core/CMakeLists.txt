@@ -160,7 +160,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAK
 #Add all the include directories to the target
 target_include_directories(${PROJECT_NAME} PRIVATE ${CWB_INCLUDE_DIRS})
 
-target_link_libraries(${PROJECT_NAME} ROOT::TreePlayer ROOT::Core ROOT::Graf ROOT::FFTW ROOT::Tree ROOT::Gpad ROOT::Physics ${HEALPIX_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}
+   PRIVATE
+      ROOT::TreePlayer
+      ROOT::Core
+      ROOT::Graf
+      ROOT::FFTW
+      ROOT::Tree
+      ROOT::Gpad
+      ROOT::Physics
+      ${HEALPIX_LIBRARIES}
+)
 
 #Generate the root dictionary
 ROOT_GENERATE_DICTIONARY(wavedict ${WAT_HDRS}

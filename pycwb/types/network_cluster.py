@@ -107,6 +107,13 @@ class ClusterMeta:
     ndof: float = 0.
     sky_size: int = 0
     sky_index: int = 0
+    l_max: int = 0
+    # Per-IFO xtalk-corrected waveform energies (getMRAwave equivalents, set by fill_detection_statistic)
+    wave_snr: list = field(default_factory=list)    # data energy per IFO (C++ d->enrg = get_XX())
+    signal_snr: list = field(default_factory=list)  # signal energy per IFO (C++ d->sSNR = get_SS())
+    cross_snr: list = field(default_factory=list)   # xSNR per IFO (C++ d->xSNR = get_XS())
+    signal_energy_physical: list = field(default_factory=list)  # physical strain energy per IFO for hrss
+    null_energy: list = field(default_factory=list)  # null energy per IFO (C++ d->null)
 
 
 @dataclass
@@ -140,6 +147,7 @@ class Cluster:
     pixels: list[Pixel]
     cluster_meta: ClusterMeta
     cluster_status: int = 0
+    cluster_id: int = 0
     cluster_rate: list[int] = field(default_factory=list)
     cluster_time: float = 0.0
     cluster_freq: float = 0.0
@@ -292,7 +300,81 @@ class Cluster:
             analyzed pixels
         """
         return len([p for p in self.pixels if p.likelihood > 0 and p.core])
+    
+    def get_core_size(self):
+        """
+        Get core pixels
 
+        Returns
+        -------
+        int
+            core pixels
+        """
+        return len([p for p in self.pixels if p.core])
+
+    @property
+    def start_time(self):
+        """
+        Get cluster start time
+
+        Returns
+        -------
+        float
+            cluster start time (seconds)
+        """
+        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB
+        return min([p.time_in_seconds + 1 / p.rate / 2 for p in self.pixels])
+    
+    @property
+    def stop_time(self):
+        """
+        Get cluster stop time
+
+        Returns
+        -------
+        float
+            cluster stop time (seconds)
+        """
+        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB. The + 1 / p.rate need to be confirmed.
+        return max([p.time_in_seconds + 1 / p.rate / 2 + 1 / p.rate for p in self.pixels])
+    
+    @property
+    def duration(self):
+        """
+        Get cluster duration
+
+        Returns
+        -------
+        float
+            cluster duration (seconds)
+        """
+        return self.stop_time - self.start_time
+    
+    @property
+    def low_frequency(self):
+        """
+        Get cluster low frequency
+
+        Returns
+        -------
+        float
+            cluster low frequency (Hz)
+        """
+        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
+        return min([(p.frequency - 0.5) * p.rate / 2 for p in self.pixels])
+    
+    @property
+    def high_frequency(self):
+        """
+        Get cluster high frequency
+
+        Returns
+        -------
+        float
+            cluster high frequency (Hz)
+        """
+        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
+        return max([(p.frequency - 0.5) * p.rate / 2 + p.rate / 2 for p in self.pixels])
 
 @dataclass
 class FragmentCluster:
@@ -326,18 +408,18 @@ class FragmentCluster:
     clusters : list of Cluster
         cluster list
     """
-    rate: float
-    start: float
-    stop: float
-    bpp: float
-    shift: float
-    f_low: float
-    f_high: float
-    n_pix: int
-    run: int
-    pair: bool
-    subnet_threshold: float
-    clusters: list[Cluster]
+    rate: float = 0.0
+    start: float = 0.0
+    stop: float = 0.0
+    bpp: float = 1.0
+    shift: float = 0.0
+    f_low: float = 0.0
+    f_high: float = 0.0
+    n_pix: int = 0
+    run: int = 0
+    pair: bool = False
+    subnet_threshold: float = 0.0
+    clusters: list[Cluster] = field(default_factory=list)
 
 
     def event_count(self, event_status=None):
@@ -353,9 +435,8 @@ class FragmentCluster:
                 raise ValueError('event_status must be -2, -1, 0, 1 or None')
 
         if event_status is None:
-            return len([c.cluster_status for c in self.clusters if c.cluster_status < 1])
-        else:
-            return len([c.cluster_status for c in self.clusters if c.cluster_status == event_status])
+            return sum(1 for cluster in self.clusters if cluster.cluster_status < 1)
+        return sum(1 for cluster in self.clusters if cluster.cluster_status == event_status)
 
     def pixel_count(self, event_status=None):
         """
@@ -369,16 +450,9 @@ class FragmentCluster:
             if not isinstance(event_status, int) or event_status > 1 or event_status < -2:
                 raise ValueError('event_status must be -2, -1, 0, 1 or None')
 
-        pixel_count = 0
-
-        for c in self.clusters:
-            if event_status is None:
-                if c.cluster_status < 1:
-                    pixel_count += len(c.pixels)
-            else:
-                if c.cluster_status == event_status:
-                    pixel_count += len(c.pixels)
-        return pixel_count
+        if event_status is None:
+            return sum(len(cluster.pixels) for cluster in self.clusters if cluster.cluster_status < 1)
+        return sum(len(cluster.pixels) for cluster in self.clusters if cluster.cluster_status == event_status)
 
     def dump_cluster(self, cluster_id):
         """
@@ -404,6 +478,42 @@ class FragmentCluster:
         Remove rejected clusters
         """
         self.clusters = [c for c in self.clusters if c.cluster_status < 1]
+
+    def select(self, name: str, threshold: float) -> np.ndarray:
+        """
+        Select/reject clusters by a scalar cluster statistic.
+
+        This is a Python-native counterpart of cWB `netcluster::select` for
+        common filters used in coherence (`subrho`, `subnet`).
+
+        Parameters
+        ----------
+        name : str
+            Selection name. Supported: `subrho`, `subnet`.
+        threshold : float
+            Rejection threshold. Cluster is rejected when value < threshold.
+
+        Returns
+        -------
+        np.ndarray
+            Array of per-cluster values used by the selection.
+        """
+        key = str(name).strip().lower()
+
+        if key == "subrho":
+            values = np.array([c.cluster_meta.net_rho for c in self.clusters], dtype=float)
+        elif key == "subnet":
+            values = np.array([c.cluster_meta.sub_net for c in self.clusters], dtype=float)
+        else:
+            raise ValueError(f"Unsupported selection '{name}'. Supported: subrho, subnet")
+
+        for cluster, value in zip(self.clusters, values):
+            if cluster.cluster_status > 0:
+                continue
+            if value < threshold:
+                cluster.cluster_status = 1
+
+        return values
 
 
 @dataclass(slots=True)

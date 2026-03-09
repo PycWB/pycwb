@@ -299,6 +299,17 @@ class Event:
             #    this->neted[2] = pcd->energy;                          // total event energy
             #    this->neted[3] = pcd->likesky;                         // total likelihood at all resolutions
             #    this->neted[4] = pcd->enrgsky;                         // total energy at all resolutions
+
+            
+            # for i in range(11):
+            self.erA.append(np.array(pwc.sArea[ID - 1]))
+            # ind = pwc.sArea[ID - 1].size(); 
+            # for i in range(11):
+            #     if i < ind:
+            #         self.erA.append(pwc.sArea[ID - 1][i])
+            #     else:
+            #         self.erA.append(0)
+
             self.ECOR = pcd.normcor  # normalized coherent energy
             self.netcc = [
                 pcd.netcc,  # MRA or SRA cc statistic
@@ -325,6 +336,9 @@ class Event:
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
 
+        # Take sqrt of strain (C++ netevent.cc line 983)
+        self.strain[0] = np.sqrt(self.strain[0])
+
         self.id = self.long_id
     # def json(self):
     #     """
@@ -335,31 +349,337 @@ class Event:
     #     """
     #     return json.dumps(self.__dict__)
 
-    def output_py(self, job_segment: WaveSegment, cluster: Cluster):
-        #    print(f"[old] start: {event.left[0]}, stop: {event.stop[0] - event.gps[0]}, low_freq: {event.low[0]}, high_freq: {event.high[0]}")
-        #         print(f"[new] start: {cluster.start_time}, stop: {cluster.stop_time}, low_freq: {cluster.low_frequency}, high_freq: {cluster.high_frequency}")
-        #         print(f"[old] ecor: {event.ecor:.6f}, subnet: {event.netcc[2]:.6f}, SUBNET: {event.netcc[3]:.6f}, rho0: {event.rho[0]:.6f}")
-        #         print(f"[new] ecor: {cluster.cluster_meta.net_ecor:.6f}, subnet: {cluster.cluster_meta.sub_net:.6f}, SUBNET: {cluster.cluster_meta.sub_net2:.6f}, rho0: {cluster.cluster_meta.net_rho:.6f}")
-        #         print(f"[old] a_net: {event.anet:.6f}, g_net: {event.gnet:.6f}, i_net: {event.inet:.6f}")
-        #         print(f"[new] a_net: {cluster.cluster_meta.a_net:.6f}, g_net: {cluster.cluster_meta.g_net:.6f}, i_net: {cluster.cluster_meta.i_net:.6f}")
-        #         print(f"[old] skysize: {event.size[0]}, {event.size[1]}")
-        #         print(f"[new] skysize: {cluster.get_core_size()}, {cluster.cluster_meta.sky_size}")
+    def output_py(self, job_segment: WaveSegment, cluster: Cluster, config=None):
+        """
+        Populate event fields from a native (ROOT-free) Cluster object.
+
+        Parameters
+        ----------
+        job_segment : WaveSegment
+            The job segment that produced this cluster (provides GPS times, IFO list).
+        cluster : Cluster
+            The detected cluster whose ``cluster_meta`` and ``pixels`` are already
+            populated by the native likelihood pipeline.
+        config : Config, optional
+            Pipeline configuration object.  Required to compute per-IFO amplitude
+            fields (hrss, snr, sSNR, xSNR, noise, bp, bx) and timing corrections.
+            If ``None`` those fields will be left as empty lists.
+        """
+        meta = cluster.cluster_meta
+        n_ifo = len(job_segment.ifos)
+
+        # --- GPS epoch per IFO ---
         self.gps = np.array([job_segment.physical_start_times[ifo] for ifo in job_segment.ifos])
-        self.left = cluster.start_time
-        self.right = job_segment.duration - cluster.stop_time
-        self.start = cluster.start_time + self.gps
-        self.stop = cluster.stop_time + self.gps
-        self.low = cluster.low_frequency
-        self.high = cluster.high_frequency
-        self.ecor = cluster.cluster_meta.net_ecor
-        self.netcc = [None, None, cluster.cluster_meta.sub_net, cluster.cluster_meta.sub_net2]
-        self.rho = [cluster.cluster_meta.net_rho]
-        self.anet = cluster.cluster_meta.a_net
-        self.gnet = cluster.cluster_meta.g_net
-        self.inet = cluster.cluster_meta.i_net
-        self.size = [cluster.get_core_size(), cluster.cluster_meta.sky_size]
+
+        # --- Time-window geometry ---
+        self.left = [float(cluster.start_time)] * n_ifo
+        self.right = [float(job_segment.duration - cluster.stop_time)] * n_ifo
+        self.start = [float(cluster.start_time + self.gps[i]) for i in range(n_ifo)]
+        self.stop = [float(cluster.stop_time + self.gps[i]) for i in range(n_ifo)]
+        self.low = [float(cluster.low_frequency)] * n_ifo
+        self.high = [float(cluster.high_frequency)] * n_ifo
+
+        # --- Network-level coherence statistics ---
+        self.ecor = meta.net_ecor
+        self.ECOR = meta.norm_cor
+        self.likelihood = meta.like_net       # waveform likelihood (Lw = sum sSNR)
+        self.norm = meta.norm                 # packet norm (= (Eo-Eh)/Ew * 2)
+        self.netcc = [meta.net_cc, meta.sky_cc, meta.sub_net, meta.sub_net2]
+        # rho[1]: netrho (raw rho) for pat0 mode; netRHO * chirp_factor for non-pat0 (mirrors output() logic)
+        # rho[1] = netrho (raw rho before cc reduction); same as pat0 branch in output().
+        # For chirp events: rho[1] = netRHO * chrho, but chirp not yet computed so use net_rho2.
+        pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
+        self.rho = [meta.net_rho, meta.net_rho2]  # rho[0]=netRHO=rho/sqrt(cc), rho[1]=netrho=raw rho
+        self.anet = meta.a_net
+        self.gnet = meta.g_net
+        self.inet = meta.i_net
+        self.ndim = n_ifo
+        self.size = [cluster.get_core_size(), meta.sky_size]
+        self.volume = [cluster.get_size(), meta.sky_size]  # [all pixels, core pixels]
+        self.neted = [meta.net_ed, meta.net_null, meta.energy, meta.like_sky, meta.energy_sky]
+        self.iota = [meta.iota]
+        self.psi = [meta.psi]
+        self.type = [1]
+        self.range = [0]
+        self.chirp = [0, 0, 0, 0, 0, 0]       # placeholder; mchirp not yet computed
+        self.gap = [0] * n_ifo
+        n_ifo_val = config.nIFO if config is not None else n_ifo
+        ndof_val = max(meta.ndof, 1e-10)
+        if pat0:
+            self.penalty = meta.net_null / max(n_ifo_val * cluster.get_core_size(), 1e-10)
+        else:
+            self.penalty = meta.net_null / max(n_ifo_val * ndof_val, 1e-10)
+
+        # --- Sky localisation ---
+        # meta.theta / meta.phi are in the Earth-fixed (geographic) frame,
+        # matching CWB's convention: phi_geo = geographic longitude,
+        # theta_geo = geographic co-latitude (0 = N pole, 180 = S pole).
+        # Equatorial RA = phi_geo + GMST(t_event), dec = 90 - theta_geo.
+        theta_deg = meta.theta  # geographic co-latitude [0, 180] degrees
+        phi_deg = meta.phi      # geographic longitude [0, 360) degrees
+        dec_deg = 90.0 - theta_deg   # declination (equatorial; same Z-axis)
+        # Convert geographic longitude to equatorial RA using GMST at event time.
+        # mirrors CWB skymap::phi2RA = fmod(phi_geo + GMST, 360)
+        from pycwb.types.detector import gmst_accurate as _gmst_accurate
+        _t_event_gps = float(meta.c_time if meta.c_time != 0.0 else cluster.cluster_time) + float(self.gps[0])
+        _gmst_deg = np.degrees(_gmst_accurate(_t_event_gps)) % 360.0
+        ra_deg = (phi_deg + _gmst_deg) % 360.0
+        # [skymap_value, 0, equatorial, detector_frame]  — matches CWB output() layout:
+        #   phi[0] = geographic phi;  phi[2] = equatorial RA
+        self.theta = [theta_deg, 0.0, dec_deg, theta_deg]
+        self.phi = [phi_deg, 0.0, ra_deg, phi_deg]
+
+        # --- Event IDs and IFO list ---
         self.nevent = 1
         self.job_id = job_segment.index
+        self.ifo_list = list(job_segment.ifos)
+        # eventID[0]: sequential cluster ID within job; eventID[1]: 0 placeholder
+        self.eventID = [getattr(cluster, 'cluster_id', 1), 0]
+
+        # --- Super-lag shifts ---
+        self.slag = list(getattr(job_segment, 'shift', [0.0] * n_ifo))
+
+        # --- Timing and frequency per IFO (network-level in slot [0]) ---
+        c_time = meta.c_time if meta.c_time != 0.0 else cluster.cluster_time
+        c_freq = meta.c_freq if meta.c_freq != 0.0 else cluster.cluster_freq
+        net_bw = cluster.high_frequency - cluster.low_frequency
+
+        # Pre-extract core pixels (used below)
+        all_pixels = cluster.pixels
+        core_pixels = [p for p in all_pixels if p.core]
+
+        # Sky-time delays: ml[i, l_max] are integer lag indices
+        sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
+        td_rate = float(config.TDRate) if config is not None else 1.0
+        # C++ lag correction: tau_i(theta,phi) - tau_0(theta,phi) in seconds
+        # For IFO 0: no correction; for IFO i>0: (sky_td[i] - sky_td[0]) / TDRate
+        tau_ref = float(sky_td[0]) / td_rate if sky_td else 0.0
+        tau_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
+                   for i in range(n_ifo)]
+        # C++ lag: [pwc->shift]*n_ifo + [pd->lagShift.data[LAG]]*n_ifo
+        # lagShift = data stream lag (0 for zero-lag); ToF delays only go into self.time.
+        self.lag = [0.0] * (2 * n_ifo)
+
+        # Time per IFO (mirrors C++ netevent.cc):
+        #   time[0] = pcd->cTime + gps[0]                          (no delay for ref)
+        #   time[i] = pcd->cTime + gps[i] + tau_i - tau_0          (ToF correction)
+        self.time = [c_time + float(self.gps[i]) + (tau_ifo[i] - tau_ref if i > 0 else 0.0)
+                     for i in range(n_ifo)]
+
+        # Duration per IFO: min/max of per-IFO pixel time bins using p.data[i].index
+        # (mirrors C++ pwc->get("start",i,'L',0) / pwc->get("stop",i,'L',0))
+        # start = min of (1/rate * floor(data[i].index / layers))
+        # stop  = max of (1/rate * (floor(data[i].index / layers) + 1))
+        per_ifo_duration = []
+        for ifo_idx in range(n_ifo):
+            t_starts = []
+            t_stops = []
+            for p in core_pixels:
+                if p.rate > 0 and p.layers > 0 and ifo_idx < len(p.data):
+                    dt = 1.0 / float(p.rate)
+                    time_bin = int(p.data[ifo_idx].index) // int(p.layers)
+                    t_starts.append(dt * time_bin)
+                    t_stops.append(dt * (time_bin + 1))
+            if t_starts:
+                per_ifo_duration.append(max(t_stops) - min(t_starts))
+            else:
+                per_ifo_duration.append(cluster.stop_time - cluster.start_time)
+
+        # Frequency per IFO:
+        # C++ sets frequency[i] = cFreq_net.data[kid] for all IFOs (WDM sub-bin likelihood-weighted mean),
+        # then overwrites frequency[0] = pcd->cFreq (supercluster central freq from supercluster stage).
+        # We compute the WDM sub-bin mean below (a_f/b_f) for slots [1+],
+        # and use cluster.cluster_freq for slot [0].
+        # Placeholder until the sub-bin accumulators are filled below:
+        self.frequency = [c_freq] * n_ifo  # will be updated after sub-bin loop
+
+        # Bandwidth per IFO: C++ uses high-low for all IFOs, overwrites [0] with energy-weighted RMS
+        self.bandwidth = [net_bw] * n_ifo
+
+        # Duration: per-IFO from pixel index ranges; [0] overwritten below with energy-weighted value
+        self.duration = per_ifo_duration[:]
+
+        # Compute energy-weighted duration (RMS) and bandwidth (RMS) for slot [0]
+        # Mirrors C++ pwc->get("duration",0,'L',0) and pwc->get("bandwidth",0,'L',0)
+        # Case 'D': a = sum(t*x), b = sum(x), d = sum(t^2*x); result = sqrt((d-a^2/b)/b) * b / b
+        # = sqrt(variance) (actually it's the weighted RMS)
+        if core_pixels:
+            # Duration RMS
+            a_t = b_t = d_t = 0.0
+            a_f = b_f = d_f = 0.0
+            max_rate = max((p.rate for p in core_pixels), default=0)
+            min_rate = min((p.rate for p in core_pixels if p.rate > 0), default=1)
+            for p in core_pixels:
+                dt = 1.0 / float(p.rate) if p.rate > 0 else 0.0
+                mm = int(p.layers)
+                mp = int(max_rate * dt + 0.5) if dt > 0 else 1  # n sub-time bins
+                # WDM: dT=0.5 bin offset (C++: dT = mm==mp ? 0 : 0.5)
+                dT = 0.0 if mm == mp else 0.5
+                # C++ uses INTEGER division: pList[M].time/mm (both size_t)
+                time_bin = int(p.time) // mm
+                iT = (float(time_bin) - dT) * dt
+                n_sub = max(mp, 1)
+                sub_dt = 1.0 / float(max_rate) if max_rate > 0 else dt
+                iT += sub_dt / 2.0  # central bin
+                x = p.likelihood / (n_sub * n_sub) if p.likelihood > 0 else 0.0
+                for _ in range(n_sub):
+                    a_t += iT * x
+                    b_t += x
+                    d_t += iT * iT * x
+                    iT += sub_dt
+
+                # Frequency sub-bins
+                mp_f = int(1.0 / (float(min_rate) * dt) + 0.5) if dt > 0 else 1
+                dF = 0.5  # WDM offset
+                iF = (float(p.frequency) - dF) / dt / 2.0
+                df = float(min_rate) / 2.0
+                n_sub_f = max(mp_f, 1)
+                iF += df / 2.0
+                x_f = p.likelihood / (n_sub_f * n_sub_f) if p.likelihood > 0 else 0.0
+                for _ in range(n_sub_f):
+                    a_f += iF * x_f
+                    b_f += x_f
+                    d_f += iF * iF * x_f
+                    iF += df
+
+            if b_t > 0:
+                var_t = (d_t - a_t * a_t / b_t) / b_t
+                dur0 = float(np.sqrt(var_t) * b_t / b_t) if var_t > 0 else 1.0 / (max_rate if max_rate > 0 else 1.0)
+                self.duration[0] = dur0
+            if b_f > 0:
+                var_f = (d_f - a_f * a_f / b_f) / b_f
+                bw0 = float(np.sqrt(var_f) * b_f / b_f) if var_f > 0 else float(min_rate) / 2.0
+                self.bandwidth[0] = bw0
+                # cFreq_net = likelihood-weighted WDM sub-bin mean frequency (C++ case 'f' / 'L')
+                # used for frequency[i>0]; frequency[0] is overwritten with c_freq (= meta.c_freq) below
+                lh_freq_net = a_f / b_f
+                self.frequency = [lh_freq_net] * n_ifo
+
+        # frequency[0] = pcd->cFreq = Fo from likelihoodWP (MRA spectral centroid) = meta.c_freq
+        self.frequency[0] = c_freq
+
+        # --- Per-IFO amplitude fields from pixel data ---
+        if config is not None:
+            in_rate = float(config.inRate)
+            # C++ get_SS()/get_GW()/get_NN() sum over ALL pixels, not just core.
+            # Use core pixels only for noise_rms sampling (TF map lookup).
+            all_pixels = cluster.pixels
+            core_pixels = [p for p in all_pixels if p.core]
+
+            # Prefer xtalk-corrected per-IFO energies from fill_detection_statistic
+            # (mirrors C++ getMRAwave 'W'/'S' + get_XX()/get_SS()/get_XS()).
+            # Fall back to diagonal pixel sums when not set (backwards compatibility).
+            have_xtalk_snr = (len(meta.wave_snr) == n_ifo
+                              and len(meta.signal_snr) == n_ifo
+                              and len(meta.cross_snr) == n_ifo)
+
+            for i in range(n_ifo):
+                if have_xtalk_snr:
+                    # Xtalk-corrected energies: mirrors C++ d->enrg, d->sSNR, d->xSNR
+                    wave_sq_xt  = float(meta.wave_snr[i])    # C++ d->enrg = get_XX()
+                    asnr_sq_xt  = float(meta.signal_snr[i])  # C++ d->sSNR = get_SS()
+                    xsnr_sq_xt  = float(meta.cross_snr[i])   # C++ d->xSNR = get_XS()
+                    self.snr.append(wave_sq_xt)
+                    self.sSNR.append(asnr_sq_xt)
+                    self.xSNR.append(xsnr_sq_xt)
+                    self.nill.append(float(xsnr_sq_xt - asnr_sq_xt))  # C++ pd.xSNR - pd.sSNR
+                    # Use per-IFO null from cluster metadata (C++ pd.null)
+                    if hasattr(meta, 'null_energy') and len(meta.null_energy) > i:
+                        null_val = float(meta.null_energy[i])
+                    else:
+                        # Fallback: split total null evenly (backwards compatibility)
+                        null_val = sum(p.null for p in all_pixels) / n_ifo
+                    self.null.append(null_val)
+                    # hrss from physical strain energy (not whitened)
+                    if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
+                        hrss_sq_physical = float(meta.signal_energy_physical[i])
+                    else:
+                        # Fallback: whitened energy (will be wrong units but backwards compatible)
+                        hrss_sq_physical = asnr_sq_xt
+                    self.hrss.append(float(np.sqrt(hrss_sq_physical / in_rate)))
+                else:
+                    # Fallback: diagonal pixel sum (no xtalk cross-terms)
+                    asnr_sq = sum(p.data[i].asnr ** 2 + p.data[i].a_90 ** 2 for p in all_pixels)
+                    wave_sq = sum(p.data[i].wave ** 2 + p.data[i].w_90 ** 2 for p in all_pixels)
+                    self.snr.append(float(wave_sq))
+                    self.sSNR.append(float(asnr_sq))
+                    self.xSNR.append(float(np.sqrt(max(wave_sq * asnr_sq, 0.0))))
+                    xsnr_sq = float(np.sqrt(max(wave_sq * asnr_sq, 0.0)))
+                    self.nill.append(float(xsnr_sq - asnr_sq))
+                    # null: split total evenly
+                    null_val = sum(p.null for p in all_pixels) / n_ifo
+                    self.null.append(null_val)
+                    # hrss from pixel-based signal energy (whitened amplitudes * noise_rms)
+                    hrss_sq = sum((p.data[i].asnr * p.data[i].noise_rms) ** 2 
+                                  + (p.data[i].a_90 * p.data[i].noise_rms) ** 2 for p in all_pixels)
+                    self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
+
+                # Noise floor: RMS of noiserms across core pixels for this IFO, scaled to strain/rtHz
+                # C++ get("noise",i,'S',0): sum += r*r; sum/=mp → log10(sqrt(sum)) → pow(10,...)/sqrt(inRate)
+                # = sqrt(mean(noiserms^2)) / sqrt(inRate)
+                rms_vals = [p.data[i].noise_rms for p in core_pixels
+                            if p.data[i].noise_rms > 0]
+                mean_nrms = float(np.sqrt(np.mean(np.array(rms_vals) ** 2))) if rms_vals else 1.0
+                # Convert from TF-domain noise amplitude to strain/rtHz: divide by sqrt(inRate)
+                self.noise.append(float(mean_nrms / np.sqrt(in_rate)))
+
+            # erA: per-IFO sky error region from l_max (placeholder 11-element zeros)
+            self.erA = [list(np.zeros(11)) for _ in range(n_ifo)]
+
+            # Strain = sqrt(sum(hrss^2))  [C++ takes sqrt at end of loop]
+            self.strain = [float(np.sqrt(sum(h ** 2 for h in self.hrss[:n_ifo])))]
+
+            # Antenna patterns at best-fit sky location
+            # C++ uses detector::antenna(theta, phi, psi) in GEOGRAPHIC coordinates:
+            #   theta = co-latitude (0-180 deg), phi = longitude (0-360 deg)
+            # These are CWB's meta.theta / meta.phi (Earth-fixed frame, NOT equatorial RA/Dec).
+            # Formula: fp = -(a·D·a - b·D·b), fx = 2*(a·D·b), return (fp/2, fx/2)
+            # where D = Det tensor (Ex⊗Ex - Ey⊗Ey, no 1/2), a=e_theta, b=e_phi (geographic).
+            # Python det.response = 0.5*(x⊗x - y⊗y), so already carries the /2:
+            #   fp/2 = -(a·D_py·a - b·D_py·b), fx/2 = 2*(a·D_py·b)
+            try:
+                from pycwb.types.detector import Detector
+                theta_geo = float(np.radians(theta_deg))  # C++ theta (geographic co-latitude)
+                phi_geo = float(np.radians(phi_deg))      # C++ phi (geographic longitude)
+                psi_rad = float(np.radians(meta.psi)) if hasattr(meta, 'psi') else 0.0
+                cT = np.cos(theta_geo); sT = np.sin(theta_geo)
+                cP = np.cos(phi_geo);  sP = np.sin(phi_geo)
+                # Polarization basis vectors in geographic Cartesian frame
+                e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
+                e_ph = np.array([-sP, cP, 0.0])            # e_phi   (C++ b)
+                for ifo in job_segment.ifos:
+                    det = Detector(ifo)
+                    D = det.response  # 0.5*(x⊗x - y⊗y), respects the C++ /2 factor
+                    Da = D @ e_th
+                    Db = D @ e_ph
+                    f_plus  = np.dot(e_th, Da) - np.dot(e_ph, Db)   # a·D·a - b·D·b (= fp_C++/2)
+                    f_cross = 2.0 * np.dot(e_th, Db)                 # 2*(a·D·b)      (= fx_C++/2)
+                    # C++ convention: fp = -fp (LIGO-T010110), before psi rotation
+                    fp = -f_plus
+                    fx = f_cross
+                    if abs(psi_rad) > 1e-15:
+                        a_rot = fp * np.cos(2 * psi_rad) + fx * np.sin(2 * psi_rad)
+                        b_rot = -fp * np.sin(2 * psi_rad) + fx * np.cos(2 * psi_rad)
+                        fp, fx = a_rot, b_rot
+                    self.bp.append(float(fp))
+                    self.bx.append(float(fx))
+            except Exception:
+                self.bp = [0.0] * n_ifo
+                self.bx = [0.0] * n_ifo
+
+            # Pixel rate per IFO (modal rate of core pixels)
+            core_rates = [p.rate for p in core_pixels]
+            if core_rates:
+                from statistics import mode as stat_mode
+                try:
+                    modal_rate = float(stat_mode(core_rates))
+                except Exception:
+                    modal_rate = float(core_rates[0])
+            else:
+                modal_rate = 0.0
+            self.rate = [modal_rate] * n_ifo
+
+        self.id = self.long_id
 
 
     def summary(self):

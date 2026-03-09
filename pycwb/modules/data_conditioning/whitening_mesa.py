@@ -1,5 +1,14 @@
 import numpy as np 
-import ROOT
+try:
+    import ROOT
+except ImportError:
+    ROOT = None
+    import warnings
+    warnings.warn(
+        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
+        ImportWarning,
+        stacklevel=2
+    )
 import logging
 from pycwb.modules.cwb_conversions import *
 from pycwb.types.time_frequency_series import TimeFrequencySeries

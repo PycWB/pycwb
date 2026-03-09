@@ -133,6 +133,20 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
                     shutil.copytree(item, dest_item)
                     logger.debug(f"Copied input directory: {item.name}")
                     
+    # Copy frames files for local data sources
+    if data_settings['is_local']:
+        frames_source_dir = Path(config_base_path) / "frames"
+        for ifo in ifo_list:
+            frames_file = frames_source_dir / f"{ifo}.frames"
+            dest_frames = work_path / "input" / f"{ifo}.frames"
+            if dry_run:
+                logger.info(f"[DRY RUN] Would copy {frames_file} to {dest_frames}")
+            else:
+                if not frames_file.exists():
+                    raise FileNotFoundError(f"Frames file not found: {frames_file}")
+                shutil.copy2(frames_file, dest_frames)
+                logger.debug(f"Copied frames file: {frames_file.name}")
+
     # Copy DQ files directly to input directory
     input_dir = work_path / "input"
     copied_dq_files = _copy_dq_files(dq_files, input_dir, dry_run)

@@ -1,6 +1,14 @@
+import numpy as np
+import warnings
+from .time_frequency_map import TimeFrequencyMap, whiten_slice, compute_rms
+
 class TimeFrequencySeries:
     """
-    Class for storing a time-frequency series.
+    Class for storing a time-frequency series. This class is a Python wrapper for ROOT.WSeries
+    
+    .. deprecated:: 
+        TimeFrequencySeries is obsolete. Use TimeFrequencyMap from wdm_wavelet instead.
+        TimeFrequencyMap provides a cleaner interface and better integration with pure-Python WDM operations.
 
     :param data: data
     :type data: pycbc.types.timeseries.TimeSeries
@@ -21,6 +29,14 @@ class TimeFrequencySeries:
 
     def __init__(self, data=None, wavelet=None, whiten_mode=None, bpp=None, w_rate=None, f_low=None, f_high=None, 
                  wseries=None):
+        # Issue deprecation warning
+        warnings.warn(
+            "TimeFrequencySeries is obsolete and will be removed in a future version. "
+            "Use TimeFrequencyMap from wdm_wavelet.wdm instead for better Python-native support.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         self._wavelet = None
         #: Time series data
         self.data = data
@@ -56,12 +72,15 @@ class TimeFrequencySeries:
         return new
 
     def __del__(self):
-        if self._wseries:
-            self._wseries.resize(0)
-            del self._wseries
-        if self._wavelet:
-            self._wavelet.release()
-            del self._wavelet
+        try:
+            wseries = getattr(self, '_wseries', None)
+            if wseries is not None and hasattr(wseries, 'resize'):
+                wseries.resize(0)
+            wavelet = getattr(self, '_wavelet', None)
+            if wavelet is not None and hasattr(wavelet, 'release'):
+                wavelet.release()
+        except Exception:
+            pass
 
     __copy__ = copy
 
@@ -131,6 +150,14 @@ class TimeFrequencySeries:
         sample rate
         """
         return self.data.sample_rate
+
+    @property
+    def dt(self):
+        """
+        time resolution (inverse of sample rate)
+        """
+        sr = self.sample_rate
+        return 1.0 / sr if sr > 0 else 0.0
 
     @property
     def f_high(self):

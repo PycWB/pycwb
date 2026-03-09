@@ -1,12 +1,13 @@
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import faulthandler
 import os
 import getpass
-import shutil
 import logging
 import sys
 from pathlib import Path
 from pycwb.modules.logger import logger_init, log_prints
-from pycwb.workflow.subflow import prepare_job_runs, load_batch_run
+from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster=None, conda_env=None, additional_init="",
-                accounting_group=None, job_per_worker=None, n_proc=1, memory=None, disk=None,
+                accounting_group=None, job_per_worker=None, n_proc=None, memory=None, disk=None,
                 container_image = None, should_transfer_files = False,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
@@ -40,6 +41,7 @@ def batch_setup(file_name, working_dir='.',
     if not additional_init: additional_init = config.additional_init
     if not accounting_group: accounting_group = config.accounting_group
     if not job_per_worker: job_per_worker = config.job_per_worker
+    if not n_proc: n_proc = config.nproc
     if not memory: memory = config.job_memory
     if not disk: disk = config.job_disk
     if not container_image: container_image = config.container_image
@@ -68,6 +70,11 @@ def batch_setup(file_name, working_dir='.',
         slurm.create(job_segments, submit=submit)
     else:
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")
+
+
+def _worker_initializer():
+    """Enable faulthandler in each worker to capture segmentation violations."""
+    faulthandler.enable()
 
 
 def data_collector(working_dir, queue):
@@ -129,34 +136,53 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, queue))
     data_collector_worker.start()
 
+    # Use ProcessPoolExecutor for modern parallel processing with segfault capture via faulthandler.
+    # max_tasks_per_child=1 restarts workers after each task to avoid memory leaks (requires Python 3.11+).
+    # _worker_initializer enables faulthandler so segmentation violations print a native traceback
+    # to stderr instead of silently terminating the worker.
     exceptions = []
-    with multiprocessing.Pool(
-        n_workers,
-        maxtasksperchild=1,  # Restart workers after each task to avoid memory leaks
-        ) as pool:
+    executor = ProcessPoolExecutor(
+        max_workers=n_workers,
+        max_tasks_per_child=1,  # Restart workers after each task to avoid memory leaks
+        initializer=_worker_initializer,
+    )
+    try:
         logger.info(f"Starting {n_workers} workers")
-        results = []
-        for job_seg in job_segments:
-            r = pool.apply_async(process_single_with_flag,
-                                    args=(main_func, queue, working_dir, config, job_seg,
-                                        compress_json, catalog_file))
-            results.append(r)
+        futures = {
+            executor.submit(process_single_with_flag, main_func, queue, working_dir, config, job_seg,
+                            compress_json, catalog_file): job_seg
+            for job_seg in job_segments
+        }
 
-        for r in results:
+        for future in as_completed(futures):
+            job_seg = futures[future]
             try:
-                err = r.get()
+                err = future.result()
                 if err:
                     exceptions.append(err)
             except Exception as e:
+                logger.error(f"Job segment {job_seg.index} raised an exception: {e}")
                 exceptions.append(e)
+    finally:
+        # Explicitly terminate all worker processes before shutdown.
+        # ProcessPoolExecutor's internal management thread is non-daemon and can hang
+        # indefinitely waiting on a pipe from workers killed by a signal (e.g. SIGSEGV).
+        # Terminating the processes unblocks the management thread so it can exit cleanly.
+        print("Terminating worker processes...")
+        for proc in list(executor._processes.values()):
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        executor.shutdown(wait=False, cancel_futures=True)
+        if exceptions:
+            os._exit(1)  # nuclear option: skip ExceptionGroup, just die
 
-        pool.close()
-        pool.join()
-        logger.info("All jobs are done, waiting for data collector to finish")
+    logger.info("All jobs are done, waiting for data collector to finish")
 
-        # send a sentinel to terminate the data collector
-        queue.put(None)
-        data_collector_worker.join()
+    # send a sentinel to terminate the data collector
+    queue.put(None)
+    data_collector_worker.join()
 
     if exceptions:
         raise ExceptionGroup("JobFailure", exceptions)

@@ -8,7 +8,13 @@ from astropy.coordinates.matrix_utilities import rotation_matrix
 from astropy.units.si import sday, meter
 from pycwb.constants.physics_constants import LAL_EARTHFLAT, LAL_REARTH_SI
 from pycwb.constants.detectors import DETECTORS
+from pycwb.utils.network import local_to_earth_centered
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from matplotlib import cm
+from scipy.special import gammaincc, gammainccinv
 
 
 @dataclass
@@ -455,6 +461,720 @@ class Detector:
 
         return fig
 
+    def compute_detector_tensor(self):
+        """
+        Compute the detector response tensor in Earth-centered coordinates.
+        
+        Returns
+        -------
+        D : np.ndarray
+            3x3 detector tensor matrix
+        x_vec : np.ndarray
+            Unit vector along x-arm in Earth-centered coordinates
+        y_vec : np.ndarray
+            Unit vector along y-arm in Earth-centered coordinates
+        """
+        lat_det = self.latitude
+        lon_det = self.longitude
+        
+        x_az, x_alt = self.x_azimuth, self.x_altitude
+        y_az, y_alt = self.y_azimuth, self.y_altitude
+        
+        # Local horizon frame components for x-arm
+        x_east = np.sin(x_az)
+        x_north = np.cos(x_az)
+        x_up = np.sin(x_alt)
+        
+        # Local horizon frame components for y-arm
+        y_east = np.sin(y_az)
+        y_north = np.cos(y_az)
+        y_up = np.sin(y_alt)
+        
+        # Normalize
+        x_norm = np.sqrt(x_east**2 + x_north**2 + x_up**2)
+        y_norm = np.sqrt(y_east**2 + y_north**2 + y_up**2)
+        x_east /= x_norm
+        x_north /= x_norm
+        x_up /= x_norm
+        y_east /= y_norm
+        y_north /= y_norm
+        y_up /= y_norm
+        
+        # Convert to Earth-centered coordinates
+        x_vec = local_to_earth_centered(lat_det, lon_det, x_east, x_north, x_up)
+        y_vec = local_to_earth_centered(lat_det, lon_det, y_east, y_north, y_up)
+        
+        # Detector tensor: D = 0.5 * (x ⊗ x - y ⊗ y)
+        D = 0.5 * (np.outer(x_vec, x_vec) - np.outer(y_vec, y_vec))
+        
+        return D, x_vec, y_vec
+    
+    def compute_antenna_pattern_for_grid(self, theta_grid, phi_grid):
+        """
+        Compute F+ and Fx antenna patterns for this detector on a sky grid.
+        
+        Parameters
+        ----------
+        theta_grid : np.ndarray
+            2D array of sky position theta (polar angle, 0 to pi)
+        phi_grid : np.ndarray
+            2D array of sky position phi (azimuthal angle, 0 to 2*pi)
+            
+        Returns
+        -------
+        F_plus : np.ndarray
+            Plus polarization antenna pattern
+        F_cross : np.ndarray
+            Cross polarization antenna pattern
+        """
+        n_lat, n_lon = theta_grid.shape
+        
+        sin_theta, cos_theta = np.sin(theta_grid), np.cos(theta_grid)
+        sin_phi, cos_phi = np.sin(phi_grid), np.cos(phi_grid)
+        
+        # Wave direction unit vector
+        n_x = sin_theta * cos_phi
+        n_y = sin_theta * sin_phi
+        n_z = cos_theta
+        
+        # Polarization basis vectors
+        e_theta_x = cos_theta * cos_phi
+        e_theta_y = cos_theta * sin_phi
+        e_theta_z = -sin_theta
+        
+        e_phi_x = -sin_phi
+        e_phi_y = cos_phi
+        e_phi_z = 0.0
+        
+        # Normalize
+        e_theta_norm = np.sqrt(e_theta_x**2 + e_theta_y**2 + e_theta_z**2)
+        e_theta_x /= e_theta_norm
+        e_theta_y /= e_theta_norm
+        e_theta_z /= e_theta_norm
+        
+        e_phi_norm = np.sqrt(e_phi_x**2 + e_phi_y**2 + e_phi_z**2)
+        e_phi_x /= e_phi_norm
+        e_phi_y /= e_phi_norm
+        e_phi_z /= e_phi_norm
+        
+        # Get detector tensor
+        D, _, _ = self.compute_detector_tensor()
+        
+        # Compute D:e_theta⊗e_theta
+        D_e_theta_e_theta = (
+            e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z) +
+            e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z) +
+            e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
+        )
+        
+        # Compute D:e_phi⊗e_phi
+        D_e_phi_e_phi = (
+            e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
+            e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
+            e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+        )
+        
+        # Compute D:e_theta⊗e_phi
+        D_e_theta_e_phi = (
+            e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
+            e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
+            e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+        )
+        
+        F_plus = D_e_theta_e_theta - D_e_phi_e_phi
+        F_cross = 2.0 * D_e_theta_e_phi
+        
+        return F_plus, F_cross
+    
+    def draw_antenna_pattern(self, polarization=3, palette='turbo',
+                           resolution=2, projection='rectilinear',
+                           display_world_map=True, add_title=True,
+                           ax=None, vmin=0.0, vmax=None):
+        """
+        Draw antenna pattern for this detector.
+        
+        Parameters
+        ----------
+        polarization : int
+            0 -> |Fx| (DPF)
+            1 -> |F+| (DPF)
+            2 -> |Fx|/|F+| (DPF)
+            3 -> sqrt(|F+|^2+|Fx|^2) (DPF)
+            4 -> |Fx|^2 (DPF)
+            5 -> |F+|^2 (DPF)
+        palette : str
+            Matplotlib colormap name
+        resolution : int
+            Sky map resolution (1=low, 2=medium, 4=high)
+        projection : str
+            Map projection: 'hammer', 'mollweide', 'rectilinear', 'sinusoidal'
+        display_world_map : bool
+            Whether to display world map background
+        add_title : bool
+            Whether to add title to plot
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to plot on
+        vmin : float
+            Minimum value for colorbar
+        vmax : float, optional
+            Maximum value for colorbar (auto if None)
+            
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        ax : matplotlib.axes.Axes
+        """
+        # Create sky grid
+        n_lon = 360 * resolution
+        n_lat = 180 * resolution
+        lon_rad = np.linspace(0, 2 * np.pi, n_lon)
+        lat_rad = np.linspace(0, np.pi, n_lat)
+        lon_grid, lat_grid = np.meshgrid(lon_rad, lat_rad)
+        
+        # Compute antenna patterns
+        F_plus, F_cross = self.compute_antenna_pattern_for_grid(lat_grid, lon_grid)
+        
+        # Compute requested polarization pattern
+        if polarization == 0:
+            pattern = np.abs(F_cross)
+        elif polarization == 1:
+            pattern = np.abs(F_plus)
+        elif polarization == 2:
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pattern = np.abs(F_cross) / np.abs(F_plus)
+                pattern[~np.isfinite(pattern)] = 0
+        elif polarization == 3:
+            pattern = np.sqrt(F_plus**2 + F_cross**2)
+        elif polarization == 4:
+            pattern = F_cross**2
+        elif polarization == 5:
+            pattern = F_plus**2
+        else:
+            raise ValueError(f"Unsupported polarization: {polarization}")
+        
+        # Create figure if needed
+        if ax is None:
+            if projection.lower() == 'hammer':
+                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'aitoff'})
+            elif projection.lower() == 'mollweide':
+                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'mollweide'})
+            elif projection.lower() == 'sinusoidal':
+                projection_ccrs = ccrs.Sinusoidal(central_longitude=0)
+                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': projection_ccrs})
+            else:
+                projection_ccrs = ccrs.PlateCarree()
+                fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': projection_ccrs})
+        else:
+            fig = ax.get_figure()
+        
+        # Convert coordinates for plotting
+        lon_deg = np.degrees(lon_grid) - 180
+        lat_deg = 90 - np.degrees(lat_grid)
+        pattern_flipped = np.flipud(pattern)
+        
+        # Set vmax if not provided
+        if vmax is None:
+            vmax = np.max(pattern)
+        
+        # Plot pattern
+        if projection.lower() in ['hammer', 'mollweide']:
+            lon_plot = lon_deg * np.pi / 180
+            lat_plot = lat_deg * np.pi / 180
+            im = ax.pcolormesh(lon_plot, lat_plot, pattern_flipped,
+                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
+            ax.grid(True, linestyle='--', alpha=0.5)
+        else:
+            im = ax.pcolormesh(lon_deg, lat_deg, pattern_flipped,
+                              transform=ccrs.PlateCarree(),
+                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
+        
+        # Add world map
+        if display_world_map and projection.lower() not in ['hammer', 'mollweide']:
+            try:
+                ax.coastlines(linewidth=0.5, alpha=0.7)
+                ax.add_feature(cfeature.BORDERS, linewidth=0.3, alpha=0.5, linestyle=':')
+                ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.2)
+                ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.1)
+                
+                if projection.lower() != 'sinusoidal':
+                    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                                     linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
+                    gl.top_labels = False
+                    gl.right_labels = False
+                    gl.xlabel_style = {'size': 8}
+                    gl.ylabel_style = {'size': 8}
+            except Exception:
+                ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+        else:
+            ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+        
+        # Plot detector site
+        lat_deg_det = np.degrees(self.latitude)
+        lon_deg_det = np.degrees(self.longitude)
+        
+        if projection.lower() in ['hammer', 'mollweide']:
+            lon_plot = np.radians(lon_deg_det)
+            if lon_plot > np.pi:
+                lon_plot -= 2 * np.pi
+            lat_plot = np.radians(lat_deg_det)
+            ax.plot(lon_plot, lat_plot, 'k.', markersize=10, markeredgewidth=2, transform=ax.transData)
+            ax.text(lon_plot + 0.05, lat_plot + 0.05, self.name,
+                   fontsize=12, fontweight='bold', ha='left', va='bottom', transform=ax.transData)
+        else:
+            ax.plot(lon_deg_det, lat_deg_det, 'k.', markersize=10,
+                   transform=ccrs.PlateCarree(), markeredgewidth=2)
+            ax.text(lon_deg_det + 1, lat_deg_det + 1, self.name,
+                   transform=ccrs.PlateCarree(), fontsize=12, fontweight='bold', ha='left', va='bottom')
+        
+        # Colorbar
+        cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.45)
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_label('Pattern Value', fontsize=11)
+        
+        # Title
+        if add_title:
+            polarization_names = {
+                0: r"$|F_x|$ (DPF)",
+                1: r"$|F_+|$ (DPF)",
+                2: r"$|F_x|/|F_+|$ (DPF)",
+                3: r"$\sqrt{|F_+|^2 + |F_x|^2}$ (DPF)",
+                4: "$|F_x|^2$ (DPF)",
+                5: "$|F_+|^2$ (DPF)"
+            }
+            title = f"Detector: {self.name} - {polarization_names.get(polarization, f'Polarization {polarization}')}"
+            ax.set_title(title, fontsize=14, pad=20)
+        
+        plt.tight_layout()
+        return fig, ax
+
+
+class DetectorNetwork:
+    """
+    Network of detectors with utilities to compute and plot network antenna patterns.
+
+    Parameters
+    ----------
+    ifos : list[str] | str | None
+        List of detector codes (e.g., ["H1", "L1", "V1"]) or a string (e.g., "H1L1V1").
+    detectors : list[Detector] | None
+        Optional list of Detector objects to initialize the network.
+    """
+
+    def __init__(self, ifos=None, detectors=None):
+        self.detectors = []
+        if detectors:
+            for det in detectors:
+                self.add_detector(det)
+        if ifos:
+            self.add_detectors(ifos)
+
+    def add_detector(self, detector):
+        if isinstance(detector, Detector):
+            self.detectors.append(detector)
+        elif isinstance(detector, str):
+            self.detectors.append(Detector(detector))
+        else:
+            raise TypeError("Detector must be a Detector instance or detector code string")
+
+    def add_detectors(self, ifos):
+        if isinstance(ifos, str):
+            ifo_list = self._parse_detector_codes(ifos)
+        else:
+            ifo_list = list(ifos)
+        for ifo in ifo_list:
+            self.add_detector(ifo)
+
+    @staticmethod
+    def _parse_detector_codes(network_str):
+        code_mapping = {
+            'H1': 'H1', 'L1': 'L1', 'G1': 'G1', 'V1': 'V1',
+            'T1': 'T1', 'H2': 'H2', 'A1': 'A1', 'O1': 'O1',
+            'N1': 'N1', 'E1': 'E1', 'A2': 'A2', 'J1': 'J1',
+            'I1': 'I1', 'K1': 'K1', 'E2': 'E2', 'E3': 'E3', 'E0': 'E0'
+        }
+        detector_codes = [code for code in code_mapping if code in network_str]
+        if not detector_codes:
+            raise ValueError("No valid detectors found in network string")
+        return detector_codes
+
+    def _get_detector_info(self):
+        detectors = []
+        for det in self.detectors:
+            det_info = DETECTORS.get(det.name)
+            if not det_info:
+                continue
+            detectors.append({
+                'code': det.name,
+                'name': det.full_name,
+                'lat': det_info['lat'],
+                'lon': det_info['lon'],
+                'x_alt': det_info['x']['alt'],
+                'x_az': det_info['x']['az'],
+                'y_alt': det_info['y']['alt'],
+                'y_az': det_info['y']['az']
+            })
+        return detectors
+
+    @staticmethod
+    def _create_sky_grid(resolution):
+        n_lon = 360 * resolution
+        n_lat = 180 * resolution
+        lon_rad = np.linspace(0, 2 * np.pi, n_lon)
+        lat_rad = np.linspace(0, np.pi, n_lat)
+        lon_grid, lat_grid = np.meshgrid(lon_rad, lat_rad)
+        return lon_grid, lat_grid, n_lon, n_lat
+
+    @classmethod
+    def _compute_detector_tensor(cls, detector):
+        lat_det = detector['lat']
+        lon_det = detector['lon']
+        x_az, x_alt = detector['x_az'], detector['x_alt']
+        y_az, y_alt = detector['y_az'], detector['y_alt']
+        x_east = np.sin(x_az)
+        x_north = np.cos(x_az)
+        x_up = np.sin(x_alt)
+        y_east = np.sin(y_az)
+        y_north = np.cos(y_az)
+        y_up = np.sin(y_alt)
+        x_norm = np.sqrt(x_east**2 + x_north**2 + x_up**2)
+        y_norm = np.sqrt(y_east**2 + y_north**2 + y_up**2)
+        x_east /= x_norm
+        x_north /= x_norm
+        x_up /= x_norm
+        y_east /= y_norm
+        y_north /= y_norm
+        y_up /= y_norm
+        x_vec = local_to_earth_centered(lat_det, lon_det, x_east, x_north, x_up)
+        y_vec = local_to_earth_centered(lat_det, lon_det, y_east, y_north, y_up)
+        D = 0.5 * (np.outer(x_vec, x_vec) - np.outer(y_vec, y_vec))
+        return D, x_vec, y_vec
+
+    @classmethod
+    def _compute_antenna_patterns(cls, theta_grid, phi_grid, detectors):
+        n_lat, n_lon = theta_grid.shape
+        n_detectors = len(detectors)
+        F_plus = np.zeros((n_lat, n_lon, n_detectors))
+        F_cross = np.zeros((n_lat, n_lon, n_detectors))
+        sin_theta, cos_theta = np.sin(theta_grid), np.cos(theta_grid)
+        sin_phi, cos_phi = np.sin(phi_grid), np.cos(phi_grid)
+        e_theta_x = cos_theta * cos_phi
+        e_theta_y = cos_theta * sin_phi
+        e_theta_z = -sin_theta
+        e_phi_x = -sin_phi
+        e_phi_y = cos_phi
+        e_phi_z = 0.0
+        e_theta_norm = np.sqrt(e_theta_x**2 + e_theta_y**2 + e_theta_z**2)
+        e_theta_x /= e_theta_norm
+        e_theta_y /= e_theta_norm
+        e_theta_z /= e_theta_norm
+        e_phi_norm = np.sqrt(e_phi_x**2 + e_phi_y**2 + e_phi_z**2)
+        e_phi_x /= e_phi_norm
+        e_phi_y /= e_phi_norm
+        e_phi_z /= e_phi_norm
+        for i, detector in enumerate(detectors):
+            D, _, _ = cls._compute_detector_tensor(detector)
+            D_e_theta_e_theta = (
+                e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z) +
+                e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z) +
+                e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
+            )
+            D_e_phi_e_phi = (
+                e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
+                e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
+                e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+            )
+            D_e_theta_e_phi = (
+                e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
+                e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
+                e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+            )
+            F_plus[:, :, i] = D_e_theta_e_theta - D_e_phi_e_phi
+            F_cross[:, :, i] = 2.0 * D_e_theta_e_phi
+        return F_plus, F_cross
+
+    @staticmethod
+    def _compute_polarization_quantity(gp, gx, gI, polarization, n_detectors):
+        gR = (gp - gx) / 2.0
+        gr = (gp + gx) / 2.0
+        gc = np.sqrt(gR**2 + gI**2)
+        if polarization == 0:
+            val = gr - gc
+            return np.sqrt(np.abs(val)) if np.abs(val) > 1e-8 else 0.0
+        if polarization == 1:
+            return np.sqrt(gr + gc)
+        if polarization == 2:
+            denom = gr + gc
+            if denom > 1e-8:
+                val = (gr - gc) / denom
+                return np.sqrt(val) if val > 0 else 0.0
+            return 0.0
+        if polarization == 3:
+            return np.sqrt(2.0 * gr / n_detectors)
+        if polarization == 4:
+            val = gr - gc
+            return val if np.abs(val) > 1e-8 else 0.0
+        if polarization == 5:
+            return gr + gc
+        raise ValueError(f"Unsupported polarization: {polarization}")
+
+    @staticmethod
+    def _compute_reference_max(F_plus, F_cross, scales):
+        n_lat, n_lon, n_detectors = F_plus.shape
+        F_plus_flat = F_plus.reshape(-1, n_detectors)
+        F_cross_flat = F_cross.reshape(-1, n_detectors)
+        gp = np.sum(scales * F_plus_flat**2, axis=1)
+        gx = np.sum(scales * F_cross_flat**2, axis=1)
+        gI = np.sum(scales * F_plus_flat * F_cross_flat, axis=1)
+        gR = (gp - gx) / 2.0
+        gr = (gp + gx) / 2.0
+        gc = np.sqrt(gR**2 + gI**2)
+        pattern_values = np.sqrt(gr + gc)
+        return np.max(pattern_values)
+
+    @classmethod
+    def _compute_antenna_pattern(cls, F_plus, F_cross, polarization, scales):
+        n_lat, n_lon, n_detectors = F_plus.shape
+        F_plus_flat = F_plus.reshape(-1, n_detectors)
+        F_cross_flat = F_cross.reshape(-1, n_detectors)
+        gp = np.sum(scales * F_plus_flat**2, axis=1)
+        gx = np.sum(scales * F_cross_flat**2, axis=1)
+        gI = np.sum(scales * F_plus_flat * F_cross_flat, axis=1)
+        if polarization == 1:
+            gR = (gp - gx) / 2.0
+            gr = (gp + gx) / 2.0
+            gc = np.sqrt(gR**2 + gI**2)
+            pattern_values = np.sqrt(gr + gc)
+        else:
+            pattern_values = np.array([
+                cls._compute_polarization_quantity(gp_i, gx_i, gI_i, polarization, n_detectors)
+                for gp_i, gx_i, gI_i in zip(gp, gx, gI)
+            ])
+        pattern = pattern_values.reshape(n_lat, n_lon)
+        pattern_max = np.max(pattern)
+        return pattern, pattern_max
+
+    @staticmethod
+    def _create_plot_figure(projection):
+        if projection.lower() == 'hammer':
+            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'aitoff'})
+        elif projection.lower() == 'mollweide':
+            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'mollweide'})
+        elif projection.lower() == 'sinusoidal':
+            projection_ccrs = ccrs.Sinusoidal(central_longitude=0)
+            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': projection_ccrs})
+        else:
+            projection_ccrs = ccrs.PlateCarree()
+            fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': projection_ccrs})
+        return fig, ax
+
+    @staticmethod
+    def _plot_pattern(ax, pattern, lon_deg, lat_deg, palette, projection, vmin=0.0, vmax=None):
+        pattern_flipped = np.flipud(pattern)
+        if projection.lower() in ['hammer', 'mollweide']:
+            lon_plot = lon_deg * np.pi / 180
+            lat_plot = lat_deg * np.pi / 180
+            im = ax.pcolormesh(lon_plot, lat_plot, pattern_flipped,
+                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
+            ax.grid(True, linestyle='--', alpha=0.5)
+        else:
+            im = ax.pcolormesh(lon_deg, lat_deg, pattern_flipped,
+                              transform=ccrs.PlateCarree(),
+                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
+        return im
+
+    @staticmethod
+    def _add_world_map(ax, display_world_map, projection):
+        if not display_world_map:
+            return
+        if projection.lower() not in ['hammer', 'mollweide']:
+            try:
+                ax.coastlines(linewidth=0.5, alpha=0.7)
+                ax.add_feature(cfeature.BORDERS, linewidth=0.3, alpha=0.5, linestyle=':')
+                ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.2)
+                ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.1)
+                if projection.lower() != 'sinusoidal':
+                    gl = ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        draw_labels=True,
+                        linewidth=0.5,
+                        color='gray',
+                        alpha=0.5,
+                        linestyle='--'
+                    )
+                    gl.top_labels = False
+                    gl.right_labels = False
+                    gl.xlabel_style = {'size': 8}
+                    gl.ylabel_style = {'size': 8}
+            except Exception:
+                ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+        else:
+            ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
+
+    @classmethod
+    def _compute_arm_endpoints(cls, detector, arm_length_factor=8.0):
+        lat, lon = detector['lat'], detector['lon']
+        _, x_vec, y_vec = cls._compute_detector_tensor(detector)
+        sin_lat, cos_lat = np.sin(lat), np.cos(lat)
+        sin_lon, cos_lon = np.sin(lon), np.cos(lon)
+        det_x = cos_lat * cos_lon
+        det_y = cos_lat * sin_lon
+        det_z = sin_lat
+        arm_length = arm_length_factor * np.pi / 180.0
+        normal = np.array([det_x, det_y, det_z])
+
+        def project_to_tangent(v, n):
+            return v - np.dot(v, n) * n
+
+        x_tangent = project_to_tangent(x_vec, normal)
+        y_tangent = project_to_tangent(y_vec, normal)
+        x_tangent_norm = np.linalg.norm(x_tangent)
+        y_tangent_norm = np.linalg.norm(y_tangent)
+        if x_tangent_norm > 0:
+            x_tangent /= x_tangent_norm
+        if y_tangent_norm > 0:
+            y_tangent /= y_tangent_norm
+
+        def point_on_sphere(center, direction, angle):
+            axis = np.cross(center, direction)
+            axis_norm = np.linalg.norm(axis)
+            if axis_norm > 0:
+                axis /= axis_norm
+                cos_a = np.cos(angle)
+                sin_a = np.sin(angle)
+                return (cos_a * center + sin_a * np.cross(axis, center) +
+                        (1 - cos_a) * np.dot(axis, center) * axis)
+            return center
+
+        x_end_cart = point_on_sphere(normal, x_tangent, arm_length)
+        y_end_cart = point_on_sphere(normal, y_tangent, arm_length)
+
+        def cart_to_sph(x, y, z):
+            r = np.sqrt(x**2 + y**2 + z**2)
+            lat_sph = np.arcsin(z / r)
+            lon_sph = np.arctan2(y, x)
+            return lat_sph, lon_sph
+
+        x_lat_sph, x_lon_sph = cart_to_sph(*x_end_cart)
+        y_lat_sph, y_lon_sph = cart_to_sph(*y_end_cart)
+        x_lat_deg = np.degrees(x_lat_sph)
+        x_lon_deg = np.degrees(x_lon_sph)
+        y_lat_deg = np.degrees(y_lat_sph)
+        y_lon_deg = np.degrees(y_lon_sph)
+        if x_lon_deg > 180:
+            x_lon_deg -= 360
+        elif x_lon_deg < -180:
+            x_lon_deg += 360
+        if y_lon_deg > 180:
+            y_lon_deg -= 360
+        elif y_lon_deg < -180:
+            y_lon_deg += 360
+        return (x_lon_deg, x_lat_deg), (y_lon_deg, y_lat_deg)
+
+    @classmethod
+    def _plot_detector_sites(cls, ax, detectors, projection):
+        for det in detectors:
+            lat_deg = np.degrees(det['lat'])
+            lon_deg = np.degrees(det['lon'])
+            (x_lon, x_lat), (y_lon, y_lat) = cls._compute_arm_endpoints(det, arm_length_factor=6.0)
+            if projection.lower() in ['hammer', 'mollweide']:
+                lon_plot = np.radians(lon_deg)
+                if lon_plot > np.pi:
+                    lon_plot -= 2 * np.pi
+                lat_plot = np.radians(lat_deg)
+                x_lon_plot = np.radians(x_lon)
+                if x_lon_plot > np.pi:
+                    x_lon_plot -= 2 * np.pi
+                x_lat_plot = np.radians(x_lat)
+                y_lon_plot = np.radians(y_lon)
+                if y_lon_plot > np.pi:
+                    y_lon_plot -= 2 * np.pi
+                y_lat_plot = np.radians(y_lat)
+                ax.plot(lon_plot, lat_plot, 'k.', markersize=10,
+                       markeredgewidth=2, transform=ax.transData)
+                ax.plot([lon_plot, x_lon_plot], [lat_plot, x_lat_plot],
+                       'k-', linewidth=2.0, transform=ax.transData)
+                ax.plot([lon_plot, y_lon_plot], [lat_plot, y_lat_plot],
+                       'k-', linewidth=2.0, transform=ax.transData)
+                ax.text(lon_plot + 0.05, lat_plot + 0.05, det['code'],
+                       fontsize=12, fontweight='bold', ha='left', va='bottom',
+                       transform=ax.transData)
+            else:
+                ax.plot(lon_deg, lat_deg, 'k.', markersize=10,
+                       transform=ccrs.PlateCarree(), markeredgewidth=2)
+                ax.plot([lon_deg, x_lon], [lat_deg, x_lat],
+                       'k-', linewidth=2.0, transform=ccrs.PlateCarree())
+                ax.plot([lon_deg, y_lon], [lat_deg, y_lat],
+                       'k-', linewidth=2.0, transform=ccrs.PlateCarree())
+                ax.text(lon_deg + 1, lat_deg + 1, det['code'],
+                       transform=ccrs.PlateCarree(), fontsize=12,
+                       fontweight='bold', ha='left', va='bottom')
+
+    def draw_antenna_pattern(self, polarization=3, palette='turbo',
+                             resolution=2, projection='rectilinear',
+                             display_world_map=True, add_title=True,
+                             uniform_colorbar=True, ax=None, detector_scales=None):
+        """
+        Draw antenna pattern for the detector network.
+        """
+        detectors = self._get_detector_info()
+        if not detectors:
+            raise ValueError("No valid detectors found")
+
+        scales = np.ones(len(detectors))
+        if detector_scales is not None:
+            if isinstance(detector_scales, dict):
+                scales = np.array([detector_scales.get(det['code'], 1.0) for det in detectors])
+            elif isinstance(detector_scales, (list, np.ndarray)):
+                if len(detector_scales) == len(detectors):
+                    scales = np.array(detector_scales)
+
+        lon_grid, lat_grid, _, _ = self._create_sky_grid(resolution)
+        theta_grid = lat_grid
+        phi_grid = lon_grid
+
+        F_plus, F_cross = self._compute_antenna_patterns(theta_grid, phi_grid, detectors)
+
+        reference_max = None
+        if uniform_colorbar:
+            reference_max = self._compute_reference_max(F_plus, F_cross, scales)
+
+        pattern, pattern_max = self._compute_antenna_pattern(F_plus, F_cross, polarization, scales)
+
+        if ax is None:
+            fig, ax = self._create_plot_figure(projection)
+        else:
+            fig = ax.get_figure()
+
+        lon_deg = np.degrees(lon_grid) - 180
+        lat_deg = 90 - np.degrees(lat_grid)
+
+        vmax = reference_max if uniform_colorbar and reference_max is not None else pattern_max
+        im = self._plot_pattern(ax, pattern, lon_deg, lat_deg, palette, projection, vmin=0.0, vmax=vmax)
+
+        self._add_world_map(ax, display_world_map, projection)
+
+        cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.45)
+        cbar.ax.tick_params(labelsize=10)
+        cbar.set_label('Pattern Value', fontsize=11)
+
+        self._plot_detector_sites(ax, detectors, projection)
+
+        if add_title:
+            polarization_names = {
+                0: r"$|F_x|$ (DPF)",
+                1: r"$|F_+|$ (DPF)",
+                2: r"$|F_x|/|F_+|$ (DPF)",
+                3: r"$\sqrt{|F_+|^2 + |F_x|^2}$ (DPF)",
+                4: "|F_x|^2 (DPF)",
+                5: "|F_+|^2 (DPF)"
+            }
+            title = f"Network: {' '.join([d['code'] for d in detectors])} - {polarization_names.get(polarization, f'Polarization {polarization}')}"
+            ax.set_title(title, fontsize=14, pad=20)
+
+        plt.tight_layout()
+        return fig, ax
+
+
 def gmst_accurate(gps_time):
     gmst = Time(gps_time, format='gps', scale='utc',
                 location=(0, 0)).sidereal_time('mean').rad
@@ -539,3 +1259,195 @@ def earth_centered_vectors(longitude, latitude,
         'y_response': resps[0],
         'response': full_resp,
     }
+
+
+def get_max_delay(detectors) -> float:
+    """
+    Return the network maximum delay using detector-level `tau` values.
+
+    This is a Python-native equivalent of cWB `getDelay("MAX")`: it scans the
+    available detector delay maps and returns the largest absolute value among
+    global extrema.
+
+    Parameters
+    ----------
+    detectors : sequence | object | None
+        Detector-like object(s). Each detector may expose:
+        - `tau.max()` / `tau.min()` (ROOT-like map), or
+        - an array-like `tau` (optionally via `tau.data`).
+
+    Returns
+    -------
+    float
+        Maximum absolute delay in seconds. Returns `0.0` when insufficient
+        detector data is available.
+    """
+    if detectors is None:
+        return 0.0
+
+    # Accept a single detector object for convenience.
+    if not isinstance(detectors, (list, tuple)):
+        detectors = [detectors]
+
+    if len(detectors) < 2:
+        return 0.0
+
+    max_tau = -np.inf
+    min_tau = np.inf
+
+    for detector in detectors:
+        tau = getattr(detector, "tau", None)
+        if tau is None:
+            continue
+
+        # Fast path for ROOT-like maps that already provide min/max methods.
+        if hasattr(tau, "max") and hasattr(tau, "min") and callable(tau.max) and callable(tau.min):
+            local_max = float(tau.max())
+            local_min = float(tau.min())
+        else:
+            # Generic path for numpy-compatible arrays.
+            tau_values = np.asarray(getattr(tau, "data", tau), dtype=float)
+            if tau_values.size == 0:
+                continue
+            local_max = float(np.max(tau_values))
+            local_min = float(np.min(tau_values))
+
+        if local_max > max_tau:
+            max_tau = local_max
+        if local_min < min_tau:
+            min_tau = local_min
+
+    if not np.isfinite(max_tau) or not np.isfinite(min_tau):
+        return 0.0
+
+    return float(max(abs(max_tau), abs(min_tau)))
+
+
+def calculate_e2or_from_acore(acore: float, n_ifo: int) -> float:
+    """
+    Compute cWB-like subnetwork energy threshold (`e2or`) from `Acore`.
+
+    This follows the C++ relation in `network::setAcore`:
+      p = 1 - Gamma(nIFO, acore^2 * nIFO)
+      e2or = iGamma(nIFO - 1, p)
+
+    Here `Gamma` / `iGamma` are implemented via regularized upper incomplete
+    gamma and its inverse (`gammaincc`, `gammainccinv`).
+
+    Parameters
+    ----------
+    acore : float
+        Core pixel amplitude threshold.
+    n_ifo : int
+        Number of detectors in network.
+
+    Returns
+    -------
+    float
+        Subnetwork energy threshold `e2or`.
+    """
+    n_ifo = int(max(1, n_ifo))
+    if n_ifo < 2:
+        return float(max(0.0, acore))
+
+    prob = float(gammaincc(float(n_ifo), float(acore) * float(acore) * float(n_ifo)))
+    prob = float(np.clip(prob, 1.0e-12, 1.0 - 1.0e-12))
+    return float(gammainccinv(float(n_ifo - 1), prob))
+
+
+def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
+    """Build sky directions as (ra, dec) arrays in radians."""
+    if healpix_order is not None and int(healpix_order) > 0:
+        try:
+            import healpy as hp
+            nside = 2 ** int(healpix_order)
+            npix = hp.nside2npix(nside)
+            theta, phi = hp.pix2ang(nside, np.arange(npix, dtype=np.int64), nest=False)
+            ra = np.asarray(phi, dtype=np.float64)
+            dec = (np.pi / 2.0) - np.asarray(theta, dtype=np.float64)
+            return ra, dec
+        except Exception:
+            pass
+
+    n_sky = int(max(1, n_sky))
+    idx = np.arange(n_sky, dtype=np.float64)
+    z = 1.0 - 2.0 * (idx + 0.5) / float(n_sky)
+    phi = (np.pi * (3.0 - np.sqrt(5.0)) * idx) % (2.0 * np.pi)
+    dec = np.arcsin(np.clip(z, -1.0, 1.0))
+    ra = phi
+    return ra.astype(np.float64), dec.astype(np.float64)
+
+
+def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time,
+                                   healpix_order=None, n_sky=None):
+    """
+    Compute pure-Python sky delay indices and antenna patterns.
+
+    Returns arrays compatible with `load_data_from_ifo` output:
+      - `ml`: int32 delay index, shape `(nIFO, nSky)`
+      - `FP`: float64 plus pattern, shape `(nIFO, nSky)`
+      - `FX`: float64 cross pattern, shape `(nIFO, nSky)`
+    """
+    detector_objs = [Detector(ifo) if isinstance(ifo, str) else ifo for ifo in ifos]
+    if len(detector_objs) == 0:
+        raise ValueError("No detectors provided")
+
+    n_ifo = len(detector_objs)
+    rate = float(sample_rate)
+    td_size = int(max(1, td_size))
+    if n_sky is None:
+        if healpix_order is not None and int(healpix_order) > 0:
+            n_sky = int(12 * (2 ** int(healpix_order)) ** 2)
+        else:
+            n_sky = 3072
+
+    ra, dec = _build_sky_directions(n_sky=n_sky, healpix_order=healpix_order)
+    n_sky = int(ra.size)
+
+    ref_idx = 0
+    for i, det in enumerate(detector_objs):
+        if det.name == ref_ifo:
+            ref_idx = i
+            break
+
+    sin_dec = np.sin(dec)
+    cos_dec = np.cos(dec)
+    cos_ra = np.cos(ra)
+    sin_ra = np.sin(ra)
+    n_hat = np.vstack((cos_dec * cos_ra, cos_dec * sin_ra, sin_dec)).T
+
+    c_light = float(constants.c.value)
+    ref_pos = detector_objs[ref_idx].vertex_vec_earth_centered
+
+    ml = np.zeros((n_ifo, n_sky), dtype=np.int32)
+    FP = np.zeros((n_ifo, n_sky), dtype=np.float64)
+    FX = np.zeros((n_ifo, n_sky), dtype=np.float64)
+
+    # CWB maps HEALPix pixel angles to the Earth-fixed (geographic) frame:
+    #   phi_hp  = geographic longitude  (NOT equatorial RA)
+    #   theta_hp = geographic colatitude (same Z-axis as equatorial)
+    #
+    # The time-delay n_hat is already correct:
+    #   n_hat = (sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta))
+    # is valid as a geographic/ECEF unit vector and is dotted against
+    # the ECEF detector positions — no GMST rotation needed.
+    #
+    # For antenna patterns, atenna_pattern computes
+    #   gha = GMST(t) - ra_arg
+    # We want gha = -phi_geo (CWB convention), so we pass
+    #   ra_arg = GMST(t) + phi_geo = GMST(t) + ra
+    # The GMST cancels: gha = GMST - (GMST + phi_geo) = -phi_geo
+    # Result is independent of the actual GPS time value chosen.
+    gmst_rad = gmst_accurate(float(gps_time))
+    ra_eff = ra + gmst_rad  # effective equatorial RA that gives gha = -phi_geo
+
+    for i, det in enumerate(detector_objs):
+        dt = np.einsum('ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos) / c_light
+        delay_idx = np.rint(dt * rate).astype(np.int32)
+        ml[i] = np.clip(delay_idx, -td_size, td_size)
+
+        f_plus, f_cross = det.atenna_pattern(ra_eff, dec, 0.0, float(gps_time))
+        FP[i] = np.asarray(f_plus, dtype=np.float64)
+        FX[i] = np.asarray(f_cross, dtype=np.float64)
+
+    return ml, FP, FX

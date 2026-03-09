@@ -129,7 +129,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     return data
 
 def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: list[str], event: Event,
-                                HoT_list: list[TimeFrequencySeries], mdc_maps: list[TimeFrequencySeries], window: float, offset: float, inRate: float, 
+                                HoT_list, mdc_maps, window: float, offset: float, inRate: float,
                                 wave_file: str = None, save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
     
     logger.info(f"Reconstructing injected waveform for event {event.hash_id}")

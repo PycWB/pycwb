@@ -251,11 +251,13 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     data.shift(data_start - start)
     logger.info(f'Shift data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     if int(data.sample_rate.value) != int(job_seg.sample_rate):
-        sample_rate_old = data.sample_rate.value
-        w = convert_to_wavearray(data)
-        w.Resample(job_seg.sample_rate)
-        data = convert_wavearray_to_timeseries(w)
-        # data = data.resample(config.inRate)
-        logger.info(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
+        raise ValueError(f'Sample rate of the data {data.sample_rate} is different from the job segment sample rate {job_seg.sample_rate}, '
+                         f'please check the frame file {frame.path} and the job segment {job_seg.index}')
+        # sample_rate_old = data.sample_rate.value
+        # w = convert_to_wavearray(data)
+        # w.Resample(job_seg.sample_rate)
+        # data = convert_wavearray_to_timeseries(w)
+        # # data = data.resample(config.inRate)
+        # logger.info(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
     # return check_and_resample(data, config, i) # move this to the final step
     return data.to_pycbc()

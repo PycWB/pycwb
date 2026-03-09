@@ -170,7 +170,7 @@ def save_trigger(working_dir, config, job_seg, trigger_data, index=None):
     save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
 
     print(f"Adding event to catalog")
-    add_events_to_catalog(f"{working_dir}/{config.outputDir}/catalog.json",
+    add_events_to_catalog(f"{working_dir}/{config.outputDir}/catalog.parquet",
                           event.summary(job_seg.index, f"{event.stop[0]}_{event.hash_id}"))
 
     return trigger_folder

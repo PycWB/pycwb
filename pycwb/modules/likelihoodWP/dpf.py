@@ -13,11 +13,18 @@ def calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_thr
     aa = np.zeros(n_sky)
 
     # check shape of FP, FX, and rms
-    if FP.shape != (n_sky, n_ifo) and FX.shape != (n_sky, n_ifo) and rms.shape[1] != n_ifo:
-        raise ValueError('FP and FX must have the shape of (n_sky, n_ifo) and rms must have the shape of (n_pix, n_ifo)')
+    if FP.shape != (n_sky, n_ifo) or FX.shape != (n_sky, n_ifo) or rms.shape[1] != n_ifo:
+        n1, n2 = FP.shape
+        m1, m2 = FX.shape
+        p1, p2 = rms.shape
+
+        raise ValueError(
+            f"FP and FX must have shape (n_sky, n_ifo) and rms must have shape (n_pix, n_ifo), "
+            f"got FP: ({n1}, {n2}), FX: ({m1}, {m2}), rms: ({p1}, {p2})"
+        )
     for i in prange(n_sky):
         MM[i] = 1
-        aa[i], _, _, _, _, _, _, _ = dpf_np_loops_vec(FP[i], FX[i], rms)
+        aa[i] = dpf_np_loops_vec(FP[i], FX[i], rms)[0]
 
     FF = MM.sum()
     ff = (aa > gamma_regulator).sum()

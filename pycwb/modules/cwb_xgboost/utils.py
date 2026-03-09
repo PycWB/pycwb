@@ -19,34 +19,48 @@ def getcapname(feature,cap):
    return (feature+'_'+str("{:.1f}".format(cap))).replace(".","d")
 
 
-def load_model(model_file: str) -> xgb.Booster:
-    """
-    Load the model from the file.
+def load_model(model_file: str) -> xgb.XGBClassifier:
+    """Load an XGBoost classifier from a file.
+
+    Supports three formats, selected by file extension:
+
+    * ``.ubj``  — XGBoost native Universal Binary JSON (recommended; compact
+      and portable across Python/XGBoost versions).
+    * ``.json`` — XGBoost native text JSON (human-readable, equally portable).
+      Falls back to pickle for legacy files that happen to have a ``.json``
+      extension.
+    * ``.pkl`` / ``.pickle`` / any other extension — pickle (legacy; avoid for
+      new models because it breaks across Python and XGBoost versions).
 
     Parameters
     ----------
     model_file : str
-        The path to the model file.
+        Path to the saved model file.
 
     Returns
     -------
-    model : xgb.Booster
-        The loaded model.
-
+    xgb.XGBClassifier
+        The loaded classifier.
     """
-    ext = model_file.split('.')[-1]
-    if ext == 'json':
-        # handle fake json file which is a pickle file
-        try:
-            model = pickle.load(open(model_file, 'rb'))
-        except Exception as e:
-            # try to load as xgboost json model
-            model = xgb.XGBClassifier()
-            model.load_model(fname=model_file)
-    elif ext == 'ujs':
+    ext = model_file.rsplit(".", 1)[-1].lower()
+
+    if ext == "ubj":
+        # XGBoost native binary JSON — preferred format
         model = xgb.XGBClassifier()
-        model.load_model(fname=model_file)
-    
+        model.load_model(model_file)
+    elif ext == "json":
+        # XGBoost native text JSON, but fall back to pickle for legacy files
+        try:
+            model = xgb.XGBClassifier()
+            model.load_model(model_file)
+        except Exception:
+            with open(model_file, "rb") as fh:
+                model = pickle.load(fh)
+    else:
+        # .pkl / .pickle or unknown extension — assume pickle
+        with open(model_file, "rb") as fh:
+            model = pickle.load(fh)
+
     return model
 
 

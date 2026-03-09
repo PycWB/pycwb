@@ -10,7 +10,7 @@ messenger_test/data
 docs/source/pycwb*.rst
 docs/source/modules.rst
 
-tests/*
+*.log
 .pytest_cache
 *.iml
 cwb-core/install
@@ -25,3 +25,16 @@ cwb_wrapper/_version.py
 pycwb/_version.py
 
 benchmark/*/*.pkl
+examples/*/catalog
+examples/*/public
+examples/*/trigger
+examples/*/job_status
+examples/*/output
+examples/*/log
+examples/*/wdmXTalk
+examples/**/*.hdf5
+examples/**/*.gwf
+
+*.bin
+*.xbin
+*.pkl

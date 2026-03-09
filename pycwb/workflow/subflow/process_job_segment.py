@@ -6,7 +6,6 @@ from copy import copy
 from pycwb.config import Config
 from pycbc.types import TimeSeries
 from pycwb.modules.catalog import add_events_to_catalog
-from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
@@ -17,7 +16,7 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.utils.dataclass_object_io import save_dataclass_to_json
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
 from pycwb.modules.reconstruction import estimate_snr
 
@@ -113,12 +112,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # supercluster
-        if config.use_root_supercluster:
-            super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
-        else:
-            xtalk_coeff, xtalk_lookup_table, layers, _ = load_catalog(config.MRAcatalog)
-            super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters, tf_maps,
-                                                        xtalk_coeff, xtalk_lookup_table, layers)
+        super_fragment_clusters = supercluster(config, network, fragment_clusters, tf_maps)
+
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # compute likelihood for each lag
@@ -161,7 +156,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 # FIXME: add gps time and segment time on the x ticks
                 event, cluster, event_skymap_statistics = trigger
-
+                event.hybrid = True
                 # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
                                         event, cluster, epoch=data[0].start_time,
@@ -202,7 +197,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                             min_qveto = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
                     
-                    event.Qveto = [min_qfactor, min_qfactor]          # just for testing purpose
+                    event.Qveto = [min_qveto, min_qfactor]
                     event.qveto = min_qveto
                     event.qfactor = min_qfactor
                     logger.info(f"Qveto for event {event.hash_id}: {event.qveto}, Qfactor: {event.qfactor}")
@@ -223,100 +218,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
 
-def create_single_trigger_folder(working_dir: str, trigger_dir: str, job_seg: WaveSegment, event: tuple) -> str:
-    """
-    Create a trigger folder for the given event and job segment.
-
-    Parameters
-    ----------
-    working_dir : str
-        The working directory for the run
-    trigger_dir : str
-        The directory to save the triggers
-    job_seg : WaveSegment
-        The job segment to process
-    event : tuple
-        The event data
-
-    Returns
-    -------
-    str
-        The path to the trigger folder
-    """
-    trigger_folder = f"{working_dir}/{trigger_dir}/trigger_{job_seg.index}_{job_seg.trail_idx}_{event[0].stop[0]}_{event[0].hash_id}"
- 
-    ## Do not create the folder here, let the save function create it to prevent too many folders
-    # if not os.path.exists(trigger_folder):
-    #     os.makedirs(trigger_folder)
-    # else:
-    #     logger.info(f"Trigger folder {trigger_folder} already exists, skip")
-
-    return trigger_folder
-
-
-def save_trigger(trigger_folder: str, trigger_data: tuple | list,
-                 save_cluster: bool = True, save_sky_map: bool = True, 
-                 index: bool = None):
-    if index is None:
-        event, cluster, event_skymap_statistics = trigger_data
-    else:
-        event, cluster, event_skymap_statistics = trigger_data[index]
-
-    # Save the event to the trigger folder
-    if save_cluster or save_sky_map:
-        if not os.path.exists(trigger_folder):
-            os.makedirs(trigger_folder)
-
-        logger.info(f"Saving trigger {event.hash_id}")
-
-        # save_dataclass_to_json(event, f"{trigger_folder}/event.json")
-        if save_cluster:
-            save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
-        if save_sky_map:
-            save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
-
-    return trigger_folder
-
-
-def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple | list,
-                     catalog_file: str = "catalog.json", index: int = None):
-    """
-    Add an event to the catalog.
-
-    Parameters
-    ----------
-    working_dir : str
-        The working directory for the run
-    catalog_dir : str
-        The directory to save the catalog
-    trigger_data : tuple | list
-        The event data
-    catalog_file : str
-        The catalog file to save the triggers
-    index : int
-        The index of the event in the list of events
-
-    Returns
-    -------
-    str
-        The path to the catalog file
-    """
-    if catalog_file is None:
-        catalog_file = "catalog.json"
-
-    if index is None:
-        event, _, _ = trigger_data
-    else:
-        event, _, _ = trigger_data[index]
-
-    logger.info(f"Adding event {event.hash_id} to catalog")
-    if not catalog_file.startswith("/"):
-        catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-
-    add_events_to_catalog(catalog_file, event)
-    logger.info(f"Event {event.hash_id} added to catalog {catalog_file}")
-    
-    return catalog_file
+# create_single_trigger_folder, save_trigger, add_event_to_catalog are imported above
+# from pycwb.modules.workflow_utils and kept available here for backward compatibility.
 
 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):
