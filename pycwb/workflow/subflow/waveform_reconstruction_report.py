@@ -3,8 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 import sys 
 from pycwb.modules.post_production.waveform_reconstruction_plot import *
 #from pycwb.modules.post_production.waveform_reconstruction import load_and_slice#, sync_waveforms, slice_waveforms, pad_waveforms
-sys.path.insert(0,'/home/alessandro.martini/pycwb/pycwb/modules/post_production')
-from waveform_reconstruction import load_and_slice
+from pycwb.modules.post_production.waveform_reconstruction import load_and_slice
 from numpy.linalg import norm 
 import os 
 from pathlib import Path
