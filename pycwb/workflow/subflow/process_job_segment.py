@@ -17,8 +17,9 @@ from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
-from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
+from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow, reconstruct_residuals_flow
 from pycwb.modules.reconstruction import estimate_snr
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.frames:
         base_data = read_from_job_segment(config, job_seg)
     if job_seg.noise:
-        base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
+        base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)    
+    if job_seg.bootstrap: 
+        base_data = [block_bootstrap(base_data[i], job_seg) for i in range(len(base_data))] 
 
     # get all the trail_idx from the injections, if there is no injections, use 0
     trail_idxs = {0}
@@ -92,9 +95,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # check and resample the data
         data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
         # data conditioning
+
         tf_maps, nRMS_list = data_conditioning(config, data)
+
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # if injection, check and resample the mdc
@@ -162,6 +166,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                         event, cluster, epoch=data[0].start_time,
                                         wave_file=wave_file,save=config.save_waveform, plot=config.plot_waveform)
                 
+                if config.save_residuals or config.plot_residuals: 
+                    reconstruct_residuals_flow(trigger_folder, config, sub_job_seg.ifos, event, 
+                                               data, reconst_data, tf_maps, nRMS_list,
+                                                save=config.save_residuals, save_gwf = config.save_residuals_gwf, 
+                                                plot=config.plot_residuals) 
                 # if injection, estimate injected_waveforms and calculate related statistics
                 if event.injection: 
                     injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
@@ -222,6 +231,68 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 # from pycwb.modules.workflow_utils and kept available here for backward compatibility.
 
 
+
+def block_bootstrap(data: TimeSeries, job_segment: WaveSegment) -> TimeSeries:
+    """
+    Perform block bootstrap on the given data.
+
+    Parameters
+    ----------
+    data : list[TimeSeries]
+        The data to perform bootstrap on
+    gps_time: float
+    start_time: float
+    end_time: float
+    block_size: float
+        The size of the block for bootstrap in seconds
+    """
+    bootstrap = job_segment.bootstrap
+    injection = job_segment.injections[0]
+    start_time = injection['start_time'] - float(data.start_time)
+    end_time = injection['end_time'] - float(data.start_time)
+
+    block_size = bootstrap.get('block_size', 0)
+    if block_size < 0:
+        raise ValueError("Block size for bootstrap cannot be negative. Please provide a non-negative block size.")
+    
+    seed = bootstrap.get('seed', None)
+    if seed: 
+        logger.info(f"Setting seed to {seed} for reproducibility")
+    rng = np.random.default_rng(seed=seed)
+    # calculate the number of blocks
+    
+    start_idx = int(start_time * data.sample_rate)
+    end_idx = int(end_time * data.sample_rate)
+    segment_length = end_idx - start_idx
+    
+    # Extract the segment to bootstrap
+    segment_data = data.data[start_idx:end_idx].copy() 
+    if block_size == 0:
+        # Bootstrap individual samples (residuals)
+        logger.info("Bootstrapping individual residuals")
+        bootstrap_indices = rng.choice(segment_length, size=segment_length, replace=True)
+        bootstrapped_segment = segment_data[bootstrap_indices]
+    else:
+        # Block bootstrap
+        logger.info(f"Performing block bootstrap with block size {block_size} seconds")
+        block_size_samples = int(block_size * data.sample_rate)
+        n_blocks = int(np.ceil(segment_length / block_size_samples))
+
+        bootstrapped_segment = np.zeros(segment_length)
+        for i in range(n_blocks):
+            # Randomly select a block start position
+            block_start = rng.choice(n_blocks) * block_size_samples
+            # Copy block to the output
+            output_start = i * block_size_samples
+            output_end = min(output_start + block_size_samples, segment_length)
+            block_length = output_end - output_start
+            bootstrapped_segment[output_start:output_end] = segment_data[block_start:block_start + block_length]
+    
+    # Create new TimeSeries with bootstrapped data
+    bootstrap_data = data.copy()
+    bootstrap_data.data[start_idx:end_idx] = bootstrapped_segment
+
+    return bootstrap_data 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):
 #     print_job_info(job_seg)
 #

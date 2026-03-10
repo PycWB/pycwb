@@ -5,12 +5,14 @@ import math
 import numpy as np
 import pycwb
 from pycbc.types.timeseries import TimeSeries
+from pycwb.modules.plot import event
+from pycwb.modules.reconstruction.getResiduals import get_ASD
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
 from pycwb.modules.plot_map.world_map import plot_skymap_contour
 # from pycwb.modules.read_data import generate_strain_from_injection
-from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform
+from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform, get_residuals
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 from filelock import SoftFileLock
@@ -222,6 +224,95 @@ def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -
                 grp[key].attrs['sample_rate'] = value.sample_rate
                 grp[key].attrs['start_time'] = float(value.start_time)
                 logger.info(f"Added waveform {key} for event {event_id} to {wave_file}")
+
+def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[str], event: Event, data: list[TimeSeries], reconst_data: Dict[str, TimeSeries], tf_maps: list[TimeFrequencySeries],
+                             nrms: list[TimeFrequencySeries], save: bool = True, save_gwf: bool = False, plot: bool = False) -> Dict[str, TimeSeries]:
+    """ Reconstruct residuals from the reconstructed data and event information.
+    """
+    from numpy import savetxt
+    logger.info(f"Reconstructing residuals for event {event.hash_id}") 
+
+    import sys
+    sys.path.insert(0,'/home/alessandro.martini/pycwb/pycwb/modules/reconstruction/')
+    from getResiduals import get_residuals, get_ASD 
+
+    # Calculate the residuals and ASD for strain data
+    strain_residuals = [get_residuals(data[i], reconst_data[f"{ifos[i]}_reconstructed_signals"], config.inRate,\
+                                      full_segment=False, rescale=True) for i in range(len(ifos))]
+    
+    try: 
+        strain_ASD = [get_ASD(strain_residuals[i]) for i in range(len(ifos))]  
+    except Exception as e:
+        logger.warning(f"Error calculating ASD for {ifo}: {e}") 
+        strain_ASD = None 
+        
+    whitened_residuals = [get_residuals(tf_maps[i].data, reconst_data[f"{ifos[i]}_reconstructed_signals_whiten"],\
+                                        config.inRate, full_segment=False, rescale = False) for i in range(len(ifos))]
+
+    if save: 
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+            logger.info(f"Creating trigger folder: {trigger_folder}")
+        for i, ifo in enumerate(ifos):
+
+            try:
+                logger.info(f"Saving residuals for {ifo}")
+                strain_residuals[i].save(f"{trigger_folder}/{ifo}_RES.{config.save_waveform_format}")
+
+                logger.info(f"Saving whitened residuals for {ifo}")
+                whitened_residuals[i].save(f"{trigger_folder}/{ifo}_RES_whiten.{config.save_waveform_format}")
+                
+                nrms[i].data.save(f"{trigger_folder}/{ifo}_nRMS.{config.save_waveform_format}")
+                logger.info(f"Saving ASD for {ifo}")
+                if strain_ASD is not None:
+                    savetxt(f"{trigger_folder}/{ifo}_RES_ASD.txt", strain_ASD[i])
+            except Exception as e:
+                logger.warning(f"Error saving residuals for {ifo}: {e}")  
+
+    
+    if save_gwf: 
+        
+        from pycwb.modules.read_data import save_to_gwf
+
+        logger.info(f"Saving residuals to GWF for event {event.hash_id}")
+        strain_residuals_full = [get_residuals(tf_maps[i].data, reconst_data[f"{ifos[i]}_reconstructed_signals_whiten"], config.inRate,\
+                                      full_segment=True, rescale=False) for i in range(len(ifos))]
+
+        channel_name = f"RES_WHITEN_{int(strain_residuals_full[0].sample_rate)}Hz"
+        label = "RES_WHITEN"
+        start_time = float(strain_residuals_full[0].start_time)
+        duration = float(strain_residuals_full[0].duration)
+        
+        save_to_gwf(strain_residuals_full, ifos, channel_name, trigger_folder, start_time, duration, label)
+        
+        for i, ifo in enumerate(ifos):
+            strain_residuals_full[i].save(f"{trigger_folder}/{ifo}_RES_whiten_full.{config.save_waveform_format}")
+            with open(f"{trigger_folder}/{ifo}_frames.in", 'w') as f:
+                f.write(f"input/frames/{ifo}-{label}-{int(start_time)}-{int(duration)}.gwf\n")
+                f.write(f"# channel name is {ifo}:{channel_name}")
+
+
+    if plot:
+        from pycwb.modules.plot.waveform import plot
+        from matplotlib import pyplot as plt
+
+        if not os.path.exists(trigger_folder):
+            os.makedirs(trigger_folder)
+            logger.info(f"Creating trigger folder: {trigger_folder}")
+
+        for i, ifo in enumerate(ifos):
+            try:
+                plot(strain_residuals[i], ifo = ifo)
+                plt.savefig(f'{trigger_folder}/{ifo}_RES.png')
+                plt.close()
+
+                plot(whitened_residuals[i], ifo = ifo)
+                plt.savefig(f'{trigger_folder}/{ifo}_RES_whiten.png')
+                plt.close()
+
+      
+            except Exception as e:
+                logger.warning(f"Error plotting residuals for {ifo}: {e}")
 
 def plot_trigger_flow(trigger_folder: str,
                  event: Event, cluster: Cluster) -> None:

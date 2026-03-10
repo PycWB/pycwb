@@ -80,6 +80,7 @@ class WaveSegment:
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
+    bootstrap: Optional[Dict] = None
     trail_idx: int = 0
 
     @property

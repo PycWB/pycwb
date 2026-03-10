@@ -120,11 +120,21 @@ def create_job_segment_from_config(config):
         for job_seg in job_segments:
             job_seg.channels = config.channelNamesRaw
 
+    if config.bootstrap:
+        #make sure there is exactly one job segment with injections for bootstrap 
+        seg_with_inj = sum([1 for job_seg in job_segments if job_seg.injections is not None])
+        if seg_with_inj != 1:
+                raise ValueError(f"Bootstrap is enabled but {seg_with_inj} job segments with injections are generated. Only one job segment with injections is allowed. "
+                                 f"Please make sure the job segments are correct.")
+        job_segments = [job_seg for job_seg in job_segments if job_seg.injections is not None] 
+        job_segments = create_bootstrap_job_segments(job_segments[0], config.bootstrap)
+
     ############################################
     ## TODO: check if the job segments are valid
-    logger.info(f"Number of segments: {len(job_segments)}")
+    print(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
     return job_segments
+
 
 
 def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high, sample_rate,
@@ -383,6 +393,48 @@ def add_injections_into_job_segments(job_segments, injections):
             if injections[i]["end_time"] >= segment.start_time:
                 segment.injections.append(injections[i])
             i += 1
+
+
+def create_bootstrap_job_segments(job_segment: WaveSegment, bootstrap: dict) -> list[WaveSegment]: 
+    """
+    Create bootstrap job segments based on the given job segments. The bootstrap job segments will be created by splitting the original job segments into smaller segments with the same length as the injection signal. The start time of each bootstrap segment will be randomly selected from the original job segment.
+
+    :param job_segments: The original job segments.
+    :type job_segments: list[WaveSegment]
+    :return: The bootstrap job segments.
+    :rtype: list[WaveSegment]
+    """
+
+
+    #make sure there is only one injection in the job segment for bootstrap
+    if len(job_segment.injections) > 1:
+        raise ValueError(f"Bootstrap is enabled but {len(job_segment.injections)} injections are found in the job segment. Only one injection is allowed for bootstrap. "
+                            f"Please make sure the injections are correctly added to the job segments.")
+    
+    #check that bootstrap has got replicates 
+    bootstrap_replicates = bootstrap.get('replicates', None)
+    if bootstrap_replicates is None:
+        raise ValueError("Bootstrap is enabled but the number of replicates is not specified. Please specify the number of replicates for bootstrap.") 
+
+    if not bootstrap.get('nrms', None):
+        raise ValueError("Bootstrap is enabled but nRMS settings are not specified. Please specify the nRMS settings for bootstrap.") 
+    
+    seed = bootstrap.get('seed', None)
+
+    from copy import deepcopy 
+    logger.info(f"Creating {bootstrap_replicates} bootstrap job segments for the analysis.")
+    bootstrap_job_segments = []
+    
+    for i in range(bootstrap_replicates):
+        job_seg = deepcopy(job_segment)
+        job_seg.index = i + 1 
+        bootstrap_copy = bootstrap.copy()
+        bootstrap_copy['seed'] = seed + i
+        job_seg.bootstrap = bootstrap_copy
+        bootstrap_job_segments.append(job_seg)
+
+    return bootstrap_job_segments
+
 
 
 def save_job_segments_to_json(job_segments, output_file) -> None:
