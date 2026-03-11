@@ -1363,7 +1363,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
             if condition_2:
                 rejection_reason += f" (Eo - Eh) > 0 but (Eo - Eh) = {Eo - Eh};"
             if condition_3:
-                rejection_reason += f" Ec * Rc / cc >= netEC_threshold but Ec * Rc / cc = {Ec * Rc / cc};"
+                rejection_reason += f" Ec * Rc / cc >= netEC_threshold but Ec * Rc / cc = {Ec * Rc / cc:.4f} < {netEC_threshold:.4f};"
             if condition_4:
                 rejection_reason += f" N < 1 but N = {N};"
             return rejection_reason

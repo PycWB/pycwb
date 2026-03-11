@@ -3,6 +3,7 @@ import logging
 from numba.typed import List
 from numba import jit, njit, types
 from .sub_net_cut import sub_net_cut
+from pycwb.types.network_cluster import Cluster
 
 
 logger = logging.getLogger(__name__)
@@ -374,7 +375,7 @@ def resolve_wdm_context(layer_tag, context_map):
     raise ValueError(f"Missing WDM context for pixel layer {layer_tag}")
 
 
-def apply_subnet_cut(superclusters, n_loudest_local, ml_local, FP_local, FX_local,
+def apply_subnet_cut(superclusters: list[Cluster], n_loudest_local, ml_local, FP_local, FX_local,
                      acor_local, e2or_local, n_ifo_local, n_sky_local,
                      subnet_local, subcut_local, subnorm_local, subrho_local,
                      xtalk_coeff_local, xtalk_lookup_table_local, layers_local):
@@ -389,13 +390,11 @@ def apply_subnet_cut(superclusters, n_loudest_local, ml_local, FP_local, FX_loca
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
             logger.info(
-                "Cluster %d (%d pixels) passed subnet, subrho, and subthr cut",
-                i,
-                len(c.pixels),
+                f"Cluster {i} ({len(c.pixels)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) passed subnet, subrho, and subthr cut"
             )
             c.cluster_status = -1
         else:
-            log_output = f"Cluster {i} ({len(c.pixels)} pixels) failed "
+            log_output = f"Cluster {i} ({len(c.pixels)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) failed "
             if not results['subnet_passed']:
                 log_output += f"subnet cut condition: {results['subnet_condition']}, "
             if not results['subrho_passed']:
