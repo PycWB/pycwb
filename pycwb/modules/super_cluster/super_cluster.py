@@ -707,8 +707,14 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
             "No accepted superclusters after supercluster stage (lag=%d)", lag_idx
         )
         return None
+    
+    if setup["pattern"] != 0:
+        accepted_superclusters = defragment(
+            accepted_superclusters, setup["Tgap"], setup["Fgap"], n_ifo
+        )
+        logger.info(f"   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixels) for c in accepted_superclusters))
 
-    selected_superclusters = apply_subnet_cut(
+    accepted_superclusters = apply_subnet_cut(
         accepted_superclusters,
         setup["n_loudest"],
         setup["ml"],
@@ -728,18 +734,18 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
     )
 
     if setup["pattern"] == 0:
-        new_superclusters = defragment(
-            selected_superclusters, setup["Tgap"], setup["Fgap"], n_ifo
+        accepted_superclusters = defragment(
+            accepted_superclusters, setup["Tgap"], setup["Fgap"], n_ifo
         )
     else:
-        new_superclusters = selected_superclusters
+        accepted_superclusters = accepted_superclusters
 
-    total_pixels = sum(len(c.pixels) for c in new_superclusters)
+    total_pixels = sum(len(c.pixels) for c in accepted_superclusters)
     logger.info(
-        "   post-cut clusters|pixels   : %6d|%d", len(new_superclusters), total_pixels
+        "   post-cut clusters|pixels   : %6d|%d", len(accepted_superclusters), total_pixels
     )
 
-    fragment_cluster.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
+    fragment_cluster.clusters = [c for c in accepted_superclusters if c.cluster_status <= 0]
     total_pixels = sum(len(c.pixels) for c in fragment_cluster.clusters)
     logger.info(
         "   final clusters|pixels      : %6d|%d",
