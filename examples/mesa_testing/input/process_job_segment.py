@@ -10,7 +10,8 @@ from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
-from pycwb.modules.data_conditioning import data_conditioning, whitening_mdc
+from pycwb.modules.data_conditioning.fake_conditioning import fake_conditioning
+from pycwb.modules.data_conditioning import whitening_mdc
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
@@ -97,7 +98,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
         # data conditioning
 
-        tf_maps, nRMS_list = data_conditioning(config, data)
+        tf_maps, nRMS_list = fake_conditioning(config, data)
 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
