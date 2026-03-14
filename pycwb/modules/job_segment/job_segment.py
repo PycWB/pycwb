@@ -121,6 +121,24 @@ def create_job_segment_from_config(config):
             job_seg.channels = config.channelNamesRaw
 
     ############################################
+    ## flatten job segments by injection trail index if parallel_injection_trail is enabled
+    if getattr(config, 'parallel_injection_trail', False):
+        from dataclasses import replace
+        flat_job_segments = []
+        index = 0
+        for job_segment in job_segments:
+            trail_indices = set(inj['trail_idx'] for inj in (job_segment.injections or []) if 'trail_idx' in inj)
+            if not trail_indices:
+                flat_job_segments.append(replace(job_segment, index=index))
+                index += 1
+                continue
+            for trail_idx in trail_indices:
+                trail_injections = [inj for inj in job_segment.injections if inj.get('trail_idx') == trail_idx]
+                flat_job_segments.append(replace(job_segment, index=index, injections=trail_injections))
+                index += 1
+        job_segments = flat_job_segments
+
+    ############################################
     ## TODO: check if the job segments are valid
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
@@ -383,6 +401,7 @@ def add_injections_into_job_segments(job_segments, injections):
             if injections[i]["end_time"] >= segment.start_time:
                 segment.injections.append(injections[i])
             i += 1
+
 
 
 def save_job_segments_to_json(job_segments, output_file) -> None:

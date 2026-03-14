@@ -17,6 +17,7 @@ import pycwb.cli.post_process as post_process
 import pycwb.cli.gwosc as gwosc
 import pycwb.cli.gwosc_data as gwosc_data
 import pycwb.cli.get_external_modules as get_external_modules
+import pycwb.cli.run_waveform_reconstruction as run_waveform_reconstruction
 from pycwb import __version__
 
 def main():
@@ -67,6 +68,10 @@ def main():
     post_process_parser = subparsers.add_parser('post-process', help='Post process the results')
     post_process.init_parser(post_process_parser)
     post_process_parser.set_defaults(func=post_process.command)
+
+    waveform_reconstruction_parser = subparsers.add_parser('waveform-reconstruction', help='Run waveform reconstruction analysis')
+    run_waveform_reconstruction.init_parser(waveform_reconstruction_parser)
+    waveform_reconstruction_parser.set_defaults(func=run_waveform_reconstruction.command)
 
     # gwosc subcommand
     gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')

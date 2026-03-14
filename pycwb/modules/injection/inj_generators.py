@@ -1,6 +1,7 @@
 from pycbc.types.timeseries import TimeSeries, load_timeseries
 from scipy.signal import resample_poly
 import logging 
+from numpy import sqrt 
 
 logger = logging.getLogger(__name__)
 
@@ -23,24 +24,36 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     #Initialize the injections dictionary
     injections = {'type': 'strain'}
     sample_rate = 1 / delta_t 
-
+    central_time = None 
+    distribute = kwargs.get('distribute', True)
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
         strain = load_timeseries(file)
-        strain.start_time = kwargs['gps_time']
+        #Only compute central time once so that detector dT is preserved 
+        if distribute: 
+            if central_time is None: 
+                central_time = compute_central_time(strain)
+            
+            strain.start_time = kwargs['gps_time'] - central_time 
 
-    
+        if kwargs.get('rescale', None):
+            rescale_factor = sqrt(2) ** kwargs['rescale'] 
+            logger.info(f"Rescaling strain data by a factor of sqrt(2) ** {kwargs['rescale']}")
+            strain.data *= rescale_factor 
+
         if strain.sample_rate == sample_rate:
             injections[ifo] = strain
 
-        elif not allow_resampling and strain.sample_rate != sample_rate:
-            raise ValueError(f"Strain sample rate ({strain.sample_rate} Hz) does not match target sample rate ({sample_rate} Hz). Set allow_resampling = True to enable resampling.")
+        #resample the data if injection sample rate and target time series sample rate do not match 
+        if strain.sample_rate != sample_rate: 
+            if not allow_resampling and distribute:
+                raise ValueError(f"Strain sample rate ({strain.sample_rate} Hz) does not match target sample rate ({sample_rate} Hz). Set allow_resampling = True to enable resampling, or set distribute = False to disable resampling and preserve original sample rate.")
+            else: 
+                logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
+                factor = sample_rate / strain.sample_rate 
+                strain = resample_data(strain, factor)
 
-        else: 
-            logger.warning(f"Resampling {ifo} data with a polyphase filter from {strain.sample_rate} to {sample_rate}")
-            factor = sample_rate / strain.sample_rate
-            injections[ifo] = resample_data(strain, factor)
-
+        injections[ifo] = strain  
     return injections
 
 def resample_data(data, factor): 
@@ -69,3 +82,10 @@ def resample_data(data, factor):
         resampled_data = data.data 
     resampled_data = TimeSeries(resampled_data, delta_t= data.delta_t / factor, epoch=data.start_time)
     return resampled_data
+
+
+def compute_central_time(strain): 
+    """ 
+    Computes the central time of the strain data.
+    """ 
+    return (strain.data * strain.data * strain.sample_times.data).sum() / (strain.data * strain.data).sum() - strain.sample_times.data[0] 

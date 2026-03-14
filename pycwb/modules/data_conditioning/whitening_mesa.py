@@ -135,11 +135,10 @@ def whitening_mesa(config, h):
     n_batches = n_time // data_per_batch
     #Only take an entire number of time batches to avoid reshaping errors
     nRMS_trimmed = nRMS_matrix[:, :n_batches * data_per_batch]
-    
     nRMS_reshaped = nRMS_trimmed.reshape(n_freq, n_batches, data_per_batch)
-    nRMS_reshaped = nRMS_matrix.reshape(int(Ny / wdm_df)+1,-1,data_per_batch) 
     nRMS_reshaped[:int(16 / wdm_df) + 1] = 1     
     
+
     #Compute the nRMS as the median over the segments ignoring nans if present
     nRMS = np.sqrt(np.nanmedian(nRMS_reshaped ** 2, axis = 2))
     nRMS = generate_nrms_wseries(config, h, nRMS.reshape(-1, order = 'F'))
