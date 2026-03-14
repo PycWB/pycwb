@@ -232,9 +232,7 @@ def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[s
     from numpy import savetxt
     logger.info(f"Reconstructing residuals for event {event.hash_id}") 
 
-    import sys
-    sys.path.insert(0,'/home/alessandro.martini/pycwb/pycwb/modules/reconstruction/')
-    from getResiduals import get_residuals, get_ASD 
+    from pycwb.modules.reconstruction.getResiduals import get_residuals, get_ASD 
 
     # Calculate the residuals and ASD for strain data
     strain_residuals = [get_residuals(data[i], reconst_data[f"{ifos[i]}_reconstructed_signals"], config.inRate,\
