@@ -14,6 +14,7 @@ from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_sin
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
+from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
@@ -103,6 +104,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg = job_seg
         # add trail_idx to the sub_job_seg
         sub_job_seg.trail_idx = trail_idx
+
+        # Export raw (injected) data + equivalent user_parameters.C for cWB comparison.
+        # Must be called BEFORE check_and_resample_py so data is still at config.inRate.
+        if getattr(config, 'cwb_compare', False):
+            _cwb_compare_dir = getattr(config, 'cwb_compare_dir', '') or None
+            create_cwb_workdir(working_dir, config, sub_job_seg, data,
+                               cwb_compare_dir=_cwb_compare_dir)
 
         # check and resample the data
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]

@@ -39,6 +39,21 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "cwb_compare": {
+            "type": "boolean",
+            "description": "if true, export raw (injected) data as GWF files and generate an equivalent "
+                           "user_parameters.C for each sub_job_seg so the run can be reproduced with cWB ROOT. "
+                           "The comparison workdir is placed under <working_dir>/cwb_compare/.",
+            "default": False,
+            "cwb": False
+        },
+        "cwb_compare_dir": {
+            "type": "string",
+            "description": "base directory for cWB comparison working directories "
+                           "(default: <working_dir>/cwb_compare)",
+            "default": "",
+            "cwb": False
+        },
         "save_waveform": {
             "type": "boolean",
             "description": "save waveform from triggers",
