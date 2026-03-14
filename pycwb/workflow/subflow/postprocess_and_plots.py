@@ -225,6 +225,39 @@ def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -
                 grp[key].attrs['start_time'] = float(value.start_time)
                 logger.info(f"Added waveform {key} for event {event_id} to {wave_file}")
 
+def load_wf_from_wave(wave_file: str, ifo: str, keys: List[str]) -> Dict[str, list]:
+    """
+    Load waveforms for a given IFO and keys from the consolidated wave HDF5 file.
+    Paired reader for add_wf_to_wave.
+
+    Parameters
+    ----------
+    wave_file : str
+        Path to the wave HDF5 file.
+    ifo : str
+        Interferometer name.
+    keys : list[str]
+        Waveform keys to load, e.g. ['wf_REC', 'wf_INJ']. Each key is prefixed
+        with ``ifo_`` when looking up in the file.
+
+    Returns
+    -------
+    dict[str, list[TimeSeries]]
+        Mapping from each key to a list of TimeSeries (one per event, sorted by event id).
+    """
+    result: Dict[str, list] = {key: [] for key in keys}
+    with h5.File(wave_file, 'r') as f:
+        for event_id in sorted(f.keys()):
+            for key in keys:
+                full_key = f'{ifo}_{key}'
+                if full_key in f[event_id]:
+                    dataset = f[event_id][full_key]
+                    ts = TimeSeries(dataset[:],
+                                   delta_t=1.0 / dataset.attrs['sample_rate'],
+                                   epoch=dataset.attrs['start_time'])
+                    result[key].append(ts)
+    return result
+
 def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[str], event: Event, data: list[TimeSeries], reconst_data: Dict[str, TimeSeries], tf_maps: list[TimeFrequencySeries],
                              nrms: list[TimeFrequencySeries], save: bool = True, save_gwf: bool = False, plot: bool = False) -> Dict[str, TimeSeries]:
     """ Reconstruct residuals from the reconstructed data and event information.
