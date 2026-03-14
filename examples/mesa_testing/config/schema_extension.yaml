@@ -1,0 +1,19 @@
+# Extra schema properties for this analysis.
+# This file is loaded by pycwb_schema (mode: extend) and merged on top of the
+# default pycwb.constants.user_parameters_schema before validation.
+# Each top-level key is a new parameter name following JSON-schema property syntax.
+
+save_residuals:
+  type: boolean
+  description: "save residuals from triggers"
+  default: false
+
+plot_residuals:
+  type: boolean
+  description: "plot residuals from triggers"
+  default: false
+
+save_residuals_gwf:
+  type: boolean
+  description: "save residuals to GWF format"
+  default: false

@@ -1,7 +1,11 @@
 """
-Class to store all user parameters, load parameters from yaml file and check parameters. The supported parameters and their
-default values are defined in the provided schema. By default, the schema is the schema defined in
-pycwb.constants.user_parameters_schema.
+Config dataclass for pycWB analysis parameters.
+
+Parameters are loaded from a YAML file and validated against a JSON schema.  The
+default schema is defined in ``pycwb.constants.user_parameters_schema``.  A YAML
+file may include an optional ``pycwb_schema`` block to extend or replace that
+default schema – see :class:`Config` and :func:`pycwb.utils.yaml_helper.resolve_schema`
+for details.
 """
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
@@ -21,14 +25,75 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Config:
     """
-    Class to store user parameters
+    Dataclass that stores all user parameters for a pycWB analysis run.
 
-    Parameters
-    ----------
-    file_name : str
-        Path to the yaml file containing the user parameters
-    schema : dict
-        Schema to validate the user parameters, default is the schema defined in pycwb.constants.user_parameters_schema
+    Instances are normally created empty and then populated via one of the two
+    loading helpers:
+
+    * :meth:`load_from_yaml` – load from a YAML file, validate against a JSON
+      schema, and compute all derived fields.  The YAML file may contain an
+      optional ``pycwb_schema`` block at the top level to customise which
+      parameters are accepted (see below).
+    * :meth:`load_from_dict` – load directly from a plain Python dict (no
+      validation or derived-field computation).
+
+    Example
+    -------
+    .. code-block:: python
+
+        config = Config()
+        config.load_from_yaml("user_parameters.yaml")
+        print(config.ifo, config.fLow, config.rateANA)
+
+    Custom schema (``pycwb_schema`` block in the YAML file)
+    --------------------------------------------------------
+    The ``pycwb_schema`` top-level key lets you extend or replace the built-in
+    parameter schema without touching any Python code.
+
+    **Extend** – add or override individual fields while keeping all defaults:
+
+    .. code-block:: yaml
+
+        pycwb_schema:
+          mode: extend          # optional, 'extend' is the default
+          properties:
+            my_tag:
+              type: string
+              default: "unset"
+
+    **Extend via external file** (file contains only the extra ``properties`` dict):
+
+    .. code-block:: yaml
+
+        pycwb_schema:
+          mode: extend
+          schema_file: ./my_extra_fields.yaml
+
+    **Replace** – supply a complete JSON schema, discarding the built-in one:
+
+    .. code-block:: yaml
+
+        pycwb_schema:
+          mode: replace
+          schema_file: ./my_full_schema.yaml
+
+    Relative ``schema_file`` paths are resolved relative to the directory that
+    contains the config YAML file.
+
+    Derived fields (computed by :meth:`add_derived_key`)
+    -----------------------------------------------------
+    After loading, the following attributes are set automatically:
+
+    * ``gamma`` – alias of ``cfg_gamma``
+    * ``search`` – alias of ``cfg_search``
+    * ``rateANA`` – analysis sample rate (``inRate`` or ``fResample`` shifted by ``levelR``)
+    * ``nRES`` – number of resolution levels (``l_high - l_low + 1``)
+    * ``MRAcatalog`` – full path to the WDM cross-talk catalog
+    * ``TDRate`` – time-delay filter sample rate
+    * ``nIFO`` / ``nDQF`` – number of IFOs / DQ flag entries
+    * ``max_delay`` – maximum light-travel delay between IFOs
+    * ``WDM_level`` – list of WDM resolution levels
+    * ``dq_files`` – ``DQF`` rows converted to :class:`~pycwb.types.data_quality_file.DQFile` objects
     """
     dq_files: List[DQFile] = field(default_factory=list)
     
@@ -69,11 +134,48 @@ class Config:
     segMLS: Optional[float] = None
 
     def load_from_yaml(self, file_name, schema=None):
+        """
+        Load user parameters from a YAML file, validate them, and compute all
+        derived fields.
+
+        The YAML file is first scanned for an optional top-level
+        ``pycwb_schema`` block.  If present, that block controls which JSON
+        schema is used for validation – either extending the default schema
+        with extra properties (``mode: extend``) or replacing it wholesale
+        (``mode: replace``).  The block is then stripped before validation so
+        it does not appear in the resulting parameter set.  See
+        :func:`~pycwb.utils.yaml_helper.resolve_schema` for the full format.
+
+        After loading and validating the YAML values, :meth:`add_derived_key`
+        is called to compute dependent attributes, followed by
+        :meth:`check_xtalk_file`, :meth:`check_MRA_catalog`, and
+        :meth:`check_lagStep`.
+
+        Parameters
+        ----------
+        file_name : str
+            Path to the YAML configuration file.
+        schema : dict, optional
+            JSON schema to validate against.  Defaults to
+            ``pycwb.constants.user_parameters_schema``.  A ``pycwb_schema``
+            block inside the file can further modify or replace this schema.
+
+        Raises
+        ------
+        jsonschema.ValidationError
+            If the YAML parameters fail schema validation.
+        FileNotFoundError
+            If the WDM cross-talk catalog cannot be found or downloaded.
+        ValueError
+            If the MRA catalog layers do not match the configured resolution
+            range, or if ``lagStep`` / ``segEdge`` / ``segMLS`` are
+            incompatible with WDM pixel parity.
+        """
         if schema is None:
             schema = user_parameters_schema
-        # TODO: find if schema exists by preloading the matadata part
-        
-
+        # load_yaml resolves any pycwb_schema metadata in the YAML file first
+        # and merges/replaces the default schema before validation (see
+        # yaml_helper.resolve_schema for the supported modes and format).
         params = load_yaml(file_name, schema)
 
         for key in params:
@@ -85,12 +187,46 @@ class Config:
         self.check_lagStep()
 
     def load_from_dict(self, params: Dict[str, Any]):
+        """
+        Load user parameters from a plain Python dictionary.
+
+        This is intended for restoring a :class:`Config` from a previously
+        serialised (e.g. JSON-dumped) parameter dict.  No schema validation
+        or derived-field computation is performed – the dict values are applied
+        directly as attributes.
+
+        Parameters
+        ----------
+        params : dict
+            Mapping of parameter names to values.  Unknown keys are accepted
+            and set as attributes without validation.
+        """
         for key in params:
             setattr(self, key, params[key])
 
     def add_derived_key(self):
         """
-        Add derived key to the user parameters, this method is called after loading the user parameters
+        Compute and set all derived attributes from the loaded base parameters.
+
+        Called automatically by :meth:`load_from_yaml` after the YAML values
+        have been applied.  The following attributes are set:
+
+        * ``gamma`` – alias of ``cfg_gamma``
+        * ``search`` – alias of ``cfg_search``
+        * ``rateANA`` – analysis sample rate: ``fResample >> levelR`` when
+          ``fResample > 0``, otherwise ``inRate >> levelR``
+        * ``nRES`` – number of resolution levels: ``l_high - l_low + 1``
+        * ``filter_dir`` – resolved from the ``HOME_WAT_FILTERS`` environment
+          variable when not set explicitly in the YAML file
+        * ``MRAcatalog`` – full path ``filter_dir / wdmXTalk``
+        * ``TDRate`` – time-delay filter sample rate: ``rateANA * upTDF``
+        * ``nIFO`` – number of interferometers
+        * ``nDQF`` – number of DQ flag entries
+        * ``dq_files`` – ``DQF`` rows converted to
+          :class:`~pycwb.types.data_quality_file.DQFile` objects
+        * ``max_delay`` – maximum light-travel delay between IFOs
+        * ``WDM_level`` – ordered list of WDM resolution levels from
+          ``l_low`` to ``l_high``
         """
 
         self.gamma = self.cfg_gamma
@@ -134,7 +270,13 @@ class Config:
 
     def get_lag_buffer(self):
         """
-        Get lag buffer from configuration and update lag mode
+        Resolve the lag buffer from the current ``lagFile`` / ``lagMode`` settings.
+
+        * When ``lagMode`` is ``'r'`` (read), the contents of ``lagFile`` are
+          read into ``lagBuffer`` and ``lagMode`` is updated to ``'s'``
+          (string) so the buffer can be passed directly to the network.
+        * Otherwise, ``lagBuffer`` is set to ``lagFile`` and ``lagMode`` is
+          set to ``'w'`` (write).
         """
         if self.lagMode == "r":
             with open(self.lagFile, "r") as f:
@@ -190,11 +332,20 @@ class Config:
 
     def check_lagStep(self):
         """
-        Check if lagStep compatible with WDM parity
+        Verify that ``lagStep``, ``segEdge``, and ``segMLS`` are compatible
+        with WDM pixel parity.
 
-        this condition is necessary to avoid mixing between odd
-        and even pixels when circular buffer is used for lag shift
-        The MRAcatalog distinguish odd and even pixels
+        The WDM circular buffer uses odd/even pixel distinction tracked by the
+        MRA catalog.  To prevent mixing between odd and even pixels during lag
+        shifts, each of these time intervals must be an integer multiple of
+        ``2 * dt_max``, where ``dt_max = 1 / rate_min`` and
+        ``rate_min = rateANA >> l_high``.
+
+        Raises
+        ------
+        ValueError
+            If ``rate_min`` is not an integer, or if any of ``lagStep``,
+            ``segEdge``, or ``segMLS`` fail the parity check.
         """
         rate_min = self.rateANA >> self.l_high
         dt_max = 1. / rate_min
@@ -219,11 +370,23 @@ class Config:
 
     def check_MRA_catalog(self):
         """
-        Check if MRAcatalog exists
+        Validate that the MRA catalog is consistent with the configured
+        resolution range and, if tagged, update WDM filter parameters.
+
+        The catalog file at ``self.MRAcatalog`` is read and its layer list is
+        checked against the expected WDM layers for every resolution level
+        between ``l_low`` and ``l_high``.  The number of matching layers must
+        equal ``nRES``.
+
+        If the catalog contains a non-zero ``tag`` field, ``WDM_beta_order``
+        and ``WDM_precision`` are updated from the catalog's ``beta_order`` and
+        ``precision`` metadata fields, overriding any values from the YAML file.
 
         Raises
         ------
-        FileNotFoundError: if MRAcatalog does not exist
+        ValueError
+            If the catalog layer counts do not match the configured resolution
+            range.
         """
         logger.info("Checking MRA catalog")
         metadata = read_catalog_metadata(self.MRAcatalog)
@@ -260,4 +423,20 @@ class Config:
 
     @staticmethod
     def get_precision(cluster_size_threshold, healpix_order):
+        """
+        Encode cluster-size threshold and HEALPix order into a single integer
+        precision value used by the likelihood processor.
+
+        Parameters
+        ----------
+        cluster_size_threshold : int
+            Maximum number of pixels per cluster to process in full detail.
+        healpix_order : int
+            HEALPix order for sky-map resolution.
+
+        Returns
+        -------
+        int
+            Combined precision value: ``cluster_size_threshold + 65536 * healpix_order``.
+        """
         return cluster_size_threshold+65536*healpix_order
