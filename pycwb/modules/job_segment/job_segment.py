@@ -140,10 +140,9 @@ def create_job_segment_from_config(config):
 
     ############################################
     ## TODO: check if the job segments are valid
-    print(f"Number of segments: {len(job_segments)}")
+    logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
     return job_segments
-
 
 
 def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_overlap, rateANA, l_high, sample_rate,
