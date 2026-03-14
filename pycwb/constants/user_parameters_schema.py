@@ -179,6 +179,12 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "parallel_injection_trail": {
+            "type": "boolean",
+            "description": "flatten job segments by injection trail index for parallel processing",
+            "default": False,
+            "cwb": False
+        },
         "injection": {
             "type": "object",
             "description": "injection parameters",

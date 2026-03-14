@@ -57,6 +57,7 @@ class Config:
     lagMode: Optional[str] = None
     max_delay: Optional[float] = field(init=False)
     injection: Dict = field(default_factory=dict)
+    parallel_injection_trail: bool = False
     WDM_beta_order: Optional[int] = None
     WDM_precision: Optional[int] = None
     WDM_level: List[int] = field(default_factory=list)
@@ -70,6 +71,8 @@ class Config:
     def load_from_yaml(self, file_name, schema=None):
         if schema is None:
             schema = user_parameters_schema
+        # TODO: find if schema exists by preloading the matadata part
+        
 
         params = load_yaml(file_name, schema)
 
