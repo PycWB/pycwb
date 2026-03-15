@@ -95,3 +95,96 @@ downstream `subrho` and `subnet` cuts and do not appear in any output event.
 | `1` – `10` (incl. default `10`) | Shape branch | ❌ No (was already correct) |
 
 ---
+
+## 2. `_time_delay_max_energy_pattern_jit` — wrong layer zeroing before `Gamma2Gauss` (`time_delay_max_energy.py`)
+
+### Background
+
+`maxEnergy` accumulates the element-wise maximum WDM packet energy over all time-delay shifts
+`k = N, 2N, … K` (left and right).  Before passing the accumulated map to `Gamma2Gauss`, C++
+zeros certain boundary frequency layers to suppress edge artefacts.  The relevant C++ code
+(from `wseries.cc`) is:
+
+```cpp
+int M  = tmp.maxLayer() + 1;         // ← key: see below
+this->getLayer(xx, 0.1);  xx = 0;  this->putLayer(xx, 0.1);   // zeros layer 0
+this->getLayer(xx, M-1);  xx = 0;  this->putLayer(xx, M-1);   // zeros layer M-1
+if (m == 5 || m == 6 || m == 9) {
+    this->getLayer(xx, 1);    xx = 0;  this->putLayer(xx, 1);       // zeros layer 1
+    this->getLayer(xx, M-2);  xx = 0;  this->putLayer(xx, M-2);     // zeros layer M-2
+}
+```
+
+### Root Cause
+
+`tmp` (type `WSeries<float>`) is populated by `wdmPacket(pattern, 'E')`, which internally
+calls `this->resize(J)`.  `resize` calls `pWavelet->reset()`, which sets `m_Level = 0`
+(from `WDM.hh`: `inline virtual void reset() { m_Level = 0; }`).
+
+Therefore:
+```
+tmp.maxLayer() = 0   →   M = tmp.maxLayer() + 1 = 1
+```
+
+Consequently:
+- `getLayer(xx, 0.1)` → zeros frequency layer **0**
+- `getLayer(xx, M-1 = 0)` → zeros frequency layer **0** again *(same layer, no-op)*
+- For patterns 5, 6, 9: `getLayer(xx, 1)` → zeros layer **1**;
+  `getLayer(xx, M-2 = -1)` → accesses the 90°-phase half of layer 1, which does not exist
+  after `resize(J)` (only the 0°-phase band is present), so this is effectively a no-op.
+
+**The actual C++ behaviour is: only layer 0 is zeroed** (and layer 1 additionally for
+patterns 5, 6, 9).
+
+### Bug
+
+The original Python code used the *nominal* number of layers `M = current_max.shape[0]`
+(e.g., 17 for resolution level 6) instead of the post-`resize`/`reset` value of 1:
+
+```python
+# Before — WRONG: zeros layer 0 AND the actual last layer (e.g. layer 16)
+current_max = current_max.at[0, :].set(0.0)
+current_max = current_max.at[current_max.shape[0] - 1, :].set(0.0)   # ← incorrect
+if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+    current_max = current_max.at[1, :].set(0.0)
+    current_max = current_max.at[current_max.shape[0] - 2, :].set(0.0)  # ← incorrect
+```
+
+For resolution level 6 (17 frequency layers), layer 16 contained **146,693** nonzero pixels.
+Incorrectly zeroing those pixels changed the fill fraction `fff`, the order statistics `val`
+and `med`, and consequently the fitted Gamma shape `ALP` — shifting it from the correct value
+**1.94817** to **2.07174**, a ~6.3% error.  This caused a **13-pixel discrepancy** in the
+final supercluster between Python and C++.
+
+### Fix
+
+Remove the incorrect last-layer zeroing; zero only layer 0 (and layer 1 for patterns 5, 6, 9):
+
+```python
+# After — matches C++ (M=1 after wdmPacket's resize+reset → only layer 0 is zeroed)
+current_max = current_max.at[0, :].set(0.0)
+if pattern in (5, 6, 9) and current_max.shape[0] > 2:
+    current_max = current_max.at[1, :].set(0.0)
+```
+
+This fix was applied to **both** JIT variants of the function (the three-state and two-state
+`while_loop` overloads).
+
+### Verification
+
+After the fix, for all 7 WDM resolution levels (Res 0 – 6):
+
+| Metric | Result |
+|---|---|
+| Pixel count difference (Python vs C++) | **0** |
+| Threshold Eo percentage difference | **0.00%** |
+| Event count difference | **0** |
+| Production ALP (Res 6, pattern 10) | Python **1.94817184** = C++ **1.94817184** ✓ |
+
+### Applicability
+
+This bug affects every call to `_time_delay_max_energy_pattern_jit` regardless of pattern,
+because the last layer is always non-trivially populated.  The impact is largest at higher
+WDM resolution levels with more frequency layers.
+
+---

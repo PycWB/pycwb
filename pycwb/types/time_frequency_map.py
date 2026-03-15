@@ -21,6 +21,7 @@ class TimeFrequencyMap:
 	edge: float | None
 	wavelet: Wavelet  # Replace 'object' with the actual type of wavelet if available
 	len_timeseries: int = None  # Original time series length before transform
+	ts_data: np.ndarray = None  # Original time series data (avoids roundtrip w2t→t2w in max_energy)
 
 	@classmethod
 	def from_timeseries(cls, ts: TimeSeries, wavelet: Wavelet,
@@ -60,7 +61,8 @@ class TimeFrequencyMap:
 			f_high=f_high,
 			edge=edge,
 			wavelet=wavelet,
-			len_timeseries=len(ts.data)
+			len_timeseries=len(ts.data),
+			ts_data=np.asarray(ts.data, dtype=np.float64),
 		)
 
 	@property
@@ -150,8 +152,13 @@ class TimeFrequencyMap:
 		"""
 		original = np.asarray(self.data)
 		shape = original.shape
-		flat = original.real if np.iscomplexobj(original) else original
-		flat = np.asarray(flat, dtype=np.float64).ravel()
+		flat_2d = original.real if np.iscomplexobj(original) else original
+		flat_2d = np.asarray(flat_2d, dtype=np.float64)
+		# C++ stores data in time-major order (j = t*M + m); ravel accordingly.
+		if flat_2d.ndim == 2:
+			flat = flat_2d.T.ravel()  # (M,T) → (T,M) → 1D time-major: flat[t*M + m]
+		else:
+			flat = flat_2d.ravel()
 
 		if flat.size < 4:
 			return 0.0
@@ -168,7 +175,7 @@ class TimeFrequencyMap:
 		if region.size == 0:
 			return 0.0
 
-		wavecount_1 = int(np.sum(region > 0.001))
+		wavecount_1 = int(np.sum(flat > 0.001))  # count over full array, matches C++ wavecount(0.001)
 		fff = (nR - nL) * wavecount_1 / float(nn_all)
 
 		split_idx_med = nR - int(0.5 * fff)
@@ -206,7 +213,8 @@ class TimeFrequencyMap:
 		region2 = transformed[nL:nR]
 		if region2.size == 0:
 			return 0.0
-		wavecount_2 = int(np.sum(region2 > 1.0e-5))
+		# C++ wavecount(1e-5, nL) counts [nL, size-nL) symmetrically
+		wavecount_2 = int(np.sum(transformed[nL:nn_all - nL] > 1.0e-5))
 		split_idx_rms = nR - int(0.3173 * wavecount_2)
 		split_idx_rms = max(nL, min(split_idx_rms, nR - 1))
 		rel_rms = split_idx_rms - nL
@@ -221,7 +229,8 @@ class TimeFrequencyMap:
 			hist.extend(np.sqrt(np.clip(transformed[nL:nR], 0.0, None)).tolist())
 
 		if len(shape) == 2:
-			self.data = transformed.reshape(shape)
+			M2, T2 = shape  # shape = (M, T) → time-major reshape (T, M) then transpose
+			self.data = transformed.reshape(T2, M2).T
 		else:
 			self.data = transformed
 

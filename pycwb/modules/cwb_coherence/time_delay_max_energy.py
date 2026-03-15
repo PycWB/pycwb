@@ -63,15 +63,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 if _HAS_JAX:
-    def _shift_right_zero(x, k):
-        idx = jnp.arange(x.shape[0], dtype=jnp.int32)
-        rolled = jnp.roll(x, k)
-        return jnp.where(idx >= k, rolled, jnp.zeros_like(rolled))
+    def _cpf_left(xx, ts, k):
+        """Mimic C++ xx.cpf(ts, ts.size()-k, k, 0):
+        copies ts[k:size] to xx[0:size-k]; xx[size-k:size] is left unchanged."""
+        size = ts.shape[0]
+        idx = jnp.arange(size, dtype=jnp.int32)
+        new_val = ts[jnp.minimum(idx + k, size - 1)]
+        return jnp.where(idx < size - k, new_val, xx)
 
-    def _shift_left_zero(x, k):
-        idx = jnp.arange(x.shape[0], dtype=jnp.int32)
-        rolled = jnp.roll(x, -k)
-        return jnp.where(idx < (x.shape[0] - k), rolled, jnp.zeros_like(rolled))
+    def _cpf_right(xx, ts, k):
+        """Mimic C++ xx.cpf(ts, ts.size()-k, 0, k):
+        copies ts[0:size-k] to xx[k:size]; xx[0:k] is left unchanged."""
+        size = ts.shape[0]
+        idx = jnp.arange(size, dtype=jnp.int32)
+        new_val = ts[jnp.maximum(idx - k, 0)]
+        return jnp.where(idx >= k, new_val, xx)
 
     def _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode):
         """Transform time series to WDM TF map using JAX.
@@ -242,7 +248,11 @@ if _HAS_JAX:
         aa = a1 + a2
 
         em = jnp.where(mean == 1.0, sum_eeEE / 2.0, (aa * aa) / 4.0)
-        energy_f = jnp.where(active, em, 0.0)
+        # C++ wdmPacket: boundary pixels j not in [jb, je) keep the raw 00-phase Forward
+        # amplitude from resize(J).  After maxEnergy's "*this = max(0, tmp)" step, negative
+        # amplitudes become 0, positive ones survive.  Match that behaviour here.
+        boundary_raw = jnp.maximum(0.0, q0r)
+        energy_f = jnp.where(active, em, jnp.where(inside, 0.0, boundary_raw))
         return jnp.reshape(energy_f, (T, M)).T
 
     @partial(jax.jit, static_argnames=(
@@ -260,29 +270,33 @@ if _HAS_JAX:
         current_max = _wdm_packet_energy_jax(base_data, pattern, edge, wavelet_rate, f_low, f_high, df)
 
         def cond_fn(state):
-            k, _ = state
+            k, _, _xx = state
             return jnp.logical_and(k <= max_delay, k < ts_data.shape[0])
 
         def body_fn(state):
-            k, cur = state
+            k, cur, xx = state
 
-            xx_pos = _shift_right_zero(ts_data, k)
-            tmp_pos = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx_pos, mm_mode)
-            cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_pos, pattern, edge, wavelet_rate, f_low, f_high, df))
+            # C++ cpf call 1: xx.cpf(ts, size-k, k, 0) — left-shift ts into xx
+            xx = _cpf_left(xx, ts_data, k)
+            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_left, pattern, edge, wavelet_rate, f_low, f_high, df))
 
-            xx_neg = _shift_left_zero(ts_data, k)
-            tmp_neg = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx_neg, mm_mode)
-            cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_neg, pattern, edge, wavelet_rate, f_low, f_high, df))
+            # C++ cpf call 2: xx.cpf(ts, size-k, 0, k) — right-shift ts into tail of xx
+            xx = _cpf_right(xx, ts_data, k)
+            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            cur = jnp.maximum(cur, _wdm_packet_energy_jax(tmp_right, pattern, edge, wavelet_rate, f_low, f_high, df))
 
-            return k + downsample, cur
+            return k + downsample, cur, xx
 
-        _, current_max = jax.lax.while_loop(cond_fn, body_fn, (jnp.int32(downsample), current_max))
+        _, current_max, _ = jax.lax.while_loop(
+            cond_fn, body_fn, (jnp.int32(downsample), current_max, jnp.array(ts_data))
+        )
 
+        # C++ zeros layer 0 only: after wdmPacket's resize+reset, M=tmp.maxLayer()+1=1,
+        # so getLayer(xx,M-1=0) zeroes layer 0 again — the actual last layer is NOT zeroed.
         current_max = current_max.at[0, :].set(0.0)
-        current_max = current_max.at[current_max.shape[0] - 1, :].set(0.0)
-        if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+        if pattern in (5, 6, 9) and current_max.shape[0] > 2:
             current_max = current_max.at[1, :].set(0.0)
-            current_max = current_max.at[current_max.shape[0] - 2, :].set(0.0)
 
         return current_max
 
@@ -301,28 +315,30 @@ if _HAS_JAX:
         current_max_imag = jnp.array(jnp.imag(base_data))
 
         def cond_fn(state):
-            k, _, _ = state
+            k, _, _, _xx = state
             return jnp.logical_and(k <= max_delay, k < ts_data.shape[0])
 
         def body_fn(state):
-            k, cur_r, cur_i = state
+            k, cur_r, cur_i, xx = state
 
-            xx_pos = _shift_right_zero(ts_data, k)
-            tmp_pos = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx_pos, mm_mode)
-            cur_r = jnp.maximum(cur_r, jnp.real(tmp_pos))
-            cur_i = jnp.maximum(cur_i, jnp.imag(tmp_pos))
+            # C++ cpf call 1: left-shift ts into xx
+            xx = _cpf_left(xx, ts_data, k)
+            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            cur_r = jnp.maximum(cur_r, jnp.real(tmp_left))
+            cur_i = jnp.maximum(cur_i, jnp.imag(tmp_left))
 
-            xx_neg = _shift_left_zero(ts_data, k)
-            tmp_neg = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx_neg, mm_mode)
-            cur_r = jnp.maximum(cur_r, jnp.real(tmp_neg))
-            cur_i = jnp.maximum(cur_i, jnp.imag(tmp_neg))
+            # C++ cpf call 2: right-shift ts into tail of xx
+            xx = _cpf_right(xx, ts_data, k)
+            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            cur_r = jnp.maximum(cur_r, jnp.real(tmp_right))
+            cur_i = jnp.maximum(cur_i, jnp.imag(tmp_right))
 
-            return k + downsample, cur_r, cur_i
+            return k + downsample, cur_r, cur_i, xx
 
-        _, current_max_real, current_max_imag = jax.lax.while_loop(
+        _, current_max_real, current_max_imag, _ = jax.lax.while_loop(
             cond_fn,
             body_fn,
-            (jnp.int32(downsample), current_max_real, current_max_imag),
+            (jnp.int32(downsample), current_max_real, current_max_imag, jnp.array(ts_data)),
         )
 
         out = current_max_real + 1j * current_max_imag
@@ -401,11 +417,11 @@ if _HAS_JAX:
             cond_fn, body_fn, (jnp.int32(downsample), current_max)
         )
 
+        # C++ zeros layer 0 only: after wdmPacket's resize+reset, M=tmp.maxLayer()+1=1,
+        # so getLayer(xx,M-1=0) zeroes layer 0 again — the actual last layer is NOT zeroed.
         current_max = current_max.at[0, :].set(0.0)
-        current_max = current_max.at[current_max.shape[0] - 1, :].set(0.0)
-        if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+        if pattern in (5, 6, 9) and current_max.shape[0] > 2:
             current_max = current_max.at[1, :].set(0.0)
-            current_max = current_max.at[current_max.shape[0] - 2, :].set(0.0)
 
         return current_max
 
@@ -566,28 +582,28 @@ if _HAS_NUMBA:
         )
 
         k = int(downsample)
+        xx = ts_data.copy()
         while k <= int(max_delay) and k < len(ts_data):
-            # positive delay: shift right, zero left edge
-            xx_pos = np.roll(ts_data, k).copy()
-            xx_pos[:k] = 0.0
-            _, _, tf_pos = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx_pos, wavelet_filter, mm_mode)
-            re_pos = np.ascontiguousarray(tf_pos[0], dtype=np.float64)
-            im_pos = np.ascontiguousarray(tf_pos[1], dtype=np.float64)
-            en_pos = _wdm_packet_energy_nb(
-                re_pos.ravel(), im_pos.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+            size = len(ts_data)
+            # C++ cpf call 1: xx.cpf(ts, size-k, k, 0) — copy ts[k:] to xx[0:size-k], tail unchanged
+            xx[:size - k] = ts_data[k:]
+            _, _, tf_left = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
+            re_left = np.ascontiguousarray(tf_left[0], dtype=np.float64)
+            im_left = np.ascontiguousarray(tf_left[1], dtype=np.float64)
+            en_left = _wdm_packet_energy_nb(
+                re_left.ravel(), im_left.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
             )
-            np.maximum(current_max, en_pos, out=current_max)
+            np.maximum(current_max, en_left, out=current_max)
 
-            # negative delay: shift left, zero right edge
-            xx_neg = np.roll(ts_data, -k).copy()
-            xx_neg[-k:] = 0.0
-            _, _, tf_neg = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx_neg, wavelet_filter, mm_mode)
-            re_neg = np.ascontiguousarray(tf_neg[0], dtype=np.float64)
-            im_neg = np.ascontiguousarray(tf_neg[1], dtype=np.float64)
-            en_neg = _wdm_packet_energy_nb(
-                re_neg.ravel(), im_neg.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+            # C++ cpf call 2: xx.cpf(ts, size-k, 0, k) — copy ts[0:size-k] to xx[k:], head unchanged
+            xx[k:] = ts_data[:size - k]
+            _, _, tf_right = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
+            re_right = np.ascontiguousarray(tf_right[0], dtype=np.float64)
+            im_right = np.ascontiguousarray(tf_right[1], dtype=np.float64)
+            en_right = _wdm_packet_energy_nb(
+                re_right.ravel(), im_right.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
             )
-            np.maximum(current_max, en_neg, out=current_max)
+            np.maximum(current_max, en_right, out=current_max)
 
             k += int(downsample)
 
@@ -650,7 +666,12 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     else:
         len_ts = max(1, int(round((tf_map.stop - tf_map.start) / tf_map.dt)))
 
-    ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts)
+    # Use the stored original time series if available to avoid the w2t→t2w roundtrip,
+    # which introduces meaningful numerical error for the WDM packet energy computation.
+    if getattr(tf_map, 'ts_data', None) is not None:
+        ts_data = jnp.asarray(tf_map.ts_data, dtype=jnp.float64)
+    else:
+        ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts)
 
     sample_rate_val = float(2.0 * float(tf_map.df) * (int(np.asarray(tf_map.data).shape[0]) - 1))
     sample_rate = jnp.asarray(sample_rate_val, dtype=jnp.float64)
