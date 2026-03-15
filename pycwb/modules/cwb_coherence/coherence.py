@@ -658,10 +658,29 @@ def get_max_delay(net):
 
 
 def _igamma_inv_upper(shape, p):
-    """Upper-tail inverse incomplete gamma helper used by threshold estimators."""
+    """Upper-tail inverse incomplete gamma matching C++ iGamma step search.
+
+    C++ scans x = 0, 1e-5, 2e-5, ... using TMath::Gamma until the upper
+    regularized incomplete gamma drops to *p*.  We start near the scipy result
+    and search locally using ROOT's TMath::Gamma for exact agreement.
+    Falls back to scipy-only if ROOT is unavailable.
+    """
     p = float(np.clip(p, 1.0e-12, 1.0 - 1.0e-12))
     s = float(max(shape, 1.0e-12))
-    return float(gammainccinv(s, p))
+
+    try:
+        import ROOT as _ROOT
+        _tmath_gamma = _ROOT.TMath.Gamma
+    except Exception:
+        return float(gammainccinv(s, p))
+
+    x_approx = float(gammainccinv(s, p))
+    step = 1.0e-5
+    k = max(0, int(x_approx / step) - 2)
+    x = k * step
+    while 1.0 - _tmath_gamma(s, x) > p:
+        x += step
+    return x
 
 
 def _get_tf_energy_array(tf_map, edge=None):
@@ -702,19 +721,40 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
     :return: detection threshold in energy units
     :rtype: float
     """
-    energies = [_get_tf_energy_array(tfm, edge=edge) for tfm in tf_maps]
-    combined = np.sum(energies, axis=0)
-    work = combined.ravel()
     n_ifo = len(tf_maps)
-    if work.size == 0:
-        return 0.0
-
-    work = np.clip(work, 0.0, n_ifo * 100.0)
-    positive = work[work > 1.0e-3]
-    if positive.size == 0:
-        return 0.0
 
     if shape is not None:
+        # C++ THRESHOLD(p, shape) works on flat 1-D time-major data with
+        # nL / nR indices, NOT on 2-D edge-cropped arrays.  Replicate that.
+        pw0 = tf_maps[0]
+        arr0 = np.asarray(pw0.data, dtype=np.float64)
+        if np.iscomplexobj(arr0):
+            arr0 = arr0.real
+        M = int(arr0.shape[0]) if arr0.ndim == 2 else 1
+        # C++ stores time-major: flat[t*M + m].  Python (M, T) -> transpose then ravel.
+        if arr0.ndim == 2:
+            flat0 = arr0.T.ravel()
+        else:
+            flat0 = arr0.ravel()
+        w = flat0.copy()
+        for tfm in tf_maps[1:]:
+            a = np.asarray(tfm.data, dtype=np.float64)
+            if np.iscomplexobj(a):
+                a = a.real
+            if a.ndim == 2:
+                w += a.T.ravel()
+            else:
+                w += a.ravel()
+
+        nL = int(float(edge or 0.0) * pw0.wavelet_rate * M)
+        nR = int(w.size) - nL - 1          # C++: nR = pw->size() - nL - 1
+
+        region = w[nL:nR]                   # C++ loop: for(i=nL; i<nR; i++)
+        region = np.clip(region, 0.0, n_ifo * 100.0)
+        positive = region[region > 1.0e-3]
+        if positive.size == 0:
+            return 0.0
+
         avr = float(np.mean(positive))
         bbb = float(np.mean(np.log(positive)))
         alp = np.log(avr) - bbb
@@ -722,6 +762,17 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
         bpp_corr = float(bpp) * alp / float(shape)
         result = avr * _igamma_inv_upper(alp, bpp_corr) / alp / 2.0
         return result
+
+    energies = [_get_tf_energy_array(tfm, edge=edge) for tfm in tf_maps]
+    combined = np.sum(energies, axis=0)
+    work = combined.ravel()
+    if work.size == 0:
+        return 0.0
+
+    work = np.clip(work, 0.0, n_ifo * 100.0)
+    positive = work[work > 1.0e-3]
+    if positive.size == 0:
+        return 0.0
 
     # CWB THRESHOLD(p) exact algorithm: iterative search for Gamma shape m
     # fff = fill fraction (fraction of pixels with energy > 0.0001, matching CWB wavecount)

@@ -90,13 +90,11 @@ def whitening_python(config, h):
     )
 
     coeff = np.asarray(tf_map.data, dtype=np.complex128)
-    whitened = np.zeros_like(coeff)
 
-    freqs = np.arange(coeff.shape[0], dtype=np.float64) * float(tf_map.df)
-    in_band = (freqs >= f_low) & (freqs <= f_high)
-
+    # C++ white(nRMS, 1) whitens ALL layers; out-of-band nRMS is already 1.0
+    # from bandpass(16., 0., 1), so dividing keeps those coefficients unchanged.
     safe_nrms = np.maximum(nRMS_interp, _NRMS_DIV_FLOOR)
-    whitened[in_band, :] = coeff[in_band, :] / safe_nrms[in_band, :]
+    whitened = coeff / safe_nrms
 
     tf_map.data = whitened
 
@@ -109,8 +107,14 @@ def whitening_python(config, h):
         wdm_params=dict(tf_map.wdm_params),
     )
 
-    whitened_ts_gwpy = wdm.w2t(tf_map)
-    whitened_data = np.array(whitened_ts_gwpy.value, dtype=np.float64)
+    # C++ inverts BOTH 00° and 90° phases and averages:
+    #   tf_map.Inverse()      → time series from 00° phase
+    #   wtmp.Inverse(-2)      → time series from 90° phase
+    #   output = (00_inv + 90_inv) / 2
+    ts_00 = wdm.w2t(tf_map)
+    ts_90 = wdm.w2tQ(tf_map)
+    whitened_data = 0.5 * (np.array(ts_00.value, dtype=np.float64)
+                           + np.array(ts_90.value, dtype=np.float64))
     conditioned_strain = pycbc.types.TimeSeries(
         whitened_data,
         delta_t=h_ts.delta_t,
@@ -193,33 +197,42 @@ def _estimate_nrms_cwb_mode0(tf_map, window_length=60.0, stride=60.0, edge_lengt
 
         window_data = power[:, p_start:p_end]
         if window_data.shape[1] < 3:
-            median_vals = np.median(power, axis=1)
+            # C++ waveSplit picks element at index m//2 (not average of two middle)
+            sorted_all = np.sort(power, axis=1)
+            median_vals = sorted_all[:, power.shape[1] // 2]
         else:
-            median_vals = np.median(window_data, axis=1)
+            # C++ waveSplit(pp, 0, m-1, mm) with mm = m//2: selects the mm-th
+            # smallest element.  np.median averages two middle values for even m.
+            sorted_w = np.sort(window_data, axis=1)
+            median_vals = sorted_w[:, mm]
 
         nrms_anchor[:, j] = np.sqrt(np.maximum(median_vals * 0.7191, 0.0))
 
+    # Interpolation matching C++ WSeries::white(nRMS, mode) exactly.
+    # C++ formula: r = (na[k-1]*(dT-T+t) + na[k]*(T-t))/dT
+    # This is REVERSED linear interpolation: left anchor gets weight proportional
+    # to distance-from-left, right anchor gets weight proportional to distance-from-right.
     nrms_interp = np.zeros((n_freq, n_time), dtype=np.float64)
 
-    head = max(0, jL)
-    if head > 0:
-        nrms_interp[:, :head] = nrms_anchor[:, [0]]
+    j_arr = np.arange(n_time)
 
-    for j in range(K):
-        seg_start = jL + j * k
-        seg_end = min(n_time, seg_start + k)
-        if seg_start >= n_time or seg_end <= max(seg_start, 0):
-            continue
+    # Head: j <= jL → anchor[0]  (C++: t <= To)
+    nrms_interp[:, j_arr <= jL] = nrms_anchor[:, [0]]
 
-        s = max(seg_start, 0)
-        e = seg_end
-        i = np.arange(e - s, dtype=np.float64)
-        interp = (nrms_anchor[:, [j + 1]] * i + nrms_anchor[:, [j]] * (k - i)) / k
-        nrms_interp[:, s:e] = interp
+    # Middle: jL < j < jL + K*k → reversed interpolation between anchors
+    mid_mask = (j_arr > jL) & (j_arr < jL + K * k)
+    j_mid = j_arr[mid_mask]
+    seg_k = (j_mid - jL - 1) // k + 1       # 1-based segment index (matching C++ k after increment)
+    T_idx = jL + seg_k * k                   # right boundary index
+    d_left = j_mid - (T_idx - k)             # distance from left anchor
+    d_right = T_idx - j_mid                  # distance from right anchor
+    nrms_interp[:, mid_mask] = (
+        nrms_anchor[:, seg_k - 1] * d_left[np.newaxis, :]
+        + nrms_anchor[:, seg_k] * d_right[np.newaxis, :]
+    ) / k
 
-    tail_start = min(n_time, jL + K * k)
-    if tail_start < n_time:
-        nrms_interp[:, tail_start:] = nrms_anchor[:, [K]]
+    # Tail: j >= jL + K*k → anchor[K]  (C++: t >= To+K*dT)
+    nrms_interp[:, j_arr >= jL + K * k] = nrms_anchor[:, [K]]
 
     nrms_anchor = np.maximum(nrms_anchor, 0.0)
     nrms_interp = np.maximum(nrms_interp, 0.0)

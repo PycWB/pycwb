@@ -175,13 +175,17 @@ class TimeFrequencyMap:
 		if region.size == 0:
 			return 0.0
 
+		# C++ waveSplit(nL, nR, m) operates on [nL, nR] inclusive.
+		# Use nR+1 as the exclusive end for partition to match C++ range.
+		ws_region = flat[nL:nR + 1]
+
 		wavecount_1 = int(np.sum(flat > 0.001))  # count over full array, matches C++ wavecount(0.001)
 		fff = (nR - nL) * wavecount_1 / float(nn_all)
 
 		split_idx_med = nR - int(0.5 * fff)
-		split_idx_med = max(nL, min(split_idx_med, nR - 1))
+		split_idx_med = max(nL, min(split_idx_med, nR))
 		rel_med = split_idx_med - nL
-		med = float(np.partition(region, rel_med)[rel_med])
+		med = float(np.partition(ws_region, rel_med)[rel_med])
 		if med <= 0.0:
 			return 0.0
 
@@ -199,6 +203,7 @@ class TimeFrequencyMap:
 		alp = (3.0 - alp + np.sqrt((alp - 3.0) * (alp - 3.0) + 24.0 * alp)) / (12.0 * alp)
 
 		avr = med * (3.0 * alp + 0.2) / (3.0 * alp - 0.8)
+
 		ALP = med * alp / avr
 
 		amp = flat * alp / avr
@@ -213,12 +218,14 @@ class TimeFrequencyMap:
 		region2 = transformed[nL:nR]
 		if region2.size == 0:
 			return 0.0
+		# C++ waveSplit(nL, nR, m) operates on [nL, nR] inclusive for partition.
+		ws_region2 = transformed[nL:nR + 1]
 		# C++ wavecount(1e-5, nL) counts [nL, size-nL) symmetrically
 		wavecount_2 = int(np.sum(transformed[nL:nn_all - nL] > 1.0e-5))
 		split_idx_rms = nR - int(0.3173 * wavecount_2)
-		split_idx_rms = max(nL, min(split_idx_rms, nR - 1))
+		split_idx_rms = max(nL, min(split_idx_rms, nR))
 		rel_rms = split_idx_rms - nL
-		qv = float(np.partition(region2, rel_rms)[rel_rms])
+		qv = float(np.partition(ws_region2, rel_rms)[rel_rms])
 		if qv <= 0.0:
 			return 0.0
 
