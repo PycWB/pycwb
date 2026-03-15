@@ -1,0 +1,130 @@
+###### project ######
+
+outputDir: "output"
+nproc: 6
+###### search ######
+
+#calibVer: "C01"
+#channelName: "DCS-CALIB_STRAIN_CLEAN_C01" # //"DCS-CALIB_STRAIN_CLEAN_C01";  // C00 -> "GDS-CALIB_STRAIN", C01 -> "DCS-CALIB_STRAIN_C01", C02 -> "DCS-CALIB_STRAIN_C02"
+
+analysis: "2G"
+cfg_search: "r"
+
+plot_trigger: False
+save_waveform: False
+plot_waveform: False
+save_injection: False
+plot_injection: False
+compress_output_json: False
+
+optim: False
+
+###### network configuration ######
+ifo: ["L1","H1"]
+refIFO: "L1"
+
+# lags
+lagSize: 9
+lagStep: 1.
+lagOff: 0
+lagMax: 9
+
+# superlags
+slagSize: 1 # number of super lags (simulation=1) - if slagSize=0 -> Standard Segments
+slagMin: 0
+slagMax: 0
+slagOff: 0
+
+# job
+segLen: 1200
+segMLS: 600
+segTHR: 200
+segEdge: 10
+
+# frequency
+fLow: 16.
+fHigh: 1024.
+
+
+levelR: 3
+l_low: 4 # low frequency resolution level		// std (sthr = 2)
+l_high: 10 # high frequency resolution level	// std (sthr = 8)
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+healpix: 7
+
+###### cWB production thresholds & regulators ######
+
+bpp: 0.001
+subnet: 0.5
+subcut: -1.0
+netRHO: 5.0
+cedRHO: 5.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: .0
+LOUD: 300
+
+pattern: 10
+
+iwindow: 100
+
+
+gps_start: 1126258862.4
+gps_end: 1126260062.4
+segment_processer: pycwb.workflow.subflow.process_job_segment_native.process_job_segment
+
+cwb_compare: True
+cwb_compare_dir: "output/cwb_compare"
+
+injection:
+  seed: 150914
+  parameters:
+    - mass1: 36
+      mass2: 29
+      spin1x: 0.3
+      spin1z: 0.2
+      spin2z: 0.1
+      distance: 1030
+      inclination: 0
+      polarization: 0
+      gps_time: 1126259162.4
+      coa_phase: 0
+      t_start: -5
+      t_end: 2
+      ra: 0
+      dec: 0
+      pol: 0
+      f_lower: 16
+      approximant: "IMRPhenomXPHM"
+    - mass1: 90
+      mass2: 69
+      spin1x: 0.0
+      spin1z: 0.2
+      spin2z: 0.1
+      distance: 530
+      inclination: 0.2
+      polarization: 0.1
+      gps_time: 1126259182.4
+      coa_phase: 0
+      t_start: -5
+      t_end: 2
+      ra: 0.3
+      dec: 0.2
+      pol: 0
+      f_lower: 16
+      approximant: "IMRPhenomXPHM"
+  noise:
+    type: "GaussianNoise"
+    psds:
+      H1: "input/aligo_O4high.txt"
+      L1: "input/aligo_O4high.txt"
+      V1: "input/avirgo_O4high_NEW.txt"
+    delta_seeds: 
+      H1: 10
+      L1: 20
+      V1: 30
