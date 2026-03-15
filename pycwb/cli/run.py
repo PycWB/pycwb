@@ -77,6 +77,22 @@ def init_parser(parser):
                         default=False,
                         help='list all jobs in the flow')
 
+    # jobs
+    parser.add_argument('--jobs',
+                        '-j',
+                        metavar='jobs',
+                        type=str,
+                        default=None,
+                        help='the range of jobs to run, e.g., 1-5,7')
+
+    # trail_idx
+    parser.add_argument('--trail-idx',
+                        '-t',
+                        metavar='trail_idx',
+                        type=str,
+                        default=None,
+                        help='the trail indices to run, e.g., 0-2,5')
+
 
 def command(args):
     from pycwb.workflow.run import search
@@ -97,11 +113,13 @@ def command(args):
         return 0
 
     # Run the search function with the specified user parameter file
-    search(args.user_parameter_file, 
+    search(args.user_parameter_file,
            input_dir=args.input_dir,
-           working_dir=args.work_dir, 
+           working_dir=args.work_dir,
            n_proc=args.n_proc,
-           overwrite=args.force_overwrite, 
-           plot=args.plot, 
-           compress_json=args.compress_json, 
-           config_vars=args.config_vars)
+           overwrite=args.force_overwrite,
+           plot=args.plot,
+           compress_json=args.compress_json,
+           config_vars=args.config_vars,
+           jobs=args.jobs,
+           trail_idx=args.trail_idx)
