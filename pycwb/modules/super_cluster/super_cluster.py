@@ -439,7 +439,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_supercluster(config, strains):
+def setup_supercluster(config, strains, td_inputs_cache=None):
     """
     Compute every lag-independent supercluster resource once per job segment.
 
@@ -452,6 +452,10 @@ def setup_supercluster(config, strains):
     config : Config
     strains : list
         Whitened strain time series.
+    td_inputs_cache : dict or None
+        Pre-computed TD inputs cache (keyed by wdm_layers and wdm_layers+1).
+        When provided (e.g. from ``setup_coherence(..., extract_td=True)``),
+        the expensive duplicate WDM transforms are skipped entirely.
 
     Returns
     -------
@@ -465,58 +469,62 @@ def setup_supercluster(config, strains):
     lag_plan = build_lag_plan_from_config(config, strains_ts)
     n_lag = int(lag_plan.n_lag)
 
-    # ---- WDM contexts and TD-input cache (same logic as supercluster_wrapper) ----
     upTDF = int(getattr(config, 'upTDF', 1))
     TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
 
-    wdm_context_by_layers = {}
-    for level in config.WDM_level:
-        layers_at_level = 2 ** level if level > 0 else 0
-        wdm_layers = max(1, int(layers_at_level))
-        wdm = WDMWavelet(
-            M=wdm_layers,
-            K=wdm_layers,
-            beta_order=config.WDM_beta_order,
-            precision=config.WDM_precision,
-        )
-        # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
-        wdm.set_td_filter(int(config.TDSize), upTDF)
-
-        detector_tf_maps = []
-        for n in range(config.nIFO):
-            ts_data, sample_rate, t0 = extract_timeseries_data(strains_ts[n])
-            detector_tf_maps.append(wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1))
-
-        context = {"wdm": wdm, "tf_maps": detector_tf_maps}
-        wdm_context_by_layers[int(wdm_layers)] = context
-        wdm_context_by_layers[int(wdm_layers) + 1] = context
-
-    td_inputs_cache = {}
-    seen_keys = set()
-    for layer_key, context in wdm_context_by_layers.items():
-        ctx_id = id(context)
-        if ctx_id in seen_keys:
-            td_inputs_cache[layer_key] = (
-                td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+    if td_inputs_cache is None:
+        # ---- WDM contexts and TD-input cache (same logic as supercluster_wrapper) ----
+        wdm_context_by_layers = {}
+        for level in config.WDM_level:
+            layers_at_level = 2 ** level if level > 0 else 0
+            wdm_layers = max(1, int(layers_at_level))
+            wdm = WDMWavelet(
+                M=wdm_layers,
+                K=wdm_layers,
+                beta_order=config.WDM_beta_order,
+                precision=config.WDM_precision,
             )
-            continue
-        seen_keys.add(ctx_id)
-        wdm_obj = context["wdm"]
-        per_ifo = [prepare_td_inputs(context["tf_maps"][n], wdm_obj) for n in range(config.nIFO)]
-        td_inputs_cache[layer_key] = per_ifo
-        # Free the TF maps immediately after extracting padded planes (~1.1 GB total).
-        # The padded arrays in td_inputs_cache are the only data needed downstream;
-        # there is no reason to keep the raw complex TF maps alive.
-        context["tf_maps"] = None
-    for layer_key in list(wdm_context_by_layers.keys()):
-        if td_inputs_cache.get(layer_key) is None:
-            alt = (
-                td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-            )
-            td_inputs_cache[layer_key] = alt
-    # Release the entire WDM context dict (WDM objects + any remaining TF map refs).
-    # After this point only td_inputs_cache is needed.
-    wdm_context_by_layers.clear()
+            # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
+            wdm.set_td_filter(int(config.TDSize), upTDF)
+
+            detector_tf_maps = []
+            for n in range(config.nIFO):
+                ts_data, sample_rate, t0 = extract_timeseries_data(strains_ts[n])
+                detector_tf_maps.append(wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1))
+
+            context = {"wdm": wdm, "tf_maps": detector_tf_maps}
+            wdm_context_by_layers[int(wdm_layers)] = context
+            wdm_context_by_layers[int(wdm_layers) + 1] = context
+
+        td_inputs_cache = {}
+        seen_keys = set()
+        for layer_key, context in wdm_context_by_layers.items():
+            ctx_id = id(context)
+            if ctx_id in seen_keys:
+                td_inputs_cache[layer_key] = (
+                    td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+                )
+                continue
+            seen_keys.add(ctx_id)
+            wdm_obj = context["wdm"]
+            per_ifo = [prepare_td_inputs(context["tf_maps"][n], wdm_obj) for n in range(config.nIFO)]
+            td_inputs_cache[layer_key] = per_ifo
+            # Free the TF maps immediately after extracting padded planes (~1.1 GB total).
+            # The padded arrays in td_inputs_cache are the only data needed downstream;
+            # there is no reason to keep the raw complex TF maps alive.
+            context["tf_maps"] = None
+        for layer_key in list(wdm_context_by_layers.keys()):
+            if td_inputs_cache.get(layer_key) is None:
+                alt = (
+                    td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+                )
+                td_inputs_cache[layer_key] = alt
+        # Release the entire WDM context dict (WDM objects + any remaining TF map refs).
+        # After this point only td_inputs_cache is needed.
+        wdm_context_by_layers.clear()
+    else:
+        logger.info("[setup_supercluster] Using pre-computed td_inputs_cache "
+                    "(%d entries), skipping WDM transforms", len(td_inputs_cache))
 
     # ---- Sky delay / antenna-pattern matrices ----
     # Compute TWO sky-array sets that mirror ROOT/CWB behaviour:

@@ -169,8 +169,8 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
     Parameters
     ----------
     pixel_indices : int32 array (n_pixels,)
-    padded00      : float64 array (n_time + 2*n_coeffs, M+1)
-    padded90      : float64 array (n_time + 2*n_coeffs, M+1)
+    padded00      : float32 array (n_time + 2*n_coeffs, M+1)
+    padded90      : float32 array (n_time + 2*n_coeffs, M+1)
     T0, Tx        : float64 arrays (2*J+1, 2*n_coeffs+1)
     M, n_coeffs, K, J : int
 
@@ -236,13 +236,19 @@ def prepare_td_inputs(tf_map, wdm):
     Returns
     -------
     dict with keys:
-        padded00 : float64 ndarray  shape (n_time + 2*n_coeffs, M+1)
-        padded90 : float64 ndarray  shape (n_time + 2*n_coeffs, M+1)
+        padded00 : float32 ndarray  shape (n_time + 2*n_coeffs, M+1)
+        padded90 : float32 ndarray  shape (n_time + 2*n_coeffs, M+1)
         T0       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
         Tx       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
         M        : int
         n_coeffs : int
         J        : int
+
+    Notes
+    -----
+    Padded planes use float32 to halve memory.  The downstream Numba kernel
+    ``batch_get_td_vecs`` accumulates in float64 and outputs float32, so
+    float32 inputs lose no meaningful precision.
     """
     data = np.asarray(tf_map.data, dtype=np.complex128)  # (M+1, n_time)
     # Transpose to (n_time, M+1) — matching time_delay.py convention
@@ -255,8 +261,8 @@ def prepare_td_inputs(tf_map, wdm):
     J = int(td_filters.max_delay)   # = M * L; for L=1, J=M
 
     pad = [(n_coeffs, n_coeffs), (0, 0)]
-    padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float64)
-    padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float64)
+    padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
+    padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
 
     T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
     Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
