@@ -173,7 +173,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # Use extract_td=True so coherence setup extracts TD inputs from the complex
         # TF maps *before* max_energy, avoiding a duplicate WDM pass in supercluster.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains, extract_td=True)
+        coherence_setup = setup_coherence(config, strains, extract_td=True, job_seg=sub_job_seg)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -188,11 +188,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 td_inputs_cache[int(wdm_layers)] = td_inputs
                 td_inputs_cache[int(wdm_layers) + 1] = td_inputs
 
+        n_lag = sub_job_seg.n_lag
+        logger.info("Lag plan: n_lag=%d (from job segment duration=%.2f s)", n_lag, sub_job_seg.duration)
+
         stage_timer = time.perf_counter()
         xtalk = XTalk.load(config.MRAcatalog)
         sc_setup = setup_supercluster(config, strains, td_inputs_cache=td_inputs_cache)
         wdm_td_cache = sc_setup["td_inputs_cache"]
-        n_lag = sc_setup["n_lag"]
         logger.info("Supercluster setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -225,7 +227,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
 
             # supercluster for this lag only
-            fragment_cluster = supercluster_single_lag(sc_setup, frag_clusters_this_lag, lag, xtalk=xtalk)
+            fragment_cluster = supercluster_single_lag(sc_setup, config, frag_clusters_this_lag, lag, xtalk=xtalk)
 
             if fragment_cluster is None:
                 logger.warning(

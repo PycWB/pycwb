@@ -8,14 +8,13 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
-from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
 
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, strains, return_rejected: bool = False):
+def coherence(config, strains, return_rejected: bool = False, job_seg=None):
     """
     Select the significant pixels
 
@@ -58,7 +57,7 @@ def coherence(config, strains, return_rejected: bool = False):
   
     normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
 
-    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected) for i in
+    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected, job_seg=job_seg) for i in
                                     range(config.nRES)]
 
     logger.info("----------------------------------------")
@@ -68,7 +67,7 @@ def coherence(config, strains, return_rejected: bool = False):
     return fragment_clusters_multi_res
 
 
-def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False):
+def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False, job_seg=None):
     """
     Calculate the coherence for a single resolution
 
@@ -158,8 +157,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 
     max_delay = config.max_delay
     pattern = config.pattern
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
-    n_lag = lag_plan.n_lag
+    n_lag = job_seg.n_lag
 
     for n, tf_map in enumerate(tf_maps):
         tf_maps[n], alp_n = max_energy(
@@ -209,7 +207,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             lag_index=j,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_plan.lag_shifts[j],
+            lag_shifts=job_seg.lag_shifts[j],
             veto=None,
             edge=config.segEdge,
         )
@@ -252,7 +250,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_coherence(config, strains, extract_td=False):
+def setup_coherence(config, strains, extract_td=False, job_seg=None):
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
     threshold, lag plan) for every resolution level.
@@ -276,7 +274,7 @@ def setup_coherence(config, strains, extract_td=False):
     -------
     list[dict]
         One setup dict per resolution, keyed by ``tf_maps``, ``Eo``,
-        ``lag_plan``, ``pattern``, ``level``, ``layers``, ``rate``,
+        ``job_seg``, ``pattern``, ``level``, ``layers``, ``rate``,
         ``select_subrho``, ``select_subnet``, ``segEdge``, and
         optionally ``td_inputs``.
     """
@@ -290,7 +288,7 @@ def setup_coherence(config, strains, extract_td=False):
 
     setups = [
         _setup_coherence_single_res(i, config, normalized_strains, up_n,
-                                    extract_td=extract_td)
+                                    extract_td=extract_td, job_seg=job_seg)
         for i in range(config.nRES)
     ]
 
@@ -298,7 +296,7 @@ def setup_coherence(config, strains, extract_td=False):
     return setups
 
 
-def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False):
+def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False, job_seg=None):
     """
     Lag-independent coherence setup for one resolution level.
 
@@ -316,7 +314,7 @@ def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False):
     Returns
     -------
     dict
-        Keys: ``tf_maps``, ``Eo``, ``lag_plan``, ``pattern``, ``level``,
+        Keys: ``tf_maps``, ``Eo``, ``job_seg``, ``pattern``, ``level``,
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
         ``segEdge``, and optionally ``td_inputs``.
     """
@@ -409,18 +407,18 @@ def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False):
         edge=config.segEdge,
     )
 
-    # Build lag plan from the (now max-energy-processed) TF maps
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
+    # Build lag plan
+    n_lag = job_seg.n_lag
 
     logger.info(
         "level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)",
-        level, Eo, lag_plan.n_lag, time.perf_counter() - timer_start,
+        level, Eo, n_lag, time.perf_counter() - timer_start,
     )
 
     return {
         "tf_maps": tf_maps,
         "Eo": Eo,
-        "lag_plan": lag_plan,
+        "job_seg": job_seg,
         "pattern": pattern,
         "level": level,
         "layers": layers,
@@ -458,12 +456,12 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
     for setup in coherence_setups:
         tf_maps = setup["tf_maps"]
         Eo = setup["Eo"]
-        lag_plan = setup["lag_plan"]
+        job_seg = setup["job_seg"]
         pattern = setup["pattern"]
 
-        if lag_idx >= lag_plan.n_lag:
+        if lag_idx >= job_seg.n_lag:
             raise IndexError(
-                f"lag_idx={lag_idx} is out of range n_lag={lag_plan.n_lag}"
+                f"lag_idx={lag_idx} is out of range n_lag={job_seg.n_lag}"
             )
 
         t_sel = time.perf_counter()
@@ -471,7 +469,7 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
             lag_index=lag_idx,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_plan.lag_shifts[lag_idx],
+            lag_shifts=job_seg.lag_shifts[lag_idx],
             veto=None,
             edge=setup["segEdge"],
         )

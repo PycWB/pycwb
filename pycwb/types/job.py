@@ -1,5 +1,68 @@
 from typing import List, Optional, Dict
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+import numpy as np
+
+
+def _generate_extended_lag_ids(n_ifo, lag_size, lag_off, lag_max, lag_site=None, max_iter=10_000_000):
+    """
+    Generate integer lag IDs for extended-lag mode (lagMax > 0).
+
+    This is a deterministic Python adaptation of cWB random extended-lag generation.
+    """
+    n_ifo = int(n_ifo)
+    lag_size = int(max(1, lag_size))
+    lag_off = int(max(0, lag_off))
+    lag_max = int(max(0, lag_max))
+
+    if lag_site is not None:
+        lag_site = np.asarray(lag_site, dtype=int)
+        if lag_site.size != n_ifo:
+            raise ValueError("lag_site size mismatch with n_ifo")
+        if np.any((lag_site < 0) | (lag_site >= n_ifo)):
+            raise ValueError("lag_site values must be in [0, n_ifo)")
+
+    target = lag_off + lag_size
+    rng = np.random.default_rng(13)
+
+    lag_ids = [tuple([0] * n_ifo)]
+    seen = {lag_ids[0]}
+
+    for _ in range(int(max_iter)):
+        if len(lag_ids) >= target:
+            break
+
+        sampled = np.zeros(n_ifo, dtype=int)
+        sampled[1:] = rng.integers(-lag_max, lag_max + 1, size=n_ifo - 1)
+
+        if lag_site is None:
+            ids = sampled.copy()
+        else:
+            ids = sampled[lag_site]
+
+        check = True
+        for i in range(n_ifo - 1, -1, -1):
+            for j in range(i - 1, -1, -1):
+                if lag_site is not None:
+                    if lag_site[i] != lag_site[j] and ids[i] == ids[j]:
+                        check = False
+                else:
+                    if ids[i] == ids[j]:
+                        check = False
+
+        if not check:
+            continue
+
+        if np.all(ids == 0):
+            continue
+
+        ids = ids - int(np.min(ids))
+        key = tuple(int(x) for x in ids)
+        if key in seen:
+            continue
+        seen.add(key)
+        lag_ids.append(key)
+
+    return lag_ids
 
 
 @dataclass
@@ -56,12 +119,26 @@ class WaveSegment:
         end time of the segment
     sample_rate: float
         sample rate of the segment
+    seg_edge: float
+        the edge of the segment (seconds)
+    lag_size: int
+        number of lags to generate (default 1)
+    lag_step: float
+        lag step size in seconds (default 1.0)
+    lag_off: int
+        first lag id offset (default 0, includes zero lag)
+    lag_max: int
+        maximum lag id for extended-lag mode (default 0, standard mode)
+    lag_site: list of int, optional
+        lag site assignment per IFO for extended-lag mode
+    lag_array: list of list of float, optional
+        user-provided lag shift matrix; overrides computed lags
+    lag_file: str, optional
+        path to a text file with lag shifts; overrides lag_array and computed lags
     shift: list, optional
         list of shifts for each interferometer, used for superlags
-    seg_edge: float, optional
-        the edge of the segment
     channels: list, optional
-        list of data  channels for each interferometer
+        list of data channels for each interferometer
     frames: list, optional
         list of frame files that are within the segment
     noise: dict, optional
@@ -75,6 +152,13 @@ class WaveSegment:
     end_time: float
     sample_rate: float
     seg_edge: float
+    lag_size: int = 1
+    lag_step: float = 1.0
+    lag_off: int = 0
+    lag_max: int = 0
+    lag_site: Optional[List[int]] = None
+    lag_array: Optional[List[List[float]]] = None
+    lag_file: Optional[str] = None
     shift: Optional[List[float]] = None
     channels: Optional[List[str]] = None
     frames: Optional[List[FrameFile]] = None
@@ -121,6 +205,84 @@ class WaveSegment:
         if self.shift is None:
             return {ifo: self.end_time for ifo in self.ifos}
         return {ifo: self.end_time - self.shift[i] for i, ifo in enumerate(self.ifos)}
+
+    @property
+    def n_lag(self) -> int:
+        """Number of valid time lags for this segment."""
+        return self.lag_shifts.shape[0]
+
+    @property
+    def lag_shifts(self) -> np.ndarray:
+        """
+        Lag shift matrix of shape ``(n_lag, n_ifo)`` in seconds.
+
+        Resolution order:
+        1. ``lag_file`` — load from a text file (one row per lag, columns = IFO shifts).
+        2. ``lag_array`` — user-provided list of lag vectors.
+        3. Computed from ``lag_size/lag_step/lag_off/lag_max/lag_site`` and segment geometry.
+        """
+        if self.lag_file is not None:
+            return self._load_lag_file()
+        if self.lag_array is not None:
+            return np.asarray(self.lag_array, dtype=float)
+        return self._compute_lag_shifts()
+
+    def _load_lag_file(self) -> np.ndarray:
+        """Load lag shifts from a whitespace-delimited text file."""
+        data = np.loadtxt(self.lag_file, dtype=float, ndmin=2)
+        n_ifo = len(self.ifos)
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[1] != n_ifo:
+            raise ValueError(
+                f"lag_file has {data.shape[1]} columns but segment has {n_ifo} IFOs"
+            )
+        return data
+
+    def _compute_lag_shifts(self) -> np.ndarray:
+        """Build the lag shift matrix from lag parameters and segment geometry."""
+        n_ifo = len(self.ifos)
+        seg_duration = float(self.duration)
+        lag_step = float(self.lag_step)
+        seg_edge = float(self.seg_edge)
+
+        if lag_step <= 0:
+            raise ValueError("lag_step must be positive")
+
+        lag_max_seg = int((seg_duration - 2.0 * seg_edge) / lag_step) - 1
+        if lag_max_seg < 0:
+            return np.zeros((0, n_ifo), dtype=float)
+
+        if self.lag_max == 0:
+            full_ids = [
+                tuple([m] + [0] * (n_ifo - 1))
+                for m in range(self.lag_off, self.lag_off + self.lag_size)
+            ]
+            selected_ids = full_ids
+        else:
+            full_ids = _generate_extended_lag_ids(
+                n_ifo=n_ifo,
+                lag_size=self.lag_size,
+                lag_off=self.lag_off,
+                lag_max=self.lag_max,
+                lag_site=self.lag_site,
+            )
+            if self.lag_off >= len(full_ids):
+                selected_ids = []
+            else:
+                selected_ids = full_ids[self.lag_off : self.lag_off + self.lag_size]
+
+        valid = []
+        for ids in selected_ids:
+            arr = np.asarray(ids, dtype=int)
+            if np.any(arr < 0) or np.any(arr > lag_max_seg):
+                continue
+            valid.append(arr)
+
+        if len(valid) == 0:
+            return np.zeros((0, n_ifo), dtype=float)
+
+        return np.vstack(valid).astype(float) * lag_step
 
     to_dict = asdict
 

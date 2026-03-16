@@ -120,6 +120,14 @@ def create_job_segment_from_config(config):
         for job_seg in job_segments:
             job_seg.channels = config.channelNamesRaw
 
+    # populate lag parameters so each segment is self-contained
+    for job_seg in job_segments:
+        job_seg.lag_size = int(getattr(config, 'lagSize', 1))
+        job_seg.lag_step = float(getattr(config, 'lagStep', 1.0))
+        job_seg.lag_off = int(getattr(config, 'lagOff', 0))
+        job_seg.lag_max = int(getattr(config, 'lagMax', 0))
+        job_seg.lag_site = getattr(config, 'lagSite', None)
+
     ############################################
     ## flatten job segments by injection trail index if parallel_injection_trail is enabled
     if getattr(config, 'parallel_injection_trail', False):

@@ -5,7 +5,6 @@ import time
 import numpy as np
 from wdm_wavelet.wdm import WDM as WDMWavelet
 
-from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 from .td_vector_batch import prepare_td_inputs, batch_extract_td_vecs
 from .utils import get_cluster_links, calculate_statistics, get_defragment_link, \
     aggregate_clusters_from_links, extract_timeseries_data, expected_td_vec_len, \
@@ -178,13 +177,12 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
 
 
 def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers,
-                         return_td_cache: bool = False):
+                         return_td_cache: bool = False, job_seg=None):
     timer_start = time.perf_counter()
 
     strains = [TimeSeries.from_input(strain) for strain in strains]
 
-    lag_plan = build_lag_plan_from_config(config, strains)
-    n_lag = int(lag_plan.n_lag)
+    n_lag = int(job_seg.n_lag)
     if n_lag == 0:
         logger.info("Supercluster wrapper skipped: n_lag=0")
         return (None, {}) if return_td_cache else None
@@ -444,7 +442,7 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
     Compute every lag-independent supercluster resource once per job segment.
 
     This includes the WDM wavelet decompositions, TD-input cache, sky delay /
-    antenna-pattern matrices, and all scalar thresholds derived from *config*.
+    antenna-pattern matrices, and K_td derived from *config*.
     Pass the returned dict to :func:`supercluster_single_lag` for each lag.
 
     Parameters
@@ -465,9 +463,6 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
     timer_start = time.perf_counter()
 
     strains_ts = [TimeSeries.from_input(strain) for strain in strains]
-
-    lag_plan = build_lag_plan_from_config(config, strains_ts)
-    n_lag = int(lag_plan.n_lag)
 
     upTDF = int(getattr(config, 'upTDF', 1))
     TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
@@ -576,15 +571,9 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
     )
     strains_ts = None
 
-    super_acor = config.Acore
-    super_e2or = calculate_e2or_from_acore(super_acor, config.nIFO)
-    subnet_acor = config.subacor if config.subacor > 0 else config.Acore
-    subnet_e2or = calculate_e2or_from_acore(subnet_acor, config.nIFO)
-
     logger.info("Supercluster setup time: %.2f s", time.perf_counter() - timer_start)
 
     return {
-        "n_lag": n_lag,
         "td_inputs_cache": td_inputs_cache,
         "ml": ml_subnet,              # reduced resolution for apply_subnet_cut
         "FP": FP_subnet,
@@ -594,25 +583,11 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
         "FP_likelihood": FP,
         "FX_likelihood": FX,
         "n_sky_likelihood": int(ml.shape[1]),
-        "super_e2or": super_e2or,
-        "subnet_acor": subnet_acor,
-        "subnet_e2or": subnet_e2or,
-        "n_ifo": config.nIFO,
-        "n_loudest": config.LOUD,
-        "gap": config.TFgap,
-        "Tgap": config.Tgap,
-        "Fgap": config.Fgap,
-        "subnet": config.subnet,
-        "subcut": config.subcut,
-        "subnorm": config.subnorm,
-        "subrho": config.subrho if config.subrho > 0 else config.netRHO,
-        "pattern": int(getattr(config, "pattern", 0)),
-        "TDSize": config.TDSize,
         "K_td": K_td,
     }
 
 
-def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk):
+def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx, xtalk):
     """
     Run the full supercluster pipeline for a single lag.
 
@@ -620,6 +595,9 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
     ----------
     setup : dict
         Returned by :func:`setup_supercluster`.
+    config : Config
+        Configuration object — all thresholds and parameters are read
+        directly from *config* rather than being pre-parsed into *setup*.
     fragment_clusters_single_lag : list[FragmentCluster]
         One ``FragmentCluster`` per resolution for *this* lag only
         (i.e. the output of :func:`~pycwb.modules.cwb_coherence.coherence.coherence_single_lag`).
@@ -635,10 +613,8 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
         candidates were rejected at the subnet-cut stage.
     """
     td_inputs_cache = setup["td_inputs_cache"]
-    n_ifo = setup["n_ifo"]
-    # Use K_td (max inter-detector delay in rateANA samples) when available;
-    # fall back to TDSize for backwards compatibility with old setup dicts.
-    K = int(setup.get("K_td", setup["TDSize"]))
+    n_ifo = config.nIFO
+    K = int(setup["K_td"])
 
     # Merge all resolutions for this lag into one FragmentCluster.
     # No deepcopy needed: fragment_clusters_single_lag is freshly built per lag
@@ -702,7 +678,13 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
     logger.info("   --------------------------------------------------")
     clusters = fragment_cluster.clusters
 
-    superclusters = supercluster(clusters, 'L', setup["gap"], setup["super_e2or"], n_ifo)
+    super_acor = config.Acore
+    super_e2or = calculate_e2or_from_acore(super_acor, n_ifo)
+    subnet_acor = config.subacor if config.subacor > 0 else config.Acore
+    subnet_e2or = calculate_e2or_from_acore(subnet_acor, n_ifo)
+    pattern = int(getattr(config, "pattern", 0))
+
+    superclusters = supercluster(clusters, 'L', config.TFgap, super_e2or, n_ifo)
     total_pixels = sum(len(c.pixels) for c in superclusters)
     accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
     logger.info(
@@ -716,34 +698,35 @@ def supercluster_single_lag(setup, fragment_clusters_single_lag, lag_idx, xtalk)
         )
         return None
     
-    if setup["pattern"] != 0:
+    if pattern != 0:
         accepted_superclusters = defragment(
-            accepted_superclusters, setup["Tgap"], setup["Fgap"], n_ifo
+            accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
         logger.info(f"   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixels) for c in accepted_superclusters))
 
+    subrho = config.subrho if config.subrho > 0 else config.netRHO
     accepted_superclusters = apply_subnet_cut(
         accepted_superclusters,
-        setup["n_loudest"],
+        config.LOUD,
         setup["ml"],
         setup["FP"],
         setup["FX"],
-        setup["subnet_acor"],
-        setup["subnet_e2or"],
+        subnet_acor,
+        subnet_e2or,
         n_ifo,
         setup["n_sky"],
-        setup["subnet"],
-        setup["subcut"],
-        setup["subnorm"],
-        setup["subrho"],
+        config.subnet,
+        config.subcut,
+        config.subnorm,
+        subrho,
         xtalk.coeff,
         xtalk.lookup_table,
         xtalk.layers,
     )
 
-    if setup["pattern"] == 0:
+    if pattern == 0:
         accepted_superclusters = defragment(
-            accepted_superclusters, setup["Tgap"], setup["Fgap"], n_ifo
+            accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
     else:
         accepted_superclusters = accepted_superclusters
