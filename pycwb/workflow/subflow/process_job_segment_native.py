@@ -1,4 +1,3 @@
-import ctypes
 import gc
 import logging
 import os
@@ -24,22 +23,13 @@ from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.catalog import Catalog
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.utils.memory import release_memory
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
     reconstruct_INJwaveforms_flow, plot_skymap_flow,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _release_heap():
-    """gc.collect() + glibc malloc_trim(0) to return fragmented heap pages to OS."""
-    gc.collect()
-    try:
-        libc = ctypes.CDLL("libc.so.6")
-        libc.malloc_trim(0)
-    except (OSError, AttributeError):
-        pass  # Non-Linux or musl libc
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
@@ -155,7 +145,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         stage_timer = time.perf_counter()
         strains, nRMS = data_conditioning(config, data)
         data = None  # remove reference to original data to save memory
-        _release_heap()  # return fragmented heap pages to OS
+        release_memory()
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -167,7 +157,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc_py
             mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc, nRMS)])
             del mdc
-            _release_heap()
+            release_memory()
 
         # ---- One-time lag-independent setup ----------------------------------------
         # Use extract_td=True so coherence setup extracts TD inputs from the complex
