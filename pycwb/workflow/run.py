@@ -4,7 +4,7 @@ import logging
 from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
 from pycwb.utils.module import import_function
-from pycwb.utils.parser import parse_id_string
+from pycwb.utils.parser import parse_id_string, parse_lag_string
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
            n_proc=1, plot=None, config_vars: str = None, input_dir=None,
            compress_json=False, dry_run=False,
-           jobs: str = None, trail_idx: str = None):
+           jobs: str = None, trail_idx: str = None, lags: str = None):
     # TODO: optimize the plot control
     logger_init(log_file, log_level)
 
@@ -24,8 +24,37 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
         job_ids = set(parse_id_string(jobs))
         job_segments = [seg for seg in job_segments if seg.index in job_ids]
 
+    if lags is not None:
+        lag_array = parse_lag_string(lags)
+        for job_seg in job_segments:
+            if job_seg.lag_file is not None:
+                raise ValueError(
+                    f"Job segment {job_seg.index}: --lags cannot be used when lag_file "
+                    f"is already set in the configuration"
+                )
+            job_seg.lag_array = lag_array
+            job_seg.lag_size = 0
+
     if dry_run:
         return job_segments
+
+    # Log the active run options so they appear in the log for later debugging
+    logger.info("Run options:")
+    if jobs is not None:
+        logger.info("  --jobs      : %s  (selected job indices: %s)", jobs,
+                    sorted(seg.index for seg in job_segments))
+    else:
+        logger.info("  --jobs      : all (%d segments)", len(job_segments))
+    if trail_idx is not None:
+        logger.info("  --trail-idx : %s", trail_idx)
+    else:
+        logger.info("  --trail-idx : all (from segment injections)")
+    if lags is not None:
+        logger.info("  --lags      : %s  (%d lag vectors)", lags,
+                    len(job_segments[0].lag_array) if job_segments else 0)
+    else:
+        logger.info("  --lags      : from config (lag_size=%s)",
+                    job_segments[0].lag_size if job_segments else "N/A")
 
     trail_ids = parse_id_string(trail_idx) if trail_idx is not None else None
 

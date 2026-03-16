@@ -93,6 +93,14 @@ def init_parser(parser):
                         default=None,
                         help='the trail indices to run, e.g., 0-2,5')
 
+    # lags
+    parser.add_argument('--lags',
+                        metavar='lags',
+                        type=str,
+                        default=None,
+                        help='specific lags to run, as a semicolon-separated list of comma-separated shift vectors, '
+                             'e.g., "0,0;1,0;0,1" for 3 lags with 2 IFOs')
+
 
 def command(args):
     from pycwb.workflow.run import search
@@ -122,4 +130,5 @@ def command(args):
            compress_json=args.compress_json,
            config_vars=args.config_vars,
            jobs=args.jobs,
-           trail_idx=args.trail_idx)
+           trail_idx=args.trail_idx,
+           lags=args.lags)

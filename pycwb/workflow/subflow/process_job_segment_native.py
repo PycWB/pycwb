@@ -209,6 +209,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         for lag in range(n_lag):
             # timer for each lag iteration, not including the one-time setup above
             lag_timer = time.perf_counter()
+            lag_shifts = sub_job_seg.lag_shifts[lag]
+            lag_shift_str = ", ".join(
+                f"{ifo}={shift:.3f}s"
+                for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
+            )
+            logger.info("Processing lag %d / %d  [%s]", lag, n_lag - 1, lag_shift_str)
             if skip_lags and lag in skip_lags:
                 logger.info("Skipping lag %d due to skip_lags", lag)
                 continue
