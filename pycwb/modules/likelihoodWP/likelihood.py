@@ -327,7 +327,7 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
 
     rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
     if rejected:
-        logger.info("Cluster rejected due to threshold cuts: %s", rejected)
+        logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
         logger.info("\t <- rejected    ")
         timer_end = time.perf_counter()

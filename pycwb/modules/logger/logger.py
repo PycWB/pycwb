@@ -27,6 +27,12 @@ def logger_init(log_file: str = None, log_level: str = 'INFO', silent: bool = Fa
         logging.basicConfig(stream=sys.stdout, level=log_level, force=True,
                             format=format_str, datefmt='%y-%m-%d %H:%M:%S')
 
+    # Pin noisy external libraries to WARNING regardless of the requested level,
+    # so that --log-level DEBUG only reveals pycwb internals.
+    for _noisy_lib in ("jax", "jaxlib", "numba", "numba.core", "matplotlib",
+                       "absl", "tensorflow", "torch"):
+        logging.getLogger(_noisy_lib).setLevel(logging.WARNING)
+
     if not silent:
         logger.info("Logging initialized")
         logger.info("Logging level: " + log_level)
