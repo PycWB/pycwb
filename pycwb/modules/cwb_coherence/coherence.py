@@ -250,7 +250,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_coherence(config, strains, extract_td=False, job_seg=None):
+def setup_coherence(config, strains, job_seg=None):
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
     threshold, lag plan) for every resolution level.
@@ -263,20 +263,15 @@ def setup_coherence(config, strains, extract_td=False, job_seg=None):
     config : Config
     strains : list
         Whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
-    extract_td : bool
-        If True, extract TD inputs from the complex TF maps *before*
-        ``max_energy`` destroys them.  Each returned setup dict will
-        contain a ``"td_inputs"`` key (list of per-IFO dicts from
-        :func:`prepare_td_inputs`).  This avoids a duplicate WDM
-        pass in :func:`setup_supercluster`.
+    job_seg : WaveSegment
+        Job segment (provides lag count via ``job_seg.n_lag``).
 
     Returns
     -------
     list[dict]
         One setup dict per resolution, keyed by ``tf_maps``, ``Eo``,
         ``job_seg``, ``pattern``, ``level``, ``layers``, ``rate``,
-        ``select_subrho``, ``select_subnet``, ``segEdge``, and
-        optionally ``td_inputs``.
+        ``select_subrho``, ``select_subnet``, ``segEdge``.
     """
     timer_start = time.perf_counter()
 
@@ -288,7 +283,7 @@ def setup_coherence(config, strains, extract_td=False, job_seg=None):
 
     setups = [
         _setup_coherence_single_res(i, config, normalized_strains, up_n,
-                                    extract_td=extract_td, job_seg=job_seg)
+                                    job_seg=job_seg)
         for i in range(config.nRES)
     ]
 
@@ -296,7 +291,7 @@ def setup_coherence(config, strains, extract_td=False, job_seg=None):
     return setups
 
 
-def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False, job_seg=None):
+def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
     """
     Lag-independent coherence setup for one resolution level.
 
@@ -304,19 +299,12 @@ def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False, job_
     energy threshold, and builds the lag plan.  Nothing here depends on
     which lag is being processed.
 
-    Parameters
-    ----------
-    extract_td : bool
-        If True, call ``set_td_filter`` on the WDM and extract TD inputs
-        from the complex TF maps *before* ``max_energy``.  The result
-        dict will contain ``"td_inputs"``.
-
     Returns
     -------
     dict
         Keys: ``tf_maps``, ``Eo``, ``job_seg``, ``pattern``, ``level``,
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
-        ``segEdge``, and optionally ``td_inputs``.
+        ``segEdge``.
     """
     timer_start = time.perf_counter()
 
@@ -372,17 +360,6 @@ def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False, job_
         1000. / rate,
     )
 
-    # Optionally extract TD inputs from the complex TF maps before
-    # max_energy destroys them, so setup_supercluster can skip its own
-    # duplicate WDM transforms.
-    td_inputs = None
-    if extract_td:
-        from pycwb.modules.super_cluster.td_vector_batch import prepare_td_inputs
-        upTDF = int(getattr(config, 'upTDF', 1))
-        wdm_wavelet.set_td_filter(int(config.TDSize), upTDF)
-        td_inputs = [prepare_td_inputs(tf_maps[n], wdm_wavelet)
-                     for n in range(config.nIFO)]
-
     # Apply max_energy over the sky (modifies tf-map data in place)
     max_delay = config.max_delay
     pattern = config.pattern
@@ -426,7 +403,6 @@ def _setup_coherence_single_res(i, config, strains, up_n, extract_td=False, job_
         "select_subrho": config.select_subrho,
         "select_subnet": config.select_subnet,
         "segEdge": config.segEdge,
-        **({"td_inputs": td_inputs} if td_inputs is not None else {}),
     }
 
 

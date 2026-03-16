@@ -8,6 +8,7 @@ from copy import copy
 from pycwb.config import Config
 from pycbc.types import TimeSeries
 from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
+from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.cwb_coherence import coherence
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
@@ -46,13 +47,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
        * **Early MDC resampling & whitening** – MDC channels are resampled
          together with the data and whitened *before* the heavy
          coherence / supercluster setup, freeing ~315 MB earlier.
-       * **Combined coherence → supercluster TD extraction** –
-         ``setup_coherence(..., extract_td=True)`` extracts TD inputs from
-         the complex TF maps before ``max_energy`` destroys them.  The
-         resulting ``td_inputs_cache`` is passed to
-         ``setup_supercluster(..., td_inputs_cache=...)``, eliminating a
-         duplicate WDM transform pass (~275 MB temporary, ~3 s wall time).
-       * **Float32 TD padded planes** – ``prepare_td_inputs()`` now stores
+       * **Decoupled TD-inputs generation** –
+         ``build_td_inputs_cache(config, strains)`` builds TD inputs
+         independently from coherence and supercluster setup.
+       * **Float32 TD padded planes** – ``prepare_td_inputs()`` stores
          padded planes in float32 instead of float64, halving the TD cache
          from ~565 MB to ~282 MB with no precision loss (Numba accumulates
          in float64 internally).
@@ -160,42 +158,34 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             release_memory()
 
         # ---- One-time lag-independent setup ----------------------------------------
-        # Use extract_td=True so coherence setup extracts TD inputs from the complex
-        # TF maps *before* max_energy, avoiding a duplicate WDM pass in supercluster.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains, extract_td=True, job_seg=sub_job_seg)
+        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # Build td_inputs_cache from coherence setup (avoids duplicate WDM in supercluster)
-        td_inputs_cache = {}
-        for setup in coherence_setup:
-            level = setup["level"]
-            layers = 2 ** level if level > 0 else 0
-            wdm_layers = max(1, int(layers))
-            td_inputs = setup.pop("td_inputs", None)
-            if td_inputs is not None:
-                td_inputs_cache[int(wdm_layers)] = td_inputs
-                td_inputs_cache[int(wdm_layers) + 1] = td_inputs
+        stage_timer = time.perf_counter()
+        td_inputs_cache = build_td_inputs_cache(config, strains)
+        logger.info("TD inputs cache build time: %.2f s", time.perf_counter() - stage_timer)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         n_lag = sub_job_seg.n_lag
         logger.info("Lag plan: n_lag=%d (from job segment duration=%.2f s)", n_lag, sub_job_seg.duration)
 
+        gps_time = float(strains[0].start_time)
+
         stage_timer = time.perf_counter()
         xtalk = XTalk.load(config.MRAcatalog)
-        sc_setup = setup_supercluster(config, strains, td_inputs_cache=td_inputs_cache)
-        wdm_td_cache = sc_setup["td_inputs_cache"]
+        supercluster_setup = setup_supercluster(config, gps_time)
         logger.info("Supercluster setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         stage_timer = time.perf_counter()
-        # Reuse sky arrays already computed by setup_supercluster; use the full-resolution
-        # arrays (ml_likelihood/FP_likelihood/FX_likelihood) so the likelihood sky scan runs
-        # at config.healpix resolution, not the reduced MIN_SKYRES_HEALPIX resolution.
-        lh_setup = setup_likelihood(config, strains, config.nIFO,
-                                    ml=sc_setup.get("ml_likelihood", sc_setup["ml"]),
-                                    FP=sc_setup.get("FP_likelihood", sc_setup["FP"]),
-                                    FX=sc_setup.get("FX_likelihood", sc_setup["FX"]))
+        # Reuse sky arrays from setup_supercluster; use full-resolution arrays
+        # so the likelihood sky scan runs at config.healpix resolution.
+        likelihood_setup = setup_likelihood(config, strains, config.nIFO,
+                                    ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
+                                    FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
+                                    FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]))
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -223,7 +213,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
 
             # supercluster for this lag only
-            fragment_cluster = supercluster_single_lag(sc_setup, config, frag_clusters_this_lag, lag, xtalk=xtalk)
+            fragment_cluster = supercluster_single_lag(
+                supercluster_setup, config, frag_clusters_this_lag, lag,
+                xtalk=xtalk, td_inputs_cache=td_inputs_cache,
+            )
 
             if fragment_cluster is None:
                 logger.warning(
@@ -245,9 +238,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     selected_cluster,
                     config.MRAcatalog,
                     cluster_id=k + 1,
-                    wdm_td_cache=wdm_td_cache,
+                    td_inputs_cache=td_inputs_cache,
                     nRMS=nRMS,
-                    setup=lh_setup,
+                    setup=likelihood_setup,
                     xtalk=xtalk,
                     config=config,
                 )

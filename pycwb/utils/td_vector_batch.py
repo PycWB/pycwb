@@ -1,5 +1,5 @@
 """
-Batch time-delay vector extraction for super_cluster.
+Batch time-delay vector extraction utility.
 
 Replaces the serial per-pixel loop:
     for pixel in pixels:
@@ -16,8 +16,8 @@ Notes
 - This replicates core.time_delay.get_pixel_amplitude + get_td_vec(mode="a").
 - Numba compiles once per dtype signature (not per array shape), so there is
   no per-lag JIT-trace-cache accumulation and no associated memory leak.
-- Call ``prepare_td_inputs`` to extract numpy arrays from the TF map and
-  filter bank before invoking the batch function.
+- Call ``TimeFrequencyMap.prepare_td_inputs(td_filters)`` to extract padded
+  numpy arrays from the TF map before invoking the batch function.
 """
 
 import logging
@@ -221,88 +221,106 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
 
 
 # ---------------------------------------------------------------------------
-# Helpers: extract numpy arrays → call batch → write results back to pixels
+# TD-inputs cache builder
 # ---------------------------------------------------------------------------
 
-def prepare_td_inputs(tf_map, wdm):
+def build_td_inputs_cache(config, strains):
     """
-    Extract numpy arrays from a TimeFrequencyMap and WDM instance for batch TD extraction.
+    Build a TD-inputs cache for all WDM resolution levels.
+
+    For each resolution level in ``config.WDM_level``, a WDM wavelet is
+    constructed, TD filters are computed, TF maps are produced for every
+    detector, and :meth:`TimeFrequencyMap.prepare_td_inputs` extracts the
+    padded planes needed by :func:`batch_extract_td_vecs`.
+
+    The returned dict is keyed by both ``wdm_layers`` and ``wdm_layers + 1``
+    (the cWB pixel layer-tag convention), so callers can look up by either.
 
     Parameters
     ----------
-    tf_map : TimeFrequencyMap  (pycwb type, data is complex128 shape (M+1, n_time))
-    wdm : WDMWavelet instance with td_filters already set via set_td_filter
+    config : Config
+        Must have ``WDM_level``, ``nIFO``, ``TDSize``, ``upTDF``,
+        ``WDM_beta_order``, ``WDM_precision``.
+    strains : list
+        Whitened strain time series (one per IFO).
 
     Returns
     -------
-    dict with keys:
-        padded00 : float32 ndarray  shape (n_time + 2*n_coeffs, M+1)
-        padded90 : float32 ndarray  shape (n_time + 2*n_coeffs, M+1)
-        T0       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
-        Tx       : float64 ndarray  shape (2*J+1, 2*n_coeffs+1)
-        M        : int
-        n_coeffs : int
-        J        : int
-
-    Notes
-    -----
-    Padded planes use float32 to halve memory.  The downstream Numba kernel
-    ``batch_get_td_vecs`` accumulates in float64 and outputs float32, so
-    float32 inputs lose no meaningful precision.
+    dict[int, list[TDBatchInputs]]
+        Layer key → list of per-IFO :class:`TDBatchInputs`.
     """
-    data = np.asarray(tf_map.data, dtype=np.complex128)  # (M+1, n_time)
-    # Transpose to (n_time, M+1) — matching time_delay.py convention
-    tf00 = np.ascontiguousarray(data.real.T, dtype=np.float64)  # (n_time, M+1)
-    tf90 = np.ascontiguousarray(data.imag.T, dtype=np.float64)
+    from wdm_wavelet.wdm import WDM as WDMWavelet
+    from pycwb.types.time_series import TimeSeries
+    from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-    td_filters = wdm.td_filters
-    n_coeffs = int(td_filters.n_coeffs)
-    M = int(td_filters.M)
-    J = int(td_filters.max_delay)   # = M * L; for L=1, J=M
+    strains_ts = [TimeSeries.from_input(strain) for strain in strains]
+    upTDF = int(getattr(config, 'upTDF', 1))
 
-    pad = [(n_coeffs, n_coeffs), (0, 0)]
-    padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
-    padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
+    # Build one WDM context per resolution level
+    wdm_context_by_layers = {}
+    for level in config.WDM_level:
+        layers_at_level = 2 ** level if level > 0 else 0
+        wdm_layers = max(1, int(layers_at_level))
+        wdm = WDMWavelet(
+            M=wdm_layers,
+            K=wdm_layers,
+            beta_order=config.WDM_beta_order,
+            precision=config.WDM_precision,
+        )
+        wdm.set_td_filter(int(config.TDSize), upTDF)
 
-    T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
-    Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
+        detector_tf_maps = []
+        for n in range(config.nIFO):
+            strain_ts = strains_ts[n]
+            ts_data = np.asarray(strain_ts.data, dtype=np.float64)
+            sample_rate = float(strain_ts.sample_rate)
+            t0 = float(strain_ts.t0)
+            wdm_tf = wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1)
+            detector_tf_maps.append(
+                TimeFrequencyMap(
+                    data=wdm_tf.data,
+                    is_whitened=True,
+                    dt=wdm_tf.dt,
+                    df=wdm_tf.df,
+                    start=wdm_tf.start_time,
+                    stop=wdm_tf.end_time,
+                    f_low=wdm_tf.start_freq,
+                    f_high=wdm_tf.end_freq,
+                    edge=None,
+                    wavelet=wdm,
+                    len_timeseries=wdm_tf.len_timeseries,
+                )
+            )
 
-    return {
-        "padded00": padded00,
-        "padded90": padded90,
-        "T0": T0,
-        "Tx": Tx,
-        "M": M,
-        "n_coeffs": n_coeffs,
-        "J": J,
-    }
+        context = {"wdm": wdm, "tf_maps": detector_tf_maps}
+        wdm_context_by_layers[int(wdm_layers)] = context
+        wdm_context_by_layers[int(wdm_layers) + 1] = context
 
+    # Extract TD inputs from TF maps, deduplicating shared contexts
+    td_inputs_cache = {}
+    seen_ctx = set()
+    for layer_key, context in wdm_context_by_layers.items():
+        ctx_id = id(context)
+        if ctx_id in seen_ctx:
+            td_inputs_cache[layer_key] = (
+                td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+            )
+            continue
+        seen_ctx.add(ctx_id)
+        wdm_obj = context["wdm"]
+        per_ifo = [
+            context["tf_maps"][n].prepare_td_inputs(wdm_obj.td_filters)
+            for n in range(config.nIFO)
+        ]
+        td_inputs_cache[layer_key] = per_ifo
+        context["tf_maps"] = None  # free TF maps after extraction
 
-def batch_extract_td_vecs(pixel_indices_np, tf_inputs, K):
-    """
-    Run the batch Numba TD extraction and return a numpy array.
+    # Fill any remaining None entries from neighbours
+    for layer_key in list(wdm_context_by_layers.keys()):
+        if td_inputs_cache.get(layer_key) is None:
+            td_inputs_cache[layer_key] = (
+                td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+            )
 
-    Numba compiles ``batch_get_td_vecs`` once per dtype signature (int32/float64),
-    not per array shape, so there is no per-lag JIT trace cache accumulation.
-
-    Parameters
-    ----------
-    pixel_indices_np : np.ndarray, shape (n_pixels,), dtype int32
-    tf_inputs : dict from prepare_td_inputs
-    K : int  — TD filter half-range (corresponds to config.TDSize)
-
-    Returns
-    -------
-    np.ndarray, shape (n_pixels, 4*K+2), dtype float32
-    """
-    return batch_get_td_vecs(
-        np.asarray(pixel_indices_np, dtype=np.int32),
-        tf_inputs["padded00"],
-        tf_inputs["padded90"],
-        tf_inputs["T0"],
-        tf_inputs["Tx"],
-        tf_inputs["M"],
-        tf_inputs["n_coeffs"],
-        K,
-        tf_inputs["J"],
-    )
+    wdm_context_by_layers.clear()
+    return td_inputs_cache

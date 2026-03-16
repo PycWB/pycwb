@@ -5,7 +5,6 @@ import time
 import numpy as np
 from wdm_wavelet.wdm import WDM as WDMWavelet
 
-from .td_vector_batch import prepare_td_inputs, batch_extract_td_vecs
 from .utils import get_cluster_links, calculate_statistics, get_defragment_link, \
     aggregate_clusters_from_links, extract_timeseries_data, expected_td_vec_len, \
     apply_subnet_cut
@@ -230,7 +229,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
             continue
         seen_keys.add(ctx_id)
         wdm_obj = context["wdm"]
-        per_ifo = [prepare_td_inputs(context["tf_maps"][n], wdm_obj) for n in range(config.nIFO)]
+        per_ifo = [context["tf_maps"][n].prepare_td_inputs(wdm_obj.td_filters) for n in range(config.nIFO)]
         td_inputs_cache[layer_key] = per_ifo
     # For any layer_key that still has None (dedup gap), fill from its neighbour
     for layer_key in list(wdm_context_by_layers.keys()):
@@ -304,7 +303,7 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 
             for ifo_idx in range(config.nIFO):
                 indices_np = np.asarray(layer_pixel_indices[:, ifo_idx], dtype=np.int32)
-                batch_result = batch_extract_td_vecs(indices_np, per_ifo_inputs[ifo_idx], K)
+                batch_result = per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
                 # batch_result: (n_layer_pixels, 4*K+2) float32
                 all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
         
@@ -437,89 +436,30 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_supercluster(config, strains, td_inputs_cache=None):
+def setup_supercluster(config, gps_time):
     """
-    Compute every lag-independent supercluster resource once per job segment.
+    Compute lag-independent supercluster resources: sky delay / antenna-pattern
+    matrices and the K_td delay range.
 
-    This includes the WDM wavelet decompositions, TD-input cache, sky delay /
-    antenna-pattern matrices, and K_td derived from *config*.
-    Pass the returned dict to :func:`supercluster_single_lag` for each lag.
+    Call this once per job segment, then pass the returned dict together with
+    a separately built ``td_inputs_cache`` to :func:`supercluster_single_lag`.
 
     Parameters
     ----------
     config : Config
-    strains : list
-        Whitened strain time series.
-    td_inputs_cache : dict or None
-        Pre-computed TD inputs cache (keyed by wdm_layers and wdm_layers+1).
-        When provided (e.g. from ``setup_coherence(..., extract_td=True)``),
-        the expensive duplicate WDM transforms are skipped entirely.
+    gps_time : float
+        GPS time of the first strain sample (used for sky-delay computation).
 
     Returns
     -------
     dict
-        All lag-independent state; see source for keys.
+        Keys: ``ml``, ``FP``, ``FX``, ``n_sky``, ``ml_likelihood``,
+        ``FP_likelihood``, ``FX_likelihood``, ``n_sky_likelihood``, ``K_td``.
     """
     timer_start = time.perf_counter()
 
-    strains_ts = [TimeSeries.from_input(strain) for strain in strains]
-
     upTDF = int(getattr(config, 'upTDF', 1))
     TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
-
-    if td_inputs_cache is None:
-        # ---- WDM contexts and TD-input cache (same logic as supercluster_wrapper) ----
-        wdm_context_by_layers = {}
-        for level in config.WDM_level:
-            layers_at_level = 2 ** level if level > 0 else 0
-            wdm_layers = max(1, int(layers_at_level))
-            wdm = WDMWavelet(
-                M=wdm_layers,
-                K=wdm_layers,
-                beta_order=config.WDM_beta_order,
-                precision=config.WDM_precision,
-            )
-            # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
-            wdm.set_td_filter(int(config.TDSize), upTDF)
-
-            detector_tf_maps = []
-            for n in range(config.nIFO):
-                ts_data, sample_rate, t0 = extract_timeseries_data(strains_ts[n])
-                detector_tf_maps.append(wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1))
-
-            context = {"wdm": wdm, "tf_maps": detector_tf_maps}
-            wdm_context_by_layers[int(wdm_layers)] = context
-            wdm_context_by_layers[int(wdm_layers) + 1] = context
-
-        td_inputs_cache = {}
-        seen_keys = set()
-        for layer_key, context in wdm_context_by_layers.items():
-            ctx_id = id(context)
-            if ctx_id in seen_keys:
-                td_inputs_cache[layer_key] = (
-                    td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-                )
-                continue
-            seen_keys.add(ctx_id)
-            wdm_obj = context["wdm"]
-            per_ifo = [prepare_td_inputs(context["tf_maps"][n], wdm_obj) for n in range(config.nIFO)]
-            td_inputs_cache[layer_key] = per_ifo
-            # Free the TF maps immediately after extracting padded planes (~1.1 GB total).
-            # The padded arrays in td_inputs_cache are the only data needed downstream;
-            # there is no reason to keep the raw complex TF maps alive.
-            context["tf_maps"] = None
-        for layer_key in list(wdm_context_by_layers.keys()):
-            if td_inputs_cache.get(layer_key) is None:
-                alt = (
-                    td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-                )
-                td_inputs_cache[layer_key] = alt
-        # Release the entire WDM context dict (WDM objects + any remaining TF map refs).
-        # After this point only td_inputs_cache is needed.
-        wdm_context_by_layers.clear()
-    else:
-        logger.info("[setup_supercluster] Using pre-computed td_inputs_cache "
-                    "(%d entries), skipping WDM transforms", len(td_inputs_cache))
 
     # ---- Sky delay / antenna-pattern matrices ----
     # Compute TWO sky-array sets that mirror ROOT/CWB behaviour:
@@ -545,7 +485,7 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
         ref_ifo=config.refIFO,
         sample_rate=TDRate,
         td_size=K_td,
-        gps_time=float(strains_ts[0].t0),
+        gps_time=gps_time,
         healpix_order=healpix_order_full,
         n_sky=None,
     )
@@ -557,7 +497,7 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
             ref_ifo=config.refIFO,
             sample_rate=TDRate,
             td_size=K_td,
-            gps_time=float(strains_ts[0].t0),
+            gps_time=gps_time,
             healpix_order=healpix_order_subnet,
             n_sky=None,
         )
@@ -569,12 +509,10 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
         int(ml.shape[1]), healpix_order_full,
         int(ml_subnet.shape[1]), healpix_order_subnet,
     )
-    strains_ts = None
 
     logger.info("Supercluster setup time: %.2f s", time.perf_counter() - timer_start)
 
     return {
-        "td_inputs_cache": td_inputs_cache,
         "ml": ml_subnet,              # reduced resolution for apply_subnet_cut
         "FP": FP_subnet,
         "FX": FX_subnet,
@@ -587,7 +525,7 @@ def setup_supercluster(config, strains, td_inputs_cache=None):
     }
 
 
-def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx, xtalk):
+def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx, xtalk, td_inputs_cache):
     """
     Run the full supercluster pipeline for a single lag.
 
@@ -605,6 +543,9 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         Zero-based lag index (used for logging only).
     xtalk : XTalk
         Pre-loaded cross-talk catalog instance.
+    td_inputs_cache : dict
+        Pre-built TD inputs cache keyed by layer → list of per-IFO
+        :class:`TDBatchInputs`.
 
     Returns
     -------
@@ -612,7 +553,6 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         Processed cluster ready for likelihood, or ``None`` if all
         candidates were rejected at the subnet-cut stage.
     """
-    td_inputs_cache = setup["td_inputs_cache"]
     n_ifo = config.nIFO
     K = int(setup["K_td"])
 
@@ -663,7 +603,7 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         layer_pixel_indices = pixel_indices[pixel_idxs]
         for ifo_idx in range(n_ifo):
             indices_np = np.asarray(layer_pixel_indices[:, ifo_idx], dtype=np.int32)
-            batch_result = batch_extract_td_vecs(indices_np, per_ifo_inputs[ifo_idx], K)
+            batch_result = per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
             all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
 
     for pidx in range(n_pixels):

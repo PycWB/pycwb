@@ -4,6 +4,69 @@ from dataclasses import dataclass
 from .wavelet import Wavelet
 from .time_series import TimeSeries
 
+
+@dataclass
+class TDBatchInputs:
+	"""
+	Pre-computed padded quadrature planes and filter tables for batch
+	time-delay vector extraction.
+
+	Created by :meth:`TimeFrequencyMap.prepare_td_inputs`.
+
+	Attributes
+	----------
+	padded00 : np.ndarray
+		Zero-padded 00-phase plane, float32, shape ``(n_time + 2*n_coeffs, M+1)``.
+	padded90 : np.ndarray
+		Zero-padded 90-phase plane, float32, shape ``(n_time + 2*n_coeffs, M+1)``.
+	T0 : np.ndarray
+		Same-band TD filter table, float64, shape ``(2*J+1, 2*n_coeffs+1)``.
+	Tx : np.ndarray
+		Cross-band TD filter table, float64, shape ``(2*J+1, 2*n_coeffs+1)``.
+	M : int
+		Number of frequency layers (Nyquist index).
+	n_coeffs : int
+		Half-width of symmetric TD filters.
+	J : int
+		Maximum delay index (``M * L``).
+	"""
+	padded00: np.ndarray
+	padded90: np.ndarray
+	T0: np.ndarray
+	Tx: np.ndarray
+	M: int
+	n_coeffs: int
+	J: int
+
+	def extract_td_vecs(self, pixel_indices, K):
+		"""
+		Batch TD vector extraction for the given pixel indices.
+
+		Parameters
+		----------
+		pixel_indices : array-like, shape (n_pixels,)
+			Flat pixel indices into the TF plane (int32).
+		K : int
+			TD filter half-range (corresponds to config.TDSize).
+
+		Returns
+		-------
+		np.ndarray, shape (n_pixels, 4*K+2), dtype float32
+		"""
+		from pycwb.utils.td_vector_batch import batch_get_td_vecs
+		return batch_get_td_vecs(
+			np.asarray(pixel_indices, dtype=np.int32),
+			self.padded00,
+			self.padded90,
+			self.T0,
+			self.Tx,
+			self.M,
+			self.n_coeffs,
+			K,
+			self.J,
+		)
+
+
 @dataclass
 class TimeFrequencyMap:
 	"""
@@ -476,6 +539,47 @@ class TimeFrequencyMap:
 			return amp_out if mode == 'a' else energy_out
 
 		return shape
+
+	def prepare_td_inputs(self, td_filters):
+		"""
+		Build padded quadrature planes and filter tables for batch TD extraction.
+
+		This is a pure computation — no caching.  Callers are responsible for
+		storing the result when it needs to be reused across lags.
+
+		Parameters
+		----------
+		td_filters : wdm_wavelet.core.time_delay.TDFilterBank
+			Pre-built filter bank (from ``WDM.set_td_filter``).
+
+		Returns
+		-------
+		TDBatchInputs
+		"""
+		data = np.asarray(self.data, dtype=np.complex128)  # (M+1, n_time)
+		tf00 = np.ascontiguousarray(data.real.T, dtype=np.float64)  # (n_time, M+1)
+		tf90 = np.ascontiguousarray(data.imag.T, dtype=np.float64)
+
+		n_coeffs = int(td_filters.n_coeffs)
+		M = int(td_filters.M)
+		J = int(td_filters.max_delay)
+
+		pad = [(n_coeffs, n_coeffs), (0, 0)]
+		padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
+		padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
+
+		T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
+		Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
+
+		return TDBatchInputs(
+			padded00=padded00,
+			padded90=padded90,
+			T0=T0,
+			Tx=Tx,
+			M=M,
+			n_coeffs=n_coeffs,
+			J=J,
+		)
 
 
 def whiten_slice(data, rate, t, mode=1, offset=0.0, stride=0.0):
