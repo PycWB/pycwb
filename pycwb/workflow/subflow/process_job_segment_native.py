@@ -10,7 +10,6 @@ from pycbc.types import TimeSeries
 from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.cwb_coherence import coherence
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py
@@ -272,7 +271,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     selected_cluster,
                     config.MRAcatalog,
                     cluster_id=k + 1,
-                    td_inputs_cache=td_inputs_cache,
                     nRMS=nRMS,
                     setup=likelihood_setup,
                     xtalk=xtalk,
