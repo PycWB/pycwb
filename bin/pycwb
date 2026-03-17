@@ -18,6 +18,7 @@ import pycwb.cli.gwosc as gwosc
 import pycwb.cli.gwosc_data as gwosc_data
 import pycwb.cli.get_external_modules as get_external_modules
 import pycwb.cli.run_waveform_reconstruction as run_waveform_reconstruction
+import pycwb.cli.online as online
 from pycwb import __version__
 
 def main():
@@ -87,6 +88,11 @@ def main():
     get_external_modules_parser = subparsers.add_parser('get-external-modules', help='Get external modules')
     get_external_modules.init_parser(get_external_modules_parser)
     get_external_modules_parser.set_defaults(func=get_external_modules.command)
+
+    # online subcommand
+    online_parser = subparsers.add_parser('online', help='Run online gravitational-wave search')
+    online.init_parser(online_parser)
+    online_parser.set_defaults(func=online.command)
         
     args = parser.parse_args()
     if hasattr(args, 'func'):
