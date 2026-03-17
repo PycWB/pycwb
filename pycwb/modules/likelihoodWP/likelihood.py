@@ -59,7 +59,7 @@ def _resolve_runtime_parameters(config, nIFO):
     return network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, net_cc
 
 
-def _ensure_td_amp(cluster, nIFO, strains=None, config=None, wdm_td_cache=None):
+def _ensure_td_amp(cluster, nIFO, strains=None, config=None, td_inputs_cache=None):
     if len(cluster.pixels) == 0:
         return False
 
@@ -77,7 +77,7 @@ def _ensure_td_amp(cluster, nIFO, strains=None, config=None, wdm_td_cache=None):
         raise ValueError("likelihood requires `strains` and `config` when cluster pixels do not contain td_amp")
 
     # Batch JAX extraction replaces the per-pixel serial loop
-    return batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=wdm_td_cache)
+    return batch_ensure_td_amp(cluster, nIFO, strains, config, td_inputs_cache=td_inputs_cache)
 
 def _populate_pixel_noise_rms(pixels, nRMS):
     """
@@ -211,7 +211,7 @@ def setup_likelihood(config, strains, nIFO, ml=None, FP=None, FX=None):
 
 
 def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,  # noqa: keep config optional for legacy callers but warn
-               wdm_td_cache=None, nRMS=None, setup=None, xtalk=None):
+               td_inputs_cache=None, nRMS=None, setup=None, xtalk=None):
     """
     Main function to calculate the likelihood for a given network and cluster.
 
@@ -219,9 +219,9 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
         nIFO (int): Number of interferometers.
         cluster (Cluster): The cluster object containing pixel data.
         MRAcatalog (str): Path to the MRA catalog for xtalk information.
-        wdm_td_cache (dict | None): Optional pre-built TD-input cache from
-            supercluster_wrapper (Priority 2 optimisation).  When provided,
-            ``batch_ensure_td_amp`` skips the expensive WDM context rebuild.
+        td_inputs_cache (dict | None): Optional pre-built TD-input cache.
+            When provided, ``batch_ensure_td_amp`` skips the expensive WDM
+            context rebuild.
         nRMS (list | None): List of TimeFrequencyMap objects (one per IFO) from
             data conditioning.  When provided, each pixel's ``noise_rms`` field
             is populated from the TF map so that downstream physical-unit

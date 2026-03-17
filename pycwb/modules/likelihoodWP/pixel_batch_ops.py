@@ -70,7 +70,7 @@ def load_data_from_pixels_vectorized(pixels, nifo):
 # Batch TD amplitude computation (fallback path in _ensure_td_amp)
 # ---------------------------------------------------------------------------
 
-def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
+def batch_ensure_td_amp(cluster, nIFO, strains, config, td_inputs_cache=None):
     """
     Batch replacement for the per-pixel ``wdm.get_td_vec()`` loop inside
     ``_ensure_td_amp``.
@@ -89,9 +89,9 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     nIFO    : int
     strains : list of TimeSeries
     config  : Config
-    wdm_td_cache : dict | None
-        Optional pre-built TD-input cache from supercluster_wrapper
-        (``{layer_key: [per_ifo_td_inputs_dict, ...]}``) .  When provided,
+    td_inputs_cache : dict | None
+        Optional pre-built TD-input cache
+        (``{layer_key: [per_ifo_TDBatchInputs, ...]}``) .  When provided,
         the expensive ``set_td_filter`` + ``t2w`` + ``prepare_td_inputs``
         steps are skipped for any layer found in the cache.
 
@@ -100,13 +100,10 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     bool  — True if td_amp was (re-)computed, False if already present.
     """
     from pycwb.types.time_series import TimeSeries
+    from pycwb.types.time_frequency_map import TimeFrequencyMap
     from wdm_wavelet.wdm import WDM as WDMWavelet
 
     # Import batch helpers from super_cluster (exact same math, one impl)
-    from pycwb.modules.super_cluster.td_vector_batch import (
-        prepare_td_inputs,
-        batch_extract_td_vecs,
-    )
 
     if len(cluster.pixels) == 0:
         return False
@@ -143,8 +140,8 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
     for lc in unique_layers:
         # Check if supercluster already built td_inputs for this layer
         cached_td_inputs = None
-        if wdm_td_cache:
-            cached_td_inputs = wdm_td_cache.get(lc) or wdm_td_cache.get(lc + 1)
+        if td_inputs_cache:
+            cached_td_inputs = td_inputs_cache.get(lc) or td_inputs_cache.get(lc + 1)
         if cached_td_inputs is not None:
             logger.debug("batch_ensure_td_amp: using cached td_inputs for layer %d", lc)
             wdm_contexts[lc] = {"td_inputs": cached_td_inputs}
@@ -160,15 +157,26 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
         tf_maps = []
         for n in range(nIFO):
             strain = normalized[n]
-            tf_maps.append(
-                wdm.t2w(
-                    np.asarray(strain.data, dtype=np.float64),
-                    sample_rate=float(strain.sample_rate),
-                    t0=float(strain.t0),
-                    MM=-1,
-                )
+            wdm_tf = wdm.t2w(
+                np.asarray(strain.data, dtype=np.float64),
+                sample_rate=float(strain.sample_rate),
+                t0=float(strain.t0),
+                MM=-1,
             )
-        td_inputs_per_ifo = [prepare_td_inputs(tf_maps[n], wdm) for n in range(nIFO)]
+            tf_maps.append(TimeFrequencyMap(
+                data=wdm_tf.data,
+                is_whitened=True,
+                dt=wdm_tf.dt,
+                df=wdm_tf.df,
+                start=float(strain.t0),
+                stop=float(strain.t0) + len(strain.data) / float(strain.sample_rate),
+                f_low=getattr(config, "fLow", None),
+                f_high=getattr(config, "fHigh", None),
+                edge=getattr(config, "segEdge", None),
+                wavelet=wdm,
+                len_timeseries=len(strain.data),
+            ))
+        td_inputs_per_ifo = [tf_maps[n].prepare_td_inputs(wdm.td_filters) for n in range(nIFO)]
         wdm_contexts[lc] = {"td_inputs": td_inputs_per_ifo}
         wdm_contexts[lc + 1] = wdm_contexts[lc]
 
@@ -200,8 +208,8 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, wdm_td_cache=None):
 
         td_results = np.zeros((n_layer, nIFO, 4 * K + 2), dtype=np.float32)
         for ifo_idx in range(nIFO):
-            td_results[:, ifo_idx, :] = batch_extract_td_vecs(
-                pixel_indices[:, ifo_idx], td_inputs_per_ifo[ifo_idx], K
+            td_results[:, ifo_idx, :] = td_inputs_per_ifo[ifo_idx].extract_td_vecs(
+                pixel_indices[:, ifo_idx], K
             )
 
         for pid, pix in enumerate(layer_pixels):

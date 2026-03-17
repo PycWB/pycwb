@@ -21,3 +21,27 @@ def parse_vars(var_string):
             key, value = item.split('=', 1)
             variables[key] = value
     return variables
+
+
+def parse_lag_string(lag_string: str) -> list[list[float]]:
+    """Parse a lag specification string into a lag array.
+
+    Each lag vector is semicolon-separated, and within each vector the
+    per-IFO shifts are comma-separated.  For example ``"0,0;1,0;0,1"``
+    produces ``[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]``.
+    """
+    lag_array = []
+    for entry in lag_string.split(';'):
+        entry = entry.strip()
+        if not entry:
+            continue
+        lag_array.append([float(v) for v in entry.split(',')])
+    if not lag_array:
+        raise ValueError("Empty lag specification")
+    width = len(lag_array[0])
+    for i, row in enumerate(lag_array):
+        if len(row) != width:
+            raise ValueError(
+                f"Lag vector {i} has {len(row)} values, expected {width}"
+            )
+    return lag_array

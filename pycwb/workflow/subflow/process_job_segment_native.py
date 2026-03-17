@@ -8,12 +8,14 @@ from copy import copy
 from pycwb.config import Config
 from pycbc.types import TimeSeries
 from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
+from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.cwb_coherence import coherence
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
+from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
@@ -22,6 +24,7 @@ from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.catalog import Catalog
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.utils.memory import release_memory
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
     reconstruct_INJwaveforms_flow, plot_skymap_flow,
@@ -55,7 +58,24 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         The options to skip certain lags. It is used for resuming the processing after a crash
     
     """
+    # ─────────────────────────────────────────────────────────────────────────
+    # HIGH-LEVEL WORKFLOW OVERVIEW
+    # ─────────────────────────────────────────────────────────────────────────
+    # For each trail_idx (injection realisation, or 0 if no injections):
+    #
+    #   1. DATA LOADING     – read frames / generate noise / inject signals
+    #   2. CONDITIONING     – resample → whiten (data + MDC injections)
+    #   3. ONE-TIME SETUP   – coherence, TD-input cache, supercluster, likelihood
+    #                         (expensive; computed once, reused across all lags)
+    #   4. PER-LAG LOOP     – for each time-slide lag:
+    #        a. Coherence      → pixel selection + fragment clustering
+    #        b. Supercluster   → TD amplitudes + subnet veto
+    #        c. Likelihood     → sky scan + reconstruction veto
+    #        d. Post-process   → waveforms, injections, Q-veto, plots
+    #        e. Catalog        → persist triggers and release lag memory
+    # ─────────────────────────────────────────────────────────────────────────
     print_job_info(job_seg)
+    job_timer = time.perf_counter()  # total wall-time for this job segment
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
         raise ValueError("No data to process")
@@ -78,11 +98,17 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         wave_file = stem.replace('catalog', 'wave') + '.h5'
     else:
         wave_file = None
-    # loop over all the trail_idx, if there is no injections or only one trail, only loop once for trail_idx=0
+
+    # Outer loop: one iteration per injection trail (or a single pass when there are no injections).
     for trail_idx in trail_idxs:
-        #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 1 – DATA LOADING & INJECTION SETUP
+        # ─────────────────────────────────────────────────────────────────────
+        # Start from a fresh copy of base_data for every trail so that injected
+        # signals from one trial never bleed into another.
         data = base_data
-        # if only one trail_idxs, remove the base_data reference to save memory
+        # Drop the shared reference after the first (or only) trail to let the
+        # GC reclaim base_data's memory as early as possible.
         if len(trail_idxs) == 1:
             base_data = None
         if job_seg.injections:
@@ -91,82 +117,137 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
+            # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
             mdc = [TimeSeries(np.zeros(int(sub_job_seg.duration * sub_job_seg.sample_rate)), epoch = sub_job_seg.start_time, delta_t = 1/sub_job_seg.sample_rate) for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:
-                inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos) 
-                #default argument copy = True prevents original base_data to be modified due to aliasing 
-                mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
-                data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))] 
+                inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
+                # inject() uses copy=True by default, so base_data is never modified in-place.
+                mdc  = [mdc[i].inject(inj[i])  for i in range(len(sub_job_seg.ifos))]
+                data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
         else:
             logger.info(f"Processing trail_idx: {trail_idx} without injections")
             sub_job_seg = job_seg
+            mdc = None
         # add trail_idx to the sub_job_seg
         sub_job_seg.trail_idx = trail_idx
 
-        # check and resample the data
+        # ─────────────────────────────────────────────────────────────────────
+        # BENCHMARK ONLY – cWB comparison workdir
+        # ─────────────────────────────────────────────────────────────────────
+        # Dumps raw (injected) data and a matching user_parameters.C so the
+        # same segment can be replayed by native cWB for side-by-side checks.
+        # Must run BEFORE resampling so the data is still at config.inRate.
+        if getattr(config, 'cwb_compare', False):
+            _cwb_compare_dir = getattr(config, 'cwb_compare_dir', '') or None
+            create_cwb_workdir(working_dir, config, sub_job_seg, data,
+                               cwb_compare_dir=_cwb_compare_dir)
+
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 2 – RESAMPLING & DATA CONDITIONING
+        # ─────────────────────────────────────────────────────────────────────
+        # Resample data (and MDC simultaneously) to config.fSample.  Doing MDC
+        # here – rather than after whitening – frees the high-sample-rate buffers
+        # before the heavy coherence/supercluster allocations below.
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]
+        if mdc is not None:
+            mdc = [check_and_resample_py(mdc[i], config, i) for i in range(len(sub_job_seg.ifos))]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # data conditioning
+        # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
         stage_timer = time.perf_counter()
         strains, nRMS = data_conditioning(config, data)
-        data = None  # remove reference to original data to save memory
+        data = None  # raw data no longer needed; drop reference to free memory
+        release_memory()
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # ---- One-time lag-independent setup ----------------------------------------
+        # Whiten the MDC buffers EARLY (before coherence + supercluster setup)
+        # so the resampled high-sample-rate MDC arrays can be freed sooner.
+        mdc_maps = None
+        HoT_list = None
+        if mdc is not None and hasattr(sub_job_seg, 'injections') and sub_job_seg.injections:
+            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc_py
+            mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc, nRMS)])
+            del mdc
+            release_memory()
+
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 3 – ONE-TIME LAG-INDEPENDENT SETUP
+        # ─────────────────────────────────────────────────────────────────────
+        # Everything below is computed once per trail and then reused by every
+        # lag iteration.  The ordering matters for memory:  coherence builds
+        # WDM TF maps → TD cache is derived from those strains → supercluster
+        # and likelihood share the same sky-pattern arrays.
+
+        # 3a. Coherence setup: WDM decomposition + TF maps for all IFOs.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains)
+        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # 3b. TD-input cache: float32 padded planes for the supercluster step.
+        #     Stored in float32 (vs. float64) to halve memory usage;
+        #     Numba accumulates in float64 internally, so precision is preserved.
+        stage_timer = time.perf_counter()
+        td_inputs_cache = build_td_inputs_cache(config, strains)
+        logger.info("TD inputs cache build time: %.2f s", time.perf_counter() - stage_timer)
+        logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
+
+        n_lag = sub_job_seg.n_lag
+        logger.info("Lag plan: n_lag=%d (from job segment duration=%.2f s)", n_lag, sub_job_seg.duration)
+
+        gps_time = float(strains[0].start_time)
+
+        # 3c. Supercluster setup: sky patterns (FP/FX/ml) + cross-talk catalog.
         stage_timer = time.perf_counter()
         xtalk = XTalk.load(config.MRAcatalog)
-        sc_setup = setup_supercluster(config, strains)
-        wdm_td_cache = sc_setup["td_inputs_cache"]
-        n_lag = sc_setup["n_lag"]
+        supercluster_setup = setup_supercluster(config, gps_time)
         logger.info("Supercluster setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+        # 3d. Likelihood setup: reuse full-resolution sky arrays from supercluster
+        #     so the sky scan runs at config.healpix resolution without rebuilding them.
         stage_timer = time.perf_counter()
-        # Reuse sky arrays already computed by setup_supercluster; use the full-resolution
-        # arrays (ml_likelihood/FP_likelihood/FX_likelihood) so the likelihood sky scan runs
-        # at config.healpix resolution, not the reduced MIN_SKYRES_HEALPIX resolution.
-        lh_setup = setup_likelihood(config, strains, config.nIFO,
-                                    ml=sc_setup.get("ml_likelihood", sc_setup["ml"]),
-                                    FP=sc_setup.get("FP_likelihood", sc_setup["FP"]),
-                                    FX=sc_setup.get("FX_likelihood", sc_setup["FX"]))
+        likelihood_setup = setup_likelihood(config, strains, config.nIFO,
+                                    ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
+                                    FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
+                                    FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]))
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # pre-condition the mdc (whitened injection maps) if needed for reconstruction
-        mdc_maps = None
-        HoT_list = None
-        if job_seg.injections and hasattr(sub_job_seg, 'injections') and sub_job_seg.injections:
-            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc_py
-            mdc_cond = [check_and_resample_py(mdc[i], config, i) for i in range(len(sub_job_seg.ifos))]
-            mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc_cond, nRMS)])
-
-        # ---- Streaming per-lag loop ---------------------------------------------------
-        # For each lag: coherence (pixel selection + clustering) →
-        #               supercluster (TD amps + subnet cut) →
-        #               likelihood + output.
-        # Expensive lag-independent work (TF maps, WDM decomposition, sky patterns)
-        # was done once above and is reused here.
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 4 – STREAMING PER-LAG LOOP
+        # ─────────────────────────────────────────────────────────────────────
+        # Lag 0 is the zero-lag (no additional time slide within the segment).
+        # Note: the segment itself may already be superlagged, so lag 0 is not
+        # necessarily on-source.  Lags 1…n_lag-1 apply additional IFO-specific
+        # time shifts for background estimation.
+        # Each iteration runs coherence → supercluster → likelihood in sequence
+        # and then saves the accepted triggers before releasing lag-local memory.
         likelihood_timer = time.perf_counter()
         for lag in range(n_lag):
-            # timer for each lag iteration, not including the one-time setup above
-            lag_timer = time.perf_counter()
+            lag_timer = time.perf_counter()  # measures only this lag, not the setup above
+            lag_shifts = sub_job_seg.lag_shifts[lag]
+            lag_shift_str = ", ".join(
+                f"{ifo}={shift:.3f}s"
+                for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
+            )
+            logger.info("Processing lag %d / %d  [%s]", lag, n_lag - 1, lag_shift_str)
             if skip_lags and lag in skip_lags:
                 logger.info("Skipping lag %d due to skip_lags", lag)
                 continue
 
-            # coherence for this lag only
+            # ── 4a. Coherence ────────────────────────────────────────────────
+            # Pixel selection and fragment clustering for this specific time slide.
             frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
 
-            # supercluster for this lag only
-            fragment_cluster = supercluster_single_lag(sc_setup, frag_clusters_this_lag, lag, xtalk=xtalk)
+            # ── 4b. Supercluster ─────────────────────────────────────────────
+            # Compute TD amplitudes, apply subnet veto, and merge fragments.
+            fragment_cluster = supercluster_single_lag(
+                supercluster_setup, config, frag_clusters_this_lag, lag,
+                xtalk=xtalk, td_inputs_cache=td_inputs_cache,
+            )
 
             if fragment_cluster is None:
                 logger.warning(
@@ -175,12 +256,15 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 )
                 continue
 
+            # ── 4c. Likelihood ───────────────────────────────────────────────
+            # Run sky scan and reconstruction veto on every surviving cluster.
+            # cluster_status == 0 means the cluster passed the supercluster subnet cut.
             events_data = []
             for k, selected_cluster in enumerate(fragment_cluster.clusters):
                 if selected_cluster.cluster_status > 0:
                     continue
 
-                # Tag the cluster with its sequential 1-based ID for the event record
+                # Assign a 1-based sequential ID used throughout the event record.
                 selected_cluster.cluster_id = k + 1
 
                 result_cluster, sky_stats = likelihood(
@@ -188,9 +272,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     selected_cluster,
                     config.MRAcatalog,
                     cluster_id=k + 1,
-                    wdm_td_cache=wdm_td_cache,
+                    td_inputs_cache=td_inputs_cache,
                     nRMS=nRMS,
-                    setup=lh_setup,
+                    setup=likelihood_setup,
                     xtalk=xtalk,
                     config=config,
                 )
@@ -206,10 +290,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 event.output_py(sub_job_seg, result_cluster, config)
                 event.job_id = sub_job_seg.index
 
-                # Associate injections by GPS time overlap
+                # Match this event to its injection by GPS overlap.
+                # FIXME: overlapping signals share the same GPS window; only the
+                #        first matching injection is associated here.
                 if sub_job_seg.injections:
                     for injection in sub_job_seg.injections:
-                        # FIXME: for overlap signal, this won't work
                         if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
                             event.injection = injection
 
@@ -217,7 +302,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-            #################### Save triggers and post-process ####################
+            # ── 4d. Save triggers & post-process ────────────────────────────
+            # Persist raw cluster data on disk first, then run optional
+            # waveform reconstruction, injection comparison, Q-veto, and plots.
             trigger_folders = []
             for trigger in events_data:
                 trigger_folder = create_single_trigger_folder(working_dir, config.trigger_dir, sub_job_seg, trigger)
@@ -227,18 +314,21 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-            # post-process and plot
+            # Post-process each trigger: waveform reconstruction → injection stats
+            # → Q-veto → optional plots.  Heavy artefacts are deleted promptly to
+            # keep per-lag memory footprint low.
             for trigger_folder, trigger in zip(trigger_folders, events_data):
                 event, cluster_out, event_skymap_statistics = trigger
 
-                # estimate reconstructed waveforms
+                # Reconstruct and optionally save/plot the detected waveform.
                 reconst_data = reconstruct_waveforms_flow(
                     trigger_folder, config, sub_job_seg.ifos,
                     event, cluster_out, epoch=sub_job_seg.start_time,
                     wave_file=wave_file, save=config.save_waveform, plot=config.plot_waveform,
                 )
 
-                # if injection, estimate injected waveforms and calculate statistics
+                # If this event was matched to an injection, whiten the injected
+                # waveform and compute hrss / SNR / frequency / bandwidth / duration.
                 if event.injection:
                     injected_data = reconstruct_INJwaveforms_flow(
                         trigger_folder, config, sub_job_seg.ifos, event,
@@ -262,17 +352,19 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     ]
                     del injected_data, inj_waveforms, rec_waveforms
 
-                # Q-veto and Q-factor
+                # Q-veto: compute the minimum Q-veto and Q-factor across all IFOs
+                # and waveform types (DAT = data, REC = reconstructed).  The minimum
+                # across IFOs is the most conservative (worst-case) estimate.
                 try:
-                    min_qveto = 1e23
+                    min_qveto   = 1e23
                     min_qfactor = 1e23
                     for ifo in sub_job_seg.ifos:
                         for a_type in ['DAT', 'REC']:
                             [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_wf_{a_type}_whiten'])
-                            min_qveto = min(min_qveto, qveto)
+                            min_qveto   = min(min_qveto, qveto)
                             min_qfactor = min(min_qfactor, qfactor)
-                    event.Qveto = [min_qveto, min_qfactor]
-                    event.qveto = min_qveto
+                    event.Qveto   = [min_qveto, min_qfactor]
+                    event.qveto   = min_qveto
                     event.qfactor = min_qfactor
                     logger.info("Qveto for event %s: %s, Qfactor: %s",
                                 event.hash_id, event.qveto, event.qfactor)
@@ -287,7 +379,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
                 del reconst_data
 
-            #################### Add events to catalog ####################
+            # ── 4e. Catalog ──────────────────────────────────────────────────
+            # Append accepted events to the run-level catalog file.
             for trigger in events_data:
                 catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
                                                     trigger_data=trigger,
@@ -297,10 +390,23 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
             logger.info("-------------------------------------------")
 
-            # Release JAX device buffers and Python objects from this lag before
-            # the next iteration.  JAX kernels hold device memory until GC runs;
-            # with 100+ background lags this accumulates to GB of device memory.
+            # ── Lag memory cleanup ───────────────────────────────────────────
+            # Explicitly delete all lag-local objects and call gc.collect() so
+            # JAX device buffers and Python heap are freed before the next lag.
+            # Without this, 100+ background lags can accumulate GBs of stale memory.
             del frag_clusters_this_lag, fragment_cluster, events_data, trigger_folders
             gc.collect()
 
         logger.info("Native likelihood loop time: %.2f s", time.perf_counter() - likelihood_timer)
+
+    job_walltime = time.perf_counter() - job_timer
+    # Speed factor: effective data length (segment duration minus both edges)
+    # divided by total wall-time.  Values > 1 mean faster-than-real-time.
+    effective_duration = job_seg.duration - 2 * config.segEdge
+    speed_factor = effective_duration / job_walltime if job_walltime > 0 else float('inf')
+    logger.info("============================================")
+    logger.info("Job segment %s total time: %.2f s", job_seg.index, job_walltime)
+    logger.info("Effective data length:     %.2f s  (duration %.2f s - 2 x segEdge %.2f s)",
+                effective_duration, job_seg.duration, config.segEdge)
+    logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
+    logger.info("============================================")

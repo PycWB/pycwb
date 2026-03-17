@@ -15,6 +15,35 @@ from pycwb.modules.injection.par_generator import get_injection_list_from_parame
 logger = logging.getLogger(__name__)
 
 
+def _validate_lag_config(job_segments):
+    """Validate that lag configuration fields are not conflicting.
+
+    Raises ``ValueError`` when:
+    * Both ``lag_array`` and ``lag_file`` are set.
+    * ``lag_array`` or ``lag_file`` is set together with a non-zero ``lag_size``.
+    """
+    for job_seg in job_segments:
+        has_array = job_seg.lag_array is not None
+        has_file = job_seg.lag_file is not None
+        has_computed = job_seg.lag_size != 0
+
+        if has_array and has_file:
+            raise ValueError(
+                f"Job segment {job_seg.index}: lag_array and lag_file cannot both be set. "
+                "Use only one lag source."
+            )
+        if has_array and has_computed:
+            raise ValueError(
+                f"Job segment {job_seg.index}: lag_array is set but lag_size ({job_seg.lag_size}) "
+                "is non-zero. Set lag_size to 0 when providing explicit lag_array."
+            )
+        if has_file and has_computed:
+            raise ValueError(
+                f"Job segment {job_seg.index}: lag_file is set but lag_size ({job_seg.lag_size}) "
+                "is non-zero. Set lag_size to 0 when providing a lag_file."
+            )
+
+
 def create_job_segment_from_config(config):
     """
     Create job segments based on the configuration file. Currently, the following cases are supported:
@@ -119,6 +148,18 @@ def create_job_segment_from_config(config):
     if config.channelNamesRaw:
         for job_seg in job_segments:
             job_seg.channels = config.channelNamesRaw
+
+    # populate lag parameters so each segment is self-contained
+    for job_seg in job_segments:
+        job_seg.lag_size = int(getattr(config, 'lagSize', 1))
+        job_seg.lag_step = float(getattr(config, 'lagStep', 1.0))
+        job_seg.lag_off = int(getattr(config, 'lagOff', 0))
+        job_seg.lag_max = int(getattr(config, 'lagMax', 0))
+        job_seg.lag_site = getattr(config, 'lagSite', None)
+        job_seg.lag_file = getattr(config, 'lagFile', None)
+
+    # validate that lag configurations are not conflicting
+    _validate_lag_config(job_segments)
 
     ############################################
     ## flatten job segments by injection trail index if parallel_injection_trail is enabled

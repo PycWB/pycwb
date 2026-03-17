@@ -4,6 +4,69 @@ from dataclasses import dataclass
 from .wavelet import Wavelet
 from .time_series import TimeSeries
 
+
+@dataclass
+class TDBatchInputs:
+	"""
+	Pre-computed padded quadrature planes and filter tables for batch
+	time-delay vector extraction.
+
+	Created by :meth:`TimeFrequencyMap.prepare_td_inputs`.
+
+	Attributes
+	----------
+	padded00 : np.ndarray
+		Zero-padded 00-phase plane, float32, shape ``(n_time + 2*n_coeffs, M+1)``.
+	padded90 : np.ndarray
+		Zero-padded 90-phase plane, float32, shape ``(n_time + 2*n_coeffs, M+1)``.
+	T0 : np.ndarray
+		Same-band TD filter table, float64, shape ``(2*J+1, 2*n_coeffs+1)``.
+	Tx : np.ndarray
+		Cross-band TD filter table, float64, shape ``(2*J+1, 2*n_coeffs+1)``.
+	M : int
+		Number of frequency layers (Nyquist index).
+	n_coeffs : int
+		Half-width of symmetric TD filters.
+	J : int
+		Maximum delay index (``M * L``).
+	"""
+	padded00: np.ndarray
+	padded90: np.ndarray
+	T0: np.ndarray
+	Tx: np.ndarray
+	M: int
+	n_coeffs: int
+	J: int
+
+	def extract_td_vecs(self, pixel_indices, K):
+		"""
+		Batch TD vector extraction for the given pixel indices.
+
+		Parameters
+		----------
+		pixel_indices : array-like, shape (n_pixels,)
+			Flat pixel indices into the TF plane (int32).
+		K : int
+			TD filter half-range (corresponds to config.TDSize).
+
+		Returns
+		-------
+		np.ndarray, shape (n_pixels, 4*K+2), dtype float32
+		"""
+		from pycwb.utils.td_vector_batch import batch_get_td_vecs
+		return batch_get_td_vecs(
+			np.asarray(pixel_indices, dtype=np.int32),
+			self.padded00,
+			self.padded90,
+			self.T0,
+			self.Tx,
+			self.M,
+			self.n_coeffs,
+			K,
+			self.J,
+		)
+
+
 @dataclass
 class TimeFrequencyMap:
 	"""
@@ -21,6 +84,7 @@ class TimeFrequencyMap:
 	edge: float | None
 	wavelet: Wavelet  # Replace 'object' with the actual type of wavelet if available
 	len_timeseries: int = None  # Original time series length before transform
+	ts_data: np.ndarray = None  # Original time series data (avoids roundtrip w2t→t2w in max_energy)
 
 	@classmethod
 	def from_timeseries(cls, ts: TimeSeries, wavelet: Wavelet,
@@ -60,7 +124,8 @@ class TimeFrequencyMap:
 			f_high=f_high,
 			edge=edge,
 			wavelet=wavelet,
-			len_timeseries=len(ts.data)
+			len_timeseries=len(ts.data),
+			ts_data=np.asarray(ts.data, dtype=np.float64),
 		)
 
 	@property
@@ -150,8 +215,13 @@ class TimeFrequencyMap:
 		"""
 		original = np.asarray(self.data)
 		shape = original.shape
-		flat = original.real if np.iscomplexobj(original) else original
-		flat = np.asarray(flat, dtype=np.float64).ravel()
+		flat_2d = original.real if np.iscomplexobj(original) else original
+		flat_2d = np.asarray(flat_2d, dtype=np.float64)
+		# C++ stores data in time-major order (j = t*M + m); ravel accordingly.
+		if flat_2d.ndim == 2:
+			flat = flat_2d.T.ravel()  # (M,T) → (T,M) → 1D time-major: flat[t*M + m]
+		else:
+			flat = flat_2d.ravel()
 
 		if flat.size < 4:
 			return 0.0
@@ -168,13 +238,17 @@ class TimeFrequencyMap:
 		if region.size == 0:
 			return 0.0
 
-		wavecount_1 = int(np.sum(region > 0.001))
+		# C++ waveSplit(nL, nR, m) operates on [nL, nR] inclusive.
+		# Use nR+1 as the exclusive end for partition to match C++ range.
+		ws_region = flat[nL:nR + 1]
+
+		wavecount_1 = int(np.sum(flat > 0.001))  # count over full array, matches C++ wavecount(0.001)
 		fff = (nR - nL) * wavecount_1 / float(nn_all)
 
 		split_idx_med = nR - int(0.5 * fff)
-		split_idx_med = max(nL, min(split_idx_med, nR - 1))
+		split_idx_med = max(nL, min(split_idx_med, nR))
 		rel_med = split_idx_med - nL
-		med = float(np.partition(region, rel_med)[rel_med])
+		med = float(np.partition(ws_region, rel_med)[rel_med])
 		if med <= 0.0:
 			return 0.0
 
@@ -192,6 +266,7 @@ class TimeFrequencyMap:
 		alp = (3.0 - alp + np.sqrt((alp - 3.0) * (alp - 3.0) + 24.0 * alp)) / (12.0 * alp)
 
 		avr = med * (3.0 * alp + 0.2) / (3.0 * alp - 0.8)
+
 		ALP = med * alp / avr
 
 		amp = flat * alp / avr
@@ -206,11 +281,14 @@ class TimeFrequencyMap:
 		region2 = transformed[nL:nR]
 		if region2.size == 0:
 			return 0.0
-		wavecount_2 = int(np.sum(region2 > 1.0e-5))
+		# C++ waveSplit(nL, nR, m) operates on [nL, nR] inclusive for partition.
+		ws_region2 = transformed[nL:nR + 1]
+		# C++ wavecount(1e-5, nL) counts [nL, size-nL) symmetrically
+		wavecount_2 = int(np.sum(transformed[nL:nn_all - nL] > 1.0e-5))
 		split_idx_rms = nR - int(0.3173 * wavecount_2)
-		split_idx_rms = max(nL, min(split_idx_rms, nR - 1))
+		split_idx_rms = max(nL, min(split_idx_rms, nR))
 		rel_rms = split_idx_rms - nL
-		qv = float(np.partition(region2, rel_rms)[rel_rms])
+		qv = float(np.partition(ws_region2, rel_rms)[rel_rms])
 		if qv <= 0.0:
 			return 0.0
 
@@ -221,7 +299,8 @@ class TimeFrequencyMap:
 			hist.extend(np.sqrt(np.clip(transformed[nL:nR], 0.0, None)).tolist())
 
 		if len(shape) == 2:
-			self.data = transformed.reshape(shape)
+			M2, T2 = shape  # shape = (M, T) → time-major reshape (T, M) then transpose
+			self.data = transformed.reshape(T2, M2).T
 		else:
 			self.data = transformed
 
@@ -460,6 +539,47 @@ class TimeFrequencyMap:
 			return amp_out if mode == 'a' else energy_out
 
 		return shape
+
+	def prepare_td_inputs(self, td_filters):
+		"""
+		Build padded quadrature planes and filter tables for batch TD extraction.
+
+		This is a pure computation — no caching.  Callers are responsible for
+		storing the result when it needs to be reused across lags.
+
+		Parameters
+		----------
+		td_filters : wdm_wavelet.core.time_delay.TDFilterBank
+			Pre-built filter bank (from ``WDM.set_td_filter``).
+
+		Returns
+		-------
+		TDBatchInputs
+		"""
+		data = np.asarray(self.data, dtype=np.complex128)  # (M+1, n_time)
+		tf00 = np.ascontiguousarray(data.real.T, dtype=np.float64)  # (n_time, M+1)
+		tf90 = np.ascontiguousarray(data.imag.T, dtype=np.float64)
+
+		n_coeffs = int(td_filters.n_coeffs)
+		M = int(td_filters.M)
+		J = int(td_filters.max_delay)
+
+		pad = [(n_coeffs, n_coeffs), (0, 0)]
+		padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
+		padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
+
+		T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
+		Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
+
+		return TDBatchInputs(
+			padded00=padded00,
+			padded90=padded90,
+			T0=T0,
+			Tx=Tx,
+			M=M,
+			n_coeffs=n_coeffs,
+			J=J,
+		)
 
 
 def whiten_slice(data, rate, t, mode=1, offset=0.0, stride=0.0):

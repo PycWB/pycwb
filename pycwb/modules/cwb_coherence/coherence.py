@@ -8,14 +8,13 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
-from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
 
 logger = logging.getLogger(__name__)
 
 
-def coherence(config, strains, return_rejected: bool = False):
+def coherence(config, strains, return_rejected: bool = False, job_seg=None):
     """
     Select the significant pixels
 
@@ -58,7 +57,7 @@ def coherence(config, strains, return_rejected: bool = False):
   
     normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
 
-    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected) for i in
+    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected, job_seg=job_seg) for i in
                                     range(config.nRES)]
 
     logger.info("----------------------------------------")
@@ -68,7 +67,7 @@ def coherence(config, strains, return_rejected: bool = False):
     return fragment_clusters_multi_res
 
 
-def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False):
+def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False, job_seg=None):
     """
     Calculate the coherence for a single resolution
 
@@ -158,8 +157,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 
     max_delay = config.max_delay
     pattern = config.pattern
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
-    n_lag = lag_plan.n_lag
+    n_lag = job_seg.n_lag
 
     for n, tf_map in enumerate(tf_maps):
         tf_maps[n], alp_n = max_energy(
@@ -209,7 +207,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
             lag_index=j,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_plan.lag_shifts[j],
+            lag_shifts=job_seg.lag_shifts[j],
             veto=None,
             edge=config.segEdge,
         )
@@ -252,7 +250,7 @@ def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = 
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_coherence(config, strains):
+def setup_coherence(config, strains, job_seg=None):
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
     threshold, lag plan) for every resolution level.
@@ -265,12 +263,14 @@ def setup_coherence(config, strains):
     config : Config
     strains : list
         Whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
+    job_seg : WaveSegment
+        Job segment (provides lag count via ``job_seg.n_lag``).
 
     Returns
     -------
     list[dict]
         One setup dict per resolution, keyed by ``tf_maps``, ``Eo``,
-        ``lag_plan``, ``pattern``, ``level``, ``layers``, ``rate``,
+        ``job_seg``, ``pattern``, ``level``, ``layers``, ``rate``,
         ``select_subrho``, ``select_subnet``, ``segEdge``.
     """
     timer_start = time.perf_counter()
@@ -282,7 +282,8 @@ def setup_coherence(config, strains):
     normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
 
     setups = [
-        _setup_coherence_single_res(i, config, normalized_strains, up_n)
+        _setup_coherence_single_res(i, config, normalized_strains, up_n,
+                                    job_seg=job_seg)
         for i in range(config.nRES)
     ]
 
@@ -290,7 +291,7 @@ def setup_coherence(config, strains):
     return setups
 
 
-def _setup_coherence_single_res(i, config, strains, up_n):
+def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
     """
     Lag-independent coherence setup for one resolution level.
 
@@ -301,7 +302,7 @@ def _setup_coherence_single_res(i, config, strains, up_n):
     Returns
     -------
     dict
-        Keys: ``tf_maps``, ``Eo``, ``lag_plan``, ``pattern``, ``level``,
+        Keys: ``tf_maps``, ``Eo``, ``job_seg``, ``pattern``, ``level``,
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
         ``segEdge``.
     """
@@ -383,18 +384,18 @@ def _setup_coherence_single_res(i, config, strains, up_n):
         edge=config.segEdge,
     )
 
-    # Build lag plan from the (now max-energy-processed) TF maps
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
+    # Build lag plan
+    n_lag = job_seg.n_lag
 
     logger.info(
         "level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)",
-        level, Eo, lag_plan.n_lag, time.perf_counter() - timer_start,
+        level, Eo, n_lag, time.perf_counter() - timer_start,
     )
 
     return {
         "tf_maps": tf_maps,
         "Eo": Eo,
-        "lag_plan": lag_plan,
+        "job_seg": job_seg,
         "pattern": pattern,
         "level": level,
         "layers": layers,
@@ -431,12 +432,12 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
     for setup in coherence_setups:
         tf_maps = setup["tf_maps"]
         Eo = setup["Eo"]
-        lag_plan = setup["lag_plan"]
+        job_seg = setup["job_seg"]
         pattern = setup["pattern"]
 
-        if lag_idx >= lag_plan.n_lag:
+        if lag_idx >= job_seg.n_lag:
             raise IndexError(
-                f"lag_idx={lag_idx} is out of range n_lag={lag_plan.n_lag}"
+                f"lag_idx={lag_idx} is out of range n_lag={job_seg.n_lag}"
             )
 
         t_sel = time.perf_counter()
@@ -444,7 +445,7 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
             lag_index=lag_idx,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_plan.lag_shifts[lag_idx],
+            lag_shifts=job_seg.lag_shifts[lag_idx],
             veto=None,
             edge=setup["segEdge"],
         )
@@ -658,10 +659,29 @@ def get_max_delay(net):
 
 
 def _igamma_inv_upper(shape, p):
-    """Upper-tail inverse incomplete gamma helper used by threshold estimators."""
+    """Upper-tail inverse incomplete gamma matching C++ iGamma step search.
+
+    C++ scans x = 0, 1e-5, 2e-5, ... using TMath::Gamma until the upper
+    regularized incomplete gamma drops to *p*.  We start near the scipy result
+    and search locally using ROOT's TMath::Gamma for exact agreement.
+    Falls back to scipy-only if ROOT is unavailable.
+    """
     p = float(np.clip(p, 1.0e-12, 1.0 - 1.0e-12))
     s = float(max(shape, 1.0e-12))
-    return float(gammainccinv(s, p))
+
+    try:
+        import ROOT as _ROOT
+        _tmath_gamma = _ROOT.TMath.Gamma
+    except Exception:
+        return float(gammainccinv(s, p))
+
+    x_approx = float(gammainccinv(s, p))
+    step = 1.0e-5
+    k = max(0, int(x_approx / step) - 2)
+    x = k * step
+    while 1.0 - _tmath_gamma(s, x) > p:
+        x += step
+    return x
 
 
 def _get_tf_energy_array(tf_map, edge=None):
@@ -702,19 +722,40 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
     :return: detection threshold in energy units
     :rtype: float
     """
-    energies = [_get_tf_energy_array(tfm, edge=edge) for tfm in tf_maps]
-    combined = np.sum(energies, axis=0)
-    work = combined.ravel()
     n_ifo = len(tf_maps)
-    if work.size == 0:
-        return 0.0
-
-    work = np.clip(work, 0.0, n_ifo * 100.0)
-    positive = work[work > 1.0e-3]
-    if positive.size == 0:
-        return 0.0
 
     if shape is not None:
+        # C++ THRESHOLD(p, shape) works on flat 1-D time-major data with
+        # nL / nR indices, NOT on 2-D edge-cropped arrays.  Replicate that.
+        pw0 = tf_maps[0]
+        arr0 = np.asarray(pw0.data, dtype=np.float64)
+        if np.iscomplexobj(arr0):
+            arr0 = arr0.real
+        M = int(arr0.shape[0]) if arr0.ndim == 2 else 1
+        # C++ stores time-major: flat[t*M + m].  Python (M, T) -> transpose then ravel.
+        if arr0.ndim == 2:
+            flat0 = arr0.T.ravel()
+        else:
+            flat0 = arr0.ravel()
+        w = flat0.copy()
+        for tfm in tf_maps[1:]:
+            a = np.asarray(tfm.data, dtype=np.float64)
+            if np.iscomplexobj(a):
+                a = a.real
+            if a.ndim == 2:
+                w += a.T.ravel()
+            else:
+                w += a.ravel()
+
+        nL = int(float(edge or 0.0) * pw0.wavelet_rate * M)
+        nR = int(w.size) - nL - 1          # C++: nR = pw->size() - nL - 1
+
+        region = w[nL:nR]                   # C++ loop: for(i=nL; i<nR; i++)
+        region = np.clip(region, 0.0, n_ifo * 100.0)
+        positive = region[region > 1.0e-3]
+        if positive.size == 0:
+            return 0.0
+
         avr = float(np.mean(positive))
         bbb = float(np.mean(np.log(positive)))
         alp = np.log(avr) - bbb
@@ -722,6 +763,17 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
         bpp_corr = float(bpp) * alp / float(shape)
         result = avr * _igamma_inv_upper(alp, bpp_corr) / alp / 2.0
         return result
+
+    energies = [_get_tf_energy_array(tfm, edge=edge) for tfm in tf_maps]
+    combined = np.sum(energies, axis=0)
+    work = combined.ravel()
+    if work.size == 0:
+        return 0.0
+
+    work = np.clip(work, 0.0, n_ifo * 100.0)
+    positive = work[work > 1.0e-3]
+    if positive.size == 0:
+        return 0.0
 
     # CWB THRESHOLD(p) exact algorithm: iterative search for Gamma shape m
     # fff = fill fraction (fraction of pixels with energy > 0.0001, matching CWB wavecount)
