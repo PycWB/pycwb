@@ -126,7 +126,7 @@ def supercluster_and_likelihood_task(config, fragment_clusters_multi_res, condit
 
     # perform supercluster
     print("Performing supercluster")
-    super_fragment_clusters = supercluster_wrapper(config, network, fragment_clusters_multi_res, tf_maps,
+    super_fragment_clusters = supercluster_wrapper(config, fragment_clusters_multi_res, tf_maps,
                                                    xtalk_coeff, xtalk_lookup_table, layers)
 
     # perform likelihood

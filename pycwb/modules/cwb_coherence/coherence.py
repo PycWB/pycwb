@@ -3,7 +3,6 @@ import logging
 import numpy as np
 from scipy.special import gammainccinv
 from wdm_wavelet.wdm import WDM as WDMWavelet
-from pycwb.types.detector import get_max_delay as detector_get_max_delay
 from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
@@ -16,234 +15,57 @@ logger = logging.getLogger(__name__)
 
 def coherence(config, strains, return_rejected: bool = False, job_seg=None):
     """
-    Select the significant pixels
+    Select the significant pixels for all resolution levels and all lags.
 
-    Loop over resolution levels (nRES)
-
-    * Loop over detectors (cwb::nIFO)
-
-      * Compute the maximum energy of TF pixels (WSeries<double>::maxEnergy)
-      * Set pixel energy selection threshold (network::THRESHOLD)
-      * Loop over time lags (network::nLag)
-
-      * Select the significant pixels (network::getNetworkPixels)
-      * Single resolution clustering (network::cluster)
+    This is the interactive convenience wrapper.  Internally it calls
+    :func:`setup_coherence` once (expensive: WDM decomposition + TF maps)
+    and then :func:`coherence_single_lag` for every lag (cheap: pixel
+    selection + clustering only).
 
     Parameters
     ----------
     config : pycwb.config.Config
-        Configuration object
+        Configuration object.
     strains : list
-        List of whitened strain time series (pycwb TimeSeries, gwpy, or pycbc)
-    nRMS_list : list of pycwb.types.time_frequency_series.TimeFrequencySeries
-        List of noise RMS
-    net : pycwb.types.network.Network, optional
-        Network object, by default None
+        List of whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
+    return_rejected : bool
+        If True, keep rejected clusters in the output.
+    job_seg : WaveSegment, optional
+        Job segment supplying lag count and per-lag time shifts.
+        When *None* a single zero-lag pass is performed.
 
     Returns
     -------
-    fragment_clusters: list[list[pycwb.types.network_cluster.FragmentCluster]]
-        List of fragment clusters
+    list[list[FragmentCluster]]
+        ``result[res][lag]`` — one FragmentCluster per resolution per lag.
     """
-    # calculate upsample factor
     timer_start = time.perf_counter()
-    logger.info("Start coherence" + " in parallel" if config.nproc > 1 else "")
+    logger.info("Starting coherence")
 
-    # upper sample factor
-    up_n = int(config.rateANA / 1024)
-    if up_n < 1:
-        up_n = 1
+    if job_seg is None:
+        # Minimal single-lag fallback for interactive / testing use.
+        n_ifo = len(strains)
+        import types as _types
+        job_seg = _types.SimpleNamespace(
+            n_lag=1,
+            lag_shifts=[np.zeros(n_ifo)],
+        )
 
-  
-    normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
-
-    fragment_clusters_multi_res = [coherence_single_res(i, config, normalized_strains, up_n, return_rejected=return_rejected, job_seg=job_seg) for i in
-                                    range(config.nRES)]
-
-    logger.info("----------------------------------------")
-    logger.info("Coherence time totally: %f s", time.perf_counter() - timer_start)
-    logger.info("----------------------------------------")
-
-    return fragment_clusters_multi_res
-
-
-def coherence_single_res(i, config, strains, up_n=None, return_rejected: bool = False, job_seg=None):
-    """
-    Calculate the coherence for a single resolution
-
-    :param i: index of resolution
-    :type i: int
-    :param config: configuration object
-    :type config: Config
-    :param net: network
-    :type net: ROOT.network
-    :param strains: list of whitened strain time series
-    :type strains: list[TimeSeries]
-    :param wdm: wdm used for current resolution
-    :type wdm: WDM
-    :param up_n: upsample factor
-    :type up_n: int
-    :param return_rejected: if True, keep rejected clusters in output; if False, remove them
-    :type return_rejected: bool
-    :return: (sparse_table, fragment_clusters)
-    :rtype: (ROOT.SSeries, list[ROOT.netcluster])
-    """
-    # timer
-    timer_start = time.perf_counter()
-
-    # print level infos
-    level = config.l_high - i
-    layers = 2 ** level if level > 0 else 0
-    rate = config.rateANA // 2 ** level
-
-    # use python-native wdm_wavelet for TF map generation and max-energy calculation
-    wdm_layers = max(1, layers)
-    wdm_wavelet = WDMWavelet(
-        M=wdm_layers,
-        K=wdm_layers,
-        beta_order=config.WDM_beta_order,
-        precision=config.WDM_precision,
-    )
-
-    # Batch t2w over all detectors in one JAX vmap call instead of a serial loop.
-    try:
-        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
-        tf_maps = [
-            TimeFrequencyMap(
-                data=batch_data_list[n],
-                is_whitened=True,
-                dt=dt,
-                df=df,
-                start=float(strains[n].t0),
-                stop=float(strains[n].end_time),
-                f_low=getattr(config, "fLow", None),
-                f_high=getattr(config, "fHigh", None),
-                edge=getattr(config, "segEdge", None),
-                wavelet=wdm_wavelet,
-                len_timeseries=len(strains[n].data),
-            )
-            for n in range(len(strains))
-        ]
-    except Exception as exc:
-        logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
-        tf_maps = [
-            TimeFrequencyMap.from_timeseries(
-                ts=strain,
-                wavelet=wdm_wavelet,
-                is_whitened=True,
-                f_low=getattr(config, "fLow", None),
-                f_high=getattr(config, "fHigh", None),
-                edge=getattr(config, "segEdge", None),
-            )
-            for strain in strains
-        ]
-
-    logger.info(
-        "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
-        level,
-        rate,
-        layers,
-        config.rateANA / 2. / (2 ** level),
-        1000. / rate,
-    )
-
-    fragment_clusters = []
-    ###############################
-    # cWB2G coherence calculation #
-    ###############################
-
-    # produce TF maps with max over the sky energy
-    alp = 0.0
-
-    max_delay = config.max_delay
-    pattern = config.pattern
+    setups = setup_coherence(config, strains, job_seg=job_seg)
     n_lag = job_seg.n_lag
+    n_res = len(setups)
 
-    for n, tf_map in enumerate(tf_maps):
-        tf_maps[n], alp_n = max_energy(
-            tf_map=tf_map,
-            max_delay=max_delay,
-            up_n=up_n,
-            pattern=pattern,
-            f_low=config.fLow,
-            f_high=config.fHigh,
-        )
-        alp += alp_n
-    alp = alp / config.nIFO
+    # Run per-lag coherence using the pre-built setup
+    per_lag = [coherence_single_lag(setups, lag, return_rejected) for lag in range(n_lag)]
 
-    # set threshold
-    # threshold is calculated based on the data layers and rate of the default ifo data
-    Eo = compute_threshold(
-        config.bpp,
-        alp if pattern != 0 else None,
-        tf_maps=tf_maps,
-        edge=config.segEdge,
-    )
-    logger.info("thresholds in units of noise variance: Eo=%g Emax=%g", Eo, Eo * 2)
-    logger.info("lag_plan: n_lag=%d", n_lag)
+    # Transpose from [lag][res] → [res][lag] (legacy output format)
+    result = [[per_lag[lag][res] for lag in range(n_lag)] for res in range(n_res)]
 
-    # set veto array
-    # TODO: the veto is applied to veto the non-injected periods. Will implement later
-    # TL, veto_mask = apply_veto(
-    #     config.iwindow,
-    #     tf_maps[0],
-    #     edge=config.segEdge,
-    #     segment_list=segment_list,
-    #     injection_times=injection_times,
-    #     return_mask=True,
-    # )
-    # logger_info += "live time in zero lag: %g \n" % TL
+    logger.info("----------------------------------------")
+    logger.info("Coherence time totally: %.2f s", time.perf_counter() - timer_start)
+    logger.info("----------------------------------------")
 
-    # if TL <= 0.:
-    #     raise ValueError("live time is zero")
-
-    logger.info("lag | clusters | pixels | select_t(s) | cluster_t(s)")
-
-    # loop over time lags
-    for j in range(n_lag):
-        # select pixels above Eo
-        t_sel = time.perf_counter()
-        candidates = select_network_pixels(
-            lag_index=j,
-            energy_threshold=Eo,
-            tf_maps=tf_maps,
-            lag_shifts=job_seg.lag_shifts[j],
-            veto=None,
-            edge=config.segEdge,
-        )
-        t_sel_elapsed = time.perf_counter() - t_sel
-        n_candidates = len(candidates["pixels"]) if isinstance(candidates, dict) and "pixels" in candidates else -1
-
-        # get pixel list
-        t_cl = time.perf_counter()
-        if pattern != 0:
-            c = cluster_pixels(min_size=2, max_size=3, pixel_candidates=candidates)
-            # remove pixels below subrho
-            c.select("subrho", config.select_subrho)
-            # remove pixels below subnet
-            c.select("subnet", config.select_subnet)
-        else:
-            c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
-        t_cl_elapsed = time.perf_counter() - t_cl
-
-        if not return_rejected:
-            c.remove_rejected()
-
-        fragment_cluster = c
-        fragment_clusters.append(fragment_cluster)
-
-        logger.info(
-            "%3d |%9d |%7d | cand=%d sel=%.4fs clust=%.4fs",
-            j,
-            fragment_cluster.event_count(),
-            fragment_cluster.pixel_count(),
-            n_candidates,
-            t_sel_elapsed,
-            t_cl_elapsed,
-        )
-
-    logger.info("Coherence time for single level: %f s", time.perf_counter() - timer_start)
-    return fragment_clusters
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -624,38 +446,6 @@ def apply_veto(iwindow, tf_map, segment_list=None, injection_times=None, edge=No
         edge=edge,
     )
     return (live, veto_mask) if return_mask else live
-
-
-def get_max_delay(net):
-    """
-    Decoupled accessor for network max-delay.
-
-    Resolution order is intentionally Python-first:
-    1) detector-level `tau` values (pure Python utility),
-    2) ROOT network backend (`net.net.getDelay("MAX")`),
-    3) legacy wrapper method (`net.get_max_delay()`).
-
-    :param net: network object
-    :type net: Network
-    :return: maximum delay in seconds
-    :rtype: float
-    """
-    # Preferred path: derive delay directly from detector tau maps.
-    if hasattr(net, "n_ifo") and hasattr(net, "get_ifo"):
-        detectors = [net.get_ifo(i) for i in range(net.n_ifo)]
-        delay = detector_get_max_delay(detectors)
-        if delay > 0:
-            return float(delay)
-
-    # Compatibility fallback for ROOT-backed network instances.
-    if hasattr(net, "net") and hasattr(net.net, "getDelay"):
-        return float(net.net.getDelay("MAX"))
-
-    # Final fallback for legacy wrappers.
-    if hasattr(net, "get_max_delay"):
-        return float(net.get_max_delay())
-
-    return 0.0
 
 
 def _igamma_inv_upper(shape, p):
@@ -1232,54 +1022,3 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     )
 
 
-def _extract_net_values(net, n_ifo, fallback_max_delay):
-    """
-    Extract network runtime values needed by Python coherence flow.
-
-    :param net: network wrapper
-    :type net: Network
-    :param n_ifo: number of detectors
-    :type n_ifo: int
-    :param fallback_max_delay: config fallback max delay
-    :type fallback_max_delay: float
-    :return: dictionary with pattern, lags, shifts, veto-related metadata
-    :rtype: dict
-    """
-    pattern = int(getattr(net, "pattern", 0))
-    n_lag = int(getattr(net, "nLag", 1))
-
-    max_delay = float(fallback_max_delay)
-    if max_delay <= 0:
-        max_delay = get_max_delay(net)
-
-    lag_shifts = np.zeros((n_lag, n_ifo), dtype=float)
-    for det_idx in range(n_ifo):
-        ifo = net.get_ifo(det_idx)
-        shifts = np.asarray(ifo.lagShift.data, dtype=float)
-        if shifts.size < n_lag:
-            lag_shifts[:shifts.size, det_idx] = shifts
-        else:
-            lag_shifts[:, det_idx] = shifts[:n_lag]
-
-    segment_list = None
-    if hasattr(net, "net") and hasattr(net.net, "segList"):
-        try:
-            segment_list = [(float(seg.start), float(seg.stop)) for seg in net.net.segList]
-        except Exception:
-            segment_list = None
-
-    injection_times = None
-    if hasattr(net, "net") and hasattr(net.net, "mdcTime"):
-        try:
-            injection_times = [float(x) for x in net.net.mdcTime if float(x) != 0.0]
-        except Exception:
-            injection_times = None
-
-    return {
-        "pattern": pattern,
-        "n_lag": n_lag,
-        "max_delay": max_delay,
-        "lag_shifts": lag_shifts,
-        "segment_list": segment_list,
-        "injection_times": injection_times,
-    }

@@ -1,12 +1,9 @@
-import copy
-
 import logging
 import time
 import numpy as np
-from wdm_wavelet.wdm import WDM as WDMWavelet
 
 from .utils import get_cluster_links, calculate_statistics, get_defragment_link, \
-    aggregate_clusters_from_links, extract_timeseries_data, expected_td_vec_len, \
+    aggregate_clusters_from_links, expected_td_vec_len, \
     apply_subnet_cut
 from ...types.detector import compute_sky_delay_and_patterns, calculate_e2or_from_acore
 from ...types.network_cluster import Cluster, ClusterMeta
@@ -175,12 +172,43 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
     return superclusters
 
 
-def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers,
+def supercluster_wrapper(config, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers,
                          return_td_cache: bool = False, job_seg=None):
+    """
+    Convenience wrapper for interactive / legacy use.
+
+    Internally calls :func:`setup_supercluster`, :func:`build_td_inputs_cache`,
+    and :func:`supercluster_single_lag` for every lag, avoiding all the
+    duplicated WDM/sky-pattern setup code that was previously inlined here.
+
+    Parameters
+    ----------
+    config : Config
+    fragment_clusters : list[list[FragmentCluster]]
+        ``fragment_clusters[res][lag]`` — output of :func:`~pycwb.modules.cwb_coherence.coherence.coherence`.
+    strains : list
+        Whitened strain time series (one per IFO).
+    xtalk_coeff : np.ndarray
+    xtalk_lookup_table : np.ndarray
+    layers : np.ndarray
+    return_td_cache : bool
+        If True, return ``(result, td_inputs_cache)`` instead of ``result``.
+    job_seg : WaveSegment
+        Job segment supplying lag count.
+
+    Returns
+    -------
+    list[FragmentCluster] or None
+        One FragmentCluster per lag, or None if any lag produces no clusters.
+    """
     timer_start = time.perf_counter()
 
     strains = [TimeSeries.from_input(strain) for strain in strains]
 
+    if job_seg is None:
+        import types as _types
+        n_lag = len(fragment_clusters[0]) if fragment_clusters else 1
+        job_seg = _types.SimpleNamespace(n_lag=n_lag)
     n_lag = int(job_seg.n_lag)
     if n_lag == 0:
         logger.info("Supercluster wrapper skipped: n_lag=0")
@@ -189,247 +217,38 @@ def supercluster_wrapper(config, network, fragment_clusters, strains, xtalk_coef
     if len(fragment_clusters) == 0 or len(fragment_clusters[0]) < n_lag:
         raise ValueError("Fragment clusters are inconsistent with lag plan")
 
-    ########################
-    # build wdm_wavelet contexts for each resolution and detector
-    upTDF = int(getattr(config, 'upTDF', 1))
-    TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
+    # Build lag-independent resources once
+    from pycwb.utils.td_vector_batch import build_td_inputs_cache
+    from pycwb.modules.xtalk.type import XTalk
 
-    wdm_context_by_layers = {}
-    for level in config.WDM_level:
-        layers_at_level = 2 ** level if level > 0 else 0
-        wdm_layers = max(1, int(layers_at_level))
-        wdm = WDMWavelet(
-            M=wdm_layers,
-            K=wdm_layers,
-            beta_order=config.WDM_beta_order,
-            precision=config.WDM_precision,
-        )
-        # Use L=upTDF so the TD filter has TDRate resolution (1/upTDF sample steps)
-        wdm.set_td_filter(int(config.TDSize), upTDF)
+    td_inputs_cache = build_td_inputs_cache(config, strains)
+    gps_time = float(strains[0].t0)
+    setup = setup_supercluster(config, gps_time)
+    xtalk = XTalk(coeff=xtalk_coeff, lookup_table=xtalk_lookup_table, layers=layers, nRes=0)
 
-        detector_tf_maps = []
-        for n in range(config.nIFO):
-            ts_data, sample_rate, t0 = extract_timeseries_data(strains[n])
-            detector_tf_maps.append(wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1))
+    n_res = len(fragment_clusters)
+    result_clusters = []
 
-        context = {"wdm": wdm, "tf_maps": detector_tf_maps}
-        # Accept both direct WDM layers and cWB pixel layer-tag convention (M + 1)
-        wdm_context_by_layers[int(wdm_layers)] = context
-        wdm_context_by_layers[int(wdm_layers) + 1] = context
-
-    # Pre-cache JAX TD inputs (padded planes, filter tables) once per (layer, ifo).
-    # These are derived from the TF maps which do not change across lags.
-    td_inputs_cache = {}   # key: layer_key -> list of per-ifo dicts
-    seen_keys = set()
-    for layer_key, context in wdm_context_by_layers.items():
-        # Both layer_key and layer_key+1 may point to the same context; deduplicate.
-        ctx_id = id(context)
-        if ctx_id in seen_keys:
-            td_inputs_cache[layer_key] = td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-            continue
-        seen_keys.add(ctx_id)
-        wdm_obj = context["wdm"]
-        per_ifo = [context["tf_maps"][n].prepare_td_inputs(wdm_obj.td_filters) for n in range(config.nIFO)]
-        td_inputs_cache[layer_key] = per_ifo
-    # For any layer_key that still has None (dedup gap), fill from its neighbour
-    for layer_key in list(wdm_context_by_layers.keys()):
-        if td_inputs_cache.get(layer_key) is None:
-            alt = td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-            td_inputs_cache[layer_key] = alt
-    # merge cluster
-
-    clusters_by_lag = []
     for j in range(n_lag):
-        cluster = copy.deepcopy(fragment_clusters[0][j])
-        cluster.clusters = [c for c in cluster.clusters if c.cluster_status < 1]
-        if len(fragment_clusters) > 1:
-            for fragment_cluster in fragment_clusters[1:]:
-                cluster.clusters += [c for c in fragment_cluster[j].clusters if c.cluster_status < 1]
-        clusters_by_lag.append(cluster)
-
-    # K_td: delay range at TDRate resolution matching CWB's loadTDamp behaviour.
-    K_td = max(int(config.TDSize) * upTDF,
-               int(getattr(config, 'max_delay', 0.0) * float(TDRate)) + 1)
-
-    td_vec_default = np.zeros(expected_td_vec_len(K_td), dtype=np.float32)
-    fragment_clusters = clusters_by_lag
-    for lag, fragment_cluster in enumerate(fragment_clusters):
-        # Batch processing: collect all pixels and pre-extract indices using numpy
-
-        # Flatten all pixels from all clusters into a single list
-        pixel_objects = []
-        for cluster in fragment_cluster.clusters:
-            pixel_objects.extend(cluster.pixels)
-        
-        n_pixels = len(pixel_objects)
-        if n_pixels == 0:
-            logger.info("No pixels to process for lag %d", lag)
-            continue
-        
-        # Pre-extract pixel data into numpy arrays for vectorized operations
-        # Shape: (n_pixels,)
-        pixel_layers = np.array([int(p.layers) for p in pixel_objects], dtype=np.int32)
-        
-        # Shape: (n_pixels, n_ifo) - pre-extract all pixel indices
-        pixel_indices = np.zeros((n_pixels, config.nIFO), dtype=np.int32)
-        for i, pixel in enumerate(pixel_objects):
-            for n in range(config.nIFO):
-                pixel_indices[i, n] = int(pixel.data[n].index)
-        
-        # Group pixels by layer using numpy operations
-        unique_layers = np.unique(pixel_layers)
-        pixels_by_layer = {int(layer): np.where(pixel_layers == layer)[0] for layer in unique_layers}
-
-        # Pre-allocate output array: (n_pixels, n_ifo, td_vec_len)
-        td_vec_len = expected_td_vec_len(K_td)
-        all_td_amps = np.zeros((n_pixels, config.nIFO, td_vec_len), dtype=np.float32)
-        
-        # Process pixels grouped by layer using JAX batch extraction
-        K = K_td
-        for layer_key, pixel_idxs in pixels_by_layer.items():
-            per_ifo_inputs = td_inputs_cache.get(layer_key)
-            if per_ifo_inputs is None:
-                # Try adjacent key used by cWB layer-tag convention
-                per_ifo_inputs = td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-            if per_ifo_inputs is None:
-                logger.warning(
-                    "Missing TD input cache for layer %d, skipping %d pixels",
-                    layer_key, len(pixel_idxs),
-                )
-                continue
-
-            # Gather all pixel indices for this layer group — shape (n_layer_pixels, n_ifo)
-            layer_pixel_indices = pixel_indices[pixel_idxs]  # (n_layer_pixels, n_ifo)
-
-            for ifo_idx in range(config.nIFO):
-                indices_np = np.asarray(layer_pixel_indices[:, ifo_idx], dtype=np.int32)
-                batch_result = per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
-                # batch_result: (n_layer_pixels, 4*K+2) float32
-                all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
-        
-        # Assign td_amp back to pixel objects using vectorized slicing
-        for pidx in range(n_pixels):
-            pixel_objects[pidx].td_amp = [all_td_amps[pidx, ifo_idx, :] for ifo_idx in range(config.nIFO)]
-
-    ########################
-
-    # prepare user parameters
-    super_acor = config.Acore
-    super_e2or = calculate_e2or_from_acore(super_acor, config.nIFO)
-
-    subnet_acor = config.subacor if config.subacor > 0 else config.Acore
-    subnet_e2or = calculate_e2or_from_acore(subnet_acor, config.nIFO)
-    network_energy_threshold = 2 * subnet_acor * subnet_acor * config.nIFO
-    if hasattr(config, "healpix") and int(config.healpix) > 0:
-        healpix_order = int(config.healpix)
-        min_skyres = int(getattr(config, "MIN_SKYRES_HEALPIX", healpix_order))
-        if healpix_order > min_skyres:
-            healpix_order = min_skyres
-    else:
-        healpix_order = None
-
-    # Use K_td at TDRate resolution for ml clipping (matches CWB precision)
-    _upTDF_sc = int(getattr(config, 'upTDF', 1))
-    _TDRate_sc = int(getattr(config, 'TDRate', int(config.rateANA) * _upTDF_sc))
-    K_td_sc = max(int(config.TDSize) * _upTDF_sc,
-                  int(getattr(config, 'max_delay', 0.0) * float(_TDRate_sc)) + 1)
-    ml, FP, FX = compute_sky_delay_and_patterns(
-        ifos=config.ifo,
-        ref_ifo=config.refIFO,
-        sample_rate=_TDRate_sc,
-        td_size=K_td_sc,
-        gps_time=float(strains[0].t0),
-        healpix_order=healpix_order,
-        n_sky=None,
-    )
-    n_sky = int(ml.shape[1])
-    n_ifo = config.nIFO
-    n_loudest = config.LOUD
-    gap = config.TFgap
-    Tgap = config.Tgap
-    Fgap = config.Fgap
-    subnet = config.subnet
-    subcut = config.subcut
-    subnorm = config.subnorm
-    subrho = config.subrho if config.subrho > 0 else config.netRHO
-    pattern = int(getattr(config, "pattern", 0))
-
-    for fragment_cluster, lag in zip(fragment_clusters, range(n_lag)):
-        logger.info(
-            "-> Processing lag=%d with %d clusters",
-            lag,
-            len(fragment_cluster.clusters),
+        frag_clusters_this_lag = [fragment_clusters[res][j] for res in range(n_res)]
+        fragment_cluster = supercluster_single_lag(
+            setup, config, frag_clusters_this_lag, j,
+            xtalk=xtalk, td_inputs_cache=td_inputs_cache,
         )
-        logger.info("   --------------------------------------------------")
-        clusters = fragment_cluster.clusters
-
-        superclusters = supercluster(clusters, 'L', gap, super_e2or, n_ifo)
-
-        # Vectorized pixel counting for better performance
-        total_pixels = sum(len(c.pixels) for c in superclusters)
-
-        # filter out the rejected superclusters
-        accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
-        logger.info(
-            "   super clusters|pixels      : %6d|%d",
-            len(superclusters),
-            total_pixels,
-        )
-        logger.info("   accepted superclusters     : %6d", len(accepted_superclusters))
-
-        # if there are no accepted superclusters, return None
-        if len(accepted_superclusters) == 0:
-            logger.warning("No accepted superclusters after supercluster stage (lag=%d)", lag)
+        if fragment_cluster is None:
+            logger.warning("No supercluster results for lag %d", j)
             return (None, td_inputs_cache) if return_td_cache else None
+        result_clusters.append(fragment_cluster)
 
-        selected_superclusters = apply_subnet_cut(
-            accepted_superclusters, n_loudest, ml, FP, FX,
-            subnet_acor, subnet_e2or, n_ifo, n_sky,
-            subnet, subcut, subnorm, subrho,
-            xtalk_coeff, xtalk_lookup_table, layers,
-        )
-
-        if pattern == 0:
-            # cWB order for pattern == 0: apply defragment after subnet cut
-            new_superclusters = defragment(selected_superclusters, Tgap, Fgap, n_ifo)
-        else:
-            # cWB behavior for pattern != 0: no defragment stage
-            new_superclusters = selected_superclusters
-
-        # Vectorized pixel counting
-        total_pixels = sum(len(c.pixels) for c in new_superclusters)
-        logger.info(
-            "   post-cut clusters|pixels   : %6d|%d",
-            len(new_superclusters),
-            total_pixels,
-        )
-
-        fragment_cluster.clusters = [c for c in new_superclusters if c.cluster_status <= 0]
-
-        # Vectorized pixel counting
-        total_pixels = sum(len(c.pixels) for c in fragment_cluster.clusters)
-        logger.info(
-            "   final clusters|pixels      : %6d|%d",
-            len(fragment_cluster.clusters),
-            total_pixels,
-        )
-
-        # Batch attribute updates - collect all pixels first, then update
-        all_pixels = [p for c in fragment_cluster.clusters for p in c.pixels]
-        for p in all_pixels:
-            p.core = 1
-            p.td_amp = None
-
-    total_clusters = sum(len(fc.clusters) for fc in fragment_clusters)
-    total_pixels = sum(len(c.pixels) for fc in fragment_clusters for c in fc.clusters)
-    timer_stop = time.perf_counter()
+    total_clusters = sum(len(fc.clusters) for fc in result_clusters)
+    total_pixels = sum(len(c.pixels) for fc in result_clusters for c in fc.clusters)
     logger.info("Supercluster wrapper done")
     logger.info("total  clusters|pixels : %6d|%d", total_clusters, total_pixels)
     logger.info("----------------------------------------")
-    logger.info("Supercluster time: %.2f s", timer_stop - timer_start)
+    logger.info("Supercluster time: %.2f s", time.perf_counter() - timer_start)
     logger.info("----------------------------------------")
 
-    return (fragment_clusters, td_inputs_cache) if return_td_cache else fragment_clusters
+    return (result_clusters, td_inputs_cache) if return_td_cache else result_clusters
 
 
 # ---------------------------------------------------------------------------

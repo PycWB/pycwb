@@ -101,6 +101,14 @@ def init_parser(parser):
                         help='specific lags to run, as a semicolon-separated list of comma-separated shift vectors, '
                              'e.g., "0,0;1,0;0,1" for 3 lags with 2 IFOs')
 
+    # log level
+    parser.add_argument('--log-level',
+                        metavar='log_level',
+                        type=str,
+                        default='INFO',
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        help='logging level (default: INFO)')
+
 
 def command(args):
     from pycwb.workflow.run import search
@@ -131,4 +139,5 @@ def command(args):
            config_vars=args.config_vars,
            jobs=args.jobs,
            trail_idx=args.trail_idx,
-           lags=args.lags)
+           lags=args.lags,
+           log_level=args.log_level)

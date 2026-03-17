@@ -3,7 +3,6 @@ import logging
 import time
 import numpy as np
 from numba import njit, prange, float32
-from wdm_wavelet.wdm import WDM as WDMWavelet
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.time_series import TimeSeries
 from pycwb.types.detector import compute_sky_delay_and_patterns, _build_sky_directions
@@ -11,7 +10,7 @@ from .dpf import calculate_dpf, dpf_np_loops_vec
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps, \
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps, xtalk_energy_sum_numpy
-from .pixel_batch_ops import load_data_from_pixels_vectorized, batch_ensure_td_amp
+from .pixel_batch_ops import load_data_from_pixels_vectorized
 from pycwb.modules.xtalk.type import XTalk
 from .typing import SkyStatistics, SkyMapStatistics
 
@@ -58,26 +57,6 @@ def _resolve_runtime_parameters(config, nIFO):
     netEC_threshold = net_rho * net_rho * 2
     return network_energy_threshold, gamma_regulator, delta_regulator, netEC_threshold, net_cc
 
-
-def _ensure_td_amp(cluster, nIFO, strains=None, config=None, td_inputs_cache=None):
-    if len(cluster.pixels) == 0:
-        return False
-
-    has_td = True
-    for pixel in cluster.pixels:
-        td_amp = getattr(pixel, "td_amp", None)
-        if td_amp is None or len(td_amp) < nIFO:
-            has_td = False
-            break
-
-    if has_td:
-        return False
-
-    if strains is None or config is None:
-        raise ValueError("likelihood requires `strains` and `config` when cluster pixels do not contain td_amp")
-
-    # Batch JAX extraction replaces the per-pixel serial loop
-    return batch_ensure_td_amp(cluster, nIFO, strains, config, td_inputs_cache=td_inputs_cache)
 
 def _populate_pixel_noise_rms(pixels, nRMS):
     """
@@ -210,30 +189,39 @@ def setup_likelihood(config, strains, nIFO, ml=None, FP=None, FX=None):
     }
 
 
-def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,  # noqa: keep config optional for legacy callers but warn
-               td_inputs_cache=None, nRMS=None, setup=None, xtalk=None):
+def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP=None, FX=None, cluster_id=None,
+               nRMS=None, setup=None, xtalk=None):
     """
-    Main function to calculate the likelihood for a given network and cluster.
+    Calculate the likelihood for a single cluster.
+
+    In the streaming workflow, call :func:`setup_likelihood` once per job
+    segment and pass the result as ``setup=`` so that sky-pattern computation
+    and runtime-parameter resolution are done only once.
 
     Args:
         nIFO (int): Number of interferometers.
-        cluster (Cluster): The cluster object containing pixel data.
+        cluster (Cluster): Cluster with ``td_amp`` already set on every pixel
+            (guaranteed by :func:`~pycwb.modules.super_cluster.super_cluster.supercluster_single_lag`).
         MRAcatalog (str): Path to the MRA catalog for xtalk information.
-        td_inputs_cache (dict | None): Optional pre-built TD-input cache.
-            When provided, ``batch_ensure_td_amp`` skips the expensive WDM
-            context rebuild.
-        nRMS (list | None): List of TimeFrequencyMap objects (one per IFO) from
-            data conditioning.  When provided, each pixel's ``noise_rms`` field
-            is populated from the TF map so that downstream physical-unit
-            quantities (hrss, noise) are correct.
+        strains (list | None): Whitened strain time series; only needed when
+            ``setup`` is *None* for sky-pattern computation.
+        config (Config): Analysis configuration (required).
+        ml, FP, FX (np.ndarray | None): Pre-computed sky-delay / antenna arrays;
+            only used when ``setup`` is *None*.
+        cluster_id (int | None): Opaque cluster identifier for logging.
+        nRMS (list | None): Per-IFO TF noise maps from data conditioning.
+            When provided each pixel's ``noise_rms`` is populated so that
+            physical-unit quantities (hrss, noise) are correct.
         setup (dict | None): Pre-computed segment-level inputs from
-            :func:`setup_likelihood`.  When provided, XTalk loading, sky-pattern
-            computation, and runtime-parameter resolution are all skipped.
+            :func:`setup_likelihood`.  When provided, sky-pattern computation
+            and runtime-parameter resolution are all skipped.
+        xtalk (XTalk | None): Pre-loaded cross-talk catalog; loaded from
+            ``MRAcatalog`` when *None* and ``setup`` is also *None*.
 
     Returns:
         tuple[Cluster | None, SkyMapStatistics | None]: 
-            The updated cluster object with filled detection statistics and the full skymap statistics.
-            Returns ``(None, None)`` if the cluster is rejected by threshold cuts.
+            The updated cluster and full skymap statistics, or ``(None, None)``
+            if the cluster is rejected.
     """
     if config is None:
         raise ValueError(
@@ -244,9 +232,6 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
     logger.info("-------------------------------------------------------")
     logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
     logger.info("   ----------------------------------------------------")
-
-    # td_amp is guaranteed to be set by supercluster_single_lag before likelihood
-    # is called in the streaming per-lag path; no reload needed.
 
     # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
     # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
@@ -342,7 +327,7 @@ def likelihood(nIFO, cluster, MRAcatalog, strains=None, config=None, ml=None, FP
 
     rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
     if rejected:
-        logger.info("Cluster rejected due to threshold cuts: %s", rejected)
+        logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
         logger.info("\t <- rejected    ")
         timer_end = time.perf_counter()
@@ -1388,18 +1373,6 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     return None  # No rejection, all conditions passed
 
 
-def likelihood_by_pixel():
-    pass
-
-
-def subnetwork_statistic():
-    pass
-
-
-def detection_statistic():
-    pass
-
-
 def get_error_region(cluster: Cluster):
     # pwc->p_Ind[id - 1].push_back(Mo);
     # double T = To + pwc->start;                          // trigger time
@@ -1611,3 +1584,79 @@ def get_chirp_mass(cluster: Cluster):
           f"rho0={cluster.cluster_meta.net_rho:.6f} rho1={rho1:.6f}")
 
     cluster.cluster_meta.net_rho2 = rho1
+
+
+def likelihood_wrapper(config, fragment_clusters, strains, MRAcatalog, nRMS=None, xtalk=None):
+    """
+    Convenience wrapper for interactive / legacy use.
+
+    Internally calls :func:`setup_likelihood` once and then calls
+    :func:`likelihood` for every surviving cluster across all lags, avoiding
+    repeated sky-pattern computation and runtime-parameter resolution.
+
+    Parameters
+    ----------
+    config : Config
+        Analysis configuration.
+    fragment_clusters : list[FragmentCluster]
+        One :class:`~pycwb.types.network_cluster.FragmentCluster` per lag —
+        the direct output of
+        :func:`~pycwb.modules.super_cluster.super_cluster.supercluster_wrapper`.
+        Clusters with ``cluster_status != 0`` are skipped automatically.
+    strains : list
+        Whitened strain time series (one per IFO); used for sky-pattern
+        computation inside :func:`setup_likelihood`.
+    MRAcatalog : str
+        Path to the MRA catalog (cross-talk coefficients).
+    nRMS : list | None
+        Per-IFO TF noise maps from data conditioning.  When provided, each
+        pixel's ``noise_rms`` is populated so physical-unit quantities (hrss,
+        noise) are correct.
+    xtalk : XTalk | None
+        Pre-loaded cross-talk catalog.  When *None* it is loaded from
+        ``MRAcatalog``.
+
+    Returns
+    -------
+    list[list[tuple[Cluster, SkyMapStatistics]]]
+        ``results[lag]`` is a list of ``(result_cluster, sky_stats)`` tuples
+        for every cluster that passed the likelihood veto in that lag.
+        Empty inner lists indicate no accepted clusters for that lag.
+    """
+    timer_start = time.perf_counter()
+
+    strains = [TimeSeries.from_input(s) for s in strains]
+
+    if xtalk is None:
+        xtalk = XTalk.load(MRAcatalog, dump=True)
+
+    likelihood_setup = setup_likelihood(config, strains, config.nIFO)
+
+    results = []
+    for lag, fragment_cluster in enumerate(fragment_clusters):
+        lag_results = []
+        for k, selected_cluster in enumerate(fragment_cluster.clusters):
+            if selected_cluster.cluster_status != 0:
+                continue
+            result_cluster, sky_stats = likelihood(
+                config.nIFO,
+                selected_cluster,
+                MRAcatalog,
+                cluster_id=k + 1,
+                nRMS=nRMS,
+                setup=likelihood_setup,
+                xtalk=xtalk,
+                config=config,
+            )
+            if result_cluster is None or result_cluster.cluster_status != -1:
+                logger.info("likelihood rejected cluster %d in lag %d", k + 1, lag)
+                continue
+            logger.info("likelihood accepted cluster %d in lag %d", k + 1, lag)
+            lag_results.append((result_cluster, sky_stats))
+        results.append(lag_results)
+
+    total_accepted = sum(len(r) for r in results)
+    logger.info("Likelihood wrapper done: %d accepted cluster(s) across %d lag(s)", total_accepted, len(fragment_clusters))
+    logger.info("Likelihood wrapper time: %.2f s", time.perf_counter() - timer_start)
+
+    return results

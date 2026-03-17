@@ -389,7 +389,7 @@ def apply_subnet_cut(superclusters: list[Cluster], n_loudest_local, ml_local, FP
         )
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
-            logger.info(
+            logger.debug(
                 f"Cluster {i} ({len(c.pixels)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) passed subnet, subrho, and subthr cut"
             )
             c.cluster_status = -1
@@ -401,7 +401,7 @@ def apply_subnet_cut(superclusters: list[Cluster], n_loudest_local, ml_local, FP
                 log_output += f"subrho cut condition: {results['subrho_condition']}, "
             if not results['subthr_passed']:
                 log_output += f"subthr cut condition: {results['subthr_condition']}, "
-            logger.info(log_output)
+            logger.debug(log_output)
             c.cluster_status = 1
 
     return [c for c in superclusters if c.cluster_status <= 0]
