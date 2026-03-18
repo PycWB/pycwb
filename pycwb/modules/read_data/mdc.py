@@ -82,12 +82,13 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
     psds = job_seg.noise['psds'] if 'psds' in job_seg.noise else [None] * len(job_seg.ifos)
 
-    # generate noise for each ifo — epoch is the analysis-window start (no edge padding;
-    # the noise array is sized to the analysis duration only)
+    # generate noise for the full padded window [padded_start, padded_end] so that
+    # the whitening step sees edge samples and the WDM TF map t_idx=0 maps to padded_start,
+    # consistent with the real-data path (read_from_job_segment also reads the padded window).
     noises = [generate_noise(psd=psds[i],
                              f_low=f_low, sample_rate=sample_rate,
-                             duration=job_seg.duration,
-                             start_time=job_seg.analyze_start, seed=seed) for i, seed in enumerate(seeds)]
+                             duration=job_seg.padded_duration,
+                             start_time=job_seg.padded_start, seed=seed) for i, seed in enumerate(seeds)]
 
     # if there are upstream data, add noise into the data
     if data:

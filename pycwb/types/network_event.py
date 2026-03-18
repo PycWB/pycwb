@@ -369,12 +369,14 @@ class Event:
         n_ifo = len(job_segment.ifos)
 
         # --- GPS epoch per IFO ---
-        # cluster.start_time / stop_time are measured from padded_start (= analyze_start - seg_edge),
-        # so the GPS epoch must be the padded data start, not the analysis window start.
+        # cluster.start_time / stop_time are measured from padded_start (= analyze_start - seg_edge).
+        # The WDM TF map t_idx=0 maps to padded_start (the full padded data window start),
+        # consistent with both real data (read_from_job_segment reads padded window) and
+        # synthetic noise (generate_noise_for_job_seg generates the padded window).
         self.gps = np.array([job_segment.physical_padded_starts[ifo] for ifo in job_segment.ifos])
 
         # --- Time-window geometry ---
-        # left  : seconds from padded_start to cluster start  (= cluster.start_time measured from padded_start)
+        # left  : seconds from padded_start to cluster start  (= cluster.start_time ≥ seg_edge)
         # right : seconds from cluster stop to padded_end     (= padded_duration - cluster.stop_time)
         # start / stop : absolute GPS times = relative offset + padded_start epoch
         self.left = [float(cluster.start_time)] * n_ifo
