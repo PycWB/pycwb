@@ -301,12 +301,14 @@ class WaveSegment:
         n_ifo = len(self.ifos)
         seg_duration = float(self.duration)
         lag_step = float(self.lag_step)
-        seg_edge = float(self.seg_edge)
 
         if lag_step <= 0:
             raise ValueError("lag_step must be positive")
 
-        lag_max_seg = int((seg_duration - 2.0 * seg_edge) / lag_step) - 1
+        # CWB computes lagMaxSeg as int((tfmap_size/rate - 2*edge) / lagStep) - 1.
+        # The TFmap spans the *padded* window (analysis + 2*edge), so
+        # tfmap_size/rate - 2*edge == analysis_duration == seg_duration here.
+        lag_max_seg = int(seg_duration / lag_step) - 1
         if lag_max_seg < 0:
             return np.zeros((0, n_ifo), dtype=float)
 
