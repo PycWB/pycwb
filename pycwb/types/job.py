@@ -253,20 +253,6 @@ class WaveSegment:
         """Per-IFO GPS end of the padded data window (= physical_analyze_ends[ifo] + seg_edge)."""
         return {ifo: t + self.seg_edge for ifo, t in self.physical_analyze_ends.items()}
 
-    # ------------------------------------------------------------------
-    # Backward-compatibility aliases (kept so existing callers don't break)
-    # ------------------------------------------------------------------
-
-    @property
-    def start_time(self) -> float:
-        """Deprecated alias for :attr:`analyze_start`."""
-        return self.analyze_start
-
-    @property
-    def end_time(self) -> float:
-        """Deprecated alias for :attr:`analyze_end`."""
-        return self.analyze_end
-
     @property
     def physical_start_times(self) -> Dict[str, float]:
         """Deprecated alias for :attr:`physical_analyze_starts`."""
