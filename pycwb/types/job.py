@@ -130,9 +130,9 @@ class WaveSegment:
         trail index of the segment for injections, leave it 0 for no injections
     ifos: list of str
         list of interferometers
-    start_time: float
+    analyze_start: float
         GPS start of the analysis window (excluding edge padding)
-    end_time: float
+    analyze_end: float
         GPS end of the analysis window (excluding edge padding)
     sample_rate: float
         sample rate of the segment
