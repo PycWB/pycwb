@@ -1,0 +1,71 @@
+# Example online search configuration for PyCWB.
+#
+# This file demonstrates the online workflow configuration using the
+# pycwb_schema extension mechanism.  Copy and edit for your setup.
+
+pycwb_schema:
+  mode: extend
+  schema_file: ./online_schema_extension.yaml
+
+# --- Standard CWB parameters (unchanged) ---
+outputDir: "output_online"
+
+ifo: ["L1", "H1"]
+refIFO: "L1"
+analysis: "2G"
+cfg_search: "r"
+
+inRate: 16384
+fResample: 4096
+fLow: 16
+fHigh: 1024
+levelR: 2
+l_low: 3
+l_high: 8
+healpix: 4
+
+segEdge: 8
+lagSize: 1           # zero-lag only
+
+Acore: 1.7
+netRHO: 4.0
+netCC: 0.5
+
+save_waveform: false
+plot_trigger: false
+
+# --- Online extension parameters ---
+online_segment_duration: 60
+online_segment_stride: 20
+online_poll_interval: 1
+online_n_workers: 4
+
+online_channels:
+  - "L1:GDS-CALIB_STRAIN_CLEAN_C01"
+  - "H1:GDS-CALIB_STRAIN_CLEAN_C01"
+
+online_data_source:
+  type: nds2
+
+online_max_queue_depth: 8
+online_latency_threshold: 30
+
+online_dedup_window: 0.5
+online_dedup_sky_tolerance: 5.0
+
+online_significance:
+  model_path: ""        # Path to pre-trained XGBoost model
+  ifar_file: ""         # Path to IFAR lookup table
+  feature_columns: ["rho", "netcc", "penalty", "ecor", "qveto", "qfactor"]
+
+online_alert:
+  gracedb: false
+  gracedb_group: "Burst"
+  gracedb_pipeline: "CWB"
+  gracedb_search: "AllSky"
+  gracedb_ifar_threshold: 1.0  # years
+  local_catalog: true
+  webhook_url: ""
+
+online_background:
+  enabled: false

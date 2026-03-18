@@ -90,7 +90,10 @@ def check_and_resample_py(data, config, ifo_index):
     if np.isnan(np.asarray(data.data)).any():
         raise ValueError('Data contains NaNs')
     # check if the sample rate is consitent with configuation
-    if data.sample_rate != config.inRate:
+    sr = data.sample_rate
+    # gwpy-derived TimeSeries may carry an astropy Quantity for sample_rate
+    sr_val = float(sr.value) if hasattr(sr, "value") else float(sr)
+    if sr_val != config.inRate:
         raise ValueError('Sample rate is not consistent with configuation')
 
     # DC correction
@@ -104,9 +107,10 @@ def check_and_resample_py(data, config, ifo_index):
         data = data.cwb_resampling(float(config.fResample))
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
-    if new_sample_rate != config.inRate:
+    new_sr_val = float(new_sample_rate.value) if hasattr(new_sample_rate, "value") else float(new_sample_rate)
+    if new_sr_val != config.rateANA:
         logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
-        data = data.cwb_resampling(float(new_sample_rate))
+        data = data.cwb_resampling(new_sr_val)
 
     # rescaling
     data.data *= (2 ** config.levelR) ** 0.5

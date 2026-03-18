@@ -1,0 +1,188 @@
+# Online schema extension properties.
+# Merged on top of the default PyCWB schema when the user YAML contains:
+#   pycwb_schema:
+#     mode: extend
+#     schema_file: <path-to-this-file>
+
+# --- Timing ---
+online_segment_duration:
+  type: number
+  description: >
+    Duration (seconds) of each analysis segment.
+    With a sliding window, consecutive segments overlap by
+    (duration - stride) seconds.
+  default: 60
+
+online_segment_stride:
+  type: number
+  description: >
+    Stride (seconds) between consecutive analysis segments.
+    Must be <= online_segment_duration.  When stride < duration,
+    segments overlap and latency is reduced.
+    Set stride = duration to disable sliding window.
+  default: 20
+
+online_poll_interval:
+  type: number
+  description: >
+    Interval (seconds) between successive data acquisition polls.
+  default: 1
+
+# --- Workers ---
+online_n_workers:
+  type: integer
+  description: >
+    Number of parallel analysis worker processes.
+  default: 4
+  minimum: 1
+
+# --- Data Source ---
+online_channels:
+  type: array
+  items:
+    type: string
+  description: >
+    Channel names for live data acquisition, one per IFO, in the same
+    order as config.ifo.
+  default: []
+
+online_data_source:
+  type: object
+  description: >
+    Data source configuration.  The 'type' field selects the adapter.
+  properties:
+    type:
+      type: string
+      enum: ["nds2", "kafka", "shm"]
+      default: "nds2"
+    host:
+      type: string
+      default: ""
+    port:
+      type: integer
+      default: 0
+  additionalProperties: true
+  default:
+    type: "nds2"
+
+# --- Backpressure & Latency ---
+online_max_queue_depth:
+  type: integer
+  description: >
+    Maximum number of analysis-ready segments in the queue.
+  default: 8
+  minimum: 1
+
+online_dedup_window:
+  type: number
+  description: >
+    GPS time coincidence window (seconds) for trigger deduplication.
+  default: 0.5
+
+online_dedup_sky_tolerance:
+  type: number
+  description: >
+    Sky position coincidence tolerance (degrees) for deduplication.
+  default: 5.0
+
+online_latency_threshold:
+  type: number
+  description: >
+    Latency threshold (seconds).  Warnings logged when exceeded.
+  default: 30
+
+# --- Significance ---
+online_significance:
+  type: object
+  description: >
+    Configuration for real-time significance assignment.
+  properties:
+    model_path:
+      type: string
+      default: ""
+    ifar_file:
+      type: string
+      default: ""
+    feature_columns:
+      type: array
+      items:
+        type: string
+      default: ["rho", "netcc", "penalty", "ecor", "qveto", "qfactor"]
+  additionalProperties: true
+  default:
+    model_path: ""
+    ifar_file: ""
+
+# --- Alert / Output ---
+online_alert:
+  type: object
+  description: >
+    Alert dispatch configuration.
+  properties:
+    gracedb:
+      type: boolean
+      default: false
+    gracedb_group:
+      type: string
+      default: "Burst"
+    gracedb_pipeline:
+      type: string
+      default: "CWB"
+    gracedb_search:
+      type: string
+      default: "AllSky"
+    gracedb_ifar_threshold:
+      type: number
+      default: 0.0
+    local_catalog:
+      type: boolean
+      default: true
+    webhook_url:
+      type: string
+      default: ""
+    webhook_timeout:
+      type: number
+      default: 10
+  additionalProperties: true
+  default:
+    gracedb: false
+    local_catalog: true
+    webhook_url: ""
+
+# --- State & Recovery ---
+online_state_file:
+  type: string
+  description: >
+    Path (relative to working_dir) for crash recovery state.
+  default: "online_state.json"
+
+online_monitor_interval:
+  type: number
+  description: >
+    Health monitoring interval (seconds).
+  default: 5
+
+# --- Background Estimation (placeholder) ---
+online_background:
+  type: object
+  description: >
+    Placeholder for background-estimation job management.
+  properties:
+    enabled:
+      type: boolean
+      default: false
+    live_hours:
+      type: number
+      default: 6
+    resubmit_interval:
+      type: number
+      default: 3600
+    cluster:
+      type: string
+      default: ""
+    auto_retrain:
+      type: boolean
+      default: false
+  additionalProperties: true
+  default:
+    enabled: false

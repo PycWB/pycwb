@@ -1,0 +1,121 @@
+# PyCWB online search — shared-memory (llhoft) data source
+# Run directory designed to be moved to a server and executed as-is.
+#
+# Data layout expected on the server:
+#   /dev/shm/kafka/H1/H-H1_llhoft-<GPS>-1.gwf
+#   /dev/shm/kafka/L1/L-L1_llhoft-<GPS>-1.gwf
+#
+# Usage:
+#   cd /path/to/this/dir
+#   pycwb online user_parameters.yaml --work-dir output --n-workers 4
+
+pycwb_schema:
+  mode: extend
+  schema_file: ./online_schema_extension.yaml
+
+# ── Output ──────────────────────────────────────────────────────────────────
+outputDir: "output"
+
+# ── Network ─────────────────────────────────────────────────────────────────
+ifo: ["H1", "L1"]
+refIFO: "H1"
+
+# ── CWB search mode ─────────────────────────────────────────────────────────
+analysis: "2G"
+cfg_search: "r"
+
+# ── Sampling / frequency ────────────────────────────────────────────────────
+inRate: 16384         # CWB WDM analysis rate; fake data at 4096 Hz is resampled on read
+fResample: 0          # 0 = use inRate directly (matches test/sample config)
+fLow: 16.0
+fHigh: 1024.0
+
+# ── Wavelet decomposition ────────────────────────────────────────────────────
+levelR: 3
+l_low: 4
+l_high: 10
+healpix: 7
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+# ── Segment geometry ────────────────────────────────────────────────────────
+# segEdge seconds are stripped from each end of every segment to suppress
+# wavelet edge artefacts.  Usable window = segment_duration - 2*segEdge.
+segEdge: 8
+
+# ── Lags (zero-lag only for low-latency) ────────────────────────────────────
+lagSize: 1
+lagStep: 1.0
+lagOff: 0
+lagMax: 0
+
+# ── CWB thresholds ──────────────────────────────────────────────────────────
+Acore: 1.7
+# Thresholds lowered for fake-data / debug runs (raise for production)
+netRHO: 4.0
+netCC: 0.5
+bpp: 0.001
+subnet: 0.5
+
+# ── Output options ──────────────────────────────────────────────────────────
+save_waveform: false
+plot_trigger: false
+compress_output_json: true
+
+# ── Online extension ─────────────────────────────────────────────────────────
+
+# Segment timing
+online_segment_duration: 60      # full segment length (seconds) passed to CWB
+online_segment_stride: 8         # slide every 8 s  → ~8-16 s analysis latency
+online_poll_interval: 0.5        # seconds between data-source polls
+
+# Worker processes for parallel segment analysis
+online_n_workers: 4
+
+# Channels — must match what the fake_data_generator.py writes into the GWF files
+# Default generator channel: GDS-CALIB_STRAIN_CLEAN_C00
+# NOTE: Generate frames at 4096 Hz; CWB will resample to inRate internally
+online_channels:
+  - "H1:GDS-CALIB_STRAIN_CLEAN"
+  - "L1:GDS-CALIB_STRAIN_CLEAN"
+
+# Shared-memory data source
+online_data_source:
+  type: shm
+  base_path: /dev/shm/kafka   # per-IFO sub-dirs: .../H1/, .../L1/
+  timeout: 30                 # seconds to wait for a 1-s frame file
+  poll_interval: 0.1          # polling interval while waiting
+
+# Backpressure
+online_max_queue_depth: 8
+
+# Deduplication (sliding-window trigger coincidence)
+online_dedup_window: 0.5      # GPS coincidence window (s)
+online_dedup_sky_tolerance: 5.0  # sky position tolerance (deg)
+
+# Latency warning threshold
+online_latency_threshold: 30  # seconds
+
+# Significance — leave empty to use raw rho/cc thresholds only
+online_significance:
+  model_path: ""
+  ifar_file: ""
+  feature_columns: ["rho", "netcc", "penalty", "ecor", "qveto", "qfactor"]
+
+# Alert routing
+online_alert:
+  gracedb: false              # set true (and supply credentials) for real alerts
+  gracedb_group: "Burst"
+  gracedb_pipeline: "CWB"
+  gracedb_search: "AllSky"
+  gracedb_ifar_threshold: 1.0
+  local_catalog: true         # always write triggers to output/catalog.json
+  webhook_url: ""             # optional HTTP webhook for custom alerts
+
+# Crash recovery
+online_state_file: "online_state.json"
+online_monitor_interval: 5
+
+# Background estimation (disabled for testing)
+online_background:
+  enabled: false
