@@ -83,7 +83,33 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     """
     seg_timer = time.perf_counter()
     nIFO = len(online_seg.ifos)
-    data = online_seg.data_payload
+
+    # data_payload is {channel_name: TimeSeries}; convert to ordered list
+    # matching the IFO order in online_seg.ifos / config.ifo.
+    payload = online_seg.data_payload
+    if isinstance(payload, dict):
+        channels = list(payload.keys())
+        # match each IFO to its channel (first channel whose prefix == ifo)
+        data_list = []
+        for ifo in online_seg.ifos:
+            matched = next(
+                (payload[ch] for ch in channels if ch.startswith(ifo + ":")),
+                None,
+            )
+            if matched is None:
+                raise ValueError(
+                    f"No channel for IFO {ifo!r} in data_payload keys "
+                    f"{list(payload.keys())}"
+                )
+            data_list.append(matched)
+        data = data_list
+    else:
+        # already a list
+        data = list(payload)
+
+    # Normalise each element to PyCWBTimeSeries so downstream modules
+    # (which were designed for pycbc/pycwb TimeSeries) see the right types.
+    data = [PyCWBTimeSeries.from_input(d) for d in data]
 
     # Build a minimal WaveSegment so existing modules see what they expect.
     wave_seg = _online_seg_to_wave_seg(online_seg, config)

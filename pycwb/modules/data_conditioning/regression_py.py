@@ -658,10 +658,16 @@ def regression_python(config, h):
         regulator = "h"
 
     if not isinstance(h, pycbc.types.TimeSeries):
+        _epoch = h.t0 if hasattr(h, 't0') else h.start_time
+        if hasattr(_epoch, 'value'):
+            _epoch = float(_epoch.value)
+        _dt = h.dt if hasattr(h, 'dt') else h.sample_rate**-1
+        if hasattr(_dt, 'value'):
+            _dt = float(_dt.value)
         h_ts = pycbc.types.TimeSeries(
             h.value if hasattr(h, 'value') else h.data,
-            delta_t=h.dt if hasattr(h, 'dt') else h.sample_rate**-1,
-            epoch=h.t0 if hasattr(h, 't0') else h.start_time,
+            delta_t=_dt,
+            epoch=_epoch,
         )
     else:
         h_ts = h

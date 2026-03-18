@@ -25,16 +25,18 @@ analysis: "2G"
 cfg_search: "r"
 
 # ── Sampling / frequency ────────────────────────────────────────────────────
-inRate: 16384         # native llhoft sample rate
-fResample: 4096       # analysis sample rate
+inRate: 16384         # CWB WDM analysis rate; fake data at 4096 Hz is resampled on read
+fResample: 0          # 0 = use inRate directly (matches test/sample config)
 fLow: 16.0
 fHigh: 1024.0
 
 # ── Wavelet decomposition ────────────────────────────────────────────────────
-levelR: 2
-l_low: 3
-l_high: 8
-healpix: 4
+levelR: 3
+l_low: 4
+l_high: 10
+healpix: 7
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
 
 # ── Segment geometry ────────────────────────────────────────────────────────
 # segEdge seconds are stripped from each end of every segment to suppress
@@ -49,6 +51,7 @@ lagMax: 0
 
 # ── CWB thresholds ──────────────────────────────────────────────────────────
 Acore: 1.7
+# Thresholds lowered for fake-data / debug runs (raise for production)
 netRHO: 4.0
 netCC: 0.5
 bpp: 0.001
@@ -69,7 +72,9 @@ online_poll_interval: 0.5        # seconds between data-source polls
 # Worker processes for parallel segment analysis
 online_n_workers: 4
 
-# Channels — must match what appears inside the GWF files
+# Channels — must match what the fake_data_generator.py writes into the GWF files
+# Default generator channel: GDS-CALIB_STRAIN_CLEAN_C00
+# NOTE: Generate frames at 4096 Hz; CWB will resample to inRate internally
 online_channels:
   - "H1:GDS-CALIB_STRAIN_CLEAN_C00"
   - "L1:GDS-CALIB_STRAIN_CLEAN_C00"

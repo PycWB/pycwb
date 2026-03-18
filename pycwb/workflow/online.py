@@ -61,7 +61,8 @@ class OnlineSearchManager:
 
         # Load config
         logger.info("Loading config from %s", config_file)
-        self.config = Config(config_file, working_dir=self.working_dir)
+        self.config = Config()
+        self.config.load_from_yaml(config_file)
 
         # Online parameters (from extension schema, with defaults)
         self.segment_duration = float(
