@@ -508,13 +508,12 @@ def process_job_segment_parallel(
         logger.info("Trail %d done.", trail_idx)
 
     job_walltime = time.perf_counter() - job_timer
-    effective_duration = job_seg.duration - 2 * config.segEdge
-    speed_factor = effective_duration / job_walltime if job_walltime > 0 else float("inf")
+    speed_factor = job_seg.duration / job_walltime if job_walltime > 0 else float("inf")
     logger.info("============================================")
     logger.info("Job segment %s total time: %.2f s", job_seg.index, job_walltime)
     logger.info(
-        "Effective data length:     %.2f s  (duration %.2f s - 2 x segEdge %.2f s)",
-        effective_duration, job_seg.duration, config.segEdge,
+        "Effective data length:     %.2f s  (padded %.2f s - 2 x segEdge %.2f s)",
+        job_seg.duration, job_seg.padded_duration, job_seg.seg_edge,
     )
     logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
     logger.info("============================================")
