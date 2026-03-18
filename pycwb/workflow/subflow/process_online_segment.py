@@ -276,8 +276,8 @@ def _online_seg_to_wave_seg(online_seg: OnlineSegment, config) -> WaveSegment:
     return WaveSegment(
         index=online_seg.index,
         ifos=online_seg.ifos,
-        start_time=online_seg.segment_gps_start,
-        end_time=online_seg.segment_gps_end,
+        analyze_start=online_seg.segment_gps_start,
+        analyze_end=online_seg.segment_gps_end,
         sample_rate=online_seg.sample_rate,
         seg_edge=online_seg.seg_edge,
         lag_size=1,

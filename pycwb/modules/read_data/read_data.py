@@ -185,8 +185,8 @@ def merge_frames(job_seg, data, seg_edge):
             ifo_data = ifo_data.to_pycbc()
 
         # check if data range match with job segment
-        if ifo_data.start_time != job_seg.start_time - seg_edge or \
-                ifo_data.end_time != job_seg.end_time + seg_edge:
+        if ifo_data.start_time != job_seg.padded_start or \
+                ifo_data.end_time != job_seg.padded_end:
             raise ValueError(f'Job segment {job_seg} not match with data {ifo_data}, '
                              f'the gwf data start at {ifo_data.start_time} and end at {ifo_data.end_time}')
 
@@ -221,16 +221,12 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
     """
     # get the physical start and end time of the frame
     ifo = frame.ifo
-    physical_start_time = job_seg.physical_start_times[ifo]
-    physical_end_time = job_seg.physical_end_times[ifo]
-    data_start_time = job_seg.start_time
-    data_end_time = job_seg.end_time
 
     # should read data with segment edge
-    start = physical_start_time - job_seg.seg_edge
-    end = physical_end_time + job_seg.seg_edge
-    data_start = data_start_time - job_seg.seg_edge
-    data_end = data_end_time + job_seg.seg_edge
+    start = job_seg.physical_padded_starts[ifo]
+    end = job_seg.physical_padded_ends[ifo]
+    data_start = job_seg.padded_start
+    data_end = job_seg.padded_end
 
     # for each frame, if the frame start time is later than the job segment start time, use the frame start time
     if frame.start_time > start:

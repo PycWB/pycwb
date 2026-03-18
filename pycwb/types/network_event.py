@@ -369,11 +369,16 @@ class Event:
         n_ifo = len(job_segment.ifos)
 
         # --- GPS epoch per IFO ---
-        self.gps = np.array([job_segment.physical_start_times[ifo] for ifo in job_segment.ifos])
+        # cluster.start_time / stop_time are measured from padded_start (= analyze_start - seg_edge),
+        # so the GPS epoch must be the padded data start, not the analysis window start.
+        self.gps = np.array([job_segment.physical_padded_starts[ifo] for ifo in job_segment.ifos])
 
         # --- Time-window geometry ---
+        # left  : seconds from padded_start to cluster start  (= cluster.start_time measured from padded_start)
+        # right : seconds from cluster stop to padded_end     (= padded_duration - cluster.stop_time)
+        # start / stop : absolute GPS times = relative offset + padded_start epoch
         self.left = [float(cluster.start_time)] * n_ifo
-        self.right = [float(job_segment.duration - cluster.stop_time)] * n_ifo
+        self.right = [float(job_segment.padded_duration - cluster.stop_time)] * n_ifo
         self.start = [float(cluster.start_time + self.gps[i]) for i in range(n_ifo)]
         self.stop = [float(cluster.stop_time + self.gps[i]) for i in range(n_ifo)]
         self.low = [float(cluster.low_frequency)] * n_ifo

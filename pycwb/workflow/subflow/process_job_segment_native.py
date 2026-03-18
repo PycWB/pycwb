@@ -117,7 +117,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
             # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
-            mdc = [TimeSeries(np.zeros(int(sub_job_seg.duration * sub_job_seg.sample_rate)), epoch = sub_job_seg.start_time, delta_t = 1/sub_job_seg.sample_rate) for i in range(len(sub_job_seg.ifos))]
+            # MDC buffer must span the full padded window [padded_start, padded_end] so that
+            # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
+            mdc = [TimeSeries(np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
+                              epoch=sub_job_seg.padded_start,
+                              delta_t=1 / sub_job_seg.sample_rate)
+                   for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
@@ -321,7 +326,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 # Reconstruct and optionally save/plot the detected waveform.
                 reconst_data = reconstruct_waveforms_flow(
                     trigger_folder, config, sub_job_seg.ifos,
-                    event, cluster_out, epoch=sub_job_seg.start_time,
+                    event, cluster_out, epoch=sub_job_seg.padded_start,
                     wave_file=wave_file, save=config.save_waveform, plot=config.plot_waveform,
                 )
 

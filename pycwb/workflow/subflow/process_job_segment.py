@@ -159,7 +159,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 event.hybrid = True
                 # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
-                                        event, cluster, epoch=data[0].start_time,
+                                        event, cluster, epoch=sub_job_seg.padded_start,
                                         wave_file=wave_file,save=config.save_waveform, plot=config.plot_waveform)
                 
                 # if injection, estimate injected_waveforms and calculate related statistics

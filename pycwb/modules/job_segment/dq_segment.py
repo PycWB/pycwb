@@ -187,18 +187,18 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=N
             job_list.append(WaveSegment(seg_index, ifos, seg_len * j + start, seg_len * j + start + seg_len,
                                         seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
 
-        remainder = stop - job_list[-1].end_time
+        remainder = stop - job_list[-1].analyze_end
         half = int(remainder / 2)
         if half >= seg_mls:
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + half,
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].analyze_end, job_list[-1].analyze_end + half,
                                         seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, stop,
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].analyze_end, stop,
                                         seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
         else:
             seg_index += 1
-            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].end_time, job_list[-1].end_time + seg_len,
+            job_list.append(WaveSegment(seg_index, ifos, job_list[-1].analyze_end, job_list[-1].analyze_end + seg_len,
                                         seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
 
     logger.info('lost livetime after building of the standard job list = %d sec' % lostlivetime)

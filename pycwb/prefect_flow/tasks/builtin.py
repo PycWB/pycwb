@@ -31,9 +31,9 @@ def load_xtalk_catalog(MRAcatalog):
 def print_job_info(job_seg):
     job_id = job_seg.index
     print(f"Job ID: {job_id}")
-    print(f"Start time: {job_seg.start_time}")
-    print(f"End time: {job_seg.end_time}")
-    print(f"Duration: {job_seg.end_time - job_seg.start_time}")
+    print(f"Start time: {job_seg.analyze_start}")
+    print(f"End time: {job_seg.analyze_end}")
+    print(f"Duration: {job_seg.duration}")
     print(f"Frames: {job_seg.frames}")
     print(f"Noise: {job_seg.noise}")
     print(f"Injections: {job_seg.injections}")
