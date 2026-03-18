@@ -105,7 +105,17 @@ parallelism lives in the new workflow layer.
 |------|--------|
 | `pycwb/utils/td_vector_batch.py` | Extracted `_build_td_inputs_single_level` (per-level callable for parallel use) |
 | `pycwb/modules/gracedb/gracedb.py` | Added `upload_online_event()`, `upload_skymap()`, `write_log()` |
+| `pycwb/modules/online/data_source.py` | Added `DataSource.read_dq_chunk()` ABC default + `SharedMemoryDataSource.read_dq_chunk()` override; `_read_gwf_with_retry()` gained `optional=True` param |
+| `pycwb/modules/online/data_acquisition.py` | DQ bitmask check per IFO in `_poll_once()`; gap detection + partial-segment emission; `self.dq_channels` / `self.dq_bits` from config |
+| `pycwb/modules/online/ring_buffer.py` | Added `_gap_detected`, `_pre_gap_gps`; `check_and_clear_gap()` method |
+| `pycwb/modules/online/deduplication.py` | Uses `rho` (= `event.rho[0]`) instead of `ranking_statistic` for candidate comparison |
+| `pycwb/modules/online/trigger_handler.py` | `_handle_one()` calls `_check_catalog_rho()` before upload |
+| `pycwb/workflow/online.py` | Startup GPS gap → `unprocessed_gaps.json`; `seg.data_payload = None` after `executor.submit()` |
+| `pycwb/workflow/subflow/process_online_segment.py` | `max_threads = nIFO` cap on all `ThreadPoolExecutor`s; `del strains…; release_memory()` at end |
 | `bin/pycwb` | Registered `online` subcommand |
+| `examples/online_shm_run/fake_data_generator.py` | Writes `DMT-DQ_VECTOR` (1 Hz, value=1) into GWF frames alongside strain; `--dq-channel` CLI arg |
+| `examples/online_shm_run/user_parameters_debug.yaml` | Added `online_dq_channels` and `online_dq_bits` |
+| `examples/online_shm_run/debug_run.sh` | Passes `--dq-channel` to generator |
 
 ### NOT Modified
 
@@ -221,9 +231,122 @@ capacity ≥ duration + stride + 2 × segEdge
 ### GPS gap handling
 
 - Gaps < 1 sample: silently absorbed
-- Gaps > 1 sample: warning logged, ring buffer reset; `DataAcquisitionManager`
-  will re-fill before emitting the next segment
+- Gaps ≥ 1 second detected by `RingBuffer.check_and_clear_gap()`: the ring
+  buffer records the pre-gap GPS (`_pre_gap_gps`), emits a **partial segment**
+  covering whatever data arrived before the gap (if ≥ `2 × seg_edge` seconds),
+  then resets so the next fill starts fresh
 - Reconnection on `read_chunk()` failure: exponential backoff (1 s → 60 s max)
+
+### Startup gap recovery
+
+When the pipeline restarts from a state file (`online_state.json`), the saved
+`last_processed_gps` may be far in the past.  `OnlineSearchManager` compares
+that GPS against the current live GPS:
+
+- If the gap is **≤ `online_segment_stride`**: resume from
+  `last_processed_gps` (normal operation, no data missed).
+- If the gap is **> `online_segment_stride`**: log the unprocessed GPS range to
+  `unprocessed_gaps.json` in the working directory and jump directly to the
+  current live GPS.  The gap file can be used later to run an offline backfill.
+
+```json
+// unprocessed_gaps.json (appended on each restart with a large gap)
+[
+  {"start": 1234567890.0, "end": 1234568100.0, "reason": "restart_gap"}
+]
+```
+
+---
+
+## Data Quality
+
+### DMT-DQ_VECTOR channel
+
+The shared-memory pipeline supports per-IFO data-quality (DQ) gating using the
+standard LIGO `DMT-DQ_VECTOR` channel:
+
+```
+IFO:DMT-DQ_VECTOR  — 1 Hz integer bitmask
+bit 0 (value = 1)  — CBC analysis-ready flag
+```
+
+`DataAcquisitionManager` reads the DQ channel alongside strain data each poll
+cycle using `DataSource.read_dq_chunk()`.  If the bitmask check fails for any
+sample in the 1-second chunk, the IFO's data is **not** appended to its ring
+buffer.  The resulting gap is detected by `RingBuffer.check_and_clear_gap()` and
+handled identically to a data gap (ring buffer reset, optional partial-segment
+emission).
+
+### `read_dq_chunk()` interface
+
+`DataSource` provides a default implementation that calls `read_chunk()` and
+returns `None` per channel on any failure so the acquisition loop is never
+interrupted.  `SharedMemoryDataSource` overrides it with per-channel graceful
+error handling, reading the DQ channel from the same 1-second GWF file.
+
+### Configuration
+
+```yaml
+online_dq_channels:
+  - "H1:DMT-DQ_VECTOR"
+  - "L1:DMT-DQ_VECTOR"
+online_dq_bits: 1        # bitmask: all bits must be set in every sample
+```
+
+If `online_dq_channels` is empty (default), DQ gating is disabled and all data
+is accepted unconditionally.
+
+### NDS2 / Kafka adapters
+
+DQ gating is not yet implemented for the NDS2 and Kafka adapters.  The default
+`DataSource.read_dq_chunk()` will call `read_chunk()` for those adapters, which
+may succeed or fail depending on whether the DQ channel is available from the
+data source.  See the TODO section.
+
+---
+
+## Memory Management
+
+Three independent mechanisms prevent unbounded memory growth during long runs:
+
+### 1  Parent-process payload release
+
+After `executor.submit(process_online_segment, seg, ...)` the parent process
+immediately drops its reference to the heavy numpy arrays:
+
+```python
+future = executor.submit(process_online_segment, seg, ...)
+seg.data_payload = None   # release parent's copy
+```
+
+This prevents the `ProcessPoolExecutor` bookkeeping from retaining a duplicate
+of every segment's strain data.
+
+### 2  Worker-process cleanup
+
+At the end of `process_online_segment()` the worker calls:
+
+```python
+del strains, nRMS, online_seg
+release_memory()   # calls malloc_trim(0) on Linux; gc.collect() otherwise
+```
+
+`release_memory()` (from `pycwb.utils.memory`) returns trimmed heap pages to
+the OS, preventing VSZ from growing monotonically across `max_tasks_per_child`
+restarts.
+
+### 3  Thread count cap inside workers
+
+All `ThreadPoolExecutor` instances created inside `process_online_segment()`
+are capped at `max_workers = nIFO` (typically 2):
+
+```python
+max_threads = config.nIFO  # e.g. 2 for H1+L1
+with ThreadPoolExecutor(max_workers=max_threads) as pool:
+    ...
+```
+
+This prevents unbounded thread creation when workers restart under high load.
 
 ---
 
@@ -236,7 +359,8 @@ duplicates before they reach GraceDB.
 **Algorithm:**
 1. When a trigger arrives, check all `pending` triggers for GPS + sky match
 2. Match condition: `|GPS_a - GPS_b| < gps_window` **and** `angular_distance < sky_tolerance`
-3. Keep the trigger with the higher `ranking_statistic`
+3. Keep the trigger with the higher **`rho`** (= `event.rho[0]` for `Event`
+   objects; the primary coherent SNR)
 4. Flush triggers whose `wall_time_done` exceeds `flush_delay = duration + 2 × stride`
    — enough time for all overlapping duplicates to arrive
 
@@ -328,6 +452,8 @@ are accessed via `getattr(config, 'online_*', default)`.
 | `online_alert.local_catalog` | `true` | Save triggers to local catalog |
 | `online_alert.webhook_url` | `""` | HTTP POST webhook URL |
 | `online_state_file` | `"online_state.json"` | GPS state file for crash recovery |
+| `online_dq_channels` | `[]` | DQ channel names (e.g. `["H1:DMT-DQ_VECTOR", "L1:DMT-DQ_VECTOR"]`) |
+| `online_dq_bits` | `1` | DQ bitmask: all bits must be set in every sample (0 = disabled) |
 
 A complete annotated example is at `pycwb/vendor/online/user_parameters_online.yaml`.
 
@@ -419,3 +545,58 @@ IFAR files.
 
 All are optional at import time: missing libraries produce a log warning rather
 than a crash at startup.
+
+---
+
+## TODO
+
+The following items are tracked for future implementation:
+
+### Data Quality
+
+- [ ] **NDS2 DQ gating** — `NDS2DataSource.read_dq_chunk()` should fetch
+  `IFO:DMT-DQ_VECTOR` via `TimeSeriesDict.get()` in a dedicated call; the
+  default `DataSource.read_dq_chunk()` will attempt this automatically if the
+  NDS2 server exposes the channel, but it is not yet tested.
+- [ ] **Kafka DQ gating** — `KafkaDataSource.read_dq_chunk()` should subscribe
+  to or poll the DQ topic alongside the strain topic.
+- [ ] **DQ pass-rate logging** — log the fraction of 1-second chunks that pass
+  the bitmask per IFO; expose as a `LatencyMonitor` metric.
+- [ ] **DQ bit documentation** — extend `online_schema_extension.yaml` with
+  named-bit aliases (e.g. `CBC_READY=1`, `BURST_READY=2`) and validate
+  `online_dq_bits` against the channel spec.
+- [ ] **DQ failure alerting** — optionally send a webhook or GraceDB log when
+  an IFO fails DQ checks for > N consecutive seconds.
+
+### Gap recovery & backfill
+
+- [ ] **Offline backfill from `unprocessed_gaps.json`** — add a `pycwb backfill`
+  subcommand that reads the gap file and submits offline jobs (Condor/Slurm) to
+  process the missed GPS ranges.
+- [ ] **Gap emission tuning** — allow `min_gap_emit_duration` to be configured
+  separately from `seg_edge` for very short valid-data segments before a gap.
+
+### Background estimation
+
+- [ ] **`BackgroundManager` implementation** — `background.py` is a placeholder;
+  real background requires time-shifted analysis and automatic XGBoost
+  retraining (see `INTRA_SEGMENT_PARALLELIZATION_PLAN.md`).
+- [ ] **Online IFAR update** — periodically reload the IFAR lookup table as new
+  background accumulates without restarting the pipeline.
+
+### Monitoring & operations
+
+- [ ] **Prometheus / Grafana metrics** — expose ring-buffer fill levels, queue
+  depth, per-IFO DQ pass rates, and trigger rate as a `/metrics` endpoint.
+- [ ] **Memory watermark logging** — log RSS / VSZ after each
+  `release_memory()` call to detect slow leaks early.
+- [ ] **`max_tasks_per_child` auto-tuning** — measure per-worker RSS after each
+  segment and restart early if it exceeds a configurable threshold.
+
+### Testing
+
+- [ ] **Integration test with fake SHM generator** — `examples/online_shm_run/`
+  covers the happy path; add test cases for: DQ failure, GPS gap, worker
+  crash-restart, and startup-gap recovery.
+- [ ] **Unit tests for `read_dq_chunk()`** — mock GWF files with and without
+  `DMT-DQ_VECTOR` channel; verify `optional=True` path returns `None` cleanly.

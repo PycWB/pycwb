@@ -34,6 +34,22 @@ class DataSource(ABC):
         Returns a dict mapping channel name to a TimeSeries-like object.
         """
 
+    def read_dq_chunk(self, dq_channels: list, start_gps: float,
+                      duration: float) -> Dict[str, Optional[object]]:
+        """Read data-quality channels; returns ``None`` per channel on failure.
+
+        Unlike :meth:`read_chunk` this method never raises — missing or
+        unreadable DQ channels silently return ``None`` so the acquisition
+        loop can continue without the DQ check.
+        """
+        if not dq_channels:
+            return {}
+        try:
+            return self.read_chunk(dq_channels, start_gps, duration)
+        except Exception as exc:
+            logger.debug("DQ bulk read failed (%s) — treating all as absent", exc)
+            return {ch: None for ch in dq_channels}
+
     @abstractmethod
     def is_alive(self) -> bool:
         """Return ``True`` if the connection is healthy."""
@@ -59,6 +75,10 @@ class NDS2DataSource(DataSource):
     def read_chunk(self, channels, start_gps, duration):
         from gwpy.timeseries import TimeSeriesDict
 
+        logger.debug(
+            "NDS2: fetching %s [GPS %.3f, %.3f] (%.1f s)",
+            channels, start_gps, start_gps + duration, duration,
+        )
         kwargs = {}
         if self.host:
             kwargs["host"] = self.host
@@ -71,7 +91,11 @@ class NDS2DataSource(DataSource):
             start_gps + duration,
             **kwargs,
         )
-        return {ch: data[ch] for ch in channels}
+        result = {ch: data[ch] for ch in channels}
+        for ch, ts in result.items():
+            n = len(ts) if hasattr(ts, "__len__") else "?"
+            logger.debug("NDS2: received %s: %s samples", ch, n)
+        return result
 
     def is_alive(self) -> bool:
         return self._connected
@@ -152,11 +176,21 @@ class KafkaDataSource(DataSource):
         for ch in channels:
             segments = []
             for gps in required_gps:
+                _logged_wait = False
                 while True:
                     with self._lock:
                         if gps in self._buffer.get(ch, {}):
+                            logger.debug(
+                                "Kafka: assembled %s GPS %d from buffer", ch, gps
+                            )
                             segments.append(self._buffer[ch][gps])
                             break
+                    if not _logged_wait:
+                        logger.debug(
+                            "Kafka: waiting for %s GPS %d (deadline in %.1f s)",
+                            ch, gps, deadline - time.time(),
+                        )
+                        _logged_wait = True
                     if time.time() > deadline:
                         raise TimeoutError(
                             f"KafkaDataSource: timed out waiting for "
@@ -213,6 +247,11 @@ class KafkaDataSource(DataSource):
                 with self._lock:
                     for ch, ts in ts_dict.items():
                         self._buffer.setdefault(ch, {})[gps_second] = ts
+                        n = len(ts) if hasattr(ts, "__len__") else "?"
+                        logger.debug(
+                            "Kafka: buffered %s GPS %d (%s samples)",
+                            ch, gps_second, n,
+                        )
                     # Prune old seconds to cap memory usage
                     cutoff = gps_second - self.buffer_seconds
                     for ch_buf in self._buffer.values():
@@ -230,7 +269,7 @@ class SharedMemoryDataSource(DataSource):
 
         {site}-{ifo}_{stream}-{gps_start}-{duration}.gwf
 
-    Example: ``/dev/shm/kafka/H1/H-H1_llhoft-1457805590-1.gwf``
+    Example: ``/dev/shm/kafka/H1/H-H1_llhoft-1257894000-1.gwf``
 
     The IFO name is extracted from each channel's prefix
     (``"H1:GDS-..."`` → ``"H1"``).  :meth:`read_chunk` reads one file per
@@ -285,10 +324,25 @@ class SharedMemoryDataSource(DataSource):
             ifo = ch.split(":")[0]   # "H1" from "H1:GDS-..."
             ifo_dir = os.path.join(self.base_path, ifo)
             segments = []
+            logger.debug(
+                "SHM: reading %s GPS seconds %s from %s",
+                ch, required_gps, ifo_dir,
+            )
 
             for gps in required_gps:
                 path = self._wait_for_file(ifo_dir, gps)
-                segments.append(TimeSeries.read(path, ch))
+                logger.debug("SHM: reading %s GPS %d from %s", ch, gps, path)
+                # Retry on I/O errors — the generator may still be
+                # flushing the file when we first detect it.
+                ts = self._read_gwf_with_retry(path, ch)
+                n = len(ts) if hasattr(ts, "__len__") else "?"
+                logger.debug(
+                    "SHM: read %s GPS %d: %s samples (rate=%.0f Hz)",
+                    ch, gps, n, float(ts.sample_rate.value
+                                      if hasattr(ts.sample_rate, "value")
+                                      else ts.sample_rate),
+                )
+                segments.append(ts)
 
             if len(segments) == 1:
                 result[ch] = segments[0]
@@ -302,6 +356,29 @@ class SharedMemoryDataSource(DataSource):
                 )
         return result
 
+    def read_dq_chunk(self, dq_channels: list, start_gps: float,
+                      duration: float) -> Dict[str, Optional[object]]:
+        """Read DQ channels from per-IFO GWF files; returns ``None`` per
+        channel when the channel is absent or the file cannot be read."""
+        result: Dict[str, Optional[object]] = {}
+        for ch in dq_channels:
+            try:
+                ifo = ch.split(":")[0]
+                ifo_dir = os.path.join(self.base_path, ifo)
+                gps_int = int(start_gps)
+                path = self._find_file(ifo_dir, gps_int)
+                if path is None:
+                    logger.debug("DQ: no GWF file for %s GPS %d", ch, gps_int)
+                    result[ch] = None
+                    continue
+                result[ch] = self._read_gwf_with_retry(
+                    path, ch, optional=True
+                )
+            except Exception as exc:
+                logger.debug("DQ: channel %s unavailable: %s", ch, exc)
+                result[ch] = None
+        return result
+
     def is_alive(self) -> bool:
         return self._connected and os.path.isdir(self.base_path)
 
@@ -310,13 +387,57 @@ class SharedMemoryDataSource(DataSource):
 
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _read_gwf_with_retry(path: str, channel: str,
+                             max_retries: int = 5, delay: float = 0.1,
+                             optional: bool = False):
+        """Read a GWF file, retrying on I/O errors from incomplete writes.
+
+        Parameters
+        ----------
+        optional : bool
+            If ``True``, return ``None`` when the channel is not found in the
+            file instead of raising.  Used for DQ channels that may be absent.
+        """
+        from gwpy.timeseries import TimeSeries
+        for attempt in range(max_retries):
+            try:
+                return TimeSeries.read(path, channel)
+            except RuntimeError as exc:
+                # Channel not present in file — fail fast when optional
+                if optional and "not found" in str(exc).lower():
+                    logger.debug("SHM: optional channel %s not in %s",
+                                 channel, path)
+                    return None
+                if attempt == max_retries - 1:
+                    if optional:
+                        logger.debug(
+                            "SHM: giving up on optional channel %s: %s",
+                            channel, exc,
+                        )
+                        return None
+                    raise
+                logger.debug(
+                    "SHM: I/O error reading %s (attempt %d/%d), retrying",
+                    path, attempt + 1, max_retries,
+                )
+                time.sleep(delay)
+
     def _wait_for_file(self, ifo_dir: str, gps: int) -> str:
         """Block until a GWF file covering *gps* exists; return its path."""
         deadline = time.time() + self.timeout
+        _logged_wait = False
         while True:
             path = self._find_file(ifo_dir, gps)
             if path is not None:
                 return path
+            if not _logged_wait:
+                logger.debug(
+                    "SHM: waiting for GWF file covering GPS %d in %s "
+                    "(timeout %.0f s)",
+                    gps, ifo_dir, self.timeout,
+                )
+                _logged_wait = True
             if time.time() > deadline:
                 raise TimeoutError(
                     f"SharedMemoryDataSource: no GWF file covering GPS {gps}"
@@ -338,6 +459,23 @@ class SharedMemoryDataSource(DataSource):
             if file_gps <= gps < file_gps + file_dur:
                 return os.path.join(ifo_dir, name)
         return None
+
+    def scan_earliest_gps(self, ifos) -> Optional[float]:
+        """Scan all IFO sub-directories and return the earliest GPS second
+        present across all IFOs, or ``None`` if no files are found yet."""
+        earliest = None
+        for ifo in ifos:
+            ifo_dir = os.path.join(self.base_path, ifo)
+            if not os.path.isdir(ifo_dir):
+                continue
+            for name in os.listdir(ifo_dir):
+                m = self._FILENAME_RE.match(name)
+                if m is None:
+                    continue
+                gps = int(m.group("gps"))
+                if earliest is None or gps < earliest:
+                    earliest = gps
+        return float(earliest) if earliest is not None else None
 
 
 _ADAPTERS = {

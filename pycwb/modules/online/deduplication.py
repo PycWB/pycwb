@@ -56,15 +56,23 @@ class TriggerDeduplicator:
         """Add a trigger; return any finalized (flushed) triggers.
 
         If *trigger* matches a pending trigger within the GPS/sky window,
-        the one with the higher ranking statistic is kept.
+        the one with the higher ``rho`` (effective correlated SNR, i.e.
+        ``rho[0]``) is kept.
         """
         matched = False
         for i, pending_t in enumerate(self.pending):
             if self._is_duplicate(trigger, pending_t):
-                # Keep the one with the higher ranking statistic
-                new_stat = getattr(trigger.event, "ranking_statistic", 0.0)
-                old_stat = getattr(pending_t.event, "ranking_statistic", 0.0)
-                if new_stat > old_stat:
+                # Keep the one with the higher rho (rho[0])
+                new_rho = self._get_rho(trigger)
+                old_rho = self._get_rho(pending_t)
+                if new_rho > old_rho:
+                    logger.info(
+                        "Dedup: replacing trigger (rho %.4f -> %.4f) "
+                        "at GPS %.3f",
+                        old_rho, new_rho,
+                        getattr(trigger.event, "gps_time",
+                                trigger.segment_gps),
+                    )
                     self.pending[i] = trigger
                 matched = True
                 break
@@ -73,6 +81,18 @@ class TriggerDeduplicator:
             self.pending.append(trigger)
 
         return self._flush()
+
+    @staticmethod
+    def _get_rho(trigger: OnlineTrigger) -> float:
+        """Extract the primary rho value from a trigger's event.
+
+        Works with both legacy ``Event`` (``rho`` is a list) and new
+        ``Trigger`` (``rho`` is a scalar).
+        """
+        rho = getattr(trigger.event, "rho", 0.0)
+        if isinstance(rho, (list, tuple)):
+            return float(rho[0]) if rho else 0.0
+        return float(rho)
 
     def flush_all(self) -> List[OnlineTrigger]:
         """Flush all pending triggers (e.g. at shutdown)."""

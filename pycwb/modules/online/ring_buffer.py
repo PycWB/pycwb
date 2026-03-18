@@ -34,11 +34,13 @@ class RingBuffer:
         self._start_gps = None       # GPS of the oldest sample currently held
         self._last_gps = None        # GPS of the most recently appended sample
         self._last_snapshot_gps = None
+        self._gap_detected = False   # set True when a significant gap is seen
+        self._pre_gap_gps = None     # last_gps before the gap (for partial emit)
         self._lock = threading.Lock()
 
     @property
     def last_gps(self):
-        """GPS time of the most recently appended sample."""
+        """GPS time up to which data is available (exclusive boundary)."""
         with self._lock:
             return self._last_gps
 
@@ -48,6 +50,23 @@ class RingBuffer:
             if self._last_gps is None or self._last_snapshot_gps is None:
                 return 0.0
             return max(0.0, self._last_gps - self._last_snapshot_gps)
+
+    def check_and_clear_gap(self):
+        """Check if a gap was detected and clear the flag.
+
+        Returns
+        -------
+        tuple (bool, float or None)
+            ``(gap_detected, pre_gap_gps)`` — the GPS time just before the
+            gap, or *None* if no gap.
+        """
+        with self._lock:
+            if self._gap_detected:
+                self._gap_detected = False
+                pre_gap = self._pre_gap_gps
+                self._pre_gap_gps = None
+                return True, pre_gap
+            return False, None
 
     def append(self, chunk_data: np.ndarray, chunk_start_gps: float) -> None:
         """Append a contiguous chunk of data.
@@ -77,6 +96,8 @@ class RingBuffer:
                             "(expected %.6f, got %.6f). Resetting buffer.",
                             gap, expected_gps, chunk_start_gps,
                         )
+                        self._pre_gap_gps = self._last_gps
+                        self._gap_detected = True
                         self._reset_unlocked()
 
             # Write into circular buffer
@@ -89,7 +110,7 @@ class RingBuffer:
                 self._buf[:n - first] = chunk_data[first:]
 
             self._write_pos += n
-            self._last_gps = chunk_end_gps - 1.0 / self.sample_rate
+            self._last_gps = chunk_end_gps
 
             if self._start_gps is None:
                 self._start_gps = chunk_start_gps
@@ -122,13 +143,24 @@ class RingBuffer:
 
             n_samples = int(round((end_gps - start_gps) * self.sample_rate))
 
-            # Offset from the start of the buffer
+            # Offset from the start of the buffer.
+            # Allow up to 1 sample of float-precision drift — clamp to 0.
             offset_samples = int(round((start_gps - self._start_gps) * self.sample_rate))
             if offset_samples < 0:
-                raise ValueError(
-                    f"Requested start {start_gps:.6f} is before buffer start "
-                    f"{self._start_gps:.6f}"
-                )
+                if offset_samples >= -1:
+                    # Float-precision drift (< 1 sample); clamp
+                    logger.debug(
+                        "Clamping snapshot offset from %d to 0 "
+                        "(start=%.6f, buf_start=%.6f)",
+                        offset_samples, start_gps, self._start_gps,
+                    )
+                    offset_samples = 0
+                else:
+                    raise ValueError(
+                        f"Requested start {start_gps:.6f} is before buffer "
+                        f"start {self._start_gps:.6f} "
+                        f"(offset={offset_samples} samples)"
+                    )
 
             total_held = min(self._write_pos, self._capacity_samples)
             if offset_samples + n_samples > total_held:

@@ -76,12 +76,24 @@ class LatencyMonitor(threading.Thread):
             logger.info("Segment queue depth: %d / %d", depth, self.max_queue)
 
         # Data staleness per IFO
+        # Convert GPS time to Unix time: GPS_epoch = 1980-01-06; offset = 315964800 s
+        # lal gives exact leap-second-corrected conversion; fall back to constant offset.
         for ifo, rb in self.ring_buffers.items():
             last = rb.last_gps
             if last is not None:
-                staleness = time.time() - last  # rough: assumes GPS ≈ wall clock offset
+                try:
+                    from lal import gpstime as _gpstime
+                    utc_dt = _gpstime.gps_to_utc(last)
+                    # Use calendar.timegm to avoid naive-datetime local-tz bug
+                    import calendar
+                    last_unix = float(calendar.timegm(utc_dt.timetuple()))
+                except Exception:
+                    last_unix = last + 315964800  # GPS epoch → Unix epoch offset
+                staleness = time.time() - last_unix
                 if staleness > 2 * self.duration:
                     logger.warning("IFO %s data staleness: %.0f s", ifo, staleness)
+                else:
+                    logger.debug("IFO %s data staleness: %.1f s", ifo, staleness)
 
         # Processing latency
         with self._lock:

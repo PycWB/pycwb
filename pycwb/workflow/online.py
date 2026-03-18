@@ -25,9 +25,16 @@ from pycwb.modules.online.trigger_handler import TriggerHandler
 logger = logging.getLogger(__name__)
 
 
-def _worker_initializer():
-    """Run once per worker process — import heavy modules so they are
-    already loaded when ``process_online_segment`` is called."""
+def _worker_initializer(log_level="INFO"):
+    """Run once per worker process — configure logging and import heavy
+    modules so they are already loaded when ``process_online_segment``
+    is called."""
+    import logging as _logging
+    _logging.basicConfig(
+        level=getattr(_logging, log_level.upper(), _logging.INFO),
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        force=True,
+    )
     import numpy  # noqa: F401
     try:
         import numba  # noqa: F401
@@ -86,8 +93,32 @@ class OnlineSearchManager:
         # Data source
         self.data_source = create_data_source(self.config)
 
-        # Recover last GPS from state file
-        initial_gps = self._load_state_gps()
+        # Recover last GPS from state file; otherwise start from now.
+        # If there is a gap between last_processed_gps and current time,
+        # record the gap for a separate backfill run and start live from
+        # current GPS to preserve low latency.
+        last_processed_gps = self._load_state_gps()
+        current_gps = self._get_current_gps()
+
+        if last_processed_gps is not None and current_gps is not None:
+            gap = current_gps - last_processed_gps
+            # If the gap is larger than one stride, record it and skip ahead
+            if gap > self.segment_stride:
+                self._record_unprocessed_gap(last_processed_gps, current_gps)
+                logger.info(
+                    "Gap of %.1f s since last processed GPS %.3f. "
+                    "Starting live from current GPS %.3f. "
+                    "Unprocessed interval recorded for backfill.",
+                    gap, last_processed_gps, current_gps,
+                )
+                initial_gps = current_gps
+            else:
+                # Small gap — resume from where we left off
+                initial_gps = last_processed_gps
+        elif current_gps is not None:
+            initial_gps = current_gps
+        else:
+            initial_gps = None
 
         # Components
         self.data_acq = DataAcquisitionManager(
@@ -110,10 +141,12 @@ class OnlineSearchManager:
             stop_event=self.stop_event,
             n_workers=self.n_workers,
         )
+        self._log_level = log_level
         self.executor = ProcessPoolExecutor(
             max_workers=self.n_workers,
             max_tasks_per_child=1,
             initializer=_worker_initializer,
+            initargs=(log_level,),
         )
 
     # ------------------------------------------------------------------
@@ -146,7 +179,11 @@ class OnlineSearchManager:
                     self._collect_done(pending_futures)
                     continue
 
-                # Submit for analysis
+                # Submit for analysis.
+                # NOTE: ProcessPoolExecutor.submit() does not pickle
+                # arguments immediately — a management thread serialises
+                # them later.  We must keep the payload alive until the
+                # future completes; cleanup happens in _collect_done().
                 future = self.executor.submit(
                     _process_segment_entry, self.config, seg,
                 )
@@ -169,6 +206,8 @@ class OnlineSearchManager:
         done = [f for f in pending_futures if f.done()]
         for f in done:
             seg = pending_futures.pop(f)
+            # Release the data payload now that the worker has finished.
+            seg.data_payload = None
             try:
                 triggers = f.result()
                 latency = time.time() - seg.wall_time_received
@@ -239,6 +278,44 @@ class OnlineSearchManager:
             except (json.JSONDecodeError, OSError):
                 logger.warning("Could not read state file %s", state_path)
         return None
+
+    @staticmethod
+    def _get_current_gps():
+        """Return current GPS time using the best available source."""
+        try:
+            from lal import gpstime
+            return float(gpstime.gps_time_now())
+        except ImportError:
+            pass
+        try:
+            from astropy.time import Time
+            return float(Time.now().gps)
+        except ImportError:
+            pass
+        import calendar
+        GPS_EPOCH = calendar.timegm((1980, 1, 6, 0, 0, 0, 0, 0, 0))
+        return float(time.time() - GPS_EPOCH + 18)
+
+    def _record_unprocessed_gap(self, gap_start: float, gap_end: float):
+        """Append an unprocessed GPS interval to the gaps file for backfill."""
+        gaps_path = os.path.join(self.working_dir, "unprocessed_gaps.json")
+        gaps = []
+        if os.path.isfile(gaps_path):
+            try:
+                with open(gaps_path) as f:
+                    gaps = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                gaps = []
+        gaps.append({"start_gps": gap_start, "end_gps": gap_end})
+        try:
+            with open(gaps_path, "w") as f:
+                json.dump(gaps, f, indent=2)
+            logger.info(
+                "Recorded unprocessed gap [%.3f, %.3f] in %s",
+                gap_start, gap_end, gaps_path,
+            )
+        except OSError:
+            logger.warning("Failed to write gaps file %s", gaps_path)
 
 
 def _process_segment_entry(config, online_seg):

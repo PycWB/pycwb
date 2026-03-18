@@ -76,8 +76,8 @@ online_n_workers: 4
 # Default generator channel: GDS-CALIB_STRAIN_CLEAN_C00
 # NOTE: Generate frames at 4096 Hz; CWB will resample to inRate internally
 online_channels:
-  - "H1:GDS-CALIB_STRAIN_CLEAN_C00"
-  - "L1:GDS-CALIB_STRAIN_CLEAN_C00"
+  - "H1:GDS-CALIB_STRAIN_CLEAN"
+  - "L1:GDS-CALIB_STRAIN_CLEAN"
 
 # Shared-memory data source
 online_data_source:

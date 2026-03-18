@@ -110,21 +110,131 @@ class TriggerHandler(threading.Thread):
             self.feature_columns,
         )
 
-        # 2. Save locally
+        # 2. Check against catalog for existing trigger at same GPS/sky
+        #    with comparable or higher rho.  If the existing trigger
+        #    already has >= rho, skip upload (not a new/better trigger).
+        is_new_or_better = self._check_catalog_rho(trigger)
+
+        # 3. Save locally (always — even if not uploaded)
         if self.alert_cfg.get("local_catalog", True):
             self._save_local(trigger)
 
-        # 3. GraceDB upload
+        if not is_new_or_better:
+            logger.info(
+                "Trigger %s not uploaded: existing catalog trigger has "
+                "comparable or higher rho",
+                getattr(trigger.event, "hash_id", "?"),
+            )
+            return
+
+        # 4. GraceDB upload
         if self.alert_cfg.get("gracedb", False):
             threshold = float(self.alert_cfg.get("gracedb_ifar_threshold", 0.0))
             ifar = getattr(trigger.event, "ifar", 0.0)
             if ifar >= threshold:
                 self._upload_gracedb(trigger)
 
-        # 4. Webhook
+        # 5. Webhook
         webhook_url = self.alert_cfg.get("webhook_url", "")
         if webhook_url:
             self._send_webhook(trigger, webhook_url)
+
+    def _check_catalog_rho(self, trigger) -> bool:
+        """Check the catalog for an existing trigger at the same GPS/sky.
+
+        Returns True if the trigger is new or has higher rho than any
+        existing match (and should be uploaded).  Returns False if an
+        existing trigger already has comparable or higher rho.
+        """
+        from pycwb.modules.online.deduplication import _angular_distance_deg
+
+        catalog_path = self._catalog_path()
+        if not os.path.isfile(catalog_path):
+            return True  # no catalog yet — trigger is new
+
+        try:
+            from pycwb.modules.catalog import Catalog
+
+            cat = Catalog.open(catalog_path)
+            table = cat.triggers(deduplicate=True)
+            if table.num_rows == 0:
+                return True
+
+            # Extract trigger GPS and sky position
+            trig_gps = getattr(trigger.event, "time", [0.0])
+            if isinstance(trig_gps, (list, tuple)):
+                trig_gps = float(trig_gps[0]) if trig_gps else 0.0
+            else:
+                trig_gps = float(trig_gps)
+
+            trig_theta = getattr(trigger.event, "theta", [0.0])
+            if isinstance(trig_theta, (list, tuple)):
+                trig_theta = float(trig_theta[0]) if trig_theta else 0.0
+            else:
+                trig_theta = float(trig_theta)
+
+            trig_phi = getattr(trigger.event, "phi", [0.0])
+            if isinstance(trig_phi, (list, tuple)):
+                trig_phi = float(trig_phi[0]) if trig_phi else 0.0
+            else:
+                trig_phi = float(trig_phi)
+
+            trig_rho = getattr(trigger.event, "rho", [0.0])
+            if isinstance(trig_rho, (list, tuple)):
+                trig_rho = float(trig_rho[0]) if trig_rho else 0.0
+            else:
+                trig_rho = float(trig_rho)
+
+            # Search catalog for matches within GPS and sky window
+            gps_window = self.dedup.gps_window
+            sky_tol = self.dedup.sky_tolerance
+
+            cat_gps = table.column("gps_time").to_pylist()
+            cat_theta = table.column("theta").to_pylist()
+            cat_phi = table.column("phi").to_pylist()
+            cat_rho = table.column("rho").to_pylist()
+
+            for i in range(len(cat_gps)):
+                if abs(float(cat_gps[i]) - trig_gps) >= gps_window:
+                    continue
+                sky_dist = _angular_distance_deg(
+                    trig_theta, trig_phi,
+                    float(cat_theta[i]), float(cat_phi[i]),
+                )
+                if sky_dist >= sky_tol:
+                    continue
+                # Found a match — compare rho
+                existing_rho = float(cat_rho[i])
+                if trig_rho > existing_rho:
+                    logger.info(
+                        "New trigger has higher rho (%.4f > %.4f) than "
+                        "existing catalog match at GPS %.3f — uploading",
+                        trig_rho, existing_rho, trig_gps,
+                    )
+                    return True
+                else:
+                    logger.debug(
+                        "Existing catalog trigger at GPS %.3f has "
+                        "rho %.4f >= new %.4f — skipping upload",
+                        float(cat_gps[i]), existing_rho, trig_rho,
+                    )
+                    return False
+
+            # No matching trigger in catalog — this is new
+            return True
+
+        except Exception:
+            logger.warning(
+                "Catalog rho check failed; treating trigger as new",
+                exc_info=True,
+            )
+            return True
+
+    def _catalog_path(self) -> str:
+        """Return the path to the catalog file."""
+        from pycwb.modules.catalog import Catalog
+        catalog_dir = os.path.join(self.working_dir, "catalog")
+        return os.path.join(catalog_dir, Catalog.DEFAULT_FILENAME)
 
     def _save_local(self, trigger):
         """Save trigger data to disk."""

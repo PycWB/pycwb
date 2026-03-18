@@ -1,0 +1,101 @@
+# PyCWB online search — DEBUG configuration
+# Uses /tmp/fake_stream as the data source (written by fake_data_generator.py)
+# and limits the run to 120 s of pre-generated data.
+#
+# Usage:
+#   bash debug_run.sh   (automatically uses this file via CONFIG variable)
+# or manually:
+#   pycwb online user_parameters_debug.yaml --work-dir output --n-workers 4
+
+pycwb_schema:
+  mode: extend
+  schema_file: ./online_schema_extension.yaml
+
+# ── Output ──────────────────────────────────────────────────────────────────
+outputDir: "output"
+
+# ── Network ─────────────────────────────────────────────────────────────────
+ifo: ["H1", "L1"]
+refIFO: "H1"
+
+# ── CWB search mode ─────────────────────────────────────────────────────────
+analysis: "2G"
+cfg_search: "r"
+
+# ── Sampling / frequency ────────────────────────────────────────────────────
+inRate: 16384
+fResample: 0
+fLow: 16.0
+fHigh: 1024.0
+
+# ── Wavelet decomposition ────────────────────────────────────────────────────
+levelR: 3
+l_low: 4
+l_high: 10
+healpix: 7
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+# ── Segment geometry ────────────────────────────────────────────────────────
+segEdge: 8
+
+# ── Lags (zero-lag only) ─────────────────────────────────────────────────────
+lagSize: 1
+lagStep: 1.0
+lagOff: 0
+lagMax: 0
+
+# ── CWB thresholds (relaxed for debug / fake data) ──────────────────────────
+Acore: 1.7
+netRHO: 4.0
+netCC: 0.5
+bpp: 0.001
+subnet: 0.5
+
+# ── Output options ──────────────────────────────────────────────────────────
+save_waveform: false
+plot_trigger: false
+compress_output_json: true
+
+# ── Online extension ─────────────────────────────────────────────────────────
+
+# Segment timing
+online_segment_duration: 60
+online_segment_stride: 8
+online_poll_interval: 0.5
+
+# Worker processes
+online_n_workers: 4
+
+# Channels — must match what fake_data_generator.py writes
+online_channels:
+  - "H1:GDS-CALIB_STRAIN_CLEAN_C00"
+  - "L1:GDS-CALIB_STRAIN_CLEAN_C00"
+
+# Data quality channels (DMT-DQ_VECTOR at 1 Hz).
+# Bit 0 (= value 1) must be set for data to be considered analysis-ready.
+# Set to [] to disable DQ checking.
+online_dq_channels:
+  - "H1:DMT-DQ_VECTOR"
+  - "L1:DMT-DQ_VECTOR"
+online_dq_bits: 1  # bitmask: bit 0 = CBC analysis ready
+
+# Local fake-stream data source (debug)
+online_data_source:
+  type: shm
+  base_path: /tmp/fake_stream   # per-IFO sub-dirs: .../H1/, .../L1/
+  timeout: 30
+  poll_interval: 0.1
+
+# Backpressure
+online_max_queue_depth: 8
+
+# Deduplication
+online_dedup_window: 0.5
+online_dedup_sky_tolerance: 5.0
+
+# Latency warning threshold
+online_latency_threshold: 30
+
+# Significance (empty → use raw rho/cc thresholds only)
+online_significance: {}

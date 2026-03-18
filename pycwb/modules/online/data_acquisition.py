@@ -69,6 +69,15 @@ class DataAcquisitionManager(threading.Thread):
         self.seg_edge = float(config.segEdge)
         self.sample_rate = float(config.inRate)
 
+        # Data quality channels — one per IFO (e.g. "H1:DMT-DQ_VECTOR").
+        # If empty, DQ checking is skipped and all data is treated as good.
+        self.dq_channels = list(getattr(config, "online_dq_channels", []))
+        # Bitmask that must be set for data to be analysis-ready.
+        # Default = 1 (bit 0 = CBC analysis ready in DMT-DQ_VECTOR).
+        self.dq_bits = int(getattr(config, "online_dq_bits", 1))
+        # Map IFO name → DQ channel name for quick lookup
+        self._dq_map = {ch.split(":")[0]: ch for ch in self.dq_channels}
+
         # Ring buffers: capacity = duration + stride + 2*segEdge (generous)
         capacity = self.duration + self.stride + 2 * self.seg_edge + 10
         self.ring_buffers = {
@@ -96,14 +105,76 @@ class DataAcquisitionManager(threading.Thread):
                 logger.error("Could not determine initial GPS. Exiting.")
                 return
 
-        # First segment boundary
-        next_seg_end = last_gps + self.duration
+        # First segment boundary — account for seg_edge so the padded window
+        # [seg_end - duration - seg_edge, seg_end + seg_edge] starts no
+        # earlier than initial_gps (there is no data before that).
+        next_seg_end = last_gps + self.duration + self.seg_edge
+
+        logger.info("Entering acquisition loop, initial last_gps=%.3f, "
+                    "next_seg_end=%.3f (need %.0f s of data before first "
+                    "segment)", last_gps, next_seg_end,
+                    self.duration + 2 * self.seg_edge)
 
         backoff = 1.0
+        _last_progress_log = time.time()
+        _progress_interval = 10.0  # seconds between INFO progress messages
+
+        # Track the GPS of the last emitted segment's analysis-end boundary.
+        # Data in (last_emitted_end, ...] is "unprocessed" for gap logic.
+        last_emitted_end = last_gps
+
         while not self.stop_event.is_set():
             try:
                 self._poll_once(last_gps)
                 backoff = 1.0  # reset on success
+
+                # --- Check for gaps in any ring buffer ---
+                gap_detected = False
+                pre_gap_gps = None
+                for ifo in self.ifos:
+                    detected, pgps = self.ring_buffers[ifo].check_and_clear_gap()
+                    if detected:
+                        gap_detected = True
+                        # Use the minimum pre-gap GPS across all IFOs
+                        if pgps is not None:
+                            if pre_gap_gps is None or pgps < pre_gap_gps:
+                                pre_gap_gps = pgps
+
+                if gap_detected and pre_gap_gps is not None:
+                    # Data available before the gap: (last_emitted_end, pre_gap_gps]
+                    available_before_gap = pre_gap_gps - last_emitted_end
+                    logger.info(
+                        "Gap detected at GPS %.3f. Unprocessed data before "
+                        "gap: %.1f s (need > %.1f s seg_edge to emit)",
+                        pre_gap_gps, available_before_gap, self.seg_edge,
+                    )
+                    if available_before_gap > 2 * self.seg_edge:
+                        # Emit a partial segment covering the pre-gap data.
+                        # The analysis window is the available data minus
+                        # seg_edge padding on each side.
+                        partial_end = pre_gap_gps - self.seg_edge
+                        partial_start = max(
+                            last_emitted_end,
+                            partial_end - self.duration,
+                        )
+                        partial_dur = partial_end - partial_start
+                        if partial_dur > 2 * self.seg_edge:
+                            logger.info(
+                                "Emitting gap-triggered segment "
+                                "[%.1f, %.1f] GPS (%.1f s)",
+                                partial_start, partial_end, partial_dur,
+                            )
+                            self._emit_segment(partial_end,
+                                               duration_override=partial_dur)
+                            last_emitted_end = partial_end
+
+                    # Reset next_seg_end — after the gap, we need fresh data
+                    # so we'll recalculate once new data arrives.
+                    next_seg_end = None
+                    logger.info(
+                        "Segment scheduling reset after gap. Waiting for "
+                        "new data to set next segment boundary."
+                    )
 
                 # Update last_gps from ring buffers
                 latest = min(
@@ -114,10 +185,71 @@ class DataAcquisitionManager(threading.Thread):
                 if latest is not None:
                     last_gps = latest
 
-                # Check if enough data for the next segment
-                if latest is not None and latest >= next_seg_end:
-                    self._emit_segment(next_seg_end)
-                    next_seg_end += self.stride
+                # After a gap reset, recalculate next_seg_end from new data
+                if next_seg_end is None and latest is not None:
+                    next_seg_end = latest + self.duration + self.seg_edge
+                    last_emitted_end = latest
+                    logger.info(
+                        "Post-gap: new data at GPS %.3f, next_seg_end "
+                        "set to %.3f",
+                        latest, next_seg_end,
+                    )
+
+                # Check if enough data for the next segment (including
+                # seg_edge padding on both sides).
+                if latest is not None and next_seg_end is not None:
+                    ready_at = next_seg_end + self.seg_edge
+                    remaining = ready_at - latest
+                    logger.debug(
+                        "Ring buffer latest GPS: %.3f, next segment end: "
+                        "%.3f, ready at: %.3f (%.1f s until ready)",
+                        latest, next_seg_end, ready_at, remaining,
+                    )
+                    # Periodic INFO progress report
+                    now = time.time()
+                    if now - _last_progress_log >= _progress_interval:
+                        if remaining > 0:
+                            logger.info(
+                                "Data reading: latest GPS %.3f | "
+                                "next segment [%.1f, %.1f] GPS | "
+                                "%.1f s until ready",
+                                latest,
+                                next_seg_end - self.duration,
+                                next_seg_end,
+                                remaining,
+                            )
+                        else:
+                            logger.info(
+                                "Data reading: latest GPS %.3f | "
+                                "segment [%.1f, %.1f] GPS ready, emitting",
+                                latest,
+                                next_seg_end - self.duration,
+                                next_seg_end,
+                            )
+                        _last_progress_log = now
+                if (latest is not None and next_seg_end is not None
+                        and latest >= next_seg_end + self.seg_edge):
+                    # If next_seg_end is so far behind that the ring buffer
+                    # no longer covers the required padded window
+                    # [seg_end - duration - seg_edge, seg_end + seg_edge],
+                    # skip forward to the earliest viable boundary.
+                    buf_capacity = (self.duration + self.stride
+                                    + 2 * self.seg_edge + 10)
+                    earliest_viable = (latest - buf_capacity
+                                       + self.duration + self.seg_edge + 1)
+                    if next_seg_end < earliest_viable:
+                        skipped = (int((earliest_viable - next_seg_end)
+                                       / self.stride) + 1) * self.stride
+                        next_seg_end += skipped
+                        logger.warning(
+                            "Skipping %.0f s of segments (insufficient "
+                            "buffered data). Next segment end -> %.3f",
+                            skipped, next_seg_end,
+                        )
+                    if latest >= next_seg_end + self.seg_edge:
+                        self._emit_segment(next_seg_end)
+                        last_emitted_end = next_seg_end
+                        next_seg_end += self.stride
 
             except Exception:
                 logger.exception("Data acquisition error, backing off %.1f s", backoff)
@@ -136,48 +268,138 @@ class DataAcquisitionManager(threading.Thread):
     # ------------------------------------------------------------------
 
     def _wait_for_initial_data(self) -> float:
-        """Try to acquire one chunk to determine the initial GPS."""
-        for attempt in range(10):
-            if self.stop_event.is_set():
-                return None
-            try:
-                data = self.data_source.read_chunk(
-                    self.channels, 0, self.poll_interval
-                )
-                if data:
-                    first_ch = next(iter(data.values()))
-                    return float(getattr(first_ch, "t0", 0))
-            except Exception:
-                logger.debug("Waiting for initial data (attempt %d)", attempt + 1)
-            time.sleep(self.poll_interval)
-        return None
+        """Return current GPS as the acquisition start time."""
+        try:
+            from lal import gpstime
+            gps = float(gpstime.gps_time_now())
+            logger.info("Initial GPS from lal (current time): %.3f", gps)
+            return gps
+        except ImportError:
+            pass
+
+        # Fallback: astropy
+        try:
+            from astropy.time import Time
+            gps = float(Time.now().gps)
+            logger.info("Initial GPS from astropy (current time): %.3f", gps)
+            return gps
+        except ImportError:
+            pass
+
+        # Last resort: manual GPS calculation
+        import calendar
+        GPS_EPOCH = calendar.timegm((1980, 1, 6, 0, 0, 0, 0, 0, 0))
+        gps = float(time.time() - GPS_EPOCH + 18)
+        logger.info("Initial GPS from system clock: %.3f", gps)
+        return gps
 
     def _poll_once(self, last_gps: float):
         """Read one poll interval from the data source and append to buffers."""
-        data = self.data_source.read_chunk(
+        logger.debug(
+            "Polling data source: channels=%s, start_gps=%.3f, duration=%.1f s",
             self.channels, last_gps, self.poll_interval,
         )
+        # read_chunk for SHM uses int(start_gps), so ensure we advance to the
+        # next integer GPS boundary to avoid re-reading the same second.
+        read_start = float(int(last_gps))  # align to integer GPS
+        read_dur = max(self.poll_interval, 1.0)
+
+        data = self.data_source.read_chunk(
+            self.channels, read_start, read_dur,
+        )
+
+        # ── Data quality check ─────────────────────────────────────────────
+        # Per-IFO DQ status: True = pass (append to ring buffer)
+        dq_ok = {ifo: True for ifo in self.ifos}
+        if self.dq_channels:
+            dq_data = self.data_source.read_dq_chunk(
+                self.dq_channels, read_start, read_dur,
+            )
+            for ifo in self.ifos:
+                dq_ch = self._dq_map.get(ifo)
+                if dq_ch is None:
+                    continue
+                dq_ts = dq_data.get(dq_ch)
+                if dq_ts is None:
+                    # Channel absent — treat as pass (no DQ info available)
+                    logger.debug(
+                        "DQ: %s channel not available — treating as pass",
+                        ifo,
+                    )
+                    continue
+                arr = np.asarray(
+                    dq_ts.data if hasattr(dq_ts, "data") else dq_ts,
+                    dtype=np.int64,
+                )
+                passed = bool(np.all((arr & self.dq_bits) == self.dq_bits))
+                dq_ok[ifo] = passed
+                if passed:
+                    logger.debug(
+                        "DQ: %s GPS %.3f pass (bits=0x%x)",
+                        ifo, read_start, self.dq_bits,
+                    )
+                else:
+                    logger.warning(
+                        "DQ check FAILED for %s at GPS %.3f "
+                        "(required bits=0x%x, got %s) — skipping second",
+                        ifo, read_start, self.dq_bits, arr.tolist(),
+                    )
+
+        # ── Append strain data for IFOs that pass DQ ──────────────────────
         for ch, ifo in zip(self.channels, self.ifos):
+            if not dq_ok.get(ifo, True):
+                # DQ failed — do not append; gap detection in ring buffer
+                # will handle the break in continuity on the next good second
+                continue
             ts = data.get(ch)
             if ts is None:
+                logger.warning(
+                    "No data returned for channel %s at GPS %.3f", ch, last_gps
+                )
                 continue
             arr = np.asarray(ts.data if hasattr(ts, "data") else ts, dtype=np.float64)
-            t0 = float(getattr(ts, "t0", last_gps))
+            t0_raw = getattr(ts, "t0", last_gps)
+            # gwpy TimeSeries.t0 is an astropy Quantity (seconds); extract float
+            t0 = float(t0_raw.value if hasattr(t0_raw, "value") else t0_raw)
+            logger.debug(
+                "Received %d samples for %s (t0=%.3f, rate=%.0f Hz)",
+                len(arr), ifo, t0, self.sample_rate,
+            )
             self.ring_buffers[ifo].append(arr, t0)
 
-    def _emit_segment(self, seg_end: float):
-        """Build an OnlineSegment and put it on the queue."""
-        seg_start = seg_end - self.duration
+    def _emit_segment(self, seg_end: float, duration_override: float = None):
+        """Build an OnlineSegment and put it on the queue.
+
+        Parameters
+        ----------
+        seg_end : float
+            GPS end of the analysis window (excluding edge padding).
+        duration_override : float or None
+            If set, use this duration instead of ``self.duration``.
+            Used for gap-triggered partial segments.
+        """
+        from gwpy.timeseries import TimeSeries as GWpyTS
+
+        seg_dur = duration_override if duration_override is not None else self.duration
+        seg_start = seg_end - seg_dur
         padded_start = seg_start - self.seg_edge
         padded_end = seg_end + self.seg_edge
 
         payloads = []
-        for ifo in self.ifos:
+        for ifo, ch in zip(self.ifos, self.channels):
             snapshot = self.ring_buffers[ifo].snapshot(padded_start, padded_end)
-            payloads.append(snapshot)
+            # Wrap as gwpy TimeSeries so downstream from_input() accepts it
+            ts = GWpyTS(
+                snapshot,
+                t0=padded_start,
+                sample_rate=self.sample_rate,
+                channel=ch,
+                name=ch,
+            )
+            payloads.append(ts)
             self.ring_buffers[ifo].mark_snapshot()
 
-        overlap_frac = (self.duration - self.stride) / self.duration
+        overlap_frac = (seg_dur - self.stride) / seg_dur if seg_dur > self.stride else 0.0
 
         seg = OnlineSegment(
             index=self._segment_counter,
@@ -192,10 +414,12 @@ class DataAcquisitionManager(threading.Thread):
             overlap_frac=overlap_frac,
         )
 
+        label = "gap-triggered " if duration_override is not None else ""
         try:
             self.segment_queue.put(seg, timeout=60)
-            logger.info("Segment %d emitted [%.1f, %.1f] GPS",
-                        self._segment_counter, seg_start, seg_end)
+            logger.info("Segment %d %semitted [%.1f, %.1f] GPS (%.1f s)",
+                        self._segment_counter, label, seg_start, seg_end,
+                        seg_dur)
         except queue.Full:
             logger.error("Segment queue full — dropping segment %d",
                          self._segment_counter)

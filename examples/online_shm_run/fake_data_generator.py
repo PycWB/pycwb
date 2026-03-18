@@ -129,13 +129,18 @@ def _site_char(ifo: str) -> str:
 
 def _write_1s_frame(ifo: str, channel: str, gps: int,
                     samples: np.ndarray, sample_rate: float,
-                    shm_base: str) -> str:
+                    shm_base: str,
+                    dq_channel: str = None) -> str:
     """
     Write a 1-second GWF frame for *ifo* to {shm_base}/{ifo}/.
 
+    If *dq_channel* is given, a ``DMT-DQ_VECTOR``-style channel (1 Hz,
+    value = 1 = analysis ready) is written into the same file alongside
+    the strain channel.
+
     Returns the written file path.
     """
-    from gwpy.timeseries import TimeSeries as GWpyTS
+    from gwpy.timeseries import TimeSeries as GWpyTS, TimeSeriesDict
 
     ifo_dir = os.path.join(shm_base, ifo)
     os.makedirs(ifo_dir, exist_ok=True)
@@ -145,7 +150,7 @@ def _write_1s_frame(ifo: str, channel: str, gps: int,
     fname = f"{site}-{ifo}_llhoft-{gps}-1.gwf"
     out_path = os.path.join(ifo_dir, fname)
 
-    ts = GWpyTS(
+    strain_ts = GWpyTS(
         samples,
         t0=gps,
         sample_rate=sample_rate,
@@ -153,7 +158,22 @@ def _write_1s_frame(ifo: str, channel: str, gps: int,
         name=f"{ifo}:{channel}",
         unit="strain",
     )
-    ts.write(out_path)
+
+    if dq_channel:
+        # DMT-DQ_VECTOR: 1 Hz integer channel, value=1 (bit 0 = analysis ready)
+        dq_ts = GWpyTS(
+            np.ones(1, dtype=np.int32),
+            t0=gps,
+            sample_rate=1,
+            channel=f"{ifo}:{dq_channel}",
+            name=f"{ifo}:{dq_channel}",
+            unit="",
+        )
+        td = TimeSeriesDict({strain_ts.channel.name: strain_ts,
+                             dq_ts.channel.name: dq_ts})
+        td.write(out_path)
+    else:
+        strain_ts.write(out_path)
     return out_path
 
 
@@ -164,7 +184,8 @@ def _write_1s_frame(ifo: str, channel: str, gps: int,
 def run(gps_start: int, duration: int, sample_rate: float, ifos: list[str],
         channel: str, shm_base: str, realtime: bool, inject: bool,
         seed_base: int = 42, f_low: float = 16.0,
-        max_frames: int | None = None):
+        max_frames: int | None = None,
+        dq_channel: str = "DMT-DQ_VECTOR"):
     """
     Generate *duration* seconds of fake strain data and write 1-second GWF
     frames to *shm_base*/{ifo}/.
@@ -193,11 +214,19 @@ def run(gps_start: int, duration: int, sample_rate: float, ifos: list[str],
         Low-frequency cutoff for noise PSD.
     max_frames : int or None
         If set, stop after writing this many seconds per IFO.
+    dq_channel : str or None
+        DQ channel suffix (without IFO prefix), e.g. 'DMT-DQ_VECTOR'.
+        Written at 1 Hz with value=1 (all DQ bits pass).  Set to None or
+        empty string to skip DQ channel generation.
     """
     logger.info(
         "Generating %d s of fake data for %s, GPS start %d",
         duration, ifos, gps_start,
     )
+    if dq_channel:
+        logger.info("DQ channel: %s (value=1 = analysis ready)", dq_channel)
+    else:
+        logger.info("DQ channel disabled")
 
     spf = int(sample_rate)   # samples per frame (1 s)
 
@@ -259,6 +288,7 @@ def run(gps_start: int, duration: int, sample_rate: float, ifos: list[str],
                 samples=chunk,
                 sample_rate=sample_rate,
                 shm_base=shm_base,
+                dq_channel=dq_channel or None,
             )
             logger.debug("  wrote %s", path)
 
@@ -302,6 +332,10 @@ def _parse_args():
                    help="Write all frames as fast as possible (default)")
     p.add_argument("--no-injection", dest="inject", action="store_false", default=True,
                    help="Skip the CBC injection")
+    p.add_argument("--dq-channel", default="DMT-DQ_VECTOR",
+                   help="DQ channel suffix to write into each GWF frame at 1 Hz "
+                        "with value=1 (analysis ready).  Set to '' to disable. "
+                        "(default: DMT-DQ_VECTOR)")
     p.add_argument("--seed", type=int, default=42,
                    help="Base noise random seed (default: 42)")
     p.add_argument("--f-low", type=float, default=16.0,
@@ -344,4 +378,5 @@ if __name__ == "__main__":
         seed_base=args.seed,
         f_low=args.f_low,
         max_frames=args.max_frames,
+        dq_channel=args.dq_channel,
     )

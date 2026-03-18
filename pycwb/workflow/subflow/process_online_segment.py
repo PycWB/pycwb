@@ -17,7 +17,6 @@ inner loops (Numba ``@prange``, JAX ``jit``/``vmap``, BLAS) release the GIL,
 giving true parallelism without pickle overhead for large arrays.
 """
 
-import gc
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -84,6 +83,10 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     seg_timer = time.perf_counter()
     nIFO = len(online_seg.ifos)
 
+    # Cap intra-segment thread parallelism to nIFO so that with
+    # N workers the total core usage is bounded to N × nIFO.
+    max_threads = nIFO
+
     # data_payload is {channel_name: TimeSeries}; convert to ordered list
     # matching the IFO order in online_seg.ifos / config.ifo.
     payload = online_seg.data_payload
@@ -118,7 +121,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     # STEP 1 — Parallel resample (per-IFO)
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=nIFO) as pool:
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(check_and_resample_py, data[i], config, i): i
             for i in range(nIFO)
@@ -134,7 +137,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     # STEP 2 — Parallel data conditioning (per-IFO)
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=nIFO) as pool:
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(data_conditioning_single, config, data[i]): i
             for i in range(nIFO)
@@ -156,7 +159,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     stage_t = time.perf_counter()
     gps_time = float(strains[0].start_time)
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         f_coherence = pool.submit(
             _parallel_coherence_setup, config, strains, wave_seg,
         )
@@ -247,16 +250,20 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
 
     logger.info("Lag 0 time: %.2f s", time.perf_counter() - lag_t)
 
-    # Cleanup
+    # Capture values needed for the final log before releasing online_seg.
+    _seg_index = online_seg.index
+    _seg_duration = online_seg.segment_gps_end - online_seg.segment_gps_start
+
+    # Cleanup — free large intermediate objects and return heap to OS
     del coherence_setup, td_inputs_cache, supercluster_setup, xtalk
     del likelihood_setup, frag_clusters, fragment_cluster
-    gc.collect()
+    del strains, nRMS, online_seg
+    release_memory()
 
     seg_walltime = time.perf_counter() - seg_timer
-    effective_duration = (online_seg.segment_gps_end - online_seg.segment_gps_start)
-    speed_factor = effective_duration / seg_walltime if seg_walltime > 0 else float("inf")
+    speed_factor = _seg_duration / seg_walltime if seg_walltime > 0 else float("inf")
     logger.info("Online segment %d: %.2f s wall-time, %.2fx speed factor, %d triggers",
-                online_seg.index, seg_walltime, speed_factor, len(triggers))
+                _seg_index, seg_walltime, speed_factor, len(triggers))
     return triggers
 
 
@@ -286,7 +293,8 @@ def _parallel_coherence_setup(config, strains, wave_seg):
     normalized = [PyCWBTimeSeries.from_input(s) for s in strains]
 
     nRES = config.nRES
-    with ThreadPoolExecutor(max_workers=nRES) as pool:
+    max_threads = config.nIFO
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(
                 _setup_coherence_single_res, i, config, normalized, up_n,
@@ -315,7 +323,8 @@ def _build_td_inputs_single_level_parallel(config, strains):
 
     # Dispatch per-level work in parallel
     levels = list(config.WDM_level)
-    with ThreadPoolExecutor(max_workers=len(levels)) as pool:
+    max_threads = config.nIFO
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(
                 _build_td_inputs_single_level,
@@ -351,6 +360,7 @@ def _setup_supercluster_and_xtalk(config, gps_time):
 
 def _parallel_postprocess(config, ifos, event, cluster_out):
     """Run the 4 reconstruction modes + Q-veto in parallel."""
+    max_threads = config.nIFO
     # 4 independent get_network_MRA_wave calls
     recon_args = [
         ("signal", 0, True, False),   # reconstructed signal
@@ -359,7 +369,7 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
         ("strain", 0, True, True),    # whitened reconstructed data
     ]
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(
                 get_network_MRA_wave,
@@ -380,7 +390,7 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
         qveto_inputs.append(("DAT", i, rec_data_w[i]))
         qveto_inputs.append(("REC", i, rec_signal_w[i]))
 
-    with ThreadPoolExecutor(max_workers=len(qveto_inputs)) as pool:
+    with ThreadPoolExecutor(max_workers=max_threads) as pool:
         qveto_futures = [
             pool.submit(get_qveto, wf) for _, _, wf in qveto_inputs
         ]
