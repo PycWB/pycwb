@@ -257,7 +257,7 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
                 logger.warning(f"No segments found for super lag {slag}")
                 raise ValueError(f"No segments found for super lag {slag}, please check the DQ files or periods")
 
-            print('live time', merged_slag_seg_list[1][0] - merged_slag_seg_list[0][0])
+            logger.info(f"slag {slag} - total livetime - {(sum(merged_slag_seg_list[1][i] - merged_slag_seg_list[0][i] for i in range(len(merged_slag_seg_list[0]))))/60/60/24:.2f} days")
             job_segments += get_job_list(ifos, merged_slag_seg_list, seg_len, seg_mls,
                                          seg_edge=seg_edge, sample_rate=sample_rate,
                                          shift=np.array(slag) * seg_len, index_start=len(job_segments))
