@@ -1,14 +1,12 @@
 import numpy as np
-import pycbc.noise
-import pycbc.psd
 from pycbc.types import TimeSeries
-from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from pycwb.types.detector import Detector
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
+from pycwb.modules.noise import generate_noise as _native_generate_noise
 from pycwb.utils.module import import_function
 from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
 from ...config import Config
@@ -20,7 +18,12 @@ logger = logging.getLogger(__name__)
 def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 4, duration: int = 32,
                    sample_rate: float = 16384, seed: int = 1234, start_time: int = 0):
     """
-    Generate noise from a given psd file or aLIGOZeroDetHighPower psd
+    Generate noise from a given psd file or aLIGOZeroDetHighPower psd.
+
+    Uses the native ``pycwb.modules.noise`` module (backed by
+    ``lalsimulation.SimNoise``).  Returns a pycbc ``TimeSeries`` for
+    backward compatibility with callers that use ``.add_into()`` /
+    ``.inject()``.
 
     Parameters
     ----------
@@ -44,30 +47,13 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     pycbc.types.timeseries.TimeSeries
         time series of noise
     """
-    # generate noise
-    flen = int(sample_rate / delta_f) + 1
-    if psd:
-        logger.info(f"Using psd file {psd} with f_low {f_low}, delta_f {delta_f}, flen {flen}")
-        psd = pycbc.psd.from_txt(psd, flen, delta_f, f_low)
-    else:
-        logger.info(f"Using aLIGOZeroDetHighPower psd with f_low {f_low}, delta_f {delta_f}, flen {flen}")
-        psd = pycbc.psd.aLIGOZeroDetHighPower(flen, delta_f, f_low)
-
-    delta_t = 1.0 / sample_rate
-
-    # if sample rate is higher than psd provided, resize the psd to fill 0 values
-    desired_length = int (1.0 / delta_t / psd.delta_f)//2+1
-    if len(psd) < desired_length:
-        logger.warning(f"PSD length {len(psd)} is less than desired length {desired_length}, resizing PSD")
-        psd.resize(desired_length)
-
-    t_samples = int(duration / delta_t)
-    noise = pycbc.noise.noise_from_psd(t_samples, delta_t, psd, seed=seed)
-
-    if start_time:
-        noise._epoch = start_time
-    # return noise
-    return noise
+    native_ts = _native_generate_noise(
+        psd=psd, f_low=f_low, delta_f=delta_f,
+        duration=duration, sample_rate=sample_rate,
+        seed=seed, start_time=start_time,
+    )
+    # Convert to pycbc TimeSeries for backward compatibility
+    return convert_to_pycbc_timeseries(native_ts)
 
 
 def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
