@@ -27,7 +27,7 @@ def coherence(config, strains, return_rejected: bool = False, job_seg=None):
     config : pycwb.config.Config
         Configuration object.
     strains : list
-        List of whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
+        List of whitened strain time series (pycwb TimeSeries or gwpy).
     return_rejected : bool
         If True, keep rejected clusters in the output.
     job_seg : WaveSegment, optional
@@ -84,7 +84,7 @@ def setup_coherence(config, strains, job_seg=None):
     ----------
     config : Config
     strains : list
-        Whitened strain time series (pycwb TimeSeries, gwpy, or pycbc).
+        Whitened strain time series (pycwb TimeSeries or gwpy).
     job_seg : WaveSegment
         Job segment (provides lag count via ``job_seg.n_lag``).
 

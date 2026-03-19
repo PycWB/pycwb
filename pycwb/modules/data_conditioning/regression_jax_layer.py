@@ -51,12 +51,12 @@ def regression_jax(config, h):
     ----------
     config : pycwb Config object
         Analysis configuration.  Read-only; not mutated.
-    h : gwpy.TimeSeries | pycbc.TimeSeries | pycwb.TimeSeries
+    h : gwpy.TimeSeries | pycwb.TimeSeries
         Input strain time series.
 
     Returns
     -------
-    pycbc.types.TimeSeries
+    pycwb.types.time_series.TimeSeries
         Regression-cleaned time series, same sample rate and start time.
     """
     from pycwb.modules.data_conditioning.regression_py import regression_python

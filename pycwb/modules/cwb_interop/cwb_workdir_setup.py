@@ -86,7 +86,7 @@ def create_cwb_workdir(
         The :class:`~pycwb.types.job.WaveSegment` being processed
         (``trail_idx`` must already be set).
     data:
-        List of ``pycbc.types.TimeSeries`` (one per IFO) at ``config.inRate``
+        List of ``pycwb.types.time_series.TimeSeries`` (one per IFO) at ``config.inRate``
         Hz, *before* ``check_and_resample_py`` has been applied.
     cwb_compare_dir:
         Base directory for all cWB comparison working directories.
@@ -157,7 +157,7 @@ def create_cwb_workdir(
 # ---------------------------------------------------------------------------
 
 def _save_timeseries_to_gwf(ts, ifo: str, channel_suffix: str, gwf_path: str) -> None:
-    """Write a pycbc/pycwb TimeSeries to a GWF file via gwpy."""
+    """Write a pycwb TimeSeries to a GWF file via gwpy."""
     from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
     channel_name = f"{ifo}:{channel_suffix}"

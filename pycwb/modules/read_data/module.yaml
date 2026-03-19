@@ -1,4 +1,4 @@
 name: read_data
 author: pycWB
 description: Read data module
-dependencies: ["gwpy", "numpy", "lalsimulation", "pycbc"]
+dependencies: ["gwpy", "numpy", "lalsimulation"]

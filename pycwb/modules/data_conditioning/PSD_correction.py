@@ -25,7 +25,7 @@ def psd_correction_python(
     ----------
     config : Config
         Configuration object with `segEdge`, `WDM_beta_order`, `WDM_precision`.
-    h : pycwb.types.time_series.TimeSeries | pycbc.types.TimeSeries | gwpy.timeseries.TimeSeries
+    h : pycwb.types.time_series.TimeSeries | gwpy.timeseries.TimeSeries
         Input conditioned/whitened strain.
     high_frequency_threshold : float, optional
         Minimum frequency (Hz) used to build PSD variability envelope.

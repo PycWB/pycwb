@@ -23,9 +23,9 @@ def regression(config, h):
     :param wdm: WDM transform for regression
     :type wdm: WDM
     :param h: data to be cleaned
-    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
+    :type h: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: cleaned data
-    :rtype: pycbc.types.timeseries.TimeSeries
+    :rtype: pycwb.types.time_series.TimeSeries
     """
     layers = int(config.rateANA / 8)
     wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)

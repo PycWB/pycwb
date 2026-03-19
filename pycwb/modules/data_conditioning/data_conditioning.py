@@ -15,7 +15,7 @@ def data_conditioning(config, strains, nproc=1):
     :param config: config object
     :type config: Config
     :param strains: list of strain data
-    :type strains: list[pycbc.types.timeseries.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)]
+    :type strains: list[pycwb.types.time_series.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)]
     :return: (conditioned_strains, nRMS_list)
     :rtype: tuple[list[TimeFrequencySeries], list[TimeFrequencySeries]]
     """
@@ -54,7 +54,7 @@ def data_conditioning_single(config, strain):
     :param config: config object
     :type config: Config
     :param strain: strain data
-    :type strain: pycbc.types.timeseries.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)
+    :type strain: pycwb.types.time_series.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)
     :return: (conditioned_strain, nRMS)
     :rtype: tuple[TimeFrequencySeries, TimeFrequencySeries]
     """

@@ -1,5 +1,4 @@
 import numpy as np
-from pycbc.types import TimeSeries
 import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
@@ -10,7 +9,6 @@ from pycwb.modules.noise import generate_noise as _native_generate_noise
 from pycwb.utils.module import import_function
 from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
 from ...config import Config
-from ...utils.conversions.timeseries import convert_to_pycbc_timeseries
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +19,7 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
     Generate noise from a given psd file or aLIGOZeroDetHighPower psd.
 
     Uses the native ``pycwb.modules.noise`` module (backed by
-    ``lalsimulation.SimNoise``).  Returns a pycbc ``TimeSeries`` for
-    backward compatibility with callers that use ``.add_into()`` /
-    ``.inject()``.
+    ``lalsimulation.SimNoise``).
 
     Parameters
     ----------
@@ -44,16 +40,14 @@ def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 
 
     Returns
     -------
-    pycbc.types.timeseries.TimeSeries
+    pycwb.types.time_series.TimeSeries
         time series of noise
     """
-    native_ts = _native_generate_noise(
+    return _native_generate_noise(
         psd=psd, f_low=f_low, delta_f=delta_f,
         duration=duration, sample_rate=sample_rate,
         seed=seed, start_time=start_time,
     )
-    # Convert to pycbc TimeSeries for backward compatibility
-    return convert_to_pycbc_timeseries(native_ts)
 
 
 def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
@@ -79,7 +73,7 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
 
     # if there are upstream data, add noise into the data
     if data:
-        data = [noises[i].add_into(data[i]) for i in range(len(seeds))]
+        data = [noises[i].inject(PycwbTimeSeries.from_input(data[i])) for i in range(len(seeds))]
     else:
         data = noises
 
@@ -133,7 +127,7 @@ def save_to_gwf(signals, detectors, channel_name, out_dir, start_time, duration,
     Save the signals to gwf files
 
     :param signals: signals to save
-    :type signals: list[pycbc.types.timeseries.TimeSeries]
+    :type signals: list[pycwb.types.time_series.TimeSeries]
     :param detectors: list of detectors
     :type detectors: list[str]
     :param channel_name: channel name for the gwf file
@@ -160,7 +154,7 @@ def save_to_gwf(signals, detectors, channel_name, out_dir, start_time, duration,
         strain.write(f'{out_dir}/{detector}-{label}-{int(start_time)}-{int(duration)}.gwf')
 
 
-def generate_strain_from_injection(injection: dict, config: Config, sample_rate, ifos) -> list[TimeSeries]:
+def generate_strain_from_injection(injection: dict, config: Config, sample_rate, ifos) -> list[PycwbTimeSeries]:
     """
     Generate strain from given injection parameters, the config is used to get the default values
 
@@ -177,7 +171,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
 
     Returns
     -------
-    list[pycbc.types.timeseries.TimeSeries]
+    list[pycwb.types.time_series.TimeSeries]
         strain
     """
     from warnings import warn
@@ -236,7 +230,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
                 raise ValueError(f"Provided ifos {provided_ifos} are not same as the ifos {ifos} in config")
             
             # return the strain with the order of ifos in the config
-            strain = [convert_to_pycbc_timeseries(generated_data.get(ifo)) for ifo in ifos]
+            strain = [PycwbTimeSeries.from_input(generated_data.get(ifo)) for ifo in ifos]
         elif generated_data.get('type') == 'polarizations':
             generated_data.pop('type')
             logger.info(f"Polarizations {generated_data.keys()} are generated")
@@ -246,8 +240,8 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             if set(generated_data.keys()) != {'hp', 'hc'}:
                 raise NotImplementedError("Only hp and hc polarization is supported for now")
 
-            hp = convert_to_pycbc_timeseries(generated_data.get('hp'))
-            hc = convert_to_pycbc_timeseries(generated_data.get('hc'))
+            hp = PycwbTimeSeries.from_input(generated_data.get('hp'))
+            hc = PycwbTimeSeries.from_input(generated_data.get('hc'))
 
             #check GPS time 
             gps_end_time = injection.get('gps_time')
@@ -276,10 +270,6 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             logger.info(f"Projecting {generated_data.keys()} to detectors {ifos}")
 
             strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
-            # project_to_detector returns PycwbTimeSeries; convert back to
-            # pycbc TimeSeries so callers (e.g. generate_injections) that
-            # still use pycbc .add_into()/.inject() keep working.
-            strain = [convert_to_pycbc_timeseries(s) for s in strain]
     else:
         raise ValueError(f"Unsupported return type from waveform generator: {generated_data}, should be tuple for hp and hc, dict for more polarizations or list for strain")
 
@@ -294,7 +284,7 @@ def generate_injections(config, job_seg, strain=None):
     :param config: user configuration
     :type config: Config
     :return: list of strains for each detector
-    :rtype: list[pycbc.types.timeseries.TimeSeries]
+    :rtype: list[pycwb.types.time_series.TimeSeries]
     """
     ifos = job_seg.ifos
 
@@ -305,15 +295,15 @@ def generate_injections(config, job_seg, strain=None):
 
     # generate zero noise if injected is None
     if not injected:
-        injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)),
-                               delta_t=1.0 / config.inRate,
-                               epoch=job_seg.analyze_start) for ifo in ifos]
+        injected = [PycwbTimeSeries(data=np.zeros(int(job_seg.duration * config.inRate)),
+                                    dt=1.0 / config.inRate,
+                                    t0=job_seg.analyze_start) for ifo in ifos]
 
     for injection in job_seg.injections:
-        strain = generate_strain_from_injection(injection, config, injected[0].sample_rate, ifos)
+        inj_strain = generate_strain_from_injection(injection, config, injected[0].sample_rate, ifos)
 
-        # inject signal into noise and convert to wavearray
-        injected = [injected[i].add_into(strain[i]) for i in range(len(ifos))]
+        # inject signal into noise
+        injected = [injected[i].inject(inj_strain[i]) for i in range(len(ifos))]
     return injected
 
 # Backward compatibility
