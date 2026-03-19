@@ -1,13 +1,14 @@
 import numpy as np
 import pycbc.noise
 import pycbc.psd
-from pycbc.detector import Detector
 from pycbc.types import TimeSeries
 from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
 import os, logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
+from pycwb.types.detector import Detector
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from pycwb.utils.module import import_function
 from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
 from ...config import Config
@@ -101,38 +102,41 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
 
 
 def project_to_detector(hp, hc, ra, dec, polarization, detectors, geocent_end_time, ref_ifo='H1'):
-    """Make a h(t) strain time-series from an injection object as read from
-    a sim_inspiral table, for example.
+    """Project plus/cross polarisations onto a list of detectors.
 
     Parameters
-    -----------
-    inj : injection object
-        The injection object to turn into a strain h(t).
-    delta_t : float
-        Sample rate to make injection at.
-    detector_name : string
-        Name of the detector used for projecting injections.
-    f_lower : {None, float}, optional
-        Low-frequency cutoff for injected signals. If None, use value
-        provided by each injection.
-    distance_scale: {1, float}, optional
-        Factor to scale the distance of an injection with. The default is
-        no scaling.
+    ----------
+    hp : TimeSeries
+        Plus polarisation (any supported TimeSeries type).
+    hc : TimeSeries
+        Cross polarisation (any supported TimeSeries type).
+    ra : float
+        Right ascension in radians.
+    dec : float
+        Declination in radians.
+    polarization : float
+        Polarisation angle in radians.
+    detectors : list of str
+        Detector names (e.g. ['H1', 'L1']).
+    geocent_end_time : float
+        Geocentric end time (added to the epoch of hp/hc).
+    ref_ifo : str, optional
+        Reference detector (unused, kept for backward compatibility).
 
     Returns
-    --------
-    signal : list of TimeSeries
-        h(t) corresponding to the injection.
+    -------
+    list of pycwb.types.time_series.TimeSeries
+        Projected h(t) for each detector.
     """
-    hp._epoch += geocent_end_time
-    hc._epoch += geocent_end_time
+    hp_ts = PycwbTimeSeries.from_input(hp)
+    hc_ts = PycwbTimeSeries.from_input(hc)
+    hp_ts = PycwbTimeSeries(data=hp_ts.data, dt=hp_ts.dt, t0=hp_ts.t0 + geocent_end_time)
+    hc_ts = PycwbTimeSeries(data=hc_ts.data, dt=hc_ts.dt, t0=hc_ts.t0 + geocent_end_time)
 
     signals = []
     for ifo in detectors:
         detector = Detector(ifo)
-        # compute the detector response
-        signal = detector.project_wave(hp, hc, ra, dec, polarization)
-
+        signal = detector.project_wave(hp_ts, hc_ts, ra, dec, polarization)
         signals.append(signal)
 
     return signals
@@ -286,6 +290,10 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             logger.info(f"Projecting {generated_data.keys()} to detectors {ifos}")
 
             strain = project_to_detector(hp, hc, right_ascension, declination, polarization, ifos, gps_end_time)
+            # project_to_detector returns PycwbTimeSeries; convert back to
+            # pycbc TimeSeries so callers (e.g. generate_injections) that
+            # still use pycbc .add_into()/.inject() keep working.
+            strain = [convert_to_pycbc_timeseries(s) for s in strain]
     else:
         raise ValueError(f"Unsupported return type from waveform generator: {generated_data}, should be tuple for hp and hc, dict for more polarizations or list for strain")
 

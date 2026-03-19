@@ -394,6 +394,122 @@ class Detector:
                 fl = (z * dz).sum()
             return fb, fl
 
+    def optimal_orientation(self, t_gps):
+        """
+        Return the sky position (ra, dec) that maximises the antenna response.
+
+        The optimal orientation is found by evaluating the combined antenna
+        response ``sqrt(F+² + Fx²)`` on a sky grid at zero polarisation and
+        returning the (ra, dec) of the maximum.
+
+        Parameters
+        ----------
+        t_gps : float
+            GPS time of the observation.
+
+        Returns
+        -------
+        ra : float
+            Right ascension in radians.
+        dec : float
+            Declination in radians.
+        """
+        n_ra, n_dec = 360, 180
+        ra_vals = np.linspace(0, 2 * np.pi, n_ra, endpoint=False)
+        dec_vals = np.linspace(-np.pi / 2, np.pi / 2, n_dec)
+
+        best_power = -1.0
+        best_ra, best_dec = 0.0, 0.0
+        for dec in dec_vals:
+            fplus, fcross = self.atenna_pattern(ra_vals, dec, 0.0, t_gps)
+            power = np.asarray(fplus) ** 2 + np.asarray(fcross) ** 2
+            idx = np.argmax(power)
+            if power[idx] > best_power:
+                best_power = power[idx]
+                best_ra = float(ra_vals[idx])
+                best_dec = float(dec)
+        return best_ra, best_dec
+
+    def time_delay_from_detector(self, other_det, ra, dec, t_gps):
+        """
+        Return the time delay from *other_det* to *self* for a signal
+        arriving from sky position (ra, dec) in **equatorial** coordinates.
+
+        ``dt > 0`` means the signal arrives at *self* **after** *other_det*.
+
+        .. note::
+
+           This method takes *equatorial* (RA, dec) and converts via GMST,
+           matching the pycbc convention.  The cWB workflow instead uses
+           Earth-fixed (geographic) sky coordinates and skips the GMST
+           rotation — see :func:`compute_sky_delay_and_patterns` for the
+           cWB-consistent bulk computation.
+
+        Parameters
+        ----------
+        other_det : Detector
+            The other detector.
+        ra : float
+            Right ascension in radians (equatorial).
+        dec : float
+            Declination in radians.
+        t_gps : float
+            GPS time (used to rotate Earth-fixed frame to equatorial).
+
+        Returns
+        -------
+        float
+            Time delay in seconds.
+        """
+        gmst = self.gmst_estimate(float(t_gps))
+        # Source direction in Earth-centered coordinates
+        gha = gmst - ra
+        n_hat = np.array([
+            np.cos(dec) * np.cos(gha),
+            np.cos(dec) * (-np.sin(gha)),
+            np.sin(dec),
+        ])
+        d_vec = self.vertex_vec_earth_centered - other_det.vertex_vec_earth_centered
+        return float(np.dot(d_vec, n_hat) / constants.c.value)
+
+    def project_wave(self, hp, hc, ra, dec, polarization):
+        """
+        Project plus/cross polarisations onto the detector response.
+
+        ``h(t) = F+ * hp(t) + Fx * hc(t)``
+
+        The GPS epoch is taken from *hp* (attribute ``t0`` for pycwb
+        TimeSeries, ``start_time`` for pycbc TimeSeries, or ``t0`` for gwpy).
+
+        Parameters
+        ----------
+        hp : TimeSeries
+            Plus polarisation time series.
+        hc : TimeSeries
+            Cross polarisation time series.
+        ra : float
+            Right ascension in radians.
+        dec : float
+            Declination in radians.
+        polarization : float
+            Polarisation angle in radians.
+
+        Returns
+        -------
+        pycwb.types.time_series.TimeSeries
+            Projected detector strain.
+        """
+        from pycwb.types.time_series import TimeSeries
+
+        hp_ts = TimeSeries.from_input(hp)
+        hc_ts = TimeSeries.from_input(hc)
+
+        t_gps = float(hp_ts.t0)
+        fplus, fcross = self.atenna_pattern(ra, dec, polarization, t_gps)
+
+        projected = fplus * hp_ts.data + fcross * hc_ts.data
+        return TimeSeries(data=projected, dt=hp_ts.dt, t0=hp_ts.t0)
+
     def plot_on_globe(self, fig=False, 
                       distance_km=500,
                       projection_type='orthographic',
