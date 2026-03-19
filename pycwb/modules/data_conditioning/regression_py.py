@@ -664,7 +664,7 @@ def regression_python(config, h):
         - Legacy NumPy helper functions are kept below for compatibility with
             `data_conditioning_python.py` imports.
     """
-    import pycbc.types
+    from pycwb.types.time_series import TimeSeries
 
     backend = str(getattr(config, "REGRESSION_ENGINE", os.getenv("PYCWB_REGRESSION_ENGINE", "numba"))).lower()
 
@@ -678,18 +678,8 @@ def regression_python(config, h):
     if regulator not in ("h", "s", "m"):
         regulator = "h"
 
-    if not isinstance(h, pycbc.types.TimeSeries):
-        _epoch = h.t0 if hasattr(h, 't0') else h.start_time
-        if hasattr(_epoch, 'value'):
-            _epoch = float(_epoch.value)
-        _dt = h.dt if hasattr(h, 'dt') else h.sample_rate**-1
-        if hasattr(_dt, 'value'):
-            _dt = float(_dt.value)
-        h_ts = pycbc.types.TimeSeries(
-            h.value if hasattr(h, 'value') else h.data,
-            delta_t=_dt,
-            epoch=_epoch,
-        )
+    if not isinstance(h, TimeSeries):
+        h_ts = TimeSeries.from_input(h)
     else:
         h_ts = h
 
@@ -818,10 +808,10 @@ def regression_python(config, h):
     # The 0.5 factor averages the two channels as in WSeries Inverse() + Inverse(-2)
     cleaned_data = target_ts - 0.5 * (noise_ts + noiseQ_ts)
 
-    cleaned_pycbc = pycbc.types.TimeSeries(
-        cleaned_data,
-        delta_t=h_ts.delta_t,
-        epoch=h_ts.start_time
+    cleaned_pycwb = TimeSeries(
+        data=cleaned_data,
+        dt=h_ts.delta_t,
+        t0=h_ts.start_time,
     )
-    return cleaned_pycbc
+    return cleaned_pycwb
 

@@ -39,7 +39,6 @@ from copy import copy
 
 import numpy as np
 import psutil
-from pycbc.types import TimeSeries
 
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog  # noqa: F401 – kept for type parity with native
@@ -74,7 +73,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
-from pycwb.types.time_series import TimeSeries as PyCWBTimeSeries
+from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
 from pycwb.utils.td_vector_batch import (
     _build_td_inputs_single_level,
@@ -196,9 +195,9 @@ def process_job_segment_parallel(
             # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
             mdc = [
                 TimeSeries(
-                    np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
-                    epoch=sub_job_seg.padded_start,
-                    delta_t=1.0 / sub_job_seg.sample_rate,
+                    data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
+                    t0=sub_job_seg.padded_start,
+                    dt=1.0 / sub_job_seg.sample_rate,
                 )
                 for _ in range(len(sub_job_seg.ifos))
             ]

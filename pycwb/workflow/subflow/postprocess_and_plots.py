@@ -4,7 +4,7 @@ from typing import Dict, List
 import math
 import numpy as np
 import pycwb
-from pycbc.types.timeseries import TimeSeries
+from pycwb.types.time_series import TimeSeries
 from pycwb.modules.plot import event
 from pycwb.modules.reconstruction.getResiduals import get_ASD
 from pycwb.types.time_frequency_series import TimeFrequencySeries

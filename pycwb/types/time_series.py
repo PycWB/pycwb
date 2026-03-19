@@ -150,6 +150,47 @@ class TimeSeries:
         """Return a deep copy."""
         return TimeSeries(data=self.data.copy(), t0=self.t0, dt=self.dt)
 
+    def inject(self, other, copy=True):
+        """Add a signal into this time series, aligning by GPS time.
+
+        The two time series are aligned by their start times (*t0*) and the
+        overlapping region of *other* is added sample-by-sample into this
+        series.  This replicates the behaviour of
+        ``pycbc.types.TimeSeries.inject``.
+
+        Parameters
+        ----------
+        other : TimeSeries
+            The signal to inject.
+        copy : bool
+            If ``True`` (default), return a new TimeSeries leaving *self*
+            unmodified.  If ``False``, modify *self* in-place.
+
+        Returns
+        -------
+        TimeSeries
+            The time series with the injected signal.
+        """
+        result = self.copy() if copy else self
+
+        other_start = float(other.t0)
+        other_end = other_start + len(other.data) * float(other.dt)
+        self_start = float(result.t0)
+        self_end = self_start + len(result.data) * float(result.dt)
+
+        overlap_start = max(self_start, other_start)
+        overlap_end = min(self_end, other_end)
+        if overlap_start >= overlap_end:
+            return result
+
+        s_idx = int(round((overlap_start - self_start) / float(result.dt)))
+        o_idx = int(round((overlap_start - other_start) / float(other.dt)))
+        n = int(round((overlap_end - overlap_start) / float(result.dt)))
+
+        result.data[s_idx:s_idx + n] += np.asarray(other.data[o_idx:o_idx + n],
+                                                    dtype=result.data.dtype)
+        return result
+
     def save(self, path: str):
         """Write the time series to a file (gwpy delegation)."""
         self.to_gwpy().write(path, overwrite=True)

@@ -27,7 +27,7 @@ def whitening_mdc(config, h, nRMS):
     :param config: config object
     :type config: Config
     :param h: strain data
-    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
+    :type h: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :param nRMS: noise rms data
     :type nRMS: pycwb.types.time_frequency_series.TimeFrequencySeries or ROOT.WSeries<double>
     :return: (whitened strain, original strain)
@@ -90,7 +90,7 @@ def whitening_mdc_py(config, h, nRMS):
     config : Config
         Configuration object (must expose ``l_white``/``l_high``, ``WDM_beta_order``,
         ``WDM_precision``, ``fLow``, ``fHigh``).
-    h : pycbc.types.TimeSeries or gwpy.TimeSeries
+    h : pycwb.types.time_series.TimeSeries or gwpy.TimeSeries
         MDC strain data for a single detector.
     nRMS : wdm_wavelet.types.time_frequency_map.TimeFrequencyMap
         Per-frequency noise RMS, as returned by the pure-Python
@@ -100,11 +100,11 @@ def whitening_mdc_py(config, h, nRMS):
     Returns
     -------
     tuple[TimeFrequencySeries, TimeFrequencySeries]
-        ``(whitened_mdc, original_mdc)`` — both wrap a pycbc ``TimeSeries`` in their
+        ``(whitened_mdc, original_mdc)`` — both wrap a pycwb ``TimeSeries`` in their
         ``.data`` attribute, matching the interface expected by
         :func:`~pycwb.modules.reconstruction.getINJwaveform.get_INJ_waveform`.
     """
-    import pycbc.types
+    from pycwb.types.time_series import TimeSeries
     from wdm_wavelet.wdm import WDM as WDMpy
     from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 
@@ -113,13 +113,10 @@ def whitening_mdc_py(config, h, nRMS):
     precision = getattr(config, "WDM_precision", 10)
 
     # ------------------------------------------------------------------
-    # Normalise input to pycbc TimeSeries
+    # Normalise input to pycwb TimeSeries
     # ------------------------------------------------------------------
-    if not isinstance(h, pycbc.types.TimeSeries):
-        signal_data = h.value if hasattr(h, "value") else np.asarray(h)
-        dt = h.dt.value if hasattr(h, "dt") and hasattr(h.dt, "value") else float(h.dt)
-        t0 = h.t0.value if hasattr(h, "t0") and hasattr(h.t0, "value") else float(h.t0)
-        h_ts = pycbc.types.TimeSeries(signal_data.astype(np.float64), delta_t=dt, epoch=t0)
+    if not isinstance(h, TimeSeries):
+        h_ts = TimeSeries.from_input(h)
     else:
         h_ts = h
 
@@ -142,10 +139,10 @@ def whitening_mdc_py(config, h, nRMS):
     # Save original (un-whitened) inverse transform → HoT
     # ------------------------------------------------------------------
     original_gwpy = wdm.w2t(tf_map)
-    original_ts = pycbc.types.TimeSeries(
-        np.asarray(original_gwpy.value, dtype=np.float64),
-        delta_t=h_ts.delta_t,
-        epoch=h_ts.start_time,
+    original_ts = TimeSeries(
+        data=np.asarray(original_gwpy.value, dtype=np.float64),
+        dt=h_ts.delta_t,
+        t0=h_ts.start_time,
     )
 
     # ------------------------------------------------------------------
@@ -193,10 +190,10 @@ def whitening_mdc_py(config, h, nRMS):
     whitened_gwpy = wdm.w2t(tf_map)
     tf_map.data = original_coeff          # restore (non-destructive)
 
-    whitened_ts = pycbc.types.TimeSeries(
-        np.asarray(whitened_gwpy.value, dtype=np.float64),
-        delta_t=h_ts.delta_t,
-        epoch=h_ts.start_time,
+    whitened_ts = TimeSeries(
+        data=np.asarray(whitened_gwpy.value, dtype=np.float64),
+        dt=h_ts.delta_t,
+        t0=h_ts.start_time,
     )
 
     return whitened_ts, original_ts

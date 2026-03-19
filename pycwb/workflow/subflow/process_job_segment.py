@@ -4,7 +4,7 @@ import psutil
 import numpy as np
 from copy import copy
 from pycwb.config import Config
-from pycbc.types import TimeSeries
+from pycwb.types.time_series import TimeSeries
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
@@ -76,7 +76,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
             logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            mdc = [TimeSeries(np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), epoch = base_data[i].start_time, delta_t = 1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
+            mdc = [TimeSeries(data=np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), t0=base_data[i].start_time, dt=1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
