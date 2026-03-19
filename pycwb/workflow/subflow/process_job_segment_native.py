@@ -125,11 +125,40 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                               dt=1 / sub_job_seg.sample_rate)
                    for i in range(len(sub_job_seg.ifos))]
 
+            injection_envelopes = []
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
+                # Track signal timing envelope across all IFOs.
+                n_ifo = len(sub_job_seg.ifos)
+                real_start = min(float(inj[i].t0) for i in range(n_ifo))
+                real_end = max(float(inj[i].t0) + len(inj[i].data) * float(inj[i].dt)
+                               for i in range(n_ifo))
+                injection_envelopes.append((real_start, real_end))
                 # inject() uses copy=True by default, so base_data is never modified in-place.
-                mdc  = [mdc[i].inject(inj[i])  for i in range(len(sub_job_seg.ifos))]
-                data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
+                mdc  = [mdc[i].inject(inj[i])  for i in range(n_ifo)]
+                data = [data[i].inject(inj[i]) for i in range(n_ifo)]
+
+            # Populate veto_windows when injection-only analysis is enabled.
+            if getattr(config, 'analyze_injection_only', False) and injection_envelopes:
+                padding = getattr(config, 'injection_padding', 1.0)
+                padded = [(s - padding, e + padding) for s, e in injection_envelopes]
+                # Merge overlapping intervals into a union.
+                padded.sort()
+                merged = [padded[0]]
+                for s, e in padded[1:]:
+                    if s <= merged[-1][1]:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+                    else:
+                        merged.append((s, e))
+                sub_job_seg.veto_windows = merged
+                total_veto = sum(e - s for s, e in merged)
+                logger.info(
+                    "analyze_injection_only: %d veto windows covering %.2f s "
+                    "(%.1f%% of %.2f s analysis window)",
+                    len(merged), total_veto,
+                    100.0 * total_veto / sub_job_seg.duration,
+                    sub_job_seg.duration,
+                )
         else:
             logger.info(f"Processing trail_idx: {trail_idx} without injections")
             sub_job_seg = job_seg
@@ -245,7 +274,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             # ── 4a. Coherence ────────────────────────────────────────────────
             # Pixel selection and fragment clustering for this specific time slide.
-            frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
+            frag_clusters_this_lag = coherence_single_lag(
+                coherence_setup, lag,
+                veto_windows=sub_job_seg.veto_windows,
+            )
 
             # ── 4b. Supercluster ─────────────────────────────────────────────
             # Compute TD amplitudes, apply subnet veto, and merge fragments.

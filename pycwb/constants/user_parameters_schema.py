@@ -657,6 +657,16 @@ schema = {
             "description": "alias of iwindow",
             "default": 5.0
         },
+        "analyze_injection_only": {
+            "type": "boolean",
+            "description": "If true, only analyse time periods around injected signals (signal duration + injection_padding). Incompatible with lag_size > 1.",
+            "default": False
+        },
+        "injection_padding": {
+            "type": "number",
+            "description": "Padding in seconds added to each side of the injection signal window when analyze_injection_only is enabled.",
+            "default": 1.0
+        },
         "l_low": {
             "type": "integer",
             "description": "low frequency resolution level (2^l_low Hz)",

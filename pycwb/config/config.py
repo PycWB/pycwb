@@ -123,6 +123,8 @@ class Config:
     max_delay: Optional[float] = field(init=False)
     injection: Dict = field(default_factory=dict)
     parallel_injection_trail: bool = False
+    analyze_injection_only: bool = False
+    injection_padding: float = 1.0
     WDM_beta_order: Optional[int] = None
     WDM_precision: Optional[int] = None
     WDM_level: List[int] = field(default_factory=list)
@@ -185,6 +187,7 @@ class Config:
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
         self.check_lagStep()
+        self.check_analyze_injection_only()
 
     def load_from_dict(self, params: Dict[str, Any]):
         """
@@ -367,6 +370,35 @@ class Config:
                          2 * dt_max)
             raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
                              2 * dt_max)
+
+    def check_analyze_injection_only(self):
+        """
+        Validate that ``analyze_injection_only`` is compatible with the
+        current configuration.
+
+        When enabled, injections must be configured and time-slide lags
+        must not be used (``lag_size`` must be 1).
+
+        Raises
+        ------
+        ValueError
+            If ``analyze_injection_only`` is True but no injections are
+            configured, or ``lag_size > 1``.
+        """
+        if not getattr(self, 'analyze_injection_only', False):
+            return
+        if not self.injection:
+            raise ValueError(
+                "analyze_injection_only requires injections to be configured "
+                "in the 'injection' block"
+            )
+        lag_size = getattr(self, 'lagSize', None) or getattr(self, 'lag_size', 1)
+        if lag_size > 1:
+            raise ValueError(
+                f"analyze_injection_only is incompatible with lag_size={lag_size}. "
+                "Time-slide background estimation cannot be used with injection-only "
+                "analysis. Set lag_size to 1 or disable analyze_injection_only."
+            )
 
     def check_MRA_catalog(self):
         """
