@@ -1,30 +1,30 @@
-from pycbc.types.timeseries import load_timeseries, TimeSeries 
-from pycbc.types.array import Array 
-from scipy.signal import correlate, hilbert 
+from pycwb.types.time_series import TimeSeries
+from scipy.signal import correlate, hilbert
 from pathlib import Path, PosixPath
-import numpy as np 
+import numpy as np
 import os
-import copy 
-import cmath 
-import logging 
-logger = logging.getLogger(__name__) 
+import copy
+import cmath
+import logging
+logger = logging.getLogger(__name__)
 
-class Waveform(TimeSeries): 
+class Waveform(TimeSeries):
     """
     Class to handle waveform data.
 
-    :param data: data
-    :type data: pycbc.types.timeseries.TimeSeries
+    :param data: data (any TimeSeries-like: pycwb, pycbc, or gwpy)
+    :type data: TimeSeries
     """
-    def __init__(self, data: TimeSeries, folder = None):
-        super().__init__(data, data._delta_t, data.start_time)
-        #Store time and phase shift to reverse the synchronization
-        self._total_time_shift = 0 
+    def __init__(self, data, folder=None):
+        ts = TimeSeries.from_input(data) if not isinstance(data, TimeSeries) else data
+        super().__init__(data=ts.data.copy(), t0=ts.t0, dt=ts.dt)
+        # Store time and phase shift to reverse the synchronization
+        self._total_time_shift = 0
         self._total_phase_shift = 0
-        self.folder = os.path.abspath(folder) if folder is not None else None 
-        if np.any(np.isnan(self.data)): 
-            print('Data Contains NaNs') 
-        else: 
+        self.folder = os.path.abspath(folder) if folder is not None else None
+        if np.any(np.isnan(self.data)):
+            print('Data Contains NaNs')
+        else:
             self._findStartEnd()
 
     def estimateCentralTime(self): 
@@ -250,9 +250,9 @@ class Waveform(TimeSeries):
         """
         if not isinstance(new_sample_rate, (int, float)) or new_sample_rate <= 0:
             raise ValueError("New sample rate must be a positive numeric value.")
-        
-        resampled_data = self.resample(1 / new_sample_rate)
-        return self.__class__(resampled_data)
+
+        resampled_ts = self.cwb_resampling(new_sample_rate)
+        return self.__class__(resampled_ts)
 
 
 
@@ -324,24 +324,24 @@ class Waveform(TimeSeries):
         return len(self.data)
 
 
-def load_waveform(filename, resample = None, skip_nans = True):
+def load_waveform(filename, resample=None, skip_nans=True):
     """
     Load a waveform from a file.
     """
-    # Assuming the waveform is stored in a file, you can use pycbc's load_timeseries
-    # to load the waveform data.
-    data = load_timeseries(filename)  
+    from gwpy.timeseries import TimeSeries as GWpyTimeSeries
+    gwpy_ts = GWpyTimeSeries.read(str(filename))
+    data = TimeSeries.from_gwpy(gwpy_ts)
 
-    #Return None if data contain nans and skip nans is True 
-    if np.any(np.isnan(data.data)) and skip_nans: 
-       return None 
-    
-    #If resample is given as sampling rate, resample the waveform 
-    if isinstance(resample, int) or isinstance(resample, float):
-        data = data.resample(resample) 
+    # Return None if data contain nans and skip nans is True
+    if np.any(np.isnan(data.data)) and skip_nans:
+        return None
+
+    # If resample is given as sampling rate, resample the waveform
+    if isinstance(resample, (int, float)):
+        data = data.cwb_resampling(resample)
 
     folder = filename.parent if isinstance(filename, PosixPath) else os.path.dirname(filename)
-    return Waveform(data, folder = folder) 
+    return Waveform(data, folder=folder)
 
 
 

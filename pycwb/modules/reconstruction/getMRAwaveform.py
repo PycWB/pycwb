@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from pycbc.types import TimeSeries
+from pycwb.types.time_series import TimeSeries
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -129,9 +129,9 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False)
     tmax = int(tmax + max_f_len) + 1  # end event time in sec
 
     # create a time series with np.zeros(int(rate*(tmax-tmin)+0.1))
-    z = TimeSeries(np.zeros(int(rate * (tmax - tmin) + 0.1)), delta_t=1 / rate, epoch=tmin)
+    z = TimeSeries(data=np.zeros(int(rate * (tmax - tmin) + 0.1)), dt=1 / rate, t0=tmin)
 
-    io = int(tmin / z.delta_t + 0.01)  # index offset of z-array
+    io = int(tmin / z.dt + 0.01)  # index offset of z-array
 
     s00 = 0
     s90 = 0
@@ -207,9 +207,12 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
         if tof:
             R = rTDF  # effective time-delay rate
             t_shift = -v[i] / R
-            xf = x.to_frequencyseries()
-            xf.data *= np.exp(-2j * np.pi * xf.sample_frequencies * t_shift)
-            x = xf.to_timeseries()
+            # Frequency-domain phase shift (replaces pycbc to_frequencyseries/to_timeseries)
+            n = len(x.data)
+            xf = np.fft.rfft(x.data)
+            freqs = np.fft.rfftfreq(n, d=x.dt)
+            xf *= np.exp(-2j * np.pi * freqs * t_shift)
+            x = TimeSeries(data=np.fft.irfft(xf, n=n), t0=x.t0, dt=x.dt)
 
         waveforms.append(x)
         

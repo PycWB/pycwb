@@ -59,6 +59,42 @@ class TimeSeries:
             arr = arr.copy()
         self.data = arr
 
+    # ---- pycbc-compatible property aliases ----------------------------------
+
+    @property
+    def start_time(self) -> float:
+        """Alias for *t0* (pycbc compatibility)."""
+        return self.t0
+
+    @start_time.setter
+    def start_time(self, value: float):
+        self.t0 = float(value)
+
+    @property
+    def delta_t(self) -> float:
+        """Alias for *dt* (pycbc compatibility)."""
+        return self.dt
+
+    @property
+    def _epoch(self) -> float:
+        """Alias for *t0* used by some downstream code."""
+        return self.t0
+
+    @property
+    def _delta_t(self) -> float:
+        """Alias for *dt* used by some downstream code."""
+        return self.dt
+
+    @property
+    def sample_times(self) -> np.ndarray:
+        """Time axis as a numpy array (pycbc compatibility)."""
+        return self.times
+
+    @property
+    def duration(self) -> float:
+        """Duration of the time series in seconds."""
+        return self.dt * len(self.data)
+
     @property
     def times(self) -> np.ndarray:
         """Returns the array of time values."""
@@ -91,6 +127,93 @@ class TimeSeries:
 
     def __str__(self):
         return str(self.data)
+
+    # ---- pycbc-compatible utility methods -----------------------------------
+
+    def time_slice(self, start, end):
+        """Return the sub-series between GPS *start* and *end* (inclusive)."""
+        s_idx = max(0, int(round((float(start) - self.t0) / self.dt)))
+        e_idx = min(len(self.data), int(round((float(end) - self.t0) / self.dt)))
+        new_t0 = self.t0 + s_idx * self.dt
+        return TimeSeries(data=self.data[s_idx:e_idx].copy(), t0=new_t0, dt=self.dt)
+
+    def prepend_zeros(self, n: int):
+        """Prepend *n* zero samples (mutating, shifts t0 backward)."""
+        self.data = np.concatenate([np.zeros(n, dtype=self.data.dtype), self.data])
+        self.t0 -= n * self.dt
+
+    def append_zeros(self, n: int):
+        """Append *n* zero samples (mutating)."""
+        self.data = np.concatenate([self.data, np.zeros(n, dtype=self.data.dtype)])
+
+    def copy(self):
+        """Return a deep copy."""
+        return TimeSeries(data=self.data.copy(), t0=self.t0, dt=self.dt)
+
+    def save(self, path: str):
+        """Write the time series to a file (gwpy delegation)."""
+        self.to_gwpy().write(path, overwrite=True)
+
+    # ---- arithmetic operators -----------------------------------------------
+
+    def __add__(self, other):
+        if isinstance(other, TimeSeries):
+            return TimeSeries(data=self.data + other.data, t0=self.t0, dt=self.dt)
+        return TimeSeries(data=self.data + np.asarray(other), t0=self.t0, dt=self.dt)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        if isinstance(other, TimeSeries):
+            return TimeSeries(data=self.data - other.data, t0=self.t0, dt=self.dt)
+        return TimeSeries(data=self.data - np.asarray(other), t0=self.t0, dt=self.dt)
+
+    def __rsub__(self, other):
+        if isinstance(other, TimeSeries):
+            return TimeSeries(data=other.data - self.data, t0=self.t0, dt=self.dt)
+        return TimeSeries(data=np.asarray(other) - self.data, t0=self.t0, dt=self.dt)
+
+    def __mul__(self, other):
+        if isinstance(other, TimeSeries):
+            return TimeSeries(data=self.data * other.data, t0=self.t0, dt=self.dt)
+        return TimeSeries(data=self.data * np.asarray(other), t0=self.t0, dt=self.dt)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, TimeSeries):
+            return TimeSeries(data=self.data / other.data, t0=self.t0, dt=self.dt)
+        return TimeSeries(data=self.data / np.asarray(other), t0=self.t0, dt=self.dt)
+
+    def __iadd__(self, other):
+        if isinstance(other, TimeSeries):
+            self.data += other.data
+        else:
+            self.data += np.asarray(other)
+        return self
+
+    def __isub__(self, other):
+        if isinstance(other, TimeSeries):
+            self.data -= other.data
+        else:
+            self.data -= np.asarray(other)
+        return self
+
+    def __imul__(self, other):
+        if isinstance(other, TimeSeries):
+            self.data *= other.data
+        else:
+            self.data *= np.asarray(other)
+        return self
+
+    def __itruediv__(self, other):
+        if isinstance(other, TimeSeries):
+            self.data /= other.data
+        else:
+            self.data /= np.asarray(other)
+        return self
 
     def wavecount(self, threshold, edge_length=None):
         """

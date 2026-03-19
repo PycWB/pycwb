@@ -1,4 +1,4 @@
-from pycbc.types.timeseries import TimeSeries 
+from pycwb.types.time_series import TimeSeries 
 from memspectrum import MESA 
 import numpy as np 
 import logging
@@ -23,7 +23,7 @@ def get_residuals(strain, waveform, inRate, full_segment = False, rescale = Fals
         start_idx, end_idx = get_indeces(strain, waveform.start_time, waveform.end_time, mode='floor')  
         logger.info(f"Calculated start and end indices for slicing: start_idx={start_idx}, end_idx={end_idx}")
         #create a padded waveform to avoid ValueError arising from time-series misalignment 
-        waveform_padded = TimeSeries(np.zeros_like(strain), delta_t = strain.delta_t, epoch = strain._epoch)
+        waveform_padded = TimeSeries(data=np.zeros_like(strain.data), t0=strain.t0, dt=strain.dt)
         waveform_padded.data[start_idx:end_idx] = waveform.data
         strain_residuals = strain - waveform_padded
     if rescale:

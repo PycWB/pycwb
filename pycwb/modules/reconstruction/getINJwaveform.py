@@ -211,7 +211,6 @@ def apply_frequency_cut(h, f_low, f_high):
 
     w.FFTW(-1)
 
-    # convert to pycbc for consistency
-    waveform = convert_wavearray_to_timeseries(w).to_pycbc()
+    waveform = convert_wavearray_to_timeseries(w)
     
     return waveform
