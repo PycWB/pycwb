@@ -110,9 +110,11 @@ class TimeSeries:
         """Returns the end time of the time series."""
         return self.t0 + self.dt * len(self.data)
 
-    def __array__(self) -> np.ndarray:
-        """Allows implicit conversion to a NumPy array."""
-        return self.data
+    def __array__(self, dtype=None, copy=False) -> np.ndarray:
+        """Allows implicit conversion to a NumPy array (NumPy 2.0 compatible)."""
+        if dtype is not None:
+            return self.data.astype(dtype, copy=copy)
+        return self.data.copy() if copy else self.data
 
     def __getitem__(self, key):
         """Allow indexing into the time series."""
