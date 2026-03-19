@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
-from pycbc.types import TimeSeries
+from pycwb.types.time_series import TimeSeries
 from gwpy.plot.colors import GW_OBSERVATORY_COLORS
 import logging
 logger = logging.getLogger(__name__)

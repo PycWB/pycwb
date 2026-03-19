@@ -13,14 +13,13 @@ import logging
 from pycwb.modules.cwb_conversions import *
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.wdm import WDM
-from pycbc.types.timeseries import TimeSeries 
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from functools import partial
 import multiprocessing as mp
 from memspectrum import MESA
 import os 
 from scipy import signal
 from scipy.special import expit 
-from pycbc.filter.resample import highpass
 from sklearn.ensemble import IsolationForest
 import logging
 
@@ -35,7 +34,7 @@ def whitening_mesa(config, h):
     ----------
     config: config object
             The config file for the analysis 
-    h:      pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries
+    h:      pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries
             The timeSeries containing the Data  
     """ 
     
@@ -57,16 +56,13 @@ def whitening_mesa(config, h):
     wdm_dt = .5 / wdm_df        #Time resolution for the WDM 
     
 
-    #Convert to pycbc and remove mean 
-    try: 
-        h = h.to_pycbc() if type(h) == TimeSeries else h 
-    except AttributeError: 
-        pass 
-    h -= np.mean(h) 
+    #Normalise input to pycwb TimeSeries
+    h = PycwbTimeSeries.from_input(h)
+    h.data -= np.mean(h.data)
 
     #Filter the data 
     a,b = signal.butter(8, config.fLow / Ny, btype = 'high', analog = False) 
-    h.data = signal.filtfilt(a,b,h)
+    h.data[:] = signal.filtfilt(a,b,h.data)
    
     
     #Initialise whitening
@@ -102,26 +98,29 @@ def whitening_mesa(config, h):
         stop = start + window
         
         #get indeces for whitening segments [w] and segment to be whitened [s]
-        h_tmp = h[start:stop] * W
-        h_w = (h_tmp.to_frequencyseries() / psds[i][:len(h_tmp) // 2 + 1]**0.5).to_timeseries() * np.sqrt(1 / sampling_rate)
+        h_tmp = h.data[start:stop] * W
+        h_fft = np.fft.rfft(h_tmp)
+        h_w = np.fft.irfft(h_fft / psds[i][:len(h_tmp) // 2 + 1]**0.5) * np.sqrt(1 / sampling_rate)
         
         if i == 0: 
-            h_white[start:stop-stride] = h_w[:-stride]
+            h_white.data[start:stop-stride] = h_w[:-stride]
         if i == n_windows: 
-            h_white[start+stride:stop] = h_w[stride:]
+            h_white.data[start+stride:stop] = h_w[stride:]
         else: 
-            h_white[start + stride:stop-stride] = h_w[stride:-stride]
+            h_white.data[start + stride:stop-stride] = h_w[stride:-stride]
     del(h_tmp) 
     del(h_w) 
 
     #Initialize TF map 
-    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h[:stop]), wdm_white.wavelet)
+    h_sliced = PycwbTimeSeries(data=h.data[:stop].copy(), t0=h.t0, dt=h.dt)
+    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h_sliced), wdm_white.wavelet)
     tf_map.Forward()
     tf_map.setlow(config.fLow)
     tf_map.sethigh(config.fHigh)
  
     #Create a TF map for whitened array 
-    tf_map_white = ROOT.WSeries(np.double)(convert_to_wavearray(h_white[:stop]), wdm_white.wavelet)
+    h_white_sliced = PycwbTimeSeries(data=h_white.data[:stop].copy(), t0=h_white.t0, dt=h_white.dt)
+    tf_map_white = ROOT.WSeries(np.double)(convert_to_wavearray(h_white_sliced), wdm_white.wavelet)
     tf_map_white.Forward()
     tf_map_white.setlow(config.fLow)
     tf_map_white.sethigh(config.fHigh)
@@ -144,7 +143,8 @@ def whitening_mesa(config, h):
     nRMS = generate_nrms_wseries(config, h, nRMS.reshape(-1, order = 'F'))
     
     #Convert to tf map types
-    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white), wdm_white.wavelet)
+    h_white_full = PycwbTimeSeries(data=h_white.data.copy(), t0=h_white.t0, dt=h_white.dt)
+    tf_map_whitened = ROOT.WSeries(np.double)(convert_to_wavearray(h_white_full), wdm_white.wavelet)
     tf_map_whitened.w_mode = 1   #Change w_mode to 1 for compatibility with "Network.cc" 
     tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map_whitened)
     n_rms = convert_wseries_to_time_frequency_series(nRMS)

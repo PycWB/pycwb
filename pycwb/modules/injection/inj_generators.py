@@ -1,9 +1,42 @@
-from pycbc.types.timeseries import TimeSeries, load_timeseries
+from pycwb.types.time_series import TimeSeries
 from scipy.signal import resample_poly
-import logging 
-from numpy import sqrt 
+import numpy as np
+import h5py
+import logging
+from numpy import sqrt
 
 logger = logging.getLogger(__name__)
+
+
+def _load_timeseries(path):
+    """Load a time series from HDF5, NumPy, or text file.
+
+    Supports pycbc-format HDF5 files, .npy files, and whitespace-delimited
+    text files.
+    """
+    if path.endswith('.npy'):
+        data = np.load(path).astype(np.float64)
+        return TimeSeries(data=data, t0=0.0, dt=1.0)
+    elif path.endswith('.hdf') or path.endswith('.hdf5') or path.endswith('.h5'):
+        with h5py.File(path, 'r') as f:
+            if 'data' in f:
+                data = np.array(f['data'], dtype=np.float64)
+                t0 = float(f['data'].attrs.get('start_time', 0.0))
+                dt = float(f['data'].attrs.get('delta_t', 1.0))
+            elif 'strain/Strain' in f:
+                data = np.array(f['strain/Strain'], dtype=np.float64)
+                t0 = float(f['strain/Strain'].attrs.get('Xstart', 0.0))
+                dt = float(f['strain/Strain'].attrs.get('Xspacing', 1.0))
+            else:
+                key = list(f.keys())[0]
+                data = np.array(f[key], dtype=np.float64)
+                t0 = 0.0
+                dt = 1.0
+        return TimeSeries(data=data, t0=t0, dt=dt)
+    else:
+        # text file: assume single column of data values
+        data = np.loadtxt(path, dtype=np.float64)
+        return TimeSeries(data=data, t0=0.0, dt=1.0)
 
 
 def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs): 
@@ -28,7 +61,7 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     distribute = kwargs.get('distribute', True)
     for ifo, file in files.items():
         logger.info(f"Loading strain data for {ifo} from {file}") 
-        strain = load_timeseries(file)
+        strain = _load_timeseries(file)
         #Only compute central time once so that detector dT is preserved 
         if distribute: 
             if central_time is None: 
@@ -80,7 +113,7 @@ def resample_data(data, factor):
 
     else:            # No resampling needed
         resampled_data = data.data 
-    resampled_data = TimeSeries(resampled_data, delta_t= data.delta_t / factor, epoch=data.start_time)
+    resampled_data = TimeSeries(data=resampled_data, t0=float(data.start_time), dt=data.delta_t / factor)
     return resampled_data
 
 
