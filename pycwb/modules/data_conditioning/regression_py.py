@@ -282,12 +282,23 @@ if _NUMBA_AVAILABLE:
         safe_norm = norm0 if valid_norm else 1.0
         base = safe_norm * safe_norm
 
+        # ROOT regression::setMatrix fills products for j in [K, n-K], then calls
+        # ww.mean(fm) which trims nn=edge_samples from the FULL n-sample array.
+        # That means the effective trim on the product region is (edge_samples - K).
+        # Likewise for ACF/CCF with boundary K2: effective trim is (edge_samples - K2).
+        edge_v = edge_samples - K
+        if edge_v < 0:
+            edge_v = 0
+        edge_m = edge_samples - K2
+        if edge_m < 0:
+            edge_m = 0
+
         v_cross = np.zeros((K4,), dtype=np.float64)
         for lag in range(-K, K + 1):
             ww, WW = _numba_rotated_products(real, imag, lag, K)
             idx = K + lag
-            v0 = _numba_percentile_mean(ww, fm, edge_samples, stride) / base
-            v1 = _numba_percentile_mean(WW, fm, edge_samples, stride) / base
+            v0 = _numba_percentile_mean(ww, fm, edge_v, stride) / base
+            v1 = _numba_percentile_mean(WW, fm, edge_v, stride) / base
             scale = fltr if lag == 0 else 1.0
             v_cross[idx] = v0 * scale
             v_cross[idx + half] = v1 * scale
@@ -298,8 +309,10 @@ if _NUMBA_AVAILABLE:
         for lag in range(-K2, K2 + 1):
             ww, WW = _numba_rotated_products(real, imag, lag, K2)
             idx = lag + K2
-            acf[idx] = _numba_percentile_mean(ww, fm, edge_samples, stride) / base
-            ccf[idx] = _numba_percentile_mean(WW, fm, edge_samples, stride) / base
+            acf[idx] = _numba_percentile_mean(ww, fm, edge_m, stride) / base
+            # ROOT matrix WW = x_m*xQ_n - xQ_m*x_n (opposite sign from cross-vector WW)
+            # _numba_rotated_products returns WW matching cross-vector sign, so negate here
+            ccf[idx] = -_numba_percentile_mean(WW, fm, edge_m, stride) / base
 
         matrix = _numba_build_matrix(acf, ccf, K, K2, fltr)
         evals, evecs = np.linalg.eigh(matrix)
@@ -445,14 +458,17 @@ def _jax_layer_build_stats(real, imag, K, K2, K4, half, fm, edge_samples, fltr):
 @partial(jax.jit, static_argnames=("K", "K4", "half", "fm", "edge_samples", "fltr"))
 def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr):
     """Build cross vector V over lags [-K, K] for one layer."""
+    # ROOT fills products for j in [K, n-K] then trims edge_samples from the full array,
+    # giving effective trim (edge_samples - K) on the product sub-array.
+    edge_v = max(0, edge_samples - K)
 
     def _build_v(i, v_cross):
         lag = i - K
         ww, WW = _jax_rotated_products(real, imag, lag, K)
         idx = K + lag
         base = safe_norm * safe_norm
-        v0 = _jax_percentile_mean(ww, fm, edge_samples) / base
-        v1 = _jax_percentile_mean(WW, fm, edge_samples) / base
+        v0 = _jax_percentile_mean(ww, fm, edge_v) / base
+        v1 = _jax_percentile_mean(WW, fm, edge_v) / base
         scale = jnp.where(lag == 0, fltr, 1.0)
         v_cross = v_cross.at[idx].set(v0 * scale)
         v_cross = v_cross.at[idx + half].set(v1 * scale)
@@ -464,6 +480,9 @@ def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_sample
 @partial(jax.jit, static_argnames=("K2", "fm", "edge_samples"))
 def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples):
     """Build autocorrelation/cross-correlation vectors over lags [-2K, 2K]."""
+    # ROOT fills products for j in [K2, n-K2] then trims edge_samples from the full array,
+    # giving effective trim (edge_samples - K2) on the product sub-array.
+    edge_m = max(0, edge_samples - K2)
     lag_count = 2 * K2 + 1
 
     def _build_acf(i, state):
@@ -472,8 +491,10 @@ def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples):
         ww, WW = _jax_rotated_products(real, imag, lag, K2)
         idx = lag + K2
         base = safe_norm * safe_norm
-        acf = acf.at[idx].set(_jax_percentile_mean(ww, fm, edge_samples) / base)
-        ccf = ccf.at[idx].set(_jax_percentile_mean(WW, fm, edge_samples) / base)
+        # ROOT matrix WW = x_m*xQ_n - xQ_m*x_n (opposite sign from cross-vector/rotated_products WW)
+        # negate to match ROOT's matrix formula
+        acf = acf.at[idx].set(_jax_percentile_mean(ww, fm, edge_m) / base)
+        ccf = ccf.at[idx].set(-_jax_percentile_mean(WW, fm, edge_m) / base)
         return acf, ccf
 
     return jax.lax.fori_loop(
