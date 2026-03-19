@@ -1,6 +1,6 @@
 import numpy as np
-import lalsimulation as lalsim
-import os, logging
+import os
+import logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
 from pycwb.types.detector import Detector
@@ -226,7 +226,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             generated_data.pop('type')
 
             # check on ifos
-            logger.info(f"Checking if the ifos in the config are same as the provided ifos")
+            logger.info("Checking if the ifos in the config are same as the provided ifos")
             provided_ifos = set(generated_data.keys())
             if provided_ifos != set(ifos):
                 raise ValueError(f"Provided ifos {provided_ifos} are not same as the ifos {ifos} in config")

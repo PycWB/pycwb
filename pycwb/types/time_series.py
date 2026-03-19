@@ -130,27 +130,27 @@ class TimeSeries:
 
     # ---- pycbc-compatible utility methods -----------------------------------
 
-    def time_slice(self, start, end):
+    def time_slice(self, start: float, end: float) -> "TimeSeries":
         """Return the sub-series between GPS *start* and *end* (inclusive)."""
         s_idx = max(0, int(round((float(start) - self.t0) / self.dt)))
         e_idx = min(len(self.data), int(round((float(end) - self.t0) / self.dt)))
         new_t0 = self.t0 + s_idx * self.dt
         return TimeSeries(data=self.data[s_idx:e_idx].copy(), t0=new_t0, dt=self.dt)
 
-    def prepend_zeros(self, n: int):
+    def prepend_zeros(self, n: int) -> None:
         """Prepend *n* zero samples (mutating, shifts t0 backward)."""
         self.data = np.concatenate([np.zeros(n, dtype=self.data.dtype), self.data])
         self.t0 -= n * self.dt
 
-    def append_zeros(self, n: int):
+    def append_zeros(self, n: int) -> None:
         """Append *n* zero samples (mutating)."""
         self.data = np.concatenate([self.data, np.zeros(n, dtype=self.data.dtype)])
 
-    def copy(self):
+    def copy(self) -> "TimeSeries":
         """Return a deep copy."""
         return TimeSeries(data=self.data.copy(), t0=self.t0, dt=self.dt)
 
-    def inject(self, other, copy=True):
+    def inject(self, other: "TimeSeries", copy: bool = True) -> "TimeSeries":
         """Add a signal into this time series, aligning by GPS time.
 
         The two time series are aligned by their start times (*t0*) and the

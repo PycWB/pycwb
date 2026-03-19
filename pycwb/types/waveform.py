@@ -1,6 +1,6 @@
 from pycwb.types.time_series import TimeSeries
 from scipy.signal import correlate, hilbert
-from pathlib import Path, PosixPath
+from pathlib import PosixPath
 import numpy as np
 import os
 import copy

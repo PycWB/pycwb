@@ -1,3 +1,5 @@
+"""Injection generators for reading strain data from files."""
+
 from pycwb.types.time_series import TimeSeries
 from scipy.signal import resample_poly
 import numpy as np
@@ -40,19 +42,29 @@ def _load_timeseries(path):
 
 
 def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs): 
-    """
-    Generates the strain reading it from a file. The available extensions are: .txt, .npy and .hdf.
-    Parameters:
-    -----------
-    parameters: dict
-        A dictionary containing the following keys:
-        - 'sample_rate': The sample rate of the data in which the strain is to be injected. Default is 16384 Hz. 
-        - 'files': A dictionary with keys as interferometer names and values as file paths. 
-                    Eg {'H1': 'path/to/H1_strain.txt', 'L1': 'path/to/L1_strain.txt'}
-    Returns:
-    --------
-    injections: dict
-        A dictionary with keys as interferometer names and values as pycwb TimeSeries.
+    """Generate strain by reading it from a file.
+
+    The available extensions are: .txt, .npy and .hdf.
+
+    Parameters
+    ----------
+    delta_t : float
+        Sampling interval (1 / sample_rate).
+    files : dict
+        Mapping of interferometer names to file paths, e.g.
+        ``{'H1': 'path/to/H1_strain.txt', 'L1': 'path/to/L1_strain.txt'}``.
+    allow_resampling : bool, optional
+        If ``True``, resample data whose sample rate does not match the
+        target rate.  Default is ``False``.
+    **kwargs
+        Additional injection parameters (``gps_time``, ``rescale``,
+        ``distribute``, etc.).
+
+    Returns
+    -------
+    dict
+        A dictionary with keys as interferometer names and values as
+        pycwb TimeSeries.
     """
     #Initialize the injections dictionary
     injections = {'type': 'strain'}
@@ -90,20 +102,19 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     return injections
 
 def resample_data(data, factor): 
-    """
-    Resamples the data using a polyphase filter.
-    
-    Parameters:
-    -----------
-    data: np.ndarray
-        The input data to be resampled.
-    factor: int
-        The resampling factor.
-        
-    Returns:
-    --------
-    np.ndarray
-        The resampled data.
+    """Resample data using a polyphase filter.
+
+    Parameters
+    ----------
+    data : TimeSeries
+        The input time series to be resampled.
+    factor : float
+        The resampling factor (>1 upsamples, <1 downsamples).
+
+    Returns
+    -------
+    TimeSeries
+        The resampled time series.
     """
     if factor > 1:   # Upsample
         resampled_data = resample_poly(data.data, int(factor), 1)
@@ -117,8 +128,6 @@ def resample_data(data, factor):
     return resampled_data
 
 
-def compute_central_time(strain): 
-    """ 
-    Computes the central time of the strain data.
-    """ 
+def compute_central_time(strain):
+    """Compute the central time of the strain data."""
     return (strain.data * strain.data * strain.sample_times.data).sum() / (strain.data * strain.data).sum() - strain.sample_times.data[0] 
