@@ -110,8 +110,8 @@ def create_job_segment_from_config(config):
                                                          config.inRate, config.segEdge)
     ## Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
     elif config.injection and job_segments is not None:
-        start_gps_time = min([job_seg.start_time for job_seg in job_segments])
-        end_gps_time = max([job_seg.end_time for job_seg in job_segments])
+        start_gps_time = min([job_seg.analyze_start for job_seg in job_segments])
+        end_gps_time = max([job_seg.analyze_end for job_seg in job_segments])
         injections, n_trails = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
         add_injections_into_job_segments(job_segments, injections)
         # add noise settings to the job segments if specified
@@ -121,7 +121,7 @@ def create_job_segment_from_config(config):
                 job_seg.noise = {
                     'type': noise['type'],
                     'psds': [noise['psds'][ifo] for ifo in config.ifo],
-                    'seeds': [noise['delta_seeds'][ifo] + job_seg.physical_start_times[ifo] for ifo in config.ifo],
+                    'seeds': [noise['delta_seeds'][ifo] + job_seg.physical_analyze_starts[ifo] for ifo in config.ifo],
                 }
 
     ############################################
@@ -293,14 +293,14 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
         # and even pixels when circular buffer is used for lag shift
         # The MRAcatalog distinguish odd and even pixels
         # If not compatible then the length is modified according the requirements
-        length = job_seg.end_time - job_seg.start_time
+        length = job_seg.duration
         if int(length * rate_min + 0.001) & 1:
-            job_seg.end_time -= 1
+            job_seg.analyze_end -= 1
 
         # add segOverlap to the dataector's segments stop for this job
-        job_seg.end_time += seg_overlap
+        job_seg.analyze_end += seg_overlap
 
-        logger.debug(f"job segment gps range = {job_seg.start_time} - {job_seg.end_time}")
+        logger.debug(f"job segment gps range = {job_seg.analyze_start} - {job_seg.analyze_end}")
     logger.info(f"Number of job segments = {len(job_segments)}")
 
     return job_segments
@@ -313,8 +313,8 @@ def attach_frame_files_to_job_segments(job_segments, ifos, frame_files, seg_edge
             job_seg.frames = []
         for ifo in ifos:
             job_seg.frames += select_frame_list(frame_files[ifo],
-                                                job_seg.physical_start_times[ifo],
-                                                job_seg.physical_end_times[ifo],
+                                                job_seg.physical_analyze_starts[ifo],
+                                                job_seg.physical_analyze_ends[ifo],
                                                 seg_edge)
         # job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
 
@@ -347,8 +347,8 @@ def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge)
     logger.info(f" - Frame types: {gwdatafind['frametype']}")
 
     # find the min and max gps time to fetch frames in one request
-    min_gps = min([job_seg.physical_start_times[ifo] for job_seg in job_segments for ifo in ifos])
-    max_gps = max([job_seg.physical_end_times[ifo] for job_seg in job_segments for ifo in ifos])
+    min_gps = min([job_seg.physical_analyze_starts[ifo] for job_seg in job_segments for ifo in ifos])
+    max_gps = max([job_seg.physical_analyze_ends[ifo] for job_seg in job_segments for ifo in ifos])
 
     framefiles = {}
 
@@ -424,7 +424,7 @@ def add_injections_into_job_segments(job_segments, injections):
         injection['start_time'] = injection['gps_time'] + injection['t_start']
         injection['end_time'] = injection['gps_time'] + injection['t_end']
     # Sort job segments and injections by start_time
-    job_segments.sort(key=lambda x: x.start_time)
+    job_segments.sort(key=lambda x: x.analyze_start)
     injections.sort(key=lambda x: x["start_time"])
     
     injection_index = 0
@@ -433,13 +433,13 @@ def add_injections_into_job_segments(job_segments, injections):
     for segment in job_segments:
         segment.injections = []
         # Move injection index to the first relevant injection
-        while injection_index < num_injections and injections[injection_index]["end_time"] < segment.start_time:
+        while injection_index < num_injections and injections[injection_index]["end_time"] < segment.analyze_start:
             injection_index += 1
         
         # Collect all overlapping injections
         i = injection_index
-        while i < num_injections and injections[i]["start_time"] <= segment.end_time:
-            if injections[i]["end_time"] >= segment.start_time:
+        while i < num_injections and injections[i]["start_time"] <= segment.analyze_end:
+            if injections[i]["end_time"] >= segment.analyze_start:
                 segment.injections.append(injections[i])
             i += 1
 

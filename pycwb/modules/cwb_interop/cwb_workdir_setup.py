@@ -117,8 +117,8 @@ def create_cwb_workdir(
     logger.info("Creating cWB compare workdir: %s", cwb_workdir)
 
     # 1. Write GWF files (one per IFO)
-    physical_starts = sub_job_seg.physical_start_times
-    physical_ends = sub_job_seg.physical_end_times
+    physical_starts = sub_job_seg.physical_analyze_starts
+    physical_ends = sub_job_seg.physical_analyze_ends
 
     frame_paths = {}   # {ifo: absolute_path_to_gwf}
     for i, ifo in enumerate(sub_job_seg.ifos):
@@ -194,8 +194,8 @@ def _create_dq_files(sub_job_seg, input_dir: str, config) -> tuple:
     (has_cat1, has_cat2) : (bool, bool)
         Whether CAT1 / CAT2 files were found in the pycwb config and written.
     """
-    physical_starts = sub_job_seg.physical_start_times
-    physical_ends = sub_job_seg.physical_end_times
+    physical_starts = sub_job_seg.physical_analyze_starts
+    physical_ends = sub_job_seg.physical_analyze_ends
 
     # Overall analysis period: union of all IFO windows
     period_start = int(min(physical_starts.values()))
@@ -274,8 +274,8 @@ def _write_user_parameters_c(config, sub_job_seg, config_dir: str,
     nIFO = len(sub_job_seg.ifos)
 
     # ---- segment timing ------------------------------------------------
-    physical_starts = sub_job_seg.physical_start_times
-    physical_ends = sub_job_seg.physical_end_times
+    physical_starts = sub_job_seg.physical_analyze_starts
+    physical_ends = sub_job_seg.physical_analyze_ends
     seg_start = int(min(physical_starts.values()))
     seg_end = int(max(physical_ends.values()))
 

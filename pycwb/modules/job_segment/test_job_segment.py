@@ -20,10 +20,10 @@ class TestJobSegment(unittest.TestCase):
 
         job_segments = get_job_list(ifos, cat1_list, seg_len, seg_mls, seg_edge, sample_rate)
         self.assertEqual(len(job_segments), 2)
-        self.assertEqual(job_segments[0].start_time, 100010)
-        self.assertEqual(job_segments[0].end_time, 101200)
-        self.assertEqual(job_segments[1].start_time, 101200)
-        self.assertEqual(job_segments[1].end_time, 102390)
+        self.assertEqual(job_segments[0].analyze_start, 100010)
+        self.assertEqual(job_segments[0].analyze_end, 101200)
+        self.assertEqual(job_segments[1].analyze_start, 101200)
+        self.assertEqual(job_segments[1].analyze_end, 102390)
 
 
 if __name__ == '__main__':

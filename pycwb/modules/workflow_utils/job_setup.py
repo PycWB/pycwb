@@ -86,11 +86,11 @@ def check_MRACatalog_setting() -> bool:
 
 
 def print_job_info(job_seg: WaveSegment) -> None:
-    job_id = job_seg.index
-    logger.info(f"Job ID: {job_id}")
-    logger.info(f"Start time: {job_seg.start_time}")
-    logger.info(f"End time: {job_seg.end_time}")
-    logger.info(f"Duration: {job_seg.end_time - job_seg.start_time}")
-    logger.info(f"Frames: {job_seg.frames}")
-    logger.info(f"Noise: {job_seg.noise}")
-    logger.info(f"Injections: {job_seg.injections}")
+    logger.info("Job ID:           %s", job_seg.index)
+    logger.info("Analyze window:   [%.1f, %.1f]  (duration %.1f s)",
+                job_seg.analyze_start, job_seg.analyze_end, job_seg.duration)
+    logger.info("Padded window:    [%.1f, %.1f]  (duration %.1f s, seg_edge=%.1f s)",
+                job_seg.padded_start, job_seg.padded_end, job_seg.padded_duration, job_seg.seg_edge)
+    logger.info("Frames:           %s", job_seg.frames)
+    logger.info("Noise:            %s", job_seg.noise)
+    logger.info("Injections:       %s", job_seg.injections)

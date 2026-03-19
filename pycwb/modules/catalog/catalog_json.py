@@ -345,7 +345,7 @@ class JSONCatalog(BaseCatalog):
 
         livetimes = []
         for job in jobs:
-            livetime_single = job["end_time"] - job["start_time"]
+            livetime_single = job["analyze_end"] - job["analyze_start"]
             for lag in lags:
                 livetimes.append({
                     "shift":    job.get("shift"),

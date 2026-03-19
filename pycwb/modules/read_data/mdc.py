@@ -82,11 +82,13 @@ def generate_noise_for_job_seg(job_seg, sample_rate, f_low=2.0, data=None):
     seeds = job_seg.noise['seeds'] if 'seeds' in job_seg.noise else [None] * len(job_seg.ifos)
     psds = job_seg.noise['psds'] if 'psds' in job_seg.noise else [None] * len(job_seg.ifos)
 
-    # generate noise for each ifo
+    # generate noise for the full padded window [padded_start, padded_end] so that
+    # the whitening step sees edge samples and the WDM TF map t_idx=0 maps to padded_start,
+    # consistent with the real-data path (read_from_job_segment also reads the padded window).
     noises = [generate_noise(psd=psds[i],
                              f_low=f_low, sample_rate=sample_rate,
-                             duration=job_seg.duration,
-                             start_time=job_seg.start_time, seed=seed) for i, seed in enumerate(seeds)]
+                             duration=job_seg.padded_duration,
+                             start_time=job_seg.padded_start, seed=seed) for i, seed in enumerate(seeds)]
 
     # if there are upstream data, add noise into the data
     if data:
@@ -311,7 +313,7 @@ def generate_injections(config, job_seg, strain=None):
     if not injected:
         injected = [TimeSeries(np.zeros(int(job_seg.duration * config.inRate)),
                                delta_t=1.0 / config.inRate,
-                               epoch=job_seg.start_time) for ifo in ifos]
+                               epoch=job_seg.analyze_start) for ifo in ifos]
 
     for injection in job_seg.injections:
         strain = generate_strain_from_injection(injection, config, injected[0].sample_rate, ifos)

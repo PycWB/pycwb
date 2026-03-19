@@ -105,6 +105,23 @@ class WaveSegment:
     Class to store the metadata of a wave segment for analysis, which contains the index of the segment,
     the start and end time of the segment, and the list of frame files that are within the segment.
 
+    Time-window conventions
+    -----------------------
+    ``start_time`` / ``end_time`` bound the **analysis window** — the portion
+    of data that is actually searched for events.  Because the wavelet / WDM
+    transforms require boundary padding, data is always loaded over a wider
+    **padded window** ``[padded_start, padded_end]`` =
+    ``[start_time − seg_edge, end_time + seg_edge]``.
+
+    Use the named properties to avoid arithmetic in call sites:
+
+    * ``analyze_start`` / ``analyze_end``   — analysis window (= start_time / end_time)
+    * ``padded_start``  / ``padded_end``    — padded data window (± seg_edge)
+    * ``duration``                          — analysis window length
+    * ``padded_duration``                   — padded window length (= duration + 2*seg_edge)
+    * ``physical_analyze_starts/ends``      — per-IFO analysis window (after superlag shift)
+    * ``physical_padded_starts/ends``       — per-IFO padded window (after superlag shift ± seg_edge)
+
     Parameters
     ----------
     index: int
@@ -113,14 +130,14 @@ class WaveSegment:
         trail index of the segment for injections, leave it 0 for no injections
     ifos: list of str
         list of interferometers
-    start_time: float
-        start time of the segment
-    end_time: float
-        end time of the segment
+    analyze_start: float
+        GPS start of the analysis window (excluding edge padding)
+    analyze_end: float
+        GPS end of the analysis window (excluding edge padding)
     sample_rate: float
         sample rate of the segment
     seg_edge: float
-        the edge of the segment (seconds)
+        wavelet boundary padding in seconds added on each side of the analysis window
     lag_size: int
         number of lags to generate (default 1)
     lag_step: float
@@ -148,8 +165,8 @@ class WaveSegment:
     """
     index: int
     ifos: List[str]
-    start_time: float
-    end_time: float
+    analyze_start: float
+    analyze_end: float
     sample_rate: float
     seg_edge: float
     lag_size: int = 1
@@ -166,45 +183,85 @@ class WaveSegment:
     injections: Optional[List[Dict]] = None
     trail_idx: int = 0
 
+    # ------------------------------------------------------------------
+    # Analysis-window accessors (no edge padding)
+    # ------------------------------------------------------------------
+
     @property
     def duration(self) -> float:
-        """
-        Duration of the segment.
+        """Duration of the analysis window in seconds (= analyze_end − analyze_start)."""
+        return self.analyze_end - self.analyze_start
 
-        Returns
-        -------
-        duration: float
-            duration of the segment
+    # ------------------------------------------------------------------
+    # Padded-window accessors (analysis window ± seg_edge)
+    # ------------------------------------------------------------------
+
+    @property
+    def padded_start(self) -> float:
+        """GPS start of the padded data window (= analyze_start − seg_edge).
+
+        This is the actual start of the data that is read from frames /
+        generated as noise.  All TimeSeries produced by the data-reading
+        layer have ``start_time == padded_start``.
         """
-        return self.end_time - self.start_time
+        return self.analyze_start - self.seg_edge
+
+    @property
+    def padded_end(self) -> float:
+        """GPS end of the padded data window (= analyze_end + seg_edge)."""
+        return self.analyze_end + self.seg_edge
+
+    @property
+    def padded_duration(self) -> float:
+        """Duration of the padded data window (= duration + 2 * seg_edge)."""
+        return self.analyze_end - self.analyze_start + 2.0 * self.seg_edge
+
+    # ------------------------------------------------------------------
+    # Per-IFO physical times (after applying superlag shifts)
+    # ------------------------------------------------------------------
+
+    @property
+    def physical_analyze_starts(self) -> Dict[str, float]:
+        """Per-IFO GPS start of the analysis window (superlag shifts applied).
+
+        For zero-lag or standard lags ``shift`` is ``None`` and every IFO
+        returns ``start_time``.  For superlags, IFO *i* returns
+        ``start_time − shift[i]``.
+        """
+        if self.shift is None:
+            return {ifo: self.analyze_start for ifo in self.ifos}
+        return {ifo: self.analyze_start - self.shift[i] for i, ifo in enumerate(self.ifos)}
+
+    @property
+    def physical_analyze_ends(self) -> Dict[str, float]:
+        """Per-IFO GPS end of the analysis window (superlag shifts applied)."""
+        if self.shift is None:
+            return {ifo: self.analyze_end for ifo in self.ifos}
+        return {ifo: self.analyze_end - self.shift[i] for i, ifo in enumerate(self.ifos)}
+
+    @property
+    def physical_padded_starts(self) -> Dict[str, float]:
+        """Per-IFO GPS start of the padded data window (= physical_analyze_starts[ifo] − seg_edge).
+
+        This is the correct epoch for any TimeSeries that spans the full
+        padded window per IFO (e.g. the epoch base for ``Event.gps``).
+        """
+        return {ifo: t - self.seg_edge for ifo, t in self.physical_analyze_starts.items()}
+
+    @property
+    def physical_padded_ends(self) -> Dict[str, float]:
+        """Per-IFO GPS end of the padded data window (= physical_analyze_ends[ifo] + seg_edge)."""
+        return {ifo: t + self.seg_edge for ifo, t in self.physical_analyze_ends.items()}
 
     @property
     def physical_start_times(self) -> Dict[str, float]:
-        """
-        Get the physical start times of the segment.
-
-        Returns
-        -------
-        physical_start_times: dict
-            physical start times of the segment
-        """
-        if self.shift is None:
-            return {ifo: self.start_time for ifo in self.ifos}
-        return {ifo: self.start_time - self.shift[i] for i, ifo in enumerate(self.ifos)}
+        """Deprecated alias for :attr:`physical_analyze_starts`."""
+        return self.physical_analyze_starts
 
     @property
     def physical_end_times(self) -> Dict[str, float]:
-        """
-        Get the physical end times of the segment.
-
-        Returns
-        -------
-        physical_end_times: dict
-            physical end times of the segment
-        """
-        if self.shift is None:
-            return {ifo: self.end_time for ifo in self.ifos}
-        return {ifo: self.end_time - self.shift[i] for i, ifo in enumerate(self.ifos)}
+        """Deprecated alias for :attr:`physical_analyze_ends`."""
+        return self.physical_analyze_ends
 
     @property
     def n_lag(self) -> int:
@@ -244,12 +301,14 @@ class WaveSegment:
         n_ifo = len(self.ifos)
         seg_duration = float(self.duration)
         lag_step = float(self.lag_step)
-        seg_edge = float(self.seg_edge)
 
         if lag_step <= 0:
             raise ValueError("lag_step must be positive")
 
-        lag_max_seg = int((seg_duration - 2.0 * seg_edge) / lag_step) - 1
+        # CWB computes lagMaxSeg as int((tfmap_size/rate - 2*edge) / lagStep) - 1.
+        # The TFmap spans the *padded* window (analysis + 2*edge), so
+        # tfmap_size/rate - 2*edge == analysis_duration == seg_duration here.
+        lag_max_seg = int(seg_duration / lag_step) - 1
         if lag_max_seg < 0:
             return np.zeros((0, n_ifo), dtype=float)
 
