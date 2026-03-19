@@ -161,8 +161,8 @@ def _save_timeseries_to_gwf(ts, ifo: str, channel_suffix: str, gwf_path: str) ->
     from gwpy.timeseries import TimeSeries as GWpyTimeSeries
 
     channel_name = f"{ifo}:{channel_suffix}"
-    # Accept both pycbc.TimeSeries (has .data, .start_time, .delta_t) and
-    # pycwb TimeSeries (same interface).
+    # Accept any TimeSeries-like object with .data, .start_time, .delta_t
+    # attributes (pycwb, pycbc, or similar).
     strain = GWpyTimeSeries(
         data=np.array(ts.data, dtype=np.float64),
         t0=float(ts.start_time),

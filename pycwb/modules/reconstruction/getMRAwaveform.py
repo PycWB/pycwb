@@ -108,7 +108,7 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc, whiten=False)
 
     Returns
     -------
-    waveform : pycbc.types.timeseries.TimeSeries
+    waveform : pycwb.types.time_series.TimeSeries
         reconstructed waveform
     """
     if not cluster.pixels:
@@ -188,7 +188,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
 
     Returns
     -------
-    waveforms : list of pycbc.types.timeseries.TimeSeries
+    waveforms : list of pycwb.types.time_series.TimeSeries
         reconstructed waveform
     """
     wdm_list = _create_wdm_set_python(config)
@@ -207,7 +207,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof, w
         if tof:
             R = rTDF  # effective time-delay rate
             t_shift = -v[i] / R
-            # Frequency-domain phase shift (replaces pycbc to_frequencyseries/to_timeseries)
+            # Frequency-domain phase shift
             n = len(x.data)
             xf = np.fft.rfft(x.data)
             freqs = np.fft.rfftfreq(n, d=x.dt)

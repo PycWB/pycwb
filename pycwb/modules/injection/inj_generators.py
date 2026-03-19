@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def _load_timeseries(path):
     """Load a time series from HDF5, NumPy, or text file.
 
-    Supports pycbc-format HDF5 files, .npy files, and whitespace-delimited
+    Supports HDF5 files, .npy files, and whitespace-delimited
     text files.
     """
     if path.endswith('.npy'):
@@ -41,7 +41,7 @@ def _load_timeseries(path):
 
 def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs): 
     """
-    Generates the pycbc strain reading it from a file. The available extensions are: .txt, .npy and .hdf.
+    Generates the strain reading it from a file. The available extensions are: .txt, .npy and .hdf.
     Parameters:
     -----------
     parameters: dict
@@ -52,7 +52,7 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     Returns:
     --------
     injections: dict
-        A dictionary with keys as interferometer names and values as pycbc TimeSeries.
+        A dictionary with keys as interferometer names and values as pycwb TimeSeries.
     """
     #Initialize the injections dictionary
     injections = {'type': 'strain'}

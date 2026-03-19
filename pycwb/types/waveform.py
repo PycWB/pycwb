@@ -12,7 +12,7 @@ class Waveform(TimeSeries):
     """
     Class to handle waveform data.
 
-    :param data: data (any TimeSeries-like: pycwb, pycbc, or gwpy)
+    :param data: data (any TimeSeries-like: pycwb or gwpy)
     :type data: TimeSeries
     """
     def __init__(self, data, folder=None):

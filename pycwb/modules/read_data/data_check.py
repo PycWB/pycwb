@@ -78,7 +78,7 @@ def check_and_resample_py(data, config, ifo_index):
     Input is normalized to pycwb TimeSeries and output remains pycwb TimeSeries.
 
     :param data:
-    :type data: pycwb.types.time_series.TimeSeries or pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries
+    :type data: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries
     :param config:
     :param ifo_index:
     :return: pycwb TimeSeries

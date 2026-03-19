@@ -10,7 +10,7 @@ except ImportError:
     )
 import numpy as np
 
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycwb_timeseries
 from pycwb.types.wdm import WDM
 
 
@@ -58,7 +58,7 @@ def regression(config, h):
 
     # cleaned data
     hh = r.getClean()
-    strain = convert_wavearray_to_pycbc_timeseries(hh)
+    strain = convert_wavearray_to_pycwb_timeseries(hh)
     tf_map.resize(0)
     ##########################################
 

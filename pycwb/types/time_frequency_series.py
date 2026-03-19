@@ -11,7 +11,7 @@ class TimeFrequencySeries:
         TimeFrequencyMap provides a cleaner interface and better integration with pure-Python WDM operations.
 
     :param data: data
-    :type data: pycbc.types.timeseries.TimeSeries
+    :type data: pycwb.types.time_series.TimeSeries
     :param wavelet: wavelet method
     :type wavelet: WDM
     :param whiten_mode: whiten mode

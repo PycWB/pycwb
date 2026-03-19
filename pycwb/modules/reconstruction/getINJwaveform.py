@@ -17,8 +17,8 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
 
     Parameters
     ----------
-    hot : list of pycbc.types.timeseries.TimeSeries
-        list of  pycbc.types.timeseries.TimeSeries objects
+    hot : list of pycwb.types.time_series.TimeSeries
+        list of pycwb.types.time_series.TimeSeries objects
     tf_map : list of pycwb.types.wdm.WDM
         list of WDM objects
     gps_times : gps_time
@@ -36,7 +36,7 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
         list of dictionaries containing injection statistics and waveforms
     """
     
-    # Support both legacy TimeFrequencySeries wrappers and plain pycbc TimeSeries
+    # Support both legacy TimeFrequencySeries wrappers and plain pycwb TimeSeries
     if isinstance(hot, TimeFrequencySeries):
         hot = hot.data
     if isinstance(tf_map, TimeFrequencySeries):

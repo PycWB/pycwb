@@ -48,13 +48,13 @@ def fake_conditioning(config, strains):
 
 
 def _load_timeseries_h5(path):
-    """Read a PyCBC-format HDF5 time series file.
+    """Read an HDF5 time series file.
 
     Returns a pycwb TimeSeries (only the data array is used downstream,
     so start_time/delta_t are best-effort).
     """
     with h5py.File(path, 'r') as f:
-        # pycbc-format HDF5 stores data at the root 'data' key
+        # HDF5 format stores data at the root 'data' key
         if 'data' in f:
             data = np.array(f['data'], dtype=np.float64)
             t0 = float(f['data'].attrs.get('start_time', 0.0))

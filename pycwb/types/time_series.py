@@ -294,7 +294,9 @@ class TimeSeries:
     def to_pycbc(self):
         """
         Convert to a PyCBC TimeSeries object.
-        
+
+        .. note:: Requires the optional ``pycbc`` package to be installed.
+
         :return: PyCBC TimeSeries object
         :rtype: pycbc.types.TimeSeries
         """
@@ -390,7 +392,10 @@ class TimeSeries:
     def from_pycbc(cls, pycbc_ts):
         """
         Create a TimeSeries from a PyCBC TimeSeries object.
-        
+
+        .. note:: Does not require ``pycbc`` to be installed; any object with
+           ``data``, ``start_time``, and ``delta_t`` attributes is accepted.
+
         :param pycbc_ts: PyCBC TimeSeries object
         :type pycbc_ts: pycbc.types.TimeSeries
         :return: TimeSeries object
@@ -408,7 +413,7 @@ class TimeSeries:
         :return: TimeSeries object
         :rtype: TimeSeries
         """
-        return cls(data=gwpy_ts.value, t0=gwpy_ts.t0, dt=gwpy_ts.dt)
+        return cls(data=gwpy_ts.value, t0=float(gwpy_ts.t0.value), dt=float(gwpy_ts.dt.value))
 
     @classmethod
     def from_input(cls, ts):

@@ -24,7 +24,7 @@ def whitening_cwb(config, h):
     :param config: config object
     :type config: Config
     :param h: strain data
-    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
+    :type h: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: (whitened strain, nRMS)
     :rtype: tuple[pycwb.types.time_frequency_series.TimeFrequencySeries, pycwb.types.time_frequency_series.TimeFrequencySeries]
     """

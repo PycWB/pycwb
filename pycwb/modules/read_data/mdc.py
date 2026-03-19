@@ -190,14 +190,16 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
         generator = config.injection['generator']
     else:
         # ------------------------------
-        # deprecated warning: the default waveform generator will be remove in the future
-        warn("The default waveform generator will be removed in the future, please specify the generator in the injection parameters", DeprecationWarning)
-        generator = "pycbc.waveform.get_td_waveform"
+        # deprecated warning: the default waveform generator will be removed in the future
+        warn("No explicit waveform generator specified. "
+             "Using 'pycwb.modules.injection.gwsignal_waveform.get_td_waveform' as default. "
+             "Please specify the generator in the injection parameters.", DeprecationWarning)
+        generator = "pycwb.modules.injection.gwsignal_waveform.get_td_waveform"
         # ------------------------------
 
     # check if generator is a string
     if not isinstance(generator, str):
-        raise TypeError(f"Generator should be a string, e.g. 'pycbc.waveform.get_td_waveform', got {type(generator)}")
+        raise TypeError(f"Generator should be a string, e.g. 'lalsimulation.gwsignal.generate_td_waveform', got {type(generator)}")
 
     # generate hp and hc
     logger.info(f"Generating waveform using {generator}")
@@ -235,7 +237,6 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             generated_data.pop('type')
             logger.info(f"Polarizations {generated_data.keys()} are generated")
 
-            # convert to pycbc timeseries
             # if more polarizations are generated, throw an error
             if set(generated_data.keys()) != {'hp', 'hc'}:
                 raise NotImplementedError("Only hp and hc polarization is supported for now")
@@ -278,7 +279,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
 
 def generate_injections(config, job_seg, strain=None):
     """
-    A sample function to generate injection from pycbc and save it to gwf files
+    A sample function to generate injections and save them to gwf files
     with the detectors specified in the config
 
     :param config: user configuration
