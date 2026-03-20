@@ -35,7 +35,6 @@ html_static_path = ['_static']
 intersphinx_mapping = {
     'gwpy': ('https://gwpy.github.io/docs/stable/', None),
     'numpy': ('https://docs.scipy.org/doc/numpy/', None),
-    'pycbc': ('https://pycbc.org/pycbc/latest/html/', None),
 }
 
 
