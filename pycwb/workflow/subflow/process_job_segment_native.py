@@ -317,10 +317,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 )
 
                 if result_cluster is None or result_cluster.cluster_status != -1:
-                    logger.info("likelihood rejected cluster %d in lag %d", k + 1, lag)
+                    logger.info(
+                        "likelihood rejected cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
+                        k + 1, lag, len(selected_cluster.pixels),
+                        selected_cluster.start_time, selected_cluster.stop_time,
+                        selected_cluster.low_frequency, selected_cluster.high_frequency,
+                    )
                     continue
 
-                logger.info("likelihood accepted cluster %d in lag %d", k + 1, lag)
+                logger.info(
+                    "likelihood accepted cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
+                    k + 1, lag, len(result_cluster.pixels),
+                    result_cluster.start_time, result_cluster.stop_time,
+                    result_cluster.low_frequency, result_cluster.high_frequency,
+                )
 
                 # Construct Event from native cluster
                 event = Event()
