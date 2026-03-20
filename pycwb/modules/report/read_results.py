@@ -33,7 +33,7 @@ def read_triggers(work_dir, run_dir, filters=None,
 
         cat = Catalog.open("catalog/catalog.parquet")
         table = cat.query(
-            "SELECT * FROM triggers WHERE injection.mchirp > 10"
+            "SELECT * FROM triggers WHERE injection.approximant = 'WNB' AND injection.hrss > 1e-22"
         )
     """
     path = os.path.join(work_dir, run_dir, file)

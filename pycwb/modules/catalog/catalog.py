@@ -30,7 +30,7 @@ Primary interface
     print(cat.version, cat.config, cat.jobs)
     table = cat.triggers()             # pyarrow.Table of all triggers
     table = cat.filter("rho > 5", "net_cc > 0.5")
-    table = cat.query("SELECT id, rho FROM triggers WHERE injection.mchirp > 10")
+    table = cat.query("SELECT id, rho FROM triggers WHERE injection.approximant = 'WNB' AND rho > 5")
     livetimes = cat.live_time()
 
 Module-level functions are kept as thin shims for backwards compatibility.
@@ -335,12 +335,20 @@ class Catalog(BaseCatalog):
         Example::
 
             table = cat.query('''
-                SELECT id, rho, injection.mchirp, injection.distance
+                SELECT id, rho, injection.name, injection.hrss, injection.approximant
                 FROM   triggers
                 WHERE  injection IS NOT NULL
-                  AND  injection.mchirp > 10
+                  AND  injection.approximant = 'WNB'
                   AND  rho > 5
             ''')
+
+            # Access waveform-specific parameters stored in the JSON blob:
+            table = cat.query(
+                "SELECT injection.name,"
+                " json_extract(injection.parameters, '$.frequency')::FLOAT AS freq,"
+                " json_extract(injection.parameters, '$.Q')::FLOAT AS Q"
+                " FROM triggers WHERE injection IS NOT NULL"
+            )
 
         Parameters
         ----------

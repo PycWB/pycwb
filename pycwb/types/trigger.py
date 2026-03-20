@@ -37,137 +37,194 @@ from typing import Optional
 class InjectionParams:
     """Simulation-only parameters describing the injected signal.
 
-    All per-IFO lists are ordered by the parent :attr:`Trigger.ifo_list`.
+    Storage is two-tier:
+
+    * **Common typed fields** (``name``, ``hrss``, ``target_snr``, ``ra``, ``dec``,
+      ``gps_time``, ``pol``, ``approximant``) — always-present typed Arrow columns
+      that enable fast Parquet predicate pushdown and work with :meth:`Catalog.filter`.
+    * **Per-IFO injection-matched fields** (``snr_sq``, ``rec_snr_sq``,
+      ``overlap_snr``, ``d_eff``, ``fp``, ``fx``, ``time``, ``hrss_det``) — the
+      injection-side counterparts of the same-named ``Trigger`` per-IFO columns,
+      sourced from the second half (``ifo+NIFO``) of the legacy Event arrays and
+      from cWB's injection-comparison output (``iSNR``, ``oSNR``, ``ioSNR``,
+      ``Deff``).  These have **no equivalent** in the ``Trigger`` for background
+      triggers.
+    * **Flexible parameters** (``parameters``) — JSON-encoded string of the
+      **complete** original user injection dict.  Preserves all waveform-specific
+      fields (``frequency``, ``Q``, ``bandwidth`` for WNB/SGE; ``mass1``,
+      ``mass2``, ``spin1z`` for CBC, …).  Queryable via DuckDB
+      ``json_extract`` / ``json_extract_string``::
+
+          cat.query(\"\"\"
+              SELECT injection.name, injection.hrss,
+                     json_extract(injection.parameters, '$.frequency')::FLOAT AS freq
+              FROM   triggers
+              WHERE  injection IS NOT NULL
+          \"\"\")
+
     ``None`` for background triggers.
     """
 
-    waveform_name: str = ""
-    """Name of the injection waveform family (e.g. ``"SG"``, ``"WNB"``, ``"BBH"``)."""
+    # --- Common typed fields (fast Parquet filtering) --------------------
 
-    waveform_type: int = 0
-    """Numeric identifier of the injected waveform type (legacy ``type[1]``)."""
+    name: str = ""
+    """Injection waveform name, e.g. ``"WNB17b_0_0"``, ``"SGE_Q9_70Hz"``."""
 
-    amplitude_factor: float = 0.0
-    """Multiplicative amplitude scale applied to the injection (legacy ``factor``)."""
+    hrss: float = 0.0
+    """Network total injected hrss: sqrt(Σ hrss²) over detectors."""
 
-    # Sky position at injection
-    phi: float = 0.0
-    """Injected sky longitude in cWB Earth coordinates (degrees)."""
-
-    theta: float = 0.0
-    """Injected sky co-latitude in cWB Earth coordinates (degrees)."""
+    target_snr: float = 0.0
+    """Target network SNR (0 if not applicable)."""
 
     ra: float = 0.0
-    """Injected Right Ascension (equatorial, degrees)."""
+    """Injected Right Ascension (radians)."""
 
     dec: float = 0.0
-    """Injected Declination (equatorial, degrees)."""
+    """Injected Declination (radians)."""
 
-    psi: float = 0.0
+    gps_time: float = 0.0
+    """Injection GPS time (geocentric end time)."""
+
+    pol: float = 0.0
     """Injected polarisation angle (radians)."""
 
-    iota: float = 0.0
-    """Injected inclination angle (cos iota convention)."""
+    approximant: str = ""
+    """Waveform approximant, e.g. ``"WNB"``, ``"SGE"``, ``"IMRPhenomTPHM"``."""
 
-    # Signal properties
-    mchirp: float = 0.0
-    """Injected chirp mass (M☉)  (legacy ``chirp[0]``)."""
-
-    strain: float = 0.0
-    """Injected total hrss: sqrt(Σ hrss²) over detectors (legacy ``strain[1]``)."""
-
-    distance: float = 0.0
-    """Injected luminosity distance (Mpc)  (legacy ``range[1]``)."""
-
-    mass: list[float] = field(default_factory=list)
-    """Injected component masses [m1, m2] in M☉ (CBC only)."""
-
-    spin: list[float] = field(default_factory=list)
-    """Injected spin parameters [s1x, s1y, s1z, s2x, s2y, s2z] (CBC only)."""
-
-    # Per-IFO injection fields
-    time: list[float] = field(default_factory=list)
-    """GPS time of injection arrival at each detector  (legacy ``time[ifo+NIFO]``)."""
-
-    hrss: list[float] = field(default_factory=list)
-    """Injected hrss at each detector."""
-
-    fp: list[float] = field(default_factory=list)
-    """Antenna response F₊ at injected sky position per detector
-    (legacy ``bp[ifo+NIFO]``)."""
-
-    fx: list[float] = field(default_factory=list)
-    """Antenna response F× at injected sky position per detector
-    (legacy ``bx[ifo+NIFO]``)."""
+    # --- Per-IFO injection-matched fields --------------------------------
+    # Injection-side counterparts of the Trigger's own per-IFO columns,
+    # computed at the *injected* sky position / arrival time, not the
+    # reconstructed one.
 
     snr_sq: list[float] = field(default_factory=list)
-    """Injected SNR² per detector (legacy ``iSNR[ifo]``)."""
+    """Injected SNR² per detector  (legacy ``iSNR[ifo]``)."""
 
     rec_snr_sq: list[float] = field(default_factory=list)
-    """Reconstructed SNR² in injection window per detector  (legacy ``oSNR[ifo]``)."""
+    """Reconstructed SNR² inside injection window per detector
+    (legacy ``oSNR[ifo]``)."""
 
     overlap_snr: list[float] = field(default_factory=list)
-    """Cross-correlation between injected and reconstructed waveforms per detector
+    """Cross-correlation (injected ∩ reconstructed) per detector
     (legacy ``ioSNR[ifo]``).  Residual energy ∝ ``snr_sq + rec_snr_sq − 2·overlap_snr``."""
 
     d_eff: list[float] = field(default_factory=list)
     """Effective distance per detector (Mpc)  (legacy ``Deff[ifo]``)."""
 
+    fp: list[float] = field(default_factory=list)
+    """Antenna response F₊ at the *injected* sky position per detector
+    (legacy ``bp[ifo+NIFO]``)."""
+
+    fx: list[float] = field(default_factory=list)
+    """Antenna response F× at the *injected* sky position per detector
+    (legacy ``bx[ifo+NIFO]``)."""
+
+    time: list[float] = field(default_factory=list)
+    """GPS arrival time of the *injection* at each detector
+    (legacy ``time[ifo+NIFO]``)."""
+
+    hrss_det: list[float] = field(default_factory=list)
+    """Injected hrss at each detector."""
+
+    # --- Flexible parameters (JSON blob) ---------------------------------
+
+    parameters: str = ""
+    """JSON-encoded dict of the complete original user injection parameters.
+
+    Preserves all waveform-specific fields that do not fit a fixed schema
+    (e.g. ``frequency``, ``Q``, ``bandwidth``, ``duration`` for WNB/SGE;
+    ``mass1``, ``mass2``, ``spin1z`` for CBC; legacy cWB scalar fields for
+    ROOT-converted triggers).  Query with DuckDB::
+
+        cat.query(\"\"\"
+            SELECT injection.name,
+                   json_extract(injection.parameters, '$.frequency')::FLOAT AS freq,
+                   json_extract(injection.parameters, '$.Q')::FLOAT         AS Q
+            FROM   triggers
+            WHERE  injection.approximant = 'SGE'
+        \"\"\")
+    """
+
     def to_dict(self) -> dict:
         """Return a flat dict for Arrow struct serialisation."""
         return {
-            "waveform_name":    self.waveform_name,
-            "waveform_type":    self.waveform_type,
-            "amplitude_factor": float(self.amplitude_factor),
-            "phi":              float(self.phi),
-            "theta":            float(self.theta),
-            "ra":               float(self.ra),
-            "dec":              float(self.dec),
-            "psi":              float(self.psi),
-            "iota":             float(self.iota),
-            "mchirp":           float(self.mchirp),
-            "strain":           float(self.strain),
-            "distance":         float(self.distance),
-            "time":             [float(v) for v in self.time],
-            "fp":               [float(v) for v in self.fp],
-            "fx":               [float(v) for v in self.fx],
-            "snr_sq":           [float(v) for v in self.snr_sq],
-            "rec_snr_sq":       [float(v) for v in self.rec_snr_sq],
-            "overlap_snr":      [float(v) for v in self.overlap_snr],
-            "hrss":             [float(v) for v in self.hrss],
-            "d_eff":            [float(v) for v in self.d_eff],
-            "mass":             [float(v) for v in self.mass],
-            "spin":             [float(v) for v in self.spin],
+            "name":        self.name,
+            "hrss":        float(self.hrss),
+            "target_snr":  float(self.target_snr),
+            "ra":          float(self.ra),
+            "dec":         float(self.dec),
+            "gps_time":    float(self.gps_time),
+            "pol":         float(self.pol),
+            "approximant": self.approximant,
+            "snr_sq":      [float(v) for v in self.snr_sq],
+            "rec_snr_sq":  [float(v) for v in self.rec_snr_sq],
+            "overlap_snr": [float(v) for v in self.overlap_snr],
+            "d_eff":       [float(v) for v in self.d_eff],
+            "fp":          [float(v) for v in self.fp],
+            "fx":          [float(v) for v in self.fx],
+            "time":        [float(v) for v in self.time],
+            "hrss_det":    [float(v) for v in self.hrss_det],
+            "parameters":  self.parameters,
         }
 
     @staticmethod
     def arrow_struct():
         """Return the PyArrow struct type for :class:`InjectionParams`."""
         import pyarrow as pa
+        lf32 = pa.list_(pa.float32())
+        lf64 = pa.list_(pa.float64())
         return pa.struct([
-            pa.field("waveform_name",    pa.string()),
-            pa.field("waveform_type",    pa.int32()),
-            pa.field("amplitude_factor", pa.float32()),
-            pa.field("phi",              pa.float32()),
-            pa.field("theta",            pa.float32()),
-            pa.field("ra",               pa.float32()),
-            pa.field("dec",              pa.float32()),
-            pa.field("psi",              pa.float32()),
-            pa.field("iota",             pa.float32()),
-            pa.field("mchirp",           pa.float32()),
-            pa.field("strain",           pa.float32()),
-            pa.field("distance",         pa.float32()),
-            pa.field("time",             pa.list_(pa.float64())),
-            pa.field("fp",               pa.list_(pa.float32())),
-            pa.field("fx",               pa.list_(pa.float32())),
-            pa.field("snr_sq",           pa.list_(pa.float32())),
-            pa.field("rec_snr_sq",       pa.list_(pa.float32())),
-            pa.field("overlap_snr",      pa.list_(pa.float32())),
-            pa.field("hrss",             pa.list_(pa.float32())),
-            pa.field("d_eff",            pa.list_(pa.float32())),
-            pa.field("mass",             pa.list_(pa.float32())),
-            pa.field("spin",             pa.list_(pa.float32())),
+            # common typed fields
+            pa.field("name",         pa.string()),
+            pa.field("hrss",         pa.float32()),
+            pa.field("target_snr",   pa.float32()),
+            pa.field("ra",           pa.float32()),
+            pa.field("dec",          pa.float32()),
+            pa.field("gps_time",     pa.float64()),
+            pa.field("pol",          pa.float32()),
+            pa.field("approximant",  pa.string()),
+            # per-IFO injection-matched fields
+            pa.field("snr_sq",       lf32),
+            pa.field("rec_snr_sq",   lf32),
+            pa.field("overlap_snr",  lf32),
+            pa.field("d_eff",        lf32),
+            pa.field("fp",           lf32),
+            pa.field("fx",           lf32),
+            pa.field("time",         lf64),
+            pa.field("hrss_det",     lf32),
+            # flexible parameters
+            pa.field("parameters",   pa.string()),
         ])
+
+    @classmethod
+    def from_injection_dict(cls, inj_dict: dict) -> "InjectionParams":
+        """Create an :class:`InjectionParams` from a raw user injection dict.
+
+        Extracts the common typed fields by well-known key names; serialises
+        the **complete** dict as a JSON string into :attr:`parameters`.
+
+        Parameters
+        ----------
+        inj_dict : dict
+            The injection parameter dict as produced by
+            ``injection_parameters.py`` and enriched by the pipeline
+            (``ra``, ``dec``, ``gps_time`` added by sky/time distribution).
+        """
+        import json as _json
+        inj = cls()
+        inj.name        = str(inj_dict.get("name", ""))
+        inj.hrss        = float(inj_dict.get("hrss", 0.0))
+        inj.target_snr  = float(inj_dict.get("target_snr",
+                                inj_dict.get("targeted_snr", 0.0)))
+        inj.ra          = float(inj_dict.get("ra", 0.0))
+        inj.dec         = float(inj_dict.get("dec", 0.0))
+        inj.gps_time    = float(inj_dict.get("gps_time", 0.0))
+        inj.pol         = float(inj_dict.get("pol", 0.0))
+        inj.approximant = str(inj_dict.get("approximant", ""))
+        try:
+            inj.parameters = _json.dumps(inj_dict, default=str)
+        except (TypeError, ValueError):
+            inj.parameters = "{}"
+        return inj
 
 
 # ---------------------------------------------------------------------------
@@ -904,31 +961,53 @@ class Trigger:
             or isinstance(inj_raw, InjectionParams)
         )
         if has_injection:
-            inj = InjectionParams()
-            if isinstance(inj_raw, dict):
-                inj.waveform_name    = inj_raw.get("waveform_name", inj_raw.get("name", ""))
-                inj.waveform_type    = int(inj_raw.get("waveform_type", inj_raw.get("type", 0)))
-                inj.amplitude_factor = float(inj_raw.get("amplitude_factor",
-                                             inj_raw.get("factor", 0.0)))
-            elif isinstance(inj_raw, InjectionParams):
+            if isinstance(inj_raw, InjectionParams):
                 inj = inj_raw
-            inj.phi    = phi1
-            inj.theta  = theta1
-            inj.ra     = float(phi[2]) if len(phi) > 2 else 0.0  # best approximation
-            inj.dec    = float(theta[2]) if len(theta) > 2 else 0.0
-            inj.psi    = psi1
-            inj.iota   = iota1
-            inj.mchirp = chirp0
-            inj.strain = strain1
-            inj.fp     = inj_fp
-            inj.fx     = inj_fx
-            inj.time   = inj_time
-            inj.snr_sq       = _fl(isnr)
-            inj.rec_snr_sq   = _fl(osnr)
-            inj.overlap_snr  = _fl(iosnr)
-            inj.d_eff        = _fl(deff)
-            inj.mass         = _fl(getattr(ev, "mass", []))
-            inj.spin         = _fl(getattr(ev, "spin", []))
+                _need_ra_fallback  = False  # ra/dec already set in the object
+                _need_dec_fallback = False
+            elif isinstance(inj_raw, dict) and inj_raw:
+                inj = InjectionParams.from_injection_dict(inj_raw)
+                # Fall back to cWB equatorial coords only when the user dict
+                # did not supply the key — avoids overwriting a valid RA=0.0.
+                _need_ra_fallback  = "ra"  not in inj_raw
+                _need_dec_fallback = "dec" not in inj_raw
+            else:
+                # Legacy cWB path: no user dict — reconstruct from Event arrays
+                import json as _json
+                inj = InjectionParams()
+                inj.ra       = float(phi[2])   if len(phi)   > 2 else 0.0
+                inj.dec      = float(theta[2]) if len(theta) > 2 else 0.0
+                inj.hrss     = strain1
+                inj.gps_time = inj_time[0] if inj_time else 0.0
+                inj.parameters = _json.dumps({
+                    "phi":    phi1,
+                    "theta":  theta1,
+                    "psi":    psi1,
+                    "iota":   iota1,
+                    "mchirp": chirp0,
+                    "strain": strain1,
+                })
+                _need_ra_fallback  = False  # ra/dec set directly above
+                _need_dec_fallback = False
+            # Always fill per-IFO injection-matched fields from cWB Event arrays
+            # (intentional clobber): these are computed at the *injected* sky
+            # position/time and are distinct from the Trigger's reconstructed
+            # per-IFO columns, even when inj_raw was already an InjectionParams.
+            inj.fp          = inj_fp
+            inj.fx          = inj_fx
+            inj.time        = inj_time
+            inj.snr_sq      = _fl(isnr)
+            inj.rec_snr_sq  = _fl(osnr)
+            inj.overlap_snr = _fl(iosnr)
+            inj.d_eff       = _fl(deff)
+            inj.hrss_det    = _fl(getattr(ev, "hrss0", []))
+            # Fall back to cWB equatorial coords when the dict did not supply
+            # ra/dec.  Guard uses explicit flags (not truthiness) so that a
+            # valid RA=0.0 (Vernal Equinox direction) is never silently overwritten.
+            if _need_ra_fallback and len(phi) > 2:
+                inj.ra = float(phi[2])
+            if _need_dec_fallback and len(theta) > 2:
+                inj.dec = float(theta[2])
             t.injection = inj
 
         # --- q-veto ---
