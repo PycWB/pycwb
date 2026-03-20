@@ -112,7 +112,7 @@ def create_job_segment_from_config(config):
     elif config.injection and job_segments is not None:
         start_gps_time = min([job_seg.analyze_start for job_seg in job_segments])
         end_gps_time = max([job_seg.analyze_end for job_seg in job_segments])
-        injections, n_trails = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
+        injections, n_trials = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
         add_injections_into_job_segments(job_segments, injections)
         # add noise settings to the job segments if specified
         noise = config.injection.get('noise', None)
@@ -168,14 +168,19 @@ def create_job_segment_from_config(config):
         flat_job_segments = []
         index = 0
         for job_segment in job_segments:
-            trail_indices = set(inj['trail_idx'] for inj in (job_segment.injections or []) if 'trail_idx' in inj)
-            if not trail_indices:
+            trial_indices = set(
+                inj.get('trial_idx')
+                for inj in (job_segment.injections or [])
+                if 'trial_idx' in inj
+            )
+            if not trial_indices:
                 flat_job_segments.append(replace(job_segment, index=index))
                 index += 1
                 continue
-            for trail_idx in trail_indices:
-                trail_injections = [inj for inj in job_segment.injections if inj.get('trail_idx') == trail_idx]
-                flat_job_segments.append(replace(job_segment, index=index, injections=trail_injections))
+            for trial_idx in trial_indices:
+                trial_injections = [inj for inj in job_segment.injections
+                                    if inj.get('trial_idx') == trial_idx]
+                flat_job_segments.append(replace(job_segment, index=index, injections=trial_injections))
                 index += 1
         job_segments = flat_job_segments
 

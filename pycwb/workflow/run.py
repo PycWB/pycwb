@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level="INFO",
            n_proc=1, plot=None, config_vars: str = None, input_dir=None,
            compress_json=False, dry_run=False,
-           jobs: str = None, trail_idx: str = None, lags: str = None):
+           jobs: str = None, trial_idx: str = None, lags: str = None):
     # TODO: optimize the plot control
     logger_init(log_file, log_level)
 
@@ -45,10 +45,10 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
                     sorted(seg.index for seg in job_segments))
     else:
         logger.info("  --jobs      : all (%d segments)", len(job_segments))
-    if trail_idx is not None:
-        logger.info("  --trail-idx : %s", trail_idx)
+    if trial_idx is not None:
+        logger.info("  --trial-idx : %s", trial_idx)
     else:
-        logger.info("  --trail-idx : all (from segment injections)")
+        logger.info("  --trial-idx : all (from segment injections)")
     if lags is not None:
         logger.info("  --lags      : %s  (%d lag vectors)", lags,
                     len(job_segments[0].lag_array) if job_segments else 0)
@@ -56,7 +56,7 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
         logger.info("  --lags      : from config (lag_size=%s)",
                     job_segments[0].lag_size if job_segments else "N/A")
 
-    trail_ids = parse_id_string(trail_idx) if trail_idx is not None else None
+    trial_ids = parse_id_string(trial_idx) if trial_idx is not None else None
 
     logger.info(f"Loading segment processer: {config.segment_processer}")
     main_func = import_function(config.segment_processer)
@@ -67,14 +67,14 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
         return
 
     for job_seg in job_segments:
-        if trail_ids is not None:
-            for tid in trail_ids:
+        if trial_ids is not None:
+            for tid in trial_ids:
                 sub_job_seg = copy.deepcopy(job_seg)
-                sub_job_seg.trail_idx = tid
+                sub_job_seg.trial_idx = tid
                 if job_seg.injections:
                     sub_job_seg.injections = [inj for inj in job_seg.injections
-                                              if inj.get('trail_idx', 0) == tid]
-                logger.info(f"Processing job segment {job_seg.index}, trail_idx={tid}")
+                                              if inj.get('trial_idx', 0) == tid]
+                logger.info(f"Processing job segment {job_seg.index}, trial_idx={tid}")
                 main_func(working_dir, config, sub_job_seg, compress_json=compress_json)
         else:
             logger.info(f"Processing job segment {job_seg.index}")

@@ -32,7 +32,7 @@ def create_single_trigger_folder(working_dir: str, trigger_dir: str, job_seg: Wa
     """
     trigger_folder = (
         f"{working_dir}/{trigger_dir}/"
-        f"trigger_{job_seg.index}_{job_seg.trail_idx}_{event[0].stop[0]}_{event[0].hash_id}"
+        f"trigger_{job_seg.index}_{job_seg.trial_idx}_{event[0].stop[0]}_{event[0].hash_id}"
     )
 
     ## Do not create the folder here, let the save function create it to prevent too many folders

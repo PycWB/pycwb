@@ -126,8 +126,8 @@ class WaveSegment:
     ----------
     index: int
         index of the segment
-    trail_idx: int
-        trail index of the segment for injections, leave it 0 for no injections
+    trial_idx: int
+        trial index of the segment for injections, leave it 0 for no injections
     ifos: list of str
         list of interferometers
     analyze_start: float
@@ -181,7 +181,7 @@ class WaveSegment:
     frames: Optional[List[FrameFile]] = None
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
-    trail_idx: int = 0
+    trial_idx: int = 0
     veto_windows: list[tuple[float, float]] | None = None
 
     # ------------------------------------------------------------------

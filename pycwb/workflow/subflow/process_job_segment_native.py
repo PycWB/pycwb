@@ -59,7 +59,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     # ─────────────────────────────────────────────────────────────────────────
     # HIGH-LEVEL WORKFLOW OVERVIEW
     # ─────────────────────────────────────────────────────────────────────────
-    # For each trail_idx (injection realisation, or 0 if no injections):
+    # For each trial_idx (injection realisation, or 0 if no injections):
     #
     #   1. DATA LOADING     – read frames / generate noise / inject signals
     #   2. CONDITIONING     – resample → whiten (data + MDC injections)
@@ -85,10 +85,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
-    # get all the trail_idx from the injections, if there is no injections, use 0
-    trail_idxs = {0}
+    # get all the trial_idx from the injections, if there is no injections, use 0
+    trial_idxs = {0}
     if job_seg.injections:
-        trail_idxs = set([injection.get('trail_idx', 0) for injection in job_seg.injections])
+        trial_idxs = set([inj.get('trial_idx', 0) for inj in job_seg.injections])
 
     if catalog_file is not None:
         base = os.path.basename(catalog_file)
@@ -97,24 +97,26 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     else:
         wave_file = None
 
-    # Outer loop: one iteration per injection trail (or a single pass when there are no injections).
-    for trail_idx in trail_idxs:
+    # Outer loop: one iteration per injection trial (or a single pass when there are no injections).
+    for trial_idx in trial_idxs:
+        trial_timer = time.perf_counter()  # wall-time for this trial
         # ─────────────────────────────────────────────────────────────────────
         # STEP 1 – DATA LOADING & INJECTION SETUP
         # ─────────────────────────────────────────────────────────────────────
-        # Start from a fresh copy of base_data for every trail so that injected
+        # Start from a fresh copy of base_data for every trial so that injected
         # signals from one trial never bleed into another.
-        # warning: the copy is ensured by the inject() method, here is just to make it explicit that the data is different for each trail.
+        # warning: the copy is ensured by the inject() method, here is just to make it explicit that the data is different for each trial.
         data = base_data
-        # Drop the shared reference after the first (or only) trail to let the
+        # Drop the shared reference after the first (or only) trial to let the
         # GC reclaim base_data's memory as early as possible.
-        if len(trail_idxs) == 1:
+        if len(trial_idxs) == 1:
             base_data = None
         if job_seg.injections:
-            # use sub_job_seg for each trail_idx to avoid passing the trail_idx to the following functions. 
+            # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions. 
             sub_job_seg = copy(job_seg)
-            sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
-            logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
+            sub_job_seg.injections = [injection for injection in job_seg.injections
+                                      if injection.get('trial_idx', 0) == trial_idx]
+            logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
             # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
             # MDC buffer must span the full padded window [padded_start, padded_end] so that
@@ -159,11 +161,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     sub_job_seg.duration,
                 )
         else:
-            logger.info(f"Processing trail_idx: {trail_idx} without injections")
+            logger.info(f"Processing trial_idx: {trial_idx} without injections")
             sub_job_seg = job_seg
             mdc = None
-        # add trail_idx to the sub_job_seg
-        sub_job_seg.trail_idx = trail_idx
+        # add trial_idx to the sub_job_seg
+        sub_job_seg.trial_idx = trial_idx
 
         # ─────────────────────────────────────────────────────────────────────
         # BENCHMARK ONLY – cWB comparison workdir
@@ -287,8 +289,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             if fragment_cluster is None:
                 logger.warning(
-                    "No supercluster results for lag %d (job segment %s trail_idx=%s)",
-                    lag, job_seg.index, trail_idx,
+                    "No supercluster results for lag %d (job segment %s trial_idx=%s)",
+                    lag, job_seg.index, trial_idx,
                 )
                 continue
 
@@ -433,6 +435,13 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             gc.collect()
 
         logger.info("Native likelihood loop time: %.2f s", time.perf_counter() - likelihood_timer)
+
+        if len(trial_idxs) > 1:
+            trial_walltime = time.perf_counter() - trial_timer
+            logger.info("--------------------------------------------")
+            logger.info("Trial %d / %d processing time: %.2f s",
+                        trial_idx + 1, len(trial_idxs), trial_walltime)
+            logger.info("--------------------------------------------")
 
     job_walltime = time.perf_counter() - job_timer
     speed_factor = job_seg.duration / job_walltime if job_walltime > 0 else float('inf')

@@ -85,13 +85,14 @@ def init_parser(parser):
                         default=None,
                         help='the range of jobs to run, e.g., 1-5,7')
 
-    # trail_idx
-    parser.add_argument('--trail-idx',
+    # trial_idx
+    parser.add_argument('--trial-idx',
                         '-t',
-                        metavar='trail_idx',
+                        dest='trial_idx',
+                        metavar='trial_idx',
                         type=str,
                         default=None,
-                        help='the trail indices to run, e.g., 0-2,5')
+                        help='the trial indices to run, e.g., 0-2,5')
 
     # lags
     parser.add_argument('--lags',
@@ -138,6 +139,6 @@ def command(args):
            compress_json=args.compress_json,
            config_vars=args.config_vars,
            jobs=args.jobs,
-           trail_idx=args.trail_idx,
+           trial_idx=args.trial_idx,
            lags=args.lags,
            log_level=args.log_level)
