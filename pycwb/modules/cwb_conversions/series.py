@@ -10,7 +10,7 @@ except ImportError:
         stacklevel=2
     )
 from gwpy.timeseries import TimeSeries
-from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 import logging
 import ctypes
 
@@ -78,10 +78,10 @@ def convert_to_wavearray(data):
     """
     if isinstance(data, TimeFrequencySeries):
         logger.debug("Converting TimeFrequencySeries to ROOT.wavearray")
-        output = convert_pycbc_timeseries_to_wavearray(data.data)
-    elif isinstance(data, pycbcTimeSeries):
-        logger.debug("Converting pycbc TimeSeries to ROOT.wavearray")
-        output = convert_pycbc_timeseries_to_wavearray(data)
+        output = convert_pycwb_timeseries_to_wavearray(data.data)
+    elif isinstance(data, PycwbTimeSeries):
+        logger.debug("Converting pycwb TimeSeries to ROOT.wavearray")
+        output = convert_pycwb_timeseries_to_wavearray(data)
     elif isinstance(data, TimeSeries):
         logger.debug("Converting gwpy TimeSeries to ROOT.wavearray")
         output = convert_timeseries_to_wavearray(data)
@@ -138,11 +138,13 @@ def convert_timeseries_to_wavearray(data: TimeSeries):
     return h
 
 
-def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
+def convert_pycwb_timeseries_to_wavearray(data):
     """
-    Convert pycbc timeseries to wavearray with c++ function
+    Convert a pycwb TimeSeries to wavearray with c++ function.
 
-    :param data: pycbc timeseries
+    Accepts any object with ``.data``, ``.start_time``, and ``.delta_t`` attributes.
+
+    :param data: time series
     :return: Converted ROOT.wavearray
     :rtype: ROOT.wavearray
     """
@@ -163,6 +165,10 @@ def convert_pycbc_timeseries_to_wavearray(data: pycbcTimeSeries):
     h.rate(int(1. / np.asarray(data.delta_t, dtype=np.double)))
 
     return h
+
+
+# Backward-compatible alias
+convert_pycbc_timeseries_to_wavearray = convert_pycwb_timeseries_to_wavearray
 
 
 def WSeries_to_matrix(w):
@@ -206,14 +212,14 @@ def convert_wavearray_to_timeseries(h, clean=True):
     return ar
 
 
-def convert_wavearray_to_pycbc_timeseries(h, clean=True):
+def convert_wavearray_to_pycwb_timeseries(h, clean=True):
     """
-    Convert wavearray to pycbc timeseries
+    Convert wavearray to pycwb TimeSeries.
 
     :param h: ROOT.wavearray
     :type h: ROOT.wavearray
-    :return: Converted gwpy timeseries
-    :rtype: gwpy.timeseries.TimeSeries
+    :return: Converted pycwb TimeSeries
+    :rtype: pycwb.types.time_series.TimeSeries
     """
 
     # if not hasattr(ROOT, "_copy_to_wavearray"):
@@ -221,11 +227,15 @@ def convert_wavearray_to_pycbc_timeseries(h, clean=True):
 
     ar = np.array(ROOT.pycwb_get_wavearray_data(h))
 
-    ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
+    ar = PycwbTimeSeries(data=ar, dt=1. / h.rate(), t0=h.start())
 
     if clean:
         h.resize(0)
     return ar
+
+
+# Backward-compatible alias
+convert_wavearray_to_pycbc_timeseries = convert_wavearray_to_pycwb_timeseries
 
 
 def convert_wavearray_to_nparray(h, short=False, clean=True):
@@ -269,14 +279,14 @@ def convert_wseries_to_timeseries(h, clean=True):
     return ar
 
 
-def convert_wseries_to_pycbc_timeseries(h, clean=True):
+def convert_wseries_to_pycwb_timeseries(h, clean=True):
     """
-    Convert wavearray to pycbc timeseries (get 3 times faster with c++ function)
+    Convert WSeries to pycwb TimeSeries.
 
     :param h: ROOT.WSeries
     :type h: ROOT.WSeries
-    :return: Converted gwpy timeseries
-    :rtype: gwpy.timeseries.TimeSeries
+    :return: Converted pycwb TimeSeries
+    :rtype: pycwb.types.time_series.TimeSeries
     """
 
     # if not hasattr(ROOT, "_copy_to_wavearray"):
@@ -284,11 +294,15 @@ def convert_wseries_to_pycbc_timeseries(h, clean=True):
 
     ar = np.array(ROOT.pycwb_get_wseries_data(h))
 
-    ar = pycbcTimeSeries(ar, delta_t=1. / h.rate(), epoch=h.start())
+    ar = PycwbTimeSeries(data=ar, dt=1. / h.rate(), t0=h.start())
 
     if clean:
         h.resize(0)
     return ar
+
+
+# Backward-compatible alias
+convert_wseries_to_pycbc_timeseries = convert_wseries_to_pycwb_timeseries
 
 
 def convert_wseries_to_time_frequency_series(h, clean=False):
@@ -301,12 +315,12 @@ def convert_wseries_to_time_frequency_series(h, clean=False):
     :rtype: TimeFrequencySeries
     """
 
-    # convert wseries to pycbc timeseries
+    # convert wseries to pycwb timeseries
     from pycwb.types.wdm import WDM
 
-    data = convert_wseries_to_pycbc_timeseries(h, clean=clean)
+    data = convert_wseries_to_pycwb_timeseries(h, clean=clean)
 
-    # create a new time frequency series with the pycbc timeseries and the wavelet
+    # create a new time frequency series with the timeseries and the wavelet
     return TimeFrequencySeries(data=data, wavelet=WDM(wavelet=h.pWavelet), whiten_mode=h.w_mode,
                                bpp=h.bpp, w_rate=h.wRate, f_low=h.f_low, f_high=h.f_high, wseries=h)
 
@@ -321,8 +335,8 @@ def convert_time_frequency_series_to_wseries(h):
     :rtype: WSeries
     """
 
-    # conver pycbc timeseries to wavearray
-    data = convert_pycbc_timeseries_to_wavearray(h.data)
+    # convert pycwb timeseries to wavearray
+    data = convert_pycwb_timeseries_to_wavearray(h.data)
     # create a new wseries with the wavearray and the wavelet
     w = ROOT.WSeries(np.double)(data, h.wavelet.wavelet)
     # set the whitening mode

@@ -111,7 +111,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
         data = list(payload)
 
     # Normalise each element to PyCWBTimeSeries so downstream modules
-    # (which were designed for pycbc/pycwb TimeSeries) see the right types.
+    # (which were designed for pycwb TimeSeries) see the right types.
     data = [PyCWBTimeSeries.from_input(d) for d in data]
 
     # Build a minimal WaveSegment so existing modules see what they expect.

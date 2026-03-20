@@ -1,4 +1,3 @@
-from pycbc.detector import Detector
 import numpy as np
 
 
@@ -51,25 +50,22 @@ def cartesian_to_spherical(x, y, z):
 
 
 def max_delay(ifos):
-    # find all combinations of detectors
-    ifo_pairs = [(ifos[i], ifos[j]) for i in range(len(ifos)) for j in range(i + 1, len(ifos))]
+    """Maximum light-travel time between any detector pair (seconds).
 
-    # find the maximum delay between any two detectors
-    max_delay = 0
-    for ifo1, ifo2 in ifo_pairs:
-        det1 = Detector(ifo1)
-        det2 = Detector(ifo2)
+    Uses the simple geometric baseline: ``|r_i - r_j| / c``, consistent
+    with the cWB ``getDelay("MAX")`` approach.
+    """
+    from astropy import constants
+    from pycwb.types.detector import Detector
 
-        # find the orientation of the detectors
-        v1 = np.array(det1.optimal_orientation(0))
-        v2 = np.array(det2.optimal_orientation(0))
-        v1_cart = spherical_to_cartesian(v1[0], v1[1])
-        v2_cart = spherical_to_cartesian(v2[0], v2[1])
-        v3_cart = v2_cart - v1_cart
-        v3 = cartesian_to_spherical(v3_cart[0], v3_cart[1], v3_cart[2])
-
-        delay = abs(det1.time_delay_from_detector(det2, v3[0], v3[1], 0))
-
-        max_delay = max(max_delay, delay)
-
-    return max_delay
+    c = float(constants.c.value)
+    max_d = 0.0
+    for i in range(len(ifos)):
+        for j in range(i + 1, len(ifos)):
+            d1 = Detector(ifos[i])
+            d2 = Detector(ifos[j])
+            baseline = np.linalg.norm(
+                d1.vertex_vec_earth_centered - d2.vertex_vec_earth_centered
+            )
+            max_d = max(max_d, baseline / c)
+    return max_d

@@ -6,7 +6,7 @@ import psutil
 import numpy as np
 from copy import copy
 from pycwb.config import Config
-from pycbc.types import TimeSeries
+from pycwb.types.time_series import TimeSeries
 from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
@@ -105,6 +105,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # ─────────────────────────────────────────────────────────────────────
         # Start from a fresh copy of base_data for every trail so that injected
         # signals from one trial never bleed into another.
+        # warning: the copy is ensured by the inject() method, here is just to make it explicit that the data is different for each trail.
         data = base_data
         # Drop the shared reference after the first (or only) trail to let the
         # GC reclaim base_data's memory as early as possible.
@@ -119,9 +120,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
             # MDC buffer must span the full padded window [padded_start, padded_end] so that
             # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
-            mdc = [TimeSeries(np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
-                              epoch=sub_job_seg.padded_start,
-                              delta_t=1 / sub_job_seg.sample_rate)
+            mdc = [TimeSeries(data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
+                              t0=sub_job_seg.padded_start,
+                              dt=1 / sub_job_seg.sample_rate)
                    for i in range(len(sub_job_seg.ifos))]
 
             for injection in sub_job_seg.injections:

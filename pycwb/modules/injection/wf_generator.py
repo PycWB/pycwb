@@ -1,4 +1,3 @@
-from pycbc.waveform import get_td_waveform
 import lalsimulation as lalsim
 from pycwb.utils.module import import_function
 import logging

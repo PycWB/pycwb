@@ -1,11 +1,11 @@
 from gwpy.timeseries import TimeSeries
 import numpy as np
 import os
-import pycbc.catalog
 import logging
 from multiprocessing import Pool
 import time
 
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from ..cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
 from ..job_segment import WaveSegment
 
@@ -80,28 +80,32 @@ def read_from_online(channels, start, end):
 
 def read_from_catalog(catalog, event, detectors, time_slice=None):
     """
-    Read data from catalog
+    Read data from catalog via GWOSC (Gravitational-Wave Open Science Center).
 
-    :param catalog: the name of the catalog to read from
+    :param catalog: the name of the catalog (unused, kept for API compatibility)
     :type catalog: str
-    :param event: the name of the event
+    :param event: the name of the event (e.g. 'GW150914')
     :type event: str
     :param detectors: list of detectors
     :type detectors: list[str]
     :param time_slice: time slice for cropping the data, defaults to None
     :type time_slice: tuple, optional
-    :return: (time series data, merger object)
-    :rtype: tuple[list[pycbc.types.timeseries.TimeSeries], pycbc.catalog.Merger]
+    :return: (time series data, event GPS time)
+    :rtype: tuple[list[pycwb.types.time_series.TimeSeries], float]
     """
-    # Read data from catalog
-    m = pycbc.catalog.Merger(event, source=catalog)
-    data = [m.strain(ifo) for ifo in detectors]
+    from gwosc.datasets import event_gps
+    gps = event_gps(event)
+    # Fetch 32 s of open data centred on the event
+    data = []
+    for ifo in detectors:
+        ts = TimeSeries.fetch_open_data(ifo, gps - 16, gps + 16)
+        data.append(PycwbTimeSeries.from_gwpy(ts))
 
     if time_slice:
         for i in range(len(data)):
-            data[i] = data[i].crop(time_slice[0], time_slice[1])
+            data[i] = data[i].time_slice(time_slice[0], time_slice[1])
 
-    return data, m
+    return data, gps
 
 
 # def _read_from_config(config):
@@ -135,7 +139,7 @@ def read_from_job_segment(config, job_seg: WaveSegment):
     :param job_seg: job segment
     :type job_seg: WaveSegment
     :return: list of strain data
-    :rtype: list[pycbc.types.timeseries.TimeSeries]
+    :rtype: list[pycwb.types.time_series.TimeSeries]
     """
     timer_start = time.perf_counter()
 
@@ -158,7 +162,6 @@ def read_from_job_segment(config, job_seg: WaveSegment):
 
 
 def merge_frames(job_seg, data, seg_edge):
-    # TODO: use gwpy to merge the data instead of pycbc timeseries
     logger.info(f'Merging data from job segment {job_seg.index}')
     merged_data = []
 
@@ -170,19 +173,19 @@ def merge_frames(job_seg, data, seg_edge):
             # if there is only one frame, no need to merge
             ifo_data = data[frames[0]]
         else:
-            # merge gw frames
-            ifo_data = TimeSeries.from_pycbc(data[frames[0]])
+            # merge gw frames via gwpy append
+            ifo_data = data[frames[0]].to_gwpy()
             # free memory
             data[frames[0]] = None
 
             for i in frames[1:]:
                 # use append method from gwpy, raise error if there is a gap
-                ifo_data.append(TimeSeries.from_pycbc(data[i]), gap='raise')
+                ifo_data.append(data[i].to_gwpy(), gap='raise')
                 # free memory
                 data[i] = None
 
-            # convert back to pycbc
-            ifo_data = ifo_data.to_pycbc()
+            # convert to pycwb TimeSeries
+            ifo_data = PycwbTimeSeries.from_gwpy(ifo_data)
 
         # check if data range match with job segment
         if ifo_data.start_time != job_seg.padded_start or \
@@ -256,4 +259,4 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
         # # data = data.resample(config.inRate)
         # logger.info(f'Resample data from {sample_rate_old} to {job_seg.sample_rate}')
     # return check_and_resample(data, config, i) # move this to the final step
-    return data.to_pycbc()
+    return PycwbTimeSeries.from_gwpy(data)

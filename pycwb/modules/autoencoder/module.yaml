@@ -11,7 +11,7 @@ entry:
         required: true
         default: null
       - name: data
-        type: pycbc.types.timeseries.TimeSeries
+        type: pycwb.types.time_series.TimeSeries
         description: Data object
         required: true
         default: null

@@ -1,7 +1,8 @@
 from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series
 from pycwb.types.wdm import WDM
-from pycbc.types.timeseries import load_timeseries
-import numpy as np 
+from pycwb.types.time_series import TimeSeries
+import numpy as np
+import h5py
 try:
     import ROOT
 except ImportError:
@@ -20,7 +21,7 @@ def fake_conditioning(config, strains):
     :param config: config object
     :type config: Config
     :param strains: list of strain data
-    :type strains: list[pycbc.types.timeseries.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)]
+    :type strains: list[TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)]
     :return: (conditioned_strains, nRMS_list)
     :rtype: tuple[list[TimeFrequencySeries], list[TimeFrequencySeries]]
     """
@@ -33,7 +34,7 @@ def fake_conditioning(config, strains):
         wdm = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
         
         #load nrms and stores thes 
-        nRMS = load_timeseries(config.bootstrap['nrms'][ifo])
+        nRMS = _load_timeseries_h5(config.bootstrap['nrms'][ifo])
         nRMS = generate_nrms_wseries(config, strains[i], nRMS, wdm.wavelet)
         nRMS_list.append(convert_wseries_to_time_frequency_series(nRMS))
 
@@ -46,6 +47,29 @@ def fake_conditioning(config, strains):
     return conditioned_strains, nRMS_list
 
 
+def _load_timeseries_h5(path):
+    """Read an HDF5 time series file.
+
+    Returns a pycwb TimeSeries (only the data array is used downstream,
+    so start_time/delta_t are best-effort).
+    """
+    with h5py.File(path, 'r') as f:
+        # HDF5 format stores data at the root 'data' key
+        if 'data' in f:
+            data = np.array(f['data'], dtype=np.float64)
+            t0 = float(f['data'].attrs.get('start_time', 0.0))
+            dt = float(f['data'].attrs.get('delta_t', 1.0))
+        elif 'strain/Strain' in f:
+            data = np.array(f['strain/Strain'], dtype=np.float64)
+            t0 = float(f['strain/Strain'].attrs.get('Xstart', 0.0))
+            dt = float(f['strain/Strain'].attrs.get('Xspacing', 1.0))
+        else:
+            # Fallback: read the first dataset found
+            key = list(f.keys())[0]
+            data = np.array(f[key], dtype=np.float64)
+            t0 = 0.0
+            dt = 1.0
+    return TimeSeries(data=data, t0=t0, dt=dt)
 
 
 def generate_nrms_wseries(config, data, nrms, wavelet): 

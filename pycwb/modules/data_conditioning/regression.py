@@ -10,7 +10,7 @@ except ImportError:
     )
 import numpy as np
 
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycbc_timeseries
+from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wavearray_to_pycwb_timeseries
 from pycwb.types.wdm import WDM
 
 
@@ -23,9 +23,9 @@ def regression(config, h):
     :param wdm: WDM transform for regression
     :type wdm: WDM
     :param h: data to be cleaned
-    :type h: pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
+    :type h: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
     :return: cleaned data
-    :rtype: pycbc.types.timeseries.TimeSeries
+    :rtype: pycwb.types.time_series.TimeSeries
     """
     layers = int(config.rateANA / 8)
     wdm = WDM(layers, layers, config.WDM_beta_order, config.WDM_precision)
@@ -58,7 +58,7 @@ def regression(config, h):
 
     # cleaned data
     hh = r.getClean()
-    strain = convert_wavearray_to_pycbc_timeseries(hh)
+    strain = convert_wavearray_to_pycwb_timeseries(hh)
     tf_map.resize(0)
     ##########################################
 

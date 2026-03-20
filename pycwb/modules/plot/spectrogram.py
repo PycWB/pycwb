@@ -1,5 +1,5 @@
 from gwpy.timeseries import TimeSeries
-from pycbc.types.timeseries import TimeSeries as pycbcTimeSeries
+from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.types.wdm import WDM
@@ -41,9 +41,10 @@ def plot_spectrogram(wavearray, xmin=None, xmax=None, figsize=(24, 6), gwpy_plot
 
     if gwpy_plot:
         if isinstance(wavearray, TimeFrequencySeries):
-            wavearray = TimeSeries.from_pycbc(wavearray.data)
-        elif isinstance(wavearray, pycbcTimeSeries):
-            wavearray = TimeSeries.from_pycbc(wavearray)
+            ts = wavearray.data
+            wavearray = TimeSeries(ts.data, t0=ts.t0, dt=ts.dt) if isinstance(ts, PycwbTimeSeries) else ts
+        elif isinstance(wavearray, PycwbTimeSeries):
+            wavearray = TimeSeries(wavearray.data, t0=wavearray.t0, dt=wavearray.dt)
         elif isinstance(wavearray, TimeSeries):
             pass
         else:

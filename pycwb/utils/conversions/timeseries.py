@@ -1,3 +1,12 @@
+import warnings
+
+warnings.warn(
+    "pycwb.utils.conversions.timeseries is deprecated and will be removed in a "
+    "future release. Use pycwb.types.time_series.TimeSeries.from_input() instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from lal import REAL8TimeSeries
 from pycbc.types import TimeSeries
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
@@ -6,6 +15,9 @@ from pycwb.types.time_series import TimeSeries as PycWBTimeSeries
 def convert_to_pycbc_timeseries(lal_ts):
     """
     Convert a LAL TimeSeries to a pycbc TimeSeries.
+
+    .. deprecated::
+        Use ``pycwb.types.time_series.TimeSeries.from_input()`` instead.
     """
     if type(lal_ts) == REAL8TimeSeries:
         # Convert to pycbc TimeSeries

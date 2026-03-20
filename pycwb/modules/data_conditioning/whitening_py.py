@@ -20,17 +20,13 @@ def whitening_python(config, h):
 
     Returns
     -------
-    tuple[pycbc.types.timeseries.TimeSeries, TimeFrequencyMap]
+    tuple[pycwb.types.time_series.TimeSeries, TimeFrequencyMap]
         `(conditioned_strain, nRMS_tf_map)`.
     """
-    import pycbc.types
+    from pycwb.types.time_series import TimeSeries
 
-    if not isinstance(h, pycbc.types.TimeSeries):
-        h_ts = pycbc.types.TimeSeries(
-            h.value if hasattr(h, 'value') else h.data,
-            delta_t=h.dt.value if hasattr(h, 'dt') and hasattr(h.dt, 'value') else h.dt,
-            epoch=h.t0.value if hasattr(h, 't0') and hasattr(h.t0, 'value') else h.t0,
-        )
+    if not isinstance(h, TimeSeries):
+        h_ts = TimeSeries.from_input(h)
     else:
         h_ts = h
 
@@ -115,10 +111,10 @@ def whitening_python(config, h):
     ts_90 = wdm.w2tQ(tf_map)
     whitened_data = 0.5 * (np.array(ts_00.value, dtype=np.float64)
                            + np.array(ts_90.value, dtype=np.float64))
-    conditioned_strain = pycbc.types.TimeSeries(
-        whitened_data,
-        delta_t=h_ts.delta_t,
-        epoch=h_ts.start_time,
+    conditioned_strain = TimeSeries(
+        data=whitened_data,
+        dt=h_ts.dt,
+        t0=h_ts.t0,
     )
 
     logger.info("  Conditioned strain length: %d", len(conditioned_strain))

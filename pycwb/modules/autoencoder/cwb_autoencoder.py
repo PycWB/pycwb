@@ -43,7 +43,7 @@ def timeseries_processing(data, window):
 
     Parameters
     ----------
-    data: pycbc.timeseries.TimeSeries
+    data: pycwb.types.time_series.TimeSeries
         timeseries
     window: int
         window length

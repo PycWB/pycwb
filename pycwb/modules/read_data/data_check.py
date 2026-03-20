@@ -2,7 +2,6 @@ import numpy as np
 from gwpy.timeseries import TimeSeries
 import logging
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
-from pycwb.utils.conversions.timeseries import convert_to_pycbc_timeseries
 
 logger = logging.getLogger(__name__)
 
@@ -33,22 +32,22 @@ def check_and_resample(data, config, ifo_index):
     """
     Legacy-compatible data check and resampling.
 
-    This function keeps compatibility with the ROOT/legacy pipeline by returning
-    a PyCBC TimeSeries (or compatible object accepted by legacy converters).
+    Normalises input to pycwb TimeSeries, validates, applies DC
+    correction and resampling as configured.
 
     :param data:
-    :type data: pycwb.types.time_series.TimeSeries or pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries
+    :type data: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries
     :param config:
     :param ifo_index:
-    :return: pycbc.types.timeseries.TimeSeries
+    :return: pycwb.types.time_series.TimeSeries
     """
-    data = convert_to_pycbc_timeseries(data)
+    data = PycwbTimeSeries.from_input(data)
 
     # check if data contains NaNs
     if np.isnan(np.asarray(data.data, dtype=np.float64)).any():
         raise ValueError('Data contains NaNs')
     # check if the sample rate is consitent with configuation
-    if float(data.sample_rate) != float(config.inRate):
+    if data.sample_rate != float(config.inRate):
         raise ValueError('Sample rate is not consistent with configuation')
 
     # DC correction
@@ -58,13 +57,13 @@ def check_and_resample(data, config, ifo_index):
 
     # resampling
     if config.fResample > 0:
-        logger.info(f"Resampling data from {float(data.sample_rate)} to {config.fResample}")
-        data = data.resample(1.0 / float(config.fResample))
+        logger.info(f"Resampling data from {data.sample_rate} to {config.fResample}")
+        data = data.cwb_resampling(float(config.fResample))
 
-    new_sample_rate = float(data.sample_rate) / (1 << config.levelR)
+    new_sample_rate = data.sample_rate / (1 << config.levelR)
     if new_sample_rate != config.inRate:
-        logger.info(f"Resampling data from {float(data.sample_rate)} to {new_sample_rate}")
-        data = data.resample(1.0 / float(new_sample_rate))
+        logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
+        data = data.cwb_resampling(float(new_sample_rate))
 
     # rescaling
     data.data *= (2 ** config.levelR) ** 0.5
@@ -79,7 +78,7 @@ def check_and_resample_py(data, config, ifo_index):
     Input is normalized to pycwb TimeSeries and output remains pycwb TimeSeries.
 
     :param data:
-    :type data: pycwb.types.time_series.TimeSeries or pycbc.types.timeseries.TimeSeries or gwpy.timeseries.TimeSeries
+    :type data: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries
     :param config:
     :param ifo_index:
     :return: pycwb TimeSeries

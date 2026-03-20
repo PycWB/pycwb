@@ -25,7 +25,6 @@ install_requires = [
     "ligo-segments",
     "ligo-gracedb",
     "aiohttp",
-    "pycbc",
     "filelock",
     "numpy>=2",
     "scipy>=1.13",     # compatible with numpy 2.x
@@ -229,6 +228,9 @@ setup(
     long_description_content_type="text/markdown",
     url="https://git.ligo.org/yumeng.xu/pycwb",
     install_requires=install_requires,
+    extras_require={
+        "pycbc": ["pycbc"],
+    },
     cmdclass=cmdclass,
     ext_modules=ext_modules,
     scripts=["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"],  # find_files('bin', relpath='./'),

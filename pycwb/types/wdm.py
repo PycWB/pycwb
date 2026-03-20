@@ -100,7 +100,7 @@ class WDM:
         allocate memory for the WDM sliced array
 
         :param data: data to be stored in the WDM sliced array
-        :type data: pycbc.types.timeseries.TimeSeries
+        :type data: pycwb.types.time_series.TimeSeries or numpy.ndarray
         :param n: size of samples
         :type n: int
         """
