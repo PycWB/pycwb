@@ -371,10 +371,9 @@ class Config:
             raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
                              2 * dt_max)
 
-    def check_analyze_injection_only(self):
+    def check_analyze_injection_only(self) -> None:
         """
-        Validate that ``analyze_injection_only`` is compatible with the
-        current configuration.
+        Validate that ``analyze_injection_only`` is compatible with the current configuration.
 
         When enabled, injections must be configured and time-slide lags
         must not be used (``lag_size`` must be 1).

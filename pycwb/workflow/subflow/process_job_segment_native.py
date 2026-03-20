@@ -21,7 +21,6 @@ from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.modules.catalog import Catalog
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.utils.memory import release_memory
 from pycwb.workflow.subflow.postprocess_and_plots import (

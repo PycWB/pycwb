@@ -1,5 +1,5 @@
-from typing import List, Optional, Dict, Tuple
-from dataclasses import dataclass, asdict, field
+from typing import List, Optional, Dict
+from dataclasses import dataclass, asdict
 import numpy as np
 
 
@@ -182,7 +182,7 @@ class WaveSegment:
     noise: Optional[Dict] = None
     injections: Optional[List[Dict]] = None
     trail_idx: int = 0
-    veto_windows: Optional[List[Tuple[float, float]]] = None
+    veto_windows: list[tuple[float, float]] | None = None
 
     # ------------------------------------------------------------------
     # Analysis-window accessors (no edge padding)

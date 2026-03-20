@@ -8,7 +8,7 @@ from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
-from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
+from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
 
 logger = logging.getLogger(__name__)
 
@@ -228,10 +228,14 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
     }
 
 
-def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False, veto_windows=None):
+def coherence_single_lag(
+    coherence_setups: list,
+    lag_idx: int,
+    return_rejected: bool = False,
+    veto_windows: list[tuple[float, float]] | None = None,
+) -> list:
     """
-    Compute coherence for one lag index, using pre-built per-resolution setups
-    from :func:`setup_coherence`.
+    Compute coherence for one lag index, using pre-built per-resolution setups from :func:`setup_coherence`.
 
     This is the per-lag cheap counterpart: only pixel selection and clustering
     are performed here; all expensive TF/WDM work is already done.
@@ -455,7 +459,7 @@ def apply_veto(iwindow, tf_map, segment_list=None, injection_times=None, edge=No
     return (live, veto_mask) if return_mask else live
 
 
-def build_veto_mask(tf_map, veto_windows, edge=None):
+def build_veto_mask(tf_map, veto_windows: list[tuple[float, float]], edge: float | None = None) -> np.ndarray:
     """
     Build a binary keep-mask from GPS time windows for a TF map timeline.
 
