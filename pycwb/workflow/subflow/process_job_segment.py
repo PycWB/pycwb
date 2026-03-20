@@ -60,21 +60,21 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
-    # get all the trail_idx from the injections, if there is no injections, use 0
-    trail_idxs = {0}
+    # get all the trial_idx from the injections, if there is no injections, use 0
+    trial_idxs = {0}
     if job_seg.injections:
-        trail_idxs = set([injection.get('trail_idx', 0) for injection in job_seg.injections])
+        trial_idxs = set([injection.get('trial_idx', 0) for injection in job_seg.injections])
 
     wave_file = os.path.basename(catalog_file).replace('catalog', 'wave').replace('.json','.h5') if catalog_file is not None else None
-    # loop over all the trail_idx, if there is no injections or only one trail, only loop once for trail_idx=0
-    for trail_idx in trail_idxs:
-        #creates new "clean" data for each trail_idx to avoid mixing different trail idxs at different cycles 
+    # loop over all the trial_idx, if there is no injections or only one trial, only loop once for trial_idx=0
+    for trial_idx in trial_idxs:
+        #creates new "clean" data for each trial_idx to avoid mixing different trial idxs at different cycles 
         data = base_data
         if job_seg.injections:
-            # use sub_job_seg for each trail_idx to avoid passing the trail_idx to the following functions. 
+            # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions. 
             sub_job_seg = copy(job_seg)
-            sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trail_idx', 0) == trail_idx]
-            logger.info(f"Processing trail_idx: {trail_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
+            sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trial_idx', 0) == trial_idx]
+            logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
             mdc = [TimeSeries(data=np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), t0=base_data[i].start_time, dt=1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
 
@@ -84,10 +84,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
                 data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))] 
         else:
-            logger.info(f"Processing trail_idx: {trail_idx} without injections")
+            logger.info(f"Processing trial_idx: {trial_idx} without injections")
             sub_job_seg = job_seg
-        # add trail_idx to the sub_job_seg
-        sub_job_seg.trail_idx = trail_idx
+        # add trial_idx to the sub_job_seg
+        sub_job_seg.trial_idx = trial_idx
 
         # check and resample the data
         data = [check_and_resample(data[i], config, i) for i in range(len(job_seg.ifos))]

@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import random
 from math import ceil
@@ -6,6 +7,27 @@ from pycwb.modules.injection.par_generator import get_injection_list_from_parame
 from pycwb.modules.injection.sky_distribution import generate_sky_distribution, distribute_injections_on_sky
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_injection_keys(injections: list) -> None:
+    """Rename the deprecated ``'trail_idx'`` key to ``'trial_idx'`` in-place.
+
+    Emits a single :class:`DeprecationWarning` if any injection dict still
+    uses the old (misspelled) key, then renames it so all downstream code
+    can assume ``'trial_idx'`` unconditionally.
+    """
+    found = False
+    for inj in injections:
+        if 'trail_idx' in inj:
+            if not found:
+                warnings.warn(
+                    "Injection config uses the deprecated key 'trail_idx'; "
+                    "rename it to 'trial_idx' in your injection configuration.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                found = True
+            inj['trial_idx'] = inj.pop('trail_idx')
 
 
 def generate_injection_list_from_config(injection_config, start_gps_time, end_gps_time):
@@ -21,6 +43,9 @@ def generate_injection_list_from_config(injection_config, start_gps_time, end_gp
         logger.info(f'Setting random seed to {seed} for injection generation reproducibility')
 
     injections = get_injection_list_from_parameters(injection_config)
+
+    # Normalise key names early so all downstream code can use 'trial_idx' unconditionally.
+    _normalize_injection_keys(injections)
 
     # repeat injections if specified
     if repeat_injection:
@@ -44,30 +69,30 @@ def generate_injection_list_from_config(injection_config, start_gps_time, end_gp
             time_distribution_rate = time_distribution.get('rate', None)
             rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
             jitter = time_distribution.get('jitter', 0)
-            injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+            injections, n_trials = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
         elif time_distribution_type == 'poisson':
             time_distribution_rate = time_distribution.get('rate', None)
             rate = eval(time_distribution_rate) if type(time_distribution_rate) == str else time_distribution_rate
             max_trail = time_distribution.get('max_trail', None)
-            injections, n_trails = distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, max_trail=max_trail, shuffle=False)
+            injections, n_trials = distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_gps_time, max_trail=max_trail, shuffle=False)
         elif time_distribution_type == 'custom':
             raise ValueError('Custom time distribution is not supported anymore, if you want to use customized gps_time, simply remove the time_distribution field from the config')
         else:
             raise ValueError('Unknown time distribution, only support rate, poisson')
     else:
         # check if 'gps_time' is in injection
-        n_trails = 1
+        n_trials = 1
         for inj in injections:
             if 'gps_time' not in inj:
                 raise ValueError("'gps_time' must be specified in the injections when no time_distribution is provided")
-            # find the maximum trail index if 'trail_idx' is specified
-            if 'trail_idx' in inj:
-                n_trails = max(n_trails, inj['trail_idx'] + 1)
+            # find the maximum trial index if 'trial_idx' is specified
+            if 'trial_idx' in inj:
+                n_trials = max(n_trials, inj['trial_idx'] + 1)
 
-    return injections, n_trails
+    return injections, n_trials
 
 
-def generate_auxiliary_injection_list_from_config(injection_config, start_gps_time, end_gps_time, n_trails):
+def generate_auxiliary_injection_list_from_config(injection_config, start_gps_time, end_gps_time, n_trials):
     repeat_injection = injection_config['repeat_injection']
     sky_distribution = injection_config['sky_distribution']
 
@@ -80,7 +105,7 @@ def generate_auxiliary_injection_list_from_config(injection_config, start_gps_ti
     if injection_config['time_distribution'] == 'rate':
         rate = eval(injection_config['rate']) if type(injection_config['rate']) == str else injection_config['rate']
         jitter = injection_config['jitter']
-        injections, n_trails = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
+        injections, n_trials = distribute_inj_in_gps_time_by_rate(injections, rate, jitter, start_gps_time, end_gps_time, shuffle=False)
     elif injection_config['time_distribution'] == 'poisson':
         pass
     elif injection_config['time_distribution'] == 'custom':
@@ -88,7 +113,7 @@ def generate_auxiliary_injection_list_from_config(injection_config, start_gps_ti
     else:
         raise ValueError('Unknown time distribution, only support rate, poisson, custom')
 
-    return injections, n_trails
+    return injections, n_trials
 
 
 def distribute_inj_in_gps_time_by_rate(injections, rate, jitter, 
@@ -129,7 +154,7 @@ def distribute_inj_in_gps_time_by_rate(injections, rate, jitter,
     if required_time > total_available_time:
         n_inj_in_each_repeat = int(total_available_time * rate)
         n_data_repeat = ceil(n_inj / n_inj_in_each_repeat)
-        logger.info(f'Using {n_data_repeat} data repeats to distribute {n_inj} injections, each trail contains {n_inj_in_each_repeat} injections')
+        logger.info(f'Using {n_data_repeat} data repeats to distribute {n_inj} injections, each trial contains {n_inj_in_each_repeat} injections')
 
     # shuffle injections
     if shuffle:
@@ -147,10 +172,10 @@ def distribute_inj_in_gps_time_by_rate(injections, rate, jitter,
     # add jitter
     gps_times += np.random.uniform(-jitter, jitter, n_inj)
 
-    # add gps time and trail number to injections
+    # add gps time and trial number to injections
     for i, inj in enumerate(injections):
         inj['gps_time'] = gps_times[i]
-        inj['trail_idx'] = i // n_inj_in_each_repeat
+        inj['trial_idx'] = i // n_inj_in_each_repeat
 
     return injections, n_data_repeat
 
@@ -186,14 +211,14 @@ def distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_
     injection_idx = 0
     transient_signal = []
 
-    trail_idx = 0
+    trial_idx = 0
 
     while injection_idx < n_inj:
         t = start_gps_time + edge_buffer + np.random.exponential(1/rate)
         while t < end_gps_time - edge_buffer:
             par = {
                 'gps_time': t + np.random.exponential(1/rate),
-                'trail_idx': trail_idx,
+                'trial_idx': trial_idx,
             }
             transient_signal.append(injections[injection_idx] | par)
             injection_idx += 1
@@ -203,8 +228,8 @@ def distribute_inj_in_gps_time_by_poisson(injections, rate, start_gps_time, end_
                 break
                 # raise ValueError('Not enough injections to distribute in time')
             
-        trail_idx += 1
-        if max_trail and trail_idx >= max_trail:
+        trial_idx += 1
+        if max_trail and trial_idx >= max_trail:
             break
 
-    return transient_signal, trail_idx
+    return transient_signal, trial_idx

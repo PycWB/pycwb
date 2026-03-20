@@ -131,7 +131,7 @@ def process_job_segment_parallel(
     # ─────────────────────────────────────────────────────────────────────
     # HIGH-LEVEL WORKFLOW
     # ─────────────────────────────────────────────────────────────────────
-    # For each trail_idx (injection realisation, or 0 if no injections):
+    # For each trial_idx (injection realisation, or 0 if no injections):
     #
     #   1. DATA LOADING     – frames / noise / injection setup (sequential)
     #   2. RESAMPLING       – all IFOs + MDC in one parallel pool
@@ -158,10 +158,10 @@ def process_job_segment_parallel(
             job_seg, config.inRate, f_low=config.fLow, data=base_data
         )
 
-    trail_idxs = {0}
+    trial_idxs = {0}
     if job_seg.injections:
-        trail_idxs = set(
-            inj.get("trail_idx", 0) for inj in job_seg.injections
+        trial_idxs = set(
+            inj.get("trial_idx", 0) for inj in job_seg.injections
         )
 
     if catalog_file is not None:
@@ -171,25 +171,25 @@ def process_job_segment_parallel(
     else:
         wave_file = None
 
-    # ── Outer loop: one pass per injection trail ──────────────────────────
-    for trail_idx in trail_idxs:
+    # ── Outer loop: one pass per injection trial ──────────────────────────────────
+    for trial_idx in trial_idxs:
 
         # ─────────────────────────────────────────────────────────────────
         # STEP 1 – DATA LOADING & INJECTION SETUP (sequential)
         # ─────────────────────────────────────────────────────────────────
         data = base_data
-        if len(trail_idxs) == 1:
+        if len(trial_idxs) == 1:
             base_data = None
 
         if job_seg.injections:
             sub_job_seg = copy(job_seg)
             sub_job_seg.injections = [
                 inj for inj in job_seg.injections
-                if inj.get("trail_idx", 0) == trail_idx
+                if inj.get("trial_idx", 0) == trial_idx
             ]
             logger.info(
-                "Processing trail_idx: %d with %d injections: %s",
-                trail_idx, len(sub_job_seg.injections), sub_job_seg.injections,
+                "Processing trial_idx: %d with %d injections: %s",
+                trial_idx, len(sub_job_seg.injections), sub_job_seg.injections,
             )
             # MDC buffer must span the full padded window [padded_start, padded_end] so that
             # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
@@ -208,11 +208,11 @@ def process_job_segment_parallel(
                 mdc  = [mdc[i].inject(inj[i])  for i in range(len(sub_job_seg.ifos))]
                 data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
         else:
-            logger.info("Processing trail_idx: %d without injections", trail_idx)
+            logger.info("Processing trial_idx: %d without injections", trial_idx)
             sub_job_seg = job_seg
             mdc = None
 
-        sub_job_seg.trail_idx = trail_idx
+        sub_job_seg.trial_idx = trial_idx
 
         # ─────────────────────────────────────────────────────────────────
         # BENCHMARK ONLY – cWB comparison workdir (sequential, before resample)
@@ -500,11 +500,11 @@ def process_job_segment_parallel(
             logger.info("-------------------------------------------")
             del events_data, trigger_folders
 
-        # Clean up trail-level objects before the next injection trail
+        # Clean up trial-level objects before the next injection trial
         del coherence_setup, td_inputs_cache, supercluster_setup, xtalk
         del likelihood_setup, lag_results
         gc.collect()
-        logger.info("Trail %d done.", trail_idx)
+        logger.info("Trial %d done.", trial_idx)
 
     job_walltime = time.perf_counter() - job_timer
     speed_factor = job_seg.duration / job_walltime if job_walltime > 0 else float("inf")
@@ -582,8 +582,8 @@ def _process_single_lag(
 
     if fragment_cluster is None:
         logger.warning(
-            "No supercluster results for lag %d (job segment %s trail_idx=%s)",
-            lag, sub_job_seg.index, sub_job_seg.trail_idx,
+            "No supercluster results for lag %d (job segment %s trial_idx=%s)",
+            lag, sub_job_seg.index, sub_job_seg.trial_idx,
         )
         return lag, []
 

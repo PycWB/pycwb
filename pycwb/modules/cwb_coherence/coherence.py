@@ -8,7 +8,7 @@ from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
-from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
+from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
 
 logger = logging.getLogger(__name__)
 
@@ -228,10 +228,14 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
     }
 
 
-def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
+def coherence_single_lag(
+    coherence_setups: list,
+    lag_idx: int,
+    return_rejected: bool = False,
+    veto_windows: list[tuple[float, float]] | None = None,
+) -> list:
     """
-    Compute coherence for one lag index, using pre-built per-resolution setups
-    from :func:`setup_coherence`.
+    Compute coherence for one lag index, using pre-built per-resolution setups from :func:`setup_coherence`.
 
     This is the per-lag cheap counterpart: only pixel selection and clustering
     are performed here; all expensive TF/WDM work is already done.
@@ -244,6 +248,10 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
         Zero-based lag index.
     return_rejected : bool
         If True keep rejected clusters in the output.
+    veto_windows : list[tuple[float, float]] or None
+        GPS intervals ``(start, end)`` to keep.  When not ``None``, a binary
+        mask is built via :func:`build_veto_mask` and passed to pixel
+        selection so that only pixels inside these windows survive.
 
     Returns
     -------
@@ -263,12 +271,15 @@ def coherence_single_lag(coherence_setups, lag_idx, return_rejected=False):
             )
 
         t_sel = time.perf_counter()
+        veto = None
+        if veto_windows is not None:
+            veto = build_veto_mask(tf_maps[0], veto_windows, edge=setup["segEdge"])
         candidates = select_network_pixels(
             lag_index=lag_idx,
             energy_threshold=Eo,
             tf_maps=tf_maps,
             lag_shifts=job_seg.lag_shifts[lag_idx],
-            veto=None,
+            veto=veto,
             edge=setup["segEdge"],
         )
         t_sel_elapsed = time.perf_counter() - t_sel
@@ -446,6 +457,54 @@ def apply_veto(iwindow, tf_map, segment_list=None, injection_times=None, edge=No
         edge=edge,
     )
     return (live, veto_mask) if return_mask else live
+
+
+def build_veto_mask(tf_map, veto_windows: list[tuple[float, float]], edge: float | None = None) -> np.ndarray:
+    """
+    Build a binary keep-mask from GPS time windows for a TF map timeline.
+
+    Bins inside any of *veto_windows* are marked 1 (keep); everything else
+    is 0 (reject).  The resulting array can be passed as the ``veto``
+    argument to :func:`select_network_pixels`.
+
+    Parameters
+    ----------
+    tf_map : object
+        Reference TF map that defines the time axis (must expose ``data``,
+        ``dt``, and ``start`` attributes).
+    veto_windows : list[tuple[float, float]]
+        GPS intervals ``(start, end)`` to keep.  Overlapping windows are
+        handled correctly (union).
+    edge : float or None
+        Ignored for mask construction but accepted for API consistency.
+
+    Returns
+    -------
+    np.ndarray
+        1-D int16 array of length ``n_time`` (mask: 1=keep, 0=reject).
+    """
+    data = np.asarray(getattr(tf_map, "data", []))
+    n_samples = int(data.shape[1]) if data.ndim == 2 else int(data.size)
+    if n_samples <= 0:
+        return np.zeros(0, dtype=np.int16)
+
+    dt = float(getattr(tf_map, "dt", 0.0))
+    if dt <= 0:
+        raise ValueError("tf_map.dt must be positive for veto mask construction")
+
+    rate = 1.0 / dt
+    start = float(getattr(tf_map, "start", 0.0))
+    stop = float(getattr(tf_map, "stop", start + n_samples * dt))
+
+    mask = np.zeros(n_samples, dtype=np.int16)
+    for seg_start, seg_end in veto_windows:
+        s = min(max(float(seg_start), start), stop)
+        e = min(max(float(seg_end), start), stop)
+        jb = max(0, int((s - start) * rate))
+        je = min(n_samples, int((e - start) * rate))
+        if je > jb:
+            mask[jb:je] = 1
+    return mask
 
 
 def _igamma_inv_upper(shape, p):
