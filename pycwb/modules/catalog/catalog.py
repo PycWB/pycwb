@@ -367,7 +367,11 @@ class Catalog(BaseCatalog):
             ) from exc
 
         triggers = self.triggers()  # noqa: F841  (used by DuckDB via local scope)
-        return duckdb.query(sql).arrow()
+        result = duckdb.query(sql).arrow()
+        # DuckDB ≥ 1.0 returns a RecordBatchReader; materialise to Table.
+        if isinstance(result, pa.RecordBatchReader):
+            result = result.read_all()
+        return result
 
     # ------------------------------------------------------------------
     # Live time
