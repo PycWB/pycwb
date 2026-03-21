@@ -7,17 +7,18 @@ and data quality files.
 
 import shutil
 import logging
+import yaml
 from pathlib import Path
 from typing import Dict, Optional
 from jinja2 import Template
 import click
 
-from .config_repo_parser import parse_project, get_ifo_list, get_data_settings
+from .config_repo_parser import parse_project, get_ifo_list, get_data_settings, get_machine_settings
 
 logger = logging.getLogger(__name__)
 
 
-def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = "gwosc", dry_run: bool = False) -> Dict:
+def setup_project(work_dir: str, config_base_path: str = "./", data_type: Optional[str] = None, dry_run: bool = False) -> Dict:
     """
     Setup a project working directory with configuration and DQ files.
     
@@ -39,8 +40,9 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         work_dir: Absolute or relative path to the working directory
                  (will be created if it doesn't exist)
         config_base_path: Base path to the configuration repository (default: "./")
-        data_type: Data source type from settings.yaml (default: "gwosc")
-                  Options: "igwn-osg", "cit-local", "gwosc"
+        data_type: Override the data source type (e.g. "igwn-osg", "cit-local", "gwosc").
+                  If None (default), the value is taken from the ``data_source`` field of
+                  the active machine config (``machine/<machine>.yaml``).
         dry_run: If True, only show what would be done without creating files (default: False)
     
     Returns:
@@ -52,6 +54,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         - dq_files: List of copied DQ files with paths
         - config_file: Path to user_parameters.yaml in work directory
         - input_dir: Path to input directory
+        - machine_settings: Loaded machine configuration dict
         - data_type: Selected data source type
         - data_settings: Data source configuration used
         
@@ -66,6 +69,13 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         >>> print(f"Data source: {result['data_type']}")
     """
     work_path = Path(work_dir).resolve()
+
+    # Load machine settings and resolve data_type
+    machine_settings = get_machine_settings(config_base_path)
+    if data_type is None:
+        data_type = machine_settings.get('data_source', 'gwosc')
+    logger.info(f"Using machine profile with data_source: {data_type}")
+
     # ask user to confirm if work_path exists and is not empty
     if work_path.exists() and any(work_path.iterdir()):
         if not dry_run:
@@ -115,6 +125,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         ifo_site_name,
         dq_files,
         data_settings,
+        machine_settings,
         dry_run
     )
 
@@ -161,6 +172,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: str = 
         'dq_files': copied_dq_files,
         'config_file': config_dest,
         'input_dir': input_dir,
+        'machine_settings': machine_settings,
         'data_type': data_type,
         'data_settings': data_settings,
         'dry_run': dry_run
@@ -192,6 +204,7 @@ def _copy_and_template_config(
     ifo_site_name: list,
     dq_files: list,
     data_settings: Dict,
+    machine_settings: Dict,
     dry_run: bool = False
 ) -> None:
     """
@@ -209,6 +222,10 @@ def _copy_and_template_config(
     - {{ GWDATAFIND }}: Will be replaced with gwdatafind config for remote data
     - {{ FRFILES }}: Will be replaced with frFiles list for local data
     
+    Machine-specific settings (cluster, container_image, etc.) from machine_settings are
+    injected at the top of the rendered file, replacing the ``####### job setting ########``
+    header. Keys that are internal to the setup workflow (``data_source``) are excluded.
+    
     Args:
         source_file: Source user_parameters.yaml path
         dest_file: Destination path
@@ -219,6 +236,7 @@ def _copy_and_template_config(
         ifo_site_name: List of site names (e.g., ['L', 'H'])
         dq_files: List of DQ file dictionaries from get_dq_files() with metadata
         data_settings: Data source configuration from get_data_settings()
+        machine_settings: Machine profile settings from get_machine_settings()
         dry_run: If True, don't actually write files
     """
     if not source_file.exists():
@@ -275,6 +293,24 @@ def _copy_and_template_config(
         CHANNELNAMES_RAW=[data_settings.get('channelNamesRaw')[ifo] for ifo in ifo_list] if data_settings.get('channelNamesRaw') else [],
         DATA_TYPE=data_settings['type']
     )
+
+    # Inject machine settings right after the "####### job setting ########" header.
+    # Keys that are internal to the setup workflow (data_source) are excluded.
+    _SETUP_ONLY_KEYS = {'data_source'}
+    machine_block = yaml.dump(
+        {k: v for k, v in machine_settings.items() if k not in _SETUP_ONLY_KEYS},
+        default_flow_style=False,
+        allow_unicode=True
+    )
+    _JOB_HEADER = "####### job setting ########"
+    if _JOB_HEADER in rendered_content:
+        rendered_content = rendered_content.replace(
+            _JOB_HEADER + "\n",
+            _JOB_HEADER + "\n" + machine_block,
+            1
+        )
+    else:
+        rendered_content = _JOB_HEADER + "\n" + machine_block + rendered_content
     
     if dry_run:
         logger.info(f"[DRY RUN] Would write configuration to: {dest_file}")
