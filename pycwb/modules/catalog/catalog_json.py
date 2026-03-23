@@ -269,7 +269,7 @@ class JSONCatalog(BaseCatalog):
         trigger's fields, e.g. ``"rho > 5"``, ``"net_cc > 0.5"``.
 
         For injection sub-fields, reference the nested dict:
-        ``"injection is not None and injection['mchirp'] > 10"``.
+        ``"injection is not None and injection['hrss'] > 1e-22"``.
 
         Returns
         -------
@@ -306,8 +306,8 @@ class JSONCatalog(BaseCatalog):
         Example::
 
             rows = cat.query(
-                "SELECT id, rho, injection.mchirp FROM triggers"
-                " WHERE injection IS NOT NULL AND injection.mchirp > 10"
+                "SELECT id, rho, injection.name, injection.approximant FROM triggers"
+                " WHERE injection IS NOT NULL AND injection.hrss > 1e-22"
             )
         """
         try:

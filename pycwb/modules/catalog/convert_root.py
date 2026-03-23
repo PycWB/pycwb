@@ -231,29 +231,49 @@ def _row_to_trigger(row: dict, job_id: int) -> "Trigger":
     phi0   = row.get("phi0")
     theta0 = row.get("theta0")
     if phi0 is not None or theta0 is not None:
-        chirp0 = row.get("chirp0")
+        import json as _json
+        ra0     = row.get("ra0")
+        dec0    = row.get("dec0")
+        chirp0  = row.get("chirp0")
+        strain0 = row.get("strain0")
+        rng     = row.get("range")
+        time0   = _fl(row.get("time0"))
+        hrss0   = _fl(row.get("hrss0"))
+        bp0     = _fl(row.get("bp0"))
+        bx0     = _fl(row.get("bx0"))
+        isnr    = _fl(row.get("iSNR"))
+        osnr    = _fl(row.get("oSNR"))
+        iosnr   = _fl(row.get("ioSNR"))
+        deff    = _fl(row.get("Deff"))
+        # Pack all available ROOT injection fields into JSON parameters.
+        params_dict = {
+            "phi":              _safe(phi0,   0),
+            "theta":            _safe(theta0, 0),
+            "psi":              _safe(row.get("psi0"),  0),
+            "iota":             _safe(row.get("iota0"), 0),
+            "mchirp":           _safe(chirp0, 0),
+            "strain":           _safe(strain0, 0),
+            "distance":         _safe(rng,    1),
+            "waveform_type":    int(_safe(row.get("type"), 1)),
+            "amplitude_factor": float(row.get("factor", 0.0) or 0.0),
+            "mass":             _fl(row.get("mass")),
+            "spin":             _fl(row.get("spin")),
+        }
         t.injection = InjectionParams(
-            waveform_type    = int(_safe(row.get("type"), 1)),
-            amplitude_factor = float(row.get("factor", 0.0) or 0.0),
-            phi              = _safe(phi0,   0),
-            theta            = _safe(theta0, 0),
-            ra               = _safe(row.get("ra0"),  0) if row.get("ra0") is not None else _safe(phi0,  2),
-            dec              = _safe(row.get("dec0"), 0) if row.get("dec0") is not None else _safe(theta0, 2),
-            psi              = _safe(row.get("psi0"),  0),
-            iota             = _safe(row.get("iota0"), 0),
-            mchirp           = _safe(chirp0, 0),
-            strain           = _safe(row.get("strain0"), 0),
-            distance         = _safe(row.get("range"),   1),
-            mass             = _fl(row.get("mass")),
-            spin             = _fl(row.get("spin")),
-            time             = _fl(row.get("time0")),
-            hrss             = _fl(row.get("hrss0")),
-            fp               = _fl(row.get("bp0")),
-            fx               = _fl(row.get("bx0")),
-            snr_sq           = _fl(row.get("iSNR")),
-            rec_snr_sq       = _fl(row.get("oSNR")),
-            overlap_snr      = _fl(row.get("ioSNR")),
-            d_eff            = _fl(row.get("Deff")),
+            ra          = _safe(ra0,  0) if ra0  is not None else _safe(phi0,   2),
+            dec         = _safe(dec0, 0) if dec0 is not None else _safe(theta0, 2),
+            gps_time    = time0[0] if time0 else 0.0,
+            hrss        = _safe(strain0, 0),
+            pol         = _safe(row.get("psi0"), 0),
+            parameters  = _json.dumps(params_dict),
+            time        = time0,
+            hrss_det    = hrss0,
+            fp          = bp0,
+            fx          = bx0,
+            snr_sq      = isnr,
+            rec_snr_sq  = osnr,
+            overlap_snr = iosnr,
+            d_eff       = deff,
         )
 
     return t
