@@ -72,7 +72,27 @@ def parse_project_name(project_name: str, config_base_path: str = "./") -> Dict[
     label_parts = remaining_parts[path_info['matched_count']:]
     label = "_".join(label_parts) if label_parts else ""
     
-    return {
+    # Validate that config was found and all required components were extracted
+    if not path_info['config_found']:
+        config_base = Path(config_base_path).resolve()
+        raise ValueError(
+            f"Configuration not found for project '{project_name}'.\n"
+            f"Expected to find user_parameters.yaml in a subdirectory of {config_base}.\n"
+            f"Looked for path: {path_info['relative_path']}\n"
+            f"Full searched path: {path_info['full_path']}\n"
+            f"Please verify the path components in your project name are correct."
+        )
+    
+    if not network:
+        raise ValueError(
+            f"Network code not found in project name '{project_name}'.\n"
+            f"Expected format: {{OBS}}_K{{CHUNK_ID}}_{{DQ}}_{{SEARCH}}_{{NETWORK}}_{{OPTIONAL_COMPONENTS}}\n"
+            f"Example: O4_K01_C00_BurstHF_LH_SIM_NSGlitch_Set1\n"
+            f"Parsed: search='{search}', network=''\n"
+            f"Please verify your project name format."
+        )
+    
+    result = {
         'obs_chunk': obs_chunk,
         'obs': obs,
         'chunk_id': chunk_id,
@@ -84,6 +104,8 @@ def parse_project_name(project_name: str, config_base_path: str = "./") -> Dict[
         'full_path': path_info['full_path'],
         'config_found': path_info['config_found']
     }
+    
+    return result
 
 
 def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
@@ -101,12 +123,18 @@ def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
         
     Raises:
         FileNotFoundError: If settings.yaml not found
-        ValueError: If network code not found in settings.yaml
+        ValueError: If network code is empty or not found in settings.yaml
         
     Example:
         >>> ifos = get_ifo_list("LH")
         >>> print(ifos)  # ["L1", "H1"]
     """
+    if not network:
+        raise ValueError(
+            "Network code cannot be empty. Please provide a valid network code "
+            "(e.g., 'LH', 'H', 'V', 'HLV', etc.)."
+        )
+    
     settings_file = Path(config_base_path) / "settings.yaml"
     
     if not settings_file.exists():
