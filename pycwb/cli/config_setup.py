@@ -25,9 +25,18 @@ def init_parser(parser):
                         '-d',
                         metavar='datatype',
                         type=str,
-                        default='gwosc',
-                        choices=['igwn-osg', 'cit-local', 'gwosc', 'local'],
-                        help='Data source type (default: gwosc)')
+                        default=None,
+                        help='Data source type (e.g. igwn-osg, cit-local, gwosc, local). '
+                             'Overrides the data_source defined in the machine profile. '
+                             'Valid values are those configured in settings.yaml.')
+
+    # Machine name
+    parser.add_argument('--machine',
+                        metavar='machine',
+                        type=str,
+                        default=None,
+                        help='Machine profile name (overrides the machine key in settings.yaml). '
+                             'Loads machine/<machine>.yaml from the config repository.')
     
     # Config base path
     parser.add_argument('--config-base-path',
@@ -120,6 +129,7 @@ def command(args):
         setup_result = setup_project(
             work_dir=args.workdir,
             config_base_path=args.config_base_path,
+            machine=args.machine,
             data_type=args.datatype,
             dry_run=args.dry_run
         )

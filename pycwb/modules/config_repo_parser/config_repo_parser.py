@@ -129,15 +129,17 @@ def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
     return ifo_list
 
 
-def get_machine_settings(config_base_path: str = "./") -> Dict:
+def get_machine_settings(config_base_path: str = "./", machine: Optional[str] = None) -> Dict:
     """
     Load machine-specific settings from config/machine/<machine>.yaml.
 
-    Reads the ``machine`` key from ``settings.yaml`` to determine which profile
-    to load, then parses ``machine/<machine>.yaml`` and returns its contents.
+    When *machine* is given it is used directly; otherwise the ``machine`` key
+    from ``settings.yaml`` determines which profile to load.
 
     Args:
         config_base_path: Base path to the config repository (default: "./")
+        machine: Machine profile name override.  If provided, ``settings.yaml``
+                 is not consulted for the machine name.
 
     Returns:
         Dictionary of machine settings, e.g.::
@@ -153,20 +155,18 @@ def get_machine_settings(config_base_path: str = "./") -> Dict:
             }
 
     Raises:
-        FileNotFoundError: If settings.yaml or the machine yaml file is not found.
-        ValueError: If the ``machine`` key is missing from settings.yaml.
+        FileNotFoundError: If settings.yaml (when needed) or the machine yaml file is not found.
+        ValueError: If the ``machine`` key is missing from settings.yaml and no override given.
     """
-    settings_file = Path(config_base_path) / "settings.yaml"
-
-    if not settings_file.exists():
-        raise FileNotFoundError(f"Settings file not found: {settings_file}")
-
-    with open(settings_file, 'r') as f:
-        settings = yaml.safe_load(f)
-
-    machine = settings.get('machine')
-    if not machine:
-        raise ValueError("'machine' key not found in settings.yaml")
+    if machine is None:
+        settings_file = Path(config_base_path) / "settings.yaml"
+        if not settings_file.exists():
+            raise FileNotFoundError(f"Settings file not found: {settings_file}")
+        with open(settings_file, 'r') as f:
+            settings = yaml.safe_load(f)
+        machine = settings.get('machine')
+        if not machine:
+            raise ValueError("'machine' key not found in settings.yaml")
 
     machine_file = Path(config_base_path) / "machine" / f"{machine}.yaml"
     if not machine_file.exists():
