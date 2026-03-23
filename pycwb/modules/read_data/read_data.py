@@ -173,6 +173,9 @@ def merge_frames(job_seg, data, seg_edge):
             # if there is only one frame, no need to merge
             ifo_data = data[frames[0]]
         else:
+            # sort frames by start time so gwpy.append receives them in chronological order
+            frames = sorted(frames, key=lambda i: data[i].start_time)
+
             # merge gw frames via gwpy append
             ifo_data = data[frames[0]].to_gwpy()
             # free memory
