@@ -168,7 +168,13 @@ def merge_frames(job_seg, data, seg_edge):
     # split data by ifo for next step of merging
     ifo_frames = [[i for i, frame in enumerate(job_seg.frames) if frame.ifo == ifo] for ifo in job_seg.ifos]
 
-    for frames in ifo_frames:
+    for ifo, frames in zip(job_seg.ifos, ifo_frames):
+        if len(frames) == 0:
+            raise ValueError(
+                f"No frame files found for IFO '{ifo}' in job segment {job_seg.index}. "
+                f"Available frames cover: "
+                f"{[f.ifo for f in job_seg.frames]}"
+            )
         if len(frames) == 1:
             # if there is only one frame, no need to merge
             ifo_data = data[frames[0]]
