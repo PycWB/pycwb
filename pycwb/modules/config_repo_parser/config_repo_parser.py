@@ -364,17 +364,27 @@ def get_dq_files(dq: str, search: str, ifo: List[str], config_base_path: str = "
     dq_files = []
     for ifo in ifos:
         # Find all files matching {ifo}_cat*.txt pattern
-        pattern = str(dq_dir / f"{ifo}_cat*.txt")
+        pattern = str(dq_dir / f"{ifo}_*.txt")
         for filepath in glob.glob(pattern):
             # Extract category from filename (e.g., "L1_cat0.txt" -> "0")
             filename = Path(filepath).name
             # Parse pattern: {ifo}_cat{cat}.txt
             cat = filename.split('_cat')[1].replace('.txt', '')
-            
-            # Get metadata for this file (try full name first, then generic cat name)
+
+            # Resolve metadata entry: try IFO-specific key first, then generic cat key.
             file_key = f"{ifo}_cat{cat}"
-            file_metadata = metadata.get(file_key, metadata.get(f"cat{cat}", {}))
-            
+            generic_key = f"cat{cat}"
+            if metadata:
+                if file_key in metadata:
+                    file_metadata = metadata[file_key]
+                elif generic_key in metadata:
+                    file_metadata = metadata[generic_key]
+                else:
+                    # File not listed in metadata — skip it.
+                    continue
+            else:
+                file_metadata = {}
+
             dq_files.append({
                 'filename': filepath,
                 'ifo': ifo,

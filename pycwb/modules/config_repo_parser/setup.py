@@ -387,7 +387,7 @@ def _copy_dq_files(
                 continue
             
             shutil.copy2(source, dest)
-            logger.debug(f"Copied DQ file: {source.name}")
+            logger.info(f"Copied DQ file: {source.name}")
         
         copied_files[str(source)] = str(dest)
     
