@@ -222,8 +222,13 @@ def get_data_settings(data_type: str, dq: str, config_base_path: str = "./") -> 
     
     data_source = data_sources[data_type]
     
-    # Check if it's a local file source
-    is_local = data_type == "local"
+    # Check if it's a local file source.
+    # A source is local when: the type is exactly "local", the config marks it
+    # with ``is_local: true``, or the urltype is "file" (standard local indicator).
+    is_local = (
+        data_type == "local"
+        or bool(data_source.get('is_local', False))
+    )
     
     # Get channelNamesRaw - try to get by dq first, then overall setting
     channel_names_raw = None

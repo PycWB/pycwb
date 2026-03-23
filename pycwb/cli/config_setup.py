@@ -179,5 +179,6 @@ def command(args):
         return 0
     
     except Exception as e:
-        logger.error(f"Error: {e}")
+        import traceback
+        logger.error(f"Error: {e}\n{traceback.format_exc()}")
         return 1
