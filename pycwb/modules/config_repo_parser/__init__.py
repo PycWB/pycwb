@@ -11,6 +11,7 @@ from .config_repo_parser import (
     get_dq_files,
     get_ifo_list,
     get_data_settings,
+    get_machine_settings,
     parse_project
 )
 
@@ -24,6 +25,7 @@ __all__ = [
     'get_dq_files',
     'get_ifo_list',
     'get_data_settings',
+    'get_machine_settings',
     'parse_project',
     'setup_project'
 ]
