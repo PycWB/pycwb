@@ -44,7 +44,19 @@ def read_from_gwf(filename, channel, start=None, end=None) -> TimeSeries:
         if os.path.exists(local_filename):
             filename = local_filename
             logger.info(f'Using local transferred file: {local_filename}')
-    data = TimeSeries.read(filename, channel, start, end)
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"Frame file not found: {filename}")
+    size_bytes = os.path.getsize(filename)
+    if size_bytes == 0:
+        raise ValueError(f"Frame file size is 0 bytes: {filename}")
+
+    try:
+        data = TimeSeries.read(filename, channel, start, end)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to read frame data from {filename} for channel {channel} "
+            f"in window [{start}, {end}] (size={size_bytes} bytes): {exc}"
+        ) from exc
 
     # check if data contains NaN values
     if np.isnan(np.sum(data)):
@@ -251,6 +263,13 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
         # sync the data end time with the offset of frame end time
         data_end -= end - frame.end_time
         end = frame.end_time
+
+    if start >= end:
+        raise ValueError(
+            f"Empty/non-positive read window for frame {frame.path} ({ifo}) in job segment {job_seg.index}: "
+            f"computed start={start}, end={end}. "
+            "This indicates inconsistent frame coverage for the required padded interval."
+        )
 
     i = job_seg.ifos.index(frame.ifo)
     data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
