@@ -6,6 +6,7 @@ import getpass
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 from pycwb.modules.logger import logger_init, log_prints
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
@@ -77,16 +78,89 @@ def _worker_initializer():
     faulthandler.enable()
 
 
-def data_collector(working_dir, queue):
-    logger_init(log_file=None, log_level="INFO", worker_prefix=f'DataCollector')
+def data_collector(working_dir: str, config: Any, catalog_file: str, queue: Any) -> None:
+    """Worker process that serializes all persistent writes from job workers.
+
+    Handles three message types via the shared queue:
+
+    - ``{"type": "progress", ...}`` → append to progress Parquet file
+    - ``{"type": "trigger", "trigger": Trigger}`` → batch and write to catalog Parquet
+    - ``{"type": "wave", ...}`` → write to HDF5 wave file
+    - ``None`` → sentinel to flush buffers and terminate
+
+    Parameters
+    ----------
+    working_dir : str
+        Root working directory for the run.
+    config : Config
+        Parsed pycWB configuration object.
+    catalog_file : str
+        Absolute path to the catalog Parquet file.
+    queue : multiprocessing.Queue
+        Shared queue carrying typed message dicts from worker processes.
+    """
+    logger_init(log_file=None, log_level="INFO", worker_prefix='DataCollector')
+    from pycwb.modules.catalog.catalog import Catalog
+    from pycwb.workflow.subflow.postprocess_and_plots import add_wf_to_wave
+
+    stats = {"progress": 0, "trigger": 0, "wave": 0}
+    trigger_buffer = []
+    TRIGGER_FLUSH_SIZE = 50
+
+    def flush_triggers():
+        if not trigger_buffer:
+            return
+        try:
+            cat = Catalog.open(catalog_file)
+            cat.add_triggers(list(trigger_buffer))
+            logger.info("Flushed %d triggers to catalog", len(trigger_buffer))
+        except Exception as e:
+            logger.error("Error flushing %d triggers: %s", len(trigger_buffer), e)
+        trigger_buffer.clear()
+
     while True:
         item = queue.get()
-        if item is None:  # Sentinel to terminate
+        if item is None:
+            flush_triggers()
             break
+
         try:
-            logger.info(f"Merging {item}")
+            msg_type = item["type"]
+
+            if msg_type == "progress":
+                # Flush pending triggers before writing progress so the
+                # catalog is up-to-date when the lag is marked complete.
+                flush_triggers()
+                record = {k: v for k, v in item.items() if k != "type"}
+                cat = Catalog.open(catalog_file)
+                cat.add_lag_progress(**record)
+                stats["progress"] += 1
+                logger.info(
+                    "Progress: job=%d trial=%d lag=%d triggers=%d livetime=%.2fs [%d total]",
+                    record["job_id"], record["trial_idx"], record["lag_idx"],
+                    record["n_triggers"], record["livetime"], stats["progress"],
+                )
+
+            elif msg_type == "trigger":
+                trigger_buffer.append(item["trigger"])
+                stats["trigger"] += 1
+                if len(trigger_buffer) >= TRIGGER_FLUSH_SIZE:
+                    flush_triggers()
+
+            elif msg_type == "wave":
+                add_wf_to_wave(config, item["wave_file"], item["event_id"], item["waves"])
+                stats["wave"] += 1
+                logger.info("Wave: event=%s → %s [%d total]",
+                            item["event_id"], item["wave_file"], stats["wave"])
+
+            else:
+                logger.warning("Unknown message type: %s", msg_type)
+
         except Exception as e:
-            logger.error(f"Error merging {item}: {e}")
+            logger.error("Error processing %s message: %s", item.get("type", "?"), e)
+
+    logger.info("DataCollector finished: %d progress, %d triggers, %d waves",
+                stats["progress"], stats["trigger"], stats["wave"])
 
 
 def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
@@ -96,9 +170,28 @@ def process_single_with_flag(main_func, queue, working_dir, config, job_seg, com
         logger.info(f"Job segment {job_seg.index} is already done")
         return
 
+    # Build skip_lags from progress file for per-lag rescue
+    skip_lags = None
+    if catalog_file and os.path.exists(catalog_file):
+        try:
+            from pycwb.modules.catalog.catalog import Catalog
+            cat = Catalog.open(catalog_file)
+            completed = cat.get_completed_lags(job_seg.index)
+            if completed:
+                # Skip lag only if ALL trials for it are done
+                all_lag_sets = list(completed.values())
+                common_lags = set.intersection(*all_lag_sets) if all_lag_sets else set()
+                if common_lags:
+                    skip_lags = sorted(common_lags)
+                    logger.info("Rescue: skipping %d completed lags for job %d",
+                                len(skip_lags), job_seg.index)
+        except Exception as e:
+            logger.warning("Could not read progress for rescue: %s", e)
+
     try:
         main_func(working_dir, config, job_seg,
-                            compress_json=compress_json, catalog_file=catalog_file, queue=queue)
+                            compress_json=compress_json, catalog_file=catalog_file, queue=queue,
+                            skip_lags=skip_lags)
 
         # create a flag file to indicate the job is done
         try:
@@ -133,7 +226,7 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     # create a queue and a worker to collect the data
     manager = multiprocessing.Manager()
     queue = manager.Queue()
-    data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, queue))
+    data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, config, catalog_file, queue))
     data_collector_worker.start()
 
     # Use ProcessPoolExecutor for modern parallel processing with segfault capture via faulthandler.

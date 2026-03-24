@@ -41,6 +41,8 @@ import dataclasses
 import logging
 import math
 import os
+import tempfile
+import time
 from typing import Optional, Union
 
 import numpy as np
@@ -57,6 +59,19 @@ from pycwb.types.job import WaveSegment
 from pycwb.types.trigger import Trigger
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Progress schema
+# ---------------------------------------------------------------------------
+
+PROGRESS_SCHEMA = pa.schema([
+    ("job_id",     pa.int32()),
+    ("trial_idx",  pa.int32()),
+    ("lag_idx",    pa.int32()),
+    ("n_triggers", pa.int32()),
+    ("livetime",   pa.float64()),
+    ("timestamp",  pa.float64()),
+])
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +103,36 @@ def _empty_table(schema: pa.Schema) -> pa.Table:
         {f.name: pa.array([], type=f.type) for f in schema},
         schema=schema,
     )
+
+
+def _validate_catalog_file(path: str) -> None:
+    """Validate that the on-disk parquet file exists and is non-empty."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Catalog not found: {path}")
+    size = os.path.getsize(path)
+    if size == 0:
+        raise ValueError(
+            f"Catalog file is empty (0 bytes): {path}. "
+            "This usually indicates an interrupted/failed previous write. "
+            "Remove the empty file and recreate the catalog."
+        )
+
+
+def _write_table_atomic(table: pa.Table, filename: str, compression: str = "snappy") -> None:
+    """Write parquet to a temp file and atomically replace the destination."""
+    target_dir = os.path.dirname(os.path.abspath(filename)) or "."
+    os.makedirs(target_dir, exist_ok=True)
+
+    fd, tmp_path = tempfile.mkstemp(prefix=".catalog_tmp_", suffix=".parquet", dir=target_dir)
+    os.close(fd)
+    try:
+        pq.write_table(table, tmp_path, compression=compression)
+        if os.path.getsize(tmp_path) == 0:
+            raise ValueError(f"Temporary parquet write produced empty file: {tmp_path}")
+        os.replace(tmp_path, filename)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -152,15 +197,14 @@ class Catalog(BaseCatalog):
         )
         table = _empty_table(schema)
         with SoftFileLock(filename + ".lock", timeout=10):
-            pq.write_table(table, filename, compression="snappy")
+            _write_table_atomic(table, filename, compression="snappy")
         logger.info("Created Arrow catalog: %s", filename)
         return cls(filename)
 
     @classmethod
     def open(cls, filename: str) -> "Catalog":
         """Open an existing Parquet catalog for reading or appending."""
-        if not os.path.exists(filename):
-            raise FileNotFoundError(f"Catalog not found: {filename}")
+        _validate_catalog_file(filename)
         return cls(filename)
 
     # ------------------------------------------------------------------
@@ -169,6 +213,7 @@ class Catalog(BaseCatalog):
 
     def _load_meta(self) -> dict:
         if self._meta_cache is None:
+            _validate_catalog_file(self.filename)
             raw = pq.read_schema(self.filename).metadata or {}
             self._meta_cache = {
                 "version": raw.get(b"pycwb_version", b"").decode(),
@@ -224,11 +269,12 @@ class Catalog(BaseCatalog):
         )
 
         with SoftFileLock(self.filename + ".lock", timeout=30):
+            _validate_catalog_file(self.filename)
             existing = pq.read_table(self.filename)
             meta = existing.schema.metadata or {}
             combined = pa.concat_tables([existing, new_rows], promote_options="default")
             combined = combined.replace_schema_metadata(meta)
-            pq.write_table(combined, self.filename, compression="snappy")
+            _write_table_atomic(combined, self.filename, compression="snappy")
 
         self._meta_cache = None  # invalidate after write
 
@@ -242,6 +288,89 @@ class Catalog(BaseCatalog):
         if not isinstance(events, list):
             events = [events]
         self.add_triggers([Trigger.from_event(ev) for ev in events])
+
+    # ------------------------------------------------------------------
+    # Progress tracking
+    # ------------------------------------------------------------------
+
+    @property
+    def progress_file(self) -> str:
+        """Path to the companion progress Parquet file.
+
+        Derived by replacing the ``catalog`` prefix with ``progress``:
+        ``catalog/catalog_1-5.parquet`` → ``catalog/progress_1-5.parquet``
+
+        Returns
+        -------
+        str
+            Absolute path to the progress Parquet file.
+        """
+        dirname = os.path.dirname(self.filename)
+        basename = os.path.basename(self.filename).replace("catalog", "progress", 1)
+        return os.path.join(dirname, basename)
+
+    def add_lag_progress(self, job_id: int, trial_idx: int, lag_idx: int,
+                         n_triggers: int, livetime: float) -> None:
+        """Record the completion of a single lag.
+
+        Appends one row to the progress Parquet file (read-modify-write with
+        atomic replacement).
+
+        Parameters
+        ----------
+        job_id : int
+            Job segment index.
+        trial_idx : int
+            Trial (injection) index; 0 for no injections.
+        lag_idx : int
+            0-based lag index.
+        n_triggers : int
+            Number of triggers found in this lag.
+        livetime : float
+            Effective post-veto analysed duration in seconds.
+        """
+        pf = self.progress_file
+        new_row = pa.table(
+            {
+                "job_id":     [job_id],
+                "trial_idx":  [trial_idx],
+                "lag_idx":    [lag_idx],
+                "n_triggers": [n_triggers],
+                "livetime":   [livetime],
+                "timestamp":  [time.time()],
+            },
+            schema=PROGRESS_SCHEMA,
+        )
+
+        with SoftFileLock(pf + ".lock", timeout=30):
+            if os.path.exists(pf) and os.path.getsize(pf) > 0:
+                existing = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+                combined = pa.concat_tables([existing, new_row])
+            else:
+                combined = new_row
+            _write_table_atomic(combined, pf, compression="snappy")
+
+    def get_completed_lags(self, job_id: int) -> dict[int, set[int]]:
+        """Return completed lags for a given job.
+
+        Returns
+        -------
+        dict[int, set[int]]
+            ``{trial_idx: {lag_0, lag_1, ...}}`` for all completed lags
+            belonging to *job_id*.  Empty dict if no progress file exists.
+        """
+        pf = self.progress_file
+        if not os.path.exists(pf) or os.path.getsize(pf) == 0:
+            return {}
+
+        table = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+        mask = pc.equal(table["job_id"], job_id)
+        rows = table.filter(mask)
+
+        result: dict[int, set[int]] = {}
+        for row in rows.to_pylist():
+            result.setdefault(row["trial_idx"], set()).add(row["lag_idx"])
+        return result
 
     # ------------------------------------------------------------------
     # Reading
@@ -380,7 +509,12 @@ class Catalog(BaseCatalog):
     def live_time(self, filters: Optional[list] = None) -> list:
         """Return a list of per-lag livetime dicts for background estimation.
 
-        Each dict has keys ``"shift"``, ``"livetime"`` (seconds), ``"lag"``.
+        If a progress file exists, uses the stored post-veto livetimes (one
+        entry per completed lag).  Otherwise falls back to the legacy
+        ``end_time - start_time`` estimate for all jobs × lags.
+
+        Each dict has keys ``"job_id"``, ``"shift"``, ``"livetime"``
+        (seconds), ``"lag"``.
 
         Parameters
         ----------
@@ -392,19 +526,35 @@ class Catalog(BaseCatalog):
         -------
         list of dict
         """
-        cfg  = self.config
-        jobs = self.jobs
-        lags = np.arange(cfg.get("lagSize", 1))
+        pf = self.progress_file
+        if os.path.exists(pf) and os.path.getsize(pf) > 0:
+            # ── Progress-based (accurate post-veto livetimes) ──
+            progress = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+            jobs_by_index = {j.get("index", i): j for i, j in enumerate(self.jobs)}
 
-        livetimes = []
-        for job in jobs:
-            livetime_single = job["end_time"] - job["start_time"]
-            for lag in lags:
+            livetimes = []
+            for row in progress.to_pylist():
+                job = jobs_by_index.get(row["job_id"], {})
                 livetimes.append({
+                    "job_id":   row["job_id"],
                     "shift":    job.get("shift"),
-                    "livetime": livetime_single,
-                    "lag":      int(lag),
+                    "livetime": row["livetime"],
+                    "lag":      row["lag_idx"],
                 })
+        else:
+            # ── Legacy fallback (raw segment duration) ──
+            cfg  = self.config
+            jobs = self.jobs
+            lags = np.arange(cfg.get("lagSize", 1))
+            livetimes = []
+            for job in jobs:
+                livetime_single = job["end_time"] - job["start_time"]
+                for lag in lags:
+                    livetimes.append({
+                        "shift":    job.get("shift"),
+                        "livetime": livetime_single,
+                        "lag":      int(lag),
+                    })
 
         if filters:
             before = len(livetimes)

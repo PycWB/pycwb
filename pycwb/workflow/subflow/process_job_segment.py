@@ -19,6 +19,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
 from pycwb.modules.reconstruction import estimate_snr
+from pycwb.types.trigger import Trigger
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
+            if skip_lags and lag in skip_lags:
+                logger.info("Skipping lag %d due to skip_lags", lag)
+                continue
             events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
                                                             lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
             
@@ -160,13 +164,15 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 # estimate reconstructed_waveforms
                 reconst_data = reconstruct_waveforms_flow(trigger_folder, config, sub_job_seg.ifos,
                                         event, cluster, epoch=sub_job_seg.padded_start,
-                                        wave_file=wave_file,save=config.save_waveform, plot=config.plot_waveform)
+                                        wave_file=wave_file,save=config.save_waveform, plot=config.plot_waveform,
+                                        queue=queue)
                 
                 # if injection, estimate injected_waveforms and calculate related statistics
                 if event.injection: 
                     injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
                                                                 HoT_list, mdc_maps, config.iwindow/2, config.segEdge, config.inRate,
-                                                                wave_file=wave_file, save=config.save_injection, plot=config.plot_injection)
+                                                                wave_file=wave_file, save=config.save_injection, plot=config.plot_injection,
+                                                                queue=queue)
 
                     # if config.save_injection: 
                     #     event.wf_sINJ   = injected_data['injected_strain']            # estimated injected strain
@@ -212,8 +218,24 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             #################### Add event to catalog ####################
             for trigger in events_data:
-                catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
-                                                    catalog_file=catalog_file)
+                event, _, _ = trigger
+                trigger_obj = Trigger.from_event(event)
+                if queue is not None:
+                    queue.put({"type": "trigger", "trigger": trigger_obj})
+                else:
+                    catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
+                                                        catalog_file=catalog_file)
+
+            #################### Record lag progress ####################
+            progress_record = dict(
+                job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
+                n_triggers=len(events_data), livetime=sub_job_seg.livetime(lag),
+            )
+            if queue is not None:
+                queue.put({"type": "progress", **progress_record})
+            elif catalog_file:
+                from pycwb.modules.catalog.catalog import Catalog
+                Catalog.open(catalog_file).add_lag_progress(**progress_record)
 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
