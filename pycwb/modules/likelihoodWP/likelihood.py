@@ -730,27 +730,6 @@ def calculate_sky_statistics(l, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG,
     # set data packet amplitudes
     N, pd, pD = avx_setAMP_ps(pd, pD, pD_norm, pD_si, pD_co, pD_a, pD_A, mask)  # set data packet amplitudes
     N = N - 1  # effective number of pixels
-    mask_arr = np.asarray(mask)
-    pD_norm_arr = np.asarray(pD_norm)
-    pD_norm_avg = pD_norm_arr.mean(axis=0)  # shape: (n_pix,)
-    nm_sat_debug = (mask_arr > 0) & (pD_norm_avg <= 0)
-    zero_norm_pix_idx = np.where(nm_sat_debug)[0]
-    if len(zero_norm_pix_idx) > 0:
-        for zi in zero_norm_pix_idx[:5]:
-            xt_range = cluster_xtalk_lookup_table[zi]
-            xt_data = cluster_xtalk[xt_range[0]:xt_range[1]]
-            self_entry = [row for row in xt_data if int(row[0]) == zi]
-            pd_vals = [float(pd[j][zi]) for j in range(n_ifo)]
-            pD_vals = [float(pD[j][zi]) for j in range(n_ifo)]
-            t_vals = [float(pD_norm[j][zi]) for j in range(n_ifo)]
-            print(f"[Py-zero-pix] idx={zi}, mask={mask_arr[zi]}, "
-                  f"pd={pd_vals}, pD={pD_vals}, pD_norm={t_vals}, "
-                  f"n_xtalk_entries={len(xt_data)}, self_entry={self_entry}")
-    e_total = np.asarray(energy_total, dtype=np.float64)
-    Eh_debug = float(np.sum(nm_sat_debug * e_total))
-    n_data_norm_zero = int(np.sum(nm_sat_debug))
-    print(f"[Py-setAMP] N+1={N+1:.4f}, n_selected={int(np.sum(mask_arr>0))}, "
-          f"n_data_norm_zero={n_data_norm_zero}, Eh_debug={Eh_debug:.4f}, zero_norm_pix={zero_norm_pix_idx[:5]}")
     # set signal packet amplitudes
     _, ps, pS = avx_setAMP_ps(ps, pS, pS_norm, pS_si, pS_co, pS_a, pS_A, mask)
     # load noise TF domain amplitudes
@@ -1228,11 +1207,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     cc_rho_td = ch_td if ch_td > 1.0 else 1.0
     rho_reduced = float(sky_statistics.rho) / sqrt(cc_rho_td)
 
-    print(f"[Py-debug6] rho={float(sky_statistics.rho):.6f} cc_sky={float(sky_statistics.cc):.6f} "
-          f"Ec={float(sky_statistics.Ec):.6f} Rc={float(sky_statistics.Rc):.6f} "
-          f"Np={float(sky_statistics.Np):.6f} ch_packet={float(sky_statistics.cc):.6f} "
-          f"ch_td={ch_td:.6f} cc_rho_td={cc_rho_td:.6f} rho_reduced={rho_reduced:.6f}")
-
     # --- Store all fields on cluster_meta ---
     cluster.cluster_meta.sky_size = event_size             # event size in the skyloop
     cluster.cluster_meta.sub_net = Esub / (Esub + Nmax) if (Esub + Nmax) > 0 else 0.0
@@ -1578,10 +1552,6 @@ def get_chirp_mass(cluster: Cluster):
     # --- Update cluster metadata ---
     chrho = chirpEllip * math.sqrt(Efrac)
     rho1  = cluster.cluster_meta.net_rho * chrho
-
-    print(f"[Py-mchirp] m0={m0:.3f} b0={b0:.6f} Efrac={Efrac:.6f} "
-          f"chirpEllip={chirpEllip:.6f} chrho={chrho:.6f} "
-          f"rho0={cluster.cluster_meta.net_rho:.6f} rho1={rho1:.6f}")
 
     cluster.cluster_meta.net_rho2 = rho1
 
