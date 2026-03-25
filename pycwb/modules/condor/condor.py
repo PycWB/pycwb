@@ -201,12 +201,32 @@ pycwb merge-catalog --work-dir={working_dir}
             })
 
         if should_transfer_files:
-            # Pre-create empty progress stub files so HTCondor can include them in
-            # transfer_input_files before the first run produces any progress.
-            # get_completed_lags guards os.path.getsize(pf) == 0 → return {}.
+            # Pre-create per-job catalog and progress files on the submit node so HTCondor
+            # can always find them in transfer_input_files, even on the first run.
+            from pycwb.modules.catalog.catalog import Catalog
+            from dacite import from_dict
+            from pycwb.types.job import WaveSegment
+            from pycwb.modules.catalog import read_catalog_metadata
+            from pycwb.utils.parser import parse_id_string
+            from pycwb.config import Config
+
+            catalog_meta = read_catalog_metadata(
+                os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
+            )
+            config_obj = Config()
+            config_obj.load_from_dict(catalog_meta['config'])
+            all_segments = [from_dict(WaveSegment, s) for s in catalog_meta['jobs']]
+
             catalog_dir = os.path.join(working_dir, 'catalog')
             os.makedirs(catalog_dir, exist_ok=True)
             for job in jobs:
+                job_ids = parse_id_string(job['jobs'])
+                selected = [all_segments[i - 1] for i in job_ids]
+
+                catalog_frag = os.path.join(catalog_dir, f"catalog_{job['jobs']}.parquet")
+                if not os.path.exists(catalog_frag):
+                    Catalog.create(catalog_frag, config_obj, selected)
+
                 progress_path = os.path.join(catalog_dir, f"progress_{job['jobs']}.parquet")
                 if not os.path.exists(progress_path):
                     open(progress_path, 'w').close()
