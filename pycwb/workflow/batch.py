@@ -26,7 +26,8 @@ def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
                 compress_json=True, cluster=None, conda_env=None, additional_init="",
                 accounting_group=None, job_per_worker=None, n_proc=None, memory=None, disk=None,
-                container_image = None, should_transfer_files = False,
+                container_image=None, should_transfer_files=False,
+                walltime=None, slurm_constraint=None, slurm_partition=None, n_retries=5,
                 config_vars: str = None, input_dir=None,
                 dry_run=False, submit=False):
     logger_init(log_file, log_level)
@@ -47,6 +48,7 @@ def batch_setup(file_name, working_dir='.',
     if not disk: disk = config.job_disk
     if not container_image: container_image = config.container_image
     if not should_transfer_files: should_transfer_files = config.should_transfer_files
+    if not walltime: walltime = config.job_walltime
 
     logger.info(f"Job submission info:")
     logger.info(f"  Cluster type: {cluster}")
@@ -67,7 +69,9 @@ def batch_setup(file_name, working_dir='.',
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
         slurm = Slurm(working_dir, conda_env, additional_init, job_per_worker,
-                      n_proc, memory, disk)
+                      n_proc, memory, disk,
+                      time=walltime, constraint=slurm_constraint,
+                      partition=slurm_partition, n_retries=n_retries)
         slurm.create(job_segments, submit=submit)
     else:
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")

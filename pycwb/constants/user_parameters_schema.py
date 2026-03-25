@@ -188,6 +188,13 @@ schema = {
             "cwb": False,
             "category": "job_submission"
         },
+        "job_walltime": {
+            "type": "string",
+            "description": "wall-clock time limit per SLURM job (e.g., '72:00:00')",
+            "default": "72:00:00",
+            "cwb": False,
+            "category": "job_submission"
+        },
         "skip_no_injection": {
             "type": "boolean",
             "description": "skip jobs without injection",
