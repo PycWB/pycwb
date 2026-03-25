@@ -1,4 +1,5 @@
 import os
+import subprocess
 import click
 import shutil
 
@@ -72,7 +73,10 @@ conda activate {conda_env}
 {self.additional_init}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc}
                 """)
-            pass
+
+        os.chmod(f"{slurm_dir}/run.sh", 0o755)
+        self.slurm_script = os.path.join(slurm_dir, 'run.sh')
+        print(f'SLURM script: {self.slurm_script}')
 
     def generate_merge_script(self):
         working_dir = self.working_dir
@@ -82,4 +86,11 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         pass
 
     def submit(self):
-        pass
+        if not self.slurm_script or not os.path.exists(self.slurm_script):
+            raise RuntimeError("SLURM script not found. Run generate_job_script() first.")
+
+        result = subprocess.run(['sbatch', self.slurm_script], check=True,
+                                capture_output=True, text=True)
+        print(result.stdout.strip())
+        if result.stderr:
+            print(result.stderr.strip())
