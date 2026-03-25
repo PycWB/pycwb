@@ -1,0 +1,39 @@
+# ============================================================
+# pycwb – pure Python image (no ROOT, no C++ wavelet extension)
+# Multi-stage: builder produces the wheel; runtime is minimal.
+# ============================================================
+
+# ── Stage 1: build the pycwb wheel ──────────────────────────
+FROM python:3.13-slim AS builder
+
+# Tell setup.py to skip the C++ wavelet extension entirely
+ENV PYCWB_DISABLE_WAT=1
+
+WORKDIR /tmp/src
+COPY . /tmp/src
+
+RUN pip install --no-cache-dir --upgrade pip setuptools setuptools_scm build \
+ && python -m build --wheel
+
+# ── Stage 2: runtime ────────────────────────────────────────
+FROM python:3.13-slim AS runtime
+
+# Carry the disable flag into runtime so sub-processes agree
+ENV PYCWB_DISABLE_WAT=1
+
+COPY --from=builder /tmp/src/dist/*.whl /tmp/
+
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir /tmp/*.whl \
+ && rm /tmp/*.whl
+
+# Sanity checks
+RUN python - <<'EOF'
+import pycwb
+print("pycwb version:", pycwb.__version__)
+EOF
+
+RUN which pycwb && pycwb --version
+
+WORKDIR /work
+CMD ["python"]
