@@ -48,12 +48,13 @@ dependencies = [
     "plotly",
     "wdm-wavelet",
     "burst-waveform",
-    "nds2-client",
-    "python-nds2-client",
 ]
 
 [project.optional-dependencies]
 pycbc = ["pycbc"]
+# nds2-client and python-nds2-client are not on PyPI; install via conda-forge.
+# gwpy (a hard dependency) will use them automatically when present.
+nds2 = ["python-nds2-client"]
 
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
