@@ -159,11 +159,11 @@ pycwb merge-catalog --work-dir={working_dir}
             # Never transfer the whole catalog/ dir: on output transfer HTCondor would
             # overwrite other jobs' fragments with the stale copies in this scratch dir.
             batch_job_config['transfer_input_files'] = (
-                f"{working_dir}/job_status, {working_dir}/config, "
-                f"{working_dir}/input, {working_dir}/wdmXTalk, "
-                f"{working_dir}/catalog/catalog.parquet, "       # metadata root (read-only; needed by load_batch_run)
-                f"{working_dir}/catalog/catalog_$(jobs).parquet, "
-                f"{working_dir}/catalog/progress_$(jobs).parquet, "
+                "job_status, config, "
+                "input, wdmXTalk, "
+                "catalog/catalog.parquet, "
+                "catalog/catalog_$(jobs).parquet, "
+                "catalog/progress_$(jobs).parquet, "
                 f"$(framefiles)"
             )
             batch_job_config['transfer_output_files'] = (
@@ -172,7 +172,7 @@ pycwb merge-catalog --work-dir={working_dir}
             )
             batch_job_config['should_transfer_files'] = "yes"
             batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
-            merge_job_config['transfer_input_files'] = f"{working_dir}/catalog"
+            merge_job_config['transfer_input_files'] = "catalog"
             merge_job_config['transfer_output_files'] = "catalog, log"
             merge_job_config['should_transfer_files'] = "yes"
             merge_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
