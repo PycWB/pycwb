@@ -1,47 +1,51 @@
 # ============================================================
 # pycwb – pure Python image (no ROOT, no C++ wavelet extension)
-# Multi-stage: builder produces the wheel; runtime is minimal.
+#
+# Strategy: use the official Miniforge3 image (conda-forge) so
+# that C-extension dependencies (nds2-client, python-nds2-client,
+# python-ligo-lw, ligo-segments) are installed as pre-compiled
+# conda binaries rather than compiled from source.  pycwb itself
+# is built and installed via pip on top of the conda env.
+#
+# Layer cache ordering:
+#   1. Base image + env vars          (rarely changes)
+#   2. conda env creation             (changes only on Python bump)
+#   3. conda dependency install       (changes when deps change)
+#   4. COPY source + pip build/install (changes on every commit)
 # ============================================================
 
-# ── Stage 1: build the pycwb wheel ──────────────────────────
-FROM python:3.13-slim AS builder
+FROM condaforge/miniforge3:latest
 
-# Tell setup.py to skip the C++ wavelet extension entirely
-ENV PYCWB_DISABLE_WAT=1
+# ── Environment ─────────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYCWB_DISABLE_WAT=1 \
+    CONDA_DEFAULT_ENV=pycwb \
+    PATH=/opt/conda/envs/pycwb/bin:/opt/conda/bin:${PATH}
 
-# git for setuptools_scm; gcc/python3-dev to compile C-extension deps (e.g. python-ligo-lw)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git gcc python3-dev \
- && rm -rf /var/lib/apt/lists/*
+# ── Create env + install pre-compiled C-extension deps ──────
+# Merged into one RUN to minimise layers; conda clean removes
+# package tarballs and index cache (~500 MB saved).
+RUN conda create -y -n pycwb python=3.13 \
+ && conda install -y -n pycwb -c conda-forge \
+        nds2-client \
+        python-nds2-client \
+        python-ligo-lw \
+        ligo-segments \
+ && conda clean -afy
 
+# ── Build and install pycwb ──────────────────────────────────
+# COPY is last so earlier layers are reused on source-only changes.
 WORKDIR /tmp/src
 COPY . /tmp/src
 
-# Build the pycwb wheel, then pre-build ALL dependency wheels so the
-# runtime stage needs no compiler at all.
 RUN pip install --no-cache-dir --upgrade pip setuptools setuptools_scm build \
  && python -m build --wheel \
- && pip wheel --no-cache-dir --wheel-dir /tmp/wheels /tmp/src/dist/*.whl
+ && pip install --no-cache-dir /tmp/src/dist/*.whl \
+ && rm -rf /tmp/src /root/.cache/pip
 
-# ── Stage 2: runtime ────────────────────────────────────────
-FROM python:3.13-slim AS runtime
-
-# Carry the disable flag into runtime so sub-processes agree
-ENV PYCWB_DISABLE_WAT=1
-
-COPY --from=builder /tmp/wheels /tmp/wheels
-
-RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir --find-links /tmp/wheels pycwb \
- && rm -rf /tmp/wheels
-
-# Sanity checks
-RUN python - <<'EOF'
-import pycwb
-print("pycwb version:", pycwb.__version__)
-EOF
-
-RUN which pycwb && pycwb --version
+# ── Sanity checks ───────────────────────────────────────────
+RUN python -c "import pycwb; print('pycwb version:', pycwb.__version__)" \
+ && which pycwb && pycwb --version
 
 WORKDIR /work
 CMD ["python"]
