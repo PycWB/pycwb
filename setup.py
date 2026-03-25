@@ -46,7 +46,7 @@ install_requires = [
     "psutil",
     "memspectrum",
     "exceptiongroup>=1.0.0;python_version<'3.11'",  # Backport for Python < 3.11
-    "python-ligo-lw<2.0.0",  # error for version > 2: FileNotFoundError: [Errno 2] No such file or directory: 'ligolw/version.py.in'
+    "python-ligo-lw",  # error for version > 2: FileNotFoundError: [Errno 2] No such file or directory: 'ligolw/version.py.in'
     "scikit-learn",
     "jinja2",  # for template rendering
     "plotly",  # for plotting
@@ -54,8 +54,9 @@ install_requires = [
     "wdm-wavelet",
     "burst-waveform",
     "jsonschema"
-    # "nds2-client",
-    # "python-nds2-client"
+    "nds2-client",
+    "python-nds2-client",
+    "htcondor"
 ]
 
 

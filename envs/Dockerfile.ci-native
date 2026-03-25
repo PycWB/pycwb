@@ -9,14 +9,19 @@ FROM python:3.13-slim AS builder
 # Tell setup.py to skip the C++ wavelet extension entirely
 ENV PYCWB_DISABLE_WAT=1
 
+# git for setuptools_scm; gcc/python3-dev to compile C-extension deps (e.g. python-ligo-lw)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git gcc python3-dev \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /tmp/src
 COPY . /tmp/src
 
-RUN apt-get update && apt-get install -y --no-install-recommends git \
- && rm -rf /var/lib/apt/lists/*
-
+# Build the pycwb wheel, then pre-build ALL dependency wheels so the
+# runtime stage needs no compiler at all.
 RUN pip install --no-cache-dir --upgrade pip setuptools setuptools_scm build \
- && python -m build --wheel
+ && python -m build --wheel \
+ && pip wheel --no-cache-dir --wheel-dir /tmp/wheels /tmp/src/dist/*.whl
 
 # ── Stage 2: runtime ────────────────────────────────────────
 FROM python:3.13-slim AS runtime
@@ -24,11 +29,11 @@ FROM python:3.13-slim AS runtime
 # Carry the disable flag into runtime so sub-processes agree
 ENV PYCWB_DISABLE_WAT=1
 
-COPY --from=builder /tmp/src/dist/*.whl /tmp/
+COPY --from=builder /tmp/wheels /tmp/wheels
 
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir /tmp/*.whl \
- && rm /tmp/*.whl
+ && pip install --no-cache-dir --find-links /tmp/wheels pycwb \
+ && rm -rf /tmp/wheels
 
 # Sanity checks
 RUN python - <<'EOF'
