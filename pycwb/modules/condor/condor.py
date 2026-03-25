@@ -110,7 +110,7 @@ pycwb merge-catalog --work-dir={working_dir}
         batch_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
-            "executable": "run.sh",
+            "executable": "condor/run.sh",
             "arguments": f"$(jobs)",  # Passing jobs as an argument
             "should_transfer_files": "no",
             "output": "log/batch-$(jobs).out",
@@ -129,7 +129,7 @@ pycwb merge-catalog --work-dir={working_dir}
         merge_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
-            "executable": "merge.sh",
+            "executable": "condor/merge.sh",
             "should_transfer_files": "no",
             "log": "log/merge.log",
             "output": "log/merge.out",
@@ -150,8 +150,26 @@ pycwb merge-catalog --work-dir={working_dir}
             merge_job_config['container_image'] = container_image
 
         if should_transfer_files:
-            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog, $(framefiles)"
-            batch_job_config['transfer_output_files'] = "catalog, job_status, trigger, output, log"
+            # Transfer only this job's own catalog and progress fragments.
+            # catalog_$(jobs).parquet  — created by prepare_job_runs before submission;
+            #                            the job opens it and appends triggers to it.
+            # progress_$(jobs).parquet — read by get_completed_lags for per-lag resume;
+            #                            empty stubs are pre-created below so HTCondor can
+            #                            list them even on the very first run.
+            # Never transfer the whole catalog/ dir: on output transfer HTCondor would
+            # overwrite other jobs' fragments with the stale copies in this scratch dir.
+            batch_job_config['transfer_input_files'] = (
+                f"{working_dir}/job_status, {working_dir}/config, "
+                f"{working_dir}/input, {working_dir}/wdmXTalk, "
+                f"{working_dir}/catalog/catalog.parquet, "       # metadata root (read-only; needed by load_batch_run)
+                f"{working_dir}/catalog/catalog_$(jobs).parquet, "
+                f"{working_dir}/catalog/progress_$(jobs).parquet, "
+                f"$(framefiles)"
+            )
+            batch_job_config['transfer_output_files'] = (
+                "catalog/catalog_$(jobs).parquet, catalog/progress_$(jobs).parquet, "
+                "job_status, trigger, output, log"
+            )
             batch_job_config['should_transfer_files'] = "yes"
             batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
             merge_job_config['transfer_input_files'] = f"{working_dir}/catalog"
@@ -181,6 +199,17 @@ pycwb merge-catalog --work-dir={working_dir}
                 'jobs': f"{job_start + 1}-{job_end}",
                 'framefiles': ','.join(sorted(framefiles)) if framefiles else ''
             })
+
+        if should_transfer_files:
+            # Pre-create empty progress stub files so HTCondor can include them in
+            # transfer_input_files before the first run produces any progress.
+            # get_completed_lags guards os.path.getsize(pf) == 0 → return {}.
+            catalog_dir = os.path.join(working_dir, 'catalog')
+            os.makedirs(catalog_dir, exist_ok=True)
+            for job in jobs:
+                progress_path = os.path.join(catalog_dir, f"progress_{job['jobs']}.parquet")
+                if not os.path.exists(progress_path):
+                    open(progress_path, 'w').close()
 
         batch_layer = dag.layer(
             name='pycwb_batch',
