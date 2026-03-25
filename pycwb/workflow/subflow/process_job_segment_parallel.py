@@ -73,6 +73,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
+from pycwb.types.trigger import Trigger
 from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
 from pycwb.utils.td_vector_batch import (
@@ -386,7 +387,18 @@ def process_job_segment_parallel(
             if lag not in lag_results:
                 continue
             _lag_idx, events_data = lag_results[lag]
+
+            # ── Record progress for zero-trigger lags ────────────────────
             if not events_data:
+                progress_record = dict(
+                    job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
+                    n_triggers=0, livetime=sub_job_seg.livetime(lag),
+                )
+                if queue is not None:
+                    queue.put({"type": "progress", **progress_record})
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    Catalog.open(catalog_file).add_lag_progress(**progress_record)
                 continue
 
             lag_shifts = sub_job_seg.lag_shifts[lag]
@@ -425,6 +437,7 @@ def process_job_segment_parallel(
                     wave_file=wave_file,
                     save=config.save_waveform,
                     plot=config.plot_waveform,
+                    queue=queue,
                 )
 
                 # Injected waveform comparison (only for matched events)
@@ -436,6 +449,7 @@ def process_job_segment_parallel(
                         wave_file=wave_file,
                         save=config.save_injection,
                         plot=config.plot_injection,
+                        queue=queue,
                     )
                     event.hrss      += injected_data["hrss"]
                     event.time      += injected_data["central_time"]
@@ -489,11 +503,28 @@ def process_job_segment_parallel(
 
             # ── 7c. Catalog ──────────────────────────────────────────────
             for trigger in events_data:
-                catalog_file = add_event_to_catalog(
-                    working_dir, config.catalog_dir,
-                    trigger_data=trigger,
-                    catalog_file=catalog_file,
-                )
+                event, _, _ = trigger
+                trigger_obj = Trigger.from_event(event)
+                if queue is not None:
+                    queue.put({"type": "trigger", "trigger": trigger_obj})
+                else:
+                    catalog_file = add_event_to_catalog(
+                        working_dir, config.catalog_dir,
+                        trigger_data=trigger,
+                        catalog_file=catalog_file,
+                    )
+
+            # ── 7d. Record lag progress ──────────────────────────────────
+            progress_record = dict(
+                job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
+                n_triggers=len(events_data), livetime=sub_job_seg.livetime(lag),
+            )
+            if queue is not None:
+                queue.put({"type": "progress", **progress_record})
+            elif catalog_file:
+                from pycwb.modules.catalog.catalog import Catalog
+                Catalog.open(catalog_file).add_lag_progress(**progress_record)
+
             logger.info("-------------------------------------------")
             logger.info("Lag %d post-processing done", lag)
             logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)

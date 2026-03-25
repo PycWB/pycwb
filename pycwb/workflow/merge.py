@@ -124,3 +124,32 @@ def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: 
                 logger.info(f"Adding waveforms of {len(f_sub.keys())} events from {wave_file}")
                 for event_id in f_sub.keys():
                     f_sub.copy(event_id, f)
+
+
+def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog') -> None:
+    """Merge per-batch progress Parquet files into a single progress.parquet.
+
+    Parameters
+    ----------
+    working_dir : str
+        The working directory.
+    catalog_dir : str
+        The directory containing the progress files to be merged.
+    """
+    from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
+
+    progress_files = glob.glob(f"{working_dir}/{catalog_dir}/progress_*{Catalog.DEFAULT_EXTENSION}")
+    if not progress_files:
+        logger.info("No progress files to merge")
+        return
+
+    tables = []
+    for pf in progress_files:
+        table = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+        tables.append(table)
+        logger.info("Merging progress from %s (%d rows)", pf, table.num_rows)
+
+    merged = pa.concat_tables(tables)
+    out = os.path.abspath(f"{working_dir}/{catalog_dir}/progress{Catalog.DEFAULT_EXTENSION}")
+    pq.write_table(merged, out, compression="snappy")
+    logger.info("Merged progress: %d rows → %s", merged.num_rows, out)

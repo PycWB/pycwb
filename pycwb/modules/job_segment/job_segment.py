@@ -185,7 +185,36 @@ def create_job_segment_from_config(config):
         job_segments = flat_job_segments
 
     ############################################
-    ## TODO: check if the job segments are valid
+    ## Validate job segments
+    for job_seg in job_segments:
+        if job_seg.frames:
+            covered_ifos = {frame.ifo for frame in job_seg.frames}
+            missing = [ifo for ifo in job_seg.ifos if ifo not in covered_ifos]
+            if missing:
+                raise ValueError(
+                    f"Job segment {job_seg.index} (GPS {job_seg.analyze_start}–{job_seg.analyze_end}) "
+                    f"has no frame files for IFO(s): {missing}. "
+                    f"Check frFiles / gwdatafind configuration."
+                )
+            for ifo in job_seg.ifos:
+                required_start = job_seg.physical_padded_starts[ifo]
+                required_end = job_seg.physical_padded_ends[ifo]
+                ifo_frames = sorted(
+                    [f for f in job_seg.frames if f.ifo == ifo],
+                    key=lambda f: f.start_time,
+                )
+                covered_up_to = required_start
+                for f in ifo_frames:
+                    if f.start_time > covered_up_to:
+                        break
+                    covered_up_to = max(covered_up_to, f.end_time)
+                if covered_up_to < required_end:
+                    raise ValueError(
+                        f"Job segment {job_seg.index} (GPS {job_seg.analyze_start}–{job_seg.analyze_end}): "
+                        f"frame files for {ifo} cover only up to GPS {covered_up_to:.1f} "
+                        f"but {required_end:.1f} is required (padded window). "
+                        f"Check frFiles / gwdatafind configuration."
+                    )
     logger.info(f"Number of segments: {len(job_segments)}")
     logger.info("-" * 80)
     return job_segments
@@ -322,6 +351,37 @@ def attach_frame_files_to_job_segments(job_segments, ifos, frame_files, seg_edge
                                                 job_seg.physical_analyze_ends[ifo],
                                                 seg_edge)
         # job_seg.frames = select_frame_list(frame_files, job_seg.start_time, job_seg.end_time, seg_edge)
+
+        # Validate that every IFO has at least one frame covering this segment,
+        # and that the frames collectively span the full required padded window.
+        covered_ifos = {frame.ifo for frame in job_seg.frames}
+        missing = [ifo for ifo in ifos if ifo not in covered_ifos]
+        if missing:
+            raise ValueError(
+                f"Job segment {job_seg.index} (GPS {job_seg.analyze_start}–{job_seg.analyze_end}) "
+                f"has no frame files for IFO(s): {missing}. "
+                f"Check frFiles / gwdatafind configuration."
+            )
+        for ifo in ifos:
+            required_start = job_seg.physical_padded_starts[ifo]
+            required_end = job_seg.physical_padded_ends[ifo]
+            ifo_frames = sorted(
+                [f for f in job_seg.frames if f.ifo == ifo],
+                key=lambda f: f.start_time,
+            )
+            # Walk through sorted frames and check the required window is fully covered.
+            covered_up_to = required_start
+            for f in ifo_frames:
+                if f.start_time > covered_up_to:
+                    break  # gap before this frame
+                covered_up_to = max(covered_up_to, f.end_time)
+            if covered_up_to < required_end:
+                raise ValueError(
+                    f"Job segment {job_seg.index} (GPS {job_seg.analyze_start}–{job_seg.analyze_end}): "
+                    f"frame files for {ifo} cover only up to GPS {covered_up_to:.1f} "
+                    f"but {required_end:.1f} is required (padded window). "
+                    f"Check frFiles / gwdatafind configuration."
+                )
 
 
 def gwdatafind_frames_for_job_segments(job_segments, ifos, gwdatafind, seg_edge):

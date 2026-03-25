@@ -18,7 +18,7 @@ from .config_repo_parser import parse_project, get_ifo_list, get_data_settings, 
 logger = logging.getLogger(__name__)
 
 
-def setup_project(work_dir: str, config_base_path: str = "./", data_type: Optional[str] = None, dry_run: bool = False) -> Dict:
+def setup_project(work_dir: str, config_base_path: str = "./", machine: Optional[str] = None, data_type: Optional[str] = None, dry_run: bool = False) -> Dict:
     """
     Setup a project working directory with configuration and DQ files.
     
@@ -40,9 +40,12 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: Option
         work_dir: Absolute or relative path to the working directory
                  (will be created if it doesn't exist)
         config_base_path: Base path to the configuration repository (default: "./")
+        machine: Override the machine profile name (overrides the ``machine`` key in
+                 ``settings.yaml``).  The profile is loaded from ``machine/<machine>.yaml``.
         data_type: Override the data source type (e.g. "igwn-osg", "cit-local", "gwosc").
                   If None (default), the value is taken from the ``data_source`` field of
-                  the active machine config (``machine/<machine>.yaml``).
+                  the active machine config (``machine/<machine>.yaml``).  An explicit
+                  *data_type* always wins over the machine profile.
         dry_run: If True, only show what would be done without creating files (default: False)
     
     Returns:
@@ -71,7 +74,7 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: Option
     work_path = Path(work_dir).resolve()
 
     # Load machine settings and resolve data_type
-    machine_settings = get_machine_settings(config_base_path)
+    machine_settings = get_machine_settings(config_base_path, machine=machine)
     if data_type is None:
         data_type = machine_settings.get('data_source', 'gwosc')
     logger.info(f"Using machine profile with data_source: {data_type}")
@@ -147,16 +150,21 @@ def setup_project(work_dir: str, config_base_path: str = "./", data_type: Option
     # Copy frames files for local data sources
     if data_settings['is_local']:
         frames_source_dir = Path(config_base_path) / "frames"
+        input_dir_frames = work_path / "input"
         for ifo in ifo_list:
             frames_file = frames_source_dir / f"{ifo}.frames"
-            dest_frames = work_path / "input" / f"{ifo}.frames"
+            dest_frames = input_dir_frames / f"{ifo}.frames"
             if dry_run:
                 logger.info(f"[DRY RUN] Would copy {frames_file} to {dest_frames}")
             else:
                 if not frames_file.exists():
-                    raise FileNotFoundError(f"Frames file not found: {frames_file}")
+                    raise FileNotFoundError(
+                        f"Frames file not found: {frames_file}. "
+                        f"Expected at config_base_path/frames/{ifo}.frames"
+                    )
+                input_dir_frames.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(frames_file, dest_frames)
-                logger.debug(f"Copied frames file: {frames_file.name}")
+                logger.info(f"Copied frames file: {frames_file} -> {dest_frames}")
 
     # Copy DQ files directly to input directory
     input_dir = work_path / "input"
@@ -267,9 +275,17 @@ def _copy_and_template_config(
             frfiles_list.append(f"input/{ifo}.frames")
     else:
         # For remote data, use gwdatafind
+        frametype = data_settings.get('frametype') or {}
+        missing_ifos = [ifo for ifo in ifo_list if ifo not in frametype]
+        if missing_ifos:
+            raise KeyError(
+                f"Frametype not configured for IFO(s) {missing_ifos} "
+                f"under data type '{data_settings['type']}'. "
+                f"Available IFOs in frametype: {list(frametype.keys())}"
+            )
         gwdatafind_config = {
             'host': data_settings['host'],
-            'frametype': [data_settings['frametype'][ifo] for ifo in ifo_list],
+            'frametype': [frametype[ifo] for ifo in ifo_list],
             'site': ifo_site_name,
             'urltype': data_settings['urltype']
         }
@@ -290,7 +306,11 @@ def _copy_and_template_config(
         DQF=dqf_list,
         GWDATAFIND=gwdatafind_config,
         FRFILES=frfiles_list,
-        CHANNELNAMES_RAW=[data_settings.get('channelNamesRaw')[ifo] for ifo in ifo_list] if data_settings.get('channelNamesRaw') else [],
+        CHANNELNAMES_RAW=(
+            [data_settings['channelNamesRaw'][ifo] for ifo in ifo_list]
+            if isinstance(data_settings.get('channelNamesRaw'), dict)
+            else (data_settings.get('channelNamesRaw') or [])
+        ),
         DATA_TYPE=data_settings['type']
     )
 
@@ -367,7 +387,7 @@ def _copy_dq_files(
                 continue
             
             shutil.copy2(source, dest)
-            logger.debug(f"Copied DQ file: {source.name}")
+            logger.info(f"Copied DQ file: {source.name}")
         
         copied_files[str(source)] = str(dest)
     

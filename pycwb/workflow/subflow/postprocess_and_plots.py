@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[str],
                           event: Event, cluster: Cluster, epoch: float = 0.,
-                          wave_file: str = '', save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
+                          wave_file: str = '', save: bool = True, plot: bool = False,
+                          queue=None) -> Dict[str, TimeSeries]:
 
     # vREC: reconstructed signal
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
@@ -89,8 +90,12 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
         rescaled_data = {}
         for key, value in data.items():
             rescaled_data[key] = value * rescale
-            
-        add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
+
+        if queue is not None:
+            queue.put({"type": "wave", "event_id": event.hash_id,
+                       "waves": rescaled_data, "wave_file": wave_file})
+        else:
+            add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
         
     if plot:
         from pycwb.modules.plot.waveform import plot
@@ -132,7 +137,8 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
 def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: list[str], event: Event,
                                 HoT_list, mdc_maps, window: float, offset: float, inRate: float,
-                                wave_file: str = None, save: bool = True, plot: bool = False) -> Dict[str, TimeSeries]:
+                                wave_file: str = None, save: bool = True, plot: bool = False,
+                                queue=None) -> Dict[str, TimeSeries]:
     
     logger.info(f"Reconstructing injected waveform for event {event.hash_id}")
     data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
@@ -149,7 +155,11 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
                 rescaled_data[f'{ifo}_wf_INJ_whiten'] = data[i]['whitened_injected_waveform'] * rescale
                 
             logger.info(f"Save injected waveforms of event {event.hash_id} to {wave_file}")
-            add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
+            if queue is not None:
+                queue.put({"type": "wave", "event_id": event.hash_id,
+                           "waves": rescaled_data, "wave_file": wave_file})
+            else:
+                add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
 
         except Exception as e:
             logger.warning(f"Error saving waveform for {ifo}: {e}")
@@ -269,7 +279,7 @@ def load_wf_from_wave(wave_file: str, ifo: str, keys: List[str]) -> Dict[str, li
 
 def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[str], event: Event, data: list[TimeSeries], reconst_data: Dict[str, TimeSeries], tf_maps: list[TimeFrequencySeries],
                              nrms: list[TimeFrequencySeries], save: bool = True, wave_file: str = None,
-                             save_gwf: bool = False, plot: bool = False) -> Dict[str, TimeSeries]:
+                             save_gwf: bool = False, plot: bool = False, queue=None) -> Dict[str, TimeSeries]:
     """ Reconstruct residuals from the reconstructed data and event information.
     """
     logger.info(f"Reconstructing residuals for event {event.hash_id}")
@@ -298,7 +308,11 @@ def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[s
             if strain_ASD is not None:
                 waves[f"{ifo}_RES_ASD"] = strain_ASD[i]
         logger.info(f"Saving residuals for event {event.hash_id} to wave file")
-        add_wf_to_wave(config, wave_file, event.hash_id, waves)  
+        if queue is not None:
+            queue.put({"type": "wave", "event_id": event.hash_id,
+                       "waves": waves, "wave_file": wave_file})
+        else:
+            add_wf_to_wave(config, wave_file, event.hash_id, waves)  
 
     
     if save_gwf: 

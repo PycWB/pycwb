@@ -72,7 +72,27 @@ def parse_project_name(project_name: str, config_base_path: str = "./") -> Dict[
     label_parts = remaining_parts[path_info['matched_count']:]
     label = "_".join(label_parts) if label_parts else ""
     
-    return {
+    # Validate that config was found and all required components were extracted
+    if not path_info['config_found']:
+        config_base = Path(config_base_path).resolve()
+        raise ValueError(
+            f"Configuration not found for project '{project_name}'.\n"
+            f"Expected to find user_parameters.yaml in a subdirectory of {config_base}.\n"
+            f"Looked for path: {path_info['relative_path']}\n"
+            f"Full searched path: {path_info['full_path']}\n"
+            f"Please verify the path components in your project name are correct."
+        )
+    
+    if not network:
+        raise ValueError(
+            f"Network code not found in project name '{project_name}'.\n"
+            f"Expected format: {{OBS}}_K{{CHUNK_ID}}_{{DQ}}_{{SEARCH}}_{{NETWORK}}_{{OPTIONAL_COMPONENTS}}\n"
+            f"Example: O4_K01_C00_BurstHF_LH_SIM_NSGlitch_Set1\n"
+            f"Parsed: search='{search}', network=''\n"
+            f"Please verify your project name format."
+        )
+    
+    result = {
         'obs_chunk': obs_chunk,
         'obs': obs,
         'chunk_id': chunk_id,
@@ -84,6 +104,8 @@ def parse_project_name(project_name: str, config_base_path: str = "./") -> Dict[
         'full_path': path_info['full_path'],
         'config_found': path_info['config_found']
     }
+    
+    return result
 
 
 def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
@@ -101,12 +123,18 @@ def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
         
     Raises:
         FileNotFoundError: If settings.yaml not found
-        ValueError: If network code not found in settings.yaml
+        ValueError: If network code is empty or not found in settings.yaml
         
     Example:
         >>> ifos = get_ifo_list("LH")
         >>> print(ifos)  # ["L1", "H1"]
     """
+    if not network:
+        raise ValueError(
+            "Network code cannot be empty. Please provide a valid network code "
+            "(e.g., 'LH', 'H', 'V', 'HLV', etc.)."
+        )
+    
     settings_file = Path(config_base_path) / "settings.yaml"
     
     if not settings_file.exists():
@@ -129,15 +157,17 @@ def get_ifo_list(network: str, config_base_path: str = "./") -> List[str]:
     return ifo_list
 
 
-def get_machine_settings(config_base_path: str = "./") -> Dict:
+def get_machine_settings(config_base_path: str = "./", machine: Optional[str] = None) -> Dict:
     """
     Load machine-specific settings from config/machine/<machine>.yaml.
 
-    Reads the ``machine`` key from ``settings.yaml`` to determine which profile
-    to load, then parses ``machine/<machine>.yaml`` and returns its contents.
+    When *machine* is given it is used directly; otherwise the ``machine`` key
+    from ``settings.yaml`` determines which profile to load.
 
     Args:
         config_base_path: Base path to the config repository (default: "./")
+        machine: Machine profile name override.  If provided, ``settings.yaml``
+                 is not consulted for the machine name.
 
     Returns:
         Dictionary of machine settings, e.g.::
@@ -153,20 +183,18 @@ def get_machine_settings(config_base_path: str = "./") -> Dict:
             }
 
     Raises:
-        FileNotFoundError: If settings.yaml or the machine yaml file is not found.
-        ValueError: If the ``machine`` key is missing from settings.yaml.
+        FileNotFoundError: If settings.yaml (when needed) or the machine yaml file is not found.
+        ValueError: If the ``machine`` key is missing from settings.yaml and no override given.
     """
-    settings_file = Path(config_base_path) / "settings.yaml"
-
-    if not settings_file.exists():
-        raise FileNotFoundError(f"Settings file not found: {settings_file}")
-
-    with open(settings_file, 'r') as f:
-        settings = yaml.safe_load(f)
-
-    machine = settings.get('machine')
-    if not machine:
-        raise ValueError("'machine' key not found in settings.yaml")
+    if machine is None:
+        settings_file = Path(config_base_path) / "settings.yaml"
+        if not settings_file.exists():
+            raise FileNotFoundError(f"Settings file not found: {settings_file}")
+        with open(settings_file, 'r') as f:
+            settings = yaml.safe_load(f)
+        machine = settings.get('machine')
+        if not machine:
+            raise ValueError("'machine' key not found in settings.yaml")
 
     machine_file = Path(config_base_path) / "machine" / f"{machine}.yaml"
     if not machine_file.exists():
@@ -222,8 +250,13 @@ def get_data_settings(data_type: str, dq: str, config_base_path: str = "./") -> 
     
     data_source = data_sources[data_type]
     
-    # Check if it's a local file source
-    is_local = data_type == "local"
+    # Check if it's a local file source.
+    # A source is local when: the type is exactly "local", the config marks it
+    # with ``is_local: true``, or the urltype is "file" (standard local indicator).
+    is_local = (
+        data_type == "local"
+        or bool(data_source.get('is_local', False))
+    )
     
     # Get channelNamesRaw - try to get by dq first, then overall setting
     channel_names_raw = None
@@ -359,17 +392,27 @@ def get_dq_files(dq: str, search: str, ifo: List[str], config_base_path: str = "
     dq_files = []
     for ifo in ifos:
         # Find all files matching {ifo}_cat*.txt pattern
-        pattern = str(dq_dir / f"{ifo}_cat*.txt")
+        pattern = str(dq_dir / f"{ifo}_*.txt")
         for filepath in glob.glob(pattern):
             # Extract category from filename (e.g., "L1_cat0.txt" -> "0")
             filename = Path(filepath).name
             # Parse pattern: {ifo}_cat{cat}.txt
             cat = filename.split('_cat')[1].replace('.txt', '')
-            
-            # Get metadata for this file (try full name first, then generic cat name)
+
+            # Resolve metadata entry: try IFO-specific key first, then generic cat key.
             file_key = f"{ifo}_cat{cat}"
-            file_metadata = metadata.get(file_key, metadata.get(f"cat{cat}", {}))
-            
+            generic_key = f"cat{cat}"
+            if metadata:
+                if file_key in metadata:
+                    file_metadata = metadata[file_key]
+                elif generic_key in metadata:
+                    file_metadata = metadata[generic_key]
+                else:
+                    # File not listed in metadata — skip it.
+                    continue
+            else:
+                file_metadata = {}
+
             dq_files.append({
                 'filename': filepath,
                 'ifo': ifo,

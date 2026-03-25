@@ -174,3 +174,37 @@ class BaseCatalog(ABC):
         filters : list of str, optional
             Python boolean expressions applied to each livetime dict.
         """
+
+    # ------------------------------------------------------------------
+    # Progress tracking
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def add_lag_progress(self, job_id: int, trial_idx: int, lag_idx: int,
+                         n_triggers: int, livetime: float) -> None:
+        """Record the completion of a single lag.
+
+        Parameters
+        ----------
+        job_id : int
+            Job segment index.
+        trial_idx : int
+            Trial (injection) index; 0 for no injections.
+        lag_idx : int
+            0-based lag index.
+        n_triggers : int
+            Number of triggers found in this lag.
+        livetime : float
+            Effective post-veto analysed duration (seconds).
+        """
+
+    @abstractmethod
+    def get_completed_lags(self, job_id: int) -> dict[int, set[int]]:
+        """Return completed lags for a given job.
+
+        Returns
+        -------
+        dict[int, set[int]]
+            ``{trial_idx: {lag_0, lag_1, ...}}`` for all completed lags.
+            Empty dict if no progress information exists.
+        """

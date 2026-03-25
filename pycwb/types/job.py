@@ -193,6 +193,59 @@ class WaveSegment:
         """Duration of the analysis window in seconds (= analyze_end − analyze_start)."""
         return self.analyze_end - self.analyze_start
 
+    def livetime(self, lag: int = 0) -> float:
+        """Post-veto livetime of the analysis window for a given lag.
+
+        For each IFO ``i`` with lag shift ``delta_i`` seconds, the data at
+        analysis time ``t`` comes from GPS time ``t + delta_i``.  A GPS
+        keep-window ``(s, e)`` therefore maps to the analysis-time interval
+        ``(s - delta_i, e - delta_i)`` for that IFO.
+
+        The effective livetime is the total duration where **all** IFOs are
+        simultaneously inside their lag-adjusted keep windows, intersected
+        with the analysis window ``[analyze_start, analyze_end]``.
+
+        For the zero-lag (all shifts zero) this reduces to the plain overlap
+        of *veto_windows* with the analysis window.  If *veto_windows* is
+        not set the full :attr:`duration` is returned.
+
+        Parameters
+        ----------
+        lag : int
+            Row index into :attr:`lag_shifts` identifying the time-slide.
+
+        Returns
+        -------
+        float
+            Effective analysed duration in seconds after applying veto windows
+            for the given lag.
+        """
+        if not self.veto_windows:
+            return self.duration
+
+        shifts = self.lag_shifts[lag]  # (n_ifo,) in seconds
+
+        # Start with the full analysis window as the set of live intervals.
+        # Iteratively intersect with each IFO's lag-adjusted keep windows.
+        live: list[tuple[float, float]] = [(self.analyze_start, self.analyze_end)]
+
+        for ifo_idx in range(len(self.ifos)):
+            delta = float(shifts[ifo_idx])
+            # GPS keep-window (s, e) → analysis-time (s - delta, e - delta)
+            ifo_keep = sorted((s - delta, e - delta) for s, e in self.veto_windows)
+            new_live: list[tuple[float, float]] = []
+            for (ls, le) in live:
+                for (ks, ke) in ifo_keep:
+                    lo = max(ls, ks)
+                    hi = min(le, ke)
+                    if hi > lo:
+                        new_live.append((lo, hi))
+            live = new_live
+            if not live:
+                return 0.0
+
+        return sum(e - s for s, e in live)
+
     # ------------------------------------------------------------------
     # Padded-window accessors (analysis window ± seg_edge)
     # ------------------------------------------------------------------

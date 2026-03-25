@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 
 from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
@@ -66,6 +67,10 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
         logger.warning("No job segments to process")
         return
 
+    # Construct catalog_file path (same as prepare_job_runs creates)
+    from pycwb.modules.catalog.catalog import Catalog
+    catalog_file = os.path.join(working_dir, config.catalog_dir, Catalog.DEFAULT_FILENAME)
+
     for job_seg in job_segments:
         if trial_ids is not None:
             for tid in trial_ids:
@@ -75,7 +80,9 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
                     sub_job_seg.injections = [inj for inj in job_seg.injections
                                               if inj.get('trial_idx', 0) == tid]
                 logger.info(f"Processing job segment {job_seg.index}, trial_idx={tid}")
-                main_func(working_dir, config, sub_job_seg, compress_json=compress_json)
+                main_func(working_dir, config, sub_job_seg, compress_json=compress_json,
+                          catalog_file=catalog_file)
         else:
             logger.info(f"Processing job segment {job_seg.index}")
-            main_func(working_dir, config, job_seg, compress_json=compress_json)
+            main_func(working_dir, config, job_seg, compress_json=compress_json,
+                      catalog_file=catalog_file)
