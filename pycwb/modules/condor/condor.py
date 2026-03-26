@@ -66,7 +66,6 @@ class HTCondor:
 {self.additional_init if self.additional_init else ''}
 { '''mkdir -p catalog job_status trigger output log
 # HTCondor flattens individually-listed files to the execute root; restore expected layout.
-[ -f catalog.parquet ] && mv catalog.parquet catalog/
 for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/; done''' if should_transfer_files else ''}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
             """)
@@ -157,6 +156,8 @@ pycwb merge-catalog --work-dir={working_dir}
             # Transfer only this job's own catalog and progress fragments.
             # catalog_$(jobs).parquet  — created by prepare_job_runs before submission;
             #                            the job opens it and appends triggers to it.
+            #                            also serves as the config metadata source so
+            #                            the root catalog.parquet does not need to be transferred.
             # progress_$(jobs).parquet — read by get_completed_lags for per-lag resume;
             #                            empty stubs are pre-created below so HTCondor can
             #                            list them even on the very first run.
@@ -165,7 +166,6 @@ pycwb merge-catalog --work-dir={working_dir}
             batch_job_config['transfer_input_files'] = (
                 f"{working_dir}/job_status, {working_dir}/config, "
                 f"{working_dir}/input, {working_dir}/wdmXTalk, "
-                f"{working_dir}/catalog/catalog.parquet, "
                 f"{working_dir}/catalog/catalog_$(jobs).parquet, "
                 f"{working_dir}/catalog/progress_$(jobs).parquet, "
                 f"$(framefiles)"

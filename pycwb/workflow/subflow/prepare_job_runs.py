@@ -151,7 +151,21 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # # TODO: load job segments from catalog
     # job_segments = create_job_segment_from_config(config)
 
-    catalog = read_catalog_metadata(f'catalog/{Catalog.DEFAULT_FILENAME}')
+    # Prefer the root catalog for metadata; fall back to the per-job fragment when
+    # only that file is present (file-transfer / container mode: the scheduler
+    # transfers catalog_$(jobs).parquet but not catalog.parquet).
+    default_catalog_path = f'catalog/{Catalog.DEFAULT_FILENAME}'
+    per_job_catalog_path = f'catalog/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}'
+    if os.path.exists(default_catalog_path):
+        catalog_meta_file = default_catalog_path
+    elif os.path.exists(per_job_catalog_path):
+        catalog_meta_file = per_job_catalog_path
+        logger.info(f"Root catalog not found; reading metadata from per-job fragment: {per_job_catalog_path}")
+    else:
+        raise FileNotFoundError(
+            f"Catalog metadata not found: tried {default_catalog_path} and {per_job_catalog_path}"
+        )
+    catalog = read_catalog_metadata(catalog_meta_file)
     config = Config()
     config.load_from_dict(catalog['config'])
     logger.info(f"Loaded config from catalog: {config}")
