@@ -49,6 +49,9 @@ def batch_setup(file_name, working_dir='.',
     if not container_image: container_image = config.container_image
     if not should_transfer_files: should_transfer_files = config.should_transfer_files
     if not walltime: walltime = config.job_walltime
+    if not slurm_constraint: slurm_constraint = getattr(config, 'slurm_constraint', None) or slurm_constraint
+    if not slurm_partition: slurm_partition = getattr(config, 'slurm_partition', None) or slurm_partition
+    if n_retries == 5: n_retries = getattr(config, 'n_retries', 5)  # 5 is the default; prefer config if set
 
     logger.info(f"Job submission info:")
     logger.info(f"  Cluster type: {cluster}")

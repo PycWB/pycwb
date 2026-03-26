@@ -195,6 +195,27 @@ schema = {
             "cwb": False,
             "category": "job_submission"
         },
+        "slurm_constraint": {
+            "type": "string",
+            "description": "SLURM --constraint value (e.g., 'skylake')",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "slurm_partition": {
+            "type": "string",
+            "description": "SLURM --partition value (e.g., 'ligo')",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
+        "n_retries": {
+            "type": "integer",
+            "description": "number of application-level retries per job (SLURM) or DAG retries (HTCondor)",
+            "default": 5,
+            "cwb": False,
+            "category": "job_submission"
+        },
         "skip_no_injection": {
             "type": "boolean",
             "description": "skip jobs without injection",
