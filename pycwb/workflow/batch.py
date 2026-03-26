@@ -65,7 +65,7 @@ def batch_setup(file_name, working_dir='.',
     if cluster == "condor":
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
                           container_image, should_transfer_files,
-                          n_proc, memory, disk)
+                          n_proc, memory, disk, n_retries=n_retries)
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
         slurm = Slurm(working_dir, conda_env, additional_init, job_per_worker,

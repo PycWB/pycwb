@@ -7,7 +7,7 @@ class HTCondor:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", 
                  accounting_group=None, job_per_worker=10, container_image=None,
                  should_transfer_files=False,
-                 n_proc=1, memory="6GB", disk="4GB", conda_init=None):
+                 n_proc=1, memory="6GB", disk="4GB", conda_init=None, n_retries=5):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         self.additional_init = additional_init
@@ -18,6 +18,7 @@ class HTCondor:
         self.dag_file = None
         self.container_image = container_image
         self.should_transfer_files = should_transfer_files
+        self.n_retries = n_retries
 
         if container_image:
             self.should_transfer_files = True
@@ -78,7 +79,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
         if should_transfer_files:
-                    working_dir = '.'
+            working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -232,13 +233,16 @@ pycwb merge-catalog --work-dir={working_dir}
 
                 progress_path = os.path.join(catalog_dir, f"progress_{job['jobs']}.parquet")
                 if not os.path.exists(progress_path):
-                    open(progress_path, 'w').close()
+                    import pyarrow as pa
+                    import pyarrow.parquet as pq
+                    from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
+                    pq.write_table(pa.table(PROGRESS_SCHEMA.empty_table()), progress_path)
 
         batch_layer = dag.layer(
             name='pycwb_batch',
             submit_description=batch_job,
             vars=jobs,
-            retries=5,
+            retries=self.n_retries,
         )
 
         merge_layer = batch_layer.child_layer(
