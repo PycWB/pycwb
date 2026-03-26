@@ -63,7 +63,10 @@ class HTCondor:
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
-{ 'mkdir -p job_status trigger output log' if should_transfer_files else ''}
+{ '''mkdir -p catalog job_status trigger output log
+# HTCondor flattens individually-listed files to the execute root; restore expected layout.
+[ -f catalog.parquet ] && mv catalog.parquet catalog/
+for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/; done''' if should_transfer_files else ''}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
             """)
 
@@ -159,11 +162,11 @@ pycwb merge-catalog --work-dir={working_dir}
             # Never transfer the whole catalog/ dir: on output transfer HTCondor would
             # overwrite other jobs' fragments with the stale copies in this scratch dir.
             batch_job_config['transfer_input_files'] = (
-                "job_status, config, "
-                "input, wdmXTalk, "
-                "catalog/catalog.parquet, "
-                "catalog/catalog_$(jobs).parquet, "
-                "catalog/progress_$(jobs).parquet, "
+                f"{working_dir}/job_status, {working_dir}/config, "
+                f"{working_dir}/input, {working_dir}/wdmXTalk, "
+                f"{working_dir}/catalog/catalog.parquet, "
+                f"{working_dir}/catalog/catalog_$(jobs).parquet, "
+                f"{working_dir}/catalog/progress_$(jobs).parquet, "
                 f"$(framefiles)"
             )
             batch_job_config['transfer_output_files'] = (
@@ -172,7 +175,7 @@ pycwb merge-catalog --work-dir={working_dir}
             )
             batch_job_config['should_transfer_files'] = "yes"
             batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
-            merge_job_config['transfer_input_files'] = "catalog"
+            merge_job_config['transfer_input_files'] = f"{working_dir}/catalog"
             merge_job_config['transfer_output_files'] = "catalog, log"
             merge_job_config['should_transfer_files'] = "yes"
             merge_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
