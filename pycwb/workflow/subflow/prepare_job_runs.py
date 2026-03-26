@@ -151,18 +151,35 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # # TODO: load job segments from catalog
     # job_segments = create_job_segment_from_config(config)
 
-    catalog = read_catalog_metadata(f'catalog/{Catalog.DEFAULT_FILENAME}')
+    # Prefer the root catalog for metadata; fall back to the per-job fragment when
+    # only that file is present (file-transfer / container mode: the scheduler
+    # transfers catalog_$(jobs).parquet but not catalog.parquet).
+    default_catalog_path = f'catalog/{Catalog.DEFAULT_FILENAME}'
+    per_job_catalog_path = f'catalog/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}'
+    if os.path.exists(default_catalog_path):
+        catalog_meta_file = default_catalog_path
+    elif os.path.exists(per_job_catalog_path):
+        catalog_meta_file = per_job_catalog_path
+        logger.info(f"Root catalog not found; reading metadata from per-job fragment: {per_job_catalog_path}")
+    else:
+        raise FileNotFoundError(
+            f"Catalog metadata not found: tried {default_catalog_path} and {per_job_catalog_path}"
+        )
+    catalog = read_catalog_metadata(catalog_meta_file)
     config = Config()
     config.load_from_dict(catalog['config'])
     logger.info(f"Loaded config from catalog: {config}")
     job_segments = catalog['jobs']
     logger.info(f"Loaded {len(job_segments)} job segments from catalog")
 
-    if max(job_ids) - 1 > len(job_segments):
-        raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
-
-    # selected_job_segments = [job_segments[i-1] for i in job_ids]
-    selected_job_segments = [from_dict(WaveSegment, job_segments[i-1]) for i in job_ids]
+    if catalog_meta_file == default_catalog_path:
+        # Root catalog: segments are indexed 1..N; select by job id.
+        if max(job_ids) - 1 > len(job_segments):
+            raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
+        selected_job_segments = [from_dict(WaveSegment, job_segments[i - 1]) for i in job_ids]
+    else:
+        # Per-job fragment: contains exactly the segments for this batch already.
+        selected_job_segments = [from_dict(WaveSegment, s) for s in job_segments]
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)

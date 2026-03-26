@@ -130,6 +130,31 @@ def init_parser(parser):
                         default=False,
                         help='list all jobs in the flow')
 
+    # SLURM-specific options
+    parser.add_argument('--walltime',
+                        metavar='walltime',
+                        type=str,
+                        default=None,
+                        help='SLURM wall-clock time limit per job (e.g. 72:00:00, default from config)')
+
+    parser.add_argument('--slurm-constraint',
+                        metavar='slurm_constraint',
+                        type=str,
+                        default=None,
+                        help='SLURM node feature constraint (e.g. cal)')
+
+    parser.add_argument('--slurm-partition',
+                        metavar='slurm_partition',
+                        type=str,
+                        default=None,
+                        help='SLURM partition to submit to')
+
+    parser.add_argument('--n-retries',
+                        metavar='n_retries',
+                        type=int,
+                        default=5,
+                        help='Number of application-level retries on failure (SLURM only, default: 5)')
+
 
 def command(args):
     from pycwb.workflow.batch import batch_setup
@@ -167,6 +192,10 @@ def command(args):
                 job_per_worker=args.job_per_worker,
                 should_transfer_files=args.should_transfer_files,
                 container_image=args.container_image,
+                walltime=args.walltime,
+                slurm_constraint=args.slurm_constraint,
+                slurm_partition=args.slurm_partition,
+                n_retries=args.n_retries,
                 submit=args.submit,
-                overwrite=args.force_overwrite, 
+                overwrite=args.force_overwrite,
                 config_vars=args.config_vars)

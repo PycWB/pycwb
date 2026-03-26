@@ -1,17 +1,71 @@
 [build-system]
-requires = [ "setuptools", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "PycWB"
-keywords=['ligo', 'physics', 'gravity', 'signal processing', 'gravitational waves', 'cwb', 'coherent wave burst']
-authors= [
+description = "A Python package for coherent gravitational wave burst analysis"
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+authors = [
     {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
-description= "A Python package for coherent gravitational wave burst analysis"
-
+keywords = ["ligo", "physics", "gravity", "signal processing", "gravitational waves", "cwb", "coherent wave burst"]
 requires-python = ">=3.10"
-dynamic = ["version", "readme", "dependencies"]
+dynamic = ["version"]
+
+dependencies = [
+    "matplotlib",
+    "astropy",
+    "pyyaml",
+    "jsonschema",
+    "watchfiles",
+    "numba",
+    "jax",
+    "gwpy",
+    "ligo-segments",
+    "ligo-gracedb",
+    "aiohttp",
+    "filelock",
+    "numpy>=2",
+    "scipy>=1.13",
+    "h5py>=3.11",
+    "lalsuite>=7.23",
+    "healpy>=1.17",
+    "scikit-learn>=1.4.2",
+    "pyarrow>=17",
+    "pillow>=9.0.0",
+    "click",
+    "orjson",
+    "dacite",
+    "cartopy",
+    "htcondor",
+    "psutil",
+    "memspectrum",
+    "exceptiongroup>=1.0.0; python_version<'3.11'",
+    "python-ligo-lw<2.0.0",
+    "jinja2",
+    "plotly",
+    "wdm-wavelet",
+    "burst-waveform",
+]
+
+[project.optional-dependencies]
+pycbc = ["pycbc"]
+# nds2-client and python-nds2-client are not on PyPI; install via conda-forge.
+# gwpy (a hard dependency) will use them automatically when present.
+nds2 = ["python-nds2-client"]
+
+[project.urls]
+Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
+Documentation = "https://pycwb.readthedocs.io"
 
 [tool.setuptools_scm]
 write_to = "pycwb/_version.py"
+
+[tool.setuptools]
+include-package-data = true
+script-files = ["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"]
+
+[tool.setuptools.packages.find]
+where = ["."]

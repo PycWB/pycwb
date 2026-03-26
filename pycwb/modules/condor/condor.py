@@ -7,7 +7,7 @@ class HTCondor:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", 
                  accounting_group=None, job_per_worker=10, container_image=None,
                  should_transfer_files=False,
-                 n_proc=1, memory="6GB", disk="4GB", conda_init=None):
+                 n_proc=1, memory="6GB", disk="4GB", conda_init=None, n_retries=5):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         self.additional_init = additional_init
@@ -18,6 +18,7 @@ class HTCondor:
         self.dag_file = None
         self.container_image = container_image
         self.should_transfer_files = should_transfer_files
+        self.n_retries = n_retries
 
         if container_image:
             self.should_transfer_files = True
@@ -63,7 +64,9 @@ class HTCondor:
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
-{ 'mkdir -p job_status trigger output log' if should_transfer_files else ''}
+{ '''mkdir -p catalog job_status trigger output log
+# HTCondor flattens individually-listed files to the execute root; restore expected layout.
+for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/; done''' if should_transfer_files else ''}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
             """)
 
@@ -75,7 +78,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
         dag_dir = self.dag_dir
         should_transfer_files = self.should_transfer_files
         if should_transfer_files:
-                    working_dir = '.'
+            working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -150,8 +153,26 @@ pycwb merge-catalog --work-dir={working_dir}
             merge_job_config['container_image'] = container_image
 
         if should_transfer_files:
-            batch_job_config['transfer_input_files'] =  f"{working_dir}/job_status, {working_dir}/config, {working_dir}/input, {working_dir}/wdmXTalk, {working_dir}/catalog, $(framefiles)"
-            batch_job_config['transfer_output_files'] = "catalog, job_status, trigger, output, log"
+            # Transfer only this job's own catalog and progress fragments.
+            # catalog_$(jobs).parquet  — created by prepare_job_runs before submission;
+            #                            the job opens it and appends triggers to it.
+            #                            also serves as the config metadata source so
+            #                            the root catalog.parquet does not need to be transferred.
+            # progress_$(jobs).parquet — read by get_completed_lags for per-lag resume;
+            #                            empty stubs are pre-created below so HTCondor can
+            #                            list them even on the very first run.
+            # Never transfer the whole catalog/ dir: on output transfer HTCondor would
+            # overwrite other jobs' fragments with the stale copies in this scratch dir.
+            batch_job_config['transfer_input_files'] = (
+                f"{working_dir}/job_status, {working_dir}/config, "
+                f"{working_dir}/input, {working_dir}/wdmXTalk, "
+                f"{working_dir}/catalog/catalog_$(jobs).parquet, "
+                f"{working_dir}/catalog/progress_$(jobs).parquet, "
+                f"$(framefiles)"
+            )
+            batch_job_config['transfer_output_files'] = (
+                "catalog, job_status, trigger, output, log"
+            )
             batch_job_config['should_transfer_files'] = "yes"
             batch_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
             merge_job_config['transfer_input_files'] = f"{working_dir}/catalog"
@@ -182,11 +203,45 @@ pycwb merge-catalog --work-dir={working_dir}
                 'framefiles': ','.join(sorted(framefiles)) if framefiles else ''
             })
 
+        if should_transfer_files:
+            # Pre-create per-job catalog and progress files on the submit node so HTCondor
+            # can always find them in transfer_input_files, even on the first run.
+            from pycwb.modules.catalog.catalog import Catalog
+            from dacite import from_dict
+            from pycwb.types.job import WaveSegment
+            from pycwb.modules.catalog import read_catalog_metadata
+            from pycwb.utils.parser import parse_id_string
+            from pycwb.config import Config
+
+            catalog_meta = read_catalog_metadata(
+                os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
+            )
+            config_obj = Config()
+            config_obj.load_from_dict(catalog_meta['config'])
+            all_segments = [from_dict(WaveSegment, s) for s in catalog_meta['jobs']]
+
+            catalog_dir = os.path.join(working_dir, 'catalog')
+            os.makedirs(catalog_dir, exist_ok=True)
+            for job in jobs:
+                job_ids = parse_id_string(job['jobs'])
+                selected = [all_segments[i - 1] for i in job_ids]
+
+                catalog_frag = os.path.join(catalog_dir, f"catalog_{job['jobs']}.parquet")
+                if not os.path.exists(catalog_frag):
+                    Catalog.create(catalog_frag, config_obj, selected)
+
+                progress_path = os.path.join(catalog_dir, f"progress_{job['jobs']}.parquet")
+                if not os.path.exists(progress_path):
+                    import pyarrow as pa
+                    import pyarrow.parquet as pq
+                    from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
+                    pq.write_table(pa.table(PROGRESS_SCHEMA.empty_table()), progress_path)
+
         batch_layer = dag.layer(
             name='pycwb_batch',
             submit_description=batch_job,
             vars=jobs,
-            retries=5,
+            retries=self.n_retries,
         )
 
         merge_layer = batch_layer.child_layer(

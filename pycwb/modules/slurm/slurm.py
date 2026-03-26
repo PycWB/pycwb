@@ -1,19 +1,27 @@
 import os
+import re
+import subprocess
 import click
 import shutil
 
 
 class Slurm:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", job_per_worker=10,
-                 n_proc=1, memory="6GB", disk="4GB"):
+                 n_proc=1, memory="6GB", disk="4GB",
+                 time="72:00:00", constraint=None, partition=None, n_retries=5):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         self.additional_init = additional_init
         self.n_proc = n_proc
         self.memory = memory
         self.disk = disk
+        self.time = time or "72:00:00"
+        self.constraint = constraint
+        self.partition = partition
+        self.n_retries = n_retries
         self.slurm_dir = os.path.join(self.working_dir, 'slurm')
         self.slurm_script = None
+        self.merge_script = None
         self.job_per_worker = job_per_worker
 
     def create(self, job_segments, submit=False):
@@ -39,6 +47,13 @@ class Slurm:
         n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
         os.makedirs(slurm_dir, exist_ok=True)
 
+        optional_lines = []
+        if self.constraint:
+            optional_lines.append(f"#SBATCH --constraint={self.constraint}")
+        if self.partition:
+            optional_lines.append(f"#SBATCH --partition={self.partition}")
+        optional_sbatch = ('\n' + '\n'.join(optional_lines)) if optional_lines else ''
+
         # create run.sh
         with open(f"{slurm_dir}/run.sh", 'w') as f:
             f.write(f"""#!/bin/bash
@@ -48,9 +63,9 @@ class Slurm:
 #SBATCH --array=0-{n_workers-1}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={n_proc}
-#SBATCH --time=72:00:00
-#SBATCH --constraint=cal
+#SBATCH --time={self.time}
 #SBATCH --mem={memory}
+#SBATCH --requeue{optional_sbatch}
 
 total={len(job_segments)} # Total number of job segments
 jobs_per_worker={job_per_worker} # Number of jobs per worker
@@ -70,16 +85,83 @@ echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
 
 conda activate {conda_env}
 {self.additional_init}
-pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc}
-                """)
-            pass
+
+MAX_RETRIES={self.n_retries}
+attempt=0
+while [ $attempt -lt $MAX_RETRIES ]; do
+    pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc} && break
+    attempt=$((attempt + 1))
+    echo "Attempt $attempt failed, retrying in 30s..."
+    sleep 30
+done
+if [ $attempt -eq $MAX_RETRIES ]; then
+    echo "All $MAX_RETRIES attempts failed for jobs $start-$end"
+    exit 1
+fi
+""")
+
+        os.chmod(f"{slurm_dir}/run.sh", 0o755)
+        self.slurm_script = os.path.join(slurm_dir, 'run.sh')
+        print(f'SLURM job script: {self.slurm_script}')
 
     def generate_merge_script(self):
         working_dir = self.working_dir
         slurm_dir = self.slurm_dir
 
         os.makedirs(slurm_dir, exist_ok=True)
-        pass
+
+        optional_lines = []
+        if self.constraint:
+            optional_lines.append(f"#SBATCH --constraint={self.constraint}")
+        if self.partition:
+            optional_lines.append(f"#SBATCH --partition={self.partition}")
+        optional_sbatch = ('\n' + '\n'.join(optional_lines)) if optional_lines else ''
+
+        with open(f"{slurm_dir}/merge.sh", 'w') as f:
+            f.write(f"""#!/bin/bash
+#SBATCH --job-name={os.path.basename(working_dir)}_merge
+#SBATCH --output=log/merge.out
+#SBATCH --error=log/merge.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=04:00:00
+#SBATCH --mem={self.memory}{optional_sbatch}
+
+conda activate {self.conda_env}
+{self.additional_init}
+pycwb merge-catalog --work-dir={working_dir}
+""")
+
+        os.chmod(f"{slurm_dir}/merge.sh", 0o755)
+        self.merge_script = os.path.join(slurm_dir, 'merge.sh')
+        print(f'SLURM merge script: {self.merge_script}')
 
     def submit(self):
-        pass
+        if not self.slurm_script or not os.path.exists(self.slurm_script):
+            raise RuntimeError("SLURM script not found. Run generate_job_script() first.")
+        if not self.merge_script or not os.path.exists(self.merge_script):
+            raise RuntimeError("SLURM merge script not found. Run generate_merge_script() first.")
+
+        # Submit the batch array job
+        result = subprocess.run(['sbatch', self.slurm_script], check=True,
+                                capture_output=True, text=True)
+        print(result.stdout.strip())
+
+        # Parse job ID from "Submitted batch job 12345"
+        match = re.search(r'Submitted batch job (\d+)', result.stdout)
+        if not match:
+            raise RuntimeError(f"Could not parse job ID from sbatch output: {result.stdout!r}")
+        job_id = match.group(1)
+
+        # Submit merge job to run only after all array tasks succeed
+        merge_result = subprocess.run(
+            ['sbatch', f'--dependency=afterok:{job_id}', '--kill-on-invalid-dep=yes',
+             self.merge_script],
+            check=True, capture_output=True, text=True
+        )
+        print(merge_result.stdout.strip())
+        if merge_result.stderr:
+            print(merge_result.stderr.strip())
+
+        print(f"Batch array job ID: {job_id}")
+        print(f"Merge job submitted with dependency afterok:{job_id}")

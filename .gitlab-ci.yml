@@ -9,13 +9,13 @@ stages:          # List of stages for jobs, and their order of execution
 include:
   - component: git.ligo.org/computing/gitlab/components/docker/build@2.3.1
     inputs:
-      dockerfile: envs/Dockerfile.ci
+      dockerfile: envs/Dockerfile.ci-native
       job_name: build
       image_tag: ${CI_COMMIT_TAG:-$CI_COMMIT_REF_SLUG}
 
   - component: git.ligo.org/computing/gitlab/components/docker/build@2.3.1
     inputs:
-      dockerfile: envs/Dockerfile.ci
+      dockerfile: envs/Dockerfile.ci-native
       job_name: build-latest
       image_tag: latest
 

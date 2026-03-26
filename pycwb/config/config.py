@@ -198,6 +198,13 @@ class Config:
         or derived-field computation is performed – the dict values are applied
         directly as attributes.
 
+        Path rebasing: if the stored ``filter_dir`` does not exist on the
+        current machine (e.g. when a config serialised on the head node is
+        restored on a compute node in file-transfer mode), ``filter_dir`` is
+        rebased to the ``HOME_WAT_FILTERS`` environment variable when set and
+        valid, otherwise to the current working directory.  ``MRAcatalog`` is
+        recomputed accordingly.
+
         Parameters
         ----------
         params : dict
@@ -206,6 +213,17 @@ class Config:
         """
         for key in params:
             setattr(self, key, params[key])
+
+        # Rebase filter_dir / MRAcatalog if they were serialised on a different
+        # machine and no longer resolve on this node.
+        if self.filter_dir and not os.path.exists(self.filter_dir):
+            home_wat = os.environ.get('HOME_WAT_FILTERS')
+            if home_wat and os.path.exists(home_wat):
+                self.filter_dir = home_wat
+            else:
+                self.filter_dir = os.path.abspath('.')
+            if self.wdmXTalk:
+                self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
     def add_derived_key(self):
         """
