@@ -113,7 +113,7 @@ pycwb merge-catalog --work-dir={working_dir}
         batch_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
-            "executable": "condor/run.sh",
+            "executable": "run.sh",
             "arguments": f"$(jobs)",  # Passing jobs as an argument
             "should_transfer_files": "no",
             "output": "log/batch-$(jobs).out",
@@ -132,7 +132,7 @@ pycwb merge-catalog --work-dir={working_dir}
         merge_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
-            "executable": "condor/merge.sh",
+            "executable": "merge.sh",
             "should_transfer_files": "no",
             "log": "log/merge.log",
             "output": "log/merge.out",
