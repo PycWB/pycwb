@@ -172,11 +172,14 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     job_segments = catalog['jobs']
     logger.info(f"Loaded {len(job_segments)} job segments from catalog")
 
-    if max(job_ids) - 1 > len(job_segments):
-        raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
-
-    # selected_job_segments = [job_segments[i-1] for i in job_ids]
-    selected_job_segments = [from_dict(WaveSegment, job_segments[i-1]) for i in job_ids]
+    if catalog_meta_file == default_catalog_path:
+        # Root catalog: segments are indexed 1..N; select by job id.
+        if max(job_ids) - 1 > len(job_segments):
+            raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
+        selected_job_segments = [from_dict(WaveSegment, job_segments[i - 1]) for i in job_ids]
+    else:
+        # Per-job fragment: contains exactly the segments for this batch already.
+        selected_job_segments = [from_dict(WaveSegment, s) for s in job_segments]
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)
