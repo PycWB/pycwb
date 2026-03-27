@@ -1068,7 +1068,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         # This is exactly what C++ getMRAwave('W') / getMRAwave('S') + avx_norm does.
         # ---------------------------------------------------------------------------
         from pycwb.modules.reconstruction.getMRAwaveform import (
-            _create_wdm_set_python, _build_wdm_kernel_lookup, get_MRA_wave,
+            _create_wdm_set_python, get_MRA_wave,
         )
 
         # Build WDM kernel list for all resolutions present in the cluster
