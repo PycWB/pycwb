@@ -20,10 +20,11 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
-from pycwb.modules.workflow_utils.job_setup import print_job_info
+from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
+from pycwb.modules.job_segment import build_injection_veto_windows
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
     reconstruct_INJwaveforms_flow, plot_skymap_flow,
@@ -74,6 +75,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     #        e. Catalog        → persist triggers and release lag memory
     # ─────────────────────────────────────────────────────────────────────────
     print_job_info(job_seg)
+    print_node_info()
     job_timer = time.perf_counter()  # total wall-time for this job segment
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
@@ -104,14 +106,14 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # ─────────────────────────────────────────────────────────────────────
         # STEP 1 – DATA LOADING & INJECTION SETUP
         # ─────────────────────────────────────────────────────────────────────
-        # Start from a fresh copy of base_data for every trial so that injected
-        # signals from one trial never bleed into another.
-        # warning: the copy is ensured by the inject() method, here is just to make it explicit that the data is different for each trial.
-        data = base_data
-        # Drop the shared reference after the first (or only) trial to let the
-        # GC reclaim base_data's memory as early as possible.
-        if len(trial_idxs) == 1:
+        # Single trial: take ownership of base_data directly (no copy needed).
+        # Multiple trials: copy so injections from one trial don't bleed into the next.
+        if len(trial_idxs) > 1:
+            data = [ts.copy() for ts in base_data] if base_data is not None else None
+        else:
+            data = base_data
             base_data = None
+
         if job_seg.injections:
             # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions. 
             sub_job_seg = copy(job_seg)
@@ -136,30 +138,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 real_end = max(float(inj[i].t0) + len(inj[i].data) * float(inj[i].dt)
                                for i in range(n_ifo))
                 injection_envelopes.append((real_start, real_end))
-                # inject() uses copy=True by default, so base_data is never modified in-place.
-                mdc  = [mdc[i].inject(inj[i])  for i in range(n_ifo)]
-                data = [data[i].inject(inj[i]) for i in range(n_ifo)]
+                # Both mdc and data are our own buffers — always inject in-place.
+                for i in range(n_ifo):
+                    mdc[i].inject(inj[i], copy=False)
+                for i in range(n_ifo):
+                    data[i].inject(inj[i], copy=False)
+                # Free the per-injection signal buffer immediately to reduce peak memory.
+                del inj
 
             # Populate veto_windows when injection-only analysis is enabled.
             if getattr(config, 'analyze_injection_only', False) and injection_envelopes:
-                padding = getattr(config, 'injection_padding', 1.0)
-                padded = [(s - padding, e + padding) for s, e in injection_envelopes]
-                # Merge overlapping intervals into a union.
-                padded.sort()
-                merged = [padded[0]]
-                for s, e in padded[1:]:
-                    if s <= merged[-1][1]:
-                        merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-                    else:
-                        merged.append((s, e))
-                sub_job_seg.veto_windows = merged
-                total_veto = sum(e - s for s, e in merged)
-                logger.info(
-                    "analyze_injection_only: %d veto windows covering %.2f s "
-                    "(%.1f%% of %.2f s analysis window)",
-                    len(merged), total_veto,
-                    100.0 * total_veto / sub_job_seg.duration,
-                    sub_job_seg.duration,
+                sub_job_seg.veto_windows = build_injection_veto_windows(
+                    injection_envelopes,
+                    padding=getattr(config, 'injection_padding', 1.0),
+                    duration=sub_job_seg.duration,
                 )
         else:
             logger.info(f"Processing trial_idx: {trial_idx} without injections")

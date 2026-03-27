@@ -489,7 +489,6 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     nPolarisation = np.zeros(n_sky, dtype=float32)
     nAntenaPrior = np.zeros(n_sky, dtype=float32)
 
-    Eh = float32(0.0)
     # sky = 0.0
     # l_max = 0
     # STAT=-1.e12
@@ -590,7 +589,6 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         if AA_array[_l] >= STAT:
             STAT = AA_array[_l]
             l_max = _l
-    sky = np.max(nProbability)
 
     return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \
               nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)
@@ -1020,9 +1018,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     pS_arr_np = np.asarray(pS, dtype=np.float64)
     pd_arr_np = np.asarray(pd, dtype=np.float64)   # data amplitudes after avx_setAMP_ps
     pD_arr_np = np.asarray(pD, dtype=np.float64)
-    pn_arr_np = np.asarray(pn, dtype=np.float64)
-    pN_arr_np = np.asarray(pN, dtype=np.float64)
-
     # Core pixel indices — only core pixels contribute to getMRAwave (ps/pS are 0 for non-core
     # after avx_setAMP_ps, but using explicit core mask matches the C++ getMRAwave logic)
     core_indices = [k for k, pix in enumerate(cluster.pixels) if pix.core]
@@ -1068,7 +1063,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         # This is exactly what C++ getMRAwave('W') / getMRAwave('S') + avx_norm does.
         # ---------------------------------------------------------------------------
         from pycwb.modules.reconstruction.getMRAwaveform import (
-            _create_wdm_set_python, _build_wdm_kernel_lookup, get_MRA_wave,
+            _create_wdm_set_python, get_MRA_wave,
         )
 
         # Build WDM kernel list for all resolutions present in the cluster
@@ -1183,8 +1178,6 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     Eh = float(sky_statistics.Eh)
     Gn_val = float(sky_statistics.Gn)
     N_eff = float(N_pix_effective)
-    sky_norm = float(sky_statistics.norm)  # = max((Eo-Eh)/Em, 1) in skyloop
-
     # Use getMRAwave-equivalent Nw_wf for chi2 (and clamp to 0 to avoid negative chi2)
     Nw_for_stats = max(Nw_wf, 0.0)
     ch_td = (Nw_for_stats + Gn_val) / (N_eff * n_ifo) if (N_eff * n_ifo) > 0 else 1.0
@@ -1303,7 +1296,6 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     #   }
     Lm = sky_statistics.Lm
     Eo = sky_statistics.Eo
-    Np = sky_statistics.Np
     Eh = sky_statistics.Eh
     Ec = sky_statistics.Ec
     Rc = sky_statistics.Rc

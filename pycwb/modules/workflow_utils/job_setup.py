@@ -94,3 +94,52 @@ def print_job_info(job_seg: WaveSegment) -> None:
     logger.info("Frames:           %s", job_seg.frames)
     logger.info("Noise:            %s", job_seg.noise)
     logger.info("Injections:       %s", job_seg.injections)
+
+
+def print_node_info() -> None:
+    """Log CPU model, architecture, frequency, core counts, and available memory."""
+    import platform
+    import subprocess
+    import psutil
+
+    node = os.uname().nodename
+    arch = platform.machine()
+
+    # CPU model — platform.processor() is unreliable on some Linux/macOS builds,
+    # so fall back to OS-specific sources.
+    cpu_model = platform.processor() or ""
+    if not cpu_model:
+        try:
+            if platform.system() == "Darwin":
+                cpu_model = subprocess.check_output(
+                    ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
+                ).strip()
+            elif platform.system() == "Linux":
+                with open("/proc/cpuinfo") as _f:
+                    for _line in _f:
+                        if _line.startswith("model name"):
+                            cpu_model = _line.split(":", 1)[1].strip()
+                            break
+        except Exception:
+            cpu_model = "unknown"
+
+    freq = psutil.cpu_freq()
+    if freq:
+        freq_str = (f"{freq.current:.0f} MHz  (max {freq.max:.0f} MHz)"
+                    if freq.max else f"{freq.current:.0f} MHz")
+    else:
+        freq_str = "N/A"
+
+    cpu_phys    = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    cpu_logical = psutil.cpu_count(logical=True)
+    mem         = psutil.virtual_memory()
+
+    logger.info("============================================")
+    logger.info("Node:        %s", node)
+    logger.info("CPU model:   %s", cpu_model)
+    logger.info("Arch:        %s", arch)
+    logger.info("CPUs:        %d physical / %d logical", cpu_phys, cpu_logical)
+    logger.info("Frequency:   %s", freq_str)
+    logger.info("Memory:      %.1f GB total / %.1f GB available",
+                mem.total / 1024 ** 3, mem.available / 1024 ** 3)
+    logger.info("============================================")
