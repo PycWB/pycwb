@@ -4,7 +4,7 @@ import numpy as np
 import orjson
 import tqdm
 
-from .dq_segment import read_seg_list, get_job_list, merge_seg_list
+from .dq_segment import read_seg_list, get_job_list, merge_seg_list, build_cat2_veto_windows
 from .frame import get_frame_meta, select_frame_list, get_frame_files_from_gwdatafind
 from pycwb.types.job import WaveSegment
 from ..superlag import generate_slags
@@ -337,6 +337,21 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
         logger.debug(f"job segment gps range = {job_seg.analyze_start} - {job_seg.analyze_end}")
     logger.info(f"Number of job segments = {len(job_segments)}")
 
+    # ── Populate CAT2 veto_windows on each job segment ──
+    cat2_windows = build_cat2_veto_windows(dq_file_list, ifos, periods)
+    if cat2_windows:
+        for js in job_segments:
+            # Clip global CAT2 windows to each segment's analysis window
+            seg_start = js.analyze_start
+            seg_end = js.analyze_end
+            clipped = []
+            for ws, we in cat2_windows:
+                lo = max(ws, seg_start)
+                hi = min(we, seg_end)
+                if hi > lo:
+                    clipped.append((lo, hi))
+            js.veto_windows = clipped if clipped else None
+
     return job_segments
 
 
@@ -570,3 +585,36 @@ def build_injection_veto_windows(
         duration,
     )
     return merged
+
+
+def intersect_intervals(
+    a: list[tuple[float, float]],
+    b: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Return the intersection of two sorted lists of ``(start, end)`` intervals.
+
+    Both inputs must be sorted by start time and non-overlapping.
+
+    Parameters
+    ----------
+    a, b : list[tuple[float, float]]
+        Sorted, non-overlapping intervals.
+
+    Returns
+    -------
+    list[tuple[float, float]]
+        Sorted intervals representing the intersection.
+    """
+    result: list[tuple[float, float]] = []
+    i = j = 0
+    while i < len(a) and j < len(b):
+        lo = max(a[i][0], b[j][0])
+        hi = min(a[i][1], b[j][1])
+        if hi > lo:
+            result.append((lo, hi))
+        # Advance the interval that ends first
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return result

@@ -24,7 +24,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_in
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
-from pycwb.modules.job_segment import build_injection_veto_windows
+from pycwb.modules.job_segment import build_injection_veto_windows, intersect_intervals
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
     reconstruct_INJwaveforms_flow, plot_skymap_flow,
@@ -147,12 +147,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 del inj
 
             # Populate veto_windows when injection-only analysis is enabled.
+            # If CAT2 veto_windows already exist on the job segment, intersect
+            # with the injection windows so both conditions must be satisfied.
             if getattr(config, 'analyze_injection_only', False) and injection_envelopes:
-                sub_job_seg.veto_windows = build_injection_veto_windows(
+                inj_windows = build_injection_veto_windows(
                     injection_envelopes,
                     padding=getattr(config, 'injection_padding', 1.0),
                     duration=sub_job_seg.duration,
                 )
+                if sub_job_seg.veto_windows:
+                    sub_job_seg.veto_windows = intersect_intervals(
+                        sorted(sub_job_seg.veto_windows), sorted(inj_windows),
+                    )
+                else:
+                    sub_job_seg.veto_windows = inj_windows
         else:
             logger.info(f"Processing trial_idx: {trial_idx} without injections")
             sub_job_seg = job_seg
@@ -266,6 +274,28 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 logger.info("Skipping lag %d due to skip_lags", lag)
                 continue
 
+            # ── segTHR check ─────────────────────────────────────────────────
+            # If CAT2 veto_windows are set, the per-lag livetime may be too
+            # short for meaningful analysis.  Skip lags below config.segTHR.
+            seg_thr = getattr(config, 'segTHR', 0.0) or 0.0
+            if seg_thr > 0 and sub_job_seg.veto_windows:
+                lag_livetime = sub_job_seg.livetime(lag)
+                if lag_livetime < seg_thr:
+                    logger.warning(
+                        "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
+                        lag, lag_livetime, seg_thr,
+                    )
+                    progress_record = dict(
+                        job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
+                        n_triggers=0, livetime=lag_livetime, status="skipped_segTHR",
+                    )
+                    if queue is not None:
+                        queue.put({"type": "progress", **progress_record})
+                    elif catalog_file:
+                        from pycwb.modules.catalog.catalog import Catalog
+                        Catalog.open(catalog_file).add_lag_progress(**progress_record)
+                    continue
+
             # ── 4a. Coherence ────────────────────────────────────────────────
             # Pixel selection and fragment clustering for this specific time slide.
             frag_clusters_this_lag = coherence_single_lag(
@@ -289,6 +319,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 progress_record = dict(
                     job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
                     n_triggers=0, livetime=sub_job_seg.livetime(lag),
+                    status="completed",
                 )
                 if queue is not None:
                     queue.put({"type": "progress", **progress_record})
@@ -447,6 +478,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             progress_record = dict(
                 job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
                 n_triggers=len(events_data), livetime=sub_job_seg.livetime(lag),
+                status="completed",
             )
             if queue is not None:
                 queue.put({"type": "progress", **progress_record})

@@ -89,6 +89,8 @@ from pycwb.workflow.subflow.postprocess_and_plots import (
 
 logger = logging.getLogger(__name__)
 
+_SEGTHR_SKIP = object()  # sentinel returned by _process_single_lag for segTHR-skipped lags
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public API
@@ -388,11 +390,26 @@ def process_job_segment_parallel(
                 continue
             _lag_idx, events_data = lag_results[lag]
 
+            # ── Handle segTHR-skipped lags ───────────────────────────────
+            if events_data is _SEGTHR_SKIP:
+                progress_record = dict(
+                    job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
+                    n_triggers=0, livetime=sub_job_seg.livetime(lag),
+                    status="skipped_segTHR",
+                )
+                if queue is not None:
+                    queue.put({"type": "progress", **progress_record})
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    Catalog.open(catalog_file).add_lag_progress(**progress_record)
+                continue
+
             # ── Record progress for zero-trigger lags ────────────────────
             if not events_data:
                 progress_record = dict(
                     job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
                     n_triggers=0, livetime=sub_job_seg.livetime(lag),
+                    status="completed",
                 )
                 if queue is not None:
                     queue.put({"type": "progress", **progress_record})
@@ -518,6 +535,7 @@ def process_job_segment_parallel(
             progress_record = dict(
                 job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
                 n_triggers=len(events_data), livetime=sub_job_seg.livetime(lag),
+                status="completed",
             )
             if queue is not None:
                 queue.put({"type": "progress", **progress_record})
@@ -594,6 +612,17 @@ def _process_single_lag(
         logger.info("Skipping lag %d due to skip_lags", lag)
         return lag, []
 
+    # ── segTHR check ─────────────────────────────────────────────────────
+    seg_thr = getattr(config, 'segTHR', 0.0) or 0.0
+    if seg_thr > 0 and sub_job_seg.veto_windows:
+        lag_livetime = sub_job_seg.livetime(lag)
+        if lag_livetime < seg_thr:
+            logger.warning(
+                "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
+                lag, lag_livetime, seg_thr,
+            )
+            return lag, _SEGTHR_SKIP
+
     lag_timer = time.perf_counter()
     lag_shifts = sub_job_seg.lag_shifts[lag]
     lag_shift_str = ", ".join(
@@ -603,7 +632,10 @@ def _process_single_lag(
     logger.info("Processing lag %d / %d  [%s]", lag, sub_job_seg.n_lag - 1, lag_shift_str)
 
     # ── 4a. Coherence ────────────────────────────────────────────────────
-    frag_clusters_this_lag = coherence_single_lag(coherence_setup, lag)
+    frag_clusters_this_lag = coherence_single_lag(
+        coherence_setup, lag,
+        veto_windows=sub_job_seg.veto_windows,
+    )
 
     # ── 4b. Supercluster ─────────────────────────────────────────────────
     fragment_cluster = supercluster_single_lag(
