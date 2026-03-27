@@ -79,7 +79,7 @@ def _extract_wdm_filter_and_mh(wdm_obj):
     return wavelet_filter, m_h
 
 
-_wdm_set_cache = {}  # keyed by (l_low, l_high, rateANA, segEdge, TDSize, beta_order, precision)
+_wdm_set_cache: dict[tuple, list] = {}  # keyed by (l_low, l_high, rateANA, segEdge, TDSize, beta_order, precision)
 
 
 def _create_wdm_set_python(config):
@@ -369,7 +369,7 @@ if HAS_NUMBA and HAS_ROCKET_FFT:
 # ===================================================================
 
 def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc,
-                 whiten=False, _pixel_arrays=None, _wdm_njit_data=None) -> TimeSeries:
+                 whiten=False, _pixel_arrays=None, _wdm_njit_data=None) -> TimeSeries | None:
     """
     Get MRA waveforms of type a_type in time domain given lag number and cluster ID.
 
@@ -530,6 +530,6 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof,
 # Public base-wave entry point (delegates to njit dispatch)
 # ===================================================================
 
-def get_base_wave(max_layer: int, wdm_filter: np.ndarray, tf_index: int, quad: bool):
+def get_base_wave(max_layer: int, wdm_filter: np.ndarray, tf_index: int, quad: bool) -> tuple[int, np.ndarray]:
     """Compute base wavelet vector for a single pixel."""
     return _get_base_wave_dispatch(max_layer, wdm_filter, tf_index, quad)
