@@ -24,6 +24,7 @@ from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
+from pycwb.modules.job_segment import build_injection_veto_windows
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_trigger_flow, reconstruct_waveforms_flow,
     reconstruct_INJwaveforms_flow, plot_skymap_flow,
@@ -146,7 +147,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             # Populate veto_windows when injection-only analysis is enabled.
             if getattr(config, 'analyze_injection_only', False) and injection_envelopes:
-                sub_job_seg.veto_windows = _build_injection_veto_windows(
+                sub_job_seg.veto_windows = build_injection_veto_windows(
                     injection_envelopes,
                     padding=getattr(config, 'injection_padding', 1.0),
                     duration=sub_job_seg.duration,
@@ -481,23 +482,3 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 job_seg.duration, job_seg.padded_duration, job_seg.seg_edge)
     logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
     logger.info("============================================")
-
-
-def _build_injection_veto_windows(injection_envelopes, padding, duration):
-    """Merge padded injection envelopes into a sorted union of veto windows."""
-    padded = sorted((s - padding, e + padding) for s, e in injection_envelopes)
-    merged = [padded[0]]
-    for s, e in padded[1:]:
-        if s <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-        else:
-            merged.append((s, e))
-    total_veto = sum(e - s for s, e in merged)
-    logger.info(
-        "analyze_injection_only: %d veto windows covering %.2f s "
-        "(%.1f%% of %.2f s analysis window)",
-        len(merged), total_veto,
-        100.0 * total_veto / duration,
-        duration,
-    )
-    return merged

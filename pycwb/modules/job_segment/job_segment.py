@@ -533,3 +533,40 @@ def load_job_segments_from_json(input_file: str) -> list[WaveSegment]:
     with open(input_file, 'rb') as f:
         data = orjson.loads(f.read())
     return data
+
+
+def build_injection_veto_windows(
+    injection_envelopes: list[tuple[float, float]],
+    padding: float,
+    duration: float,
+) -> list[tuple[float, float]]:
+    """Merge padded injection envelopes into a sorted union of veto windows.
+
+    Each envelope is expanded by ``padding`` seconds on both sides, then
+    overlapping intervals are merged into a minimal set of disjoint windows.
+
+    :param injection_envelopes: (start, end) GPS time pairs for each injected signal.
+    :type injection_envelopes: list[tuple[float, float]]
+    :param padding: Extra seconds added on each side of every envelope before merging.
+    :type padding: float
+    :param duration: Total analysis window duration in seconds (used for the log summary).
+    :type duration: float
+    :return: Sorted, non-overlapping veto windows after padding and merging.
+    :rtype: list[tuple[float, float]]
+    """
+    padded = sorted((s - padding, e + padding) for s, e in injection_envelopes)
+    merged = [padded[0]]
+    for s, e in padded[1:]:
+        if s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    total_veto = sum(e - s for s, e in merged)
+    logger.info(
+        "analyze_injection_only: %d veto windows covering %.2f s "
+        "(%.1f%% of %.2f s analysis window)",
+        len(merged), total_veto,
+        100.0 * total_veto / duration,
+        duration,
+    )
+    return merged
