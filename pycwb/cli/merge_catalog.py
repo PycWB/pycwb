@@ -55,13 +55,14 @@ def command(args):
     args : argparse.Namespace
         Parsed command-line arguments containing work_dir, wave, catalog_dir, output_dir, and mlabel.
     """
-    from pycwb.workflow.merge import merge_catalog, merge_wave
+    from pycwb.workflow.merge import merge_catalog, merge_wave, merge_progress
     
     logger_init()
 
     if not args.wave:
         # Default: Run the search function with the specified user parameter file
         merge_catalog(working_dir=args.work_dir, catalog_dir=args.catalog_dir, merge_label=args.mlabel)
+        merge_progress(working_dir=args.work_dir, catalog_dir=args.catalog_dir, merge_label=args.mlabel)
     else:
         merge_wave(working_dir=args.work_dir, output_dir=args.output_dir, merge_label=args.mlabel)
     

@@ -126,7 +126,7 @@ def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: 
                     f_sub.copy(event_id, f)
 
 
-def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog') -> None:
+def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog', merge_label: str = None) -> None:
     """Merge per-batch progress Parquet files into a single progress.parquet.
 
     Parameters
@@ -135,6 +135,9 @@ def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog') -> None
         The working directory.
     catalog_dir : str
         The directory containing the progress files to be merged.
+    merge_label : str, optional
+        Label appended to the output file name. If None, the output is
+        ``<catalog_dir>/progress.parquet``.
     """
     from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
 
@@ -143,6 +146,17 @@ def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog') -> None
         logger.info("No progress files to merge")
         return
 
+    default_progress_file = os.path.abspath(f"{working_dir}/{catalog_dir}/progress{Catalog.DEFAULT_EXTENSION}")
+    if merge_label is not None:
+        merged_progress_file = default_progress_file.replace(
+            Catalog.DEFAULT_EXTENSION, f".{merge_label}{Catalog.DEFAULT_EXTENSION}"
+        )
+        if os.path.exists(merged_progress_file):
+            logger.warning(f"Merged progress file {merged_progress_file} already exists.")
+            return
+    else:
+        merged_progress_file = default_progress_file
+
     tables = []
     for pf in progress_files:
         table = pq.read_table(pf, schema=PROGRESS_SCHEMA)
@@ -150,6 +164,5 @@ def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog') -> None
         logger.info("Merging progress from %s (%d rows)", pf, table.num_rows)
 
     merged = pa.concat_tables(tables)
-    out = os.path.abspath(f"{working_dir}/{catalog_dir}/progress{Catalog.DEFAULT_EXTENSION}")
-    pq.write_table(merged, out, compression="snappy")
-    logger.info("Merged progress: %d rows → %s", merged.num_rows, out)
+    logger.info("Merged progress: %d rows -> %s", len(merged), merged_progress_file)
+    pq.write_table(merged, merged_progress_file, compression="snappy")
