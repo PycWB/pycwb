@@ -3,6 +3,7 @@
 import os
 import glob
 import logging
+import click
 import h5py as h5
 from dacite import from_dict
 import pyarrow as pa
@@ -12,6 +13,17 @@ from pycwb.types.job import WaveSegment
 from pycwb.modules.catalog import Catalog
 
 logger = logging.getLogger(__name__)
+
+
+def _collect_jobs_from_fragments(catalog_files: list) -> list:
+    """Collect and sort all WaveSegment jobs across fragment catalog files."""
+    jobs = []
+    for f in catalog_files:
+        for job in Catalog.open(f).jobs:
+            jobs.append(from_dict(WaveSegment, job))
+    jobs.sort(key=lambda j: j.job_id)
+    return jobs
+
 
 def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_label: str = None):
     """
@@ -26,59 +38,49 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
     merge_label : str, optional
         The label to be added to the merged catalog file name. If None, the merged catalog file will be named as "catalog.parquet".
     """
-    # get the list of parquet files catalog*.parquet
-    catalog_files = glob.glob(f"{working_dir}/{catalog_dir}/catalog_*{Catalog.DEFAULT_EXTENSION}")
-    if len(catalog_files) == 0:
+    catalog_files = sorted(glob.glob(f"{working_dir}/{catalog_dir}/catalog_*{Catalog.DEFAULT_EXTENSION}"))
+    if not catalog_files:
         logger.warning("No catalog files found")
         return
-    
-    # merged catalog file
+
     default_catalog_file = os.path.abspath(f"{working_dir}/catalog/{Catalog.DEFAULT_FILENAME}")
+
     if merge_label is not None:
-        merged_catalog_file = default_catalog_file.replace(Catalog.DEFAULT_EXTENSION, f".{merge_label}{Catalog.DEFAULT_EXTENSION}")
-
-        # check if the catalog file with the specified merge label already exists
+        # Build labeled catalog entirely from fragments — no dependency on default_catalog_file
+        merged_catalog_file = default_catalog_file.replace(
+            Catalog.DEFAULT_EXTENSION, f".{merge_label}{Catalog.DEFAULT_EXTENSION}"
+        )
         if os.path.exists(merged_catalog_file):
-            logger.warning(f"Merged catalog file {merged_catalog_file} already exists.")
-            return
-        
-        # metadata - config
+            if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
+                return
+            os.remove(merged_catalog_file)
         config = Config()
-        config.load_from_dict(Catalog.open(default_catalog_file).config)
-
-        # metadata - jobs
-        jobs = []
-        for catalog_file in catalog_files:
-            catalog_file = os.path.abspath(catalog_file)
-            catalog = Catalog.open(catalog_file)
-            
-            for job in catalog.jobs:
-                jobs.append(from_dict(WaveSegment, job))
-               
-        # create the merged catalog file with the merged jobs
+        config.load_from_dict(Catalog.open(catalog_files[0]).config)
+        jobs = _collect_jobs_from_fragments(catalog_files)
         Catalog.create(merged_catalog_file, config, jobs)
-        del config, jobs
-
     else:
+        # Bootstrap default catalog from fragments if it was never created
+        if not os.path.exists(default_catalog_file):
+            logger.info("Main catalog not found — creating from fragments: %s", default_catalog_file)
+            config = Config()
+            config.load_from_dict(Catalog.open(catalog_files[0]).config)
+            jobs = _collect_jobs_from_fragments(catalog_files)
+            Catalog.create(default_catalog_file, config, jobs)
         merged_catalog_file = default_catalog_file
-    
-    # concatenate tables from all catalog files
+
+    # Concatenate trigger rows from all fragments into the target catalog
     tables = []
     for catalog_file in catalog_files:
-        catalog_file = os.path.abspath(catalog_file)
-        table = Catalog.open(catalog_file).triggers()
+        table = Catalog.open(os.path.abspath(catalog_file)).triggers()
         tables.append(table)
-
         logger.info(f"Merging {catalog_file} - {len(table)} events")
-    
+
     merged_table = pa.concat_tables(tables, promote_options="default")
     logger.info(f"Total number of events: {len(merged_table)}")
 
-    # write the merged catalog file
     logger.info(f"Save {merged_catalog_file}")
     meta = pq.read_schema(merged_catalog_file).metadata
-    merged_table = merged_table.replace_schema_metadata(meta)
-    pq.write_table(merged_table, merged_catalog_file, compression="snappy")
+    pq.write_table(merged_table.replace_schema_metadata(meta), merged_catalog_file, compression="snappy")
 
 def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: str = None):
     """
