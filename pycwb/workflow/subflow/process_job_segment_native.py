@@ -20,7 +20,7 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
-from pycwb.modules.workflow_utils.job_setup import print_job_info
+from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
@@ -75,6 +75,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     #        e. Catalog        → persist triggers and release lag memory
     # ─────────────────────────────────────────────────────────────────────────
     print_job_info(job_seg)
+    print_node_info()
     job_timer = time.perf_counter()  # total wall-time for this job segment
 
     if not job_seg.frames and not job_seg.noise and not job_seg.injections:
