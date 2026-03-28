@@ -9,8 +9,132 @@ from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
+from numba import njit
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Numba JIT helpers (compiled once on first call; cached to disk)
+# ---------------------------------------------------------------------------
+
+@njit(cache=True)
+def _build_adj_coo(f_arr, t_arr, kf, kt):
+    """Build COO edge list for the pixel neighbourhood graph.
+
+    Two pixels are adjacent when |Δfreq| ≤ kf AND |Δtime| ≤ kt.
+    Returns upper-triangle (rows, cols) int64 index arrays.  Two-pass
+    approach avoids Python lists and allocates exact-sized output.
+    """
+    n = len(f_arr)
+    # First pass: count matching pairs
+    count = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(f_arr[i] - f_arr[j]) <= kf and abs(t_arr[i] - t_arr[j]) <= kt:
+                count += 1
+    # Second pass: fill
+    rows = np.empty(count, dtype=np.int64)
+    cols = np.empty(count, dtype=np.int64)
+    k = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(f_arr[i] - f_arr[j]) <= kf and abs(t_arr[i] - t_arr[j]) <= kt:
+                rows[k] = i
+                cols[k] = j
+                k += 1
+    return rows, cols
+
+
+@njit(cache=True)
+def _compute_pixel_data_arrays(freq_idx, time_idx, arrays_stack,
+                                shift_bins, valid_start, valid_stop,
+                                nn_valid, n_freq):
+    """Precompute per-(pixel, detector) energy and flat index values.
+
+    Parameters
+    ----------
+    freq_idx, time_idx : int64[n_pix]
+    arrays_stack       : float64[n_ifo, n_freq, n_time]
+    shift_bins         : int64[n_ifo]
+    valid_start, valid_stop, nn_valid, n_freq : int
+
+    Returns
+    -------
+    det_energy : float64[n_pix, n_ifo]
+    det_index  : int64[n_pix, n_ifo]
+    """
+    n_pix = len(freq_idx)
+    n_ifo = arrays_stack.shape[0]
+    det_energy = np.empty((n_pix, n_ifo), dtype=np.float64)
+    det_index  = np.empty((n_pix, n_ifo), dtype=np.int64)
+    for idx in range(n_pix):
+        f_i = freq_idx[idx]
+        t_i = time_idx[idx]
+        for d in range(n_ifo):
+            if nn_valid > 0 and valid_start <= t_i < valid_stop:
+                u     = t_i - valid_start
+                det_t = valid_start + (u + shift_bins[d]) % nn_valid
+            else:
+                det_t = t_i
+            e = arrays_stack[d, f_i, det_t]
+            det_energy[idx, d] = e if e > 0.0 else 0.0
+            det_index[idx, d]  = det_t * n_freq + f_i
+    return det_energy, det_index
+
+
+@njit(cache=True)
+def _subnet_subrho_numba(asnr_arr, noise_rms_arr, n_sub):
+    """Compute subnet and subrho statistics for one cluster.
+
+    Parameters
+    ----------
+    asnr_arr      : float64[n_pix, n_ifo]
+    noise_rms_arr : float64[n_pix, n_ifo]
+    n_sub         : float  — threshold constant 2 * iGamma^{-1}(n_ifo-1, 0.314)
+
+    Returns
+    -------
+    subnet : float
+    subrho : float
+    """
+    n_pix = asnr_arr.shape[0]
+    n_ifo = asnr_arr.shape[1]
+    rho         = 0.0
+    e_sub_total = 0.0
+    e_max_sum   = 0.0
+    subnet_acc  = 0.0
+    for p in range(n_pix):
+        amp_sum = 0.0
+        e_max   = 0.0
+        e_tot   = 0.0
+        nsd     = 0.0
+        msd     = 0.0
+        for d in range(n_ifo):
+            amp = asnr_arr[p, d]
+            x   = amp * amp
+            v   = noise_rms_arr[p, d] * noise_rms_arr[p, d]
+            amp_sum += abs(amp)
+            if x > e_max:
+                e_max = x
+                msd   = v
+            e_tot += x
+            if v > 0.0:
+                nsd += 1.0 / v
+        a_fac = (e_tot / (amp_sum * amp_sum)) if amp_sum > 0.0 else 1.0
+        rho   += (1.0 - a_fac) * (e_tot - n_sub * 2.0)
+        y_val  = e_tot - e_max
+        x_corr = y_val * (1.0 + y_val / (e_max + 1.0e-5))
+        if msd > 0.0:
+            nsd -= 1.0 / msd
+        v_corr = (2.0 * e_max - e_tot) * msd * nsd / 10.0
+        e_sub_total += e_tot - e_max
+        e_max_sum   += e_max
+        a_cut  = x_corr / (x_corr + n_sub) if (x_corr + n_sub) != 0.0 else 0.0
+        denom  = x_corr + (v_corr if v_corr > 0.0 else 1.0e-5)
+        subnet_acc += (e_tot * x_corr / denom) * (a_cut if a_cut > 0.5 else 0.0)
+    subnet = subnet_acc / (e_max_sum + e_sub_total + 0.01)
+    subrho = np.sqrt(rho) if rho >= 0.0 else np.nan
+    return subnet, subrho
 
 
 def coherence(config, strains, return_rejected: bool = False, job_seg=None):
@@ -864,35 +988,41 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
     freq_idx, time_idx = np.where(selected)
     values = combined_raw[freq_idx, time_idx]
 
+    # Precompute per-(pixel, detector) numeric values with Numba (avoids inner Python loop)
+    arrays_stack   = np.stack(arrays, axis=0)                    # (n_ifo, n_freq, n_time)
+    shift_bins_arr = np.asarray(shift_bins, dtype=np.int64)
+    if len(freq_idx) > 0:
+        pix_det_energy, pix_det_index = _compute_pixel_data_arrays(
+            freq_idx.astype(np.int64), time_idx.astype(np.int64),
+            arrays_stack.astype(np.float64),
+            shift_bins_arr,
+            int(valid_start), int(valid_stop), int(nn_valid), int(n_freq),
+        )
+    else:
+        pix_det_energy = np.empty((0, n_ifo), dtype=np.float64)
+        pix_det_index  = np.empty((0, n_ifo), dtype=np.int64)
+
     pixels = []
     coord_to_index = {}
-    for idx, (f_idx, t_idx, energy) in enumerate(zip(freq_idx, time_idx, values)):
-        pixel_time_index = int(t_idx * n_freq + f_idx)
-        pixel_data = []
-        for det_idx in range(n_ifo):
-            if nn_valid > 0 and valid_start <= int(t_idx) < valid_stop:
-                u = int(t_idx) - valid_start
-                det_t = int(valid_start + ((u + shift_bins[det_idx]) % nn_valid))
-            else:
-                det_t = int(t_idx)
-            det_energy = float(max(arrays[det_idx][int(f_idx), det_t], 0.0))
-            det_index = int(det_t * n_freq + f_idx)
-            pixel_data.append(
-                PixelData(
-                    noise_rms=1.0,
-                    wave=0.0,
-                    w_90=0.0,
-                    asnr=float(np.sqrt(det_energy)),
-                    a_90=0.0,
-                    rank=0.0,
-                    index=det_index,
-                )
+    for idx, (f_idx_i, t_idx_i, energy) in enumerate(zip(freq_idx, time_idx, values)):
+        pixel_time_index = int(t_idx_i * n_freq + f_idx_i)
+        pixel_data = [
+            PixelData(
+                noise_rms=1.0,
+                wave=0.0,
+                w_90=0.0,
+                asnr=float(np.sqrt(pix_det_energy[idx, d])),
+                a_90=0.0,
+                rank=0.0,
+                index=int(pix_det_index[idx, d]),
             )
+            for d in range(n_ifo)
+        ]
 
         pixels.append(
             Pixel(
                 time=pixel_time_index,
-                frequency=int(f_idx),
+                frequency=int(f_idx_i),
                 layers=int(n_freq),
                 rate=float(1.0 / dt),
                 likelihood=float(energy),
@@ -907,7 +1037,7 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
                 neighbors=[],
             )
         )
-        coord_to_index[(int(f_idx), int(t_idx))] = idx
+        coord_to_index[(int(f_idx_i), int(t_idx_i))] = idx
 
     tf0 = tf_maps[0]
     return {
@@ -951,58 +1081,15 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
     def _compute_subnet_subrho(cluster_pixels):
         if not cluster_pixels:
             return 0.0, 0.0
-
         n_ifo_local = len(cluster_pixels[0].data) if cluster_pixels[0].data else 0
         if n_ifo_local <= 1:
             return 0.0, 0.0
-
         n_sub = 2.0 * _igamma_inv_upper(float(n_ifo_local - 1), 0.314)
-
-        rho = 0.0
-        e_sub = 0.0
-        e_max_sum = 0.0
-        subnet_acc = 0.0
-
-        for p in cluster_pixels:
-            amp_sum = 0.0
-            e_max = 0.0
-            e_tot = 0.0
-            nsd = 0.0
-            msd = 0.0
-
-            for det in p.data:
-                amp = float(det.asnr)
-                x = amp * amp
-                v = float(det.noise_rms) * float(det.noise_rms)
-
-                amp_sum += abs(amp)
-                if x > e_max:
-                    e_max = x
-                    msd = v
-                e_tot += x
-                if v > 0:
-                    nsd += 1.0 / v
-
-            a_fac = (e_tot / (amp_sum * amp_sum)) if amp_sum > 0 else 1.0
-            rho += (1.0 - a_fac) * (e_tot - n_sub * 2.0)
-
-            y_val = e_tot - e_max
-            x_corr = y_val * (1.0 + y_val / (e_max + 1.0e-5))
-
-            if msd > 0:
-                nsd -= 1.0 / msd
-            v_corr = (2.0 * e_max - e_tot) * msd * nsd / 10.0
-
-            e_sub += (e_tot - e_max)
-            e_max_sum += e_max
-
-            a_cut = x_corr / (x_corr + n_sub) if (x_corr + n_sub) != 0 else 0.0
-            denom = x_corr + (v_corr if v_corr > 0 else 1.0e-5)
-            subnet_acc += (e_tot * x_corr / denom) * (a_cut if a_cut > 0.5 else 0.0)
-
-        subnet = subnet_acc / (e_max_sum + e_sub + 0.01)
-        subrho = float(np.sqrt(rho)) if rho >= 0 else float("nan")
-        return float(subnet), subrho
+        asnr_arr      = np.array([[d.asnr      for d in p.data] for p in cluster_pixels],
+                                  dtype=np.float64)
+        noise_rms_arr = np.array([[d.noise_rms for d in p.data] for p in cluster_pixels],
+                                  dtype=np.float64)
+        return _subnet_subrho_numba(asnr_arr, noise_rms_arr, n_sub)
 
     if not pixels:
         clusters = []
@@ -1018,11 +1105,16 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
         t_idx_arr = time_arr[:len(pixels)].astype(np.int64)
         n_pix = len(f_idx_arr)
 
-        # Build sparse adjacency (upper triangle only; undirected)
+        # Build sparse adjacency via Numba COO builder (avoids O(n²) dense arrays)
         if n_pix > 0:
-            df = np.abs(f_idx_arr[:, None] - f_idx_arr[None, :])
-            dt = np.abs(t_idx_arr[:, None] - t_idx_arr[None, :])
-            adj = csr_matrix((df <= kf) & (dt <= kt))
+            rows_coo, cols_coo = _build_adj_coo(f_idx_arr, t_idx_arr, kf, kt)
+            n_edges  = len(rows_coo)
+            all_rows = np.concatenate([rows_coo, cols_coo])
+            all_cols = np.concatenate([cols_coo, rows_coo])
+            adj = csr_matrix(
+                (np.ones(2 * n_edges, dtype=np.bool_), (all_rows, all_cols)),
+                shape=(n_pix, n_pix),
+            )
             _, raw_labels = _cc(adj, directed=False, connection='weak')
             # raw_labels is 0-indexed; shift to 1-indexed to match ndimage convention
             raw_labels = raw_labels + 1
@@ -1031,8 +1123,7 @@ def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
 
         # Build a labeled 2D array (same shape as mask) for downstream code
         labeled = np.zeros(mask.shape, dtype=np.int64)
-        for pix_idx in range(n_pix):
-            labeled[int(f_idx_arr[pix_idx]), int(t_idx_arr[pix_idx])] = int(raw_labels[pix_idx])
+        labeled[f_idx_arr, t_idx_arr] = raw_labels
 
         # Group pixel objects by their 2D label (O(n) instead of O(n²))
         grouped: dict = {}
