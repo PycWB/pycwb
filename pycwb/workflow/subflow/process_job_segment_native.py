@@ -295,6 +295,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                         from pycwb.modules.catalog.catalog import Catalog
                         Catalog.open(catalog_file).add_lag_progress(**progress_record)
                     continue
+                else:
+                    logger.info(
+                        "Processing lag %d: post-CAT2 livetime %.2f s >= segTHR %.2f s, lost %.2f s",
+                        lag, lag_livetime, seg_thr, sub_job_seg.duration - lag_livetime,
+                    )
 
             # ── 4a. Coherence ────────────────────────────────────────────────
             # Pixel selection and fragment clustering for this specific time slide.
