@@ -377,15 +377,13 @@ def resolve_wdm_context(layer_tag, context_map):
 
 def apply_subnet_cut(superclusters: list[Cluster], n_loudest_local, ml_local, FP_local, FX_local,
                      acor_local, e2or_local, n_ifo_local, n_sky_local,
-                     subnet_local, subcut_local, subnorm_local, subrho_local,
-                     xtalk_coeff_local, xtalk_lookup_table_local, layers_local):
+                     subnet_local, subcut_local, subnorm_local, subrho_local, xtalk_local):
     for i, c in enumerate(superclusters):
         c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
         results = sub_net_cut(
             c.pixels[:n_loudest_local], ml_local, FP_local, FX_local,
             acor_local, e2or_local, n_ifo_local, n_sky_local,
-            subnet_local, subcut_local, subnorm_local, subrho_local,
-            xtalk_coeff_local, xtalk_lookup_table_local, layers_local,
+            subnet_local, subcut_local, subnorm_local, subrho_local, xtalk_local,
         )
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:

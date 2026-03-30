@@ -478,9 +478,7 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         config.subcut,
         config.subnorm,
         subrho,
-        xtalk.coeff,
-        xtalk.lookup_table,
-        xtalk.layers,
+        xtalk,
     )
 
     if pattern == 0:
