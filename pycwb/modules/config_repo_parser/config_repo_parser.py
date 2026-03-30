@@ -499,7 +499,7 @@ def _get_all_config_dirs(base_path: str) -> List[Tuple[Path, List[str]]]:
     base = Path(base_path).resolve()
     config_dirs = []
     
-    for root, dirs, files in os.walk(base):
+    for root, dirs, files in os.walk(base, followlinks=True):
         if "user_parameters.yaml" in files:
             rel_path = Path(root).relative_to(base)
             # Get path components - preserves underscores in directory names
