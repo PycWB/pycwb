@@ -214,23 +214,12 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
             if selected_cluster.cluster_status > 0:
                 continue
             selected_cluster.cluster_id = k + 1
-
             result_cluster, sky_stats = likelihood(
-                config.nIFO,
-                selected_cluster,
-                config.MRAcatalog,
-                cluster_id=k + 1,
-                nRMS=nRMS,
-                setup=likelihood_setup,
-                xtalk=xtalk,
-                config=config,
+                config.nIFO, selected_cluster, config,
+                cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
             )
-
             if result_cluster is None or result_cluster.cluster_status != -1:
-                logger.info("Likelihood rejected cluster %d", k + 1)
                 continue
-
-            logger.info("Likelihood accepted cluster %d", k + 1)
             event = Event()
             event.output_py(wave_seg, result_cluster, config)
             event.job_id = wave_seg.index

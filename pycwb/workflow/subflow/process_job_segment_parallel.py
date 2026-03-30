@@ -655,26 +655,13 @@ def _process_single_lag(
     for k, selected_cluster in enumerate(fragment_cluster.clusters):
         if selected_cluster.cluster_status > 0:
             continue
-
         selected_cluster.cluster_id = k + 1
-
         result_cluster, sky_stats = likelihood(
-            config.nIFO,
-            selected_cluster,
-            config.MRAcatalog,
-            cluster_id=k + 1,
-            nRMS=nRMS,
-            setup=likelihood_setup,
-            xtalk=xtalk,
-            config=config,
+            config.nIFO, selected_cluster, config,
+            cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
         )
-
         if result_cluster is None or result_cluster.cluster_status != -1:
-            logger.info("Likelihood rejected cluster %d in lag %d", k + 1, lag)
             continue
-
-        logger.info("Likelihood accepted cluster %d in lag %d", k + 1, lag)
-
         event = Event()
         event.output_py(sub_job_seg, result_cluster, config)
         event.job_id = sub_job_seg.index
