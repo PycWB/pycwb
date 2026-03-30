@@ -36,6 +36,15 @@ except Exception:
     _wdm_t2w_jax_impl = None
 
 try:
+    from wdm_wavelet.core.t2w import t2w_numba_core as _wdm_t2w_numba_core
+    from numba.core.registry import CPUDispatcher as _NumbaCPUDispatcher
+    # Only usable from @njit if it was JIT-compiled (requires rocket-fft)
+    _HAS_T2W_NUMBA_CORE = isinstance(_wdm_t2w_numba_core, _NumbaCPUDispatcher)
+except Exception:
+    _wdm_t2w_numba_core = None
+    _HAS_T2W_NUMBA_CORE = False
+
+try:
     import jax
     import jax.numpy as jnp
     _HAS_JAX = True
@@ -506,15 +515,21 @@ def _compute_packet_energy_params(M, T, pattern, edge, wavelet_rate, f_low, f_hi
 
 
 if _HAS_NUMBA:
-    @numba.njit(cache=True)
+    @numba.njit(cache=True, fastmath=True)
     def _wdm_packet_energy_nb(real_f, imag_f, M, T, J, jb, je, mL, mH, mean, p):
         """Numba njit energy kernel. Returns (M, T) energy array."""
         energy = np.zeros((M, T), dtype=np.float64)
         for j in range(J):
             m = j % M
-            if m < mL or m > mH:
-                continue
+            t = j // M
+            # Pixels outside [jb, je): keep raw 00-phase forward amplitude (clamped at 0),
+            # matching C++ wdmPacket's resize+maxEnergy "max(0, tmp)" boundary behaviour.
             if j < jb or j >= je:
+                boundary_raw = real_f[j]
+                if boundary_raw > 0.0:
+                    energy[m, t] = boundary_raw
+                continue
+            if m < mL or m > mH:
                 continue
 
             ss = 0.0
@@ -553,9 +568,76 @@ if _HAS_NUMBA:
             aa = a1 + a2
 
             em = sum_eeEE / 2.0 if mean == 1.0 else (aa * aa) / 4.0
-            energy[m, j // M] = em
+            energy[m, t] = em
 
         return energy
+
+    @numba.njit(cache=True, parallel=True, fastmath=True)
+    def _time_delay_max_energy_pattern_loop_nb(
+        ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
+        max_delay, downsample,
+        M_val, T_val, J, jb, je, mL, mH, mean, p,
+        pattern,
+    ):
+        """Fully JIT-compiled time-delay max-energy loop (parallel over delays).
+
+        Calls ``t2w_numba_core`` and ``_wdm_packet_energy_nb`` directly
+        (njit-to-njit).  Each delay iteration uses an independent copy of
+        ``ts_data`` so the k-loop can run in parallel via ``numba.prange``.
+
+        Correctness note: the original sequential C++ cpf loop leaves the
+        tail/head k samples of ``xx`` from the *previous* iteration unchanged.
+        Here each iteration uses a fresh copy of ``ts_data`` instead. Those
+        k boundary samples always fall within the inactive ``jb`` margin
+        (jb >= 4*M time bins, while k << 4*M for any realistic max_delay),so
+        the two formulations produce identical active-pixel results.
+        """
+        _, tf0 = _wdm_t2w_numba_core(ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+        current_max = _wdm_packet_energy_nb(
+            tf0[0].ravel(), tf0[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+        )
+
+        # Pre-compute number of valid delay steps for prange
+        size = len(ts_data)
+        n_iters = 0
+        k = downsample
+        while k <= max_delay and k < size:
+            n_iters += 1
+            k += downsample
+
+        if n_iters > 0:
+            # Allocate one energy array per shifted signal (2 per delay: left + right)
+            all_en = np.empty((n_iters * 2, M_val, T_val), dtype=np.float64)
+
+            for i in numba.prange(n_iters):  # parallel over delay values
+                k_i = (i + 1) * downsample
+
+                # cpf_left: copy ts_data[k_i:] into xx[0:size-k_i]; tail stays = ts_data tail
+                xx_l = ts_data.copy()
+                xx_l[:size - k_i] = ts_data[k_i:]
+                _, tf_l = _wdm_t2w_numba_core(xx_l, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+                all_en[2 * i] = _wdm_packet_energy_nb(
+                    tf_l[0].ravel(), tf_l[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+                )
+
+                # cpf_right: copy ts_data[0:size-k_i] into xx[k_i:]; head stays = ts_data head
+                xx_r = ts_data.copy()
+                xx_r[k_i:] = ts_data[:size - k_i]
+                _, tf_r = _wdm_t2w_numba_core(xx_r, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+                all_en[2 * i + 1] = _wdm_packet_energy_nb(
+                    tf_r[0].ravel(), tf_r[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+                )
+
+            # Sequential reduction (trivially fast — dominates nothing)
+            for i in range(n_iters * 2):
+                current_max = np.maximum(current_max, all_en[i])
+
+        # C++ zeros layer 0 only
+        current_max[0, :] = 0.0
+        if pattern in (5, 6, 9) and current_max.shape[0] > 2:
+            current_max[1, :] = 0.0
+
+        return current_max
 
     def _time_delay_max_energy_pattern_nb(
         ts_data, wavelet_M, wavelet_m_H, wavelet_filter,
@@ -565,17 +647,50 @@ if _HAS_NUMBA:
         """Numba-accelerated time-delay max-energy loop (pattern path).
 
         Returns an ``(M, T)`` numpy float64 energy array.
+
+        When ``t2w_numba_core`` is available (requires *rocket-fft*), the
+        entire delay loop runs inside a single ``@numba.njit`` function.
+        Otherwise falls back to calling the Python-level ``t2w_numba``
+        wrapper per iteration.
         """
-        _, _, tf0 = _wdm_t2w_numba(wavelet_M, wavelet_m_H, ts_data, wavelet_filter, mm_mode)
-        # tf0 shape: (2, n_time, n_freq); re/im each (n_time, n_freq)
-        re0, im0 = np.ascontiguousarray(tf0[0], dtype=np.float64), np.ascontiguousarray(tf0[1], dtype=np.float64)
-        n_time, M_val = re0.shape
-        T_val = n_time
+        # Pre-compute t2w parameters (Python-level, done once)
+        n_filter_taps = int(wavelet_m_H)
+        M_int = int(wavelet_M)
+        MM_eff = M_int if mm_mode <= 0 else int(mm_mode)
+        return_quadrature = mm_mode < 0
+        filt = np.ascontiguousarray(
+            np.asarray(wavelet_filter, dtype=np.float64).ravel()[:n_filter_taps]
+        )
+
+        # Pre-compute TF map dimensions
+        n_input = len(ts_data)
+        remainder = n_input % MM_eff
+        aligned_length = n_input if remainder == 0 else n_input + (MM_eff - remainder)
+        n_time_bins = aligned_length // MM_eff
+        M_val = M_int + 1  # n_freq
+        T_val = n_time_bins
         J = M_val * T_val
 
+        pattern_abs = abs(int(pattern))
         jb, je, mL, mH, mean, p = _compute_packet_energy_params(
-            M_val, T_val, pattern, edge, wavelet_rate, f_low, f_high, df
+            M_val, T_val, pattern_abs, edge, wavelet_rate, f_low, f_high, df
         )
+
+        # ---- fully-JIT path (t2w_numba_core is njit-compiled, i.e. rocket-fft present) ----
+        if _HAS_T2W_NUMBA_CORE:
+            return _time_delay_max_energy_pattern_loop_nb(
+                ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
+                int(max_delay), int(downsample),
+                M_val, T_val, J, jb, je, mL, mH, mean, p,
+                pattern_abs,
+            )
+        else:
+            print("Warning: t2w_numba_core is not available; falling back to slower Python-level loop for time-delay max energy.")
+
+        # ---- fallback: Python-level t2w_numba wrapper per iteration ----
+        _, _, tf0 = _wdm_t2w_numba(wavelet_M, wavelet_m_H, ts_data, wavelet_filter, mm_mode)
+        re0 = np.ascontiguousarray(tf0[0])
+        im0 = np.ascontiguousarray(tf0[1])
 
         current_max = _wdm_packet_energy_nb(
             re0.ravel(), im0.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
@@ -583,36 +698,31 @@ if _HAS_NUMBA:
 
         k = int(downsample)
         xx = ts_data.copy()
-        while k <= int(max_delay) and k < len(ts_data):
-            size = len(ts_data)
-            # C++ cpf call 1: xx.cpf(ts, size-k, k, 0) — copy ts[k:] to xx[0:size-k], tail unchanged
+        size = len(ts_data)
+        while k <= int(max_delay) and k < size:
             xx[:size - k] = ts_data[k:]
             _, _, tf_left = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
-            re_left = np.ascontiguousarray(tf_left[0], dtype=np.float64)
-            im_left = np.ascontiguousarray(tf_left[1], dtype=np.float64)
+            re_left = np.ascontiguousarray(tf_left[0])
+            im_left = np.ascontiguousarray(tf_left[1])
             en_left = _wdm_packet_energy_nb(
                 re_left.ravel(), im_left.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
             )
-            np.maximum(current_max, en_left, out=current_max)
+            current_max = np.maximum(current_max, en_left)
 
-            # C++ cpf call 2: xx.cpf(ts, size-k, 0, k) — copy ts[0:size-k] to xx[k:], head unchanged
             xx[k:] = ts_data[:size - k]
             _, _, tf_right = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
-            re_right = np.ascontiguousarray(tf_right[0], dtype=np.float64)
-            im_right = np.ascontiguousarray(tf_right[1], dtype=np.float64)
+            re_right = np.ascontiguousarray(tf_right[0])
+            im_right = np.ascontiguousarray(tf_right[1])
             en_right = _wdm_packet_energy_nb(
                 re_right.ravel(), im_right.ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
             )
-            np.maximum(current_max, en_right, out=current_max)
+            current_max = np.maximum(current_max, en_right)
 
             k += int(downsample)
 
-        # Zero out DC and Nyquist edge rows (matches JAX version)
         current_max[0, :] = 0.0
-        current_max[-1, :] = 0.0
-        if pattern in (5, 6, 9) and current_max.shape[0] > 3:
+        if pattern_abs in (5, 6, 9) and current_max.shape[0] > 2:
             current_max[1, :] = 0.0
-            current_max[-2, :] = 0.0
 
         return current_max  # shape (M, T)
 
@@ -787,14 +897,19 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
 
     data_np = np.asarray(tf_map.data)
     n_freq = int(data_np.shape[0])
-    re_map = data_np.real.astype(np.float64)
-    im_map = data_np.imag.astype(np.float64)
-    # flat layout: stack [re.T, im.T] → same format w2t_numba expects
-    flat = np.stack([re_map.T, im_map.T], axis=0).reshape(-1).astype(np.float64)
     wavelet_filter = np.asarray(tf_map.wavelet.filter, dtype=np.float64)
 
-    ts_data = _wdm_w2t_numba(flat, n_freq, wavelet_filter, output_length=len_ts)
-    ts_data = np.asarray(ts_data, dtype=np.float64)
+    # Use the stored original time series if available to avoid the w2t→t2w roundtrip,
+    # which introduces meaningful numerical error for the WDM packet energy computation.
+    if getattr(tf_map, 'ts_data', None) is not None:
+        ts_data = np.asarray(tf_map.ts_data, dtype=np.float64)
+    else:
+        re_map = data_np.real.astype(np.float64)
+        im_map = data_np.imag.astype(np.float64)
+        # flat layout: stack [re.T, im.T] → same format w2t_numba expects
+        flat = np.stack([re_map.T, im_map.T], axis=0).reshape(-1).astype(np.float64)
+        ts_data = _wdm_w2t_numba(flat, n_freq, wavelet_filter, output_length=len_ts)
+        ts_data = np.asarray(ts_data, dtype=np.float64)
 
     # --- compute params ---
     sample_rate_val = float(2.0 * float(tf_map.df) * (n_freq - 1))
@@ -820,4 +935,5 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
 
     new_tf_map = dataclasses.replace(tf_map, data=current_max)
     result = new_tf_map.Gamma2Gauss(hist=hist)
+
     return new_tf_map, result
