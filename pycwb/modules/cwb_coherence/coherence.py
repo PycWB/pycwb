@@ -1,8 +1,21 @@
+"""
+Coherence analysis module for gravitational wave burst detection.
+
+This module implements the core coherence pipeline: WDM wavelet decomposition,
+time-frequency map construction, pixel selection, and clustering. It provides
+a streaming-friendly API (setup once, iterate over lags) for efficient
+multi-lag analysis.
+
+The main entry points are :func:`coherence` (all-in-one) and :func:`setup_coherence`
+combined with :func:`coherence_single_lag` (streaming mode).
+"""
 import time
 import logging
 import numpy as np
 from scipy.special import gammainccinv
 from wdm_wavelet.wdm import WDM as WDMWavelet
+from pycwb.config import Config
+from pycwb.types.job import WaveSegment
 from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
@@ -10,6 +23,7 @@ from pycwb.types.network_pixel import Pixel, PixelData
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
 from numba import njit
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
-def _build_adj_coo(f_arr, t_arr, kf, kt):
+def _build_adj_coo(f_arr: np.ndarray, t_arr: np.ndarray, kf: int, kt: int) -> tuple[np.ndarray, np.ndarray]:
     """Build COO edge list for the pixel neighbourhood graph.
 
     Two pixels are adjacent when |Δfreq| ≤ kf AND |Δtime| ≤ kt.
@@ -46,9 +60,9 @@ def _build_adj_coo(f_arr, t_arr, kf, kt):
 
 
 @njit(cache=True)
-def _compute_pixel_data_arrays(freq_idx, time_idx, arrays_stack,
-                                shift_bins, valid_start, valid_stop,
-                                nn_valid, n_freq):
+def _compute_pixel_data_arrays(freq_idx: np.ndarray, time_idx: np.ndarray, arrays_stack: np.ndarray,
+                                shift_bins: np.ndarray, valid_start: int, valid_stop: int,
+                                nn_valid: int, n_freq: int) -> tuple[np.ndarray, np.ndarray]:
     """Precompute per-(pixel, detector) energy and flat index values.
 
     Parameters
@@ -83,7 +97,7 @@ def _compute_pixel_data_arrays(freq_idx, time_idx, arrays_stack,
 
 
 @njit(cache=True)
-def _subnet_subrho_numba(asnr_arr, noise_rms_arr, n_sub):
+def _subnet_subrho_numba(asnr_arr: np.ndarray, noise_rms_arr: np.ndarray, n_sub: float) -> tuple[float, float]:
     """Compute subnet and subrho statistics for one cluster.
 
     Parameters
@@ -137,7 +151,7 @@ def _subnet_subrho_numba(asnr_arr, noise_rms_arr, n_sub):
     return subnet, subrho
 
 
-def coherence(config, strains, return_rejected: bool = False, job_seg=None):
+def coherence(config: Config, strains: list[TimeSeries], return_rejected: bool = False, job_seg: WaveSegment | None = None) -> list[list[FragmentCluster]]:
     """
     Select the significant pixels for all resolution levels and all lags.
 
@@ -148,10 +162,10 @@ def coherence(config, strains, return_rejected: bool = False, job_seg=None):
 
     Parameters
     ----------
-    config : pycwb.config.Config
+    config : Config
         Configuration object.
-    strains : list
-        List of whitened strain time series (pycwb TimeSeries or gwpy).
+    strains : list[TimeSeries]
+        List of whitened strain time series.
     return_rejected : bool
         If True, keep rejected clusters in the output.
     job_seg : WaveSegment, optional
@@ -196,8 +210,10 @@ def coherence(config, strains, return_rejected: bool = False, job_seg=None):
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_coherence(config, strains, job_seg=None):
+def setup_coherence(config: Config, strains: list[TimeSeries], job_seg: WaveSegment | None = None) -> list[dict]:
     """
+    Compute all lag-independent coherence data.
+
     Compute all lag-independent coherence data (TF maps after max_energy,
     threshold, lag plan) for every resolution level.
 
@@ -207,9 +223,10 @@ def setup_coherence(config, strains, job_seg=None):
     Parameters
     ----------
     config : Config
-    strains : list
-        Whitened strain time series (pycwb TimeSeries or gwpy).
-    job_seg : WaveSegment
+        Configuration object.
+    strains : list[TimeSeries]
+        Whitened strain time series.
+    job_seg : WaveSegment or None, optional
         Job segment (provides lag count via ``job_seg.n_lag``).
 
     Returns
@@ -221,12 +238,17 @@ def setup_coherence(config, strains, job_seg=None):
     """
     timer_start = time.perf_counter()
 
+    # Compute upsample factor for max_energy (minimum 1)
     up_n = int(config.rateANA / 1024)
     if up_n < 1:
         up_n = 1
 
+    # Normalize input strains to pycwb TimeSeries objects
     normalized_strains = [TimeSeries.from_input(strain) for strain in strains]
 
+    # Build setups for each resolution level independently
+    # (expensive WDM transforms, TF maps, and thresholds are computed once here,
+    #  then reused across all lags in coherence_single_lag)
     setups = [
         _setup_coherence_single_res(i, config, normalized_strains, up_n,
                                     job_seg=job_seg)
@@ -237,7 +259,7 @@ def setup_coherence(config, strains, job_seg=None):
     return setups
 
 
-def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
+def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries], up_n: int, job_seg: WaveSegment | None = None) -> dict:
     """
     Lag-independent coherence setup for one resolution level.
 
@@ -258,6 +280,7 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
 
+    # Ensure at least one WDM layer for zero-lag case
     wdm_layers = max(1, layers)
     wdm_wavelet = WDMWavelet(
         M=wdm_layers,
@@ -266,7 +289,7 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
         precision=config.WDM_precision,
     )
 
-    # Build TF maps
+    # Build time-frequency maps via batch WDM transform (preferring fast path)
     try:
         batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
         tf_maps = [
@@ -306,7 +329,8 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
         1000. / rate,
     )
 
-    # Apply max_energy over the sky (modifies tf-map data in place)
+    # Apply max_energy skymap projection to decorrelate across lags
+    # (computes the optimal coherent energy over sky positions)
     max_delay = config.max_delay
     pattern = config.pattern
     alp = 0.0
@@ -320,9 +344,11 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
             f_high=config.fHigh,
         )
         alp += alp_n
+    # Average the Gamma-to-Gauss scaling factor across detectors
     alp = alp / config.nIFO
 
-    # Compute energy threshold (lag-independent)
+    # Compute pixel energy threshold based on black-pixel probability
+    # (independent of lag since TF maps are lag-independent)
     Eo = compute_threshold(
         config.bpp,
         alp if pattern != 0 else None,
@@ -330,7 +356,7 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
         edge=config.segEdge,
     )
 
-    # Build lag plan
+    # Extract lag count from job segment for setup dictionary
     n_lag = job_seg.n_lag
 
     logger.info(
@@ -353,11 +379,11 @@ def _setup_coherence_single_res(i, config, strains, up_n, job_seg=None):
 
 
 def coherence_single_lag(
-    coherence_setups: list,
+    coherence_setups: list[dict],
     lag_idx: int,
     return_rejected: bool = False,
     veto_windows: list[tuple[float, float]] | None = None,
-) -> list:
+) -> list[FragmentCluster]:
     """
     Compute coherence for one lag index, using pre-built per-resolution setups from :func:`setup_coherence`.
 
@@ -384,16 +410,20 @@ def coherence_single_lag(
     """
     fragment_clusters = []
     for setup in coherence_setups:
+        # Unpack lag-independent setup data for this resolution
         tf_maps = setup["tf_maps"]
         Eo = setup["Eo"]
         job_seg = setup["job_seg"]
         pattern = setup["pattern"]
 
+        # Validate lag index is within range
         if lag_idx >= job_seg.n_lag:
             raise IndexError(
                 f"lag_idx={lag_idx} is out of range n_lag={job_seg.n_lag}"
             )
 
+        # Select significant pixels above threshold for this lag
+        # (applies time shifts and optional veto masks)
         t_sel = time.perf_counter()
         veto = None
         if veto_windows is not None:
@@ -413,15 +443,20 @@ def coherence_single_lag(
             else -1
         )
 
+        # Cluster selected pixels and apply statistical selection criteria
+        # (min/max cluster sizes depend on wave pattern)
         t_cl = time.perf_counter()
         if pattern != 0:
+            # Multi-pixel clusters for network patterns (size 2-3 pixels)
             c = cluster_pixels(min_size=2, max_size=3, pixel_candidates=candidates)
             c.select("subrho", setup["select_subrho"])
             c.select("subnet", setup["select_subnet"])
         else:
+            # Single-pixel clusters for non-network patterns
             c = cluster_pixels(min_size=1, max_size=1, pixel_candidates=candidates)
         t_cl_elapsed = time.perf_counter() - t_cl
 
+        # Remove clusters rejected by statistical selection unless explicitly requested
         if not return_rejected:
             c.remove_rejected()
 
@@ -440,31 +475,37 @@ def coherence_single_lag(
     return fragment_clusters
 
 
-def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
-               f_low=None, f_high=None, hist=None):
+def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: int,
+               f_low: float | None = None, f_high: float | None = None, hist: list | None = None) -> tuple[TimeFrequencyMap, float]:
     """
-    Decoupled max-energy computation for a detector TF map.
+    Compute max-energy skymap projection for a detector TF map.
 
     Calls :func:`time_delay_max_energy` from the module-level pure-function
     implementation and returns a new TF map together with the Gamma-to-Gauss
     scaling parameter.
 
-    :param tf_map: detector TF map object
-    :type tf_map: TimeFrequencyMap
-    :param max_delay: maximum delay for the time series
-    :type max_delay: float
-    :param up_n: upsample factor
-    :type up_n: int
-    :param pattern: wave packet pattern
-    :type pattern: int
-    :param f_low: low cut frequency
-    :type f_low: float | None
-    :param f_high: high cut frequency
-    :type f_high: float | None
-    :param hist: optional histogram container
-    :type hist: list | None
-    :return: ``(new_tf_map, alp)`` — updated TF map and Gamma-to-Gauss scaling
-    :rtype: tuple[TimeFrequencyMap, float]
+    Parameters
+    ----------
+    tf_map : TimeFrequencyMap
+        Detector time-frequency map object.
+    max_delay : float
+        Maximum delay for the time series.
+    up_n : int
+        Upsample factor for decorrelation.
+    pattern : int
+        Wave packet pattern identifier.
+    f_low : float | None, optional
+        Low-frequency cutoff in Hz.
+    f_high : float | None, optional
+        High-frequency cutoff in Hz.
+    hist : list | None, optional
+        Optional histogram container for statistics.
+
+    Returns
+    -------
+    tuple[TimeFrequencyMap, float]
+        Updated TF map after max-energy projection and Gamma-to-Gauss scaling
+        factor.
     """
     if hasattr(tf_map, "bandpass"):
         tf_map.bandpass(f_low=f_low, f_high=f_high)
@@ -473,50 +514,57 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay, up_n, pattern,
     return new_tf_map, result
 
 
-def compute_threshold(bpp, alp=None, tf_maps=None, edge=None):
+def compute_threshold(bpp: float, alp: float | None = None, tf_maps: list | None = None, edge: float | None = None) -> float:
     """
-    Decoupled threshold calculation.
+    Compute pixel energy threshold from time-frequency map statistics.
 
-    If `tf_maps` are provided, uses a Python-native implementation inspired by
-    cWB `network::THRESHOLD` logic.
+    Uses a Python-native implementation inspired by cWB `network::THRESHOLD`
+    logic based on the black-pixel probability (false-alarm rate).
 
-    :param bpp: black pixel probability
-    :type bpp: float
-    :param alp: optional packet-shape reference value
-    :type alp: float | None
-    :param tf_maps: optional list of python TF maps (for python-native threshold)
-    :type tf_maps: list | None
-    :param edge: optional edge in seconds for data trimming
-    :type edge: float | None
-    :return: calculated threshold
-    :rtype: float
+    Parameters
+    ----------
+    bpp : float
+        Black-pixel probability (target false-alarm rate).
+    alp : float | None, optional
+        Optional packet-shape reference value for scaling.
+    tf_maps : list[TimeFrequencyMap] | None, optional
+        List of python TF maps for computing threshold statistics.
+    edge : float | None, optional
+        Edge margin in seconds for excluding boundary data.
+
+    Returns
+    -------
+    float
+        Computed pixel energy threshold.
     """
     if tf_maps is None or len(tf_maps) == 0 or not hasattr(tf_maps[0], "data"):
         raise ValueError("compute_threshold requires python TF maps")
     return _threshold_python(tf_maps, bpp=bpp, shape=alp, edge=edge)
 
 
-def select_network_pixels(lag_index, energy_threshold, tf_maps=None, lag_shifts=None, veto=None, edge=0.0):
+def select_network_pixels(lag_index: int, energy_threshold: float, tf_maps: list | None = None, lag_shifts: np.ndarray | list | None = None, veto: np.ndarray | None = None, edge: float = 0.0) -> dict:
     """
-    Decoupled significant-pixel selection.
+    Select significant pixels above energy threshold.
 
-    Returns Python pixel candidates compatible with
-    `_cluster_pixels_python`.
+    Parameters
+    ----------
+    lag_index : int
+        Zero-based lag index for time-delay selection.
+    energy_threshold : float
+        Pixel energy threshold for significance.
+    tf_maps : list[TimeFrequencyMap] | None, optional
+        List of python TF maps (required for pixel selection).
+    lag_shifts : np.ndarray | list[float] | None, optional
+        Per-detector time shifts in seconds for this lag.
+    veto : np.ndarray | None, optional
+        Binary veto array in time bins (1 keep, 0 reject).
+    edge : float, optional
+        Edge margin in seconds. Default is 0.0.
 
-    :param lag_index: lag index
-    :type lag_index: int
-    :param energy_threshold: pixel threshold
-    :type energy_threshold: float
-    :param tf_maps: optional python TF maps
-    :type tf_maps: list | None
-    :param lag_shifts: per-detector lag shifts for this lag (seconds)
-    :type lag_shifts: np.ndarray | list[float] | None
-    :param veto: optional veto array in time bins (1 keep, 0 reject)
-    :type veto: np.ndarray | None
-    :param edge: optional edge in seconds
-    :type edge: float
-    :return: candidate payload with selected mask, coordinates, energies and pixels
-    :rtype: dict
+    Returns
+    -------
+    dict
+        Candidate payload with selected mask, coordinates, energies, and pixels.
     """
     if tf_maps is None or len(tf_maps) == 0 or not hasattr(tf_maps[0], "data"):
         raise ValueError("select_network_pixels requires python TF maps")
@@ -530,48 +578,53 @@ def select_network_pixels(lag_index, energy_threshold, tf_maps=None, lag_shifts=
     )
 
 
-def cluster_pixels(min_size, max_size, pixel_candidates=None):
+def cluster_pixels(min_size: int, max_size: int, pixel_candidates: dict | None = None) -> FragmentCluster:
     """
-    Decoupled clustering function.
+    Cluster selected pixels using connected-component analysis.
 
-    If `pixel_candidates` is provided (output of `_get_network_pixels_python`),
-    performs python-native connected-component clustering and returns labels.
-    This function is intentionally python-only for the cwb_coherence path.
+    Parameters
+    ----------
+    min_size : int
+        Minimum number of pixels in a cluster (typically 1-2).
+    max_size : int
+        Maximum number of pixels in a cluster (typically 2-3).
+    pixel_candidates : dict | None, optional
+        Candidate payload from :func:`select_network_pixels` (required).
 
-    :param min_size: minimum size of clusters
-    :type min_size: int
-    :param max_size: maximum size of clusters
-    :type max_size: int
-    :param pixel_candidates: optional python pixel candidate payload
-    :type pixel_candidates: dict | None
-    :return: clustered pixels
-    :rtype: object
+    Returns
+    -------
+    FragmentCluster
+        Clustered pixels with selected and rejected flags based on size.
     """
     if pixel_candidates is None:
         raise ValueError("cluster_pixels requires python pixel_candidates")
     return _cluster_pixels_python(pixel_candidates, kt=min_size, kf=max_size)
     
 
-def apply_veto(iwindow, tf_map, segment_list=None, injection_times=None, edge=None, return_mask=False):
+def apply_veto(iwindow: int, tf_map: Any, segment_list: list[tuple[float, float]] | None = None, injection_times: list[float] | None = None, edge: float | None = None, return_mask: bool = False) -> float | tuple[float, np.ndarray]:
     """
-    Decoupled veto application.
+    Compute live time and optional veto mask from segments and injections.
 
-    Applies Python-native veto construction based on cWB `network::setVeto` logic.
+    Parameters
+    ----------
+    iwindow : int
+        Veto window size in time bins.
+    tf_map : object
+        Reference TF map for timeline definition.
+    segment_list : list[tuple[float, float]] | None, optional
+        List of (start, stop) GPS segments to keep.
+    injection_times : list[float] | None, optional
+        List of injection GPS times to exclude.
+    edge : float | None, optional
+        Edge margin in seconds for live-time integration.
+    return_mask : bool, optional
+        If True, return both live time and veto mask. Default is False.
 
-    :param iwindow: window size for veto
-    :type iwindow: int
-    :param tf_map: reference TF map for timeline definition
-    :type tf_map: object
-    :param segment_list: list of (start, stop) GPS segments
-    :type segment_list: list[tuple[float, float]] | None
-    :param injection_times: list of injection times (GPS)
-    :type injection_times: list[float] | None
-    :param edge: optional edge in seconds for live-time integration
-    :type edge: float | None
-    :param return_mask: if True, returns `(live_time, veto_mask)`
-    :type return_mask: bool
-    :return: live time in zero lag
-    :rtype: float | tuple[float, np.ndarray]
+    Returns
+    -------
+    float or tuple[float, np.ndarray]
+        Live time in seconds (zero lag). If ``return_mask=True``, returns
+        ``(live_time, veto_mask)`` where veto_mask is a binary array.
     """
     live, veto_mask = _set_veto_python(
         tf_map=tf_map,
@@ -631,7 +684,7 @@ def build_veto_mask(tf_map, veto_windows: list[tuple[float, float]], edge: float
     return mask
 
 
-def _igamma_inv_upper(shape, p):
+def _igamma_inv_upper(shape: float, p: float) -> float:
     """Upper-tail inverse incomplete gamma matching C++ iGamma step search.
 
     C++ scans x = 0, 1e-5, 2e-5, ... using TMath::Gamma until the upper
@@ -657,7 +710,7 @@ def _igamma_inv_upper(shape, p):
     return x
 
 
-def _get_tf_energy_array(tf_map, edge=None):
+def _get_tf_energy_array(tf_map: Any, edge: float | None = None) -> np.ndarray:
     """
     Return a real-valued TF energy array from a map-like object.
 
@@ -680,7 +733,7 @@ def _get_tf_energy_array(tf_map, edge=None):
     return arr
 
 
-def _threshold_python(tf_maps, bpp, shape=None, edge=None):
+def _threshold_python(tf_maps: list, bpp: float, shape: float | None = None, edge: float | None = None) -> float:
     """
     Python-native approximation of cWB threshold estimation.
 
@@ -777,7 +830,7 @@ def _threshold_python(tf_maps, bpp, shape=None, edge=None):
     return result
 
 
-def _set_veto_python(tf_map, tw, segment_list=None, injection_times=None, edge=None):
+def _set_veto_python(tf_map: Any, tw: float, segment_list: list[tuple[float, float]] | None = None, injection_times: list[float] | None = None, edge: float | None = None) -> tuple[float, np.ndarray]:
     """
     Build a veto mask and live-time estimate for a TF map timeline.
 
@@ -846,7 +899,7 @@ def _set_veto_python(tf_map, tw, segment_list=None, injection_times=None, edge=N
     return live, veto
 
 
-def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=None, veto=None, edge=0.0):
+def _get_network_pixels_python(tf_maps: list, lag_index: int, energy_threshold: float, lag_shifts: np.ndarray | list | None = None, veto: np.ndarray | None = None, edge: float = 0.0) -> dict:
     """
     Select coherent network pixels for one lag in pure Python.
 
@@ -1056,7 +1109,7 @@ def _get_network_pixels_python(tf_maps, lag_index, energy_threshold, lag_shifts=
     }
 
 
-def _cluster_pixels_python(pixel_candidates, kt=1, kf=1):
+def _cluster_pixels_python(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> FragmentCluster:
     """
     Cluster selected pixels with connected-components labeling.
 
