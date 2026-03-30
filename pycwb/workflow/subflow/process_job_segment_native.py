@@ -303,17 +303,21 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             # ── 4a. Coherence ────────────────────────────────────────────────
             # Pixel selection and fragment clustering for this specific time slide.
+            timer_coherence = time.perf_counter()
             frag_clusters_this_lag = coherence_single_lag(
                 coherence_setup, lag,
                 veto_windows=sub_job_seg.veto_windows,
             )
+            logger.info("Coherence time for lag %d: %.2f s", lag, time.perf_counter() - timer_coherence)
 
             # ── 4b. Supercluster ─────────────────────────────────────────────
             # Compute TD amplitudes, apply subnet veto, and merge fragments.
+            timer_supercluster = time.perf_counter()
             fragment_cluster = supercluster_single_lag(
                 supercluster_setup, config, frag_clusters_this_lag, lag,
                 xtalk=xtalk, td_inputs_cache=td_inputs_cache,
             )
+            logger.info("Supercluster time for lag %d: %.2f s", lag, time.perf_counter() - timer_supercluster)
 
             if fragment_cluster is None:
                 logger.warning(
