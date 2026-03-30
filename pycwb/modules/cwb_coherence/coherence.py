@@ -295,6 +295,7 @@ def coherence_single_lag(
         veto = None
         if veto_windows is not None:
             veto = build_veto_mask(tf_maps[0], veto_windows, edge=setup["segEdge"])
+        t0_select = time.perf_counter()
         candidates = select_network_pixels(
             tf_maps=tf_maps,
             lag_index=lag_idx,
@@ -303,10 +304,12 @@ def coherence_single_lag(
             veto=veto,
             edge=setup["segEdge"],
         )
+        t_select = time.perf_counter() - t0_select
         n_candidates = int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
 
         # Cluster selected pixels and apply statistical selection criteria
         # (min/max cluster sizes depend on wave pattern)
+        t0_cluster = time.perf_counter()
         if pattern != 0:
             # Multi-pixel clusters for network patterns (kt=2 time bins, kf=3 freq bins)
             c = cluster_pixels(candidates, kt=2, kf=3)
@@ -315,14 +318,16 @@ def coherence_single_lag(
         else:
             # Single-pixel clusters for non-network patterns
             c = cluster_pixels(candidates, kt=1, kf=1)
+        t_cluster = time.perf_counter() - t0_cluster
 
         # Remove clusters rejected by statistical selection unless explicitly requested
         if not return_rejected:
             c.remove_rejected()
 
         logger.info(
-            "lag=%3d level=%d | events=%d pixels=%d candidates=%d",
+            "lag=%3d level=%d | events=%d pixels=%d candidates=%d | select=%.3fs cluster=%.3fs",
             lag_idx, setup["level"], c.event_count(), c.pixel_count(), n_candidates,
+            t_select, t_cluster,
         )
         fragment_clusters.append(c)
 
