@@ -71,6 +71,7 @@ PROGRESS_SCHEMA = pa.schema([
     ("n_triggers", pa.int32()),
     ("livetime",   pa.float64()),
     ("timestamp",  pa.float64()),
+    ("status",     pa.string()),
 ])
 
 
@@ -310,7 +311,8 @@ class Catalog(BaseCatalog):
         return os.path.join(dirname, basename)
 
     def add_lag_progress(self, job_id: int, trial_idx: int, lag_idx: int,
-                         n_triggers: int, livetime: float) -> None:
+                         n_triggers: int, livetime: float,
+                         status: str = "completed") -> None:
         """Record the completion of a single lag.
 
         Appends one row to the progress Parquet file (read-modify-write with
@@ -328,6 +330,8 @@ class Catalog(BaseCatalog):
             Number of triggers found in this lag.
         livetime : float
             Effective post-veto analysed duration in seconds.
+        status : str
+            Lag outcome: ``"completed"`` (default) or ``"skipped_segTHR"``.
         """
         pf = self.progress_file
         new_row = pa.table(
@@ -338,6 +342,7 @@ class Catalog(BaseCatalog):
                 "n_triggers": [n_triggers],
                 "livetime":   [livetime],
                 "timestamp":  [time.time()],
+                "status":     [status],
             },
             schema=PROGRESS_SCHEMA,
         )
@@ -353,6 +358,9 @@ class Catalog(BaseCatalog):
     def get_completed_lags(self, job_id: int) -> dict[int, set[int]]:
         """Return completed lags for a given job.
 
+        All statuses (including ``"skipped_segTHR"``) count as processed
+        so the lag is not re-run on restart.
+
         Returns
         -------
         dict[int, set[int]]
@@ -363,7 +371,11 @@ class Catalog(BaseCatalog):
         if not os.path.exists(pf) or os.path.getsize(pf) == 0:
             return {}
 
-        table = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+        # Read with promote_options to handle old files missing the status column
+        try:
+            table = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+        except (pa.ArrowInvalid, pa.ArrowTypeError):
+            table = pq.read_table(pf)
         mask = pc.equal(table["job_id"], job_id)
         rows = table.filter(mask)
 
@@ -529,11 +541,18 @@ class Catalog(BaseCatalog):
         pf = self.progress_file
         if os.path.exists(pf) and os.path.getsize(pf) > 0:
             # ── Progress-based (accurate post-veto livetimes) ──
-            progress = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+            try:
+                progress = pq.read_table(pf, schema=PROGRESS_SCHEMA)
+            except (pa.ArrowInvalid, pa.ArrowTypeError):
+                progress = pq.read_table(pf)
             jobs_by_index = {j.get("index", i): j for i, j in enumerate(self.jobs)}
 
             livetimes = []
             for row in progress.to_pylist():
+                # Exclude lags that were skipped (e.g. segTHR) from livetime sums
+                status = row.get("status", "completed")
+                if status != "completed":
+                    continue
                 job = jobs_by_index.get(row["job_id"], {})
                 livetimes.append({
                     "job_id":   row["job_id"],

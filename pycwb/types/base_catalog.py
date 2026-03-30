@@ -181,7 +181,8 @@ class BaseCatalog(ABC):
 
     @abstractmethod
     def add_lag_progress(self, job_id: int, trial_idx: int, lag_idx: int,
-                         n_triggers: int, livetime: float) -> None:
+                         n_triggers: int, livetime: float,
+                         status: str = "completed") -> None:
         """Record the completion of a single lag.
 
         Parameters
@@ -196,6 +197,8 @@ class BaseCatalog(ABC):
             Number of triggers found in this lag.
         livetime : float
             Effective post-veto analysed duration (seconds).
+        status : str
+            Lag outcome: ``"completed"`` (default) or ``"skipped_segTHR"``.
         """
 
     @abstractmethod

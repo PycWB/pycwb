@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import logging
 from typing import List
-from dacite import from_dict
+from dacite import from_dict, Config as DaciteConfig
 from jinja2 import Template 
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog, read_catalog_metadata
@@ -176,10 +176,10 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
         # Root catalog: segments are indexed 1..N; select by job id.
         if max(job_ids) - 1 > len(job_segments):
             raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
-        selected_job_segments = [from_dict(WaveSegment, job_segments[i - 1]) for i in job_ids]
+        selected_job_segments = [from_dict(WaveSegment, job_segments[i - 1], config=DaciteConfig(cast=[tuple])) for i in job_ids]
     else:
         # Per-job fragment: contains exactly the segments for this batch already.
-        selected_job_segments = [from_dict(WaveSegment, s) for s in job_segments]
+        selected_job_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in job_segments]
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)

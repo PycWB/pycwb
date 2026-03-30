@@ -21,7 +21,7 @@ def _collect_jobs_from_fragments(catalog_files: list) -> list:
     for f in catalog_files:
         for job in Catalog.open(f).jobs:
             jobs.append(from_dict(WaveSegment, job))
-    jobs.sort(key=lambda j: j.job_id)
+    jobs.sort(key=lambda j: j.index)
     return jobs
 
 

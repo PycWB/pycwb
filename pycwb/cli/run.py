@@ -96,11 +96,13 @@ def init_parser(parser):
 
     # lags
     parser.add_argument('--lags',
-                        metavar='lags',
+                        metavar='lag_vector',
                         type=str,
+                        nargs='+',
                         default=None,
-                        help='specific lags to run, as a semicolon-separated list of comma-separated shift vectors, '
-                             'e.g., "0,0;1,0;0,1" for 3 lags with 2 IFOs')
+                        help='specific lag vectors to run; each vector is comma-separated per-IFO shifts. '
+                             'Pass multiple vectors as space-separated arguments, '
+                             'e.g., --lags 0,0 0,600 0,1190  (or quoted: "0,0;0,600;0,1190")')
 
     # log level
     parser.add_argument('--log-level',
@@ -130,6 +132,10 @@ def command(args):
         return 0
 
     # Run the search function with the specified user parameter file
+    # args.lags is a list (nargs='+'); join with ';' so parse_lag_string still works.
+    # This also accepts the legacy quoted form "0,0;0,600;0,1190" as a single-element list.
+    lags = ';'.join(args.lags) if args.lags is not None else None
+
     search(args.user_parameter_file,
            input_dir=args.input_dir,
            working_dir=args.work_dir,
@@ -140,5 +146,5 @@ def command(args):
            config_vars=args.config_vars,
            jobs=args.jobs,
            trial_idx=args.trial_idx,
-           lags=args.lags,
+           lags=lags,
            log_level=args.log_level)

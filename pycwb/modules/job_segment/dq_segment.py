@@ -87,6 +87,57 @@ def merge_seg_list(seg_list_1, seg_list_2):
     return merged_start, merged_stop
 
 
+def build_cat2_veto_windows(dq_file_list, ifos, periods=None):
+    """Build per-IFO CAT2 veto windows from DQ files.
+
+    Reads all DQ files up to ``CWB_CAT2`` for each IFO, intersects them
+    across IFOs, and returns the result as a list of ``(start, stop)`` GPS
+    tuples suitable for :attr:`~pycwb.types.job.WaveSegment.veto_windows`.
+
+    Parameters
+    ----------
+    dq_file_list : list[DQFile]
+        All DQ file entries from the config.
+    ifos : list[str]
+        Detector names (e.g. ``["H1", "L1"]``).
+    periods : tuple[list, list] or None
+        Optional ``(starts, stops)`` that further constrain the live segments.
+
+    Returns
+    -------
+    list[tuple[float, float]] or None
+        Sorted veto windows, or ``None`` when no CAT2 files are present.
+    """
+    has_cat2 = any(dqf.dq_cat == 'CWB_CAT2' for dqf in (dq_file_list or []))
+    if not has_cat2:
+        return None
+
+    seg_lists = []
+    for ifo in ifos:
+        dq_files = [dqf for dqf in dq_file_list if dqf.ifo == ifo]
+        cat2_list = read_seg_list(dq_files, 'CWB_CAT2', periods)
+        seg_lists.append(cat2_list)
+
+    # Intersect across IFOs
+    merged = seg_lists[0]
+    for seg_list in seg_lists[1:]:
+        merged = merge_seg_list(merged, seg_list)
+
+    starts, stops = merged
+    if not starts:
+        return None
+
+    windows = list(zip(
+        [float(s) for s in starts],
+        [float(e) for e in stops],
+    ))
+    logger.info(
+        "CAT2 veto windows: %d segments, total %.2f s",
+        len(windows), sum(e - s for s, e in windows),
+    )
+    return windows
+
+
 def get_seg_list(ifo, dq_list, seg_len, seg_mls, seg_edge):
     """
     Not implemented yet.
