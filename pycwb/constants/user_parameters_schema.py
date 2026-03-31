@@ -495,8 +495,13 @@ schema = {
         },
         "netRHO": {
             "type": "number",
-            "description": "[>4.0] coherent network SNR (supercluster, likelihood), if <=0 then use the new statistics for XGBoost",
+            "description": "[>4.0] coherent network SNR (supercluster, likelihood). Deprecated: setting netRHO < 0 was the legacy way to activate XGBoost statistics mode; use xgb_rho_mode instead.",
             "default": 4.0,
+        },
+        "xgb_rho_mode": {
+            "type": "boolean",
+            "description": "If True, use XGBoost rho0 statistics (XGB.rho0 mode) instead of the original 2G coherent SNR statistic. Replaces the deprecated convention of setting netRHO < 0.",
+            "default": False,
         },
         "netCC": {
             "type": "number",

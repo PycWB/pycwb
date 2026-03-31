@@ -213,11 +213,12 @@ def setup_likelihood(
     delta = float(getattr(config, "delta", 0.0))
     net_rho = float(getattr(config, "netRHO", 0.0))
     netCC = float(getattr(config, "netCC", 0.0))
+    xgb_rho_mode = bool(getattr(config, "xgb_rho_mode", False))
 
     network_energy_threshold = 2 * acor * acor * nIFO
     gamma_regulator = gamma * gamma * 2 / 3
     delta_regulator = abs(delta) if abs(delta) < 1 else 1
-    netEC_threshold = net_rho * net_rho * 2
+    netEC_threshold = abs(net_rho) * abs(net_rho) * 2
 
     if ml is not None and FP is not None and FX is not None:
         # Reuse pre-computed arrays from setup_supercluster to avoid a duplicate
@@ -236,6 +237,7 @@ def setup_likelihood(
 
     return {
         "network_energy_threshold": network_energy_threshold,
+        "xgb_rho_mode": xgb_rho_mode,
         "gamma_regulator": gamma_regulator,
         "delta_regulator": delta_regulator,
         "netEC_threshold": netEC_threshold,
@@ -250,8 +252,6 @@ def setup_likelihood(
         "ra_arr": ra_arr,
         "dec_arr": dec_arr,
     }
-
-
 
 
 def likelihood(
@@ -343,6 +343,7 @@ def likelihood(
         _populate_pixel_noise_rms(cluster.pixels, nRMS)
 
     network_energy_threshold = setup["network_energy_threshold"]
+    xgb_rho_mode             = setup["xgb_rho_mode"]
     gamma_regulator          = setup["gamma_regulator"]
     delta_regulator          = setup["delta_regulator"]
     netEC_threshold          = setup["netEC_threshold"]
@@ -397,15 +398,16 @@ def likelihood(
     # dozens of parameters will be returned in SkyStatistics dataclass
     sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
                                                              FP, FX, rms, td00, td90, ml, REG, 
-                                                             network_energy_threshold, 
-                                                             cluster_xtalk, cluster_xtalk_lookup)
+                                                             network_energy_threshold,
+                                                             cluster_xtalk, cluster_xtalk_lookup,
+                                                             xgb_rho_mode=xgb_rho_mode)
 
     # Check if the cluster is rejected based on the threshold cuts, 
     # the function will return the reason for rejection. If the cluster is not rejected, it will return None.
     selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
     logger.info("Selected core pixels: %d / %d", selected_core_pixels, n_pix)
 
-    rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
+    rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold, xgb_rho_mode=xgb_rho_mode)
     if rejected:
         logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
@@ -421,10 +423,12 @@ def likelihood(
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster,
                              n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold,
+                             xgb_rho_mode=xgb_rho_mode,
                              config=config)
     
     # Placeholder: Get the chirp mass
-    get_chirp_mass(cluster)
+    pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
+    get_chirp_mass(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
 
     # Placeholder: Get the error region
     get_error_region(cluster)
@@ -691,6 +695,7 @@ def calculate_sky_statistics(
     cluster_xtalk: np.ndarray,
     cluster_xtalk_lookup_table: np.ndarray,
     DEBUG: bool = False,
+    xgb_rho_mode: bool = False,
 ) -> SkyStatistics:
     """
     Calculate the sky statistics for a specific sky location.
@@ -859,12 +864,12 @@ def calculate_sky_statistics(
     xrho = 0.
     penalty = 0.
     ecor = 0.
-    if network_energy_threshold >= 0: # original 2G
+    if not xgb_rho_mode: # original 2G
         cc = ch if ch > 1 else 1  # rho correction factor
         rho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
         if DEBUG:
             print("cc = ", cc, ", rho = ", rho)
-    else:  # (XGB.rho0)
+    else:  # XGB.rho0
         penalty = ch
         ecor = Ec
         rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1)))
@@ -929,7 +934,8 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                              cluster: Cluster, n_ifo: int,
                              xtalk: XTalk,
                              network_energy_threshold: float,
-                             config: Config) -> None:
+                             xgb_rho_mode: bool = False,
+                             config: Config = None) -> None:
     """
     Fill the detection statistics into the cluster and pixels.
     
@@ -947,6 +953,8 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         The XTalk object for cross-talk calculations.
     network_energy_threshold : float
         Energy threshold for the network.
+    xgb_rho_mode : bool, optional
+        If True, use XGB.rho0 statistics (rho0 without cc division). Default False.
     config : Config
         Pipeline configuration object. Required for MRA waveform reconstruction
         (hrss, strain, accurate gps_time and central_freq). Raises ValueError if None.
@@ -1032,6 +1040,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                  float(np.min(coherent_energy)),
                  float(np.max(coherent_energy)))
 
+    # TODO: write a numba kernal for this loop, at the end, write the pixel back. Prevent use pixel in the inner computation
     for i, pixel in enumerate(cluster.pixels):
         if not pixel.core or gaussian_noise_correction[i] <= 0:
             continue
@@ -1155,6 +1164,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     To = 0.0
     Fo = 0.0
 
+    # FIXME: config is required
     if config is not None and len(core_indices) > 0:
         # ---------------------------------------------------------------------------
         # Pure Python getMRAwave equivalent (mirrors C++ netcluster::getMRAwave 'W'/'S')
@@ -1171,6 +1181,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
             _create_wdm_set_python, get_MRA_wave,
         )
 
+        # TODO: maybe reuse the wdm list
         # Build WDM kernel list for all resolutions present in the cluster
         wdm_list = _create_wdm_set_python(config)
         rate_ana = float(config.rateANA)
@@ -1334,11 +1345,14 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         cluster.cluster_meta.c_time = float(To)
         cluster.cluster_meta.c_freq = float(Fo)
 
-    if network_energy_threshold >= 0:  # original 2G
+    if not xgb_rho_mode:  # original 2G
         cluster.cluster_meta.net_rho = rho_reduced
         cluster.cluster_meta.net_rho2 = float(sky_statistics.rho)
-    else:  # (XGB.rho0)
-        pass
+    else:  # XGB.rho0
+        # rho[0] = -netRHO = rho  (XGB rho0, no cc division — C++ netevent.cc line 979)
+        cluster.cluster_meta.net_rho = float(sky_statistics.rho)
+        # rho[1] = netrho = xrho/sqrt(cc)  (original 2G rho with cc — C++ netevent.cc line 980)
+        cluster.cluster_meta.net_rho2 = float(sky_statistics.xrho) / sqrt(cc_rho_td)
 
     cluster.cluster_meta.g_net = skymap_statistics.nAntennaPrior[skymap_statistics.l_max]
     cluster.cluster_meta.a_net = skymap_statistics.nAlignment[skymap_statistics.l_max]
@@ -1371,7 +1385,7 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
 
 
 
-def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float, netEC_threshold: float) -> str:
+def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float, netEC_threshold: float, xgb_rho_mode: bool = False) -> str:
     """
     Apply threshold cuts based on the sky statistics and network energy threshold.
     
@@ -1380,10 +1394,11 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     sky_statistics : SkyStatistics
         The statistics calculated for the sky location.
     network_energy_threshold : float
-        The threshold for network energy.  Values > 0 use the original 2G cuts;
-        values ≤ 0 use the XGB.rho0 cuts.
+        The threshold for network energy.
     netEC_threshold : float
         The threshold for net correlation energy (``netEC``).
+    xgb_rho_mode : bool, optional
+        If True, apply XGB.rho0 cuts instead of the original 2G cuts.
 
     Returns
     -------
@@ -1418,7 +1433,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     cc = sky_statistics.cc
     rho = sky_statistics.rho
     N = sky_statistics.N_pix_effective   # C++ N = _avx_setAMP_ps() - 1 = effective pixel count
-    if network_energy_threshold > 0:
+    if not xgb_rho_mode:
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
         condition_3 = Ec * Rc / cc < netEC_threshold
@@ -1438,7 +1453,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
         # For XGB.rho0 case
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
-        condition_3 = rho < abs(network_energy_threshold)
+        condition_3 = rho < network_energy_threshold
         condition_4 = N < 1   # C++: N < 1 (pixel count)
         if condition_1 or condition_2 or condition_3 or condition_4:
             rejection_reason = ""
@@ -1447,7 +1462,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
             if condition_2:
                 rejection_reason += f" (Eo - Eh) > 0 but (Eo - Eh) = {Eo - Eh};"
             if condition_3:
-                rejection_reason += f" rho >= abs(network_energy_threshold) but rho = {rho} < {abs(network_energy_threshold)};"
+                rejection_reason += f" rho >= network_energy_threshold but rho = {rho} < {network_energy_threshold};"
             if condition_4:
                 rejection_reason += f" N < 1 but N = {N};"
             return rejection_reason
@@ -1471,7 +1486,7 @@ def get_error_region(cluster: Cluster):
     pass
 
 
-def get_chirp_mass(cluster: Cluster):
+def get_chirp_mass(cluster: Cluster, xgb_rho_mode: bool = False, pat0: bool = False):
     """Python implementation of C++ netcluster::mchirp().
 
     Computes chirpEllip and chirpEfrac via Hough-transform + PCA ellipticity
@@ -1479,6 +1494,10 @@ def get_chirp_mass(cluster: Cluster):
     fill_detection_statistic).  Updates cluster.cluster_meta.net_rho2 with
     rho1 = rho0 * chirpEllip * sqrt(chirpEfrac), matching netevent.cc line 977:
         rho[1] = pcd->netRHO * chirp[3] * sqrt(chirp[5])   (pat0=false branch)
+
+    net_rho2 is only updated for original 2G mode (xgb_rho_mode=False)
+    with pat0=False.  In XGB mode or pat0=True the value set by
+    fill_detection_statistic is preserved (mirrors netevent.cc lines 974-981).
     """
     import math
     import numpy as np
@@ -1665,4 +1684,12 @@ def get_chirp_mass(cluster: Cluster):
     chrho = chirpEllip * math.sqrt(Efrac)
     rho1  = cluster.cluster_meta.net_rho * chrho
 
-    cluster.cluster_meta.net_rho2 = rho1
+    # C++ netevent.cc lines 974-981:
+    #   chrho = chirp[3] * sqrt(chirp[5])                    (always computed)
+    #   if netRHO >= 0 (original 2G):
+    #       rho[1] = pat0 ? netrho : netRHO * chrho           (only pat0=false uses chirp)
+    #   else (XGB.rho0):
+    #       rho[1] = netrho                                   (chirp result ignored)
+    if not xgb_rho_mode and not pat0:
+        cluster.cluster_meta.net_rho2 = rho1
+    # else: net_rho2 already set correctly by fill_detection_statistic; do not overwrite
