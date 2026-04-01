@@ -208,7 +208,7 @@ def mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
         # Ln += rNRG[j] * _msk  # network energy
 
     # Eo = Eo + float32(0.01)
-    m = int(2 * m)
+    m = int(m)  # undoubled count of above-threshold pixels, matching C++ _sse_MRA_ps call
     # aa = float32(Ls * Ln / (Eo - Ls))
 
     for i in range(n_ifo):
@@ -233,8 +233,8 @@ def mra_statistics(n_ifo, n_pix, FP, FX, rms, td00, td90, td_energy, ml,
 
         for i in range(n_ifo):
             reduced_rms[m, i] = rms[j, i]
-            reduced_v00[m, i] = v00[i, j]
-            reduced_v90[m, i] = v90[i, j]
+            reduced_v00[m, i] = xi[i, j]   # use MRA principal components, not original v00
+            reduced_v90[m, i] = XI[i, j]   # use MRA principal components, not original v90
         m += 1
 
         # dominant pixel energy
