@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -632,6 +633,459 @@ def _stats_row(x, y):
 
 
 # ---------------------------------------------------------------------------
+# Reference-events matching  (--ref_events)
+# ---------------------------------------------------------------------------
+
+# Column names for headerless CSVs with a known 9-column layout
+_REF_COL_NAMES = [
+    "gps_start_ref", "gps_end_ref", "hrss_ref", "t_central_ref",
+    "freq_low_ref", "freq_high_ref", "amplitude_ref", "col7_ref", "col8_ref",
+]
+
+
+def load_ref_events(ref_csv: str) -> pd.DataFrame:
+    """Load reference events CSV.  First column is GPS start, second is GPS end.
+
+    Auto-detects whether a header row is present.  If the file has no header
+    (first field parses as a float) the columns are named using
+    ``_REF_COL_NAMES`` for the first 9 columns; any extras get ``colN_ref``.
+    The resulting DataFrame always has ``gps_start_ref`` and ``gps_end_ref``
+    as its first two columns.
+    """
+    with open(ref_csv) as fh:
+        first = fh.readline().split(",")[0].strip()
+    has_header = True
+    try:
+        float(first)
+        has_header = False
+    except ValueError:
+        pass
+
+    df = pd.read_csv(ref_csv, header=0 if has_header else None)
+    cols = list(df.columns)
+    if not has_header:
+        rename = {}
+        for i, c in enumerate(cols):
+            rename[c] = _REF_COL_NAMES[i] if i < len(_REF_COL_NAMES) else f"col{i}_ref"
+        df = df.rename(columns=rename)
+    else:
+        # Ensure first two columns are named gps_start_ref / gps_end_ref
+        df = df.rename(columns={cols[0]: "gps_start_ref"})
+        if len(cols) > 1:
+            df = df.rename(columns={cols[1]: "gps_end_ref"})
+    log.info("Reference events loaded: %d rows from %s", len(df), ref_csv)
+    return df
+
+
+def match_ref_to_pyc(df_ref: pd.DataFrame, df_pyc: pd.DataFrame) -> pd.DataFrame:
+    """Match reference events to pycWB triggers by time-range containment.
+
+    A pycWB trigger is considered **found** for a reference event when its
+    GPS time falls within the reference event's window:
+        gps_start_ref <= gps_time_pyc <= gps_end_ref
+
+    If multiple pycWB triggers fall inside the same reference window the one
+    closest to the window centre is chosen.
+
+    Adds columns to a copy of *df_ref*:
+    - ``ref_status``    : ``"found"`` or ``"missing_in_pycwb"``
+    - All ``*_pyc`` columns of the best-matching pycWB trigger (NaN if missing)
+    """
+    t_start = df_ref["gps_start_ref"].to_numpy(dtype=np.float64)
+    t_end   = df_ref["gps_end_ref"].to_numpy(dtype=np.float64)
+    t_pyc   = df_pyc["gps_time_pyc"].to_numpy(dtype=np.float64)
+
+    matched_pyc_idx: list[int | None] = []
+    used_pyc: set[int] = set()
+
+    for t0, t1 in zip(t_start, t_end):
+        # All pycWB triggers inside [t0, t1]
+        centre = 0.5 * (t0 + t1)
+        candidates = [
+            (abs(t_pyc[j] - centre), j)
+            for j in range(len(t_pyc))
+            if t0 <= t_pyc[j] <= t1 and j not in used_pyc
+        ]
+        if candidates:
+            _, best_j = min(candidates)
+            matched_pyc_idx.append(best_j)
+            used_pyc.add(best_j)
+        else:
+            matched_pyc_idx.append(None)
+
+    df_out = df_ref.copy()
+    df_out["ref_status"] = [
+        "found" if idx is not None else "missing_in_pycwb"
+        for idx in matched_pyc_idx
+    ]
+
+    # Attach matched pycwb columns (NaN for unmatched rows)
+    pyc_cols = [c for c in df_pyc.columns]
+    for col in pyc_cols:
+        vals = np.full(len(df_ref), np.nan)
+        for i, idx in enumerate(matched_pyc_idx):
+            if idx is not None:
+                v = df_pyc.iloc[idx][col]
+                try:
+                    vals[i] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        df_out[col] = vals
+
+    n_found   = sum(1 for x in matched_pyc_idx if x is not None)
+    n_missing = len(matched_pyc_idx) - n_found
+    log.info("Reference events: found=%d  missing_in_pycwb=%d", n_found, n_missing)
+    return df_out
+
+
+def _ref_events_pages(pdf_pages, df_ref: pd.DataFrame,
+                      ifo_list: list[str]) -> None:
+    """Append PDF pages summarising found vs missing reference events."""
+    if "ref_status" not in df_ref.columns:
+        return
+
+    status_col = df_ref["ref_status"]
+    counts     = status_col.value_counts()
+    COLORS = {"found": "#2ca02c", "missing_in_pycwb": "#d62728"}
+
+    # ── Page A: bar chart ────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(7, 4))
+    bars = ax.bar(counts.index,
+                  counts.values,
+                  color=[COLORS.get(s, "gray") for s in counts.index])
+    for bar, val in zip(bars, counts.values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                str(val), ha="center", va="bottom", fontsize=11)
+    ax.set_xlabel("Status", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title("Reference events — pycWB detection status", fontsize=11)
+    total = len(df_ref)
+    n_found = counts.get("found", 0)
+    ax.text(0.98, 0.97,
+            f"Total: {total}\nFound: {n_found} ({100*n_found/max(total,1):.1f} %)",
+            transform=ax.transAxes, ha="right", va="top", fontsize=10,
+            bbox=dict(boxstyle="round", fc="#f5f5f5", ec="gray"))
+    plt.tight_layout()
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page B: parameter distributions from ref CSV (found vs missing) ────────
+    # Collect numeric ref-side columns (exclude matched pycwb columns)
+    ref_numeric = [
+        c for c in df_ref.columns
+        if c.endswith("_ref") and pd.api.types.is_numeric_dtype(df_ref[c])
+    ]
+    # Also include matched pycwb trigger parameters for found events
+    pyc_show = [
+        ("gps_time_pyc",      "Matched GPS time (pycWB)"),
+        ("likelihood_pyc",    "Likelihood (pycWB)"),
+        ("rho0_pyc",          "rho0 (pycWB)"),
+        ("net_cc_pyc",        "netcc[0] (pycWB)"),
+        ("q_veto_pyc",        "Qa (pycWB)"),
+        ("penalty_pyc",       "Penalty (pycWB)"),
+    ]
+    for ifo in ifo_list:
+        pyc_show.append((f"sSNR_{ifo}_pyc", f"sSNR {ifo} (pycWB)"))
+
+    all_statuses = sorted(counts.index)
+
+    # ── ref-column distributions ──────────────────────────────────────────────
+    if ref_numeric:
+        ncols = 4
+        nrows = math.ceil(len(ref_numeric) / ncols)
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(5 * ncols, 4 * nrows), squeeze=False)
+        fig.suptitle("Reference-event parameters: found vs missing", fontsize=12)
+        for slot, col in enumerate(ref_numeric):
+            r, c = divmod(slot, ncols)
+            ax = axes[r][c]
+            all_vals = df_ref[col].to_numpy(dtype=np.float64)
+            finite = all_vals[np.isfinite(all_vals)]
+            if len(finite) < 2:
+                ax.set_title(col, fontsize=9)
+                continue
+            lo = np.nanpercentile(finite, 0.5)
+            hi = np.nanpercentile(finite, 99.5)
+            if lo == hi:
+                lo, hi = finite.min() - 0.5, finite.max() + 0.5
+            bins = np.linspace(lo, hi, 40)
+            for st in all_statuses:
+                mask = (status_col == st).to_numpy()
+                vals = df_ref.loc[mask, col].to_numpy(dtype=np.float64)
+                vals = vals[np.isfinite(vals)]
+                vals = vals[(vals >= lo) & (vals <= hi)]
+                if len(vals) == 0:
+                    continue
+                ch, edges = np.histogram(vals, bins=bins)
+                nh = ch / ch.sum() if ch.sum() > 0 else ch
+                centres = 0.5 * (edges[:-1] + edges[1:])
+                ax.step(centres, nh, where="mid",
+                        color=COLORS.get(st, "gray"), alpha=0.75,
+                        label=f"{st} (N={len(vals)})")
+            ax.set_xlabel(col, fontsize=8)
+            ax.set_ylabel("Fraction", fontsize=8)
+            ax.set_title(col, fontsize=9)
+            ax.legend(fontsize=6, loc="upper right")
+        for slot in range(len(ref_numeric), nrows * ncols):
+            r, c = divmod(slot, ncols)
+            axes[r][c].set_visible(False)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        pdf_pages.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+    # ── matched pycwb-column distributions (found entries only) vs missing ────
+    avail_pyc = [(col, lbl) for col, lbl in pyc_show if col in df_ref.columns]
+    if avail_pyc:
+        ncols = 4
+        nrows = math.ceil(len(avail_pyc) / ncols)
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(5 * ncols, 4 * nrows), squeeze=False)
+        fig.suptitle("Matched pycWB parameters for found reference events", fontsize=12)
+        found_mask = (status_col == "found").to_numpy()
+        for slot, (col, lbl) in enumerate(avail_pyc):
+            r, c = divmod(slot, ncols)
+            ax = axes[r][c]
+            vals = df_ref.loc[found_mask, col].to_numpy(dtype=np.float64)
+            finite = vals[np.isfinite(vals)]
+            if len(finite) < 2:
+                ax.set_title(lbl, fontsize=9); continue
+            ax.hist(finite, bins=40, color=COLORS["found"], alpha=0.75, edgecolor="none")
+            ax.set_xlabel(lbl, fontsize=8)
+            ax.set_ylabel("Count", fontsize=8)
+            ax.set_title(lbl, fontsize=9)
+        for slot in range(len(avail_pyc), nrows * ncols):
+            r, c = divmod(slot, ncols)
+            axes[r][c].set_visible(False)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        pdf_pages.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Log-based classification of unmatched cWB triggers
+# ---------------------------------------------------------------------------
+
+_CLUSTER_LINE_RE = re.compile(
+    r"likelihood\s+(accepted|rejected)\s+cluster\s+\d+.*?"
+    r"pixels,\s+from\s+([\d.]+)\s+-\s+([\d.]+)\s+s"
+)
+_ANALYZE_WIN_RE = re.compile(r"Analyze window:\s+\[([0-9.]+),\s*([0-9.]+)\]")
+_PADDED_WIN_RE  = re.compile(r"Padded window:\s+\[([0-9.]+),\s*([0-9.]+)\]")
+
+
+def _parse_log_windows(log_file: str) -> tuple[float, float, float] | None:
+    """Return (analyze_start, analyze_end, padded_start) from first ~50 lines."""
+    a_start = a_end = p_start = None
+    with open(log_file) as f:
+        for i, line in enumerate(f):
+            if i > 50:
+                break
+            m = _ANALYZE_WIN_RE.search(line)
+            if m:
+                a_start, a_end = float(m.group(1)), float(m.group(2))
+            m = _PADDED_WIN_RE.search(line)
+            if m:
+                p_start = float(m.group(1))
+            if a_start is not None and p_start is not None:
+                break
+    if a_start is None or p_start is None:
+        return None
+    return a_start, a_end, p_start
+
+
+def _load_log_cluster_info(log_path: str) -> list[dict]:
+    """Load analyze/padded windows and cluster lines from log file(s)."""
+    p = Path(log_path)
+    log_files = sorted(p.glob("job_*.log")) if p.is_dir() else [p] if p.is_file() else []
+    if not log_files:
+        log.warning("No log files found at: %s", log_path)
+        return []
+    infos = []
+    for lf in log_files:
+        windows = _parse_log_windows(str(lf))
+        if windows is None:
+            log.warning("Could not parse windows from %s", lf)
+            continue
+        a_start, a_end, p_start = windows
+        clusters = []
+        with open(lf) as f:
+            for line in f:
+                m = _CLUSTER_LINE_RE.search(line)
+                if m:
+                    clusters.append({
+                        "outcome": m.group(1),
+                        "t_start": float(m.group(2)),
+                        "t_end":   float(m.group(3)),
+                    })
+        infos.append({
+            "analyze_start": a_start,
+            "analyze_end":   a_end,
+            "padded_start":  p_start,
+            "clusters":      clusters,
+            "file":          str(lf),
+        })
+        log.info("Log %s: window [%.1f, %.1f], %d clusters",
+                 lf.name, a_start, a_end, len(clusters))
+    return infos
+
+
+def classify_unmatched_cwb_from_logs(unmatched_cwb: pd.DataFrame,
+                                      log_path: str) -> pd.DataFrame:
+    """Add 'pycwb_status' column to unmatched_cwb.
+
+    Status values
+    -------------
+    rejected_likelihood : GPS time falls within a pycWB likelihood-rejected cluster.
+    not_found           : Inside the analyze window but no matching cluster in log.
+    outside_window      : GPS time outside all log analyze windows.
+    """
+    infos = _load_log_cluster_info(log_path)
+    if not infos:
+        df = unmatched_cwb.copy()
+        df["pycwb_status"] = "log_not_found"
+        return df
+
+    statuses = []
+    for _, row in unmatched_cwb.iterrows():
+        gps = row["gps_time_cwb"]
+        status = "outside_window"
+        for info in infos:
+            if not (info["analyze_start"] <= gps <= info["analyze_end"]):
+                continue
+            rel = gps - info["padded_start"]
+            t_int = round(rel)
+            status = "not_found"
+            for cl in info["clusters"]:
+                if cl["outcome"] != "rejected":
+                    continue
+                # Quick pre-filter on integer part of cluster start time
+                if abs(int(cl["t_start"]) - t_int) > 1:
+                    continue
+                if cl["t_start"] <= rel <= cl["t_end"]:
+                    status = "rejected_likelihood"
+                    break
+            break  # matched to a log file
+        statuses.append(status)
+
+    df = unmatched_cwb.copy()
+    df["pycwb_status"] = statuses
+    counts = pd.Series(statuses).value_counts().to_dict()
+    log.info("Unmatched cWB classification: %s", counts)
+    return df
+
+
+def _pycwb_status_pages(pdf_pages, unmatched_cwb: pd.DataFrame,
+                        ifo_list: list[str]) -> None:
+    """Append classification summary pages for unmatched cWB triggers."""
+    if "pycwb_status" not in unmatched_cwb.columns:
+        return
+
+    status_col = unmatched_cwb["pycwb_status"]
+    counts = status_col.value_counts()
+
+    # ── Page 1: bar chart summary ─────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars = ax.bar(counts.index, counts.values,
+                  color=["#d62728", "#ff7f0e", "#aec7e8"][:len(counts)])
+    for bar, val in zip(bars, counts.values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                str(val), ha="center", va="bottom", fontsize=10)
+    ax.set_xlabel("pycWB status", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title("Unmatched cWB triggers — pycWB status classification", fontsize=11)
+    plt.tight_layout()
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page 2: parameter distributions per status ────────────────────────
+    STATUS_COLORS = {
+        "rejected_likelihood": "#d62728",
+        "not_found":           "#ff7f0e",
+        "outside_window":      "#aec7e8",
+        "log_not_found":       "#9467bd",
+    }
+    DIST_COLS = [
+        ("rho0_cwb",       "rho0"),
+        ("rho_cwb",        "rho[0]"),
+        ("likelihood_cwb", "Likelihood"),
+        ("net_cc_cwb",     "netcc[0]"),
+        ("q_veto_cwb",     "Qa"),
+        ("penalty_cwb",    "Penalty"),
+    ]
+    for ifo in ifo_list:
+        DIST_COLS.append((f"sSNR_{ifo}_cwb", f"sSNR ({ifo})"))
+
+    ncols, nrows = 4, math.ceil(len(DIST_COLS) / 4)
+    fig, axes = plt.subplots(nrows, ncols,
+                             figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    fig.suptitle("Unmatched cWB — parameter distributions by pycWB status",
+                 fontsize=12)
+
+    all_statuses = sorted(counts.index)
+    for slot, (col, label) in enumerate(DIST_COLS):
+        r, c = divmod(slot, ncols)
+        ax = axes[r][c]
+        if col not in unmatched_cwb.columns:
+            ax.set_visible(False)
+            continue
+        all_vals = unmatched_cwb[col].to_numpy(dtype=np.float64)
+        finite = all_vals[np.isfinite(all_vals)]
+        if len(finite) < 2:
+            ax.set_title(label, fontsize=9)
+            continue
+        lo = np.nanpercentile(finite, 0.5)
+        hi = np.nanpercentile(finite, 99.5)
+        if lo == hi:
+            lo, hi = finite.min() - 0.5, finite.max() + 0.5
+        bins = np.linspace(lo, hi, 40)
+        for st in all_statuses:
+            mask = (status_col == st).to_numpy()
+            vals = unmatched_cwb.loc[mask, col].to_numpy(dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            vals = vals[(vals >= lo) & (vals <= hi)]
+            if len(vals) == 0:
+                continue
+            counts_h, edges = np.histogram(vals, bins=bins)
+            norm_h = counts_h / counts_h.sum() if counts_h.sum() > 0 else counts_h
+            centres = 0.5 * (edges[:-1] + edges[1:])
+            color = STATUS_COLORS.get(st, "gray")
+            ax.step(centres, norm_h, where="mid", color=color, alpha=0.75,
+                    label=f"{st} (N={len(vals)})")
+        ax.set_xlabel(label, fontsize=8)
+        ax.set_ylabel("Fraction", fontsize=8)
+        ax.set_title(label, fontsize=9)
+        ax.legend(fontsize=6, loc="upper right")
+
+    for slot in range(len(DIST_COLS), nrows * ncols):
+        r, c = divmod(slot, ncols)
+        axes[r][c].set_visible(False)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page 3: rho0 vs netcc[0] scatter coloured by status ──────────────
+    if "rho0_cwb" in unmatched_cwb.columns and "net_cc_cwb" in unmatched_cwb.columns:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        for st in all_statuses:
+            mask = (status_col == st).to_numpy()
+            x = unmatched_cwb.loc[mask, "rho0_cwb"].to_numpy(dtype=np.float64)
+            y = unmatched_cwb.loc[mask, "net_cc_cwb"].to_numpy(dtype=np.float64)
+            m = np.isfinite(x) & np.isfinite(y)
+            if m.any():
+                ax.scatter(x[m], y[m], s=10, alpha=0.5,
+                           color=STATUS_COLORS.get(st, "gray"),
+                           label=f"{st} (N={m.sum()})", rasterized=True)
+        ax.set_xlabel("rho0", fontsize=10)
+        ax.set_ylabel("netcc[0]", fontsize=10)
+        ax.set_title("Unmatched cWB: rho0 vs netcc[0] by pycWB status", fontsize=11)
+        ax.legend(fontsize=8)
+        plt.tight_layout()
+        pdf_pages.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
@@ -670,8 +1124,17 @@ def build_report(merged: pd.DataFrame,
                  unmatched_cwb: pd.DataFrame,
                  unmatched_pyc: pd.DataFrame,
                  ifo_list: list[str],
-                 out_pdf: str, out_csv: str) -> pd.DataFrame:
-    """Generate the PDF report and statistics CSV, return the stats table."""
+                 out_pdf: str, out_csv: str,
+                 ref_df: pd.DataFrame | None = None) -> tuple:
+    """Generate the PDF report and statistics CSV, return the stats table.
+
+    If *unmatched_cwb* contains a ``pycwb_status`` column (added by
+    :func:`classify_unmatched_cwb_from_logs`), extra classification pages
+    are appended to the PDF.
+
+    If *ref_df* is provided (output of :func:`match_ref_to_pyc`), reference-
+    event found/missing pages are also appended.
+    """
 
     # Add per-IFO sSNR features dynamically
     for i, ifo in enumerate(ifo_list):
@@ -713,7 +1176,8 @@ def build_report(merged: pd.DataFrame,
         n_pyc   = len(merged) + len(unmatched_pyc)
         n_match = len(merged)
 
-        dt = (merged["gps_time_pyc"] - merged["gps_time_cwb"]).to_numpy()
+        merged["gps_time_diff"] = merged["gps_time_pyc"] - merged["gps_time_cwb"]
+        dt = merged["gps_time_diff"].to_numpy()
         dt_mask = np.isfinite(dt)
         dt_mean = np.mean(dt[dt_mask]) if dt_mask.any() else np.nan
         dt_std  = np.std( dt[dt_mask]) if dt_mask.any() else np.nan
@@ -821,6 +1285,14 @@ def build_report(merged: pd.DataFrame,
         _distribution_pages(pdf_pages, unmatched_cwb, unmatched_pyc,
                             matched_cwb_vals, matched_pyc_vals, ifo_list)
 
+        # ── Log-based classification of unmatched cWB triggers ───────────────
+        if "pycwb_status" in unmatched_cwb.columns:
+            _pycwb_status_pages(pdf_pages, unmatched_cwb, ifo_list)
+
+        # ── Reference-event found/missing pages ──────────────────────────────
+        if ref_df is not None:
+            _ref_events_pages(pdf_pages, ref_df, ifo_list)
+
         # ── Angular separation vs rho0 ────────────────────────────────────────
         if "rho0_cwb" in merged.columns:
             fig, ax = plt.subplots(figsize=(8, 5))
@@ -856,10 +1328,26 @@ def build_report(merged: pd.DataFrame,
     log.info("Report saved → %s", out_pdf)
 
     # Save matched CSV
-    merged.to_csv(out_csv, index=False, float_format="%.6g")
+    merged.to_csv(out_csv, index=False, float_format="%.9f")
     log.info("Matched triggers CSV → %s", out_csv)
 
-    return stats_df
+    # Save unmatched CSVs (derived from out_csv stem)
+    csv_path = Path(out_csv)
+    out_csv_unmatched_cwb = str(csv_path.parent / (csv_path.stem + "_unmatched_cwb" + csv_path.suffix))
+    out_csv_unmatched_pyc = str(csv_path.parent / (csv_path.stem + "_unmatched_pyc" + csv_path.suffix))
+    unmatched_cwb.to_csv(out_csv_unmatched_cwb, index=False, float_format="%.9f")
+    log.info("Unmatched cWB CSV   → %s", out_csv_unmatched_cwb)
+    unmatched_pyc.to_csv(out_csv_unmatched_pyc, index=False, float_format="%.9f")
+    log.info("Unmatched pycWB CSV → %s", out_csv_unmatched_pyc)
+
+    # Save reference-events CSV (with ref_status + matched pycwb columns)
+    out_csv_ref = None
+    if ref_df is not None:
+        out_csv_ref = str(csv_path.parent / (csv_path.stem + "_ref_events" + csv_path.suffix))
+        ref_df.to_csv(out_csv_ref, index=False, float_format="%.9f")
+        log.info("Reference events CSV → %s", out_csv_ref)
+
+    return stats_df, out_csv_unmatched_cwb, out_csv_unmatched_pyc, out_csv_ref
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +1373,13 @@ def parse_args(argv=None):
                    help="Output PDF report path  [%(default)s]")
     p.add_argument("--csv", default=_DEFAULT_CSV,
                    help="Output matched-trigger CSV path  [%(default)s]")
+    p.add_argument("--log", default=None,
+                   help="Path to pycWB log file or log directory for unmatched-cWB "
+                        "classification (optional)")
+    p.add_argument("--ref_events", default=None,
+                   help="Reference events CSV (first column = GPS time). "
+                        "Matched against pycWB catalog; found/missing statistics "
+                        "are added to the report (optional)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -907,14 +1402,30 @@ def main(argv=None):
         log.error("No matched triggers found — check --tol or the input files.")
         sys.exit(1)
 
+    # ── Classify unmatched cWB triggers via log (optional) ───────────────────
+    if args.log:
+        unmatched_cwb = classify_unmatched_cwb_from_logs(unmatched_cwb, args.log)
+
+    # ── Match reference events to pycWB catalog (optional) ───────────────────
+    ref_df = None
+    if args.ref_events:
+        df_ref_raw = load_ref_events(args.ref_events)
+        ref_df = match_ref_to_pyc(df_ref_raw, df_pyc)
+
     # ── Report ───────────────────────────────────────────────────────────────
-    stats_df = build_report(merged, unmatched_cwb, unmatched_pyc, args.ifo, args.out, args.csv)
+    stats_df, csv_unm_cwb, csv_unm_pyc, csv_ref = build_report(
+        merged, unmatched_cwb, unmatched_pyc, args.ifo, args.out, args.csv,
+        ref_df=ref_df)
 
     # Print summary to stdout
     print("\n── Consistency statistics (pycWB − cWB) ──")
     print(stats_df[["label", "N", "mean_diff", "rms_diff", "pearson_r"]].to_string())
-    print(f"\nReport → {args.out}")
-    print(f"CSV    → {args.csv}")
+    print(f"\nReport                → {args.out}")
+    print(f"CSV (matched)         → {args.csv}")
+    print(f"CSV (unmatched cWB)   → {csv_unm_cwb}")
+    print(f"CSV (unmatched pycWB) → {csv_unm_pyc}")
+    if csv_ref:
+        print(f"CSV (ref events)      → {csv_ref}")
 
 
 if __name__ == "__main__":
