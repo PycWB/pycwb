@@ -201,7 +201,7 @@ def setup_likelihood(
     -------
     dict
         Keys: ``network_energy_threshold``, ``gamma_regulator``,
-        ``delta_regulator``, ``netEC_threshold``, ``netCC``, ``ml``, ``FP``,
+        ``delta_regulator``, ``net_rho_threshold``, ``netEC_threshold``, ``netCC``, ``ml``, ``FP``,
         ``FX``, ``FP_t``, ``FX_t``, ``n_sky``, ``healpix_order``, ``ra_arr``,
         ``dec_arr``.
     """
@@ -217,7 +217,11 @@ def setup_likelihood(
 
     network_energy_threshold = 2 * acor * acor * nIFO
     gamma_regulator = gamma * gamma * 2 / 3
+    # Mirror C++ constraint(): delta==0 is stored as 0.00001 to avoid a degenerate regulator
+    if delta == 0.0:
+        delta = 0.00001
     delta_regulator = abs(delta) if abs(delta) < 1 else 1
+    net_rho_threshold = abs(net_rho)
     netEC_threshold = abs(net_rho) * abs(net_rho) * 2
 
     if ml is not None and FP is not None and FX is not None:
@@ -240,6 +244,7 @@ def setup_likelihood(
         "xgb_rho_mode": xgb_rho_mode,
         "gamma_regulator": gamma_regulator,
         "delta_regulator": delta_regulator,
+        "net_rho_threshold": net_rho_threshold,
         "netEC_threshold": netEC_threshold,
         "netCC": netCC,
         "ml": ml_raw,          # (nIFO, n_sky) — integer time-delay indices
@@ -346,6 +351,7 @@ def likelihood(
     xgb_rho_mode             = setup["xgb_rho_mode"]
     gamma_regulator          = setup["gamma_regulator"]
     delta_regulator          = setup["delta_regulator"]
+    net_rho_threshold        = setup["net_rho_threshold"]
     netEC_threshold          = setup["netEC_threshold"]
     netCC                    = setup["netCC"]
     ml                       = setup["ml"]    # (nIFO, n_sky)
@@ -353,37 +359,34 @@ def likelihood(
     FX                       = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
     n_sky                    = setup["n_sky"]
 
+    # REG[0] = delta * sqrt(2): amplitude regulator; REG[1] filled below by DPF scan
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.])
     n_pix = len(cluster.pixels)
 
-    # Per-cluster xtalk pixel selection
+    # --- Prepare per-cluster inputs ---
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
-
     rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
-
-    # Transpose pixel arrays and convert to float32 for numba
-    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
+    # Reshape to (ndelay, nifo, npix) and cast to float32 for numba; FP/FX already prepared in setup
+    td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))
+    td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))
     rms = rms.T.astype(np.float32)
-    # FP / FX are (n_sky, nIFO) float32 from setup — already transposed and cast
 
-    # Note: What are the two regulators for?
+    # REG[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
 
-    # loop over the sky locations to find the optimal sky localization, 
-    # l_max and sky statistics will be returned in tuple due to the limitations of numba
+    # --- Sky scan: find the optimal sky direction (l_max) ---
+    # Returns a tuple; numba cannot return dataclasses directly
     skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
-    # Convert the tuple to SkyMapStatistics dataclass for better structure and IDE friendly
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
-    # Compute normalised sky probability from nSkyStat (softmax)
+    # --- Compute normalised sky probability map (softmax over nSkyStat) ---
     _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
     _sky_stat_shifted = _sky_stat_f64 - _sky_stat_f64.max()
     _exp_stat = np.exp(_sky_stat_shifted)
     skymap_statistics.nProbability = (_exp_stat / _exp_stat.sum()).astype(np.float32)
 
-    # Sky direction angles at l_max — from precomputed arrays in setup
+    # --- Convert l_max index to (theta, phi) sky angles ---
     _healpix_order = setup["healpix_order"]
     _ra_arr        = setup["ra_arr"]
     _dec_arr       = setup["dec_arr"]
@@ -402,12 +405,17 @@ def likelihood(
                                                              cluster_xtalk, cluster_xtalk_lookup,
                                                              xgb_rho_mode=xgb_rho_mode)
 
-    # Check if the cluster is rejected based on the threshold cuts, 
-    # the function will return the reason for rejection. If the cluster is not rejected, it will return None.
+    # --- Threshold cuts — reject cluster if any condition fails ---
     selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
     logger.info("Selected core pixels: %d / %d", selected_core_pixels, n_pix)
 
-    rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold, xgb_rho_mode=xgb_rho_mode)
+    rejected = threshold_cut(
+        sky_statistics,
+        network_energy_threshold,
+        netEC_threshold,
+        net_rho_threshold=net_rho_threshold,
+        xgb_rho_mode=xgb_rho_mode,
+    )
     if rejected:
         logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
@@ -419,34 +427,31 @@ def likelihood(
         logger.info("-------------------------------------------------------")
         return None, None
 
-    # Fill the detection statistics into the cluster and pixels for return
+    # --- Fill detection statistics (rho, netCC, waveform energies, per-pixel data) ---
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster,
                              n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold,
                              xgb_rho_mode=xgb_rho_mode,
                              config=config)
-    
-    # Placeholder: Get the chirp mass
+
+    # --- Post-processing: chirp mass and error region (placeholders) ---
     pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
     get_chirp_mass(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
-
-    # Placeholder: Get the error region
     get_error_region(cluster)
 
-    # Store sky localisation metadata on cluster for downstream Event construction
+    # --- Store sky localisation metadata ---
     cluster.cluster_meta.l_max = _l_max
     cluster.cluster_meta.theta = _theta_deg
     cluster.cluster_meta.phi = _phi_deg
-    # c_time / c_freq from supercluster if not yet set by fill_detection_statistic
+    # Fall back to supercluster estimates if fill_detection_statistic did not set these
     if cluster.cluster_meta.c_time == 0.0:
         cluster.cluster_meta.c_time = cluster.cluster_time
     if cluster.cluster_meta.c_freq == 0.0:
         cluster.cluster_meta.c_freq = cluster.cluster_freq
-    # Time delay indices at l_max — one entry per IFO (used by getMRAwaveform for ToF correction)
-    # ml has shape (nIFO, n_sky); setup["ml"] is the pre-transpose original
+    # Time-of-flight delays at l_max per IFO — used by getMRAwaveform for ToF correction
     cluster.sky_time_delay = [float(ml[i, _l_max]) for i in range(nIFO)]
 
-    # Mirror C++ sCuts[id-1] = -1: mark the cluster as accepted after all cuts have passed.
+    # Mark accepted (mirrors C++ sCuts[id-1] = -1)
     cluster.cluster_status = -1
 
     detected = cluster.cluster_status == -1
@@ -579,19 +584,10 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         where ``l_max`` is the index of the sky location with maximum cross-correlation
         statistic and all ``n*`` arrays are float32 of length n_sky.
     """
-    # td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    # td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
-    # FP = FP.T.astype(np.float32)
-    # FX = FX.T.astype(np.float32)
-    # rms = rms.T.astype(np.float32)
+    # Arrays are pre-transposed and cast to float32 by setup_likelihood / the caller.
     REG = REG.astype(np.float32)
 
-
-    # get unique list of ml.T for each nsky for numba
-    # ml_set = set()
-    # for i in range(n_sky):
-    #     ml_set.add(tuple(ml.T[i]))
-
+    # --- Allocate per-sky-location statistics arrays ---
     nAlignment = np.zeros(n_sky, dtype=float32)
     nLikelihood = np.zeros(n_sky, dtype=float32)
     nNullEnergy = np.zeros(n_sky, dtype=float32)
@@ -609,26 +605,26 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     # TODO: sky sky mask
     AA_array = np.zeros(n_sky, dtype=float32)
     for sky_idx in prange(n_sky):
-        # get time delayed data slice at sky location sky_idx, make sure it is numpy float32 array
+        # --- Apply time delay and load pixel data for this sky direction ---
         v00 = np.empty((n_ifo, n_pix), dtype=float32)
         v90 = np.empty((n_ifo, n_pix), dtype=float32)
         for i in range(n_ifo):
             v00[i] = td00[ml[i, sky_idx] + offset, i]
             v90[i] = td90[ml[i, sky_idx] + offset, i]
 
-        # calculate data stats for time delayed data slice
+        # --- Compute data energy and pixel mask ---
         Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
 
-        # calculate DPF f+,fx and their norms
+        # --- Compute DPF (dominant polarisation frame) f+/fx and their norms ---
         _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[sky_idx], FX[sky_idx], rms)
 
-        # gw strain packet, return number of selected pixels
+        # --- Project data onto GW strain packet; select pixels above threshold ---
         Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
 
-        # othogonalize signal amplitudes
+        # --- Orthogonalise signal amplitudes (+ and x polarisations) ---
         Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
 
-        # coherent statistics
+        # --- Compute coherent network statistics ---
         Cr, Ec, Mp, No, coherent_energy, _, _ = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
         CH = No / (n_ifo * Mo + sqrt(Mo))  # chi2 in TF domain
@@ -638,10 +634,12 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         if Cr < netCC:
             continue
 
+        # --- Sky statistics: likelihood and cross-correlation ---
         aa = Eo - No if Eo > float32(0.) else float32(0.)  # likelihood skystat
         AA = aa * Co  # x-correlation skystat
         nProbability[sky_idx] = aa if delta_regulator < 0 else AA
 
+        # --- Antenna sensitivity: energy-weighted f+/fx norms ---
         ff, FF, ee = float32(0.), float32(0.), float32(0.)
 
         for j in range(n_pix):
@@ -655,6 +653,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
 
         nAntenaPrior[sky_idx] = sqrt(ff + FF)
         nAlignment[sky_idx] = sqrt(FF / ff) if ff > float32(0.) else float32(0.)
+        # --- Store all per-sky statistics ---
         nLikelihood[sky_idx] = Eo - No
         nNullEnergy[sky_idx] = No
         nCorrEnergy[sky_idx] = Ec
@@ -741,154 +740,93 @@ def calculate_sky_statistics(
 
     offset = int(td00.shape[0] / 2)
 
-    # get time delayed data slice at sky location sky_idx
+    # --- Apply time delay for this sky direction ---
     for i in range(n_ifo):
         v00[i] = td00[ml[i, sky_idx] + offset, i]
         v90[i] = td90[ml[i, sky_idx] + offset, i]
 
-    # compute the energy of the time delayed data slice
+    # Per-pixel TF energy (v00² + v90²)
     for i in range(n_ifo):
         for j in range(n_pix):
             td_energy[i, j] = v00[i, j] * v00[i, j] + v90[i, j] * v90[i, j]
 
-    # calculate the total energy, active pixels and mask
+    # --- Compute total energy, pixel activity mask ---
     Eo, NN, energy_total, mask = load_data_from_td(v00, v90, network_energy_threshold)
 
-    # calculate DPF f+,fx and their norms for the sky location sky_idx
+    # --- Dominant polarisation frame: f+/fx projections and norms ---
     _, f, F, fp, fx, si, co, ni = dpf_np_loops_vec(FP[sky_idx], FX[sky_idx], rms)
 
-    # gw strain packet, return number of selected pixels
+    # --- Project onto GW strain packet; select pixels above threshold ---
     Mo, ps, pS, mask, au, AU, av, AV = avx_GW_ps(v00, v90, f, F, fp, fx, ni, energy_total, mask, REG)
 
-    # othogonalize signal amplitudes
+    # --- Orthogonalise signal amplitudes (+ and x polarisations) ---
     Lo, si, co, ee, EE = avx_ort_ps(ps, pS, mask)
 
-    # coherent statistics
+    # --- Coherent network statistics ---
     _, _, _, _, coherent_energy, gn, rn = avx_stat_ps(v00, v90, ps, pS, si, co, mask)
 
-    ##############################
-    # Eo = _avx_packet_ps(pd, pD, _AVX, V4);            // get data packet
-    # Lo = _avx_packet_ps(ps, pS, _AVX, V4);            // get signal packet
-    # D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, V4);           // data packet energy snr
-    # S_snr = _avx_norm_ps(pS, pD, p_ec, V4);           // set signal norms, return signal SNR
-    # Ep = D_snr[0];
-    # Lp = S_snr[0];
-    ##############################
-    Eo, pd, pD, pD_E, pD_si, pD_co, pD_a, pD_A = avx_packet_ps(v00, v90, mask)  # get data packet
-    Lo, ps, pS, pS_E, pS_si, pS_co, pS_a, pS_A = avx_packet_ps(ps, pS, mask)  # get signal packet
+    # --- Build data and signal packets; compute xtalk-corrected SNRs ---
+    Eo, pd, pD, pD_E, pD_si, pD_co, pD_a, pD_A = avx_packet_ps(v00, v90, mask)  # data packet (Ep)
+    Lo, ps, pS, pS_E, pS_si, pS_co, pS_a, pS_A = avx_packet_ps(ps, pS, mask)    # signal packet (Lp)
 
-    detector_snr, pD_E, rn, pD_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E)
+    detector_snr, pD_E, rn, pD_norm = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E)  # data packet energy snr
     D_snr = np.sum(detector_snr)
-    S_snr, signal_snr, pS_E, pS_norm = gw_norm_numpy(pD_norm, pD_E, pS_E, coherent_energy) # return signal norms and signal SNR
-    # S_snr = np.sum(signal_norm)
+    S_snr, signal_snr, pS_E, pS_norm = gw_norm_numpy(pD_norm, pD_E, pS_E, coherent_energy)  # signal norms and signal SNR
     if DEBUG:
         print(S_snr, signal_snr)
         print("Eo = ", Eo, ", Lo = ", Lo, ", Ep = ", D_snr, ", Lp = ", S_snr)
 
-    ############### G-noise correction ##################
-    # _CC = _avx_noise_ps(pS, pD, _AVX, V4);            // get G-noise correction
-    # _mm256_storeu_ps(vvv, _CC);                     // extract coherent statistics
-    # Gn = vvv[0];                                   // gaussian noise correction
-    # Ec = vvv[1];                                   // core coherent energy in TF domain
-    # Dc = vvv[2];                                   // signal-core coherent energy in TF domain
-    # Rc = vvv[3];                                   // EC normalization
-    # Eh = vvv[4];                                   // satellite energy in TF domain
-    #################################
-
+    # --- Gaussian-noise correction and coherent energy decomposition ---
+    # Returns: Gn (Gaussian noise), Ec (core coherent energy), Dc (signal-core coherent energy),
+    #          Rc (EC normalisation), Eh (satellite/halo energy), Es, NC, NS
     # TODO: one more pixel selected, need to be fixed
-    # Gn: gaussian noise correction
-    # Ec: core coherent energy in TF domain
-    # Dc: signal-core coherent energy in TF domain
-    # Rc: EC normalization
-    # Eh: satellite energy in TF domain    
     Gn, Ec, Dc, Rc, Eh, Es, NC, NS = avx_noise_ps(pS_norm, pD_norm, energy_total, mask, coherent_energy, gn, rn)
 
     if DEBUG:
         print("Gn = ", Gn, ", Ec = ", Ec, ", Dc = ", Dc, ", Rc = ", Rc, ", Eh = ", Eh, ", Es = ", Es, ", NC = ", NC, ", NS = ", NS)
-    # # DEBUG:
-    # print(f"pD[0][393]: {pD[0][393]}, pS[0][393]: {pS[0][393]}")
-    # print(f"pD[1][393]: {pD[1][393]}, pS[1][393]: {pS[1][393]}")
 
-    ##################################
-    # N = _avx_setAMP_ps(pd, pD, _AVX, V4) - 1;           // set data packet amplitudes
-    # _avx_setAMP_ps(ps, pS, _AVX, V4);                 // set signal packet amplitudes
-    # _avx_loadNULL_ps(pn, pN, pd, pD, ps, pS, V4);        // load noise TF domain amplitudes
-    # D_snr = _avx_norm_ps(wdmMRA, pd, pD, _AVX, -V4);          // data packet energy snr
-    # N_snr = _avx_norm_ps(wdmMRA, pn, pN, _AVX, -V4);          // noise packet energy snr
-    # Np = N_snr.data[0];                            // time-domain NULL
-    # Em = D_snr.data[0];                            // time domain energy
-    # Lm = Em - Np - Gn;                                 // time domain signal energy
-    # norm = Em > 0 ? (Eo - Eh) / Em : 1.e9;               // norm
-    # if (norm < 1) norm = 1;                           // corrected norm
-    # Ec /= norm;                                   // core coherent energy in time domain
-    # Dc /= norm;                                   // signal-core coherent energy in time domain
-    # ch = (Np + Gn) / (N * nIFO);                         // chi2
-    ##################################
+    # --- Set packet amplitudes and compute time-domain null / energy ---
+    N, pd, pD = avx_setAMP_ps(pd, pD, pD_norm, pD_si, pD_co, pD_a, pD_A, mask)  # data amplitudes
+    N = N - 1  # effective pixel count
+    _, ps, pS = avx_setAMP_ps(ps, pS, pS_norm, pS_si, pS_co, pS_a, pS_A, mask)  # signal amplitudes
+    pn, pN = avx_loadNULL_ps(pd, pD, ps, pS)                                     # noise = data - signal
 
-    # set data packet amplitudes
-    N, pd, pD = avx_setAMP_ps(pd, pD, pD_norm, pD_si, pD_co, pD_a, pD_A, mask)  # set data packet amplitudes
-    N = N - 1  # effective number of pixels
-    # set signal packet amplitudes
-    _, ps, pS = avx_setAMP_ps(ps, pS, pS_norm, pS_si, pS_co, pS_a, pS_A, mask)
-    # load noise TF domain amplitudes
-    pn, pN = avx_loadNULL_ps(pd, pD, ps, pS)
-    # data packet energy snr (C++ _avx_norm_ps(pd,pD,-V4): raw xtalk sum, no clamping)
+    # Raw xtalk sums (no clamping, mirrors C++ _avx_norm_ps(-V4))
     _, pD_E, rn, _ = packet_norm_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E)
-    Em = xtalk_energy_sum_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)
-    # null packet energy (C++ _avx_norm_ps(pn,pN,-V4): raw xtalk sum, no clamping)
-    Np = xtalk_energy_sum_numpy(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)
-    D_snr = Em  # data packet energy snr (for backward compat)
-    Lm = Em - Np - Gn  # time domain signal energy
-    norm = (Eo - Eh) / Em if (Eo - Eh) > 0 else 1.e9  # norm
+    Em = xtalk_energy_sum_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain data energy
+    Np = xtalk_energy_sum_numpy(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain null energy
+    D_snr = Em  # alias for backward compat
+    Lm = Em - Np - Gn   # time-domain signal energy
+    norm = (Eo - Eh) / Em if Em > 0 else 1.e9
     if norm < 1:
         norm = 1
-    Ec /= norm  # core coherent energy in time domain
-    Dc /= norm  # signal-core coherent energy in time domain
-    ch = (Np + Gn) / (N * n_ifo)  # chi
+    Ec /= norm  # core coherent energy normalised to time domain
+    Dc /= norm  # signal-core coherent energy normalised to time domain
+    ch = (Np + Gn) / (N * n_ifo)  # chi2
     if DEBUG:
         print("Np = ", Np, ", Em = ", Em, ", Lm = ", Lm, ", norm = ", norm, ", Ec = ", Ec, ", Dc = ", Dc, ", ch = ", ch)
 
-    #################################
-    # if (netRHO >= 0) {    // original 2G
-    #     cc = ch > 1 ? ch : 1;                          // rho correction factor
-    #     rho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;           // cWB detection stat
-    # } else {        // (XGB.rho0)
-    #     penalty = ch;
-    #     ecor = Ec;
-    #     rho = sqrt(ecor / (1 + penalty * (max((float) 1., penalty) - 1)));
-    #     // original 2G rho statistic: only for test
-    #     cc = ch > 1 ? ch : 1;                          // rho correction factor
-    #     xrho = Ec > 0 ? sqrt(Ec * Rc / 2.) : 0.;          // cWB detection stat
-    # }
-    #################################
+    # --- Detection statistic rho (mode-dependent) ---
     xrho = 0.
     penalty = 0.
     ecor = 0.
-    if not xgb_rho_mode: # original 2G
-        cc = ch if ch > 1 else 1  # rho correction factor
-        rho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
+    if not xgb_rho_mode:  # original 2G
+        cc = ch if ch > 1 else 1             # noise correction factor
+        rho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB rho
         if DEBUG:
             print("cc = ", cc, ", rho = ", rho)
     else:  # XGB.rho0
         penalty = ch
         ecor = Ec
         rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1)))
-        # original 2G rho statistic: only for test
-        cc = ch if ch > 1 else 1  # rho correction factor
-        xrho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # cWB detection stat
+        cc = ch if ch > 1 else 1             # noise correction factor (kept for xrho)
+        xrho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # original 2G rho (reference only)
         if DEBUG:
             print("cc = ", cc, ", rho = ", rho, ", ecor = ", ecor, ", penalty = ", penalty, ", xrho = ", xrho)
-    #################################
-    # // save projection on network plane in polar coordinates
-    # // The Dual Stream Transform (DSP) is applied to v00,v90
-    # _avx_pol_ps(v00, v90, p00_POL, p90_POL, _APN, _AVX, V4);
-    # // save DSP components in polar coordinates
-    # _avx_pol_ps(v00, v90, r00_POL, r90_POL, _APN, _AVX, V4);
-    #################################
-    # save projection on network plane in polar coordinates
-    v00, v90, p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)
-    # save DSP components in polar coordinates
-    v00, v90, r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)
+
+    # --- Project residuals onto network polarisation plane (Dual Stream Transform) ---
+    v00, v90, p00_POL, p90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)  # network-plane projection
+    v00, v90, r00_POL, r90_POL = avx_pol_ps(v00, v90, mask, fp, fx, f, F)  # DSP components
 
     return SkyStatistics(
         Gn=np.float32(Gn),
@@ -1085,77 +1023,29 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                              + xt[3] * np.dot(pS_i, pS_arr[:, k]))
             pixel.likelihood = like_acc
 
-    # subnetwork statistic
+    # --- Subnetwork statistic ---
     Nmax = 0.0
     Emax = np.max(S_snr)
-
     Esub = np.sum(S_snr) - Emax
     Esub = Esub * (1 + 2 * Rc * Esub / Emax)
     Nmax = Gn + Np - N_pix_effective * (n_ifo - 1)
 
-    # --- Accumulate time-domain waveform statistics (mirrors C++ getMRAwave('W') + ('S') loop)
-    #
-    # Lw  —  waveform likelihood  (C++: cData[id-1].likenet, stored in Event.likelihood)
-    # ─────────────────────────────────────────────────────────────────────────────────────
-    # C++ computes Lw by:
-    #   1. getMRAwave('S') → reconstructs the whitened signal time series for each IFO:
-    #          s_i(t) = Σ_{j∈core} [ asnr_ij · ψ00_j(t) + a_90_ij · ψ90_j(t) ]
-    #      where ψ00_j / ψ90_j are the 0°/90° WDM basis functions for pixel j (netcluster.cc).
-    #   2. get_SS() = Σ_t s_i(t)²  — squared norm of the reconstructed waveform.
-    #   3. Lw = Σ_i  get_SS_i
-    #
-    # Expanding the squared norm reveals WDM cross-pixel inner products (xtalk):
-    #
-    #   Lw = Σ_i  Σ_{j,k ∈ core, CC0_jk ≤ 2}
-    #               [ CC0_jk · asnr_ij · asnr_ik          (00–00 cross)
-    #               + CC1_jk · asnr_ij · a_90_ik          (00–90 cross)
-    #               + CC2_jk · a_90_ij · asnr_ik          (90–00 cross)
-    #               + CC3_jk · a_90_ij · a_90_ik ]        (90–90 cross)
-    #
-    # where CC0–CC3 = WDM basis inner products from the xtalk catalog:
-    #   CC0 = <ψ00_j, ψ00_k>,  CC1 = <ψ00_j, ψ90_k>,
-    #   CC2 = <ψ90_j, ψ00_k>,  CC3 = <ψ90_j, ψ90_k>.
-    # The cut CC0 > 2 skips non-overlapping pairs (sentinel value in the catalog).
-    #
-    # For a coherent GW signal spanning V core pixels, the O(V²) cross-terms can be as
-    # large as the O(V) diagonal, so the diagonal-only approximation underestimates Lw
-    # by a factor O(V) for detection-strength signals.
-    #
+    # --- Time-domain waveform statistics via getMRAwave reconstruction ---
+    # Mirrors C++ getMRAwave('W') + getMRAwave('S') loop.
     # See docs/math/waveform_likelihood.md for the full derivation.
     #
-    # Ew = Σ_{i,j} (wave²_ij + w_90²_ij)  — time-domain data energy  (diagonal, no xtalk)
-    # Nw = Σ_{i,j} (pn²_ij  + pN²_ij)   — time-domain null energy   (diagonal, no xtalk)
-    # To = Σ_j w_j·t_j / Lw              — Lw-weighted mean time
-    # Fo = Σ_j w_j·f_j / Lw              — Lw-weighted mean frequency
-    #   where w_j = Σ_i (asnr²_ij + a_90²_ij)  (per-pixel diagonal sSNR used as centroid weight)
+    # Per-IFO quantities (whitened time-domain waveforms):
+    #   sSNR_i = Σ_t z_signal_i(t)²             (signal energy / sSNR)  → Lw = Σ_i sSNR_i
+    #   snr_i  = Σ_t z_data_i(t)²               (data   energy / snr)   → Ew_wf
+    #   null_i = Σ_t (z_data - z_signal)_i(t)²  (null   energy)         → Nw_wf
+    # To/Fo   = sSNR-weighted mean time / frequency over core pixels
     ps_arr_np = np.asarray(ps, dtype=np.float64)   # (n_ifo, n_pix)
     pS_arr_np = np.asarray(pS, dtype=np.float64)
     pd_arr_np = np.asarray(pd, dtype=np.float64)   # data amplitudes after avx_setAMP_ps
     pD_arr_np = np.asarray(pD, dtype=np.float64)
-    # Core pixel indices — only core pixels contribute to getMRAwave (ps/pS are 0 for non-core
-    # after avx_setAMP_ps, but using explicit core mask matches the C++ getMRAwave logic)
+    # Core pixel indices — only core pixels contribute to getMRAwave
     core_indices = [k for k, pix in enumerate(cluster.pixels) if pix.core]
 
-    # ---------------------------------------------------------------------------
-    # WDM synthesis: exact getMRAwave equivalent (pure Python, no ROOT)
-    #
-    # When config is provided, reconstruct the time-domain signal waveforms
-    # exactly as C++ getMRAwave does, using WDMWavelet.w2t() + w2tQ():
-    #   z_ifo(t) = Σ_{j∈core} [ a00_ij * ψ00_j(t) + a90_ij * ψ90_j(t) ]
-    # then compute:
-    #   get_SS_i = Σ_t z_ifo_signal_i(t)²     (sSNR per IFO)
-    #   get_XX_i = Σ_t z_ifo_data_i(t)²       (snr  per IFO)
-    #   get_NN_i = Σ_t (z_data - z_signal)²   (null per IFO)
-    #   get_XS_i = sqrt(get_XX_i * get_SS_i)  (xSNR per IFO)
-    #   Lw  = Σ_i get_SS_i
-    #   Ew  = Σ_i get_XX_i
-    #   Nw  = Σ_i get_NN_i
-    #   To  = Σ_i get_SS_i * getWFtime_i / Lw
-    #   Fo  = Σ_i get_SS_i * getWFfreq_i / Lw
-    #
-    # Falls back to xtalk-catalog double-sum when config is not available.
-    # See docs/math/waveform_likelihood.md for derivation.
-    # ---------------------------------------------------------------------------
     Lw = 0.0
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
@@ -1164,25 +1054,15 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     To = 0.0
     Fo = 0.0
 
-    # FIXME: config is required
     if config is not None and len(core_indices) > 0:
-        # ---------------------------------------------------------------------------
-        # Pure Python getMRAwave equivalent (mirrors C++ netcluster::getMRAwave 'W'/'S')
-        #
-        # For each IFO we call get_MRA_wave() which reconstructs the whitened
-        # time-domain waveform  z_i(t) = Σ_{j∈core} [a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t)]
-        # and then compute:
-        #   get_SS_i = Σ_t z_signal_i(t)²   (sSNR per IFO)
-        #   get_XX_i = Σ_t z_data_i(t)²     (snr  per IFO)
-        #   get_NN_i = Σ_t (z_data - z_signal)²  (null per IFO)
-        # This is exactly what C++ getMRAwave('W') / getMRAwave('S') + avx_norm does.
-        # ---------------------------------------------------------------------------
+        # --- WDM synthesis path: exact getMRAwave equivalent (pure Python, no ROOT) ---
+        # Reconstructs whitened time-domain waveforms per IFO:
+        #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
         from pycwb.modules.reconstruction.getMRAwaveform import (
             _create_wdm_set_python, get_MRA_wave,
         )
 
         # TODO: maybe reuse the wdm list
-        # Build WDM kernel list for all resolutions present in the cluster
         wdm_list = _create_wdm_set_python(config)
         rate_ana = float(config.rateANA)
 
@@ -1270,27 +1150,18 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     # xSNR per IFO: geometric mean  C++ get_XS() = sqrt(get_XX() * get_SS())
     xSNR_ifo = np.sqrt(np.maximum(snr_ifo * sSNR_ifo, 0.0))
 
-    # -----------------------------------------------------------------------
-    # Detection statistics: netCC, norm
-    # -----------------------------------------------------------------------
-    # Notation (mirrors network.cc likelihoodWP):
-    #   Eo    — total TF-domain data energy           (from avx_loadata_ps)
-    #   Eh    — satellite (halo) energy in TF domain  (from avx_noise_ps)
-    #   Em    — pixel-domain xtalk-corrected energy   (_avx_norm_ps(pd,pD,-V4) after setAMP)
-    #           → stored as likesky (neted[3]) in C++
-    #   Ew_wf — waveform-domain xtalk-corrected data energy (Σ get_XX() after getMRAwave 'W')
-    #           → stored as energy (neted[2]) and used for norm denominator
-    #   Nw_wf — waveform-domain xtalk-corrected null energy (Σ get_NN() after getMRAwave 'W')
-    #           → stored as netnull - Gn; used for Cp, Cr, netED
-    #
-    # C++ formulas (after getMRAwave):
-    #   ch_wf  = (Nw_wf + Gn) / (N * nIFO)
-    #   cc_Cr  = ch > 1 ? 1 + (ch-1)*2*(1-Rc) : 1          ← Cr correction (NOT simple ch!)
-    #   cc_rho = ch > 1 ? ch : 1                             ← rho correction (simple ch from pixel Np)
-    #   Cp     = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)         - N*(nIFO-1))   # netCC[0]
-    #   Cr     = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)*cc_Cr   - N*(nIFO-1))   # netCC[1]
-    #   norm   = (Eo - Eh) / Ew_wf    then clamped to ≥ 1;  stored as norm*2
-    # -----------------------------------------------------------------------
+    # --- Detection statistics: netCC, norm, rho (mirrors network.cc likelihoodWP) ---
+    # Energy notation:
+    #   Eo    — total TF-domain data energy
+    #   Eh    — satellite (halo) energy
+    #   Em    — pixel-domain xtalk-corrected energy (likesky / neted[3])
+    #   Ew_wf — waveform-domain data energy from getMRAwave (neted[2])
+    #   Nw_wf — waveform-domain null energy from getMRAwave (neted[1] - Gn)
+    # C++ formulas:
+    #   ch_wf = (Nw_wf + Gn) / (N * nIFO)
+    #   Cp = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)       - N*(nIFO-1))   # netCC[0]
+    #   Cr = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)*cc_Cr - N*(nIFO-1))   # netCC[1]
+    #   norm = (Eo-Eh) / Ew_wf  clamped to ≥ 1, stored as norm*2
     Dc = float(sky_statistics.Dc)
     Ec = float(sky_statistics.Ec)
     Rc_val = float(sky_statistics.Rc)
@@ -1298,45 +1169,36 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     Eh = float(sky_statistics.Eh)
     Gn_val = float(sky_statistics.Gn)
     N_eff = float(N_pix_effective)
-    # Use getMRAwave-equivalent Nw_wf for chi2 (and clamp to 0 to avoid negative chi2)
-    Nw_for_stats = max(Nw_wf, 0.0)
+    Nw_for_stats = max(Nw_wf, 0.0)  # clamp to avoid negative chi2
     ch_td = (Nw_for_stats + Gn_val) / (N_eff * n_ifo) if (N_eff * n_ifo) > 0 else 1.0
 
-    # cc_Cr: Cr correction factor (C++ formula: 1 + (ch-1)*2*(1-Rc) for ch>1, else 1)
+    # cc_Cr: Cr-specific correction (NOT the simple ch used for rho)
     cc_Cr = 1.0 + (ch_td - 1.0) * 2.0 * (1.0 - Rc_val) if ch_td > 1.0 else 1.0
     denom_r = Ec * Rc_val + (Dc + Nw_for_stats + Gn_val) * cc_Cr - N_eff * (n_ifo - 1)
     denom_p = Ec * Rc_val + (Dc + Nw_for_stats + Gn_val) - N_eff * (n_ifo - 1)
     Cr_td = (Ec * Rc_val / denom_r) if denom_r > 0 else 0.0
     Cp_td = (Ec * Rc_val / denom_p) if denom_p > 0 else 0.0
 
-    # norm: (Eo-Eh) / Ew_wf  where Ew_wf = getMRAwave-equivalent data energy (Σ get_XX())
     norm_td = (Eo - Eh) / Ew_wf if Ew_wf > 0 else 1.0
     if norm_td < 1.0:
         norm_td = 1.0
 
-    # C++ rho uses /sqrt(cc) where cc is recomputed AFTER getMRAwave using Nw (time-domain null).
-    # C++ line 939: cc = ch > 1 ? ch : 1  where ch = (Nw+Gn)/(N*nIFO)
-    # Since null_ifo (= Nw) already matches C++ exactly, use ch_td (getMRAwave-based) for cc_rho.
+    # rho is divided by sqrt(cc) using Nw-based chi2 (time-domain null, matches C++ line 939)
     cc_rho_td = ch_td if ch_td > 1.0 else 1.0
     rho_reduced = float(sky_statistics.rho) / sqrt(cc_rho_td)
 
     # --- Store all fields on cluster_meta ---
-    cluster.cluster_meta.sky_size = event_size             # event size in the skyloop
+    cluster.cluster_meta.sky_size = event_size
     cluster.cluster_meta.sub_net = Esub / (Esub + Nmax) if (Esub + Nmax) > 0 else 0.0
     cluster.cluster_meta.sub_net2 = skymap_statistics.nCorrelation[skymap_statistics.l_max]
-    # neted[3]: likesky = Em (pixel-domain xtalk energy from _avx_norm_ps(pd,pD,-V4) after setAMP)
-    # NOT Eo-Eh! sky_statistics.Em stores this value from calculate_sky_statistics.
-    cluster.cluster_meta.like_sky = float(sky_statistics.Em)          # Em at best sky (neted[3])
-    cluster.cluster_meta.energy_sky = sky_statistics.Eo               # TF-domain all-res energy (neted[4])
-    cluster.cluster_meta.net_ecor = sky_statistics.Ec                 # packet (signal) coherent energy
-    cluster.cluster_meta.norm_cor = sky_statistics.Ec * sky_statistics.Rc  # normalized coherent energy
+    cluster.cluster_meta.like_sky = float(sky_statistics.Em)          # Em (neted[3]): pixel-domain xtalk energy
+    cluster.cluster_meta.energy_sky = sky_statistics.Eo               # TF-domain data energy (neted[4])
+    cluster.cluster_meta.net_ecor = sky_statistics.Ec                 # packet coherent energy
+    cluster.cluster_meta.norm_cor = sky_statistics.Ec * sky_statistics.Rc  # normalised coherent energy
     cluster.cluster_meta.like_net = float(Lw)                         # waveform likelihood (likenet)
-    # neted[2]: energy = Ew from getMRAwave in C++ = xtalk double-sum of data amplitudes per IFO
     cluster.cluster_meta.energy = float(Ew_wf)                        # getMRAwave data energy (neted[2])
-    # neted[1]: netnull = Nw_wf + Gn   (getMRAwave null + Gaussian noise correction)
-    # neted[0]: netED  = Nw_wf + Gn + Dc - N*nIFO
-    cluster.cluster_meta.net_null = float(Nw_for_stats + Gn_val)      # packet NULL (neted[1])
-    cluster.cluster_meta.net_ed = float(Nw_for_stats + Gn_val + Dc - N_eff * n_ifo)  # residual NULL (neted[0])
+    cluster.cluster_meta.net_null = float(Nw_for_stats + Gn_val)      # packet null (neted[1])
+    cluster.cluster_meta.net_ed = float(Nw_for_stats + Gn_val + Dc - N_eff * n_ifo)  # residual null (neted[0])
     cluster.cluster_meta.norm = float(norm_td * 2.0)                  # packet norm
     cluster.cluster_meta.net_cc = float(Cp_td)                        # network cc (netcc[0])
     cluster.cluster_meta.sky_cc = float(Cr_td)                        # reduced network cc (netcc[1])
@@ -1385,7 +1247,13 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
 
 
 
-def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float, netEC_threshold: float, xgb_rho_mode: bool = False) -> str:
+def threshold_cut(
+    sky_statistics: SkyStatistics,
+    network_energy_threshold: float,
+    netEC_threshold: float,
+    net_rho_threshold: float | None = None,
+    xgb_rho_mode: bool = False,
+) -> str:
     """
     Apply threshold cuts based on the sky statistics and network energy threshold.
     
@@ -1397,6 +1265,9 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
         The threshold for network energy.
     netEC_threshold : float
         The threshold for net correlation energy (``netEC``).
+    net_rho_threshold : float or None, optional
+        Absolute ``netRHO`` threshold. In XGB mode C++ compares against
+        ``fabs(netRHO)`` directly.
     xgb_rho_mode : bool, optional
         If True, apply XGB.rho0 cuts instead of the original 2G cuts.
 
@@ -1405,26 +1276,6 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     str or None
         A rejection reason string if any cut fails; ``None`` if the cluster passes.
     """
-    # if (this->netRHO >= 0)
-    #   { // original 2G
-    #     if (Lm <= 0. || (Eo - Eh) <= 0. || Ec * Rc / cc < netEC || N < 1)
-    #     {
-    #       pwc->sCuts[id - 1] = 1;
-    #       count = 0; // reject cluster
-    #       pwc->clean(id);
-    #       continue;
-    #     }
-    #   }
-    #   else
-    #   { // (XGB.rho0)
-    #     if (Lm <= 0. || (Eo - Eh) <= 0. || rho < fabs(this->netRHO) || N < 1)
-    #     {
-    #       pwc->sCuts[id - 1] = 1;
-    #       count = 0; // reject cluster
-    #       pwc->clean(id);
-    #       continue;
-    #     }
-    #   }
     Lm = sky_statistics.Lm
     Eo = sky_statistics.Eo
     Eh = sky_statistics.Eh
@@ -1432,7 +1283,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
     Rc = sky_statistics.Rc
     cc = sky_statistics.cc
     rho = sky_statistics.rho
-    N = sky_statistics.N_pix_effective   # C++ N = _avx_setAMP_ps() - 1 = effective pixel count
+    N = sky_statistics.N_pix_effective   # effective pixel count (_avx_setAMP_ps() - 1)
     if not xgb_rho_mode:
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
@@ -1450,10 +1301,12 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
                 rejection_reason += f" N < 1 but N = {N};"
             return rejection_reason
     else:
-        # For XGB.rho0 case
+        # For XGB.rho0 case C++ uses `rho < fabs(netRHO)` directly.
+        if net_rho_threshold is None:
+            net_rho_threshold = (netEC_threshold / 2.0) ** 0.5
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
-        condition_3 = rho < network_energy_threshold
+        condition_3 = rho < net_rho_threshold
         condition_4 = N < 1   # C++: N < 1 (pixel count)
         if condition_1 or condition_2 or condition_3 or condition_4:
             rejection_reason = ""
@@ -1462,7 +1315,7 @@ def threshold_cut(sky_statistics: SkyStatistics, network_energy_threshold: float
             if condition_2:
                 rejection_reason += f" (Eo - Eh) > 0 but (Eo - Eh) = {Eo - Eh};"
             if condition_3:
-                rejection_reason += f" rho >= network_energy_threshold but rho = {rho} < {network_energy_threshold};"
+                rejection_reason += f" rho >= |netRHO| but rho = {rho} < {net_rho_threshold};"
             if condition_4:
                 rejection_reason += f" N < 1 but N = {N};"
             return rejection_reason
