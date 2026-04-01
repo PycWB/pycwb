@@ -3,12 +3,11 @@ import numpy as np
 from numba import njit
 from numpy import float32
 from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
-from pycwb.modules.xtalk.monster import getXTalk_pixels
+from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
 
 
-def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho,
-                xtalk_coeff, xtalk_lookup_table, layers):
+def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, subnorm, subrho, xtalk: XTalk):
     """
     This function is used to cut the subnet from the lag and return the new lag
     """
@@ -17,7 +16,7 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
 
     rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
 
-    cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, True, layers, xtalk_coeff, xtalk_lookup_table)
+    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(pixels, True)
 
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))  # (ndelay, nifo, npix)

@@ -192,7 +192,7 @@ def getXTalk(nLayer1, indx1, nLayer2, indx2, layers, xtalk_coeff, xtalk_lookup_t
 
 
 @njit(cache=True)
-def getXTalk_pixels_np(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
+def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
     n_pix = len(pixels)
 
     clusterCC = np.empty((n_pix * n_pix, 8), dtype=np.float32)
@@ -224,11 +224,3 @@ def getXTalk_pixels_np(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
         # sizeCC.append(len(tmp_data) // 8)
         # clusterCC.append(np.array(tmp_data, dtype=np.float32))
     return clusterCC_lookup, clusterCC[0:index_counter]
-
-
-def getXTalk_pixels(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
-    pixels_np = np.array([[pix.layers, pix.time] for pix in pixels])
-
-    clusterCC_lookup, clusterCC = getXTalk_pixels_np(pixels_np, check, layers, xtalk_coeff, xtalk_lookup_table)
-
-    return clusterCC_lookup, clusterCC

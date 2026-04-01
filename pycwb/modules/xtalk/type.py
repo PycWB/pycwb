@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from .monster import load_catalog, getXTalk_pixels, getXTalk
+from .monster import load_catalog, getXTalk_pixels_numba, getXTalk
 from pycwb.types.network_pixel import Pixel
 
 @dataclass
@@ -45,7 +45,10 @@ class XTalk:
                 - cluster_xtalk_lookup (np.ndarray): Lookup table for crosstalk coefficients.
                 - cluster_xtalk (np.ndarray): Crosstalk coefficients for the pixels.
         """
-        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels(pixels, check, self.layers, self.coeff, self.lookup_table)
+        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_numba(
+            np.array([[pix.layers, pix.time] for pix in pixels]),
+            check, self.layers, self.coeff, self.lookup_table
+        )
         return cluster_xtalk_lookup, cluster_xtalk
 
     def get_xtalk(self, pix1: Pixel, pix2: Pixel):

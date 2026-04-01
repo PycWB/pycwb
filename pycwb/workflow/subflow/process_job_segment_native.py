@@ -339,38 +339,20 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
             # ── 4c. Likelihood ───────────────────────────────────────────────
             # Run sky scan and reconstruction veto on every surviving cluster.
-            # cluster_status == 0 means the cluster passed the supercluster subnet cut.
             events_data = []
             for k, selected_cluster in enumerate(fragment_cluster.clusters):
                 if selected_cluster.cluster_status > 0:
                     continue
-
-                # Assign a 1-based sequential ID used throughout the event record.
                 selected_cluster.cluster_id = k + 1
-
                 result_cluster, sky_stats = likelihood(
-                    config.nIFO,
-                    selected_cluster,
-                    config.MRAcatalog,
-                    cluster_id=k + 1,
-                    nRMS=nRMS,
-                    setup=likelihood_setup,
-                    xtalk=xtalk,
-                    config=config,
+                    config.nIFO, selected_cluster, config,
+                    cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
                 )
-
                 if result_cluster is None or result_cluster.cluster_status != -1:
-                    logger.info(
-                        "likelihood rejected cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
-                        k + 1, lag, len(selected_cluster.pixels),
-                        selected_cluster.start_time, selected_cluster.stop_time,
-                        selected_cluster.low_frequency, selected_cluster.high_frequency,
-                    )
                     continue
-
                 logger.info(
                     "likelihood accepted cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
-                    k + 1, lag, len(result_cluster.pixels),
+                    result_cluster.cluster_id, lag, len(result_cluster.pixels),
                     result_cluster.start_time, result_cluster.stop_time,
                     result_cluster.low_frequency, result_cluster.high_frequency,
                 )

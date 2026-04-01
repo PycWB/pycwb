@@ -134,6 +134,7 @@ class Config:
     upTDF: Optional[int] = None
     segEdge: Optional[float] = None
     segMLS: Optional[float] = None
+    xgb_rho_mode: bool = False
 
     def load_from_yaml(self, file_name, schema=None):
         """
@@ -288,6 +289,21 @@ class Config:
         self.max_delay = max_delay(self.ifo)
 
         self.WDM_level = [int(self.l_high + self.l_low - i) for i in range(self.l_low, self.l_high + 1)]
+
+        # Backward compatibility: netRHO < 0 was the legacy cWB convention for XGB mode.
+        # If the user sets netRHO < 0 and has not explicitly set xgb_rho_mode, activate it
+        # automatically and emit a deprecation warning.
+        net_rho = float(getattr(self, "netRHO", 4.0))
+        if net_rho < 0 and not self.xgb_rho_mode:
+            import warnings
+            warnings.warn(
+                "Setting netRHO < 0 to activate XGBoost statistics mode is deprecated. "
+                "Please use 'xgb_rho_mode: true' in your config instead. "
+                "xgb_rho_mode has been set to True automatically.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            self.xgb_rho_mode = True
 
     def get_lag_buffer(self):
         """

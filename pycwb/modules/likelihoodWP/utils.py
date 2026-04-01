@@ -887,7 +887,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
 
         e = (pi * pi + qi * qi) / (t_clamped + _o)  # 1-d vector
 
-        q_norm[:, i] = np.where(e > 1, 0, e)
+        q_norm[:, i] = np.where(e >= 1, 0, e)
 
         u = x[0] + x[2]
         v = x[1] + x[3]
