@@ -5,7 +5,7 @@ from copy import copy
 from pycwb.config import Config
 from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
-from pycwb.modules.super_cluster.supercluster import supercluster
+from pycwb.modules.super_cluster.super_cluster_cwb import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
