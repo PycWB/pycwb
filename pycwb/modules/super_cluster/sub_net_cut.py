@@ -41,7 +41,7 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
         'subthr_passed': subthr_pass,
         'subnet_condition': f"min(suball = {suball:.4f}, submra = {submra:.4f}) > subnet = {subnet:.4f}",
         'subrho_condition': f"rho = {rHo:.4f} > subrho = {subrho:.4f}",
-        'subthr_condition': f"Em = {Em:.4f} > subnorm = {subnorm:.4f} * Eo = {Eo:.4f}"
+        'subthr_condition': f"Em = {Em:.4f} > (subnorm = {subnorm:.4f} * Eo = {Eo:.4f})"
     }
 
 
