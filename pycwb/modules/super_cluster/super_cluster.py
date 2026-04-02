@@ -1,19 +1,41 @@
+from __future__ import annotations
+
 import logging
 import time
+import types as _types
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 
-from .utils import get_cluster_links, calculate_statistics, get_defragment_link, \
-    aggregate_clusters_from_links, expected_td_vec_len, \
-    apply_subnet_cut
-from ...types.detector import compute_sky_delay_and_patterns, calculate_e2or_from_acore
+from .utils import (
+    aggregate_clusters_from_links,
+    apply_subnet_cut,
+    calculate_statistics,
+    expected_td_vec_len,
+    get_cluster_links,
+    get_defragment_link,
+)
+from ...types.detector import calculate_e2or_from_acore, compute_sky_delay_and_patterns
 from ...types.network_cluster import Cluster, ClusterMeta
 from ...types.time_series import TimeSeries
+
+if TYPE_CHECKING:
+    from pycwb.modules.xtalk.type import XTalk
 
 
 logger = logging.getLogger(__name__)
 
 
-def supercluster(clusters, atype, gap, threshold, n_ifo, mini_pix = 3, core=False, pair=False):
+def supercluster(
+    clusters: list[Cluster],
+    atype: str,
+    gap: float,
+    threshold: float,
+    n_ifo: int,
+    mini_pix: int = 3,
+    core: bool = False,
+    pair: bool = False,
+) -> list[Cluster]:
     """
     Supercluster algorithm
 
@@ -53,7 +75,9 @@ def supercluster(clusters, atype, gap, threshold, n_ifo, mini_pix = 3, core=Fals
     cluster_ids = np.arange(len(clusters))
 
     # find links between clusters
-    # FIXME: understand the dF here, it must be wrong to use the last dF for all clusters
+    # FIXME(#?): dF returned by get_cluster_links is the last-computed value for the final
+    # pixel pair examined, so it may not represent the cluster as a whole.
+    # Tracked in issue — do not use dF for per-cluster frequency normalisation until resolved.
     cluster_links, dF = get_cluster_links(pixels, gap, n_ifo)
 
     # remove redundant links
@@ -70,14 +94,49 @@ def supercluster(clusters, atype, gap, threshold, n_ifo, mini_pix = 3, core=Fals
         clusters_temp = []
         for c_id in c_ids:
             clusters_temp.append(clusters[c_id])
-        # TODO: move the cut out side of the supercluster, make it additional function
+        # TODO: extract the per-cluster cut into a separate function so supercluster()
+        # stays a pure grouping operation.
         sc = calculate_supercluster_data(clusters_temp, atype, core, pair, mini_pix, threshold, dF)
         superclusters.append(sc)
 
     return superclusters
 
 
-def calculate_supercluster_data(clusters, atype, core, pair, nPIX, S, dF):
+def calculate_supercluster_data(
+    clusters: list[Cluster],
+    atype: str,
+    core: bool,
+    pair: bool,
+    nPIX: int,
+    S: float,
+    dF: float,
+) -> Cluster:
+    """
+    Merge a group of clusters into one supercluster and compute its statistics.
+
+    Parameters
+    ----------
+    clusters : list[Cluster]
+        Clusters to merge (already linked by :func:`supercluster`).
+    atype : str
+        Statistics type: ``'L'`` (likelihood), ``'E'`` (energy), or ``'P'`` (power).
+    core : bool
+        If ``True``, only core pixels contribute to the statistics.
+    pair : bool
+        If ``True``, require at least two resolution levels.
+    nPIX : int
+        Minimum pixel count; candidates with fewer pixels are rejected.
+    S : float
+        Minimum amplitude/likelihood threshold per resolution level.
+    dF : float
+        Frequency correction term passed to :func:`calculate_statistics`.
+
+    Returns
+    -------
+    Cluster
+        Merged supercluster with ``cluster_status=0`` (accepted) or
+        ``cluster_status=1`` (rejected by statistics cut).
+    """
     # Vectorized pixel array construction for better performance
     pixel_data_list = []
     pixel_objects = []
@@ -117,18 +176,31 @@ def calculate_supercluster_data(clusters, atype, core, pair, nPIX, S, dF):
     return new_supercluster
 
 
-def defragment(clusters, t_gap, f_gap, n_ifo):
+def defragment(
+    clusters: list[Cluster],
+    t_gap: float,
+    f_gap: float,
+    n_ifo: int,
+) -> list[Cluster]:
     """
-    Defragmentation algorithm
+    Defragmentation algorithm — merge clusters that are close in time and frequency.
 
     Parameters
     ----------
-    cluster : FragmentCluster
-        The input cluster
-    Tgap : float
-        Time gap used to defragment clusters
-    Fgap : float
-        Frequency gap used to defragment clusters
+    clusters : list[Cluster]
+        Input clusters to defragment.
+    t_gap : float
+        Maximum time separation (seconds) for merging two clusters.
+    f_gap : float
+        Maximum frequency separation (Hz) for merging two clusters.
+    n_ifo : int
+        Number of interferometers.
+
+    Returns
+    -------
+    list[Cluster]
+        Defragmented clusters; may have fewer elements than *clusters* if
+        any were merged together.
     """
     # Vectorized pixel extraction
     pixel_data_list = []
@@ -172,8 +244,16 @@ def defragment(clusters, t_gap, f_gap, n_ifo):
     return superclusters
 
 
-def supercluster_wrapper(config, fragment_clusters, strains, xtalk_coeff, xtalk_lookup_table, layers,
-                         return_td_cache: bool = False, job_seg=None):
+def supercluster_wrapper(
+    config: Any,
+    fragment_clusters: list,
+    strains: list,
+    xtalk_coeff: np.ndarray,
+    xtalk_lookup_table: np.ndarray,
+    layers: np.ndarray,
+    return_td_cache: bool = False,
+    job_seg: Any | None = None,
+) -> list | tuple | None:
     """
     Convenience wrapper for interactive / legacy use.
 
@@ -206,7 +286,6 @@ def supercluster_wrapper(config, fragment_clusters, strains, xtalk_coeff, xtalk_
     strains = [TimeSeries.from_input(strain) for strain in strains]
 
     if job_seg is None:
-        import types as _types
         n_lag = len(fragment_clusters[0]) if fragment_clusters else 1
         job_seg = _types.SimpleNamespace(n_lag=n_lag)
     n_lag = int(job_seg.n_lag)
@@ -255,7 +334,7 @@ def supercluster_wrapper(config, fragment_clusters, strains, xtalk_coeff, xtalk_
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
 
-def setup_supercluster(config, gps_time):
+def setup_supercluster(config: Any, gps_time: float) -> dict:
     """
     Compute lag-independent supercluster resources: sky delay / antenna-pattern
     matrices and the K_td delay range.
@@ -344,7 +423,14 @@ def setup_supercluster(config, gps_time):
     }
 
 
-def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx, xtalk, td_inputs_cache):
+def supercluster_single_lag(
+    setup: dict,
+    config: Any,
+    fragment_clusters_single_lag: list,
+    lag_idx: int,
+    xtalk: XTalk,
+    td_inputs_cache: dict,
+) -> Any | None:
     """
     Run the full supercluster pipeline for a single lag.
 
@@ -461,7 +547,7 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         accepted_superclusters = defragment(
             accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
-        logger.info(f"   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixels) for c in accepted_superclusters))
+        logger.info("   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixels) for c in accepted_superclusters))
 
     subrho = config.subrho if config.subrho > 0 else config.netRHO
     accepted_superclusters = apply_subnet_cut(
@@ -485,8 +571,6 @@ def supercluster_single_lag(setup, config, fragment_clusters_single_lag, lag_idx
         accepted_superclusters = defragment(
             accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
-    else:
-        accepted_superclusters = accepted_superclusters
 
     total_pixels = sum(len(c.pixels) for c in accepted_superclusters)
     logger.info(

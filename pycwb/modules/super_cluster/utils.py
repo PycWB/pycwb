@@ -1,39 +1,70 @@
-import numpy as np
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+import numpy as np
+from numba import njit, types
 from numba.typed import List
-from numba import jit, njit, types
-from .sub_net_cut import sub_net_cut
+
 from pycwb.types.network_cluster import Cluster
+from .sub_net_cut import sub_net_cut
+
+if TYPE_CHECKING:
+    from pycwb.modules.xtalk.type import XTalk
+    from pycwb.types.time_series import TimeSeries
 
 
 logger = logging.getLogger(__name__)
 
 
-# @njit
-# def find(parent, x):
-#     """Path compression find."""
-#     if parent[x] != x:
-#         parent[x] = find(parent, parent[x])
-#     return parent[x]
-
 @njit
-def find(parent, x):
+def find(parent: np.ndarray, x: int) -> int:
+    """
+    Find the representative of the set containing *x* with iterative path compression.
+
+    Parameters
+    ----------
+    parent : np.ndarray
+        Parent array for the union-find structure.
+    x : int
+        Element whose root is to be found.
+
+    Returns
+    -------
+    int
+        Root representative of the set.
+    """
     root = x
-    # Find the root of the tree
+    # Walk up to the root.
     while parent[root] != root:
         root = parent[root]
 
-    # Path compression: update the parent pointers of all ancestors to point directly to the root
+    # Path compression: point every node on the path directly to root.
     while x != root:
-        next = parent[x]
+        next_node = parent[x]
         parent[x] = root
-        x = next
+        x = next_node
 
     return root
 
+
 @njit
-def union(parent, rank, x, y):
-    """Union by rank."""
+def union(parent: np.ndarray, rank: np.ndarray, x: int, y: int) -> None:
+    """
+    Merge the sets containing *x* and *y* using union-by-rank.
+
+    Parameters
+    ----------
+    parent : np.ndarray
+        Parent array for the union-find structure.
+    rank : np.ndarray
+        Rank array used to keep the tree shallow.
+    x : int
+        First element.
+    y : int
+        Second element.
+    """
     rootX = find(parent, x)
     rootY = find(parent, y)
     if rootX != rootY:
@@ -47,8 +78,21 @@ def union(parent, rank, x, y):
 
 
 @njit(cache=True)
-def aggregate_clusters(links):
-    """Aggregate clusters based on provided links."""
+def aggregate_clusters(links: np.ndarray) -> List:
+    """
+    Build connected components from a list of (i, j) edge pairs.
+
+    Parameters
+    ----------
+    links : np.ndarray of shape (N, 2), dtype int32
+        Pairs of cluster indices that should be merged.
+
+    Returns
+    -------
+    numba.typed.List[numba.typed.List[int32]]
+        Each inner list contains the indices belonging to one component.
+        Single-element components (isolated nodes) are excluded.
+    """
     n = np.max(links) + 1  # Assuming links are 0-indexed.
     parent = np.arange(n)
     rank = np.zeros(n, dtype=np.int32)
@@ -81,7 +125,20 @@ def aggregate_clusters(links):
 
 
 @njit(cache=True)
-def remove_duplicates_sorted(arr):
+def remove_duplicates_sorted(arr: np.ndarray) -> np.ndarray:
+    """
+    Remove consecutive duplicate rows from a sorted 2-D array.
+
+    Parameters
+    ----------
+    arr : np.ndarray of shape (N, 2)
+        Sorted array whose duplicate rows are to be removed.
+
+    Returns
+    -------
+    np.ndarray
+        View of *arr* with consecutive duplicates stripped.
+    """
     # Assuming arr is a sorted 2D numpy array of shape (n, 2)
     n = len(arr)
     if n == 0:
@@ -102,14 +159,32 @@ def remove_duplicates_sorted(arr):
     return unique[:count]
 
 
-# @njit(cache=True)
-def get_cluster_links(pixels, gap, n_ifo):
+def get_cluster_links(
+    pixels: np.ndarray, gap: float, n_ifo: int
+) -> tuple[np.ndarray, float]:
     """
+    Find (i, j) links between clusters whose pixels are close enough to merge.
 
-    :param pixels: list of pixels in format [0: time(s), 1: frequency(s), 2: 1/rate, 3: rate/2, 4: cluster_id, **data]
-    :param gap:
-    :param n_ifo:
-    :return:
+    Pixels are represented as rows in *pixels* where columns are:
+    ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+
+    Parameters
+    ----------
+    pixels : np.ndarray of shape (N, 5+n_ifo)
+        Per-pixel feature array sorted by time.
+    gap : float
+        Dimensionless overlap parameter; two pixels are linked when the
+        combined time-frequency distance satisfies ``eps <= gap``.
+    n_ifo : int
+        Number of interferometers (determines how many td-index columns exist).
+
+    Returns
+    -------
+    np.ndarray of shape (M, 2), dtype int32
+        Unique pairs of cluster indices that should be merged.
+    float
+        Last computed frequency gap value ``dF`` (used as a cluster-level
+        proxy; see FIXME in :func:`supercluster`).
     """
     pixels = pixels[pixels[:, 0].argsort()]
 
@@ -159,14 +234,39 @@ def get_cluster_links(pixels, gap, n_ifo):
                 else:
                     link = (int(q[4]), int(p[4]))
 
-                if link not in cluster_links:  # This check is not efficient in Numba
+                if link not in cluster_links:  # O(n) dedup; acceptable since cluster count is small
                     cluster_links.append(link)
 
     return np.array(cluster_links, dtype=np.int32), dF
 
 
 @njit(cache=True)
-def get_defragment_link(pixels, t_gap, f_gap, n_ifo):
+def get_defragment_link(
+    pixels: np.ndarray, t_gap: float, f_gap: float, n_ifo: int
+) -> np.ndarray:
+    """
+    Find (i, j) links between clusters for defragmentation.
+
+    Two clusters are linked when the time *and* frequency separations between
+    their representative pixels are both within the supplied thresholds.
+
+    Parameters
+    ----------
+    pixels : np.ndarray of shape (N, 5+n_ifo)
+        Per-pixel feature array: ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+    t_gap : float
+        Maximum allowed time separation in seconds.
+    f_gap : float
+        Maximum allowed frequency separation in Hz.
+    n_ifo : int
+        Number of interferometers.
+
+    Returns
+    -------
+    np.ndarray of shape (M, 2), dtype int32
+        Unique cluster-index pairs satisfying the defragmentation condition,
+        or an empty ``(0, 2)`` array when no links exist.
+    """
     pixels = pixels[pixels[:, 0].argsort()]
 
     Tgap = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
@@ -219,7 +319,41 @@ def get_defragment_link(pixels, t_gap, f_gap, n_ifo):
 
 
 @njit(cache=True)
-def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
+def calculate_statistics(
+    pixels: np.ndarray,
+    atype: str,
+    core: bool,
+    pair: bool,
+    nPIX: int,
+    S: float,
+    dF: float,
+) -> list[float] | None:
+    """
+    Compute summary statistics for a merged supercluster candidate.
+
+    Parameters
+    ----------
+    pixels : np.ndarray of shape (N, 6+n_ifo)
+        Per-pixel feature matrix.  Columns: ``[core, time, freq, rate, layers, likelihood, asnr_ifo0, …]``.
+    atype : str
+        Statistics type: ``'L'`` (likelihood), ``'E'`` (energy), or ``'P'`` (power).
+    core : bool
+        If ``True``, skip non-core pixels.
+    pair : bool
+        If ``True``, require at least two resolution levels.
+    nPIX : int
+        Minimum pixel count; clusters with fewer pixels are rejected.
+    S : float
+        Minimum amplitude/likelihood threshold per resolution level.
+    dF : float
+        Frequency correction term added to each pixel's frequency bin.
+
+    Returns
+    -------
+    list[float] or None
+        ``[cTime, cFreq, rate_max, rate_min, total_energy]`` when the cluster
+        passes all cuts, or ``None`` if it should be rejected.
+    """
     oEo = atype == 'E' or atype == 'P'
     cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
     max_size = len(pixels)
@@ -297,47 +431,65 @@ def calculate_statistics(pixels, atype, core, pair, nPIX, S, dF):
     if cut:
         return None
 
-    # Select the optimal resolution
-    a = -1.e99
-    max = -1
+    # Select the optimal resolution: find the level with the highest and lowest statistic.
+    a = -1.0e99
+    idx_max = -1
     for j in range(len(rate)):
         powr[j] = ampl[j] / sIZe[j]
         if atype == 'E' and ampl[j] > a and not cuts[j]:
-            max = j
+            idx_max = j
             a = ampl[j]
         if atype == 'L' and like[j] > a and not cuts[j]:
-            max = j
+            idx_max = j
             a = like[j]
         if atype == 'P' and powr[j] > a and not cuts[j]:
-            max = j
+            idx_max = j
             a = powr[j]
 
     if a < S:
         return None
 
-    min = -1
-    a = -1.e99
+    idx_min = -1
+    a = -1.0e99
     for j in range(len(rate)):
-        if max == j:
+        if idx_max == j:
             continue
         if atype == 'E' and ampl[j] < a and not cuts[j]:
-            min = j
+            idx_min = j
             a = ampl[j]
         if atype == 'L' and like[j] < a and not cuts[j]:
-            min = j
+            idx_min = j
             a = like[j]
         if atype == 'P' and powr[j] < a and not cuts[j]:
-            min = j
+            idx_min = j
             a = powr[j]
 
     cTime = cT / nT
     cFreq = cF / nF
 
-    return [cTime, cFreq, rate[max], rate[min], E]
+    return [cTime, cFreq, rate[idx_max], rate[idx_min], E]
 
 
-def aggregate_clusters_from_links(cluster_ids, cluster_links):
-    # aggregate clusters
+def aggregate_clusters_from_links(
+    cluster_ids: np.ndarray, cluster_links: np.ndarray
+) -> list[list[int]]:
+    """
+    Merge cluster ids using the provided edge list and append singleton clusters.
+
+    Parameters
+    ----------
+    cluster_ids : np.ndarray of int
+        Complete set of cluster indices (including isolated nodes).
+    cluster_links : np.ndarray of shape (M, 2), dtype int32
+        Pairs of cluster indices to merge.
+
+    Returns
+    -------
+    list[list[int]]
+        Each inner list holds the cluster indices belonging to one component.
+        Isolated clusters appear as single-element lists.
+    """
+    # Build connected components.
     aggregated_clusters = aggregate_clusters(cluster_links)
     aggregated_clusters = [list(cluster) for cluster in aggregated_clusters]
 
@@ -351,18 +503,68 @@ def aggregate_clusters_from_links(cluster_ids, cluster_links):
     return aggregated_clusters
 
 
-def extract_timeseries_data(strain):
+def extract_timeseries_data(strain: TimeSeries) -> tuple[np.ndarray, float, float]:
+    """
+    Extract raw data, sample rate, and start time from a strain object.
+
+    Parameters
+    ----------
+    strain : TimeSeries or compatible
+        Object exposing ``.data``, ``.sample_rate``, and ``.t0`` attributes.
+
+    Returns
+    -------
+    values : np.ndarray
+        Strain samples as float64.
+    sample_rate : float
+        Sampling frequency in Hz.
+    start : float
+        GPS start time of the time series.
+    """
     values = np.asarray(strain.data, dtype=np.float64)
     sample_rate = float(strain.sample_rate)
     start = float(strain.t0)
     return values, sample_rate, start
 
 
-def expected_td_vec_len(td_size):
+def expected_td_vec_len(td_size: int | float) -> int:
+    """
+    Return the expected length of a time-delay amplitude vector.
+
+    Parameters
+    ----------
+    td_size : int or float
+        Number of time-delay steps (``K_td``).
+
+    Returns
+    -------
+    int
+        Vector length ``4 * td_size + 2``.
+    """
     return 4 * int(td_size) + 2
 
 
-def resolve_wdm_context(layer_tag, context_map):
+def resolve_wdm_context(layer_tag: int | float, context_map: dict) -> object:
+    """
+    Look up the WDM context for *layer_tag*, falling back to ``layer_tag - 1``.
+
+    Parameters
+    ----------
+    layer_tag : int or float
+        WDM layer identifier (will be cast to ``int``).
+    context_map : dict
+        Mapping from integer layer tag to context object.
+
+    Returns
+    -------
+    object
+        The context object from *context_map*.
+
+    Raises
+    ------
+    ValueError
+        If neither ``layer_tag`` nor ``layer_tag - 1`` is present in *context_map*.
+    """
     layer_tag = int(layer_tag)
     context = context_map.get(layer_tag)
     if context is not None:
@@ -375,9 +577,61 @@ def resolve_wdm_context(layer_tag, context_map):
     raise ValueError(f"Missing WDM context for pixel layer {layer_tag}")
 
 
-def apply_subnet_cut(superclusters: list[Cluster], n_loudest_local, ml_local, FP_local, FX_local,
-                     acor_local, e2or_local, n_ifo_local, n_sky_local,
-                     subnet_local, subcut_local, subnorm_local, subrho_local, xtalk_local):
+def apply_subnet_cut(
+    superclusters: list[Cluster],
+    n_loudest_local: int,
+    ml_local: np.ndarray,
+    FP_local: np.ndarray,
+    FX_local: np.ndarray,
+    acor_local: float,
+    e2or_local: float,
+    n_ifo_local: int,
+    n_sky_local: int,
+    subnet_local: float,
+    subcut_local: float,
+    subnorm_local: float,
+    subrho_local: float,
+    xtalk_local: XTalk,
+) -> list[Cluster]:
+    """
+    Apply the sub-network cut and mark clusters that pass or fail.
+
+    Parameters
+    ----------
+    superclusters : list[Cluster]
+        Candidate clusters to evaluate.
+    n_loudest_local : int
+        Number of loudest pixels to pass to :func:`sub_net_cut`.
+    ml_local : np.ndarray
+        Sky-delay matrix (reduced resolution for subnet check).
+    FP_local : np.ndarray
+        Plus-polarisation antenna-pattern matrix.
+    FX_local : np.ndarray
+        Cross-polarisation antenna-pattern matrix.
+    acor_local : float
+        Correlation threshold.
+    e2or_local : float
+        Energy-to-overfit-ratio threshold.
+    n_ifo_local : int
+        Number of interferometers.
+    n_sky_local : int
+        Number of sky pixels.
+    subnet_local : float
+        Sub-network statistic threshold.
+    subcut_local : float
+        Sub-network cut threshold.
+    subnorm_local : float
+        Sub-network normalisation factor.
+    subrho_local : float
+        Sub-network SNR threshold.
+    xtalk_local : XTalk
+        Cross-talk catalogue instance.
+
+    Returns
+    -------
+    list[Cluster]
+        Clusters with ``cluster_status <= 0``, i.e. those that passed the cut.
+    """
     for i, c in enumerate(superclusters):
         c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
         results = sub_net_cut(

@@ -1,4 +1,4 @@
-from .supercluster import supercluster
+from .super_cluster_cwb import supercluster
 from .super_cluster import (
     supercluster_wrapper,
     setup_supercluster,
