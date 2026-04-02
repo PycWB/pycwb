@@ -677,15 +677,20 @@ def load_ref_events(ref_csv: str) -> pd.DataFrame:
     return df
 
 
-def match_ref_to_pyc(df_ref: pd.DataFrame, df_pyc: pd.DataFrame) -> pd.DataFrame:
+def match_ref_to_pyc(df_ref: pd.DataFrame, df_pyc: pd.DataFrame, tolerance: float = 0.0) -> pd.DataFrame:
     """Match reference events to pycWB triggers by time-range containment.
 
     A pycWB trigger is considered **found** for a reference event when its
-    GPS time falls within the reference event's window:
-        gps_start_ref <= gps_time_pyc <= gps_end_ref
+    GPS time falls within the reference event's window (±tolerance):
+        gps_start_ref - tolerance <= gps_time_pyc <= gps_end_ref + tolerance
 
     If multiple pycWB triggers fall inside the same reference window the one
     closest to the window centre is chosen.
+
+    Parameters
+    ----------
+    tolerance : float
+        Extra time (seconds) added on both sides of the reference window.
 
     Adds columns to a copy of *df_ref*:
     - ``ref_status``    : ``"found"`` or ``"missing_in_pycwb"``
@@ -695,23 +700,25 @@ def match_ref_to_pyc(df_ref: pd.DataFrame, df_pyc: pd.DataFrame) -> pd.DataFrame
     t_end   = df_ref["gps_end_ref"].to_numpy(dtype=np.float64)
     t_pyc   = df_pyc["gps_time_pyc"].to_numpy(dtype=np.float64)
 
-    matched_pyc_idx: list[int | None] = []
+    matched_pyc_idx: list[int | None] = [None] * len(t_start)
     used_pyc: set[int] = set()
 
-    for t0, t1 in zip(t_start, t_end):
-        # All pycWB triggers inside [t0, t1]
+    # Process reference events sorted by window size (smallest first) so that
+    # tightly-constrained injections claim their trigger before wider windows,
+    # then fall back to tolerance for remaining unmatched events.
+    order = np.argsort(t_end - t_start)           # smallest window first
+    for i in order:
+        t0, t1 = t_start[i], t_end[i]
         centre = 0.5 * (t0 + t1)
         candidates = [
             (abs(t_pyc[j] - centre), j)
             for j in range(len(t_pyc))
-            if t0 <= t_pyc[j] <= t1 and j not in used_pyc
+            if t0 - tolerance <= t_pyc[j] <= t1 + tolerance and j not in used_pyc
         ]
         if candidates:
             _, best_j = min(candidates)
-            matched_pyc_idx.append(best_j)
+            matched_pyc_idx[i] = best_j
             used_pyc.add(best_j)
-        else:
-            matched_pyc_idx.append(None)
 
     df_out = df_ref.copy()
     df_out["ref_status"] = [
@@ -1086,6 +1093,547 @@ def _pycwb_status_pages(pdf_pages, unmatched_cwb: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Live ROOT file — cWB job windows and livetime
+# ---------------------------------------------------------------------------
+
+def load_live_root(live_file: str, n_ifo: int = 2) -> dict:
+    """Read the ``liveTime`` tree from a cWB ``live_*.root`` file.
+
+    Returns
+    -------
+    dict with keys:
+      ``cwb_zero_lag_livetime`` : float — sum of ``live`` for zero-lag entries
+      ``cwb_total_livetime``    : float — sum of ``live`` for all entries
+      ``n_jobs``                : int   — number of zero-lag entries
+      ``job_windows``           : list of ``(start_gps, stop_gps)`` from IFO[0]
+      ``df``                    : pd.DataFrame — full raw table
+    """
+    log.info("Reading live ROOT file: %s", live_file)
+    with uproot.open(f"{live_file}:liveTime") as tree:
+        n = tree.num_entries
+        log.info("  liveTime entries: %d", n)
+        raw = tree.arrays(["run", "gps", "live", "lag", "slag", "start", "stop"],
+                          library="np")
+
+    live  = raw["live"].astype(np.float64)
+    lag   = raw["lag"]
+    start = raw["start"]
+    stop  = raw["stop"]
+
+    # Zero-lag entries: lag[i][0] == 0
+    zl_mask = np.array([float(lag[i][0]) == 0.0 for i in range(n)], dtype=bool)
+
+    cwb_zero_lag_livetime = float(live[zl_mask].sum())
+    cwb_total_livetime    = float(live.sum())
+
+    # Analysis windows from zero-lag entries using IFO[0] start/stop
+    job_windows: list[tuple[float, float]] = []
+    for i in np.where(zl_mask)[0]:
+        t0 = float(start[i][0])
+        t1 = float(stop[i][0])
+        if t0 > 0 and t1 > t0:
+            job_windows.append((t0, t1))
+
+    log.info("  Zero-lag livetime: %.1f s  (%d job windows)",
+             cwb_zero_lag_livetime, len(job_windows))
+
+    rows: dict[str, np.ndarray] = {
+        "run":   raw["run"].astype(int),
+        "gps":   raw["gps"].astype(np.float64),
+        "live":  live,
+        "lag0":  np.array([float(lag[i][0])   for i in range(n)], dtype=np.float64),
+        "start0": np.array([float(start[i][0]) for i in range(n)], dtype=np.float64),
+        "stop0":  np.array([float(stop[i][0])  for i in range(n)], dtype=np.float64),
+    }
+    for k in range(1, n_ifo):
+        rows[f"lag{k}"]   = np.array([float(lag[i][k])   if len(lag[i])   > k else np.nan for i in range(n)], dtype=np.float64)
+        rows[f"start{k}"] = np.array([float(start[i][k]) if len(start[i]) > k else np.nan for i in range(n)], dtype=np.float64)
+        rows[f"stop{k}"]  = np.array([float(stop[i][k])  if len(stop[i])  > k else np.nan for i in range(n)], dtype=np.float64)
+
+    return {
+        "cwb_zero_lag_livetime": cwb_zero_lag_livetime,
+        "cwb_total_livetime":    cwb_total_livetime,
+        "n_jobs":                int(zl_mask.sum()),
+        "job_windows":           job_windows,
+        "df":                    pd.DataFrame(rows),
+    }
+
+
+def load_pyc_progress(progress_file: str, catalog_file: str) -> dict:
+    """Read pycWB livetime and job analysis windows from a progress Parquet file.
+
+    Parameters
+    ----------
+    progress_file : str
+        Path to ``progress*.parquet`` (columns: job_id, trial_idx, lag_idx,
+        n_triggers, livetime, timestamp, status).
+    catalog_file : str
+        Path to the catalog Parquet file whose Arrow metadata contains the
+        ``jobs`` JSON array (each entry has ``index``, ``analyze_start``,
+        ``analyze_end``).
+
+    Returns
+    -------
+    dict with keys:
+      ``pyc_zero_lag_livetime`` : float — sum of livetime for lag_idx==0, status=="completed"
+      ``pyc_total_livetime``    : float — sum of livetime for all completed rows
+      ``n_jobs``                : int   — number of unique zero-lag completed jobs
+      ``job_windows``           : list of (analyze_start, analyze_end) GPS tuples
+      ``df``                    : pd.DataFrame — full progress table
+    """
+    log.info("Reading pycWB progress file: %s", progress_file)
+    df = pq.read_table(progress_file).to_pandas()
+    log.info("  %d progress rows", len(df))
+
+    completed = df[df["status"] == "completed"]
+    zl_mask   = (completed["lag_idx"] == 0)
+    pyc_zero_lag_livetime = float(completed.loc[zl_mask, "livetime"].sum())
+    pyc_total_livetime    = float(completed["livetime"].sum())
+    n_jobs = int(zl_mask.sum())
+    log.info("  Zero-lag livetime: %.1f s  (%d jobs)", pyc_zero_lag_livetime, n_jobs)
+
+    # Extract job windows from catalog Arrow metadata
+    job_windows: list[tuple[float, float]] = []
+    try:
+        meta = pq.read_metadata(catalog_file)
+        kv   = {k.decode(): v.decode() for k, v in meta.metadata.items()
+                if k not in (b"pandas", b"ARROW:schema")}
+        if "jobs" in kv:
+            import json as _json
+            jobs = _json.loads(kv["jobs"])
+            # Only include zero-lag jobs present in the progress file
+            completed_job_ids = set(completed.loc[zl_mask, "job_id"].tolist())
+            for job in jobs:
+                jid = job.get("index") or job.get("job_id")
+                t0  = job.get("analyze_start")
+                t1  = job.get("analyze_end")
+                if jid in completed_job_ids and t0 is not None and t1 is not None and t1 > t0:
+                    job_windows.append((float(t0), float(t1)))
+        log.info("  Extracted %d job windows from catalog metadata", len(job_windows))
+    except Exception as exc:
+        log.warning("Could not extract job windows from catalog metadata: %s", exc)
+
+    return {
+        "pyc_zero_lag_livetime": pyc_zero_lag_livetime,
+        "pyc_total_livetime":    pyc_total_livetime,
+        "n_jobs":                n_jobs,
+        "job_windows":           job_windows,
+        "df":                    df,
+    }
+
+
+def classify_unmatched_pyc_by_cwb_time(
+        unmatched_pyc: pd.DataFrame,
+        job_windows: list[tuple[float, float]]) -> pd.DataFrame:
+    """Add ``cwb_window_status`` to unmatched pycWB triggers.
+
+    Status values
+    -------------
+    ``inside_cwb_window``  : GPS time falls within a cWB job analysis window.
+    ``outside_cwb_window`` : GPS time is outside all cWB job windows.
+    """
+    if not job_windows or "gps_time_pyc" not in unmatched_pyc.columns:
+        df = unmatched_pyc.copy()
+        df["cwb_window_status"] = "unknown"
+        return df
+
+    t = unmatched_pyc["gps_time_pyc"].to_numpy(dtype=np.float64)
+    wins   = np.array(sorted(job_windows), dtype=np.float64)
+    starts = wins[:, 0]
+    stops  = wins[:, 1]
+
+    statuses = []
+    for ti in t:
+        pos = np.searchsorted(starts, ti, side="right") - 1
+        if pos >= 0 and starts[pos] <= ti <= stops[pos]:
+            statuses.append("inside_cwb_window")
+        else:
+            statuses.append("outside_cwb_window")
+
+    df = unmatched_pyc.copy()
+    df["cwb_window_status"] = statuses
+    counts = pd.Series(statuses).value_counts().to_dict()
+    log.info("Unmatched pycWB window classification: %s", counts)
+    return df
+
+
+def classify_unmatched_cwb_by_pyc_time(
+        unmatched_cwb: pd.DataFrame,
+        job_windows: list[tuple[float, float]]) -> pd.DataFrame:
+    """Add ``pyc_window_status`` to unmatched cWB triggers.
+
+    Status values
+    -------------
+    ``inside_pyc_window``  : GPS time falls within a pycWB job analysis window.
+    ``outside_pyc_window`` : GPS time is outside all pycWB job windows.
+    """
+    if not job_windows or "gps_time_cwb" not in unmatched_cwb.columns:
+        df = unmatched_cwb.copy()
+        df["pyc_window_status"] = "unknown"
+        return df
+
+    t = unmatched_cwb["gps_time_cwb"].to_numpy(dtype=np.float64)
+    wins   = np.array(sorted(job_windows), dtype=np.float64)
+    starts = wins[:, 0]
+    stops  = wins[:, 1]
+
+    statuses = []
+    for ti in t:
+        pos = np.searchsorted(starts, ti, side="right") - 1
+        if pos >= 0 and starts[pos] <= ti <= stops[pos]:
+            statuses.append("inside_pyc_window")
+        else:
+            statuses.append("outside_pyc_window")
+
+    df = unmatched_cwb.copy()
+    df["pyc_window_status"] = statuses
+    counts = pd.Series(statuses).value_counts().to_dict()
+    log.info("Unmatched cWB pycWB-window classification: %s", counts)
+    return df
+
+
+def _cwb_pyc_window_pages(pdf_pages,
+                          unmatched_cwb: pd.DataFrame,
+                          ifo_list: list[str]) -> None:
+    """Append pages for unmatched cWB triggers classified by pycWB job windows.
+
+    If all unmatched cWB triggers are inside pycWB windows (i.e. no livetime
+    loss), a single informational page is shown instead of distribution plots.
+    """
+    if "pyc_window_status" not in unmatched_cwb.columns:
+        return
+
+    status_col = unmatched_cwb["pyc_window_status"]
+    counts     = status_col.value_counts()
+    n_outside  = counts.get("outside_pyc_window", 0)
+    n_inside   = counts.get("inside_pyc_window",  0)
+    n_total    = len(unmatched_cwb)
+
+    STATUS_COLORS = {
+        "inside_pyc_window":  "#ff7f0e",
+        "outside_pyc_window": "#9467bd",
+        "unknown":            "#aec7e8",
+    }
+
+    if n_total == 0 or n_outside == 0:
+        # ── No livetime loss: single summary page ─────────────────────────────
+        fig, ax = plt.subplots(figsize=(9, 4))
+        ax.axis("off")
+        msg = (
+            "No pycWB livetime loss from cWB perspective\n"
+            "════════════════════════════════════════════\n\n"
+            f"All {n_total} unmatched cWB trigger(s) fall inside pycWB analysis windows.\n"
+            "No cWB events are outside the pycWB job time range."
+        )
+        ax.text(0.5, 0.5, msg, ha="center", va="center",
+                transform=ax.transAxes, fontsize=13, fontfamily="monospace",
+                bbox=dict(boxstyle="round", fc="#e8f5e9", ec="#2ca02c", lw=2))
+        ax.set_title("Unmatched cWB — pycWB window check", fontsize=12)
+        pdf_pages.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    # ── Page 1: bar chart ─────────────────────────────────────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig.suptitle("Unmatched cWB Triggers — pycWB Window Analysis", fontsize=13)
+
+    ax = axes[0]
+    bars = ax.bar(counts.index, counts.values,
+                  color=[STATUS_COLORS.get(s, "gray") for s in counts.index])
+    for bar, val in zip(bars, counts.values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                str(val), ha="center", va="bottom", fontsize=11)
+    ax.set_xlabel("Status", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title("cWB-only triggers: inside vs outside pycWB windows", fontsize=10)
+    ax.text(0.97, 0.97,
+            f"Total unmatched cWB   : {n_total}\n"
+            f"Inside  pycWB window  : {n_inside}  ({100*n_inside /max(n_total,1):.1f}%)\n"
+            f"Outside pycWB window  : {n_outside} ({100*n_outside/max(n_total,1):.1f}%)",
+            transform=ax.transAxes, ha="right", va="top", fontsize=9,
+            bbox=dict(boxstyle="round", fc="#f5f5f5", ec="gray"))
+
+    ax2 = axes[1]
+    for st, color in STATUS_COLORS.items():
+        mask = (status_col == st).to_numpy()
+        if not mask.any():
+            continue
+        gps = unmatched_cwb.loc[mask, "gps_time_cwb"].to_numpy(dtype=np.float64)
+        rho = (unmatched_cwb.loc[mask, "rho0_cwb"].to_numpy(dtype=np.float64)
+               if "rho0_cwb" in unmatched_cwb.columns else np.ones(mask.sum()))
+        ax2.scatter(gps, rho, s=8, alpha=0.6, color=color,
+                    label=f"{st} (N={mask.sum()})", rasterized=True)
+    ax2.set_xlabel("GPS time (s)", fontsize=9)
+    ax2.set_ylabel("rho0", fontsize=9)
+    ax2.set_title("Unmatched cWB: GPS time vs rho0", fontsize=10)
+    ax2.legend(fontsize=7)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page 2: parameter distributions by pycWB window status ───────────────
+    all_statuses = sorted(counts.index)
+    DIST_COLS = [
+        ("rho0_cwb",       "rho0"),
+        ("rho_cwb",        "rho[0]"),
+        ("likelihood_cwb", "Likelihood"),
+        ("net_cc_cwb",     "netcc[0]"),
+        ("q_veto_cwb",     "Qa"),
+        ("penalty_cwb",    "Penalty"),
+    ]
+    for ifo in ifo_list:
+        DIST_COLS.append((f"sSNR_{ifo}_cwb", f"sSNR ({ifo})"))
+
+    ncols = 4
+    nrows = math.ceil(len(DIST_COLS) / ncols)
+    fig, axes_d = plt.subplots(nrows, ncols,
+                               figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    fig.suptitle("Unmatched cWB — distributions by pycWB window status", fontsize=12)
+
+    for slot, (col, label) in enumerate(DIST_COLS):
+        r, c = divmod(slot, ncols)
+        ax = axes_d[r][c]
+        if col not in unmatched_cwb.columns:
+            ax.set_visible(False)
+            continue
+        all_vals = unmatched_cwb[col].to_numpy(dtype=np.float64)
+        finite   = all_vals[np.isfinite(all_vals)]
+        if len(finite) < 2:
+            ax.set_title(label, fontsize=9)
+            continue
+        lo = np.nanpercentile(finite, 0.5)
+        hi = np.nanpercentile(finite, 99.5)
+        if lo == hi:
+            lo, hi = finite.min() - 0.5, finite.max() + 0.5
+        bins = np.linspace(lo, hi, 40)
+        for st in all_statuses:
+            mask = (status_col == st).to_numpy()
+            vals = unmatched_cwb.loc[mask, col].to_numpy(dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            vals = vals[(vals >= lo) & (vals <= hi)]
+            if len(vals) == 0:
+                continue
+            ch, edges = np.histogram(vals, bins=bins)
+            nh = ch / ch.sum() if ch.sum() > 0 else ch
+            centres = 0.5 * (edges[:-1] + edges[1:])
+            ax.step(centres, nh, where="mid",
+                    color=STATUS_COLORS.get(st, "gray"), alpha=0.75,
+                    label=f"{st} (N={len(vals)})")
+        ax.set_xlabel(label, fontsize=8)
+        ax.set_ylabel("Fraction", fontsize=8)
+        ax.set_title(label, fontsize=9)
+        ax.legend(fontsize=6, loc="upper right")
+
+    for slot in range(len(DIST_COLS), nrows * ncols):
+        r, c = divmod(slot, ncols)
+        axes_d[r][c].set_visible(False)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _livetime_comparison_pages(pdf_pages,
+                                live_data: dict,
+                                pyc_progress: dict | None,
+                                unmatched_pyc: pd.DataFrame,
+                                ifo_list: list[str]) -> None:
+    """Append livetime comparison and pycWB unmatched-time pages to the PDF."""
+    cwb_zl      = live_data["cwb_zero_lag_livetime"]
+    cwb_tot     = live_data["cwb_total_livetime"]
+    n_cwb_jobs  = live_data["n_jobs"]
+    cwb_windows = live_data["job_windows"]
+
+    pyc_zl      = pyc_progress["pyc_zero_lag_livetime"] if pyc_progress else None
+    pyc_tot     = pyc_progress["pyc_total_livetime"]    if pyc_progress else None
+    n_pyc_jobs  = pyc_progress["n_jobs"]                if pyc_progress else None
+    pyc_windows = pyc_progress["job_windows"]           if pyc_progress else []
+
+    # ── Page 1: livetime bar chart + job-window timelines ────────────────────
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle("Livetime Comparison: cWB vs pycWB", fontsize=13)
+
+    ax = axes[0]
+    bar_labels = ["cWB zero-lag"]
+    bar_days   = [cwb_zl / 86400]
+    bar_cols   = ["#1f77b4"]
+    bar_secs   = [cwb_zl]
+    if pyc_zl is not None:
+        bar_labels.append("pycWB zero-lag")
+        bar_days.append(pyc_zl / 86400)
+        bar_cols.append("#2ca02c")
+        bar_secs.append(pyc_zl)
+    bars = ax.bar(bar_labels, bar_days, color=bar_cols, width=0.5)
+    for bar, sec in zip(bars, bar_secs):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.001,
+                f"{sec:.1f} s\n({sec / 86400:.4f} d)",
+                ha="center", va="bottom", fontsize=9)
+    ax.set_ylabel("Livetime (days)", fontsize=10)
+    ax.set_title("Zero-lag Livetime", fontsize=11)
+    extra = f"cWB total (all lags): {cwb_tot:.1f} s\ncWB jobs: {n_cwb_jobs}"
+    if pyc_zl is not None:
+        extra += f"\npycWB total: {pyc_tot:.1f} s\npycWB jobs: {n_pyc_jobs}"
+        ratio = pyc_zl / cwb_zl if cwb_zl > 0 else np.nan
+        extra += f"\npycWB / cWB ratio: {ratio:.4f}"
+    ax.text(0.97, 0.97, extra, transform=ax.transAxes, ha="right", va="top",
+            fontsize=9, bbox=dict(boxstyle="round", fc="#f5f5f5", ec="gray"))
+
+    # cWB job-window timeline
+    ax2 = axes[1]
+    if cwb_windows:
+        t_ref = sorted(cwb_windows)[0][0]
+        for idx, (t0, t1) in enumerate(sorted(cwb_windows)):
+            ax2.barh(idx, t1 - t0, left=t0 - t_ref, height=0.7,
+                     color="#1f77b4", alpha=0.6)
+        ax2.set_xlabel(f"Time offset from GPS {t_ref:.0f} (s)", fontsize=9)
+        ax2.set_ylabel("Job index", fontsize=9)
+        ax2.set_title(f"cWB Analysis Windows ({len(cwb_windows)} jobs)", fontsize=10)
+    else:
+        ax2.text(0.5, 0.5, "No cWB job windows",
+                 ha="center", va="center", transform=ax2.transAxes)
+        t_ref = 0.0
+
+    # pycWB job-window timeline
+    ax3 = axes[2]
+    if pyc_windows:
+        pyc_t_ref = sorted(pyc_windows)[0][0]
+        for idx, (t0, t1) in enumerate(sorted(pyc_windows)):
+            ax3.barh(idx, t1 - t0, left=t0 - pyc_t_ref, height=0.7,
+                     color="#2ca02c", alpha=0.6)
+        ax3.set_xlabel(f"Time offset from GPS {pyc_t_ref:.0f} (s)", fontsize=9)
+        ax3.set_ylabel("Job index", fontsize=9)
+        ax3.set_title(f"pycWB Analysis Windows ({len(pyc_windows)} jobs)", fontsize=10)
+    else:
+        ax3.text(0.5, 0.5, "No pycWB job windows",
+                 ha="center", va="center", transform=ax3.transAxes)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page 2: pycWB unmatched — inside vs outside cWB window ───────────────
+    if "cwb_window_status" not in unmatched_pyc.columns:
+        return
+
+    status_col = unmatched_pyc["cwb_window_status"]
+    counts     = status_col.value_counts()
+    STATUS_COLORS = {
+        "inside_cwb_window":  "#ff7f0e",
+        "outside_cwb_window": "#9467bd",
+        "unknown":            "#aec7e8",
+    }
+    n_inside  = counts.get("inside_cwb_window",  0)
+    n_outside = counts.get("outside_cwb_window", 0)
+    n_total   = len(unmatched_pyc)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig.suptitle("Unmatched pycWB Triggers — cWB Window Analysis", fontsize=13)
+
+    ax = axes[0]
+    bars = ax.bar(counts.index, counts.values,
+                  color=[STATUS_COLORS.get(s, "gray") for s in counts.index])
+    for bar, val in zip(bars, counts.values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                str(val), ha="center", va="bottom", fontsize=11)
+    ax.set_xlabel("Status", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title("pycWB-only triggers: inside vs outside cWB windows", fontsize=10)
+    ax.text(0.97, 0.97,
+            f"Total unmatched pycWB : {n_total}\n"
+            f"Inside  cWB window    : {n_inside}  ({100*n_inside /max(n_total,1):.1f}%)\n"
+            f"Outside cWB window    : {n_outside} ({100*n_outside/max(n_total,1):.1f}%)",
+            transform=ax.transAxes, ha="right", va="top", fontsize=9,
+            bbox=dict(boxstyle="round", fc="#f5f5f5", ec="gray"))
+
+    ax2 = axes[1]
+    if cwb_windows:
+        t_ref = sorted(cwb_windows)[0][0]
+        for t0, t1 in sorted(cwb_windows):
+            ax2.axvspan(t0 - t_ref, t1 - t_ref, alpha=0.12, color="#1f77b4")
+    else:
+        t_ref = 0.0
+    for st, color in STATUS_COLORS.items():
+        mask = (status_col == st).to_numpy()
+        if not mask.any():
+            continue
+        gps = unmatched_pyc.loc[mask, "gps_time_pyc"].to_numpy(dtype=np.float64)
+        gps_plot = gps - t_ref if cwb_windows else gps
+        rho = (unmatched_pyc.loc[mask, "rho0_pyc"].to_numpy(dtype=np.float64)
+               if "rho0_pyc" in unmatched_pyc.columns else np.ones(mask.sum()))
+        ax2.scatter(gps_plot, rho, s=8, alpha=0.6, color=color,
+                    label=f"{st} (N={mask.sum()})", rasterized=True)
+    ax2.set_xlabel(
+        f"Time offset from GPS {t_ref:.0f} (s)" if cwb_windows else "GPS time (s)",
+        fontsize=9)
+    ax2.set_ylabel("rho0", fontsize=9)
+    ax2.set_title("Unmatched pycWB: GPS offset vs rho0", fontsize=10)
+    ax2.legend(fontsize=7)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Page 3: parameter distributions by window status ─────────────────────
+    all_statuses = sorted(counts.index)
+    DIST_COLS = [
+        ("rho0_pyc",       "rho0"),
+        ("rho_pyc",        "rho[0]"),
+        ("likelihood_pyc", "Likelihood"),
+        ("net_cc_pyc",     "netcc[0]"),
+        ("q_veto_pyc",     "Qa"),
+        ("penalty_pyc",    "Penalty"),
+    ]
+    for ifo in ifo_list:
+        DIST_COLS.append((f"sSNR_{ifo}_pyc", f"sSNR ({ifo})"))
+
+    ncols = 4
+    nrows = math.ceil(len(DIST_COLS) / ncols)
+    fig, axes_d = plt.subplots(nrows, ncols,
+                               figsize=(5 * ncols, 4 * nrows), squeeze=False)
+    fig.suptitle("Unmatched pycWB — distributions by cWB window status", fontsize=12)
+
+    for slot, (col, label) in enumerate(DIST_COLS):
+        r, c = divmod(slot, ncols)
+        ax = axes_d[r][c]
+        if col not in unmatched_pyc.columns:
+            ax.set_visible(False)
+            continue
+        all_vals = unmatched_pyc[col].to_numpy(dtype=np.float64)
+        finite   = all_vals[np.isfinite(all_vals)]
+        if len(finite) < 2:
+            ax.set_title(label, fontsize=9)
+            continue
+        lo = np.nanpercentile(finite, 0.5)
+        hi = np.nanpercentile(finite, 99.5)
+        if lo == hi:
+            lo, hi = finite.min() - 0.5, finite.max() + 0.5
+        bins = np.linspace(lo, hi, 40)
+        for st in all_statuses:
+            mask = (status_col == st).to_numpy()
+            vals = unmatched_pyc.loc[mask, col].to_numpy(dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            vals = vals[(vals >= lo) & (vals <= hi)]
+            if len(vals) == 0:
+                continue
+            ch, edges = np.histogram(vals, bins=bins)
+            nh = ch / ch.sum() if ch.sum() > 0 else ch
+            centres = 0.5 * (edges[:-1] + edges[1:])
+            ax.step(centres, nh, where="mid",
+                    color=STATUS_COLORS.get(st, "gray"), alpha=0.75,
+                    label=f"{st} (N={len(vals)})")
+        ax.set_xlabel(label, fontsize=8)
+        ax.set_ylabel("Fraction", fontsize=8)
+        ax.set_title(label, fontsize=9)
+        ax.legend(fontsize=6, loc="upper right")
+
+    for slot in range(len(DIST_COLS), nrows * ncols):
+        r, c = divmod(slot, ncols)
+        axes_d[r][c].set_visible(False)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    pdf_pages.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
 
@@ -1125,7 +1673,9 @@ def build_report(merged: pd.DataFrame,
                  unmatched_pyc: pd.DataFrame,
                  ifo_list: list[str],
                  out_pdf: str, out_csv: str,
-                 ref_df: pd.DataFrame | None = None) -> tuple:
+                 ref_df: pd.DataFrame | None = None,
+                 live_data: dict | None = None,
+                 pyc_progress: dict | None = None) -> tuple:
     """Generate the PDF report and statistics CSV, return the stats table.
 
     If *unmatched_cwb* contains a ``pycwb_status`` column (added by
@@ -1134,6 +1684,11 @@ def build_report(merged: pd.DataFrame,
 
     If *ref_df* is provided (output of :func:`match_ref_to_pyc`), reference-
     event found/missing pages are also appended.
+
+    If *live_data* is provided (output of :func:`load_live_root`), livetime
+    comparison pages and pycWB unmatched-trigger window classification pages
+    are appended to the PDF.  *pyc_progress* (output of
+    :func:`load_pyc_progress`) is shown alongside for comparison.
     """
 
     # Add per-IFO sSNR features dynamically
@@ -1187,6 +1742,50 @@ def build_report(merged: pd.DataFrame,
         ang_median = np.median(ang[ang_mask]) if ang_mask.any() else np.nan
         ang_90     = np.percentile(ang[ang_mask], 90) if ang_mask.any() else np.nan
 
+        # Unmatched pycWB: inside / outside cWB analysis windows
+        if "cwb_window_status" in unmatched_pyc.columns:
+            wc = unmatched_pyc["cwb_window_status"].value_counts()
+            n_unm_inside  = wc.get("inside_cwb_window",  0)
+            n_unm_outside = wc.get("outside_cwb_window", 0)
+            _unm_window_line = (
+                f"\n            ── Unmatched pycWB — cWB window breakdown ────────────────────"
+                f"\n            Inside  cWB window    : {n_unm_inside}"
+                f"  ({100*n_unm_inside /max(len(unmatched_pyc),1):.1f}%)"
+                f"\n            Outside cWB window    : {n_unm_outside}"
+                f"  ({100*n_unm_outside/max(len(unmatched_pyc),1):.1f}%)"
+            )
+        else:
+            _unm_window_line = ""
+
+        # Livetime section
+        if live_data is not None:
+            cwb_zl  = live_data["cwb_zero_lag_livetime"]
+            cwb_tot = live_data["cwb_total_livetime"]
+            n_cwb_jobs = live_data["n_jobs"]
+            if pyc_progress is not None:
+                pyc_zl  = pyc_progress["pyc_zero_lag_livetime"]
+                pyc_tot = pyc_progress["pyc_total_livetime"]
+                n_pyc_jobs = pyc_progress["n_jobs"]
+                _lt_pyc   = f"{pyc_zl:.1f} s  ({pyc_zl/86400:.4f} d)"
+                _lt_ratio = f"{pyc_zl/cwb_zl:.4f}" if cwb_zl > 0 else "N/A"
+                _pyc_lines = (
+                    f"\n            pycWB zero-lag        : {_lt_pyc}"
+                    f"\n            pycWB total livetime  : {pyc_tot:.1f} s  ({pyc_tot/86400:.4f} d)"
+                    f"\n            pycWB analysis jobs   : {n_pyc_jobs}"
+                    f"\n            pycWB / cWB ratio     : {_lt_ratio}"
+                )
+            else:
+                _pyc_lines = "\n            pycWB zero-lag        : N/A"
+            _livetime_section = (
+                f"\n            ── Livetime ────────────────────────────────────────────────────"
+                f"\n            cWB zero-lag livetime : {cwb_zl:.1f} s  ({cwb_zl/86400:.4f} d)"
+                f"\n            cWB total livetime    : {cwb_tot:.1f} s  ({cwb_tot/86400:.4f} d)"
+                f"\n            cWB analysis jobs     : {n_cwb_jobs}"
+                + _pyc_lines
+            )
+        else:
+            _livetime_section = ""
+
         text = textwrap.dedent(f"""\
             pycWB vs cWB  —  Consistency Report
             ====================================
@@ -1201,6 +1800,7 @@ def build_report(merged: pd.DataFrame,
             Matched pairs         : {n_match}
             Match rate (cWB)      : {100*n_match/max(n_cwb,1):.1f} %
             Match rate (pycWB)    : {100*n_match/max(n_pyc,1):.1f} %
+        """) + _unm_window_line + _livetime_section + textwrap.dedent(f"""
 
             ── GPS time residuals (pycWB - cWB) ────────────────────────────
             Mean Δt               : {dt_mean:+.4f} s
@@ -1288,6 +1888,15 @@ def build_report(merged: pd.DataFrame,
         # ── Log-based classification of unmatched cWB triggers ───────────────
         if "pycwb_status" in unmatched_cwb.columns:
             _pycwb_status_pages(pdf_pages, unmatched_cwb, ifo_list)
+
+        # ── cWB unmatched triggers classified by pycWB job windows ───────────
+        if "pyc_window_status" in unmatched_cwb.columns:
+            _cwb_pyc_window_pages(pdf_pages, unmatched_cwb, ifo_list)
+
+        # ── Livetime comparison + pycWB unmatched window classification ───────
+        if live_data is not None:
+            _livetime_comparison_pages(pdf_pages, live_data, pyc_progress,
+                                       unmatched_pyc, ifo_list)
 
         # ── Reference-event found/missing pages ──────────────────────────────
         if ref_df is not None:
@@ -1380,6 +1989,14 @@ def parse_args(argv=None):
                    help="Reference events CSV (first column = GPS time). "
                         "Matched against pycWB catalog; found/missing statistics "
                         "are added to the report (optional)")
+    p.add_argument("--live", default=None,
+                   help="Path to cWB live_*.root file.  Enables livetime comparison "
+                        "and classifies unmatched pycWB triggers as inside/outside "
+                        "cWB analysis windows (optional)")
+    p.add_argument("--progress", default=None,
+                   help="Path to pycWB progress Parquet file (progress*.parquet). "
+                        "Provides pycWB zero-lag livetime and job analysis windows "
+                        "for the report (optional)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -1410,16 +2027,41 @@ def main(argv=None):
     ref_df = None
     if args.ref_events:
         df_ref_raw = load_ref_events(args.ref_events)
-        ref_df = match_ref_to_pyc(df_ref_raw, df_pyc)
+        ref_df = match_ref_to_pyc(df_ref_raw, df_pyc, tolerance=args.tol)
+
+    # ── Load live ROOT file: cWB analysis windows + livetime (optional) ───────
+    live_data    = None
+    pyc_progress = None
+    if args.live:
+        live_data = load_live_root(args.live, n_ifo=len(args.ifo))
+        unmatched_pyc = classify_unmatched_pyc_by_cwb_time(
+            unmatched_pyc, live_data["job_windows"])
+    if args.progress:
+        pyc_progress = load_pyc_progress(args.progress, args.parquet)
+        unmatched_cwb = classify_unmatched_cwb_by_pyc_time(
+            unmatched_cwb, pyc_progress["job_windows"])
 
     # ── Report ───────────────────────────────────────────────────────────────
     stats_df, csv_unm_cwb, csv_unm_pyc, csv_ref = build_report(
         merged, unmatched_cwb, unmatched_pyc, args.ifo, args.out, args.csv,
-        ref_df=ref_df)
+        ref_df=ref_df, live_data=live_data, pyc_progress=pyc_progress)
 
     # Print summary to stdout
     print("\n── Consistency statistics (pycWB − cWB) ──")
     print(stats_df[["label", "N", "mean_diff", "rms_diff", "pearson_r"]].to_string())
+    if live_data is not None:
+        cwb_zl = live_data["cwb_zero_lag_livetime"]
+        print("\n── Livetime ──")
+        print(f"cWB zero-lag livetime : {cwb_zl:.1f} s  ({cwb_zl/86400:.4f} d)")
+        if pyc_progress is not None:
+            pyc_zl = pyc_progress["pyc_zero_lag_livetime"]
+            print(f"pycWB zero-lag        : {pyc_zl:.1f} s  ({pyc_zl/86400:.4f} d)")
+            print(f"pycWB / cWB ratio     : {pyc_zl/cwb_zl:.4f}")
+        if "cwb_window_status" in unmatched_pyc.columns:
+            wc = unmatched_pyc["cwb_window_status"].value_counts()
+            print("\n── Unmatched pycWB window breakdown ──")
+            for status, count in wc.items():
+                print(f"  {status:25s}: {count}")
     print(f"\nReport                → {args.out}")
     print(f"CSV (matched)         → {args.csv}")
     print(f"CSV (unmatched cWB)   → {csv_unm_cwb}")
