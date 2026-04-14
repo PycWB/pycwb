@@ -50,11 +50,11 @@ def _load_wave_timeseries(file, id, ifo, label):
         Mapping of interferometer names to file paths, e.g.
         ``{'H1': 'path/to/catalog.parquet'}``.
     id : str
-        The unique identifier for the time series to load from the catalog.
+        The unique identifier for the event to load from the catalog.
     ifo : str
         The interferometer name (e.g., 'H1', 'L1', 'V1').
-    type : str
-        The type of time series to load (e.g., 'strain', 'whitened_strain'). 
+    label : str
+        The type of waveform to be loaded available ('REC', 'INJ', 'DAT', 'NUL')
     """ 
     logger.info(f'Creating time series from wave file: {file}, id: {id}, channel: {ifo}_wf_{label}')
 
