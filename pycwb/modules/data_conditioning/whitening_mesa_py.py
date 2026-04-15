@@ -18,7 +18,6 @@ from wdm_wavelet.wdm import WDM
 
 logger = logging.getLogger(__name__)
 
-_PSD_FLOOR = 1.0e-30
 _NRMS_DIV_FLOOR = 1.0e-30
 
 
@@ -177,7 +176,7 @@ def whitening_mesa_python(config, h):
         nrms_matrix,
         tf_dt=float(tf_white.dt),
         window_length=float(getattr(config, "whiteWindow", 60.0)),
-        stride=float(getattr(config, "whiteStride", 60.0)),
+        stride=float(getattr(config, "whiteStride", 20.0)),
         edge_length=float(getattr(config, "segEdge", 10.0)),
     )
 
@@ -372,8 +371,8 @@ def reindex_psds(psds, f):
 
     psd_median = np.median(psds, axis=0)
 
-    dist_lf = np.sqrt(np.mean((np.log(psds[:, mask_lf] / np.maximum(psd_median[mask_lf], _PSD_FLOOR))) ** 2, axis=1))
-    dist_hf = np.sqrt(np.mean((np.log(psds[:, mask_hf] / np.maximum(psd_median[mask_hf], _PSD_FLOOR))) ** 2, axis=1))
+    dist_lf = np.sqrt(np.mean((np.log(psds[:, mask_lf] / psd_median[mask_lf])) ** 2, axis=1))
+    dist_hf = np.sqrt(np.mean((np.log(psds[:, mask_hf] / psd_median[mask_hf])) ** 2, axis=1))
     dist = np.stack([dist_lf, dist_hf], axis=1)
 
     predictions = IsolationForest(n_estimators=100, contamination=0.15).fit_predict(dist)
