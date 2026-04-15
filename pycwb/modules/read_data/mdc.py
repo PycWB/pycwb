@@ -2,7 +2,6 @@ import numpy as np
 import os
 import logging
 from gwpy.timeseries import TimeSeries as GWpyTimeSeries
-
 from pycwb.types.detector import Detector
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from pycwb.modules.noise import generate_noise as _native_generate_noise
@@ -11,7 +10,6 @@ from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
 from ...config import Config
 
 logger = logging.getLogger(__name__)
-
 
 def generate_noise(psd: str = None, f_low: float = 30.0, delta_f: float = 1.0 / 4, duration: int = 32,
                    sample_rate: float = 16384, seed: int = 1234, start_time: int = 0):
@@ -219,8 +217,12 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             'hc': generated_data[1]
         }
     # ------------------------------
+    STRUCTURAL_KEYS = ['type', 'hp', 'hc']
+    if isinstance(generated_data, dict):    
+        extra_keys = set(generated_data.keys()) - STRUCTURAL_KEYS
+        for key in extra_keys:
+            injection.update(generated_data.pop(key))
 
-    if isinstance(generated_data, dict):
         if generated_data.get('type') == 'strain':
             logger.info("Strain is generated")
             generated_data.pop('type')
