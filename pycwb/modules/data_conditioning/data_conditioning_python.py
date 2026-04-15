@@ -23,6 +23,7 @@ from .whitening_py import (
     _apply_wiener_filter,
     _average_phases,
 )
+from .whitening_mesa_py import whitening_mesa_python
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,15 @@ def data_conditioning(config, strains, nproc=1):
     timer_start = time.perf_counter()
 
     white_method = getattr(config, "whiteMethod", "wavelet")
-    if white_method not in {"wavelet", "python"}:
+    if white_method not in {"wavelet", "python", "mesa"}:
         logger.error(f"Method {white_method} is not a valid pure-Python whitening method")
         raise ValueError(f"Method {white_method} is not a valid pure-Python whitening method")
 
     data_regressions = [regression_python(config, h) for h in strains]
-    res = [whitening_python(config, h) for h in data_regressions]
+    if white_method == "mesa":
+        res = [whitening_mesa_python(config, h) for h in data_regressions]
+    else:
+        res = [whitening_python(config, h) for h in data_regressions]
 
     conditioned_strains, nRMS_list = zip(*res)
 
@@ -83,12 +87,15 @@ def data_conditioning_single(config, strain):
         `(conditioned_strain, nRMS)`.
     """
     white_method = getattr(config, "whiteMethod", "wavelet")
-    if white_method not in {"wavelet", "python"}:
+    if white_method not in {"wavelet", "python", "mesa"}: 
         logger.error(f"Method {white_method} is not a valid pure-Python whitening method")
         raise ValueError(f"Method {white_method} is not a valid pure-Python whitening method")
 
     data_regression = regression_python(config, strain)
-    conditioned_strain, nRMS = whitening_python(config, data_regression)
+    if white_method == 'mesa':
+        conditioned_strain, nRMS = whitening_mesa_python(config, data_regression)
+    else:
+        conditioned_strain, nRMS = whitening_python(config, data_regression)
 
     return conditioned_strain, nRMS
 
@@ -97,6 +104,7 @@ __all__ = [
     "data_conditioning_single",
     "regression_python",
     "whitening_python",
+    "whitening_mesa_python",
     "_cwb_percentile_mean",
     "_cwb_rotated_products",
     "_build_correlation_matrix",
