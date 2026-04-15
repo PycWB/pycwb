@@ -117,7 +117,7 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
             strain.start_time = kwargs['gps_time'] - central_time 
 
         if kwargs.get('rescale', None):
-            rescale_factor = sqrt(2) * kwargs['rescale'] 
+            rescale_factor = sqrt(2) ** kwargs['rescale'] 
             logger.info(f"Rescaling strain data by a factor of sqrt(2) ** {kwargs['rescale']}")
             strain.data *= rescale_factor 
 
