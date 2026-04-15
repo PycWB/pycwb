@@ -38,7 +38,33 @@ def _load_timeseries(path):
     else:
         # text file: assume single column of data values
         data = np.loadtxt(path, dtype=np.float64)
-        return TimeSeries(data=data, t0=0.0, dt=1.0)
+        return TimeSeries(data=data, t0=0.0, dt=1.0) 
+
+
+def _load_wave_timeseries(file, id, ifo, label):
+    """Load a time series from a wave file.
+
+    Parameters
+    ----------
+    files : dict
+        Mapping of interferometer names to file paths, e.g.
+        ``{'H1': 'path/to/catalog.parquet'}``.
+    id : str
+        The unique identifier for the event to load from the catalog.
+    ifo : str
+        The interferometer name (e.g., 'H1', 'L1', 'V1').
+    label : str
+        The type of waveform to be loaded available ('REC', 'INJ', 'DAT', 'NUL')
+    """ 
+    logger.info(f'Creating time series from wave file: {file}, id: {id}, channel: {ifo}_wf_{label}')
+
+    with h5py.File(file, 'r') as f: 
+        wave = f[id] 
+        strain = wave[f'{ifo}_wf_{label}'][:]
+        sample_rate = wave[f'{ifo}_wf_{label}'].attrs['sample_rate']
+        start_time = wave[f'{ifo}_wf_{label}'].attrs['start_time']
+
+    return TimeSeries(strain, dt =1/sample_rate, t0=start_time) 
 
 
 def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs): 
@@ -70,10 +96,19 @@ def get_strain_from_file(delta_t, files, allow_resampling = False, **kwargs):
     injections = {'type': 'strain'}
     sample_rate = 1 / delta_t 
     central_time = None 
-    distribute = kwargs.get('distribute', True)
-    for ifo, file in files.items():
-        logger.info(f"Loading strain data for {ifo} from {file}") 
-        strain = _load_timeseries(file)
+    distribute = kwargs.get('distribute', True) 
+
+    if kwargs.get('is_wave_file', False):  
+       if kwargs.get('id', None) is None or kwargs.get('label', None) is None:
+           logger.error(f"When 'is_wave_file' is True, both 'id' and 'label' must be provided, given values are id: {kwargs.get('id', None)}, label: {kwargs.get('label', None)}")
+           raise ValueError(f"When 'is_wave_file' is True, both 'id' and 'label' must be provided, given values are id: {kwargs.get('id', None)}, label: {kwargs.get('label', None)}") 
+       
+       strains = {ifo: _load_wave_timeseries(file, id=kwargs['id'], ifo=ifo, label=kwargs['label']) for ifo, file in files.items()} 
+    
+    else: 
+        strains = {ifo: _load_timeseries(file) for ifo, file in files.items()}
+    
+    for ifo, strain in strains.items():
         #Only compute central time once so that detector dT is preserved 
         if distribute: 
             if central_time is None: 
