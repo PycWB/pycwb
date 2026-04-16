@@ -217,7 +217,7 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             'hc': generated_data[1]
         }
     # ------------------------------
-    STRUCTURAL_KEYS = ['type', 'hp', 'hc']
+    STRUCTURAL_KEYS = {'type', 'hp', 'hc'}
     if isinstance(generated_data, dict):    
         extra_keys = set(generated_data.keys()) - STRUCTURAL_KEYS
         for key in extra_keys:
