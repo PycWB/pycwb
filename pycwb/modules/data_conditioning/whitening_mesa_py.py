@@ -53,7 +53,7 @@ def whitening_mesa_python(config, h):
 
     logger.info("Whitening data with pure-Python MESA")
     logger.info(
-        "autoregressive order=%s, solver=%s beta",
+        "autoregressive order=%s, solver=%s",
         getattr(config, "mesaOrder", None),
         getattr(config, "mesaSolver", None),
     )
