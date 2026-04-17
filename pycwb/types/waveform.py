@@ -15,12 +15,14 @@ class Waveform(TimeSeries):
     :param data: data (any TimeSeries-like: pycwb or gwpy)
     :type data: TimeSeries
     """
-    def __init__(self, data, folder=None):
+    def __init__(self, data, folder=None, id = None):
         ts = TimeSeries.from_input(data) if not isinstance(data, TimeSeries) else data
         super().__init__(data=ts.data.copy(), t0=ts.t0, dt=ts.dt)
         # Store time and phase shift to reverse the synchronization
         self._total_time_shift = 0
         self._total_phase_shift = 0
+        self.id = id 
+        ##Folder can be removed if waveform reconstruction workflow is updated to take waveform id 
         self.folder = os.path.abspath(folder) if folder is not None else None
         if np.any(np.isnan(self.data)):
             print('Data Contains NaNs')
@@ -344,6 +346,17 @@ def load_waveform(filename, resample=None, skip_nans=True):
     return Waveform(data, folder=folder)
 
 
+def load_from_catalog(catalog_file, event_id, channel):
+    """
+    Create a waveform from a catalog entry. The catalog entry must contain a 'filename' field with the path to the waveform file.
+    """
+    import h5py
+    with h5py.File(catalog_file, 'r', swmr=True) as f:
+        if event_id not in f.keys():
+            raise ValueError(f"Event ID {event_id} not found in catalog.") 
+        ts = TimeSeries(f[event_id][channel][:], t0=f[event_id][channel].attrs['start_time'], dt=1 / f[event_id][channel].attrs['sample_rate'])
+        
+    return  Waveform(ts, id = event_id)
 
 
 
