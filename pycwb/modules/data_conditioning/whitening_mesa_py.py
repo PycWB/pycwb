@@ -53,13 +53,16 @@ def whitening_mesa_python(config, h):
 
     logger.info("Whitening data with pure-Python MESA")
     logger.info(
-        "autoregressive order=%s, solver=%s",
+        "autoregressive order=%s, solver=%s beta",
         getattr(config, "mesaOrder", None),
         getattr(config, "mesaSolver", None),
     )
-
-    if nyquist <= 0.0:
-        raise ValueError("Invalid sample rate for MESA whitening")
+    logger.info(
+        "Python whitening:, beta=%s, prec=%s, Window=%ss, Edge=%ss",
+        beta_order,
+        precision,
+        getattr(config, "mesaWindow", 15.0),
+    ) 
 
     # High-pass filter
     low_norm = min(max(float(config.fLow) / nyquist, 1.0e-6), 0.999)
