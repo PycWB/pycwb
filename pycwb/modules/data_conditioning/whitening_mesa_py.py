@@ -70,7 +70,7 @@ def whitening_mesa_python(config, h):
     mesa_window = float(getattr(config, "mesaWindow", 15.0))
     mesa_stride = float(getattr(config, "mesaStride", 5.0))
 
-    if not np.isclose(mesa_stride, mesa_window / 3.0):
+    if not mesa_stride ==  mesa_window / 3.0:
         logger.warning("mesaStride must be one third of mesaWindow; using mesaWindow/3")
         mesa_stride = mesa_window / 3.0
 
@@ -143,10 +143,6 @@ def whitening_mesa_python(config, h):
 
     tf_raw = wdm.t2w(data_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)
     tf_white = wdm.t2w(whitened_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)
-
-    # Verify WDM parameters match whitening_mesa.py expectations
-    expected_wdm_df = nyquist / layers
-    expected_wdm_dt = 0.5 / expected_wdm_df
 
     # Compute nRMS as ratio of raw/whitened TF coefficients
     coeff_raw = np.asarray(tf_raw.data, dtype=np.complex128)
