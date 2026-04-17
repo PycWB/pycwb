@@ -58,7 +58,7 @@ def whitening_mesa_python(config, h):
         getattr(config, "mesaSolver", None),
     )
     logger.info(
-        "Python whitening:, beta=%s, prec=%s, Window=%ss, Edge=%ss",
+        "Python whitening:, beta=%s, prec=%s, Window=%ss",
         beta_order,
         precision,
         getattr(config, "mesaWindow", 15.0),
