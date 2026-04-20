@@ -252,8 +252,8 @@ if _HAS_JAX:
         sum_eeEE = ee + EE
         nn = jnp.where(sum_eeEE < nn, sum_eeEE, nn)
 
-        a1 = jnp.sqrt(jnp.clip((sum_eeEE + nn) / 2.0, a_min=0.0))
-        a2 = jnp.sqrt(jnp.clip((sum_eeEE - nn) / 2.0, a_min=0.0))
+        a1 = jnp.sqrt(jnp.clip((sum_eeEE + nn) / 2.0, min=0.0))
+        a2 = jnp.sqrt(jnp.clip((sum_eeEE - nn) / 2.0, min=0.0))
         aa = a1 + a2
 
         em = jnp.where(mean == 1.0, sum_eeEE / 2.0, (aa * aa) / 4.0)
