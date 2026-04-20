@@ -1,8 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
-import sys 
-sys.path.insert(0, '/home/alessandro.martini/pycwb/pycwb/types/') 
-from waveform import Waveform, load_waveform
-#from pycwb.types.waveform import Waveform, load_waveform 
+from pycwb.types.waveform import Waveform, load_waveform  
+from pycwb.types.time_series import TimeSeries
 from tqdm import tqdm  # type: ignore
 import numpy as np  # type: ignore
 import logging 
@@ -145,8 +143,8 @@ def slice_waveforms(waveform, reference, early_start = 0):
     start, stop =  r.istart, int(r.iend) 
     start = int(max(start - early_start * w.sample_rate, 0)) 
     
-    w = Waveform(w[start:stop], folder=w.folder)
-    r = Waveform(r[start:stop], folder=r.folder)
+    w = Waveform(TimeSeries(w[start:stop], dt = 1 / w.sample_rate, t0 = r.tstart), folder=w.folder)
+    r = Waveform(TimeSeries(r[start:stop], dt = 1 / r.sample_rate, t0 = r.tstart), folder=r.folder)
 
     w._total_time_shift = waveform._total_time_shift
     w._total_phase_shift = waveform._total_phase_shift
