@@ -2,7 +2,7 @@ import struct
 import logging
 import numpy as np
 import pathlib
-from numba import njit
+from numba import njit, prange
 
 
 logger = logging.getLogger(__name__)
@@ -195,32 +195,140 @@ def getXTalk(nLayer1, indx1, nLayer2, indx2, layers, xtalk_coeff, xtalk_lookup_t
 def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
     n_pix = len(pixels)
 
-    clusterCC = np.empty((n_pix * n_pix, 8), dtype=np.float32)
+    # First pass: count valid (non-filtered) pairs so we can allocate exact memory.
+    # The original O(N²) dense pre-allocation (n_pix*n_pix rows) caused OOM for
+    # large clusters (e.g. 216 MB at N=2600, 3.2 GB at N=10000).
+    count = 0
+    for i in range(n_pix):
+        for j in range(n_pix):
+            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
+                               layers, xtalk_coeff, xtalk_lookup_table)
+            if tmpOvlp[0] <= 2:
+                count += 1
+
+    clusterCC = np.empty((count, 8), dtype=np.float32)
     clusterCC_lookup = np.empty((n_pix, 2), dtype=np.int32)
 
+    # Second pass: fill entries into the exact-size array.
     index_counter = 0
-    for i, pixi in enumerate(pixels):
-        # tmp_data = []
+    for i in range(n_pix):
         clusterCC_lookup[i, 0] = index_counter
-        for j, pixj in enumerate(pixels):
-            tmpOvlp = getXTalk(pixi[0], pixi[1], pixj[0], pixj[1], layers, xtalk_coeff, xtalk_lookup_table)
+        for j in range(n_pix):
+            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
+                               layers, xtalk_coeff, xtalk_lookup_table)
             if tmpOvlp[0] > 2:
                 continue
 
-            M = j + 1
-            # N = 0 if i == j else len(tmp_data) // 8 + 1
-            clusterCC[index_counter][0] = float(M - 1)
+            clusterCC[index_counter][0] = float(j)
             clusterCC[index_counter][1] = tmpOvlp[0] ** 2 + tmpOvlp[1] ** 2
             clusterCC[index_counter][2] = tmpOvlp[2] ** 2 + tmpOvlp[3] ** 2
-            clusterCC[index_counter][3] = clusterCC[i * n_pix + j][1] + clusterCC[i * n_pix + j][2]
-            clusterCC[index_counter][4] = tmpOvlp[0]
-            clusterCC[index_counter][5] = tmpOvlp[2]
-            clusterCC[index_counter][6] = tmpOvlp[1]
-            clusterCC[index_counter][7] = tmpOvlp[3]
+            # col[3] = total squared overlap; read from the row just written (was a bug:
+            # the original read clusterCC[i*n_pix+j] which is uninitialized memory
+            # whenever index_counter != i*n_pix+j due to sparse filtering).
+            clusterCC[index_counter][3] = clusterCC[index_counter][1] + clusterCC[index_counter][2]
+            clusterCC[index_counter][4] = tmpOvlp[0]   # xt[0]
+            clusterCC[index_counter][5] = tmpOvlp[2]   # xt[2]
+            clusterCC[index_counter][6] = tmpOvlp[1]   # xt[1]
+            clusterCC[index_counter][7] = tmpOvlp[3]   # xt[3]
             index_counter += 1
 
         clusterCC_lookup[i, 1] = index_counter
 
-        # sizeCC.append(len(tmp_data) // 8)
-        # clusterCC.append(np.array(tmp_data, dtype=np.float32))
-    return clusterCC_lookup, clusterCC[0:index_counter]
+    return clusterCC_lookup, clusterCC
+
+
+@njit(cache=True, parallel=True)
+def _compute_null_likelihood_numba(
+    null_k_set, like_k_set,
+    pn, pN, ps, pS,
+    gn, ec,
+    xtalks_lookup, xtalks,
+    null_mask, like_mask,
+    null_out, like_out,
+):
+    """Compute per-pixel null and likelihood statistics via sparse xtalk sum.
+
+    Replaces the O(N²) Python-dispatch loops in fill_detection_statistic.
+    Both loops are fully compiled and data-parallel (prange over pixels).
+
+    The original Python code had inner loops over ``null_k_set`` / ``like_k_set``
+    (the filtered subsets), not over all cluster pixels.  ``null_mask`` /
+    ``like_mask`` reproduce that filtering: only neighbours j where
+    ``null_mask[j]`` (resp. ``like_mask[j]``) is True are accumulated.
+
+    Column layout of xtalks (from getXTalk_pixels_numba):
+        col 0 : neighbour pixel index j
+        col 4 : xt[0]   col 6 : xt[1]   col 5 : xt[2]   col 7 : xt[3]
+
+    Parameters
+    ----------
+    null_k_set, like_k_set : int64 arrays
+        Core pixel indices to process (pre-filtered: gn > 0 / ec > 0).
+    pn, pN, ps, pS : float64 arrays, shape (n_ifo, n_pix)
+        Per-pixel amplitude arrays.
+    gn, ec : float64 arrays, shape (n_pix,)
+        Gaussian noise correction / coherent energy per pixel.
+    xtalks_lookup : int64 array, shape (n_pix, 2)
+        CSR row-pointer: xtalks[xtalks_lookup[i,0]:xtalks_lookup[i,1]] are
+        the entries for pixel i.
+    xtalks : float32 array, shape (N_pairs, 8)
+        Sparse xtalk coefficient table.
+    null_mask, like_mask : bool arrays, shape (n_pix,)
+        Boolean membership masks for the inner-sum sets.  null_mask[j] is
+        True iff j is in null_k_set; like_mask[j] iff j is in like_k_set.
+    null_out, like_out : float64 arrays, shape (n_pix,)
+        Output arrays — written in place for pixels in the respective sets.
+    """
+    n_ifo = pn.shape[0]
+
+    # --- Null loop ---
+    for ii in prange(len(null_k_set)):
+        i = null_k_set[ii]
+        if gn[i] <= 0.0:
+            continue
+        acc = 0.0
+        start = xtalks_lookup[i, 0]
+        end   = xtalks_lookup[i, 1]
+        for m in range(start, end):
+            j = int(xtalks[m, 0])
+            # Mirror original: inner sum was over null_k_set only
+            if not null_mask[j]:
+                continue
+            xt0 = float(xtalks[m, 4])
+            xt1 = float(xtalks[m, 6])
+            xt2 = float(xtalks[m, 5])
+            xt3 = float(xtalks[m, 7])
+            d = 0.0
+            for ifo in range(n_ifo):
+                d += (xt0 * pn[ifo, i] * pn[ifo, j]
+                      + xt1 * pn[ifo, i] * pN[ifo, j]
+                      + xt2 * pN[ifo, i] * pn[ifo, j]
+                      + xt3 * pN[ifo, i] * pN[ifo, j])
+            acc += d
+        null_out[i] = acc
+
+    # --- Likelihood loop (identical structure) ---
+    for ii in prange(len(like_k_set)):
+        i = like_k_set[ii]
+        if ec[i] <= 0.0:
+            continue
+        acc = 0.0
+        start = xtalks_lookup[i, 0]
+        end   = xtalks_lookup[i, 1]
+        for m in range(start, end):
+            j = int(xtalks[m, 0])
+            # Mirror original: inner sum was over like_k_set only
+            if not like_mask[j]:
+                continue
+            xt0 = float(xtalks[m, 4])
+            xt1 = float(xtalks[m, 6])
+            xt2 = float(xtalks[m, 5])
+            xt3 = float(xtalks[m, 7])
+            d = 0.0
+            for ifo in range(n_ifo):
+                d += (xt0 * ps[ifo, i] * ps[ifo, j]
+                      + xt1 * ps[ifo, i] * pS[ifo, j]
+                      + xt2 * pS[ifo, i] * ps[ifo, j]
+                      + xt3 * pS[ifo, i] * pS[ifo, j])
+            acc += d
+        like_out[i] = acc

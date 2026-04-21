@@ -411,10 +411,18 @@ def likelihood(
 
     # --- Fill detection statistics (reuses CPU module) ---
     _t0 = time.perf_counter()
+    if config is not None:
+        from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
+        _wdm_list = _create_wdm_set_python(config)
+    else:
+        _wdm_list = None
     fill_detection_statistic(
         sky_statistics, skymap_statistics, cluster=cluster, n_ifo=nIFO, xtalk=xtalk,
         network_energy_threshold=network_energy_threshold,
         xgb_rho_mode=xgb_rho_mode, config=config,
+        cluster_xtalk=cluster_xtalk,
+        cluster_xtalk_lookup=cluster_xtalk_lookup,
+        wdm_list=_wdm_list,
     )
 
     pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False

@@ -135,7 +135,8 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
                             FX: jnp.ndarray,
                             rms: jnp.ndarray,
                             gamma_regulator: float,
-                            network_energy_threshold: float) -> float:
+                            network_energy_threshold: float,
+                            sky_batch_size: int = 8192) -> float:
     """Compute the DPF-based energy regulator REG[1].
 
     Scans all sky directions, counts how many have DPF quality above
@@ -155,20 +156,34 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
         DPF quality threshold (γ²·2/3).
     network_energy_threshold : float
         Per-pixel energy threshold E_thr.
+    sky_batch_size : int
+        Number of sky directions processed per vmap call.  Reduce this if
+        GPU/XLA runs out of memory for large clusters.  Default: 8192.
 
     Returns
     -------
     float
         The energy regulator value REG[1].
     """
-    # vmap over sky directions (axis 0 of FP/FX)
-    dpf_qualities = jax.vmap(
-        _dpf_quality_single, in_axes=(0, 0, None)
-    )(FP, FX, rms)
+    import numpy as _np
 
-    n_sky = jnp.float32(FP.shape[0])
-    n_gamma = jnp.sum(jnp.where(dpf_qualities > gamma_regulator,
-                                jnp.float32(1.0), jnp.float32(0.0)))
+    n_sky_total = FP.shape[0]
+    FP_j = jnp.asarray(FP, dtype=jnp.float32)
+    FX_j = jnp.asarray(FX, dtype=jnp.float32)
+    rms_j = jnp.asarray(rms, dtype=jnp.float32)
 
-    reg = (n_sky ** 2 / (n_gamma ** 2 + jnp.float32(1e-9)) - 1.0) * network_energy_threshold
+    quality_parts = []
+    for start in range(0, n_sky_total, sky_batch_size):
+        end = min(start + sky_batch_size, n_sky_total)
+        batch_qualities = jax.vmap(
+            _dpf_quality_single, in_axes=(0, 0, None)
+        )(FP_j[start:end], FX_j[start:end], rms_j)
+        quality_parts.append(_np.asarray(batch_qualities))
+
+    dpf_qualities = _np.concatenate(quality_parts)
+
+    n_sky = float(n_sky_total)
+    n_gamma = float(_np.sum(dpf_qualities > gamma_regulator))
+
+    reg = (n_sky ** 2 / (n_gamma ** 2 + 1e-9) - 1.0) * network_energy_threshold
     return float(reg)

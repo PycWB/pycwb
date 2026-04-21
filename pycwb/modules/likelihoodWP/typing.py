@@ -90,6 +90,7 @@ class SkyMapStatistics:
     nEllipticity: np.array  # Cr
     nPolarisation: np.array  # Mp
     nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
+    stage_timings: dict = None  # per-stage wall-clock timings (GPU only)
 
     @classmethod
     def from_tuple(cls, t):
