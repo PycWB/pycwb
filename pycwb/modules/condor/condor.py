@@ -89,7 +89,7 @@ pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
 { 'mkdir -p log' if should_transfer_files else ''}
-pycwb merge-catalog --work-dir={working_dir}
+pycwb merge --work-dir={working_dir}
             """)
 
         # add execute permission to merge.sh
@@ -145,6 +145,12 @@ pycwb merge-catalog --work-dir={working_dir}
             "use_oauth_services": "scitokens",
             "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         }
+
+        if self.conda_env:
+            batch_job_config["MY.flock_local"] = True
+            batch_job_config["MY.DESIRED_Sites"] = "none"
+            merge_job_config["MY.flock_local"] = True
+            merge_job_config["MY.DESIRED_Sites"] = "none"
 
         if container_image:
             batch_job_config['universe'] = 'container'
@@ -263,7 +269,7 @@ pycwb merge-catalog --work-dir={working_dir}
         working_dir = self.working_dir
         dag_dir = self.dag_dir
 
-        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1, 'import_env': 1})
+        dag_submit = htcondor.Submit.from_dag(str(self.dag_file), {'force': 1, 'import_env': 0})
         print('------------------------')
         print(dag_submit)
         print('------------------------')
