@@ -129,7 +129,7 @@ fi
 
 conda activate {self.conda_env}
 {self.additional_init}
-pycwb merge-catalog --work-dir={working_dir}
+pycwb merge --work-dir={working_dir}
 """)
 
         os.chmod(f"{slurm_dir}/merge.sh", 0o755)
