@@ -258,6 +258,23 @@ def _extract_pixel_arrays(pixels, nIFO):
             pix_noise_rms, pix_wave, pix_w90, pix_asnr, pix_a90)
 
 
+def _pa_to_tuple(pa):
+    """Extract the same tuple layout as ``_extract_pixel_arrays`` directly from a
+    :class:`~pycwb.types.pixel_arrays.PixelArrays` — zero Python iteration."""
+    pix_time   = pa.time.astype(np.int64)
+    pix_layers = pa.layers.astype(np.int64)
+    pix_rate   = pa.rate.astype(np.float64)
+    pix_core   = pa.core.astype(np.int64)
+    # pixel_arrays uses (n_ifo, n_pix); kernel expects (n_pix, n_ifo)
+    pix_noise_rms = pa.noise_rms.T.astype(np.float64)
+    pix_wave      = pa.wave.T.astype(np.float64)
+    pix_w90       = pa.w_90.T.astype(np.float64)
+    pix_asnr      = pa.asnr.T.astype(np.float64)
+    pix_a90       = pa.a_90.T.astype(np.float64)
+    return (pix_time, pix_layers, pix_rate, pix_core,
+            pix_noise_rms, pix_wave, pix_w90, pix_asnr, pix_a90)
+
+
 def _build_wdm_njit_data(wdm_list):
     """Build flat arrays for WDM lookup inside njit."""
     n_wdm = len(wdm_list)
@@ -401,18 +418,16 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc,
     waveform : pycwb.types.time_series.TimeSeries
         reconstructed waveform
     """
-    if not cluster.pixels:
+    if not cluster.pixel_arrays:
         return None
 
     max_f_len = max(wdm.m_H / rate for wdm in wdmList)
 
-    # find event time interval
-    tmin = 1e20
-    tmax = 0.0
-    for pix in cluster.pixels:
-        T = int(pix.time / pix.layers) / pix.rate
-        tmin = min(tmin, T)
-        tmax = max(tmax, T)
+    # find event time interval using pixel_arrays directly
+    _pa = cluster.pixel_arrays
+    T_arr = (_pa.time.astype(np.float64) / _pa.layers.astype(np.float64)) / _pa.rate.astype(np.float64)
+    tmin = float(T_arr.min())
+    tmax = float(T_arr.max())
 
     tmin = int(tmin - max_f_len) - 1
     tmax = int(tmax + max_f_len) + 1
@@ -423,8 +438,8 @@ def get_MRA_wave(cluster, wdmList, rate, ifo, a_type, mode, nproc,
 
     # Build pre-extracted arrays if not provided
     if _pixel_arrays is None:
-        nIFO = len(cluster.pixels[0].data)
-        _pixel_arrays = _extract_pixel_arrays(cluster.pixels, nIFO)
+        nIFO = _pa._n_ifo
+        _pixel_arrays = _pa_to_tuple(_pa)
     if _wdm_njit_data is None:
         _wdm_njit_data = _build_wdm_njit_data(wdmList)
 
@@ -494,7 +509,7 @@ def get_network_MRA_wave(config, cluster, rate, nIFO, rTDF, a_type, mode, tof,
     wdm_list = _create_wdm_set_python(config)
 
     # Pre-extract pixel data into flat arrays (once, reused for all IFOs)
-    pixel_arrays = _extract_pixel_arrays(cluster.pixels, nIFO)
+    pixel_arrays = _pa_to_tuple(cluster.pixel_arrays)
     wdm_njit_data = _build_wdm_njit_data(wdm_list)
 
     v = cluster.sky_time_delay  # backward time delay per IFO

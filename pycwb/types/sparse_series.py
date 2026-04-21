@@ -123,14 +123,10 @@ class SparseTimeFrequencySeries:
         if cluster.cluster_status == 1:
             return False
 
-        # loop over pixels
-        for pixel in cluster.pixels:
-            # skip pixel with bad rate, TODO: why the rate can be bad?
-            if int(pixel.rate + 0.01) != r:
-                continue
-
-            # store pixel index
-            self.core.append(pixel.data[ifo_id].index)
+        # vectorised: select pixels matching this rate and record their TF-map index
+        pa = cluster.pixel_arrays
+        rate_match = ((pa.rate + 0.01).astype(int) == r)
+        self.core.extend(pa.pixel_index[ifo_id, rate_match].tolist())
 
     def update_sparse_table(self):
         """

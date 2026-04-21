@@ -17,6 +17,7 @@ from .utils import (
 )
 from ...types.detector import calculate_e2or_from_acore, compute_sky_delay_and_patterns
 from ...types.network_cluster import Cluster, ClusterMeta
+from ...types.pixel_arrays import PixelArrays
 from ...types.time_series import TimeSeries
 
 if TYPE_CHECKING:
@@ -61,15 +62,24 @@ def supercluster(
     # Vectorized pixel extraction for better performance with large pixel counts
     pixel_data_list = []
     for c_id, c in enumerate(clusters):
-        for p in c.pixels:
-            row = [p.time / p.rate / p.layers, p.frequency * p.rate, 1 / p.rate, p.rate / 2, c_id]
-            row.extend([d.index / p.rate / p.layers for d in p.data])
-            pixel_data_list.append(row)
-    
+        pa   = c.pixel_arrays
+        n_c  = len(pa)
+        rate_f  = pa.rate.astype(np.float64)
+        layers_f = pa.layers.astype(np.float64)
+        t_sec    = pa.time.astype(np.float64) / (rate_f * layers_f)
+        f_hz     = pa.frequency.astype(np.float64) * rate_f
+        inv_rate = 1.0 / rate_f
+        half_rate = rate_f / 2.0
+        c_ids_col = np.full(n_c, c_id, dtype=np.float64)
+        # pixel_index shape: (n_ifo, n_pix) → idx_time shape: (n_pix, n_ifo)
+        idx_time = (pa.pixel_index.astype(np.float64) / (rate_f * layers_f)).T  # (n_pix, n_ifo)
+        rows = np.column_stack([t_sec, f_hz, inv_rate, half_rate, c_ids_col, idx_time])
+        pixel_data_list.append(rows)
+
     if not pixel_data_list:
         return clusters
-        
-    pixels = np.array(pixel_data_list, dtype=np.float64)
+
+    pixels = np.concatenate(pixel_data_list, axis=0)
 
     # get the full cluster ids
     cluster_ids = np.arange(len(clusters))
@@ -137,41 +147,50 @@ def calculate_supercluster_data(
         Merged supercluster with ``cluster_status=0`` (accepted) or
         ``cluster_status=1`` (rejected by statistics cut).
     """
-    # Vectorized pixel array construction for better performance
-    pixel_data_list = []
-    pixel_objects = []
-    
-    for c_id, c in enumerate(clusters):
-        for p in c.pixels:
-            row = [p.core, p.time, p.frequency, p.rate, p.layers, p.likelihood]
-            row.extend([d.asnr for d in p.data])
-            pixel_data_list.append(row)
-            pixel_objects.append(p)
-    
-    if not pixel_data_list:
+    # Vectorized: merge PixelArrays from all clusters, then build stat matrix
+    if not clusters:
         return Cluster(
-            pixels=[],
             cluster_status=1,
-            cluster_meta=ClusterMeta()
+            cluster_meta=ClusterMeta(),
         )
-    
-    pixels = np.array(pixel_data_list, dtype=np.float64)
-    stat = calculate_statistics(pixels, atype, core, pair, nPIX, S, dF)
+
+    from ...types.pixel_arrays import PixelArrays
+    merged_pa = PixelArrays.concat([c.pixel_arrays for c in clusters])
+
+    if len(merged_pa) == 0:
+        return Cluster(
+            pixel_arrays=merged_pa,
+            cluster_status=1,
+            cluster_meta=ClusterMeta(),
+        )
+
+    # Stat input: (n_pix, 6 + n_ifo) matrix
+    # columns: [core, time, frequency, rate, layers, likelihood, asnr_0, ..., asnr_n]
+    stat_rows = np.column_stack([
+        merged_pa.core.astype(np.float64),
+        merged_pa.time.astype(np.float64),
+        merged_pa.frequency.astype(np.float64),
+        merged_pa.rate.astype(np.float64),
+        merged_pa.layers.astype(np.float64),
+        merged_pa.likelihood.astype(np.float64),
+        merged_pa.asnr.T.astype(np.float64),  # (n_pix, n_ifo)
+    ])
+    stat = calculate_statistics(stat_rows, atype, core, pair, nPIX, S, dF)
 
     if stat is None:
         new_supercluster = Cluster(
-            pixels=pixel_objects,
+            pixel_arrays=merged_pa,
             cluster_status=1,
-            cluster_meta=ClusterMeta()
+            cluster_meta=ClusterMeta(),
         )
     else:
         new_supercluster = Cluster(
-            pixels=pixel_objects,
+            pixel_arrays=merged_pa,
             cluster_status=0,
             cluster_time=stat[0],
             cluster_freq=stat[1],
             cluster_rate=[int(d+0.01) for d in stat[2:]],
-            cluster_meta=ClusterMeta(c_time=stat[0], c_freq=stat[1], like_net=stat[4], energy=stat[4])
+            cluster_meta=ClusterMeta(c_time=stat[0], c_freq=stat[1], like_net=stat[4], energy=stat[4]),
         )
     return new_supercluster
 
@@ -202,18 +221,26 @@ def defragment(
         Defragmented clusters; may have fewer elements than *clusters* if
         any were merged together.
     """
-    # Vectorized pixel extraction
+    # Vectorized pixel extraction using pixel_arrays directly
     pixel_data_list = []
     for c_id, cluster in enumerate(clusters):
-        for p in cluster.pixels:
-            row = [p.time / p.rate / p.layers, p.frequency * p.rate, 1 / p.rate, p.rate / 2, c_id]
-            row.extend([d.index / p.rate / p.layers for d in p.data])
-            pixel_data_list.append(row)
-    
+        pa       = cluster.pixel_arrays
+        n_c      = len(pa)
+        rate_f   = pa.rate.astype(np.float64)
+        layers_f = pa.layers.astype(np.float64)
+        t_sec    = pa.time.astype(np.float64) / (rate_f * layers_f)
+        f_hz     = pa.frequency.astype(np.float64) * rate_f
+        inv_rate = 1.0 / rate_f
+        half_rate = rate_f / 2.0
+        c_ids_col = np.full(n_c, c_id, dtype=np.float64)
+        idx_time  = (pa.pixel_index.astype(np.float64) / (rate_f * layers_f)).T  # (n_pix, n_ifo)
+        rows = np.column_stack([t_sec, f_hz, inv_rate, half_rate, c_ids_col, idx_time])
+        pixel_data_list.append(rows)
+
     if not pixel_data_list:
         return clusters
-        
-    pixels = np.array(pixel_data_list, dtype=np.float64)
+
+    pixels = np.concatenate(pixel_data_list, axis=0)
 
     # get the full cluster ids
     cluster_ids = np.arange(len(clusters))
@@ -229,15 +256,12 @@ def defragment(
 
     superclusters = []
     for c_ids in aggregated_clusters:
-        # Collect all pixels from the aggregated clusters
-        all_pixels = []
-        for c_id in c_ids:
-            all_pixels.extend(clusters[c_id].pixels)
-
+        from ...types.pixel_arrays import PixelArrays
+        merged_pa = PixelArrays.concat([clusters[c_id].pixel_arrays for c_id in c_ids])
         sc = Cluster(
-            pixels=all_pixels,
+            pixel_arrays=merged_pa,
             cluster_status=0,
-            cluster_meta=ClusterMeta()
+            cluster_meta=ClusterMeta(),
         )
         superclusters.append(sc)
 
@@ -320,7 +344,7 @@ def supercluster_wrapper(
         result_clusters.append(fragment_cluster)
 
     total_clusters = sum(len(fc.clusters) for fc in result_clusters)
-    total_pixels = sum(len(c.pixels) for fc in result_clusters for c in fc.clusters)
+    total_pixels = sum(len(c.pixel_arrays) for fc in result_clusters for c in fc.clusters)
     logger.info("Supercluster wrapper done")
     logger.info("total  clusters|pixels : %6d|%d", total_clusters, total_pixels)
     logger.info("----------------------------------------")
@@ -470,20 +494,26 @@ def supercluster_single_lag(
         fragment_cluster.clusters += [c for c in fc.clusters if c.cluster_status < 1]
 
     # Extract TD amplitudes from the pre-built cache
-    pixel_objects = []
-    for cluster in fragment_cluster.clusters:
-        pixel_objects.extend(cluster.pixels)
+    # Concatenate pixel_arrays across all clusters for batch TD extraction
+    from ...types.pixel_arrays import PixelArrays
+    all_clusters = fragment_cluster.clusters
+    if not all_clusters:
+        logger.info("No pixels to process for lag %d", lag_idx)
+        return None
 
-    n_pixels = len(pixel_objects)
+    # Gather per-cluster sizes and a merged view for layers/pixel_index
+    cluster_sizes = [len(c.pixel_arrays) for c in all_clusters]
+    n_pixels = sum(cluster_sizes)
     if n_pixels == 0:
         logger.info("No pixels to process for lag %d", lag_idx)
         return None
 
-    pixel_layers = np.array([int(p.layers) for p in pixel_objects], dtype=np.int32)
-    pixel_indices = np.zeros((n_pixels, n_ifo), dtype=np.int32)
-    for i, pixel in enumerate(pixel_objects):
-        for n in range(n_ifo):
-            pixel_indices[i, n] = int(pixel.data[n].index)
+    pixel_layers  = np.concatenate([c.pixel_arrays.layers  for c in all_clusters]).astype(np.int32)
+    # pixel_index: (n_ifo, n_pix) per cluster — cat along pixel axis → (n_ifo, n_pixels_total)
+    pixel_indices_all = np.concatenate(
+        [c.pixel_arrays.pixel_index for c in all_clusters], axis=1
+    )  # (n_ifo, n_pixels)
+    pixel_indices = pixel_indices_all.T.astype(np.int32)  # (n_pixels, n_ifo)
 
     unique_layers = np.unique(pixel_layers)
     pixels_by_layer = {
@@ -511,10 +541,20 @@ def supercluster_single_lag(
             batch_result = per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
             all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
 
-    for pidx in range(n_pixels):
-        pixel_objects[pidx].td_amp = [
-            all_td_amps[pidx, ifo_idx, :] for ifo_idx in range(n_ifo)
-        ]
+    # Build per-cluster PixelArrays from the dense all_td_amps matrix,
+    # eliminating the round-trip:  dense → per-pixel lists → re-assemble.
+    # Compute slice offsets from the precomputed cluster_sizes.
+    cluster_pixel_offsets: list[tuple[int, int]] = []
+    offset = 0
+    for n in cluster_sizes:
+        cluster_pixel_offsets.append((offset, offset + n))
+        offset += n
+
+    for ci, cluster in enumerate(fragment_cluster.clusters):
+        start, end = cluster_pixel_offsets[ci]
+        cluster_td = all_td_amps[start:end]  # (n_cpix, n_ifo, td_vec_len)
+        # pixel_arrays already set from coherence; just update the td_amp fields
+        cluster.pixel_arrays.set_td_amp_from_dense(cluster_td)
 
     # Supercluster + subnet cut
     logger.info(
@@ -530,7 +570,7 @@ def supercluster_single_lag(
     pattern = int(getattr(config, "pattern", 0))
 
     superclusters = supercluster(clusters, 'L', config.TFgap, super_e2or, n_ifo)
-    total_pixels = sum(len(c.pixels) for c in superclusters)
+    total_pixels = sum(len(c.pixel_arrays) for c in superclusters)
     accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
     logger.info(
         "   super clusters|pixels      : %6d|%d", len(superclusters), total_pixels
@@ -547,7 +587,7 @@ def supercluster_single_lag(
         accepted_superclusters = defragment(
             accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
-        logger.info("   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixels) for c in accepted_superclusters))
+        logger.info("   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixel_arrays) for c in accepted_superclusters))
 
     subrho = config.subrho if config.subrho > 0 else config.netRHO
     accepted_superclusters = apply_subnet_cut(
@@ -572,23 +612,22 @@ def supercluster_single_lag(
             accepted_superclusters, config.Tgap, config.Fgap, n_ifo
         )
 
-    total_pixels = sum(len(c.pixels) for c in accepted_superclusters)
+    total_pixels = sum(len(c.pixel_arrays) for c in accepted_superclusters)
     logger.info(
         "   post-cut clusters|pixels   : %6d|%d", len(accepted_superclusters), total_pixels
     )
 
     fragment_cluster.clusters = [c for c in accepted_superclusters if c.cluster_status <= 0]
-    total_pixels = sum(len(c.pixels) for c in fragment_cluster.clusters)
+    total_pixels = sum(len(c.pixel_arrays) for c in fragment_cluster.clusters)
     logger.info(
         "   final clusters|pixels      : %6d|%d",
         len(fragment_cluster.clusters),
         total_pixels,
     )
 
-    # Mark all surviving pixels as core; td_amp is already populated above
-    # and will be consumed directly by likelihood in the same lag iteration.
-    for p in (p for c in fragment_cluster.clusters for p in c.pixels):
-        p.core = 1
+    # Mark all surviving pixels as core via pixel_arrays
+    for c in fragment_cluster.clusters:
+        c.pixel_arrays.core[:] = True
 
     return fragment_cluster
 

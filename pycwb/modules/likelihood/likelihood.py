@@ -163,7 +163,7 @@ def _likelihood(config, network, lag, cluster_id, fragment_cluster, shifts=(0,0,
     detected = cluster.cluster_status == -1
 
     # print reconstructed event
-    logger.info("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixels)))
+    logger.info("   cluster-id|pixels: %5d|%d" % (cluster_id, len(cluster.pixel_arrays)))
     if detected:
         logger.info("\t -> SELECTED !!!")
     else:

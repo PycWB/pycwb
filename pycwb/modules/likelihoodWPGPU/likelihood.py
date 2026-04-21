@@ -29,7 +29,6 @@ from pycwb.modules.likelihoodWP.likelihood import (
     setup_likelihood,
     load_data_from_ifo,
     load_data_from_pixels,
-    _populate_pixel_noise_rms,
     threshold_cut,
     fill_detection_statistic,
     get_chirp_mass,
@@ -303,11 +302,11 @@ def likelihood(
     stage_timings: dict[str, float] = {}
     logger.info("-------------------------------------------------------")
     logger.info("-> [GPU] Processing cluster-id=%d|pixels=%d",
-                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
     logger.info("   ----------------------------------------------------")
 
     if nRMS is not None and len(nRMS) == nIFO:
-        _populate_pixel_noise_rms(cluster.pixels, nRMS)
+        cluster.pixel_arrays.populate_noise_rms(nRMS)
 
     network_energy_threshold = setup["network_energy_threshold"]
     xgb_rho_mode             = setup["xgb_rho_mode"]
@@ -322,7 +321,7 @@ def likelihood(
     n_sky                    = setup["n_sky"]
 
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
-    n_pix = len(cluster.pixels)
+    n_pix = len(cluster.pixel_arrays)
 
     # --- Big-cluster sky thinning ---
     _precision = int(abs(getattr(config, 'precision', 0) or 0))
@@ -340,8 +339,8 @@ def likelihood(
 
     # --- Prepare per-cluster inputs ---
     _t0 = time.perf_counter()
-    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
-    rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
+    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixel_arrays, True)
+    rms, td00, td90, td_energy = load_data_from_pixels(None, nIFO, pixel_arrays=cluster.pixel_arrays)
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))
     rms_t = rms.T.astype(np.float32)  # (n_pix, n_ifo) — GPU-optimal layout
@@ -402,7 +401,7 @@ def likelihood(
     if rejected:
         logger.debug("Cluster rejected: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d",
-                    int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+                    int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
         logger.info("\t <- rejected")
         stage_timings["total"] = time.perf_counter() - timer_start
         logger.info("-------------------------------------------------------")
@@ -436,7 +435,7 @@ def likelihood(
 
     detected = cluster.cluster_status == -1
     logger.info("   cluster-id|pixels: %5d|%d",
-                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
     if detected:
         logger.info("\t -> SELECTED !!!")
     else:
@@ -497,10 +496,10 @@ def likelihood_wrapper(
             )
             if result_cluster is None or result_cluster.cluster_status != -1:
                 logger.info("likelihood rejected cluster %d (%d pixels)",
-                            k + 1, len(selected_cluster.pixels))
+                            k + 1, len(selected_cluster.pixel_arrays))
                 continue
             logger.info("likelihood accepted cluster %d (%d pixels)",
-                        k + 1, len(result_cluster.pixels))
+                        k + 1, len(result_cluster.pixel_arrays))
             lag_results.append((result_cluster, sky_stats))
         results.append(lag_results)
 

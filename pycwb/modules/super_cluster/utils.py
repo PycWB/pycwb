@@ -633,20 +633,21 @@ def apply_subnet_cut(
         Clusters with ``cluster_status <= 0``, i.e. those that passed the cut.
     """
     for i, c in enumerate(superclusters):
-        c.pixels.sort(key=lambda x: x.likelihood, reverse=True)
+        _top_idx = np.argsort(-c.pixel_arrays.likelihood)[:n_loudest_local]
+        top_pa = c.pixel_arrays[_top_idx]
         results = sub_net_cut(
-            c.pixels[:n_loudest_local], ml_local, FP_local, FX_local,
+            top_pa, ml_local, FP_local, FX_local,
             acor_local, e2or_local, n_ifo_local, n_sky_local,
             subnet_local, subcut_local, subnorm_local, subrho_local, xtalk_local,
         )
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
             logger.debug(
-                f"Cluster {i} ({len(c.pixels)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) passed subnet, subrho, and subthr cut"
+                f"Cluster {i} ({len(c.pixel_arrays)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) passed subnet, subrho, and subthr cut"
             )
             c.cluster_status = -1
         else:
-            log_output = f"Cluster {i} ({len(c.pixels)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) failed "
+            log_output = f"Cluster {i} ({len(c.pixel_arrays)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) failed "
             if not results['subnet_passed']:
                 log_output += f"subnet cut condition: {results['subnet_condition']}, "
             if not results['subrho_passed']:

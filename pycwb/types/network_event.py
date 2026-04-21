@@ -451,9 +451,9 @@ class Event:
         c_freq = meta.c_freq if meta.c_freq != 0.0 else cluster.cluster_freq
         net_bw = cluster.high_frequency - cluster.low_frequency
 
-        # Pre-extract core pixels (used below)
-        all_pixels = cluster.pixels
-        core_pixels = [p for p in all_pixels if p.core]
+        # Pre-extract core pixel arrays (used below)
+        pa = cluster.pixel_arrays
+        core_mask = pa.core
 
         # Sky-time delays: ml[i, l_max] are integer lag indices
         sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
@@ -477,20 +477,18 @@ class Event:
         # (mirrors C++ pwc->get("start",i,'L',0) / pwc->get("stop",i,'L',0))
         # start = min of (1/rate * floor(data[i].index / layers))
         # stop  = max of (1/rate * (floor(data[i].index / layers) + 1))
+        core_rate_v   = pa.rate[core_mask].astype(np.float64)
+        core_layers_v = pa.layers[core_mask].astype(np.int64)
+        core_pidx_v   = pa.pixel_index[:, core_mask]  # (n_ifo, n_core)
         per_ifo_duration = []
         for ifo_idx in range(n_ifo):
-            t_starts = []
-            t_stops = []
-            for p in core_pixels:
-                if p.rate > 0 and p.layers > 0 and ifo_idx < len(p.data):
-                    dt = 1.0 / float(p.rate)
-                    time_bin = int(p.data[ifo_idx].index) // int(p.layers)
-                    t_starts.append(dt * time_bin)
-                    t_stops.append(dt * (time_bin + 1))
-            if t_starts:
-                per_ifo_duration.append(max(t_stops) - min(t_starts))
-            else:
+            valid = (core_rate_v > 0) & (core_layers_v > 0)
+            if not np.any(valid):
                 per_ifo_duration.append(cluster.stop_time - cluster.start_time)
+                continue
+            dt_v = 1.0 / core_rate_v[valid]
+            time_bins = core_pidx_v[ifo_idx, valid].astype(np.int64) // core_layers_v[valid]
+            per_ifo_duration.append(float((dt_v * (time_bins + 1)).max() - (dt_v * time_bins).min()))
 
         # Frequency per IFO:
         # C++ sets frequency[i] = cFreq_net.data[kid] for all IFOs (WDM sub-bin likelihood-weighted mean),
@@ -510,25 +508,35 @@ class Event:
         # Mirrors C++ pwc->get("duration",0,'L',0) and pwc->get("bandwidth",0,'L',0)
         # Case 'D': a = sum(t*x), b = sum(x), d = sum(t^2*x); result = sqrt((d-a^2/b)/b) * b / b
         # = sqrt(variance) (actually it's the weighted RMS)
-        if core_pixels:
+        if np.any(core_mask):
             # Duration RMS
             a_t = b_t = d_t = 0.0
             a_f = b_f = d_f = 0.0
-            max_rate = max((p.rate for p in core_pixels), default=0)
-            min_rate = min((p.rate for p in core_pixels if p.rate > 0), default=1)
-            for p in core_pixels:
-                dt = 1.0 / float(p.rate) if p.rate > 0 else 0.0
-                mm = int(p.layers)
+            core_rate_arr   = pa.rate[core_mask].astype(np.float64)
+            core_layers_arr = pa.layers[core_mask].astype(np.int64)
+            core_time_arr   = pa.time[core_mask].astype(np.int64)
+            core_freq_arr   = pa.frequency[core_mask].astype(np.int64)
+            core_lh_arr     = pa.likelihood[core_mask].astype(np.float64)
+            max_rate = float(np.max(core_rate_arr)) if len(core_rate_arr) > 0 else 0.0
+            min_rate = float(np.min(core_rate_arr[core_rate_arr > 0])) if np.any(core_rate_arr > 0) else 1.0
+            for pi in range(len(core_rate_arr)):
+                rate_pi   = core_rate_arr[pi]
+                layers_pi = int(core_layers_arr[pi])
+                time_pi   = int(core_time_arr[pi])
+                freq_pi   = int(core_freq_arr[pi])
+                lh_pi     = core_lh_arr[pi]
+                dt = 1.0 / rate_pi if rate_pi > 0 else 0.0
+                mm = layers_pi
                 mp = int(max_rate * dt + 0.5) if dt > 0 else 1  # n sub-time bins
                 # WDM: dT=0.5 bin offset (C++: dT = mm==mp ? 0 : 0.5)
                 dT = 0.0 if mm == mp else 0.5
                 # C++ uses INTEGER division: pList[M].time/mm (both size_t)
-                time_bin = int(p.time) // mm
+                time_bin = time_pi // mm
                 iT = (float(time_bin) - dT) * dt
                 n_sub = max(mp, 1)
-                sub_dt = 1.0 / float(max_rate) if max_rate > 0 else dt
+                sub_dt = 1.0 / max_rate if max_rate > 0 else dt
                 iT += sub_dt / 2.0  # central bin
-                x = p.likelihood / (n_sub * n_sub) if p.likelihood > 0 else 0.0
+                x = lh_pi / (n_sub * n_sub) if lh_pi > 0 else 0.0
                 for _ in range(n_sub):
                     a_t += iT * x
                     b_t += x
@@ -536,13 +544,13 @@ class Event:
                     iT += sub_dt
 
                 # Frequency sub-bins
-                mp_f = int(1.0 / (float(min_rate) * dt) + 0.5) if dt > 0 else 1
+                mp_f = int(1.0 / (min_rate * dt) + 0.5) if dt > 0 else 1
                 dF = 0.5  # WDM offset
-                iF = (float(p.frequency) - dF) / dt / 2.0
-                df = float(min_rate) / 2.0
+                iF = (float(freq_pi) - dF) / dt / 2.0
+                df = min_rate / 2.0
                 n_sub_f = max(mp_f, 1)
                 iF += df / 2.0
-                x_f = p.likelihood / (n_sub_f * n_sub_f) if p.likelihood > 0 else 0.0
+                x_f = lh_pi / (n_sub_f * n_sub_f) if lh_pi > 0 else 0.0
                 for _ in range(n_sub_f):
                     a_f += iF * x_f
                     b_f += x_f
@@ -570,8 +578,7 @@ class Event:
             in_rate = float(config.inRate)
             # C++ get_SS()/get_GW()/get_NN() sum over ALL pixels, not just core.
             # Use core pixels only for noise_rms sampling (TF map lookup).
-            all_pixels = cluster.pixels
-            core_pixels = [p for p in all_pixels if p.core]
+            # pa and core_mask already set above
 
             # Prefer xtalk-corrected per-IFO energies from fill_detection_statistic
             # (mirrors C++ getMRAwave 'W'/'S' + get_XX()/get_SS()/get_XS()).
@@ -595,7 +602,7 @@ class Event:
                         null_val = float(meta.null_energy[i])
                     else:
                         # Fallback: split total null evenly (backwards compatibility)
-                        null_val = sum(p.null for p in all_pixels) / n_ifo
+                        null_val = float(np.sum(pa.null)) / n_ifo
                     self.null.append(null_val)
                     # hrss from physical strain energy (not whitened)
                     if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
@@ -606,27 +613,27 @@ class Event:
                     self.hrss.append(float(np.sqrt(hrss_sq_physical / in_rate)))
                 else:
                     # Fallback: diagonal pixel sum (no xtalk cross-terms)
-                    asnr_sq = sum(p.data[i].asnr ** 2 + p.data[i].a_90 ** 2 for p in all_pixels)
-                    wave_sq = sum(p.data[i].wave ** 2 + p.data[i].w_90 ** 2 for p in all_pixels)
+                    asnr_sq = float(np.sum(pa.asnr[i] ** 2 + pa.a_90[i] ** 2))
+                    wave_sq = float(np.sum(pa.wave[i] ** 2 + pa.w_90[i] ** 2))
                     self.snr.append(float(wave_sq))
                     self.sSNR.append(float(asnr_sq))
                     self.xSNR.append(float(np.sqrt(max(wave_sq * asnr_sq, 0.0))))
                     xsnr_sq = float(np.sqrt(max(wave_sq * asnr_sq, 0.0)))
                     self.nill.append(float(xsnr_sq - asnr_sq))
                     # null: split total evenly
-                    null_val = sum(p.null for p in all_pixels) / n_ifo
+                    null_val = float(np.sum(pa.null)) / n_ifo
                     self.null.append(null_val)
                     # hrss from pixel-based signal energy (whitened amplitudes * noise_rms)
-                    hrss_sq = sum((p.data[i].asnr * p.data[i].noise_rms) ** 2 
-                                  + (p.data[i].a_90 * p.data[i].noise_rms) ** 2 for p in all_pixels)
+                    hrss_sq = float(np.sum((pa.asnr[i] * pa.noise_rms[i]) ** 2
+                                           + (pa.a_90[i] * pa.noise_rms[i]) ** 2))
                     self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
 
                 # Noise floor: RMS of noiserms across core pixels for this IFO, scaled to strain/rtHz
                 # C++ get("noise",i,'S',0): sum += r*r; sum/=mp → log10(sqrt(sum)) → pow(10,...)/sqrt(inRate)
                 # = sqrt(mean(noiserms^2)) / sqrt(inRate)
-                rms_vals = [p.data[i].noise_rms for p in core_pixels
-                            if p.data[i].noise_rms > 0]
-                mean_nrms = float(np.sqrt(np.mean(np.array(rms_vals) ** 2))) if rms_vals else 1.0
+                rms_vals = pa.noise_rms[i, core_mask]
+                rms_vals = rms_vals[rms_vals > 0]
+                mean_nrms = float(np.sqrt(np.mean(rms_vals ** 2))) if len(rms_vals) > 0 else 1.0
                 # Convert from TF-domain noise amplitude to strain/rtHz: divide by sqrt(inRate)
                 self.noise.append(float(mean_nrms / np.sqrt(in_rate)))
 
@@ -675,7 +682,7 @@ class Event:
                 self.bx = [0.0] * n_ifo
 
             # Pixel rate per IFO (modal rate of core pixels)
-            core_rates = [p.rate for p in core_pixels]
+            core_rates = pa.rate[core_mask].tolist()
             if core_rates:
                 from statistics import mode as stat_mode
                 try:
