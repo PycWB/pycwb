@@ -102,7 +102,7 @@ def coherence_task(config, conditioned_data, res):
     for sc in clusters:
         n_clusters += len(sc.clusters)
         for cluster in sc.clusters:
-            n_pixels += len(cluster.pixels)
+            n_pixels += len(cluster.pixel_arrays)
 
     print(f"Resolutions {res}: {n_clusters} clusters, {n_pixels} pixels")
     return clusters

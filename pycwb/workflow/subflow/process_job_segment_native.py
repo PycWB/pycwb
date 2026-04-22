@@ -352,7 +352,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     continue
                 logger.info(
                     "likelihood accepted cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
-                    result_cluster.cluster_id, lag, len(result_cluster.pixels),
+                    result_cluster.cluster_id, lag, len(result_cluster.pixel_arrays),
                     result_cluster.start_time, result_cluster.stop_time,
                     result_cluster.low_frequency, result_cluster.high_frequency,
                 )

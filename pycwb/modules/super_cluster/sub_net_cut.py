@@ -14,7 +14,7 @@ def sub_net_cut(pixels, ml, FP, FX, acor, e2or, n_ifo, n_sky, subnet, subcut, su
     network_energy_threshold = np.float32(2 * acor * acor * n_ifo)
     n_pix = len(pixels)
 
-    rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
+    rms, td00, td90, td_energy = load_data_from_pixels(None, n_ifo, pixel_arrays=pixels)
 
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(pixels, True)
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from .monster import load_catalog, getXTalk_pixels_numba, getXTalk
+from .monster import load_catalog, getXTalk_pixels_numba, getXTalk, getXTalk_pixels_fast
 from pycwb.types.network_pixel import Pixel
 
 @dataclass
@@ -31,38 +31,37 @@ class XTalk:
 
     def get_xtalk_pixels(self, pixels, check=True):
         """
-        Get the crosstalk coefficients for the given pixels. There are two arrays returned because the number of crosstalk coefficients
-        is not the same for all pixels. To make the array homogeneous for the numba JIT compiler, we return two arrays:
-        - cluster_xtalk_lookup: The lookup table for crosstalk coefficients. Contains the start and end indices for each pixel.
-        - cluster_xtalk: The crosstalk coefficients for the pixels.
+        Get the crosstalk coefficients for the given pixels.
 
-        Args:
-            pixels (list of Pixel): A list of Pixel objects.
-            check (bool): To be fixed later, currently not used.
-
-        Returns:
-            tuple: A tuple containing:
-                - cluster_xtalk_lookup (np.ndarray): Lookup table for crosstalk coefficients.
-                - cluster_xtalk (np.ndarray): Crosstalk coefficients for the pixels.
+        Accepts either a ``list[Pixel]`` (legacy) or a
+        :class:`~pycwb.types.pixel_arrays.PixelArrays` instance.
+        Returns a ``(cluster_xtalk_lookup, cluster_xtalk)`` tuple.
         """
-        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_numba(
-            np.array([[pix.layers, pix.time] for pix in pixels]),
-            check, self.layers, self.coeff, self.lookup_table
+        from pycwb.types.pixel_arrays import PixelArrays
+        if isinstance(pixels, PixelArrays):
+            pix_mat = np.column_stack([pixels.layers, pixels.time]).astype(np.int64)
+        else:
+            pix_mat = np.array([[pix.layers, pix.time] for pix in pixels])
+        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_fast(
+            pix_mat, check, self.layers, self.coeff, self.lookup_table
         )
         return cluster_xtalk_lookup, cluster_xtalk
 
-    def get_xtalk(self, pix1: Pixel, pix2: Pixel):
-        """
-        Get the crosstalk coefficients for the given pixel pair.
+    def get_xtalk(self, pix1, pix2):
+        """Get the crosstalk coefficients for the given pixel pair.
 
-        Args:
-            pix1 (Pixel): A Pixel object.
-            pix2 (Pixel): A Pixel object.
-
-        Raises:
-            AttributeError: If either pix1 or pix2 does not have 'layer' or 'time' attributes.
+        ``pix1`` / ``pix2`` can be ``Pixel`` objects **or** plain
+        ``(layers, time)`` tuples / named objects with those attributes.
         """
-        return getXTalk(pix1.layers, pix1.time, pix2.layers, pix2.time, self.layers, self.coeff, self.lookup_table)
+        if isinstance(pix1, tuple):
+            l1, t1 = pix1
+        else:
+            l1, t1 = pix1.layers, pix1.time
+        if isinstance(pix2, tuple):
+            l2, t2 = pix2
+        else:
+            l2, t2 = pix2.layers, pix2.time
+        return getXTalk(l1, t1, l2, t2, self.layers, self.coeff, self.lookup_table)
 
 
 

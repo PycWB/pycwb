@@ -16,6 +16,7 @@ from .utils import avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps
         avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps, xtalk_energy_sum_numpy
 from .pixel_batch_ops import load_data_from_pixels_vectorized
 from pycwb.modules.xtalk.type import XTalk
+from pycwb.modules.xtalk.monster import _compute_null_likelihood_numba
 from .typing import SkyStatistics, SkyMapStatistics
 
 from typing import TYPE_CHECKING
@@ -146,10 +147,10 @@ def likelihood_wrapper(
             )
             if result_cluster is None or result_cluster.cluster_status != -1:
                 logger.info("likelihood rejected cluster %d (%d pixels)",
-                            k + 1, len(selected_cluster.pixels))
+                            k + 1, len(selected_cluster.pixel_arrays))
                 continue
             logger.info("likelihood accepted cluster %d (%d pixels)",
-                        k + 1, len(result_cluster.pixels))
+                        k + 1, len(result_cluster.pixel_arrays))
             lag_results.append((result_cluster, sky_stats))
         results.append(lag_results)
 
@@ -167,6 +168,10 @@ def setup_likelihood(
     ml: np.ndarray | None = None,
     FP: np.ndarray | None = None,
     FX: np.ndarray | None = None,
+    ml_big: np.ndarray | None = None,
+    FP_big: np.ndarray | None = None,
+    FX_big: np.ndarray | None = None,
+    big_cluster_healpix_order: int | None = None,
 ) -> dict:
     """
     Pre-compute all job-segment-level (lag/cluster-independent) inputs for likelihood.
@@ -236,6 +241,18 @@ def setup_likelihood(
     FP_t = FP_raw.T.astype(np.float32)  # (n_sky, nIFO)
     FX_t = FX_raw.T.astype(np.float32)  # (n_sky, nIFO)
 
+    # Big-cluster coarse sky arrays (for bBB handling in network::likelihoodWP)
+    if ml_big is not None and FP_big is not None and FX_big is not None:
+        ml_big_raw = np.asarray(ml_big)
+        FP_big_t   = np.asarray(FP_big).T.astype(np.float32)
+        FX_big_t   = np.asarray(FX_big).T.astype(np.float32)
+        n_sky_big  = int(ml_big_raw.shape[1])
+    else:
+        ml_big_raw = None
+        FP_big_t   = None
+        FX_big_t   = None
+        n_sky_big  = None
+
     healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
     ra_arr, dec_arr = _build_sky_directions(n_sky, healpix_order)
 
@@ -256,6 +273,11 @@ def setup_likelihood(
         "healpix_order": healpix_order,
         "ra_arr": ra_arr,
         "dec_arr": dec_arr,
+        "ml_big_cluster": ml_big_raw,
+        "FP_big_cluster_t": FP_big_t,
+        "FX_big_cluster_t": FX_big_t,
+        "n_sky_big_cluster": n_sky_big,
+        "big_cluster_healpix_order": big_cluster_healpix_order,
     }
 
 
@@ -331,21 +353,26 @@ def likelihood(
                 "likelihood(): setup, strains, or supercluster_setup must be provided. "
                 "For multi-cluster / multi-lag use, call likelihood_wrapper() instead."
             )
-        setup = setup_likelihood(config, strains, nIFO, ml=ml, FP=FP, FX=FX)
+        setup = setup_likelihood(config, strains, nIFO, ml=ml, FP=FP, FX=FX,
+                                 ml_big=supercluster_setup.get("ml_big_cluster") if supercluster_setup else None,
+                                 FP_big=supercluster_setup.get("FP_big_cluster") if supercluster_setup else None,
+                                 FX_big=supercluster_setup.get("FX_big_cluster") if supercluster_setup else None,
+                                 big_cluster_healpix_order=supercluster_setup.get("big_cluster_healpix_order") if supercluster_setup else None)
     if config is None:
         raise ValueError(
             "likelihood(): config must be provided. Without it, hrss/strain are zero and "
             "gps_time/central_freq fall back to coarser supercluster estimates."
         )
     timer_start = time.perf_counter()
+    stage_timings: dict[str, float] = {}
     logger.info("-------------------------------------------------------")
-    logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+    logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
     logger.info("   ----------------------------------------------------")
 
     # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
     # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
     if nRMS is not None and len(nRMS) == nIFO:
-        _populate_pixel_noise_rms(cluster.pixels, nRMS)
+        cluster.pixel_arrays.populate_noise_rms(nRMS)
 
     network_energy_threshold = setup["network_energy_threshold"]
     xgb_rho_mode             = setup["xgb_rho_mode"]
@@ -360,33 +387,64 @@ def likelihood(
     n_sky                    = setup["n_sky"]
 
     # REG[0] = delta * sqrt(2): amplitude regulator; REG[1] filled below by DPF scan
-    REG = np.array([delta_regulator * np.sqrt(2), 0., 0.])
-    n_pix = len(cluster.pixels)
+    REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
+    n_pix = len(cluster.pixel_arrays)
+
+    # --- Big-cluster sky thinning (mirrors C++ network::likelihoodWP bBB logic) ---
+    # C++: bBB = (V > wdmMRA.nRes * csize) → use coarser healpix sky grid in the sky loop.
+    # C++ does NOT truncate pixels — it keeps all pixels and reduces the sky resolution.
+    _precision = int(abs(getattr(config, 'precision', 0) or 0))
+    _csize = _precision % 65536
+    _nres  = int(getattr(config, 'nRES', 1) or 1)
+    _bBB = (_csize > 0 and n_pix > _nres * _csize
+            and setup.get("ml_big_cluster") is not None)
+    if _bBB:
+        ml    = setup["ml_big_cluster"]
+        FP    = setup["FP_big_cluster_t"]
+        FX    = setup["FX_big_cluster_t"]
+        n_sky = setup["n_sky_big_cluster"]
+        logger.info(
+            "Cluster-id=%s is big (%d px > csize_threshold=%d): "
+            "using coarse sky grid (%d directions, healpix order=%s)",
+            cluster_id, n_pix, _nres * _csize, n_sky,
+            setup.get("big_cluster_healpix_order"),
+        )
 
     # --- Prepare per-cluster inputs ---
-    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixels, True)
-    rms, td00, td90, td_energy = load_data_from_pixels(cluster.pixels, nIFO)
+    _t0 = time.perf_counter()
+    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixel_arrays, True)
+    rms, td00, td90, td_energy = load_data_from_pixels(
+        None, nIFO, pixel_arrays=cluster.pixel_arrays
+    )
     # Reshape to (ndelay, nifo, npix) and cast to float32 for numba; FP/FX already prepared in setup
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))
     rms = rms.T.astype(np.float32)
+    stage_timings["data_prep"] = time.perf_counter() - _t0
 
     # REG[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
+    _t0 = time.perf_counter()
     REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
+    stage_timings["dpf_regulator"] = time.perf_counter() - _t0
 
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
+    _t0 = time.perf_counter()
     skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
                                           delta_regulator, network_energy_threshold)
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
+    stage_timings["sky_scan"] = time.perf_counter() - _t0
 
     # --- Compute normalised sky probability map (softmax over nSkyStat) ---
+    _t0 = time.perf_counter()
     _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
     _sky_stat_shifted = _sky_stat_f64 - _sky_stat_f64.max()
     _exp_stat = np.exp(_sky_stat_shifted)
     skymap_statistics.nProbability = (_exp_stat / _exp_stat.sum()).astype(np.float32)
+    stage_timings["sky_probability"] = time.perf_counter() - _t0
 
     # --- Convert l_max index to (theta, phi) sky angles ---
+    _t0 = time.perf_counter()
     _healpix_order = setup["healpix_order"]
     _ra_arr        = setup["ra_arr"]
     _dec_arr       = setup["dec_arr"]
@@ -396,16 +454,20 @@ def likelihood(
     _phi_rad = float(_ra_arr[_l_max])
     _theta_deg = float(np.degrees(_theta_rad)) % 180.0
     _phi_deg = float(np.degrees(_phi_rad)) % 360.0
+    stage_timings["sky_coords"] = time.perf_counter() - _t0
 
     # calculate sky statistics for the cluster at the optimal sky location l_max,
     # dozens of parameters will be returned in SkyStatistics dataclass
+    _t0 = time.perf_counter()
     sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
                                                              FP, FX, rms, td00, td90, ml, REG, 
                                                              network_energy_threshold,
                                                              cluster_xtalk, cluster_xtalk_lookup,
                                                              xgb_rho_mode=xgb_rho_mode)
+    stage_timings["sky_statistics_at_lmax"] = time.perf_counter() - _t0
 
     # --- Threshold cuts — reject cluster if any condition fails ---
+    _t0 = time.perf_counter()
     selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
     logger.info("Selected core pixels: %d / %d", selected_core_pixels, n_pix)
 
@@ -416,30 +478,49 @@ def likelihood(
         net_rho_threshold=net_rho_threshold,
         xgb_rho_mode=xgb_rho_mode,
     )
+    stage_timings["threshold_cut"] = time.perf_counter() - _t0
     if rejected:
         logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
-        logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+        logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
         logger.info("\t <- rejected    ")
-        timer_end = time.perf_counter()
+        stage_timings["total"] = time.perf_counter() - timer_start
         logger.info("-------------------------------------------------------")
         logger.info("Total events: %d", 0)
-        logger.info("Total time: %.2f s", timer_end - timer_start)
+        logger.info("Total time: %.2f s", stage_timings["total"])
         logger.info("-------------------------------------------------------")
         return None, None
 
     # --- Fill detection statistics (rho, netCC, waveform energies, per-pixel data) ---
+    _t0 = time.perf_counter()
+    # Build wdm_list once per cluster here and pass it into fill_detection_statistic
+    # to avoid _create_wdm_set_python being called again inside (~1 s saving).
+    if config is not None:
+        from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
+        _wdm_list = _create_wdm_set_python(config)
+    else:
+        _wdm_list = None
     fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster,
                              n_ifo=nIFO, xtalk=xtalk,
                              network_energy_threshold=network_energy_threshold,
                              xgb_rho_mode=xgb_rho_mode,
-                             config=config)
+                             config=config,
+                             cluster_xtalk=cluster_xtalk,
+                             cluster_xtalk_lookup=cluster_xtalk_lookup,
+                             wdm_list=_wdm_list)
+    stage_timings["fill_detection_statistic"] = time.perf_counter() - _t0
 
-    # --- Post-processing: chirp mass and error region (placeholders) ---
+    # --- Post-processing: chirp mass and error region ---
+    _t0 = time.perf_counter()
     pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
     get_chirp_mass(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
+    stage_timings["get_chirp_mass"] = time.perf_counter() - _t0
+
+    _t0 = time.perf_counter()
     get_error_region(cluster)
+    stage_timings["get_error_region"] = time.perf_counter() - _t0
 
     # --- Store sky localisation metadata ---
+    _t0 = time.perf_counter()
     cluster.cluster_meta.l_max = _l_max
     cluster.cluster_meta.theta = _theta_deg
     cluster.cluster_meta.phi = _phi_deg
@@ -450,34 +531,82 @@ def likelihood(
         cluster.cluster_meta.c_freq = cluster.cluster_freq
     # Time-of-flight delays at l_max per IFO — used by getMRAwaveform for ToF correction
     cluster.sky_time_delay = [float(ml[i, _l_max]) for i in range(nIFO)]
+    stage_timings["sky_metadata"] = time.perf_counter() - _t0
 
     # Mark accepted (mirrors C++ sCuts[id-1] = -1)
     cluster.cluster_status = -1
 
     detected = cluster.cluster_status == -1
-    logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixels))
+    logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
     if detected:
         logger.info("\t -> SELECTED !!!")
     else:
         logger.info("\t <- rejected    ")
 
-    timer_end = time.perf_counter()
+    stage_timings["total"] = time.perf_counter() - timer_start
     logger.info("-------------------------------------------------------")
     logger.info("Total events: %d", 1 if detected else 0)
-    logger.info("Total time: %.2f s", timer_end - timer_start)
+    logger.info("Total time: %.2f s", stage_timings["total"])
+    logger.info("Stage timings (CPU):")
+    for _stage, _t in stage_timings.items():
+        if _stage != "total":
+            logger.info("  %-30s %.4f s  (%5.1f%%)", _stage, _t,
+                        100.0 * _t / stage_timings["total"] if stage_timings["total"] > 0 else 0)
     logger.info("-------------------------------------------------------")
+
+    # Attach stage timings to skymap_statistics for benchmark collection
+    skymap_statistics.stage_timings = stage_timings
 
     return cluster, skymap_statistics
 
 
-def load_data_from_pixels(pixels: list[Pixel], nifo: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Load data from pixels into numpy arrays for numba processing.
+def load_data_from_pixels(
+    pixels: list[Pixel],
+    nifo: int,
+    pixel_arrays=None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load data from pixels into numpy arrays for numba / JAX processing.
 
-    Delegates to the vectorised implementation in pixel_batch_ops which
-    avoids the per-pixel Python loops and uses bulk numpy operations.
+    Fast path
+    ---------
+    When ``pixel_arrays`` (a :class:`~pycwb.types.pixel_arrays.PixelArrays`)
+    is provided and its ``td_amp`` is populated, the function reads directly
+    from the pre-computed SoA arrays — zero per-pixel Python iteration.
+
+    Fallback
+    --------
+    Otherwise delegates to the vectorised implementation in
+    ``pixel_batch_ops`` which still avoids the worst of the per-pixel loops.
+
+    Returns
+    -------
+    rms       : (nifo, n_pix) float32 — normalised inverse-RMS weights
+    td00      : (nifo, n_pix, tsize2) float32
+    td90      : (nifo, n_pix, tsize2) float32
+    td_energy : (nifo, n_pix, tsize2) float32
     """
+    if pixel_arrays is not None and pixel_arrays.has_td_amp():
+        return _load_data_from_pixel_arrays(pixel_arrays)
     return load_data_from_pixels_vectorized(pixels, nifo)
+
+
+def _load_data_from_pixel_arrays(
+    pa,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Fast path: extract rms/td arrays directly from a ``PixelArrays``."""
+    # noise_rms: (n_ifo, n_pix) float32
+    inv_rms = 1.0 / pa.noise_rms.astype(np.float64)          # (n_ifo, n_pix)
+    rms_pix = 1.0 / np.sqrt(np.sum(inv_rms ** 2, axis=0))    # (n_pix,)
+    rms = (inv_rms * rms_pix[np.newaxis, :]).astype(np.float32)  # (n_ifo, n_pix)
+
+    # td_amp_dense: (n_pix, n_ifo, tsize) → split into 00/90 halves
+    td = pa.td_amp_dense()          # (n_pix, n_ifo, tsize)
+    tsize2 = td.shape[2] // 2
+    td00 = td[:, :, :tsize2].transpose(1, 0, 2)   # (n_ifo, n_pix, tsize2)
+    td90 = td[:, :, tsize2:].transpose(1, 0, 2)
+    td_energy = td00 ** 2 + td90 ** 2
+
+    return rms, td00, td90, td_energy
 
 
 def load_data_from_ifo(
@@ -873,7 +1002,10 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                              xtalk: XTalk,
                              network_energy_threshold: float,
                              xgb_rho_mode: bool = False,
-                             config: Config = None) -> None:
+                             config: Config = None,
+                             cluster_xtalk: np.ndarray | None = None,
+                             cluster_xtalk_lookup: np.ndarray | None = None,
+                             wdm_list=None) -> None:
     """
     Fill the detection statistics into the cluster and pixels.
     
@@ -896,6 +1028,16 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     config : Config
         Pipeline configuration object. Required for MRA waveform reconstruction
         (hrss, strain, accurate gps_time and central_freq). Raises ValueError if None.
+    cluster_xtalk : np.ndarray or None, optional
+        Pre-computed CSR xtalk coefficient array from ``xtalk.get_xtalk_pixels``.
+        When provided together with ``cluster_xtalk_lookup``, the internal
+        ``get_xtalk_pixels`` call is skipped (saves ~0.4 s for N=2600).
+    cluster_xtalk_lookup : np.ndarray or None, optional
+        Pre-computed CSR lookup array (shape (N, 2)) from ``xtalk.get_xtalk_pixels``.
+    wdm_list : list or None, optional
+        Pre-built WDM filter-bank list from ``_create_wdm_set_python(config)``.
+        When provided, ``_create_wdm_set_python`` is not called again (saves ~1 s
+        per cluster). Pass from ``likelihood()`` where it is built once.
 
     Returns
     -------
@@ -907,6 +1049,9 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
             "fill_detection_statistic(): config is required. Without it, hrss/strain "
             "are zero and gps_time/central_freq use inaccurate supercluster fallback values."
         )
+    _fds_t0 = time.perf_counter()
+    _fds_timings: dict[str, float] = {}
+
     pixel_mask = sky_statistics.pixel_mask
     energy_array_plus = sky_statistics.energy_array_plus
     energy_array_cross = sky_statistics.energy_array_cross
@@ -928,21 +1073,20 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     n_coherent_pixels = 0
 
     # --- First pass: set core/likelihood/null flags and per-ifo data arrays ---
-    n_pix = len(cluster.pixels)
-    for i, pixel in enumerate(cluster.pixels):
-        pixel.core = False
-        pixel.likelihood = 0.0
-        pixel.null = 0.0
+    n_pix = len(cluster.pixel_arrays)
 
-        if pixel_mask[i] > 0:
-            pixel.core = True
-            pixel.likelihood = - (energy_array_plus[i] + energy_array_cross[i]) / 2.0
-
-        for j in range(n_ifo):
-            pixel.data[j].wave = pd[j][i]
-            pixel.data[j].w_90 = pD[j][i]
-            pixel.data[j].asnr = ps[j][i]
-            pixel.data[j].a_90 = pS[j][i]
+    _t0 = time.perf_counter()
+    # Fast path: vectorised update of pixel_arrays (avoids O(n_pix * n_ifo) Python loop).
+    _pa = cluster.pixel_arrays
+    _pa.set_waveform_data(
+        wave         = np.asarray(pd,  dtype=np.float32),
+        w_90         = np.asarray(pD,  dtype=np.float32),
+        asnr         = np.asarray(ps,  dtype=np.float32),
+        a_90         = np.asarray(pS,  dtype=np.float32),
+        core_mask    = pixel_mask,
+        energy_plus  = np.asarray(energy_array_plus,  dtype=np.float32),
+            energy_cross = np.asarray(energy_array_cross, dtype=np.float32),
+        )
 
     # Pre-convert amplitude arrays to 2-D NumPy for fast column access
     pn_arr = np.asarray(pn, dtype=np.float64)  # (n_ifo, n_pix)
@@ -950,24 +1094,21 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     ps_arr = np.asarray(ps, dtype=np.float64)
     pS_arr = np.asarray(pS, dtype=np.float64)
 
-    # Precompute per-pixel xtalk once using the vectorised lookup
-    xtalks_lookup, xtalks = xtalk.get_xtalk_pixels(cluster.pixels)
+    # Use pre-computed xtalk arrays when available (avoids redundant O(N²) numba call).
+    # Fall back to computing them here only when not passed in (e.g. standalone calls).
+    if cluster_xtalk is not None and cluster_xtalk_lookup is not None:
+        xtalks_lookup = cluster_xtalk_lookup
+        xtalks = cluster_xtalk
+    else:
+        xtalks_lookup, xtalks = xtalk.get_xtalk_pixels(cluster.pixel_arrays)
 
-    # Prefilter outer-loop eligible pixels (avoids the inner xpix.core test each time)
-    # null inner condition : core AND gnc > 0  (mirrors C++: skip if !core || p_gn[k]<=0)
-    null_k_set = np.array(
-        [k for k, xpix in enumerate(cluster.pixels)
-         if xpix.core and gaussian_noise_correction[k] > 0],
-        dtype=np.int64
-    )
-    # likelihood inner condition : core AND coherent_energy > 0  (mirrors C++: skip if !core || p_ec[k]<=0)
-    like_k_set = np.array(
-        [k for k, xpix in enumerate(cluster.pixels)
-         if xpix.core and coherent_energy[k] > 0],
-        dtype=np.int64
-    )
+    # core flags from pixel_arrays — no Python iteration
+    _core = _pa.core
+    null_k_set = np.where(_core & (np.asarray(gaussian_noise_correction) > 0))[0].astype(np.int64)
+    like_k_set = np.where(_core & (np.asarray(coherent_energy)           > 0))[0].astype(np.int64)
+    _fds_timings["set_waveform_data"] = time.perf_counter() - _t0
 
-    # --- Second pass: compute null and likelihood using vectorised inner sums ---
+    # --- Second pass: compute null and likelihood using the parallel numba kernel ---
     logger.debug("fill_detection_statistic: null_k_set size=%d, like_k_set size=%d, n_pix=%d",
                  len(null_k_set), len(like_k_set), n_pix)
     logger.debug("fill_detection_statistic: pn_arr shape=%s, pn range=[%g, %g]",
@@ -978,50 +1119,47 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                  float(np.min(coherent_energy)),
                  float(np.max(coherent_energy)))
 
-    # TODO: write a numba kernal for this loop, at the end, write the pixel back. Prevent use pixel in the inner computation
-    for i, pixel in enumerate(cluster.pixels):
-        if not pixel.core or gaussian_noise_correction[i] <= 0:
-            continue
+    # null_out and like_out are written in place for the relevant pixel indices.
+    # Initialise to zero so pixels not in the respective sets keep their old value
+    # (matches behaviour of the previous Python loops).
+    null_out = np.zeros(n_pix, dtype=np.float64)
+    like_out = np.zeros(n_pix, dtype=np.float64)
 
-        event_size += 1
+    gn_arr = np.asarray(gaussian_noise_correction, dtype=np.float64)
+    ec_arr = np.asarray(coherent_energy, dtype=np.float64)
 
-        # null computation — inner loop over (core, gnc > 0) pixels
-        if len(null_k_set) > 0:
-            null_acc = 0.0
-            pn_i = pn_arr[:, i]   # (n_ifo,)
-            pN_i = pN_arr[:, i]
-            for k in null_k_set:
-                xt = xtalk.get_xtalk(pix1=pixel, pix2=cluster.pixels[k])
-                if xt[0] > 2:
-                    continue
-                # Vectorised over ifo dimension
-                term = (xt[0] * np.dot(pn_i, pn_arr[:, k])
-                        + xt[1] * np.dot(pn_i, pN_arr[:, k])
-                        + xt[2] * np.dot(pN_i, pn_arr[:, k])
-                        + xt[3] * np.dot(pN_i, pN_arr[:, k]))
-                null_acc += term
-            pixel.null = null_acc
+    # Boolean membership masks — mirror the original inner-loop scope:
+    #   original null loop:       for k in null_k_set  (core & gn > 0)
+    #   original likelihood loop: for k in like_k_set  (core & ec > 0)
+    null_mask = np.zeros(n_pix, dtype=np.bool_)
+    null_mask[null_k_set] = True
+    like_mask = np.zeros(n_pix, dtype=np.bool_)
+    like_mask[like_k_set] = True
 
-        if coherent_energy[i] <= 0:
-            continue    # skip the incoherent pixels
+    _t0 = time.perf_counter()
+    _compute_null_likelihood_numba(
+        null_k_set, like_k_set,
+        pn_arr, pN_arr, ps_arr, pS_arr,
+        gn_arr, ec_arr,
+        xtalks_lookup.astype(np.int64),
+        xtalks,
+        null_mask, like_mask,
+        null_out, like_out,
+    )
+    _kernel_time = time.perf_counter() - _t0
 
-        n_coherent_pixels += 1
-        pixel.likelihood = 0
+    # Write results back into pixel_arrays
+    for i in null_k_set:
+        _pa.null[i] = null_out[i]
+    for i in like_k_set:
+        _pa.likelihood[i] = like_out[i]
 
-        # likelihood computation — inner loop over (core, coherent_energy<=0) pixels
-        if len(like_k_set) > 0:
-            like_acc = 0.0
-            ps_i = ps_arr[:, i]   # (n_ifo,)
-            pS_i = pS_arr[:, i]
-            for k in like_k_set:
-                xt = xtalk.get_xtalk(pix1=pixel, pix2=cluster.pixels[k])
-                if xt[0] > 2:
-                    continue
-                like_acc += (xt[0] * np.dot(ps_i, ps_arr[:, k])
-                             + xt[1] * np.dot(ps_i, pS_arr[:, k])
-                             + xt[2] * np.dot(pS_i, ps_arr[:, k])
-                             + xt[3] * np.dot(pS_i, pS_arr[:, k]))
-            pixel.likelihood = like_acc
+    # Count statistics (sets were pre-filtered, so counts equal set sizes)
+    event_size        = int(len(null_k_set))
+    n_coherent_pixels = int(len(like_k_set))
+
+    _fds_timings["null_xtalk_loop"]       = _kernel_time * len(null_k_set) / max(len(null_k_set) + len(like_k_set), 1)
+    _fds_timings["likelihood_xtalk_loop"] = _kernel_time * len(like_k_set) / max(len(null_k_set) + len(like_k_set), 1)
 
     # --- Subnetwork statistic ---
     Nmax = 0.0
@@ -1044,8 +1182,9 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     pd_arr_np = np.asarray(pd, dtype=np.float64)   # data amplitudes after avx_setAMP_ps
     pD_arr_np = np.asarray(pD, dtype=np.float64)
     # Core pixel indices — only core pixels contribute to getMRAwave
-    core_indices = [k for k, pix in enumerate(cluster.pixels) if pix.core]
+    core_indices = np.where(cluster.pixel_arrays.core)[0].tolist()
 
+    _t0 = time.perf_counter()
     Lw = 0.0
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
@@ -1059,21 +1198,31 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         # Reconstructs whitened time-domain waveforms per IFO:
         #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
         from pycwb.modules.reconstruction.getMRAwaveform import (
-            _create_wdm_set_python, get_MRA_wave,
+            _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
         )
 
-        # TODO: maybe reuse the wdm list
-        wdm_list = _create_wdm_set_python(config)
+        # Reuse the wdm_list built in likelihood() when provided; otherwise build it
+        # here (one-off / standalone calls).  Building it per-cluster was ~1 s overhead.
+        if wdm_list is None:
+            wdm_list = _create_wdm_set_python(config)
         rate_ana = float(config.rateANA)
+
+        # Pre-build pixel array tuple and WDM kernel data once; shared across all
+        # (ifo, a_type, whiten) combinations so get_MRA_wave skips redundant extraction.
+        _pixel_arrays  = _pa_to_tuple(cluster.pixel_arrays)
+        _wdm_njit_data = _build_wdm_njit_data(wdm_list)
 
         for ifo_i in range(n_ifo):
             z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='signal', mode=0, nproc=1, whiten=True)
+                                    a_type='signal', mode=0, nproc=1, whiten=True,
+                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
             z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='strain', mode=0, nproc=1, whiten=True)
+                                    a_type='strain', mode=0, nproc=1, whiten=True,
+                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
             # For hrss: get un-whitened signal energy (physical strain units)
             z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                          a_type='signal', mode=0, nproc=1, whiten=False)
+                                          a_type='signal', mode=0, nproc=1, whiten=False,
+                                          _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
             if z_sig_ts is None or z_dat_ts is None:
                 continue
             z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
@@ -1117,9 +1266,13 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         cross_ifo = np.zeros(n_ifo, dtype=np.float64)
         sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
         snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
+        _pa_fb    = cluster.pixel_arrays
         for i_idx in core_indices:
             for k_idx in core_indices:
-                xt = xtalk.get_xtalk(pix1=cluster.pixels[i_idx], pix2=cluster.pixels[k_idx])
+                xt = xtalk.get_xtalk(
+                    pix1=(_pa_fb.layers[i_idx], _pa_fb.time[i_idx]),
+                    pix2=(_pa_fb.layers[k_idx], _pa_fb.time[k_idx]),
+                )
                 if xt[0] > 2:
                     continue
                 ps_i = ps_arr_np[:, i_idx]
@@ -1134,9 +1287,10 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
                 snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
                 cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
             s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
-            pix = cluster.pixels[i_idx]
-            pix_time = float(pix.time) / (float(pix.rate) * float(pix.layers)) if (pix.rate > 0 and pix.layers > 0) else 0.0
-            pix_freq = float(pix.frequency) * float(pix.rate) / 2.0 if pix.rate > 0 else 0.0
+            _r  = float(_pa_fb.rate[i_idx])
+            _ly = float(_pa_fb.layers[i_idx])
+            pix_time = float(_pa_fb.time[i_idx]) / (_r * _ly) if (_r > 0 and _ly > 0) else 0.0
+            pix_freq = float(_pa_fb.frequency[i_idx]) * _r / 2.0 if _r > 0 else 0.0
             To += s_snr_pix * pix_time
             Fo += s_snr_pix * pix_freq
         Lw = float(np.sum(sSNR_ifo))
@@ -1147,7 +1301,10 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
             To /= Lw
             Fo /= Lw
 
+    _fds_timings["mra_waveform_reconstruction"] = time.perf_counter() - _t0
+
     # xSNR per IFO: geometric mean  C++ get_XS() = sqrt(get_XX() * get_SS())
+    _t0 = time.perf_counter()
     xSNR_ifo = np.sqrt(np.maximum(snr_ifo * sSNR_ifo, 0.0))
 
     # --- Detection statistics: netCC, norm, rho (mirrors network.cc likelihoodWP) ---
@@ -1186,8 +1343,10 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     # rho is divided by sqrt(cc) using Nw-based chi2 (time-domain null, matches C++ line 939)
     cc_rho_td = ch_td if ch_td > 1.0 else 1.0
     rho_reduced = float(sky_statistics.rho) / sqrt(cc_rho_td)
+    _fds_timings["detection_statistics"] = time.perf_counter() - _t0
 
     # --- Store all fields on cluster_meta ---
+    _t0 = time.perf_counter()
     cluster.cluster_meta.sky_size = event_size
     cluster.cluster_meta.sub_net = Esub / (Esub + Nmax) if (Esub + Nmax) > 0 else 0.0
     cluster.cluster_meta.sub_net2 = skymap_statistics.nCorrelation[skymap_statistics.l_max]
@@ -1245,6 +1404,13 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
         Ew_wf, Nw_wf, cluster.cluster_meta.like_sky,
     )
 
+    _fds_timings["store_cluster_meta"] = time.perf_counter() - _t0
+    _fds_timings["total"] = time.perf_counter() - _fds_t0
+    logger.info("fill_detection_statistic stage timings:")
+    for _stage, _t in _fds_timings.items():
+        if _stage != "total":
+            logger.info("  %-30s %.4f s  (%5.1f%%)", _stage, _t,
+                        100.0 * _t / _fds_timings["total"] if _fds_timings["total"] > 0 else 0)
 
 
 def threshold_cut(
@@ -1366,45 +1532,37 @@ def get_chirp_mass(cluster: Cluster, xgb_rho_mode: bool = False, pat0: bool = Fa
     kk = 256.0 * Pi / 5.0 * math.pow(G * SM * Pi / (C * C * C), 5.0 / 3.0)
     kk *= math.pow(sF, 8.0 / 3.0)
 
-    # --- Collect pixels ---
-    x_list, y_list    = [], []
-    ex_list, ey_list  = [], []
-    wgt_list          = []
+    # --- Collect pixels (vectorised — no per-pixel object construction) ---
+    _pa = cluster.pixel_arrays
+    _valid = (_pa.likelihood > 0.0) & (_pa.frequency > 0)
 
-    for pix in cluster.pixels:
-        if pix.likelihood <= 0.0 or pix.frequency == 0:
-            continue
+    _rate_v   = _pa.rate[_valid].astype(float)
+    _layers_v = _pa.layers[_valid].astype(float)
+    _time_v   = _pa.time[_valid].astype(float)
+    _freq_v   = _pa.frequency[_valid].astype(float)
+    _lh_v     = _pa.likelihood[_valid].astype(float)
 
-        rate   = float(pix.rate)
-        layers = float(pix.layers)
+    T_v   = np.floor(_time_v / _layers_v) / _rate_v
+    eT_v  = (0.5 / _rate_v) * math.sqrt(2.0)
 
-        T  = int(pix.time / layers) / rate      # time in seconds
-        eT = (0.5 / rate) * math.sqrt(2.0)
+    F_raw_v = _freq_v * _rate_v / 2.0 / sF
+    _pos = F_raw_v > 0.0
+    T_v, eT_v, F_raw_v, _rate_v, _lh_v = (T_v[_pos], eT_v[_pos], F_raw_v[_pos],
+                                            _rate_v[_pos], _lh_v[_pos])
 
-        F_raw = pix.frequency * rate / 2.0 / sF
-        eF    = (rate / 4.0 / math.sqrt(3.0)) / sF
+    eF_v = (_rate_v / 4.0 / math.sqrt(3.0)) / sF
+    eF_v *= 8.0 / 3.0 / np.power(F_raw_v, 11.0 / 3.0)
+    F_t_v = 1.0 / np.power(F_raw_v, 8.0 / 3.0)
 
-        if F_raw <= 0.0:
-            continue
-
-        eF *= 8.0 / 3.0 / math.pow(F_raw, 11.0 / 3.0)
-        F_t  = 1.0 / math.pow(F_raw, 8.0 / 3.0)
-
-        x_list.append(T)
-        y_list.append(F_t)
-        ex_list.append(eT)
-        ey_list.append(eF)
-        wgt_list.append(float(pix.likelihood))
-
-    np_pts = len(x_list)
+    np_pts = len(T_v)
     if np_pts < 5:
         return  # insufficient pixels — leave net_rho2 unchanged
 
-    x    = np.array(x_list,   dtype=float)
-    y    = np.array(y_list,   dtype=float)
-    xerr = np.array(ex_list,  dtype=float)
-    yerr = np.array(ey_list,  dtype=float)
-    wgt  = np.array(wgt_list, dtype=float)
+    x    = T_v
+    y    = F_t_v
+    xerr = eT_v
+    yerr = eF_v
+    wgt  = _lh_v
 
     # --- Hough transform: find mass(es) with maximum pixel-overlap ---
     maxM     = 100.0

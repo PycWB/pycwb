@@ -1,10 +1,12 @@
 import copy
 from dataclasses import dataclass, field
+from typing import Optional, TYPE_CHECKING
 
 import numpy as np
 from scipy.sparse import coo_array
 
 from pycwb.types.network_pixel import Pixel
+from pycwb.types.pixel_arrays import PixelArrays, empty_pixel_arrays
 from pycwb.utils.image import resize_resolution, align_images, merge_images
 
 
@@ -116,36 +118,31 @@ class ClusterMeta:
     null_energy: list = field(default_factory=list)  # null energy per IFO (C++ d->null)
 
 
-@dataclass
+@dataclass(init=False)
 class Cluster:
     """
-    Class for one cluster of pixels
+    Class for one cluster of pixels.
+
+    Primary storage is ``pixel_arrays`` (a :class:`~pycwb.types.pixel_arrays.PixelArrays`
+    struct-of-arrays).  The legacy ``pixels`` attribute is a computed property that
+    reconstructs a ``list[Pixel]`` on demand for backward-compatible downstream code.
 
     Parameters
     ----------
-    pixels : list of Pixel
-        list of pixels
+    pixel_arrays : PixelArrays
+        SoA pixel data.  Provide *either* this *or* the legacy ``pixels`` kwarg.
+    pixels : list[Pixel], optional
+        Backward-compat: if supplied, converted to ``pixel_arrays`` automatically.
     cluster_meta : ClusterMeta
-        cluster metadata
+        Cluster statistics metadata.
     cluster_status : int
-        cluster selection flags (cuts)  1 - rejected, 0 - not processed / accepted, -1 - not complete, -2 - ready for processing
-    cluster_rate : list of int
-        cluster type defined by rate
-    cluster_time : float
-        supercluster central time
-    cluster_freq : float
-        supercluster central frequency
-    sky_area : list of float
-        sky error area
-    sky_pixel_map : list of float
-        sky pixel map
-    sky_pixel_index : list of int
-        sky pixel index
-    sky_time_delay : list of float
-        sky time delay
+        Selection flag: 1 rejected, 0 accepted/not-processed, -1 incomplete, -2 ready.
     """
-    pixels: list[Pixel]
-    cluster_meta: ClusterMeta
+    # ---- primary storage ----
+    pixel_arrays: PixelArrays = field(default=None, repr=False)
+
+    # ---- metadata ----
+    cluster_meta: ClusterMeta = field(default_factory=ClusterMeta)
     cluster_status: int = 0
     cluster_id: int = 0
     cluster_rate: list[int] = field(default_factory=list)
@@ -156,32 +153,61 @@ class Cluster:
     sky_pixel_index: list[int] = field(default_factory=list)
     sky_time_delay: list[float] = field(default_factory=list)
 
-    def get_pixel_rates(self):
-        """
-        Get all pixel rates
+    def __init__(
+        self,
+        cluster_meta: ClusterMeta | None = None,
+        pixel_arrays: PixelArrays | None = None,
+        pixels: list | None = None,          # backward-compat alias
+        cluster_status: int = 0,
+        cluster_id: int = 0,
+        cluster_rate: list | None = None,
+        cluster_time: float = 0.0,
+        cluster_freq: float = 0.0,
+        sky_area: list | None = None,
+        sky_pixel_map: list | None = None,
+        sky_pixel_index: list | None = None,
+        sky_time_delay: list | None = None,
+    ) -> None:
+        if pixel_arrays is None:
+            if pixels:
+                n_ifo = len(pixels[0].data)
+                pixel_arrays = PixelArrays.from_pixels(pixels, n_ifo)
+            else:
+                pixel_arrays = empty_pixel_arrays(0)
+        self.pixel_arrays    = pixel_arrays
+        self.cluster_meta    = cluster_meta if cluster_meta is not None else ClusterMeta()
+        self.cluster_status  = cluster_status
+        self.cluster_id      = cluster_id
+        self.cluster_rate    = list(cluster_rate) if cluster_rate is not None else []
+        self.cluster_time    = cluster_time
+        self.cluster_freq    = cluster_freq
+        self.sky_area        = list(sky_area)        if sky_area        is not None else []
+        self.sky_pixel_map   = list(sky_pixel_map)   if sky_pixel_map   is not None else []
+        self.sky_pixel_index = list(sky_pixel_index) if sky_pixel_index is not None else []
+        self.sky_time_delay  = list(sky_time_delay)  if sky_time_delay  is not None else []
 
-        Returns
-        -------
-        list of int
-            list of pixel rates
+    # ------------------------------------------------------------------ #
+    # pixels: backward-compat property backed by pixel_arrays
+    # ------------------------------------------------------------------ #
+
+    @property
+    def pixels(self) -> list[Pixel]:
+        """Reconstruct and return ``list[Pixel]`` from the SoA storage.
+
+        This is a compatibility shim for downstream code that iterates over
+        individual ``Pixel`` objects.  Hot paths should read ``pixel_arrays``
+        directly.
         """
-        return [p.rate for p in self.pixels]
+        return self.pixel_arrays.to_pixel_list() if self.pixel_arrays else []
+
+    def get_pixel_rates(self):
+        """Return all unique pixel rates."""
+        return list(np.unique(self.pixel_arrays.rate))
 
     def get_pixels_with_rate(self, rate):
-        """
-        Get pixels with rate
-
-        Parameters
-        ----------
-        rate : int
-            pixel rate to select
-
-        Returns
-        -------
-        list of Pixel
-            list of pixels with selected rate
-        """
-        return [p for p in self.pixels if p.rate == rate]
+        """Return pixels (as list[Pixel]) with the given rate."""
+        mask = self.pixel_arrays.rate == rate
+        return self.pixel_arrays[mask].to_pixel_list()
 
     def get_sparse_map_by_rate(self, key='likelihood'):
         """
@@ -198,29 +224,25 @@ class Cluster:
         dfs: list of float
             list of frequency steps
         """
-        pixels = self.pixels
+        pa = self.pixel_arrays
+        rates = sorted(set(pa.rate.tolist()))
 
-        # get the sort the rates
-        rates = sorted(set([p.rate for p in pixels]))
-
-        # get the pixels for each rate
-        res_layers = []
-        for r in rates:
-            res_layers.append([p for p in pixels if p.rate == r])
-
-        # generate the sparse map for each rate
         v_maps = []
         dts = []
         dfs = []
         t_starts = []
 
-        for res in res_layers:
-            one_pixel = res[0]
-            dt = 1 / one_pixel.rate
-            df = one_pixel.rate / 2
-            times = [int(p.time / p.layers) for p in res]
-            freqs = [p.frequency for p in res]
-            values = [getattr(p, key) for p in res]
+        for r in rates:
+            mask = pa.rate == r
+            sub = pa[mask]
+            if len(sub) == 0:
+                continue
+
+            dt = 1.0 / r
+            df = r / 2.0
+            times  = (sub.time  // sub.layers).tolist()
+            freqs  = sub.frequency.tolist()
+            values = getattr(sub, key).tolist() if hasattr(sub, key) else [0.0] * len(sub)
             v_map = coo_array((values, (times, freqs)), shape=(max(times) + 1, max(freqs) + 1))
 
             # if all zeros, skip
@@ -280,101 +302,50 @@ class Cluster:
         return merged_map, t_start_new, min_dt, min_df
 
     def get_size(self):
-        """
-        Get cluster size
-
-        Returns
-        -------
-        int
-            cluster size
-        """
-        return len(self.pixels)
+        """Return the total number of pixels."""
+        return len(self.pixel_arrays)
 
     def get_analyzed_size(self):
-        """
-        Get analyzed pixels
+        """Return the number of core pixels with positive likelihood."""
+        pa = self.pixel_arrays
+        return int(np.sum(pa.core & (pa.likelihood > 0)))
 
-        Returns
-        -------
-        int
-            analyzed pixels
-        """
-        return len([p for p in self.pixels if p.likelihood > 0 and p.core])
-    
     def get_core_size(self):
-        """
-        Get core pixels
-
-        Returns
-        -------
-        int
-            core pixels
-        """
-        return len([p for p in self.pixels if p.core])
+        """Return the number of core pixels."""
+        return int(np.sum(self.pixel_arrays.core))
 
     @property
     def start_time(self):
-        """
-        Get cluster start time
+        """Cluster start time (seconds)."""
+        pa = self.pixel_arrays
+        dt = 1.0 / pa.rate  # (n_pix,)
+        t_sec = (pa.time.astype(np.float64) / pa.layers.astype(np.float64)) / pa.rate
+        return float(np.min(t_sec + dt / 2))
 
-        Returns
-        -------
-        float
-            cluster start time (seconds)
-        """
-        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB
-        return min([p.time_in_seconds + 1 / p.rate / 2 for p in self.pixels])
-    
     @property
     def stop_time(self):
-        """
-        Get cluster stop time
+        """Cluster stop time (seconds)."""
+        pa = self.pixel_arrays
+        dt = 1.0 / pa.rate
+        t_sec = (pa.time.astype(np.float64) / pa.layers.astype(np.float64)) / pa.rate
+        return float(np.max(t_sec + dt / 2 + dt))
 
-        Returns
-        -------
-        float
-            cluster stop time (seconds)
-        """
-        # TODO: the + 1 / p.rate / 2 is to remove the half bin offset, to be consistent with cWB. The + 1 / p.rate need to be confirmed.
-        return max([p.time_in_seconds + 1 / p.rate / 2 + 1 / p.rate for p in self.pixels])
-    
     @property
     def duration(self):
-        """
-        Get cluster duration
-
-        Returns
-        -------
-        float
-            cluster duration (seconds)
-        """
+        """Cluster duration (seconds)."""
         return self.stop_time - self.start_time
-    
+
     @property
     def low_frequency(self):
-        """
-        Get cluster low frequency
+        """Cluster low frequency (Hz)."""
+        pa = self.pixel_arrays
+        return float(np.min((pa.frequency.astype(np.float64) - 0.5) * pa.rate / 2))
 
-        Returns
-        -------
-        float
-            cluster low frequency (Hz)
-        """
-        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
-        return min([(p.frequency - 0.5) * p.rate / 2 for p in self.pixels])
-    
     @property
     def high_frequency(self):
-        """
-        Get cluster high frequency
-
-        Returns
-        -------
-        float
-            cluster high frequency (Hz)
-        """
-        # TODO: -0.5 is for WDM from the cWB code, to be confirmed
-        return max([(p.frequency - 0.5) * p.rate / 2 + p.rate / 2 for p in self.pixels])
+        """Cluster high frequency (Hz)."""
+        pa = self.pixel_arrays
+        return float(np.max((pa.frequency.astype(np.float64) - 0.5) * pa.rate / 2 + pa.rate / 2))
 
 @dataclass
 class FragmentCluster:
@@ -451,8 +422,8 @@ class FragmentCluster:
                 raise ValueError('event_status must be -2, -1, 0, 1 or None')
 
         if event_status is None:
-            return sum(len(cluster.pixels) for cluster in self.clusters if cluster.cluster_status < 1)
-        return sum(len(cluster.pixels) for cluster in self.clusters if cluster.cluster_status == event_status)
+            return sum(len(cluster.pixel_arrays) for cluster in self.clusters if cluster.cluster_status < 1)
+        return sum(len(cluster.pixel_arrays) for cluster in self.clusters if cluster.cluster_status == event_status)
 
     def dump_cluster(self, cluster_id):
         """

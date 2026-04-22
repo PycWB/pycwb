@@ -2,7 +2,9 @@ import struct
 import logging
 import numpy as np
 import pathlib
-from numba import njit
+from numba import njit, prange
+from numba.typed import Dict
+from numba.core import types as numba_types
 
 
 logger = logging.getLogger(__name__)
@@ -195,32 +197,338 @@ def getXTalk(nLayer1, indx1, nLayer2, indx2, layers, xtalk_coeff, xtalk_lookup_t
 def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
     n_pix = len(pixels)
 
-    clusterCC = np.empty((n_pix * n_pix, 8), dtype=np.float32)
+    # First pass: count valid (non-filtered) pairs so we can allocate exact memory.
+    # The original O(N²) dense pre-allocation (n_pix*n_pix rows) caused OOM for
+    # large clusters (e.g. 216 MB at N=2600, 3.2 GB at N=10000).
+    count = 0
+    for i in range(n_pix):
+        for j in range(n_pix):
+            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
+                               layers, xtalk_coeff, xtalk_lookup_table)
+            if tmpOvlp[0] <= 2:
+                count += 1
+
+    clusterCC = np.empty((count, 8), dtype=np.float32)
     clusterCC_lookup = np.empty((n_pix, 2), dtype=np.int32)
 
+    # Second pass: fill entries into the exact-size array.
     index_counter = 0
-    for i, pixi in enumerate(pixels):
-        # tmp_data = []
+    for i in range(n_pix):
         clusterCC_lookup[i, 0] = index_counter
-        for j, pixj in enumerate(pixels):
-            tmpOvlp = getXTalk(pixi[0], pixi[1], pixj[0], pixj[1], layers, xtalk_coeff, xtalk_lookup_table)
+        for j in range(n_pix):
+            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
+                               layers, xtalk_coeff, xtalk_lookup_table)
             if tmpOvlp[0] > 2:
                 continue
 
-            M = j + 1
-            # N = 0 if i == j else len(tmp_data) // 8 + 1
-            clusterCC[index_counter][0] = float(M - 1)
+            clusterCC[index_counter][0] = float(j)
             clusterCC[index_counter][1] = tmpOvlp[0] ** 2 + tmpOvlp[1] ** 2
             clusterCC[index_counter][2] = tmpOvlp[2] ** 2 + tmpOvlp[3] ** 2
-            clusterCC[index_counter][3] = clusterCC[i * n_pix + j][1] + clusterCC[i * n_pix + j][2]
-            clusterCC[index_counter][4] = tmpOvlp[0]
-            clusterCC[index_counter][5] = tmpOvlp[2]
-            clusterCC[index_counter][6] = tmpOvlp[1]
-            clusterCC[index_counter][7] = tmpOvlp[3]
+            # col[3] = total squared overlap; read from the row just written (was a bug:
+            # the original read clusterCC[i*n_pix+j] which is uninitialized memory
+            # whenever index_counter != i*n_pix+j due to sparse filtering).
+            clusterCC[index_counter][3] = clusterCC[index_counter][1] + clusterCC[index_counter][2]
+            clusterCC[index_counter][4] = tmpOvlp[0]   # xt[0]
+            clusterCC[index_counter][5] = tmpOvlp[2]   # xt[2]
+            clusterCC[index_counter][6] = tmpOvlp[1]   # xt[1]
+            clusterCC[index_counter][7] = tmpOvlp[3]   # xt[3]
             index_counter += 1
 
         clusterCC_lookup[i, 1] = index_counter
 
-        # sizeCC.append(len(tmp_data) // 8)
-        # clusterCC.append(np.array(tmp_data, dtype=np.float32))
-    return clusterCC_lookup, clusterCC[0:index_counter]
+    return clusterCC_lookup, clusterCC
+
+
+@njit(cache=True)
+def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
+    """O(N·K_catalog) replacement for getXTalk_pixels_numba.
+
+    The original function evaluates all N² pixel pairs to find which ones
+    have non-zero XTalk coefficients.  For a cluster with N=52 905 pixels
+    that is ~2.8 billion pair evaluations per pass (two passes total).
+
+    This implementation inverts the lookup: for each pixel i (acting as the
+    higher-resolution pixel in the pair) we iterate directly over its catalog
+    entries and resolve the candidate pixel j via a hash map keyed on
+    (nLayer, time).  Only truly adjacent pixels — those whose relative time
+    offset appears in the catalog — are evaluated.
+
+    Complexity
+    ----------
+    O(N · nRes · K) where K is the average number of catalog entries per
+    (freq, odd) bucket (typically O(BetaOrder) ≈ 6–8 for standard WDM).
+    For N=52 905, nRes=7, K≈6 this is ~2.2 M operations vs ~5.6 B for N².
+
+    Column layout of the output ``clusterCC`` (same as getXTalk_pixels_numba)
+    --------------------------------------------------------------------------
+    col 0 : neighbour pixel index j  (float32 cast of int)
+    col 1 : tmpOvlp[0]² + tmpOvlp[1]²
+    col 2 : tmpOvlp[2]² + tmpOvlp[3]²
+    col 3 : col[1] + col[2]
+    col 4 : tmpOvlp[0]  (= c1 always)
+    col 5 : tmpOvlp[2]  (= c3 no-swap, c2 swap)
+    col 6 : tmpOvlp[1]  (= c2 no-swap, c3 swap)
+    col 7 : tmpOvlp[3]  (= c4 always)
+
+    where (c1, c2, c3, c4) are the raw catalog coefficients and "swap" means
+    getXTalk would have swapped ret[1]↔ret[2] because r_j < r_i.
+    """
+    n_pix = len(pixels)
+    nRes  = len(layers)
+
+    if n_pix == 0:
+        return np.empty((0, 2), dtype=np.int32), np.empty((0, 8), dtype=np.float32)
+
+    # ------------------------------------------------------------------ #
+    # Build nLayer → resolution-index lookup                              #
+    #   nLayer = layers[r] + 1  (pixel.layers field)                     #
+    # ------------------------------------------------------------------ #
+    max_nLayer = np.int64(0)
+    for idx in range(n_pix):
+        if pixels[idx][0] > max_nLayer:
+            max_nLayer = np.int64(pixels[idx][0])
+
+    layer_to_r = np.full(int(max_nLayer) + 2, -1, dtype=np.int32)
+    for r in range(nRes):
+        nL = int(layers[r]) + 1
+        if nL <= int(max_nLayer) + 1:
+            layer_to_r[nL] = r
+
+    # ------------------------------------------------------------------ #
+    # Build (nLayer, time) → pixel-index hash map                        #
+    # Key encoding: nLayer * KEY_SHIFT + time, avoids tuple keys which   #
+    # are not callable inside @njit with Dict.empty in all numba versions #
+    # ------------------------------------------------------------------ #
+    KEY_SHIFT = np.int64(1 << 32)  # nLayer < 2^16, time < 2^32 in practice
+    pixel_map = Dict.empty(
+        key_type=numba_types.int64,
+        value_type=numba_types.int64,
+    )
+    for idx in range(n_pix):
+        key = np.int64(pixels[idx][0]) * KEY_SHIFT + np.int64(pixels[idx][1])
+        pixel_map[key] = np.int64(idx)
+
+    # ------------------------------------------------------------------ #
+    # Pass 1: count entries per pixel so we can allocate exact memory     #
+    # ------------------------------------------------------------------ #
+    counts = np.zeros(n_pix, dtype=np.int64)
+
+    for i in range(n_pix):
+        nLayer_i = int(pixels[i][0])
+        time_i   = int(pixels[i][1])
+        if nLayer_i > int(max_nLayer):
+            continue
+        r_i = int(layer_to_r[nLayer_i])
+        if r_i < 0:
+            continue
+
+        layer_i = int(layers[r_i])
+        time1_i  = time_i // (layer_i + 1)
+        freq1_i  = time_i - time1_i * (layer_i + 1)
+        odd_i    = time1_i & 1
+
+        # Iterate over all resolution levels r_j <= r_i.
+        # The lookup table is filled only for (r1 >= r2), so r_j plays r2.
+        for r_j in range(r_i + 1):
+            layer_j = int(layers[r_j])
+            ratio   = layer_i // layer_j          # integer, >= 1
+            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+
+            e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
+            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+
+            for eidx in range(e_start, e_end):
+                indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
+                if indx2 < 0:
+                    continue
+                key_j = np.int64(layer_j + 1) * KEY_SHIFT + indx2
+                if key_j not in pixel_map:
+                    continue
+                j = int(pixel_map[key_j])
+
+                counts[i] += 1          # (i → j) entry
+                if r_j < r_i:
+                    counts[j] += 1      # (j → i) derived via swap
+
+    # ------------------------------------------------------------------ #
+    # Build CSR offsets from per-pixel counts                             #
+    # ------------------------------------------------------------------ #
+    clusterCC_lookup = np.zeros((n_pix, 2), dtype=np.int32)
+    total = np.int64(0)
+    for i in range(n_pix):
+        clusterCC_lookup[i, 0] = np.int32(total)
+        total += counts[i]
+        clusterCC_lookup[i, 1] = np.int32(total)
+
+    clusterCC = np.empty((int(total), 8), dtype=np.float32)
+    fill_pos  = np.zeros(n_pix, dtype=np.int64)   # per-pixel fill cursor
+
+    # ------------------------------------------------------------------ #
+    # Pass 2: fill entries                                                 #
+    # ------------------------------------------------------------------ #
+    for i in range(n_pix):
+        nLayer_i = int(pixels[i][0])
+        time_i   = int(pixels[i][1])
+        if nLayer_i > int(max_nLayer):
+            continue
+        r_i = int(layer_to_r[nLayer_i])
+        if r_i < 0:
+            continue
+
+        layer_i = int(layers[r_i])
+        time1_i  = time_i // (layer_i + 1)
+        freq1_i  = time_i - time1_i * (layer_i + 1)
+        odd_i    = time1_i & 1
+
+        for r_j in range(r_i + 1):
+            layer_j = int(layers[r_j])
+            ratio   = layer_i // layer_j
+            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+
+            e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
+            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+
+            for eidx in range(e_start, e_end):
+                indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
+                if indx2 < 0:
+                    continue
+                key_j = np.int64(layer_j + 1) * KEY_SHIFT + indx2
+                if key_j not in pixel_map:
+                    continue
+                j = int(pixel_map[key_j])
+
+                c1 = np.float32(xtalk_coeff[eidx, 1])
+                c2 = np.float32(xtalk_coeff[eidx, 2])
+                c3 = np.float32(xtalk_coeff[eidx, 3])
+                c4 = np.float32(xtalk_coeff[eidx, 4])
+
+                # --- (i → j): no swap ---
+                # Mirrors getXTalk with r_i >= r_j (no internal swap).
+                # tmpOvlp = [c1, c2, c3, c4]
+                # col layout: [j, c1²+c2², c3²+c4², total, c1, c3, c2, c4]
+                pos = int(clusterCC_lookup[i, 0]) + int(fill_pos[i])
+                fill_pos[i] += 1
+                clusterCC[pos, 0] = np.float32(j)
+                clusterCC[pos, 1] = c1 * c1 + c2 * c2
+                clusterCC[pos, 2] = c3 * c3 + c4 * c4
+                clusterCC[pos, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
+                clusterCC[pos, 4] = c1
+                clusterCC[pos, 5] = c3   # tmpOvlp[2]
+                clusterCC[pos, 6] = c2   # tmpOvlp[1]
+                clusterCC[pos, 7] = c4
+
+                # --- (j → i): swap c2 ↔ c3 ---
+                # Mirrors getXTalk(j, i) where r_j < r_i triggers the swap,
+                # so ret becomes [c1, c3, c2, c4] before being stored.
+                # tmpOvlp = [c1, c3, c2, c4]
+                # col layout: [i, c1²+c3², c2²+c4², total, c1, c2, c3, c4]
+                if r_j < r_i:
+                    pos2 = int(clusterCC_lookup[j, 0]) + int(fill_pos[j])
+                    fill_pos[j] += 1
+                    clusterCC[pos2, 0] = np.float32(i)
+                    clusterCC[pos2, 1] = c1 * c1 + c3 * c3
+                    clusterCC[pos2, 2] = c2 * c2 + c4 * c4
+                    clusterCC[pos2, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
+                    clusterCC[pos2, 4] = c1
+                    clusterCC[pos2, 5] = c2   # tmpOvlp[2] after swap
+                    clusterCC[pos2, 6] = c3   # tmpOvlp[1] after swap
+                    clusterCC[pos2, 7] = c4
+
+    return clusterCC_lookup, clusterCC
+
+
+@njit(cache=True, parallel=True)
+def _compute_null_likelihood_numba(
+    null_k_set, like_k_set,
+    pn, pN, ps, pS,
+    gn, ec,
+    xtalks_lookup, xtalks,
+    null_mask, like_mask,
+    null_out, like_out,
+):
+    """Compute per-pixel null and likelihood statistics via sparse xtalk sum.
+
+    Replaces the O(N²) Python-dispatch loops in fill_detection_statistic.
+    Both loops are fully compiled and data-parallel (prange over pixels).
+
+    The original Python code had inner loops over ``null_k_set`` / ``like_k_set``
+    (the filtered subsets), not over all cluster pixels.  ``null_mask`` /
+    ``like_mask`` reproduce that filtering: only neighbours j where
+    ``null_mask[j]`` (resp. ``like_mask[j]``) is True are accumulated.
+
+    Column layout of xtalks (from getXTalk_pixels_numba):
+        col 0 : neighbour pixel index j
+        col 4 : xt[0]   col 6 : xt[1]   col 5 : xt[2]   col 7 : xt[3]
+
+    Parameters
+    ----------
+    null_k_set, like_k_set : int64 arrays
+        Core pixel indices to process (pre-filtered: gn > 0 / ec > 0).
+    pn, pN, ps, pS : float64 arrays, shape (n_ifo, n_pix)
+        Per-pixel amplitude arrays.
+    gn, ec : float64 arrays, shape (n_pix,)
+        Gaussian noise correction / coherent energy per pixel.
+    xtalks_lookup : int64 array, shape (n_pix, 2)
+        CSR row-pointer: xtalks[xtalks_lookup[i,0]:xtalks_lookup[i,1]] are
+        the entries for pixel i.
+    xtalks : float32 array, shape (N_pairs, 8)
+        Sparse xtalk coefficient table.
+    null_mask, like_mask : bool arrays, shape (n_pix,)
+        Boolean membership masks for the inner-sum sets.  null_mask[j] is
+        True iff j is in null_k_set; like_mask[j] iff j is in like_k_set.
+    null_out, like_out : float64 arrays, shape (n_pix,)
+        Output arrays — written in place for pixels in the respective sets.
+    """
+    n_ifo = pn.shape[0]
+
+    # --- Null loop ---
+    for ii in prange(len(null_k_set)):
+        i = null_k_set[ii]
+        if gn[i] <= 0.0:
+            continue
+        acc = 0.0
+        start = xtalks_lookup[i, 0]
+        end   = xtalks_lookup[i, 1]
+        for m in range(start, end):
+            j = int(xtalks[m, 0])
+            # Mirror original: inner sum was over null_k_set only
+            if not null_mask[j]:
+                continue
+            xt0 = float(xtalks[m, 4])
+            xt1 = float(xtalks[m, 6])
+            xt2 = float(xtalks[m, 5])
+            xt3 = float(xtalks[m, 7])
+            d = 0.0
+            for ifo in range(n_ifo):
+                d += (xt0 * pn[ifo, i] * pn[ifo, j]
+                      + xt1 * pn[ifo, i] * pN[ifo, j]
+                      + xt2 * pN[ifo, i] * pn[ifo, j]
+                      + xt3 * pN[ifo, i] * pN[ifo, j])
+            acc += d
+        null_out[i] = acc
+
+    # --- Likelihood loop (identical structure) ---
+    for ii in prange(len(like_k_set)):
+        i = like_k_set[ii]
+        if ec[i] <= 0.0:
+            continue
+        acc = 0.0
+        start = xtalks_lookup[i, 0]
+        end   = xtalks_lookup[i, 1]
+        for m in range(start, end):
+            j = int(xtalks[m, 0])
+            # Mirror original: inner sum was over like_k_set only
+            if not like_mask[j]:
+                continue
+            xt0 = float(xtalks[m, 4])
+            xt1 = float(xtalks[m, 6])
+            xt2 = float(xtalks[m, 5])
+            xt3 = float(xtalks[m, 7])
+            d = 0.0
+            for ifo in range(n_ifo):
+                d += (xt0 * ps[ifo, i] * ps[ifo, j]
+                      + xt1 * ps[ifo, i] * pS[ifo, j]
+                      + xt2 * pS[ifo, i] * ps[ifo, j]
+                      + xt3 * pS[ifo, i] * pS[ifo, j])
+            acc += d
+        like_out[i] = acc
