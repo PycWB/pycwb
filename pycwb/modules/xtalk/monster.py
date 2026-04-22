@@ -2,8 +2,9 @@ import struct
 import logging
 import numpy as np
 import pathlib
-from numba import njit, prange, types
+from numba import njit, prange
 from numba.typed import Dict
+from numba.core import types as numba_types
 
 
 logger = logging.getLogger(__name__)
@@ -295,13 +296,16 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
 
     # ------------------------------------------------------------------ #
     # Build (nLayer, time) → pixel-index hash map                        #
+    # Key encoding: nLayer * KEY_SHIFT + time, avoids tuple keys which   #
+    # are not callable inside @njit with Dict.empty in all numba versions #
     # ------------------------------------------------------------------ #
+    KEY_SHIFT = np.int64(1 << 32)  # nLayer < 2^16, time < 2^32 in practice
     pixel_map = Dict.empty(
-        key_type=types.UniTuple(types.int64, 2),
-        value_type=types.int64,
+        key_type=numba_types.int64,
+        value_type=numba_types.int64,
     )
     for idx in range(n_pix):
-        key = (np.int64(pixels[idx][0]), np.int64(pixels[idx][1]))
+        key = np.int64(pixels[idx][0]) * KEY_SHIFT + np.int64(pixels[idx][1])
         pixel_map[key] = np.int64(idx)
 
     # ------------------------------------------------------------------ #
@@ -337,7 +341,7 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
                 indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
                 if indx2 < 0:
                     continue
-                key_j = (np.int64(layer_j + 1), indx2)
+                key_j = np.int64(layer_j + 1) * KEY_SHIFT + indx2
                 if key_j not in pixel_map:
                     continue
                 j = int(pixel_map[key_j])
@@ -388,7 +392,7 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
                 indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
                 if indx2 < 0:
                     continue
-                key_j = (np.int64(layer_j + 1), indx2)
+                key_j = np.int64(layer_j + 1) * KEY_SHIFT + indx2
                 if key_j not in pixel_map:
                     continue
                 j = int(pixel_map[key_j])
