@@ -159,6 +159,7 @@ def remove_duplicates_sorted(arr: np.ndarray) -> np.ndarray:
     return unique[:count]
 
 
+@njit(cache=True)
 def get_cluster_links(
     pixels: np.ndarray, gap: float, n_ifo: int
 ) -> tuple[np.ndarray, float]:
@@ -190,10 +191,10 @@ def get_cluster_links(
 
     Tgap_base = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
     # Update Tgap based on your gap factor.
-    Tgap = Tgap_base * (1. + gap)
+    Tgap = Tgap_base * (1.0 + gap)
 
     # TODO: check if it is correct to expose dF as a return value
-    dF = 0
+    dF = 0.0
 
     cluster_links = []
     n_pixels = len(pixels)
@@ -212,9 +213,9 @@ def get_cluster_links(
 
             # Calculate dT
             # R = p->rate + q->rate;
-            R = 1 / p[2] + 1 / q[2]
+            R = 1.0 / p[2] + 1.0 / q[2]
             T = p[2] + q[2]
-            dT = 0
+            dT = 0.0
             for k in range(n_ifo):
                 aa = p[5 + k] - q[5 + k]
                 if abs(aa) > dT:
@@ -223,20 +224,19 @@ def get_cluster_links(
 
             # Calculate dF using half the rate difference.
             dF = abs(p[1] - q[1]) - 0.5 * R
-            eps = (dT * R if dT > 0 else 0) + (dF * T if dF > 0 else 0)
+            eps = (dT * R if dT > 0.0 else 0.0) + (dF * T if dF > 0.0 else 0.0)
 
             if gap >= eps:
-                # create cluster link, make sure the order is correct
-                # cluster_links.append([int(p[4]), int(q[4])] if p[4] < q[4] else [int(q[4]), int(p[4])])
-                # Create cluster link, ensure unique pairs
                 if p[4] < q[4]:
                     link = (int(p[4]), int(q[4]))
                 else:
                     link = (int(q[4]), int(p[4]))
 
-                if link not in cluster_links:  # O(n) dedup; acceptable since cluster count is small
+                if link not in cluster_links:
                     cluster_links.append(link)
 
+    if len(cluster_links) == 0:
+        return np.empty((0, 2), dtype=np.int32), dF
     return np.array(cluster_links, dtype=np.int32), dF
 
 
@@ -493,9 +493,9 @@ def aggregate_clusters_from_links(
     aggregated_clusters = aggregate_clusters(cluster_links)
     aggregated_clusters = [list(cluster) for cluster in aggregated_clusters]
 
-    flattened_aggregated_clusters = [c for cluster in aggregated_clusters for c in cluster]
-    # find the standalone clusters
-    standalone_clusters = np.array([c for c in cluster_ids if c not in flattened_aggregated_clusters])
+    # find the standalone clusters — use a set for O(n) lookup instead of O(n²) list scan
+    seen = {c for cluster in aggregated_clusters for c in cluster}
+    standalone_clusters = np.array([c for c in cluster_ids if c not in seen])
 
     # add standalone clusters
     aggregated_clusters = [list(c) for c in aggregated_clusters] + [[c] for c in standalone_clusters]
