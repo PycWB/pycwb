@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from .monster import load_catalog, getXTalk_pixels_numba, getXTalk
+from .monster import load_catalog, getXTalk_pixels_numba, getXTalk, getXTalk_pixels_fast
 from pycwb.types.network_pixel import Pixel
 
 @dataclass
@@ -42,7 +42,7 @@ class XTalk:
             pix_mat = np.column_stack([pixels.layers, pixels.time]).astype(np.int64)
         else:
             pix_mat = np.array([[pix.layers, pix.time] for pix in pixels])
-        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_numba(
+        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_fast(
             pix_mat, check, self.layers, self.coeff, self.lookup_table
         )
         return cluster_xtalk_lookup, cluster_xtalk

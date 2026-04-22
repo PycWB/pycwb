@@ -2,7 +2,8 @@ import struct
 import logging
 import numpy as np
 import pathlib
-from numba import njit, prange
+from numba import njit, prange, types
+from numba.typed import Dict
 
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,201 @@ def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table
             index_counter += 1
 
         clusterCC_lookup[i, 1] = index_counter
+
+    return clusterCC_lookup, clusterCC
+
+
+@njit(cache=True)
+def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table):
+    """O(N·K_catalog) replacement for getXTalk_pixels_numba.
+
+    The original function evaluates all N² pixel pairs to find which ones
+    have non-zero XTalk coefficients.  For a cluster with N=52 905 pixels
+    that is ~2.8 billion pair evaluations per pass (two passes total).
+
+    This implementation inverts the lookup: for each pixel i (acting as the
+    higher-resolution pixel in the pair) we iterate directly over its catalog
+    entries and resolve the candidate pixel j via a hash map keyed on
+    (nLayer, time).  Only truly adjacent pixels — those whose relative time
+    offset appears in the catalog — are evaluated.
+
+    Complexity
+    ----------
+    O(N · nRes · K) where K is the average number of catalog entries per
+    (freq, odd) bucket (typically O(BetaOrder) ≈ 6–8 for standard WDM).
+    For N=52 905, nRes=7, K≈6 this is ~2.2 M operations vs ~5.6 B for N².
+
+    Column layout of the output ``clusterCC`` (same as getXTalk_pixels_numba)
+    --------------------------------------------------------------------------
+    col 0 : neighbour pixel index j  (float32 cast of int)
+    col 1 : tmpOvlp[0]² + tmpOvlp[1]²
+    col 2 : tmpOvlp[2]² + tmpOvlp[3]²
+    col 3 : col[1] + col[2]
+    col 4 : tmpOvlp[0]  (= c1 always)
+    col 5 : tmpOvlp[2]  (= c3 no-swap, c2 swap)
+    col 6 : tmpOvlp[1]  (= c2 no-swap, c3 swap)
+    col 7 : tmpOvlp[3]  (= c4 always)
+
+    where (c1, c2, c3, c4) are the raw catalog coefficients and "swap" means
+    getXTalk would have swapped ret[1]↔ret[2] because r_j < r_i.
+    """
+    n_pix = len(pixels)
+    nRes  = len(layers)
+
+    if n_pix == 0:
+        return np.empty((0, 2), dtype=np.int32), np.empty((0, 8), dtype=np.float32)
+
+    # ------------------------------------------------------------------ #
+    # Build nLayer → resolution-index lookup                              #
+    #   nLayer = layers[r] + 1  (pixel.layers field)                     #
+    # ------------------------------------------------------------------ #
+    max_nLayer = np.int64(0)
+    for idx in range(n_pix):
+        if pixels[idx][0] > max_nLayer:
+            max_nLayer = np.int64(pixels[idx][0])
+
+    layer_to_r = np.full(int(max_nLayer) + 2, -1, dtype=np.int32)
+    for r in range(nRes):
+        nL = int(layers[r]) + 1
+        if nL <= int(max_nLayer) + 1:
+            layer_to_r[nL] = r
+
+    # ------------------------------------------------------------------ #
+    # Build (nLayer, time) → pixel-index hash map                        #
+    # ------------------------------------------------------------------ #
+    pixel_map = Dict.empty(
+        key_type=types.UniTuple(types.int64, 2),
+        value_type=types.int64,
+    )
+    for idx in range(n_pix):
+        key = (np.int64(pixels[idx][0]), np.int64(pixels[idx][1]))
+        pixel_map[key] = np.int64(idx)
+
+    # ------------------------------------------------------------------ #
+    # Pass 1: count entries per pixel so we can allocate exact memory     #
+    # ------------------------------------------------------------------ #
+    counts = np.zeros(n_pix, dtype=np.int64)
+
+    for i in range(n_pix):
+        nLayer_i = int(pixels[i][0])
+        time_i   = int(pixels[i][1])
+        if nLayer_i > int(max_nLayer):
+            continue
+        r_i = int(layer_to_r[nLayer_i])
+        if r_i < 0:
+            continue
+
+        layer_i = int(layers[r_i])
+        time1_i  = time_i // (layer_i + 1)
+        freq1_i  = time_i - time1_i * (layer_i + 1)
+        odd_i    = time1_i & 1
+
+        # Iterate over all resolution levels r_j <= r_i.
+        # The lookup table is filled only for (r1 >= r2), so r_j plays r2.
+        for r_j in range(r_i + 1):
+            layer_j = int(layers[r_j])
+            ratio   = layer_i // layer_j          # integer, >= 1
+            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+
+            e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
+            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+
+            for eidx in range(e_start, e_end):
+                indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
+                if indx2 < 0:
+                    continue
+                key_j = (np.int64(layer_j + 1), indx2)
+                if key_j not in pixel_map:
+                    continue
+                j = int(pixel_map[key_j])
+
+                counts[i] += 1          # (i → j) entry
+                if r_j < r_i:
+                    counts[j] += 1      # (j → i) derived via swap
+
+    # ------------------------------------------------------------------ #
+    # Build CSR offsets from per-pixel counts                             #
+    # ------------------------------------------------------------------ #
+    clusterCC_lookup = np.zeros((n_pix, 2), dtype=np.int32)
+    total = np.int64(0)
+    for i in range(n_pix):
+        clusterCC_lookup[i, 0] = np.int32(total)
+        total += counts[i]
+        clusterCC_lookup[i, 1] = np.int32(total)
+
+    clusterCC = np.empty((int(total), 8), dtype=np.float32)
+    fill_pos  = np.zeros(n_pix, dtype=np.int64)   # per-pixel fill cursor
+
+    # ------------------------------------------------------------------ #
+    # Pass 2: fill entries                                                 #
+    # ------------------------------------------------------------------ #
+    for i in range(n_pix):
+        nLayer_i = int(pixels[i][0])
+        time_i   = int(pixels[i][1])
+        if nLayer_i > int(max_nLayer):
+            continue
+        r_i = int(layer_to_r[nLayer_i])
+        if r_i < 0:
+            continue
+
+        layer_i = int(layers[r_i])
+        time1_i  = time_i // (layer_i + 1)
+        freq1_i  = time_i - time1_i * (layer_i + 1)
+        odd_i    = time1_i & 1
+
+        for r_j in range(r_i + 1):
+            layer_j = int(layers[r_j])
+            ratio   = layer_i // layer_j
+            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+
+            e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
+            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+
+            for eidx in range(e_start, e_end):
+                indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
+                if indx2 < 0:
+                    continue
+                key_j = (np.int64(layer_j + 1), indx2)
+                if key_j not in pixel_map:
+                    continue
+                j = int(pixel_map[key_j])
+
+                c1 = np.float32(xtalk_coeff[eidx, 1])
+                c2 = np.float32(xtalk_coeff[eidx, 2])
+                c3 = np.float32(xtalk_coeff[eidx, 3])
+                c4 = np.float32(xtalk_coeff[eidx, 4])
+
+                # --- (i → j): no swap ---
+                # Mirrors getXTalk with r_i >= r_j (no internal swap).
+                # tmpOvlp = [c1, c2, c3, c4]
+                # col layout: [j, c1²+c2², c3²+c4², total, c1, c3, c2, c4]
+                pos = int(clusterCC_lookup[i, 0]) + int(fill_pos[i])
+                fill_pos[i] += 1
+                clusterCC[pos, 0] = np.float32(j)
+                clusterCC[pos, 1] = c1 * c1 + c2 * c2
+                clusterCC[pos, 2] = c3 * c3 + c4 * c4
+                clusterCC[pos, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
+                clusterCC[pos, 4] = c1
+                clusterCC[pos, 5] = c3   # tmpOvlp[2]
+                clusterCC[pos, 6] = c2   # tmpOvlp[1]
+                clusterCC[pos, 7] = c4
+
+                # --- (j → i): swap c2 ↔ c3 ---
+                # Mirrors getXTalk(j, i) where r_j < r_i triggers the swap,
+                # so ret becomes [c1, c3, c2, c4] before being stored.
+                # tmpOvlp = [c1, c3, c2, c4]
+                # col layout: [i, c1²+c3², c2²+c4², total, c1, c2, c3, c4]
+                if r_j < r_i:
+                    pos2 = int(clusterCC_lookup[j, 0]) + int(fill_pos[j])
+                    fill_pos[j] += 1
+                    clusterCC[pos2, 0] = np.float32(i)
+                    clusterCC[pos2, 1] = c1 * c1 + c3 * c3
+                    clusterCC[pos2, 2] = c2 * c2 + c4 * c4
+                    clusterCC[pos2, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
+                    clusterCC[pos2, 4] = c1
+                    clusterCC[pos2, 5] = c2   # tmpOvlp[2] after swap
+                    clusterCC[pos2, 6] = c3   # tmpOvlp[1] after swap
+                    clusterCC[pos2, 7] = c4
 
     return clusterCC_lookup, clusterCC
 
