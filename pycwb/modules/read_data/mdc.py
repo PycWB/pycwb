@@ -217,11 +217,12 @@ def generate_strain_from_injection(injection: dict, config: Config, sample_rate,
             'hc': generated_data[1]
         }
     # ------------------------------
-    STRUCTURAL_KEYS = {'type', 'hp', 'hc'}
     if isinstance(generated_data, dict):    
-        extra_keys = set(generated_data.keys()) - STRUCTURAL_KEYS
-        for key in extra_keys:
-            injection.update(generated_data.pop(key))
+        if 'update' in generated_data:
+            upd = generated_data['update']
+            if not isinstance(upd, dict):
+                raise TypeError(f"update should be a dict, got {type(upd)}")
+            injection.update(generated_data.pop('update'))
 
         if generated_data.get('type') == 'strain':
             logger.info("Strain is generated")
