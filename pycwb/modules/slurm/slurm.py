@@ -22,6 +22,7 @@ class Slurm:
         self.slurm_dir = os.path.join(self.working_dir, 'slurm')
         self.slurm_script = None
         self.merge_script = None
+        self.simulation_summary_script = None
         self.job_per_worker = job_per_worker
 
     def create(self, job_segments, submit=False):
@@ -30,9 +31,13 @@ class Slurm:
                 print("Cleaning aborted.")
                 return
             shutil.rmtree(self.slurm_dir, ignore_errors=True)
-    
+
+        has_simulations = any(seg.injections for seg in job_segments)
+
         self.generate_job_script(job_segments)
         self.generate_merge_script()
+        if has_simulations:
+            self.generate_simulation_summary_script()
         if submit:
             self.submit()
 
@@ -136,6 +141,41 @@ pycwb merge --work-dir={working_dir}
         self.merge_script = os.path.join(slurm_dir, 'merge.sh')
         print(f'SLURM merge script: {self.merge_script}')
 
+    def generate_simulation_summary_script(self):
+        """Generate simulation_summary.sh — submitted independently (no dependency
+        on the analysis array job) since it only needs the config and job-segment
+        metadata."""
+        working_dir = self.working_dir
+        slurm_dir = self.slurm_dir
+
+        os.makedirs(slurm_dir, exist_ok=True)
+
+        optional_lines = []
+        if self.constraint:
+            optional_lines.append(f"#SBATCH --constraint={self.constraint}")
+        if self.partition:
+            optional_lines.append(f"#SBATCH --partition={self.partition}")
+        optional_sbatch = ('\n' + '\n'.join(optional_lines)) if optional_lines else ''
+
+        with open(f"{slurm_dir}/simulation_summary.sh", 'w') as f:
+            f.write(f"""#!/bin/bash
+#SBATCH --job-name={os.path.basename(working_dir)}_sim_summary
+#SBATCH --output=log/simulation_summary.out
+#SBATCH --error=log/simulation_summary.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=02:00:00
+#SBATCH --mem={self.memory}{optional_sbatch}
+
+conda activate {self.conda_env}
+{self.additional_init}
+pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={working_dir}
+""")
+
+        os.chmod(f"{slurm_dir}/simulation_summary.sh", 0o755)
+        self.simulation_summary_script = os.path.join(slurm_dir, 'simulation_summary.sh')
+        print(f'SLURM simulation summary script: {self.simulation_summary_script}')
+
     def submit(self):
         if not self.slurm_script or not os.path.exists(self.slurm_script):
             raise RuntimeError("SLURM script not found. Run generate_job_script() first.")
@@ -162,6 +202,20 @@ pycwb merge --work-dir={working_dir}
         print(merge_result.stdout.strip())
         if merge_result.stderr:
             print(merge_result.stderr.strip())
+
+        # Submit simulation summary job independently — it only needs the config and
+        # job-segment metadata, so it can run in parallel with the analysis array job.
+        if self.simulation_summary_script and os.path.exists(self.simulation_summary_script):
+            sim_result = subprocess.run(
+                ['sbatch', self.simulation_summary_script],
+                check=True, capture_output=True, text=True
+            )
+            print(sim_result.stdout.strip())
+            if sim_result.stderr:
+                print(sim_result.stderr.strip())
+            sim_match = re.search(r'Submitted batch job (\d+)', sim_result.stdout)
+            if sim_match:
+                print(f"Simulation summary job submitted: {sim_match.group(1)}")
 
         print(f"Batch array job ID: {job_id}")
         print(f"Merge job submitted with dependency afterok:{job_id}")

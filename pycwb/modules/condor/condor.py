@@ -41,10 +41,14 @@ class HTCondor:
                 print("Cleaning aborted.")
                 return
             shutil.rmtree(self.dag_dir, ignore_errors=True)
-    
+
+        has_simulations = any(seg.injections for seg in job_segments)
+
         self.generate_job_script()
         self.generate_merge_script()
-        self.generate_condor_dag(job_segments)
+        if has_simulations:
+            self.generate_simulation_summary_script()
+        self.generate_condor_dag(job_segments, has_simulations=has_simulations)
         if submit:
             self.submit_condor_dag()
 
@@ -95,7 +99,26 @@ pycwb merge --work-dir={working_dir}
         # add execute permission to merge.sh
         os.chmod(f"{dag_dir}/merge.sh", 0o755)
 
-    def generate_condor_dag(self, job_segments):
+    def generate_simulation_summary_script(self):
+        """Generate simulation_summary.sh — runs pycwb simulation-summary in parallel
+        with the analysis jobs.  Uses the absolute working_dir path (no file transfer)
+        so it behaves like merge.sh."""
+        working_dir = self.working_dir
+        dag_dir = self.dag_dir
+
+        os.makedirs(dag_dir, exist_ok=True)
+
+        with open(f"{dag_dir}/simulation_summary.sh", 'w') as f:
+            f.write(f"""#!/bin/bash
+{self.conda_init}
+{f'conda activate {self.conda_env}' if self.conda_env else ''}
+{self.additional_init if self.additional_init else ''}
+pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={working_dir}
+            """)
+
+        os.chmod(f"{dag_dir}/simulation_summary.sh", 0o755)
+
+    def generate_condor_dag(self, job_segments, has_simulations=False):
         import getpass
         import htcondor2 as htcondor
         from htcondor2 import dags
@@ -146,17 +169,40 @@ pycwb merge --work-dir={working_dir}
             "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         }
 
+        # Simulation summary job: lightweight, no file transfer needed — runs in
+        # parallel with the analysis jobs using only the shared filesystem config.
+        sim_summary_job_config = {
+            "universe": "vanilla",
+            "initialdir": working_dir,
+            "executable": "simulation_summary.sh",
+            "should_transfer_files": "no",
+            "log": "log/simulation_summary.log",
+            "output": "log/simulation_summary.out",
+            "error": "log/simulation_summary.err",
+            "accounting_group": accounting_group,
+            "accounting_group_user": getpass.getuser(),
+            "request_cpus": "1",
+            "request_memory": self.memory,
+            "request_disk": self.disk,
+            "use_oauth_services": "scitokens",
+            "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
+        }
+
         if self.conda_env:
             batch_job_config["MY.flock_local"] = True
             batch_job_config["MY.DESIRED_Sites"] = "none"
             merge_job_config["MY.flock_local"] = True
             merge_job_config["MY.DESIRED_Sites"] = "none"
+            sim_summary_job_config["MY.flock_local"] = True
+            sim_summary_job_config["MY.DESIRED_Sites"] = "none"
 
         if container_image:
             batch_job_config['universe'] = 'container'
             batch_job_config['container_image'] = container_image
             merge_job_config['universe'] = 'container'
             merge_job_config['container_image'] = container_image
+            sim_summary_job_config['universe'] = 'container'
+            sim_summary_job_config['container_image'] = container_image
 
         if should_transfer_files:
             # Transfer only this job's own catalog and progress fragments.
@@ -188,6 +234,7 @@ pycwb merge --work-dir={working_dir}
 
         batch_job = htcondor.Submit(batch_job_config)
         merge_job = htcondor.Submit(merge_job_config)
+        sim_summary_job = htcondor.Submit(sim_summary_job_config) if has_simulations else None
 
         dag = dags.DAG()
 
@@ -251,9 +298,17 @@ pycwb merge --work-dir={working_dir}
         )
 
         merge_layer = batch_layer.child_layer(
-            name = 'merge',
-            submit_description = merge_job,
+            name='merge',
+            submit_description=merge_job,
         )
+
+        # Simulation summary runs as an independent top-level layer — no dependency
+        # on the analysis jobs, since it only needs the config and job-segment metadata.
+        if has_simulations and sim_summary_job is not None:
+            dag.layer(
+                name='simulation_summary',
+                submit_description=sim_summary_job,
+            )
 
         # make the magic happen!
         dag_file = dags.write_dag(dag, dag_dir, dag_file_name=f'{os.path.basename(working_dir)}.dag')
