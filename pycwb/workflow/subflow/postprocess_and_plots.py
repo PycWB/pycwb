@@ -1,3 +1,4 @@
+import dataclasses
 import os
 import logging
 from typing import Dict, List
@@ -372,15 +373,21 @@ def plot_trigger_flow(trigger_folder: str,
     plot_statistics(cluster, 'null', gps_shift=event.gps[0], filename=f'{trigger_folder}/null_map.png')
 
 def plot_skymap_flow(trigger_folder: str,
-                 event: Event, event_skymap_statistics: Dict[str, List[float]]) -> None:
+                 event: Event, event_skymap_statistics) -> None:
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
         logger.info(f"Creating trigger folder: {trigger_folder}")
 
     logger.info(f"Making skymap plots for event {event.hash_id}")
-    # plot_world_map(event.phi[0], event.theta[0], filename=f'{config.outputDir}/world_map_{job_id}_{i+1}.png')
-    for key in event_skymap_statistics.keys():
-        plot_skymap_contour(event_skymap_statistics,
+
+    raw = dataclasses.asdict(event_skymap_statistics)
+
+    # Keep only array-like fields that are not None (skip scalars such as
+    # l_max and non-sky dicts such as stage_timings).
+    stats_dict = {k: v for k, v in raw.items() if isinstance(v, (list, np.ndarray)) and v is not None}
+
+    for key in stats_dict:
+        plot_skymap_contour(stats_dict,
                             key=key,
                             reconstructed_loc=(event.phi[0], event.theta[0]),
                             detector_loc=(event.phi[3], event.theta[3]),
