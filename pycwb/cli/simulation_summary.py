@@ -69,13 +69,15 @@ def command(args):
     from pycwb.workflow.subflow.simulation_summary import build_simulation_summary
 
     # ── Load configuration ────────────────────────────────────────────────
-    config_vars = {}
+    # config_vars are applied as Jinja2 template substitutions before YAML
+    # parsing — the same approach used by prepare_job_runs.py.
+    config_file = args.user_parameter_file
     if args.config_vars:
-        for pair in args.config_vars.split(','):
-            k, _, v = pair.partition('=')
-            config_vars[k.strip()] = v.strip()
+        from pycwb.workflow.subflow.prepare_job_runs import generate_config
+        config_file = generate_config(config_file, args.config_vars)
 
-    config = Config.load_from_yaml(args.user_parameter_file, config_vars=config_vars or None)
+    config = Config()
+    config.load_from_yaml(config_file)
 
     if not config.injection:
         logger.error(
