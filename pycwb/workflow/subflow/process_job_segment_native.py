@@ -137,7 +137,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 real_start = min(float(inj[i].t0) for i in range(n_ifo))
                 real_end = max(float(inj[i].t0) + len(inj[i].data) * float(inj[i].dt)
                                for i in range(n_ifo))
-                injection_envelopes.append((real_start, real_end))
+                injection['real_start'] = real_start
+                injection['real_end'] = real_end
                 # Both mdc and data are our own buffers — always inject in-place.
                 for i in range(n_ifo):
                     mdc[i].inject(inj[i], copy=False)
@@ -145,22 +146,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     data[i].inject(inj[i], copy=False)
                 # Free the per-injection signal buffer immediately to reduce peak memory.
                 del inj
-
-            # Populate veto_windows when injection-only analysis is enabled.
-            # If CAT2 veto_windows already exist on the job segment, intersect
-            # with the injection windows so both conditions must be satisfied.
-            if getattr(config, 'analyze_injection_only', False) and injection_envelopes:
-                inj_windows = build_injection_veto_windows(
-                    injection_envelopes,
-                    padding=getattr(config, 'injection_padding', 1.0),
-                    duration=sub_job_seg.duration,
-                )
-                if sub_job_seg.veto_windows:
-                    sub_job_seg.veto_windows = intersect_intervals(
-                        sorted(sub_job_seg.veto_windows), sorted(inj_windows),
-                    )
-                else:
-                    sub_job_seg.veto_windows = inj_windows
         else:
             logger.info(f"Processing trial_idx: {trial_idx} without injections")
             sub_job_seg = job_seg
@@ -301,6 +286,24 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                         lag, lag_livetime, seg_thr, sub_job_seg.duration - lag_livetime,
                     )
 
+
+            # Populate veto_windows when injection-only analysis is enabled.
+            # If CAT2 veto_windows already exist on the job segment, intersect
+            # with the injection windows so both conditions must be satisfied.
+            if getattr(config, 'analyze_injection_only', False) and job_seg.injections:
+                injection_envelopes = [(inj['real_start'], inj['real_end']) for inj in sub_job_seg.injections]
+                inj_windows = build_injection_veto_windows(
+                    injection_envelopes,
+                    padding=getattr(config, 'injection_padding', 1.0),
+                    duration=sub_job_seg.duration,
+                )
+                if sub_job_seg.veto_windows:
+                    sub_job_seg.veto_windows = intersect_intervals(
+                        sorted(sub_job_seg.veto_windows), sorted(inj_windows),
+                    )
+                else:
+                    sub_job_seg.veto_windows = inj_windows
+                    
             # ── 4a. Coherence ────────────────────────────────────────────────
             # Pixel selection and fragment clustering for this specific time slide.
             timer_coherence = time.perf_counter()
