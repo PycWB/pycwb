@@ -39,6 +39,11 @@ import pandas as pd
 from pycwb.config import Config
 from pycwb.modules.read_data import generate_strain_from_injection
 from pycwb.types.job import WaveSegment
+from pycwb.types.simulation import (
+    infer_injection_fields,
+    rows_to_flat_table,
+    build_fixed_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +217,8 @@ def build_simulation_summary(
             'vetoed_cat2':     None,
             'across_segments': None,
             'error':           None,
+            # verbatim copy of raw injection dict — expanded to flat columns
+            # when saving (see rows_to_flat_table below)
             'parameters':      {k: v for k, v in simulation.items()
                                 if k not in ('real_start', 'real_end')},
         }
@@ -287,34 +294,32 @@ def build_simulation_summary(
             row['across_segments'],
         )
 
-    # ── Assemble DataFrame ─────────────────────────────────────────────────
-    df = pd.DataFrame(rows)
+    # ── Build flat Arrow table ─────────────────────────────────────────────
+    # Collect all raw injection dicts to infer the waveform-specific schema
+    all_injection_dicts = [row['parameters'] for row in rows if row.get('parameters')]
+    extra_fields = infer_injection_fields(all_injection_dicts)
+    logger.debug(
+        "Inferred %d extra injection fields: %s",
+        len(extra_fields), list(extra_fields.keys()),
+    )
 
-    # Enforce sensible dtypes for the fixed columns
-    bool_cols = ['vetoed_cat1', 'across_segments']
-    for col in bool_cols:
-        if col in df.columns:
-            df[col] = df[col].astype('boolean')  # nullable boolean (pd.NA)
-
-    nullable_bool_cols = ['vetoed_cat0', 'vetoed_cat2']
-    for col in nullable_bool_cols:
-        if col in df.columns:
-            df[col] = df[col].astype('boolean')
-
-    for col in ('sim_idx', 'trial_idx', 'segment_idx'):
-        if col in df.columns:
-            df[col] = df[col].astype('Int64')
-
-    for col in ('gps_time', 'real_start', 'real_end', 'real_duration'):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    table = rows_to_flat_table(rows, extra_fields, fixed_schema=build_fixed_schema())
 
     # ── Save to Parquet ────────────────────────────────────────────────────
     if output_file is not None:
+        import pyarrow.parquet as pq
         parent = os.path.dirname(output_file)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        df.to_parquet(output_file, index=False)
-        logger.info("Simulation summary saved to %s  (%d rows)", output_file, len(df))
+        pq.write_table(
+            table, output_file,
+            compression='snappy',
+            write_statistics=True,
+            store_schema=True,
+        )
+        logger.info("Simulation summary saved to %s  (%d rows, %d columns)",
+                    output_file, len(table), len(table.schema))
 
+    # Return as pandas DataFrame for convenience
+    df = table.to_pandas()
     return df
