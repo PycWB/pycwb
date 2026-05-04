@@ -121,7 +121,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                       if injection.get('trial_idx', 0) == trial_idx]
             logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
+            # TODO: rename all MDC and injection into simulation
+            # Allocate a zero-filled MDC (Mock data challenge) buffer for each IFO.
             # MDC buffer must span the full padded window [padded_start, padded_end] so that
             # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
             mdc = [TimeSeries(data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
@@ -255,8 +256,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
             )
             logger.info("Processing lag %d / %d  [%s]", lag, n_lag - 1, lag_shift_str)
-            if skip_lags and lag in skip_lags:
-                logger.info("Skipping lag %d due to skip_lags", lag)
+            if skip_lags and lag in skip_lags.get(trial_idx, set()):
+                logger.info("Skipping lag %d (trial %d) due to skip_lags", lag, trial_idx)
                 continue
 
             # ── segTHR check ─────────────────────────────────────────────────
@@ -461,6 +462,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger in events_data:
                 event, _, _ = trigger
                 trigger_obj = Trigger.from_event(event)
+                trigger_obj.lag_idx = lag
+                trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 else:

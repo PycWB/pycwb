@@ -276,6 +276,12 @@ class Trigger:
     job_id: int = 0
     """Job segment index  (legacy ``run`` / ``job_id``)."""
 
+    lag_idx: int = 0
+    """Index of the time-lag used when this trigger was produced."""
+
+    trial_idx: int = 0
+    """Injection trial index (0 for background / no-injection runs)."""
+
     cluster_id: int = 0
     """Cluster ID within the job segment  (legacy ``eventID[0]``)."""
 
@@ -620,6 +626,8 @@ class Trigger:
             # bookkeeping
             pa.field("id",                       pa.string()),
             pa.field("job_id",                   i32),
+            pa.field("lag_idx",                  i32),
+            pa.field("trial_idx",                i32),
             pa.field("cluster_id",               i32),
             pa.field("event_index",              i32),
             pa.field("n_detectors",              pa.int8()),
@@ -715,6 +723,8 @@ class Trigger:
         d = {
             "id":                       self.id,
             "job_id":                   int(self.job_id),
+            "lag_idx":                  int(self.lag_idx),
+            "trial_idx":                int(self.trial_idx),
             "cluster_id":               int(self.cluster_id),
             "event_index":              int(self.event_index),
             "n_detectors":              int(self.n_detectors),

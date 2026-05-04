@@ -119,8 +119,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
-            if skip_lags and lag in skip_lags:
-                logger.info("Skipping lag %d due to skip_lags", lag)
+            if skip_lags and lag in skip_lags.get(trial_idx, set()):
+                logger.info("Skipping lag %d (trial %d) due to skip_lags", lag, trial_idx)
                 continue
             events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
                                                             lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
@@ -220,6 +220,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger in events_data:
                 event, _, _ = trigger
                 trigger_obj = Trigger.from_event(event)
+                trigger_obj.lag_idx = lag
+                trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 else:

@@ -170,54 +170,64 @@ def data_collector(working_dir: str, config: Any, catalog_file: str, queue: Any)
                 stats["progress"], stats["trigger"], stats["wave"])
 
 
-def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
+def process_single_with_resume(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
-    if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
-        logger.info(f"Job segment {job_seg.index} is already done")
-        return
 
-    # Build skip_lags from progress file for per-lag rescue
+    # Determine expected trial indices (mirrors logic in process_job_segment_*.py)
+    if job_seg.injections:
+        expected_trial_idxs = set(inj.get('trial_idx', 0) for inj in job_seg.injections)
+    else:
+        expected_trial_idxs = {0}
+    n_lag = job_seg.n_lag
+
+    # Build skip_lags from progress file for per-lag rescue; also check completeness.
     skip_lags = None
     if catalog_file and os.path.exists(catalog_file):
         try:
             from pycwb.modules.catalog.catalog import Catalog
             cat = Catalog.open(catalog_file)
             completed = cat.get_completed_lags(job_seg.index)
+
+            # Check if every expected trial has all n_lag lags done → job is complete
+            if completed and all(
+                tid in completed and len(completed[tid]) == n_lag
+                for tid in expected_trial_idxs
+            ):
+                logger.info(
+                    "Job segment %d is already complete (%d lags × %d trials)",
+                    job_seg.index, n_lag, len(expected_trial_idxs),
+                )
+                return
+
+            # Remove triggers written by incomplete lag-trial pairs from a prior
+            # interrupted run so they are not duplicated when those lags re-run.
             if completed:
-                # Skip lag only if ALL trials for it are done
-                all_lag_sets = list(completed.values())
-                common_lags = set.intersection(*all_lag_sets) if all_lag_sets else set()
-                if common_lags:
-                    skip_lags = sorted(common_lags)
-                    logger.info("Rescue: skipping %d completed lags for job %d",
-                                len(skip_lags), job_seg.index)
+                n_removed = cat.remove_stale_triggers(job_seg.index, completed)
+                if n_removed:
+                    logger.info(
+                        "Removed %d stale trigger(s) for job %d before resume",
+                        n_removed, job_seg.index,
+                    )
+
+            # Build per-trial skip sets: {trial_idx: {lag_idx, ...}}
+            # Only trials that have at least one completed lag get an entry.
+            if completed:
+                skip_lags = {tid: lags for tid, lags in completed.items() if lags}
+                total_skipped = sum(len(v) for v in skip_lags.values())
+                logger.info("Rescue: skipping %d lag-trial pairs for job %d",
+                            total_skipped, job_seg.index)
         except Exception as e:
             logger.warning("Could not read progress for rescue: %s", e)
 
     try:
         main_func(working_dir, config, job_seg,
-                            compress_json=compress_json, catalog_file=catalog_file, queue=queue,
-                            skip_lags=skip_lags)
-
-        # create a flag file to indicate the job is done
-        try:
-            with open(f"{working_dir}/job_status/job_{job_seg.index}.done", 'w') as f:
-                f.write("")
-        except Exception as e:
-            logger.error(f"Failed to create job done flag file: {e}")
-
+                  compress_json=compress_json, catalog_file=catalog_file, queue=queue,
+                  skip_lags=skip_lags)
     except Exception as e:
         logger.error(f"Error processing job segment: {job_seg}")
         logger.error(e)
-        # create a flag file to indicate the job is failed
-        try:
-            with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
-                f.write("")
-            return e
-        except Exception as e:
-            logger.error(f"Failed to create job failed flag file: {e}")
-            return e
+        return e
 
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
@@ -249,7 +259,7 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     try:
         logger.info(f"Starting {n_workers} workers")
         futures = {
-            executor.submit(process_single_with_flag, main_func, queue, working_dir, config, job_seg,
+            executor.submit(process_single_with_resume, main_func, queue, working_dir, config, job_seg,
                             compress_json, catalog_file): job_seg
             for job_seg in job_segments
         }
