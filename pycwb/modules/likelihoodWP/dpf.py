@@ -5,12 +5,10 @@ from numba import njit, prange, guvectorize, vectorize, float32, uint32
 
 
 @njit(parallel=True, cache=True)
-def calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold):
+def calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold, sky_valid_indices):
     FP = FP.astype(np.float32)
     FX = FX.astype(np.float32)
     rms = rms.astype(np.float32)
-    MM = np.zeros(n_sky)
-    aa = np.zeros(n_sky)
 
     # check shape of FP, FX, and rms
     if FP.shape != (n_sky, n_ifo) or FX.shape != (n_sky, n_ifo) or rms.shape[1] != n_ifo:
@@ -22,12 +20,16 @@ def calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_thr
             f"FP and FX must have shape (n_sky, n_ifo) and rms must have shape (n_pix, n_ifo), "
             f"got FP: ({n1}, {n2}), FX: ({m1}, {m2}), rms: ({p1}, {p2})"
         )
-    for i in prange(n_sky):
-        MM[i] = 1
-        aa[i] = dpf_np_loops_vec(FP[i], FX[i], rms)[0]
 
-    FF = MM.sum()
-    ff = (aa > gamma_regulator).sum()
+    n_valid = len(sky_valid_indices)
+    aa = np.zeros(n_valid)
+
+    for k in prange(n_valid):
+        i = sky_valid_indices[k]
+        aa[k] = dpf_np_loops_vec(FP[i], FX[i], rms)[0]
+
+    FF = np.float64(n_valid)
+    ff = np.float64((aa > gamma_regulator).sum())
 
     return (FF ** 2 / (ff ** 2 + 1.e-9) - 1) * network_energy_threshold
 
