@@ -5,7 +5,7 @@ from copy import deepcopy
 from astropy.time import Time
 from astropy import constants, coordinates, units
 from astropy.coordinates.matrix_utilities import rotation_matrix
-from astropy.units.si import sday, meter
+from astropy.units.si import meter
 from pycwb.constants.physics_constants import LAL_EARTHFLAT, LAL_REARTH_SI
 from pycwb.constants.detectors import DETECTORS
 from pycwb.utils.network import local_to_earth_centered
@@ -44,12 +44,9 @@ class Detector:
     x_response: np.ndarray = None
     y_response: np.ndarray = None
     response: np.ndarray = None
-    reference_time: float = None
-
     def __init__(self, name, full_name=None, latitude=None, longitude=None, altitude=None,
                  x_azimuth=None, x_altitude=None, x_midpoint=None,
-                 y_azimuth=None, y_altitude=None, y_midpoint=None,
-                 reference_time=1126259462.0):
+                 y_azimuth=None, y_altitude=None, y_midpoint=None):
         """
         Initialize the Detector object with either a name or specific parameters.
         If a name is provided, it will look up the detector information from the DETECTORS dictionary.
@@ -96,7 +93,6 @@ class Detector:
         self.x_response = ifo_vecs['x_response']
         self.y_response = ifo_vecs['y_response']
         self.response = ifo_vecs['response']
-        self.reference_time = reference_time
         
     @property
     def x_length(self):
@@ -277,15 +273,6 @@ class Detector:
 
         return np.array([lon2, lat2], dtype=np.float64)
     
-    def gmst_estimate(self, gps_time):
-        if self.reference_time is None:
-            return gmst_accurate(gps_time)
-
-        gmst_reference = gmst_accurate(self.reference_time)
-        dphase = (gps_time - self.reference_time) / float(sday.si.scale) * (2.0 * np.pi)
-        gmst = (gmst_reference + dphase) % (2.0 * np.pi)
-        return gmst
-    
     # TODO: to check
     def atenna_pattern(self, right_ascension, declination, polarization, t_gps,
                       frequency=0,
@@ -317,7 +304,7 @@ class Detector:
             The cross or vector-y or longitudnal polarization factor for this sky location / orientation
         """
         t_gps = float(t_gps)
-        gha = self.gmst_estimate(t_gps) - right_ascension
+        gha = gmst_accurate(t_gps) - right_ascension
 
         cosgha = np.cos(gha)
         singha = np.sin(gha)
@@ -461,7 +448,7 @@ class Detector:
         float
             Time delay in seconds.
         """
-        gmst = self.gmst_estimate(float(t_gps))
+        gmst = gmst_accurate(float(t_gps))
         # Source direction in Earth-centered coordinates
         gha = gmst - ra
         n_hat = np.array([
