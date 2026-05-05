@@ -202,13 +202,14 @@ def process_single_with_resume(main_func, queue, working_dir, config, job_seg, c
 
             # Remove triggers written by incomplete lag-trial pairs from a prior
             # interrupted run so they are not duplicated when those lags re-run.
-            if completed:
-                n_removed = cat.remove_stale_triggers(job_seg.index, completed)
-                if n_removed:
-                    logger.info(
-                        "Removed %d stale trigger(s) for job %d before resume",
-                        n_removed, job_seg.index,
-                    )
+            # Pass completed even when empty: an empty dict means nothing finished,
+            # so every trigger for this job is stale and must be purged.
+            n_removed = cat.remove_stale_triggers(job_seg.index, completed)
+            if n_removed:
+                logger.info(
+                    "Removed %d stale trigger(s) for job %d before resume",
+                    n_removed, job_seg.index,
+                )
 
             # Build per-trial skip sets: {trial_idx: {lag_idx, ...}}
             # Only trials that have at least one completed lag get an entry.
