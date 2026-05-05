@@ -16,7 +16,7 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.trigger import Trigger
@@ -224,9 +224,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
-                else:
-                    catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
-                                                        catalog_file=catalog_file)
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    if not os.path.isabs(catalog_file):
+                        catalog_file = os.path.join(working_dir, config.catalog_dir, catalog_file)
+                    Catalog.open(catalog_file).add_triggers(trigger_obj)
 
             #################### Record lag progress ####################
             progress_record = dict(
@@ -242,8 +244,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
 
-# create_single_trigger_folder, save_trigger, add_event_to_catalog are imported above
-# from pycwb.modules.workflow_utils and kept available here for backward compatibility.
+# create_single_trigger_folder, save_trigger are imported above
+# from pycwb.modules.workflow_utils.
 
 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):

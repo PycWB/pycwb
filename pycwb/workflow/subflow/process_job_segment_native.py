@@ -21,7 +21,7 @@ from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
-from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
 from pycwb.modules.job_segment import build_injection_veto_windows, intersect_intervals
@@ -466,10 +466,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
-                else:
-                    catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
-                                                        trigger_data=trigger,
-                                                        catalog_file=catalog_file)
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    if not os.path.isabs(catalog_file):
+                        catalog_file = os.path.join(working_dir, config.catalog_dir, catalog_file)
+                    Catalog.open(catalog_file).add_triggers(trigger_obj)
 
             # ── 4f. Record lag progress ──────────────────────────────────────
             progress_record = dict(
