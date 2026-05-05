@@ -15,18 +15,18 @@ def init_parser(parser):
         'catalog_parquet',
         metavar='catalog.parquet',
         nargs='?',
-        default='config/catalog.parquet',
+        default='catalog/catalog.parquet',
         type=str,
-        help='path to the trigger catalog Parquet file (default: config/catalog.parquet)',
+        help='path to the trigger catalog Parquet file (default: catalog/catalog.parquet)',
     )
 
     parser.add_argument(
         'sim_parquet',
         metavar='simulations.parquet',
         nargs='?',
-        default='config/simulations.parquet',
+        default='catalog/simulations.parquet',
         type=str,
-        help='path to the simulation summary Parquet file (default: config/simulations.parquet)',
+        help='path to the simulation summary Parquet file (default: catalog/simulations.parquet)',
     )
 
     parser.add_argument(
@@ -47,10 +47,10 @@ def init_parser(parser):
         default='outer',
         help=(
             'join type: '
-            'inner=matched pairs only (default); '
+            'inner=matched pairs only; '
             'left=all triggers (NULL sim for unmatched); '
             'right=all simulations (NULL trigger for missed); '
-            'outer=all triggers and simulations'
+            'outer=all triggers and simulations (default)'
         ),
     )
 
@@ -68,11 +68,7 @@ def init_parser(parser):
         metavar='COL',
         nargs='+',
         default=None,
-        help=(
-            'additional simulation columns to include in the output '
-            '(prefixed with sim_ to avoid name collisions), '
-            'e.g. --extra-sim-columns gps_time trial_idx name'
-        ),
+        help='(deprecated — all simulation columns are now included automatically with sim_ prefix)',
     )
 
 
