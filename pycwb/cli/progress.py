@@ -2,6 +2,7 @@
 
 import glob
 import os
+import re
 import sys
 import time
 
@@ -92,16 +93,36 @@ def init_parser(parser):
         help='restrict display to these jobs, e.g. "1-5,7"',
     )
     parser.add_argument(
-        "--compact",
+        "--verbose",
+        "-v",
         action="store_true",
         default=False,
-        help="hide the per-job breakdown table (show only the summary)",
+        help="show per-job breakdown table (hidden by default)",
+    )
+    parser.add_argument(
+        "--label",
+        "-l",
+        metavar="label",
+        type=str,
+        default=None,
+        help='use progress.{label}.parquet / catalog.{label}.parquet as the merged files',
     )
 
 
 # ---------------------------------------------------------------------------
 # Small utilities
 # ---------------------------------------------------------------------------
+
+def _expected_trials(ws) -> int:
+    """Return the number of unique trial indices expected for a WaveSegment.
+
+    Derived from ``ws.injections`` so the denominator is correct even before
+    all trials have written any progress rows.
+    """
+    if ws.injections:
+        return len({inj.get("trial_idx", 0) for inj in ws.injections})
+    return 1
+
 
 def _parse_job_range(spec: str) -> set[int]:
     """Parse a job range specification like ``"1-5,7,9-12"`` into a set."""
@@ -205,6 +226,45 @@ _SEP_THICK = "═" * 72
 _SEP_THIN  = "─" * 72
 
 
+def _aggregate_fraction_summaries(frac_summaries: dict) -> "dict | None":
+    """Merge all fraction summary dicts into one combined summary."""
+    if not frac_summaries:
+        return None
+    combined: dict[int, dict] = {}
+    total_triggers = 0
+    total_livetime  = 0.0
+    total_rows = 0
+    latest_ts = 0.0
+    for s in frac_summaries.values():
+        total_triggers += s["total_triggers"]
+        total_livetime  += s["total_livetime"]
+        total_rows      += s["total_rows"]
+        if s["latest_ts"] > latest_ts:
+            latest_ts = s["latest_ts"]
+        for jid, jstats in s["by_job"].items():
+            if jid not in combined:
+                combined[jid] = {
+                    "lags_done":  0, "lags_skip":  0,
+                    "n_triggers": 0, "livetime":   0.0,
+                    "trials":     set(), "latest_ts": 0.0,
+                }
+            e = combined[jid]
+            e["lags_done"]  += jstats["lags_done"]
+            e["lags_skip"]  += jstats["lags_skip"]
+            e["n_triggers"] += jstats["n_triggers"]
+            e["livetime"]   += jstats["livetime"]
+            e["trials"]     |= jstats["trials"]
+            if jstats["latest_ts"] > e["latest_ts"]:
+                e["latest_ts"] = jstats["latest_ts"]
+    return {
+        "by_job":         combined,
+        "total_rows":     total_rows,
+        "total_triggers": total_triggers,
+        "total_livetime": total_livetime,
+        "latest_ts":      latest_ts,
+    }
+
+
 def _print_fraction_block(frac_files: list[str], jobs_by_index: dict) -> dict[str, dict]:
     """Print the per-fraction summary and return {filename: summary_dict}."""
     print(_c(_BOLD, "\nFRACTION PROGRESS FILES"))
@@ -230,23 +290,28 @@ def _print_fraction_block(frac_files: list[str], jobs_by_index: dict) -> dict[st
         for jid, jstats in s["by_job"].items():
             ws = jobs_by_index.get(jid)
             if ws is not None:
-                n_trials = max(len(jstats["trials"]), 1)
+                n_trials = _expected_trials(ws)
                 total_lags += ws.n_lag * n_trials
             else:
                 total_lags += (jstats["lags_done"] + jstats["lags_skip"])  # best effort
 
         done_lags = sum(v["lags_done"] + v["lags_skip"] for v in s["by_job"].values())
         bar = _progress_bar(done_lags, total_lags if total_lags else done_lags)
-        job_ids = sorted(s["by_job"].keys())
-        job_range = f"jobs {job_ids[0]}–{job_ids[-1]}" if len(job_ids) > 1 else f"job {job_ids[0]}"
+        # Derive displayed range from the filename (encodes the worker/task range)
+        m = re.match(r'progress_(\d+)-(\d+)\.parquet', label)
+        if m:
+            task_range = f"jobs {m.group(1)}\u2013{m.group(2)}"
+        else:
+            job_ids = sorted(s["by_job"].keys())
+            task_range = f"jobs {job_ids[0]}\u2013{job_ids[-1]}" if len(job_ids) > 1 else f"job {job_ids[0]}"
         n_trigs  = s["total_triggers"]
         livetime = _fmt_duration(s["total_livetime"])
 
-        lag_info = f"{done_lags:>5}/{total_lags:<5} lags" if total_lags else f"{done_lags:>5} lags"
+        unit_info = f"{done_lags:>5}/{total_lags:<5} tasks" if total_lags else f"{done_lags:>5} tasks"
 
         print(
             f"  {_c(_CYAN, label):<50}  "
-            f"{job_range:<15}  {lag_info}  {bar}  "
+            f"{task_range:<15}  {unit_info}  {bar}  "
             f"{_c(_GREEN, str(n_trigs))} triggers  livetime {livetime}"
         )
 
@@ -256,7 +321,8 @@ def _print_fraction_block(frac_files: list[str], jobs_by_index: dict) -> dict[st
 
 def _print_main_block(main_pf: str, jobs_by_index: dict, filter_jobs: "set[int] | None") -> "dict | None":
     """Print the main merged progress block and return its summary dict."""
-    print(_c(_BOLD, "MAIN PROGRESS (progress.parquet)"))
+    label = os.path.basename(main_pf)
+    print(_c(_BOLD, f"MAIN PROGRESS ({label})"))
     print(_SEP_THIN)
 
     table = _load_progress_table(main_pf)
@@ -274,7 +340,7 @@ def _print_main_block(main_pf: str, jobs_by_index: dict, filter_jobs: "set[int] 
         done = jstats["lags_done"] + jstats["lags_skip"]
         done_lags_all += done
         if ws is not None:
-            n_trials = max(len(jstats["trials"]), 1)
+            n_trials = _expected_trials(ws)
             total_lags_all += ws.n_lag * n_trials
         else:
             total_lags_all += done
@@ -312,7 +378,7 @@ def _print_job_table(s: dict, jobs_by_index: dict, filter_jobs: "set[int] | None
         total_done = done + skip
         ws = jobs_by_index.get(jid)
         if ws is not None:
-            n_trials = max(len(jstats["trials"]), 1)
+            n_trials = _expected_trials(ws)
             total = ws.n_lag * n_trials
         else:
             total = total_done
@@ -413,9 +479,15 @@ def command(args):
     print()
 
     # ── Discover files ──────────────────────────────────────────────────
-    frac_catalog_files = sorted(glob.glob(os.path.join(catalog_dir, f"catalog_*.parquet")))
-    frac_progress_files = sorted(glob.glob(os.path.join(catalog_dir, f"progress_*.parquet")))
-    main_progress_file  = os.path.join(catalog_dir, "progress.parquet")
+    frac_catalog_files  = sorted(glob.glob(os.path.join(catalog_dir, "catalog_*.parquet")))
+    frac_progress_files = sorted(glob.glob(os.path.join(catalog_dir, "progress_*.parquet")))
+    label = args.label
+    if label:
+        main_progress_file  = os.path.join(catalog_dir, f"progress.{label}.parquet")
+        main_catalog_file   = os.path.join(catalog_dir, f"catalog.{label}.parquet")
+    else:
+        main_progress_file  = os.path.join(catalog_dir, "progress.parquet")
+        main_catalog_file   = os.path.join(catalog_dir, "catalog.parquet")
 
     # ── Build job metadata map ──────────────────────────────────────────
     jobs_by_index: dict = {}
@@ -424,14 +496,11 @@ def command(args):
             jobs_by_index = _load_jobs_from_catalogs(frac_catalog_files)
         except Exception as exc:
             print(_c(_YELLOW, f"  ⚠ Could not load job metadata from catalogs: {exc}"))
-    if not jobs_by_index:
-        # Fall back to main catalog
-        main_catalog_file = os.path.join(catalog_dir, "catalog.parquet")
-        if os.path.exists(main_catalog_file):
-            try:
-                jobs_by_index = _load_jobs_from_catalogs([main_catalog_file])
-            except Exception:
-                pass
+    if not jobs_by_index and os.path.exists(main_catalog_file):
+        try:
+            jobs_by_index = _load_jobs_from_catalogs([main_catalog_file])
+        except Exception:
+            pass
 
     if filter_jobs is not None:
         print(_c(_DIM, f"  Showing jobs: {sorted(filter_jobs)}\n"))
@@ -440,7 +509,14 @@ def command(args):
     frac_summaries = _print_fraction_block(frac_progress_files, jobs_by_index)
     main_s         = _print_main_block(main_progress_file, jobs_by_index, filter_jobs)
 
-    if not args.compact and main_s is not None:
-        _print_job_table(main_s, jobs_by_index, filter_jobs)
+    if args.verbose:
+        if main_s is not None:
+            _print_job_table(main_s, jobs_by_index, filter_jobs)
+        else:
+            combined_s = _aggregate_fraction_summaries(frac_summaries)
+            if combined_s:
+                print(_c(_BOLD, "PER-JOB BREAKDOWN (aggregated from fractions)"))
+                print(_SEP_THIN)
+                _print_job_table(combined_s, jobs_by_index, filter_jobs)
 
     _print_consistency_check(frac_summaries, main_s)
