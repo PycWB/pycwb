@@ -102,6 +102,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
     # Outer loop: one iteration per injection trial (or a single pass when there are no injections).
     for trial_idx in trial_idxs:
+        # check if all lags for this trial_idx are in skip_lags, if so, skip this trial_idx entirely
+        if skip_lags and trial_idx in skip_lags and len(skip_lags[trial_idx]) >= job_seg.n_lag:
+            logger.info(f"Skipping trial_idx {trial_idx} entirely: all {job_seg.n_lag} lags already completed")
+            continue
+
         trial_timer = time.perf_counter()  # wall-time for this trial
         # ─────────────────────────────────────────────────────────────────────
         # STEP 1 – DATA LOADING & INJECTION SETUP
