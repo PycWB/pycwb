@@ -290,6 +290,61 @@ class Catalog(BaseCatalog):
             events = [events]
         self.add_triggers([Trigger.from_event(ev) for ev in events])
 
+    def remove_stale_triggers(self, job_id: int, completed_lags: dict) -> int:
+        """Remove triggers belonging to incomplete (lag_idx, trial_idx) pairs.
+
+        A (trial_idx, lag_idx) pair is considered *incomplete* when it is not
+        present in *completed_lags* but a trigger with that combination already
+        exists in the catalog (left over from a previous interrupted run).
+
+        Parameters
+        ----------
+        job_id : int
+            The job segment index whose triggers should be inspected.
+        completed_lags : dict[int, set[int]]
+            ``{trial_idx: {lag_idx, ...}}`` as returned by
+            :meth:`get_completed_lags`.  Pairs present here are kept; all
+            other pairs for *job_id* are removed.
+
+        Returns
+        -------
+        int
+            Number of stale trigger rows removed.
+        """
+        with SoftFileLock(self.filename + ".lock", timeout=30):
+            _validate_catalog_file(self.filename)
+            table = pq.read_table(self.filename)
+            if table.num_rows == 0:
+                return 0
+
+            # Build a boolean keep-mask: keep rows that are NOT for this job_id,
+            # or that belong to a completed (trial_idx, lag_idx) pair.
+            keep_mask = []
+            job_id_col   = table["job_id"].to_pylist()
+            lag_idx_col  = table["lag_idx"].to_pylist()
+            trial_idx_col = table["trial_idx"].to_pylist()
+
+            for jid, lid, tid in zip(job_id_col, lag_idx_col, trial_idx_col):
+                if jid != job_id:
+                    keep_mask.append(True)
+                else:
+                    # Keep only if this (trial_idx, lag_idx) is in completed_lags
+                    keep_mask.append(
+                        tid in completed_lags and lid in completed_lags[tid]
+                    )
+
+            n_stale = keep_mask.count(False)
+            if n_stale == 0:
+                return 0
+
+            keep_indices = [i for i, k in enumerate(keep_mask) if k]
+            filtered = table.take(keep_indices)
+            meta = table.schema.metadata or {}
+            filtered = filtered.replace_schema_metadata(meta)
+            _write_table_atomic(filtered, self.filename, compression="snappy")
+
+        logger.info("Removed %d stale trigger(s) for job %d", n_stale, job_id)
+        return n_stale
     # ------------------------------------------------------------------
     # Progress tracking
     # ------------------------------------------------------------------
