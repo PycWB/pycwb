@@ -198,6 +198,16 @@ def build_simulation_summary(
                 len(all_simulations), len(job_segments))
 
     # ── Process each simulation ──
+    # Suppress verbose INFO logs from waveform generation sub-modules while the
+    # progress bar is active; they would flood the terminal for every injection.
+    _noisy_loggers = [
+        logging.getLogger("pycwb.modules.read_data.mdc"),
+        logging.getLogger("pycwb.utils.module"),
+    ]
+    _saved_levels = [lg.level for lg in _noisy_loggers]
+    for lg in _noisy_loggers:
+        lg.setLevel(logging.WARNING)
+
     from tqdm import tqdm
     rows = []
     for sim_idx, (simulation, owning_seg) in tqdm(
@@ -297,6 +307,10 @@ def build_simulation_summary(
             row['vetoed_cat0'], row['vetoed_cat1'], row['vetoed_cat2'],
             row['across_segments'],
         )
+
+    # Restore log levels suppressed during the loop
+    for lg, lvl in zip(_noisy_loggers, _saved_levels):
+        lg.setLevel(lvl)
 
     # ── Build flat Arrow table ─────────────────────────────────────────────
     # Collect all raw injection dicts to infer the waveform-specific schema
