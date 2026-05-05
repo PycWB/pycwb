@@ -201,8 +201,8 @@ def match_simulations_parquet(
         FROM   triggers   t
         <JOIN> simulations s
           ON   t.trial_idx = s.trial_idx
-         AND   list_min(t.event_start) - buffer  <  s.real_end
-         AND   list_max(t.event_stop)  + buffer  >  s.real_start
+         AND   t.gps_time - buffer  <  s.real_end
+         AND   t.gps_time + buffer  >  s.real_start
 
     where ``<JOIN>`` is ``INNER``, ``LEFT``, ``RIGHT``, or ``FULL OUTER``
     depending on *how*.
@@ -283,8 +283,8 @@ def match_simulations_parquet(
         {join_kw}
                read_parquet('{sim_parquet}')       s
           ON   t.trial_idx  =  s.trial_idx
-         AND   list_min(t.event_start) - {buf}  <  s.real_end
-         AND   list_max(t.event_stop)  + {buf}  >  s.real_start
+         AND   t.gps_time - {buf}  <  s.real_end
+         AND   t.gps_time + {buf}  >  s.real_start
     """
     logger.debug("match_simulations_parquet SQL:\n%s", sql)
 
