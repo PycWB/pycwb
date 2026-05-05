@@ -197,7 +197,7 @@ def match_simulations_parquet(
 
     Matching SQL (simplified)::
 
-        SELECT t.*, s.sim_idx, s.real_start, s.real_end, ...
+        SELECT t.*, s.col1 AS sim_col1, s.col2 AS sim_col2, ...
         FROM   triggers   t
         <JOIN> simulations s
           ON   t.trial_idx = s.trial_idx
@@ -218,9 +218,8 @@ def match_simulations_parquet(
         Optional time buffer (seconds) added symmetrically to the trigger
         window before comparing.
     extra_sim_columns:
-        Additional simulation columns (beyond ``sim_idx``, ``real_start``,
-        ``real_end``) to include in the output, e.g.
-        ``["gps_time", "trial_idx", "vetoed_cat1"]``.
+        Deprecated — all simulation columns are now included automatically
+        with a ``sim_`` prefix.  This argument is silently ignored.
     how : {"inner", "left", "right", "outer"}
         Join type:
 
@@ -239,8 +238,8 @@ def match_simulations_parquet(
     -------
     pyarrow.Table
         One row per (trigger, simulation) pair according to *how*.  Contains
-        all trigger columns plus ``sim_idx``, ``sim_real_start``,
-        ``sim_real_end``, and any requested ``extra_sim_columns``.
+        all trigger columns plus every simulation column prefixed with
+        ``sim_`` (e.g. ``sim_idx``, ``sim_real_start``, ``sim_trial_idx``, …).
 
     Raises
     ------
@@ -267,14 +266,12 @@ def match_simulations_parquet(
     join_kw = _join_keywords[how]
     buf = float(window_buffer)
 
-    # Build the SELECT list for simulation columns (alias to avoid clashes)
-    sim_cols = [
-        "s.sim_idx",
-        "s.real_start  AS sim_real_start",
-        "s.real_end    AS sim_real_end",
-    ]
-    if extra_sim_columns:
-        sim_cols += [f"s.{c} AS sim_{c}" for c in extra_sim_columns]
+    # Read sim schema to build a full sim_* SELECT list automatically.
+    import pyarrow.parquet as _pq
+    sim_schema_names = _pq.read_schema(sim_parquet).names
+
+    # Include every sim column, prefixed with sim_ to avoid clashes with trigger columns.
+    sim_cols = [f"s.{c} AS sim_{c}" for c in sim_schema_names]
     sim_select = ", ".join(sim_cols)
 
     sql = f"""
