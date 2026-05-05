@@ -198,8 +198,12 @@ def build_simulation_summary(
                 len(all_simulations), len(job_segments))
 
     # ── Process each simulation ──
+    from tqdm import tqdm
     rows = []
-    for sim_idx, (simulation, owning_seg) in enumerate(all_simulations):
+    for sim_idx, (simulation, owning_seg) in tqdm(
+        enumerate(all_simulations), total=len(all_simulations),
+        desc="Building simulation summary", unit="sim",
+    ):
         gps_time = float(simulation.get('gps_time', float('nan')))
         trial_idx = int(simulation.get('trial_idx', 0))
 

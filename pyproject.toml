@@ -50,6 +50,7 @@ dependencies = [
     "burst-waveform",
     "pandas",
     "duckdb"
+    "tqdm",
 ]
 
 [project.optional-dependencies]

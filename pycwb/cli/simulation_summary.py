@@ -11,8 +11,9 @@ def init_parser(parser):
     parser.add_argument(
         'user_parameter_file',
         metavar='config.yaml',
-        type=str,
-        help='path to the pycwb YAML configuration file',
+        nargs='?',
+        default='config/user_parameters.yaml',
+        help='path to the pycwb YAML configuration file (default: config/user_parameters.yaml)',
     )
 
     parser.add_argument(
@@ -23,7 +24,7 @@ def init_parser(parser):
         default=None,
         help=(
             'destination path for the Parquet summary file '
-            '(default: <work_dir>/simulation_summary.parquet)'
+            '(default: <work_dir>/catalog/simulations.parquet)'
         ),
     )
 
@@ -94,7 +95,7 @@ def command(args):
     # ── Resolve output path ───────────────────────────────────────────────
     output_file = args.output
     if output_file is None:
-        output_file = os.path.join(args.work_dir, 'simulation_summary.parquet')
+        output_file = os.path.join(args.work_dir, 'catalog', 'simulations.parquet')
 
     # ── Run summary ───────────────────────────────────────────────────────
     df = build_simulation_summary(config, job_segments, output_file=output_file)
