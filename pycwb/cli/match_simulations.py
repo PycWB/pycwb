@@ -14,15 +14,19 @@ def init_parser(parser):
     parser.add_argument(
         'catalog_parquet',
         metavar='catalog.parquet',
+        nargs='?',
+        default='config/catalog.parquet',
         type=str,
-        help='path to the trigger catalog Parquet file',
+        help='path to the trigger catalog Parquet file (default: config/catalog.parquet)',
     )
 
     parser.add_argument(
         'sim_parquet',
         metavar='simulations.parquet',
+        nargs='?',
+        default='config/simulations.parquet',
         type=str,
-        help='path to the simulation summary Parquet file',
+        help='path to the simulation summary Parquet file (default: config/simulations.parquet)',
     )
 
     parser.add_argument(
@@ -40,7 +44,7 @@ def init_parser(parser):
     parser.add_argument(
         '--how',
         choices=['inner', 'left', 'right', 'outer'],
-        default='inner',
+        default='outer',
         help=(
             'join type: '
             'inner=matched pairs only (default); '
