@@ -210,6 +210,8 @@ def process_single_with_resume(main_func, queue, working_dir, config, job_seg, c
                     "Removed %d stale trigger(s) for job %d before resume",
                     n_removed, job_seg.index,
                 )
+            else:
+                logger.info("No stale triggers to remove for job %d", job_seg.index)
 
             # Build per-trial skip sets: {trial_idx: {lag_idx, ...}}
             # Only trials that have at least one completed lag get an entry.

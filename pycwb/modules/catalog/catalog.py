@@ -337,13 +337,24 @@ class Catalog(BaseCatalog):
             if n_stale == 0:
                 return 0
 
+            stale_pairs: set[tuple[int, int]] = set()
+            for i, k in enumerate(keep_mask):
+                if not k:
+                    stale_pairs.add((trial_idx_col[i], lag_idx_col[i]))
+
             keep_indices = [i for i, k in enumerate(keep_mask) if k]
             filtered = table.take(keep_indices)
             meta = table.schema.metadata or {}
             filtered = filtered.replace_schema_metadata(meta)
             _write_table_atomic(filtered, self.filename, compression="snappy")
 
-        logger.info("Removed %d stale trigger(s) for job %d", n_stale, job_id)
+        pairs_str = ", ".join(
+            f"trial={t} lag={l}" for t, l in sorted(stale_pairs)
+        )
+        logger.info(
+            "Removed %d stale trigger(s) for job %d [%s]",
+            n_stale, job_id, pairs_str,
+        )
         return n_stale
     # ------------------------------------------------------------------
     # Progress tracking
