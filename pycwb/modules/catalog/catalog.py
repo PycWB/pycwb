@@ -343,7 +343,10 @@ class Catalog(BaseCatalog):
                     stale_pairs.add((trial_idx_col[i], lag_idx_col[i]))
 
             keep_indices = [i for i, k in enumerate(keep_mask) if k]
-            filtered = table.take(keep_indices)
+            if keep_indices:
+                filtered = table.take(keep_indices)
+            else:
+                filtered = _empty_table(table.schema.remove_metadata())
             meta = table.schema.metadata or {}
             filtered = filtered.replace_schema_metadata(meta)
             _write_table_atomic(filtered, self.filename, compression="snappy")
