@@ -257,48 +257,158 @@ def match_simulations_parquet(
             "install with: pip install duckdb"
         ) from exc
 
-    _join_keywords = {
-        "inner": "INNER JOIN",
-        "left":  "LEFT JOIN",
-        "right": "RIGHT JOIN",
-        "outer": "FULL OUTER JOIN",
-    }
-    join_kw = _join_keywords[how]
+    import pyarrow as _pa
+    import pyarrow.parquet as _pq
+    import pyarrow.compute as _pc
+
     buf = float(window_buffer)
 
-    # Read sim schema to build a full sim_* SELECT list automatically.
-    import pyarrow.parquet as _pq
-    sim_schema_names = _pq.read_schema(sim_parquet).names
+    # Read schemas to build SELECT lists and typed NULL columns later.
+    trig_schema = _pq.read_schema(catalog_parquet)
+    sim_schema  = _pq.read_schema(sim_parquet)
 
-    # Include every sim column, prefixed with sim_ to avoid clashes with trigger columns.
-    sim_cols = [f"s.{c} AS sim_{c}" for c in sim_schema_names]
+    sim_cols   = [f"s.{c} AS sim_{c}" for c in sim_schema.names]
     sim_select = ", ".join(sim_cols)
 
-    sql = f"""
-        SELECT t.*, {sim_select}
-        FROM   read_parquet('{catalog_parquet}')  t
-        {join_kw}
-               read_parquet('{sim_parquet}')       s
-          ON   t.trial_idx  =  s.trial_idx
-         AND   t.gps_time - {buf}  <  s.real_end
-         AND   t.gps_time + {buf}  >  s.real_start
+    # ── Step 1: inner join with 1-to-1 deduplication via QUALIFY ────────────
+    #
+    # The interval join is inherently many-to-many when the simulation table
+    # contains multiple rows at the same injection GPS time (e.g. different
+    # hrss amplitude levels) or when a large window_buffer causes a trigger to
+    # overlap more than one injection window.
+    #
+    # We resolve this with two QUALIFY passes:
+    #   a) Per sim  → keep the trigger with the highest rho (most significant
+    #                 detection); ties broken by minimum |gps_time| distance,
+    #                 then by trigger id for determinism.
+    #   b) Per trigger → keep the sim with the minimum |gps_time| distance;
+    #                 ties broken by sim_idx for determinism.
+    #
+    # This guarantees that every trigger and every simulation appears at most
+    # once in the matched set, so the outer-join row count equals
+    #   N_triggers + N_simulations − N_matched_pairs.
+    inner_sql = f"""
+        WITH step1 AS (
+            SELECT t.*, {sim_select},
+                   ABS(t.gps_time - s.gps_time) AS _gps_dist
+            FROM   read_parquet('{catalog_parquet}') t
+            INNER JOIN read_parquet('{sim_parquet}') s
+              ON   t.trial_idx  =  s.trial_idx
+             AND   t.gps_time - {buf}  <  s.real_end
+             AND   t.gps_time + {buf}  >  s.real_start
+            QUALIFY
+                ROW_NUMBER() OVER (
+                    PARTITION BY sim_sim_idx
+                    ORDER BY rho DESC NULLS LAST, _gps_dist, id
+                ) = 1
+        ),
+        step2 AS (
+            SELECT *
+            FROM   step1
+            QUALIFY
+                ROW_NUMBER() OVER (
+                    PARTITION BY id
+                    ORDER BY _gps_dist, sim_sim_idx
+                ) = 1
+        )
+        SELECT * EXCLUDE (_gps_dist) FROM step2
     """
-    logger.debug("match_simulations_parquet SQL:\n%s", sql)
+    logger.debug("match_simulations_parquet inner SQL:\n%s", inner_sql)
 
-    result = duckdb.query(sql).arrow()
-    # DuckDB ≥ 1.0 returns a RecordBatchReader; materialise to Table
-    if hasattr(result, "read_all"):
-        result = result.read_all()
+    matched = duckdb.query(inner_sql).arrow()
+    if hasattr(matched, "read_all"):
+        matched = matched.read_all()
+
+    n_matched = matched.num_rows
+    logger.debug("match_simulations_parquet: %d 1-to-1 matched pairs", n_matched)
+
+    if how == "inner":
+        result = matched
+    else:
+        # ── Step 2: assemble unmatched rows ─────────────────────────────────
+        #
+        # Build the full output schema once from the matched table (trigger cols
+        # first, then sim_* cols).  Unmatched rows get typed NULL arrays for
+        # the side that has no partner.
+        out_schema = matched.schema
+
+        def _null_cols_for(schema_side: "_pa.Schema", prefix: str = "") -> list:
+            """Return a list of (name, null_array) for columns not in out_schema."""
+            cols = []
+            for field in schema_side:
+                col_name = f"{prefix}{field.name}"
+                if col_name not in out_schema.names:
+                    continue
+                out_field = out_schema.field(col_name)
+                cols.append((col_name, _pa.array([None] * 0, type=out_field.type)))
+            return cols
+
+        parts = [matched]
+
+        if how in ("left", "outer"):
+            cat_table = _pq.read_table(catalog_parquet)
+            if n_matched > 0:
+                matched_t_ids = matched.column("id")
+                mask = _pc.invert(_pc.is_in(cat_table.column("id"),
+                                             value_set=matched_t_ids))
+                unmatched_t = cat_table.filter(mask)
+            else:
+                unmatched_t = cat_table
+
+            # Add null sim_* columns to unmatched trigger rows.
+            for field in sim_schema:
+                col_name = f"sim_{field.name}"
+                if col_name in out_schema.names:
+                    out_type = out_schema.field(col_name).type
+                    unmatched_t = unmatched_t.append_column(
+                        col_name,
+                        _pa.array([None] * len(unmatched_t), type=out_type),
+                    )
+            unmatched_t = unmatched_t.select(out_schema.names)
+            parts.append(unmatched_t)
+            logger.debug("match_simulations_parquet: %d unmatched triggers", len(unmatched_t))
+
+        if how in ("right", "outer"):
+            sim_table = _pq.read_table(sim_parquet)
+            if n_matched > 0:
+                matched_s_idxs = matched.column("sim_sim_idx")
+                mask = _pc.invert(_pc.is_in(sim_table.column("sim_idx"),
+                                             value_set=matched_s_idxs))
+                unmatched_s = sim_table.filter(mask)
+            else:
+                unmatched_s = sim_table
+
+            # Rename sim columns with sim_ prefix, then add null trigger columns.
+            unmatched_s = unmatched_s.rename_columns(
+                [f"sim_{c}" for c in unmatched_s.schema.names]
+            )
+            for field in trig_schema:
+                if field.name in out_schema.names:
+                    out_type = out_schema.field(field.name).type
+                    unmatched_s = unmatched_s.append_column(
+                        field.name,
+                        _pa.array([None] * len(unmatched_s), type=out_type),
+                    )
+            unmatched_s = unmatched_s.select(out_schema.names)
+            parts.append(unmatched_s)
+            logger.debug("match_simulations_parquet: %d unmatched sims", len(unmatched_s))
+
+        result = _pa.concat_tables(parts)
 
     if output_parquet is not None:
-        import pyarrow.parquet as pq
         import os
         os.makedirs(os.path.dirname(os.path.abspath(output_parquet)) or ".", exist_ok=True)
-        pq.write_table(result, output_parquet, compression="snappy")
-        logger.info("match_simulations_parquet: wrote %d rows to %s", result.num_rows, output_parquet)
+        _pq.write_table(result, output_parquet, compression="snappy")
+        logger.info("match_simulations_parquet: wrote %d rows to %s",
+                    result.num_rows, output_parquet)
 
     logger.info(
-        "match_simulations_parquet: %d matched (trigger, simulation) pairs",
+        "match_simulations_parquet (how=%s): %d triggers, %d sims → "
+        "%d matched pairs, %d total rows",
+        how,
+        _pq.read_metadata(catalog_parquet).num_rows,
+        _pq.read_metadata(sim_parquet).num_rows,
+        n_matched,
         result.num_rows,
     )
     return result

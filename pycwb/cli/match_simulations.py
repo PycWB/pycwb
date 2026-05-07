@@ -44,13 +44,13 @@ def init_parser(parser):
     parser.add_argument(
         '--how',
         choices=['inner', 'left', 'right', 'outer'],
-        default='outer',
+        default='right',
         help=(
             'join type: '
             'inner=matched pairs only; '
             'left=all triggers (NULL sim for unmatched); '
-            'right=all simulations (NULL trigger for missed); '
-            'outer=all triggers and simulations (default)'
+            'right=all simulations (NULL trigger for missed, default); '
+            'outer=all triggers and simulations'
         ),
     )
 
