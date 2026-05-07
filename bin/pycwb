@@ -21,6 +21,7 @@ import pycwb.cli.run_waveform_reconstruction as run_waveform_reconstruction
 import pycwb.cli.online as online
 import pycwb.cli.progress as progress
 import pycwb.cli.simulation_summary as simulation_summary
+import pycwb.cli.match_simulations as match_simulations
 from pycwb import __version__
 
 def main():
@@ -111,7 +112,15 @@ def main():
     )
     simulation_summary.init_parser(sim_summary_parser)
     sim_summary_parser.set_defaults(func=simulation_summary.command)
-        
+
+    # match-simulations subcommand
+    match_sims_parser = subparsers.add_parser(
+        'match-simulations',
+        help='Match a trigger catalog to a simulation summary via interval join',
+    )
+    match_simulations.init_parser(match_sims_parser)
+    match_sims_parser.set_defaults(func=match_simulations.command)
+
     args = parser.parse_args()
     if hasattr(args, 'func'):
         args.func(args)

@@ -588,6 +588,88 @@ class Catalog(BaseCatalog):
             result = result.read_all()
         return result
 
+    def match_simulations(
+        self,
+        sim_parquet: str,
+        *,
+        window_buffer: float = 0.0,
+        extra_sim_columns: Optional[list] = None,
+        how: str = "inner",
+        output_parquet: Optional[str] = None,
+    ) -> pa.Table:
+        """Match triggers in this catalog to a simulation summary Parquet file.
+
+        Uses a DuckDB interval join on the three conditions::
+
+            trigger.trial_idx  == simulation.trial_idx
+            min(trigger.event_start) - window_buffer  <  simulation.real_end
+            max(trigger.event_stop)  + window_buffer  >  simulation.real_start
+
+        Both files are read directly from Parquet — no Python-side data loading
+        before the join.
+
+        Parameters
+        ----------
+        sim_parquet:
+            Path to the simulation summary Parquet file produced by
+            ``pycwb simulation-summary``.
+        window_buffer:
+            Optional time buffer (seconds) added symmetrically to the trigger
+            time window before comparing.  Use 0.1–0.5 s to account for
+            reconstruction timing bias.
+        extra_sim_columns:
+            Additional simulation columns to include in the output beyond the
+            defaults (``sim_idx``, ``sim_real_start``, ``sim_real_end``), e.g.
+            ``["gps_time", "trial_idx", "vetoed_cat1"]``.
+        how : {\"inner\", \"left\", \"right\", \"outer\"}
+            Join type:
+
+            * ``\"inner\"`` *(default)* — only matched (trigger, sim) pairs.
+            * ``\"left\"``  — all triggers; simulation columns are ``NULL`` for
+              unmatched triggers.  Use this to identify *missed* injections.
+            * ``\"right\"`` — all simulations; trigger columns are ``NULL`` for
+              unmatched simulations.  Use this to identify *false alarms*.
+            * ``\"outer\"`` — all triggers and all simulations; ``NULL`` on the
+              unmatched side.
+        output_parquet : str, optional
+            If provided, the result table is written to this path as a
+            snappy-compressed Parquet file in addition to being returned.
+
+        Returns
+        -------
+        pyarrow.Table
+            One row per (trigger, simulation) pair according to *how*.  Contains
+            all trigger columns plus ``sim_idx``, ``sim_real_start``,
+            ``sim_real_end``, and any requested ``extra_sim_columns``.
+
+        Raises
+        ------
+        ImportError
+            When ``duckdb`` is not installed.
+
+        Example::
+
+            cat = Catalog.open("catalog/catalog.parquet")
+
+            # All simulations — matched triggers have trigger columns, others NULL
+            all_sims = cat.match_simulations(
+                "simulation_summary.parquet",
+                window_buffer=0.2,
+                how="right",
+                extra_sim_columns=["gps_time", "trial_idx"],
+            )
+            missed = all_sims.filter(pc.is_null(all_sims["id"]))
+        """
+        from pycwb.modules.catalog.matching import match_simulations_parquet
+        return match_simulations_parquet(
+            self.filename,
+            sim_parquet,
+            window_buffer=window_buffer,
+            extra_sim_columns=extra_sim_columns,
+            how=how,
+            output_parquet=output_parquet,
+        )
+
     # ------------------------------------------------------------------
     # Live time
     # ------------------------------------------------------------------
