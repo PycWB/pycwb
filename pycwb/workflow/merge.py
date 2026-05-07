@@ -45,28 +45,25 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
 
     default_catalog_file = os.path.abspath(f"{working_dir}/catalog/{Catalog.DEFAULT_FILENAME}")
 
-    if merge_label is not None:
-        # Build labeled catalog entirely from fragments — no dependency on default_catalog_file
-        merged_catalog_file = default_catalog_file.replace(
-            Catalog.DEFAULT_EXTENSION, f".{merge_label}{Catalog.DEFAULT_EXTENSION}"
-        )
-        if os.path.exists(merged_catalog_file):
-            if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
-                return
-            os.remove(merged_catalog_file)
+    # Determine output path
+    merged_catalog_file = (
+        default_catalog_file.replace(Catalog.DEFAULT_EXTENSION, f".{merge_label}{Catalog.DEFAULT_EXTENSION}")
+        if merge_label is not None
+        else default_catalog_file
+    )
+
+    # Handle existing file: labeled runs ask for confirmation; unlabeled reuses existing structure
+    if os.path.exists(merged_catalog_file):
+        if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
+            return
+        os.remove(merged_catalog_file)
+
+    # Create catalog structure from fragments if not present
+    if not os.path.exists(merged_catalog_file):
+        logger.info("Creating catalog from fragments: %s", merged_catalog_file)
         config = Config()
         config.load_from_dict(Catalog.open(catalog_files[0]).config)
-        jobs = _collect_jobs_from_fragments(catalog_files)
-        Catalog.create(merged_catalog_file, config, jobs)
-    else:
-        # Bootstrap default catalog from fragments if it was never created
-        if not os.path.exists(default_catalog_file):
-            logger.info("Main catalog not found — creating from fragments: %s", default_catalog_file)
-            config = Config()
-            config.load_from_dict(Catalog.open(catalog_files[0]).config)
-            jobs = _collect_jobs_from_fragments(catalog_files)
-            Catalog.create(default_catalog_file, config, jobs)
-        merged_catalog_file = default_catalog_file
+        Catalog.create(merged_catalog_file, config, _collect_jobs_from_fragments(catalog_files))
 
     # Concatenate trigger rows from all fragments into the target catalog
     tables = []

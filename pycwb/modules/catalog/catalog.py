@@ -474,15 +474,20 @@ class Catalog(BaseCatalog):
         table = pq.read_table(self.filename)
 
         if deduplicate and table.num_rows > 0:
-            job_col = pc.cast(table["job_id"], pa.string())
-            key_col = pc.binary_join_element_wise(job_col, table["id"], "_")
+            # Build composite key: job_id + id, plus trial_idx / lag_idx when present
+            key_cols = ["job_id", "id"] + [c for c in ("trial_idx", "lag_idx") if c in table.schema.names]
+            parts = [pc.cast(table["job_id"], pa.string()), table["id"]]
+            for col in ("trial_idx", "lag_idx"):
+                if col in table.schema.names:
+                    parts.append(pc.cast(table[col], pa.string()))
+            key_col = pc.binary_join_element_wise(*parts, "_")
             seen: dict[str, int] = {}
             for i, k in enumerate(key_col.to_pylist()):
                 seen[k] = i
             keep = sorted(seen.values())
             if len(keep) < table.num_rows:
                 removed = table.num_rows - len(keep)
-                logger.info("Removed %d duplicate trigger(s)", removed)
+                logger.info("Removed %d duplicate trigger(s) (dedup keys: %s)", removed, key_cols)
                 table = table.take(keep)
 
         return table
