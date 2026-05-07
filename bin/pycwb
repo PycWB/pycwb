@@ -20,6 +20,7 @@ import pycwb.cli.get_external_modules as get_external_modules
 import pycwb.cli.run_waveform_reconstruction as run_waveform_reconstruction
 import pycwb.cli.online as online
 import pycwb.cli.progress as progress
+import pycwb.cli.simulation_summary as simulation_summary
 from pycwb import __version__
 
 def main():
@@ -102,6 +103,14 @@ def main():
     )
     progress.init_parser(progress_parser)
     progress_parser.set_defaults(func=progress.command)
+
+    # simulation-summary subcommand
+    sim_summary_parser = subparsers.add_parser(
+        'simulation-summary',
+        help='Build a per-simulation summary Parquet file with veto flags',
+    )
+    simulation_summary.init_parser(sim_summary_parser)
+    sim_summary_parser.set_defaults(func=simulation_summary.command)
         
     args = parser.parse_args()
     if hasattr(args, 'func'):
