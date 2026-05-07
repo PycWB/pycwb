@@ -146,6 +146,13 @@ def build_simulation_summary(
         ``sim_idx``         int           Global simulation index (sequential)
         ``trial_idx``       int           Trial index (0 = first/only trial)
         ``gps_time``        float         Requested coalescence GPS time
+        ``name``            str           Injection waveform name
+        ``approximant``     str           Waveform approximant (e.g. IMRPhenomXPHM)
+        ``ra``              float         Right ascension (radians)
+        ``dec``             float         Declination (radians)
+        ``pol``             float         Polarisation angle (radians)
+        ``hrss``            float         Strain amplitude (h_rss)
+        ``target_snr``      float         Target network SNR (0 if not set)
         ``real_start``      float         Earliest waveform sample across all IFOs
         ``real_end``        float         Latest waveform sample across all IFOs
         ``real_duration``   float         ``real_end - real_start``
@@ -221,6 +228,14 @@ def build_simulation_summary(
             'sim_idx':   sim_idx,
             'trial_idx': trial_idx,
             'gps_time':  gps_time,
+            'name':        str(simulation.get('name', '')),
+            'approximant': str(simulation.get('approximant', '')),
+            'ra':          float(simulation.get('ra', float('nan'))),
+            'dec':         float(simulation.get('dec', float('nan'))),
+            'pol':         float(simulation.get('pol', float('nan'))),
+            'hrss':        float(simulation.get('hrss', float('nan'))),
+            'target_snr':  float(simulation.get('target_snr',
+                                simulation.get('targeted_snr', float('nan')))),
             # to be filled after waveform generation
             'real_start':      None,
             'real_end':        None,
