@@ -893,7 +893,6 @@ class Trigger:
         erA_raw = getattr(ev, "erA", [])
         # erA inside Event is appended once per IFO (each entry is a 11-element array);
         # take the first non-empty entry as the network-level sky area.
-        import numpy as np
         if erA_raw:
             first = erA_raw[0]
             if hasattr(first, "__len__"):

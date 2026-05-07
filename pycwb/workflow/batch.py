@@ -5,9 +5,8 @@ import os
 import getpass
 import logging
 import sys
-from pathlib import Path
 from typing import Any
-from pycwb.modules.logger import logger_init, log_prints
+from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
@@ -38,22 +37,36 @@ def batch_setup(file_name, working_dir='.',
     if dry_run:
         return job_segments
 
-    if not cluster: cluster = config.cluster
-    if not conda_env: conda_env = config.conda_env
-    if not additional_init: additional_init = config.additional_init
-    if not accounting_group: accounting_group = config.accounting_group
-    if not job_per_worker: job_per_worker = config.job_per_worker
-    if not n_proc: n_proc = config.nproc
-    if not memory: memory = config.job_memory
-    if not disk: disk = config.job_disk
-    if not container_image: container_image = config.container_image
-    if not should_transfer_files: should_transfer_files = config.should_transfer_files
-    if not walltime: walltime = config.job_walltime
-    if not slurm_constraint: slurm_constraint = getattr(config, 'slurm_constraint', None) or slurm_constraint
-    if not slurm_partition: slurm_partition = getattr(config, 'slurm_partition', None) or slurm_partition
-    if n_retries == 5: n_retries = getattr(config, 'n_retries', 5)  # 5 is the default; prefer config if set
+    if not cluster:
+        cluster = config.cluster
+    if not conda_env:
+        conda_env = config.conda_env
+    if not additional_init:
+        additional_init = config.additional_init
+    if not accounting_group:
+        accounting_group = config.accounting_group
+    if not job_per_worker:
+        job_per_worker = config.job_per_worker
+    if not n_proc:
+        n_proc = config.nproc
+    if not memory:
+        memory = config.job_memory
+    if not disk:
+        disk = config.job_disk
+    if not container_image:
+        container_image = config.container_image
+    if not should_transfer_files:
+        should_transfer_files = config.should_transfer_files
+    if not walltime:
+        walltime = config.job_walltime
+    if not slurm_constraint:
+        slurm_constraint = getattr(config, 'slurm_constraint', None) or slurm_constraint
+    if not slurm_partition:
+        slurm_partition = getattr(config, 'slurm_partition', None) or slurm_partition
+    if n_retries == 5:
+        n_retries = getattr(config, 'n_retries', 5)  # 5 is the default; prefer config if set
 
-    logger.info(f"Job submission info:")
+    logger.info("Job submission info:")
     logger.info(f"  Cluster type: {cluster}")
     logger.info(f"  Conda environment: {conda_env}")
     logger.info(f"  Additional init script: {additional_init}")
@@ -170,7 +183,7 @@ def data_collector(working_dir: str, config: Any, catalog_file: str, queue: Any)
                 stats["progress"], stats["trigger"], stats["wave"])
 
 
-def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None, skip_lags=None):
+def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None, skip_lags: dict[int, set[int]] | None = None):
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
     try:

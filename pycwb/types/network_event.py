@@ -1,8 +1,6 @@
-import base64
 import hashlib
 
 import numpy as np
-import json
 from dataclasses import dataclass, field
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.job import WaveSegment
@@ -231,8 +229,6 @@ class Event:
         self.range = [0]
 
         TAU = psm.get(self.theta[0], self.phi[0])
-        M = 0
-        gC = 0
         self.strain = [0]
         self.penalty = 0
         self.neted = [0, 0, 0, 0, 0]
@@ -658,8 +654,10 @@ class Event:
                 theta_geo = float(np.radians(theta_deg))  # C++ theta (geographic co-latitude)
                 phi_geo = float(np.radians(phi_deg))      # C++ phi (geographic longitude)
                 psi_rad = float(np.radians(meta.psi)) if hasattr(meta, 'psi') else 0.0
-                cT = np.cos(theta_geo); sT = np.sin(theta_geo)
-                cP = np.cos(phi_geo);  sP = np.sin(phi_geo)
+                cT = np.cos(theta_geo)
+                sT = np.sin(theta_geo)
+                cP = np.cos(phi_geo)
+                sP = np.sin(phi_geo)
                 # Polarization basis vectors in geographic Cartesian frame
                 e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
                 e_ph = np.array([-sP, cP, 0.0])            # e_phi   (C++ b)
@@ -735,7 +733,7 @@ class Event:
         :return: Hash ID of the event
         :rtype: str
         """
-        hash_object = hashlib.md5()
+        hash_object = hashlib.md5(usedforsecurity=False)  # identifier only, not for cryptography
         parts = f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}"
         if self.trial_idx is not None:
             parts += f"_{self.trial_idx}"

@@ -352,7 +352,7 @@ class Catalog(BaseCatalog):
             _write_table_atomic(filtered, self.filename, compression="snappy")
 
         pairs_str = ", ".join(
-            f"trial={t} lag={l}" for t, l in sorted(stale_pairs)
+            f"trial={trial} lag={lag_id}" for trial, lag_id in sorted(stale_pairs)
         )
         logger.info(
             "Removed %d stale trigger(s) for job %d [%s]",

@@ -10,7 +10,6 @@ import logging
 import os
 import queue
 import threading
-import time
 
 from pycwb.modules.online.deduplication import TriggerDeduplicator
 from pycwb.modules.online.significance import (

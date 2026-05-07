@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False,
+                        skip_lags: dict[int, set[int]] | None = None):
     """
     The core workflow to process single job segment with trails or lags. 
 

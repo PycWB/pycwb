@@ -5,9 +5,7 @@ import numpy as np
 from copy import copy
 from pycwb.config import Config
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster_cwb import supercluster
-from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
 from pycwb.modules.data_conditioning import data_conditioning, whitening_mdc
@@ -25,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False,
+                        skip_lags: dict[int, set[int]] | None = None):
     """
     The core workflow to process single job segment with trails or lags. 
 
@@ -45,8 +44,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         The queue to send the triggers to the collector for saving in production mode
     production_mode : bool
         Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
-    skip_lags : list
-        The options to skip certain lags. It is used for resuming the processing after a crash
+    skip_lags : dict[int, set[int]] or None
+        Per-trial set of lag indices to skip, keyed by trial_idx.
+        Used to resume processing after a crash without reprocessing
+        already-completed (trial, lag) pairs.
     
     """
     print_job_info(job_seg)

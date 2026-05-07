@@ -1,10 +1,13 @@
 """CLI module for displaying run progress from catalog and progress Parquet files."""
 
 import glob
+import logging
 import os
 import re
 import sys
 import time
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +71,14 @@ def _fmt_timestamp(ts: float) -> str:
 # ---------------------------------------------------------------------------
 
 def init_parser(parser):
-    """Initialize argument parser for the ``pycwb progress`` command."""
+    """
+    Initialize argument parser for the ``pycwb progress`` command.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        The sub-parser to configure with progress-command arguments.
+    """
     parser.add_argument(
         "--work-dir",
         "-d",
@@ -151,12 +161,12 @@ def _load_jobs_from_catalogs(catalog_files: list[str]) -> dict[int, object]:
                 ws = from_dict(WaveSegment, jd)
                 if ws.index not in jobs:
                     jobs[ws.index] = ws
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not load jobs from %s: %s", cf, exc)
     return jobs
 
 
-def _load_progress_table(path: str) -> "pa.Table | None":
+def _load_progress_table(path: str) -> object | None:
     """Read a progress Parquet file; return None on any error."""
     import pyarrow.parquet as pq
     from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
@@ -165,17 +175,16 @@ def _load_progress_table(path: str) -> "pa.Table | None":
         return None
     try:
         return pq.read_table(path, schema=PROGRESS_SCHEMA)
-    except Exception:
+    except Exception:  # schema mismatch — retry without enforcing schema
         try:
             return pq.read_table(path)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not read progress file %s: %s", path, exc)
             return None
 
 
-def _summarise_table(table: "pa.Table") -> dict:
+def _summarise_table(table: object) -> dict:
     """Return summary stats dict from a progress table."""
-    import pyarrow.compute as pc
-
     rows = table.to_pylist()
     by_job: dict[int, dict] = {}
     total_triggers = 0
@@ -466,14 +475,28 @@ def _print_consistency_check(frac_summaries: dict, main_s: "dict | None"):
 # ---------------------------------------------------------------------------
 
 def command(args):
-    """Display run progress across all fraction and main progress files."""
+    """
+    Display run progress across all fraction and main progress files.
+
+    Reads catalog and progress Parquet files from *args.catalog_dir* inside
+    *args.work_dir* and prints a formatted report to stdout.  The report
+    includes per-fraction progress bars, an overall summary from the merged
+    ``progress.parquet``, an optional per-job breakdown table (``--verbose``),
+    and a consistency check comparing fraction totals to the merged file.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed command-line arguments.  Expected attributes:
+        ``work_dir``, ``catalog_dir``, ``jobs``, ``verbose``, ``label``.
+    """
     work_dir   = os.path.abspath(args.work_dir)
     catalog_dir = os.path.join(work_dir, args.catalog_dir)
     filter_jobs = _parse_job_range(args.jobs) if args.jobs else None
 
     print()
     print(_c(_BOLD, _SEP_THICK))
-    print(_c(_BOLD, f"  pycWB Progress Report"))
+    print(_c(_BOLD, "  pycWB Progress Report"))
     print(_c(_DIM,  f"  catalog dir: {catalog_dir}"))
     print(_c(_BOLD, _SEP_THICK))
     print()
@@ -499,8 +522,8 @@ def command(args):
     if not jobs_by_index and os.path.exists(main_catalog_file):
         try:
             jobs_by_index = _load_jobs_from_catalogs([main_catalog_file])
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not load job metadata from main catalog: %s", exc)
 
     if filter_jobs is not None:
         print(_c(_DIM, f"  Showing jobs: {sorted(filter_jobs)}\n"))
