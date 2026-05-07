@@ -1,1 +1,1 @@
-from .trigger_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from .trigger_utils import create_single_trigger_folder, save_trigger, add_trigger_to_catalog
