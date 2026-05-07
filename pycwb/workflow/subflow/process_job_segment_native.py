@@ -21,7 +21,7 @@ from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
-from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
 from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
 from pycwb.modules.job_segment import build_injection_veto_windows, intersect_intervals
@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False,
+                        skip_lags: dict[int, set[int]] | None = None):
     """
     The core workflow to process single job segment with trails or lags. 
 
@@ -102,6 +103,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
     # Outer loop: one iteration per injection trial (or a single pass when there are no injections).
     for trial_idx in trial_idxs:
+        # check if all lags for this trial_idx are in skip_lags, if so, skip this trial_idx entirely
+        if skip_lags and trial_idx in skip_lags and len(skip_lags[trial_idx]) >= job_seg.n_lag:
+            logger.info(f"Skipping trial_idx {trial_idx} entirely: all {job_seg.n_lag} lags already completed")
+            continue
+
         trial_timer = time.perf_counter()  # wall-time for this trial
         # ─────────────────────────────────────────────────────────────────────
         # STEP 1 – DATA LOADING & INJECTION SETUP
@@ -121,7 +127,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                       if injection.get('trial_idx', 0) == trial_idx]
             logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            # Allocate a zero-filled MDC (Monte-Carlo injection) buffer for each IFO.
+            # TODO: rename all MDC and injection into simulation
+            # Allocate a zero-filled MDC (Mock data challenge) buffer for each IFO.
             # MDC buffer must span the full padded window [padded_start, padded_end] so that
             # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
             mdc = [TimeSeries(data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
@@ -255,8 +262,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
             )
             logger.info("Processing lag %d / %d  [%s]", lag, n_lag - 1, lag_shift_str)
-            if skip_lags and lag in skip_lags:
-                logger.info("Skipping lag %d due to skip_lags", lag)
+            if skip_lags and lag in skip_lags.get(trial_idx, set()):
+                logger.info("Skipping lag %d (trial %d) due to skip_lags", lag, trial_idx)
                 continue
 
             # ── segTHR check ─────────────────────────────────────────────────
@@ -364,6 +371,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 event = Event()
                 event.output_py(sub_job_seg, result_cluster, config)
                 event.job_id = sub_job_seg.index
+                event.trial_idx = trial_idx
+                event.lag_idx = lag
+                event.id = event.long_id  # recompute id with job_id, trial_idx, lag_idx
 
                 # Match this event to its injection by GPS overlap.
                 # FIXME: overlapping signals share the same GPS window; only the
@@ -463,10 +473,11 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 trigger_obj = Trigger.from_event(event)
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
-                else:
-                    catalog_file = add_event_to_catalog(working_dir, config.catalog_dir,
-                                                        trigger_data=trigger,
-                                                        catalog_file=catalog_file)
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    if not os.path.isabs(catalog_file):
+                        catalog_file = os.path.join(working_dir, config.catalog_dir, catalog_file)
+                    Catalog.open(catalog_file).add_triggers(trigger_obj)
 
             # ── 4f. Record lag progress ──────────────────────────────────────
             progress_record = dict(

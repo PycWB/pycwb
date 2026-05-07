@@ -5,9 +5,8 @@ import os
 import getpass
 import logging
 import sys
-from pathlib import Path
 from typing import Any
-from pycwb.modules.logger import logger_init, log_prints
+from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
@@ -38,22 +37,36 @@ def batch_setup(file_name, working_dir='.',
     if dry_run:
         return job_segments
 
-    if not cluster: cluster = config.cluster
-    if not conda_env: conda_env = config.conda_env
-    if not additional_init: additional_init = config.additional_init
-    if not accounting_group: accounting_group = config.accounting_group
-    if not job_per_worker: job_per_worker = config.job_per_worker
-    if not n_proc: n_proc = config.nproc
-    if not memory: memory = config.job_memory
-    if not disk: disk = config.job_disk
-    if not container_image: container_image = config.container_image
-    if not should_transfer_files: should_transfer_files = config.should_transfer_files
-    if not walltime: walltime = config.job_walltime
-    if not slurm_constraint: slurm_constraint = getattr(config, 'slurm_constraint', None) or slurm_constraint
-    if not slurm_partition: slurm_partition = getattr(config, 'slurm_partition', None) or slurm_partition
-    if n_retries == 5: n_retries = getattr(config, 'n_retries', 5)  # 5 is the default; prefer config if set
+    if not cluster:
+        cluster = config.cluster
+    if not conda_env:
+        conda_env = config.conda_env
+    if not additional_init:
+        additional_init = config.additional_init
+    if not accounting_group:
+        accounting_group = config.accounting_group
+    if not job_per_worker:
+        job_per_worker = config.job_per_worker
+    if not n_proc:
+        n_proc = config.nproc
+    if not memory:
+        memory = config.job_memory
+    if not disk:
+        disk = config.job_disk
+    if not container_image:
+        container_image = config.container_image
+    if not should_transfer_files:
+        should_transfer_files = config.should_transfer_files
+    if not walltime:
+        walltime = config.job_walltime
+    if not slurm_constraint:
+        slurm_constraint = getattr(config, 'slurm_constraint', None) or slurm_constraint
+    if not slurm_partition:
+        slurm_partition = getattr(config, 'slurm_partition', None) or slurm_partition
+    if n_retries == 5:
+        n_retries = getattr(config, 'n_retries', 5)  # 5 is the default; prefer config if set
 
-    logger.info(f"Job submission info:")
+    logger.info("Job submission info:")
     logger.info(f"  Cluster type: {cluster}")
     logger.info(f"  Conda environment: {conda_env}")
     logger.info(f"  Additional init script: {additional_init}")
@@ -170,58 +183,24 @@ def data_collector(working_dir: str, config: Any, catalog_file: str, queue: Any)
                 stats["progress"], stats["trigger"], stats["wave"])
 
 
-def process_single_with_flag(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None):
+def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None, skip_lags: dict[int, set[int]] | None = None):
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
-    if os.path.exists(f"{working_dir}/job_status/job_{job_seg.index}.done"):
-        logger.info(f"Job segment {job_seg.index} is already done")
-        return
-
-    # Build skip_lags from progress file for per-lag rescue
-    skip_lags = None
-    if catalog_file and os.path.exists(catalog_file):
-        try:
-            from pycwb.modules.catalog.catalog import Catalog
-            cat = Catalog.open(catalog_file)
-            completed = cat.get_completed_lags(job_seg.index)
-            if completed:
-                # Skip lag only if ALL trials for it are done
-                all_lag_sets = list(completed.values())
-                common_lags = set.intersection(*all_lag_sets) if all_lag_sets else set()
-                if common_lags:
-                    skip_lags = sorted(common_lags)
-                    logger.info("Rescue: skipping %d completed lags for job %d",
-                                len(skip_lags), job_seg.index)
-        except Exception as e:
-            logger.warning("Could not read progress for rescue: %s", e)
-
     try:
         main_func(working_dir, config, job_seg,
-                            compress_json=compress_json, catalog_file=catalog_file, queue=queue,
-                            skip_lags=skip_lags)
-
-        # create a flag file to indicate the job is done
-        try:
-            with open(f"{working_dir}/job_status/job_{job_seg.index}.done", 'w') as f:
-                f.write("")
-        except Exception as e:
-            logger.error(f"Failed to create job done flag file: {e}")
-
+                  compress_json=compress_json, catalog_file=catalog_file, queue=queue,
+                  skip_lags=skip_lags)
     except Exception as e:
         logger.error(f"Error processing job segment: {job_seg}")
         logger.error(e)
-        # create a flag file to indicate the job is failed
-        try:
-            with open(f"{working_dir}/job_status/job_{job_seg.index}.failed", 'w') as f:
-                f.write("")
-            return e
-        except Exception as e:
-            logger.error(f"Failed to create job failed flag file: {e}")
-            return e
+        return e
 
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
               jobs=None, n_proc=1, compress_json=True, n_workers=1):
+    # ------------------------------------------------------------------ #
+    # 1. Load configuration and job segments                               #
+    # ------------------------------------------------------------------ #
     job_segments, config, working_dir, catalog_file = load_batch_run(working_dir, config_file, jobs,
                                                        n_proc=n_proc, compress_json=compress_json)
     logger_init(log_file, log_level)
@@ -230,28 +209,105 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     main_func = import_function(config.segment_processer)
     logger.info(f"Segment processer loaded: {main_func}")
 
-    # create a queue and a worker to collect the data
+    # ------------------------------------------------------------------ #
+    # 2. Pre-flight resume check (serial, before any subprocess spawns)   #
+    #    - Skip already-complete jobs                                      #
+    #    - Remove stale triggers from interrupted runs                     #
+    #    - Build skip_lags_map so workers resume at the right lag          #
+    # ------------------------------------------------------------------ #
+    pending_segments = []
+    skip_lags_map = {}  # {job_index: {trial_idx: {lag_idx, ...}}}
+    if catalog_file and os.path.exists(catalog_file):
+        try:
+            from pycwb.modules.catalog.catalog import Catalog
+            cat = Catalog.open(catalog_file)
+            for job_seg in job_segments:
+                # injections is None  → non-simulation run (field never populated)
+                # injections == []    → simulation run, but no injections overlap this segment
+                # injections == [...] → simulation run with injections in this segment
+                if job_seg.injections is not None:
+                    expected_trial_idxs = (
+                        set(inj.get('trial_idx', 0) for inj in job_seg.injections) or {0}
+                    )
+                    # Simulation mode: if no injections overlap this segment and
+                    # analyze_injection_only is set, there is no valid time window to
+                    # analyse — skip the job entirely rather than running a vacuous trial.
+                    if not job_seg.injections and getattr(config, 'analyze_injection_only', False):
+                        logger.info(
+                            "Job segment %d has no injections in window and "
+                            "analyze_injection_only is set, skipping",
+                            job_seg.index,
+                        )
+                        continue
+                else:
+                    expected_trial_idxs = {0}
+
+                completed = cat.get_completed_lags(job_seg.index)
+
+                # check if all expected trial_idx and lag_idx combinations are marked complete; if so, skip the job entirely
+                if completed and all(
+                    tid in completed and len(completed[tid]) == job_seg.n_lag
+                    for tid in expected_trial_idxs
+                ):
+                    logger.info(
+                        "Job segment %d is already complete (%d lags × %d trials), skipping",
+                        job_seg.index, job_seg.n_lag, len(expected_trial_idxs),
+                    )
+                    continue
+
+                n_removed = cat.remove_stale_triggers(job_seg.index, completed)
+                if n_removed:
+                    logger.info("Removed %d stale trigger(s) for job %d before resume",
+                                n_removed, job_seg.index)
+
+                if completed:
+                    skip_lags = {tid: lags for tid, lags in completed.items() if lags}
+                    if skip_lags:
+                        total_skipped = sum(len(v) for v in skip_lags.values())
+                        logger.info("Rescue: skipping %d lag-trial pairs for job %d",
+                                    total_skipped, job_seg.index)
+                        skip_lags_map[job_seg.index] = skip_lags
+
+                pending_segments.append(job_seg)
+        except Exception as e:
+            logger.warning("Could not read progress for pre-flight resume check: %s", e)
+            pending_segments = list(job_segments)
+    else:
+        pending_segments = list(job_segments)
+
+    if not pending_segments:
+        logger.info("All job segments are already complete, nothing to do.")
+        return
+
+    # ------------------------------------------------------------------ #
+    # 3. Start the data-collector process                                  #
+    #    Single writer that serialises all catalog/wave I/O from workers. #
+    # ------------------------------------------------------------------ #
     manager = multiprocessing.Manager()
     queue = manager.Queue()
-    data_collector_worker = multiprocessing.Process(target=data_collector, args=(working_dir, config, catalog_file, queue))
+    data_collector_worker = multiprocessing.Process(
+        target=data_collector, args=(working_dir, config, catalog_file, queue)
+    )
     data_collector_worker.start()
 
-    # Use ProcessPoolExecutor for modern parallel processing with segfault capture via faulthandler.
-    # max_tasks_per_child=1 restarts workers after each task to avoid memory leaks (requires Python 3.11+).
-    # _worker_initializer enables faulthandler so segmentation violations print a native traceback
-    # to stderr instead of silently terminating the worker.
+    # ------------------------------------------------------------------ #
+    # 4. Dispatch job segments to the process pool                        #
+    #    - max_tasks_per_child=1: restart each worker after one job to    #
+    #      avoid memory leaks from JAX/Numba state accumulation           #
+    #    - initializer: enable faulthandler so SIGSEGV prints a traceback #
+    # ------------------------------------------------------------------ #
     exceptions = []
     executor = ProcessPoolExecutor(
         max_workers=n_workers,
-        max_tasks_per_child=1,  # Restart workers after each task to avoid memory leaks
+        max_tasks_per_child=1,
         initializer=_worker_initializer,
     )
     try:
         logger.info(f"Starting {n_workers} workers")
         futures = {
-            executor.submit(process_single_with_flag, main_func, queue, working_dir, config, job_seg,
-                            compress_json, catalog_file): job_seg
-            for job_seg in job_segments
+            executor.submit(processor_wrapper, main_func, queue, working_dir, config, job_seg,
+                            compress_json, catalog_file, skip_lags_map.get(job_seg.index)): job_seg
+            for job_seg in pending_segments
         }
 
         for future in as_completed(futures):
@@ -264,10 +320,12 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                 logger.error(f"Job segment {job_seg.index} raised an exception: {e}")
                 exceptions.append(e)
     finally:
-        # Explicitly terminate all worker processes before shutdown.
-        # ProcessPoolExecutor's internal management thread is non-daemon and can hang
-        # indefinitely waiting on a pipe from workers killed by a signal (e.g. SIGSEGV).
-        # Terminating the processes unblocks the management thread so it can exit cleanly.
+        # ------------------------------------------------------------------ #
+        # 5. Tear down the pool                                               #
+        #    Explicitly terminate workers: the executor's management thread   #
+        #    is non-daemon and can hang waiting on a pipe from a dead worker  #
+        #    (e.g. killed by SIGSEGV). Terminating unblocks it cleanly.      #
+        # ------------------------------------------------------------------ #
         print("Terminating worker processes...")
         for proc in list(executor._processes.values()):
             try:
@@ -276,12 +334,13 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
                 pass
         executor.shutdown(wait=False, cancel_futures=True)
         if exceptions:
-            os._exit(1)  # nuclear option: skip ExceptionGroup, just die
+            os._exit(1)  # hard exit: skip cleanup to avoid hanging on broken state
 
+    # ------------------------------------------------------------------ #
+    # 6. Drain the data-collector and wait for it to finish               #
+    # ------------------------------------------------------------------ #
     logger.info("All jobs are done, waiting for data collector to finish")
-
-    # send a sentinel to terminate the data collector
-    queue.put(None)
+    queue.put(None)  # sentinel: signals the collector to flush and exit
     data_collector_worker.join()
 
     if exceptions:

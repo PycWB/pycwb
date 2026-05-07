@@ -1,7 +1,6 @@
 import logging
 import os
 
-from pycwb.types import BaseCatalog
 from pycwb.modules.catalog import Catalog
 from pycwb.types.job import WaveSegment
 from pycwb.types.trigger import Trigger
@@ -68,44 +67,34 @@ def save_trigger(trigger_folder: str, trigger_data: tuple | list,
     return trigger_folder
 
 
-def add_event_to_catalog(working_dir: str, catalog_dir: str, trigger_data: tuple | list,
-                         catalog_file: str = Catalog.DEFAULT_FILENAME, index: int = None):
-    """
-    Convert an event to a :class:`~pycwb.types.trigger.Trigger` and append it
-    to the Arrow/Parquet catalog.
+def add_trigger_to_catalog(trigger: Trigger, working_dir: str, catalog_dir: str,
+                            catalog_file: str = None) -> str:
+    """Append a :class:`~pycwb.types.trigger.Trigger` to the run catalog.
 
     Parameters
     ----------
-    working_dir : str
-        The working directory for the run
-    catalog_dir : str
-        The directory to save the catalog
-    trigger_data : tuple | list
-        The event data tuple ``(event, cluster, sky_stats)``
-    catalog_file : str
-        The catalog file to save the triggers (default ``catalog.parquet``)
-    index : int
-        The index of the event in the list of events
+    trigger:
+        The fully-populated Trigger object to persist.
+    working_dir:
+        The working directory for the run.
+    catalog_dir:
+        Subdirectory under *working_dir* that holds the catalog file.
+    catalog_file:
+        Catalog filename (basename or absolute path).  Defaults to
+        :attr:`~pycwb.modules.catalog.Catalog.DEFAULT_FILENAME`.
 
     Returns
     -------
     str
-        The path to the catalog file
+        Absolute path of the catalog file that was written.
     """
+
+    # TODO: this function is for backwards compatibility with the old workflow. It can be replaced with direct calls to Catalog.open().add_triggers() in the new workflow.
     if catalog_file is None:
         catalog_file = Catalog.DEFAULT_FILENAME
+    if not os.path.isabs(catalog_file):
+        catalog_file = os.path.join(working_dir, catalog_dir, catalog_file)
 
-    if index is None:
-        event, _, _ = trigger_data
-    else:
-        event, _, _ = trigger_data[index]
-
-    logger.info(f"Adding event {event.hash_id} to catalog")
-    if not catalog_file.startswith("/"):
-        catalog_file = f"{working_dir}/{catalog_dir}/{catalog_file}"
-
-    trigger = Trigger.from_event(event)
+    logger.info("Adding trigger %s to catalog %s", trigger.id, catalog_file)
     Catalog.open(catalog_file).add_triggers(trigger)
-    logger.info(f"Event {event.hash_id} added to catalog {catalog_file}")
-
     return catalog_file

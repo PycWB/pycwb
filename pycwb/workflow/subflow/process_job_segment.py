@@ -5,9 +5,7 @@ import numpy as np
 from copy import copy
 from pycwb.config import Config
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.catalog import add_events_to_catalog
 from pycwb.modules.super_cluster.super_cluster_cwb import supercluster
-from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
 from pycwb.modules.data_conditioning import data_conditioning, whitening_mdc
@@ -16,7 +14,7 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
-from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger, add_event_to_catalog
+from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
 from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.trigger import Trigger
@@ -25,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None, queue=None, production_mode: bool = False, skip_lags: list = None):
+                        catalog_file: str = None, queue=None, production_mode: bool = False,
+                        skip_lags: dict[int, set[int]] | None = None):
     """
     The core workflow to process single job segment with trails or lags. 
 
@@ -45,8 +44,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         The queue to send the triggers to the collector for saving in production mode
     production_mode : bool
         Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
-    skip_lags : list
-        The options to skip certain lags. It is used for resuming the processing after a crash
+    skip_lags : dict[int, set[int]] or None
+        Per-trial set of lag indices to skip, keyed by trial_idx.
+        Used to resume processing after a crash without reprocessing
+        already-completed (trial, lag) pairs.
     
     """
     print_job_info(job_seg)
@@ -119,8 +120,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
-            if skip_lags and lag in skip_lags:
-                logger.info("Skipping lag %d due to skip_lags", lag)
+            if skip_lags and lag in skip_lags.get(trial_idx, set()):
+                logger.info("Skipping lag %d (trial %d) due to skip_lags", lag, trial_idx)
                 continue
             events, clusters, skymap_statistics = likelihood(config, network, fragment_cluster,
                                                             lag=lag, shifts=sub_job_seg.shift, job_id=sub_job_seg.index)
@@ -219,12 +220,17 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             #################### Add event to catalog ####################
             for trigger in events_data:
                 event, _, _ = trigger
+                event.trial_idx = trial_idx
+                event.lag_idx = lag
+                event.id = event.long_id  # recompute id with trial_idx and lag_idx
                 trigger_obj = Trigger.from_event(event)
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
-                else:
-                    catalog_file = add_event_to_catalog(working_dir, config.catalog_dir, trigger_data=trigger,
-                                                        catalog_file=catalog_file)
+                elif catalog_file:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    if not os.path.isabs(catalog_file):
+                        catalog_file = os.path.join(working_dir, config.catalog_dir, catalog_file)
+                    Catalog.open(catalog_file).add_triggers(trigger_obj)
 
             #################### Record lag progress ####################
             progress_record = dict(
@@ -240,8 +246,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
 
-# create_single_trigger_folder, save_trigger, add_event_to_catalog are imported above
-# from pycwb.modules.workflow_utils and kept available here for backward compatibility.
+# create_single_trigger_folder, save_trigger are imported above
+# from pycwb.modules.workflow_utils.
 
 
 # def process_job_segment_dask(working_dir, config, job_seg, plot=False, compress_json=True, client=None):

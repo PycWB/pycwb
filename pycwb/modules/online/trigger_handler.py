@@ -10,7 +10,6 @@ import logging
 import os
 import queue
 import threading
-import time
 
 from pycwb.modules.online.deduplication import TriggerDeduplicator
 from pycwb.modules.online.significance import (
@@ -238,10 +237,8 @@ class TriggerHandler(threading.Thread):
 
     def _save_local(self, trigger):
         """Save trigger data to disk."""
-        from pycwb.modules.workflow_utils.trigger_utils import (
-            save_trigger,
-            add_event_to_catalog,
-        )
+        from pycwb.modules.workflow_utils.trigger_utils import save_trigger, add_trigger_to_catalog
+        from pycwb.types.trigger import Trigger
 
         trigger_dir = os.path.join(
             self.working_dir, "triggers",
@@ -252,10 +249,9 @@ class TriggerHandler(threading.Thread):
         trigger_data = (trigger.event, trigger.cluster, trigger.sky_stats)
         try:
             save_trigger(trigger_dir, trigger_data)
-            add_event_to_catalog(
-                self.working_dir,
-                os.path.join(self.working_dir, "catalog"),
-                trigger_data,
+            trigger_obj = Trigger.from_event(trigger.event)
+            add_trigger_to_catalog(
+                trigger_obj, self.working_dir, "catalog",
             )
             logger.info("Saved trigger %s locally", trigger.event.hash_id)
         except Exception:

@@ -290,6 +290,75 @@ class Catalog(BaseCatalog):
             events = [events]
         self.add_triggers([Trigger.from_event(ev) for ev in events])
 
+    def remove_stale_triggers(self, job_id: int, completed_lags: dict) -> int:
+        """Remove triggers belonging to incomplete (lag_idx, trial_idx) pairs.
+
+        A (trial_idx, lag_idx) pair is considered *incomplete* when it is not
+        present in *completed_lags* but a trigger with that combination already
+        exists in the catalog (left over from a previous interrupted run).
+
+        Parameters
+        ----------
+        job_id : int
+            The job segment index whose triggers should be inspected.
+        completed_lags : dict[int, set[int]]
+            ``{trial_idx: {lag_idx, ...}}`` as returned by
+            :meth:`get_completed_lags`.  Pairs present here are kept; all
+            other pairs for *job_id* are removed.
+
+        Returns
+        -------
+        int
+            Number of stale trigger rows removed.
+        """
+        with SoftFileLock(self.filename + ".lock", timeout=30):
+            _validate_catalog_file(self.filename)
+            table = pq.read_table(self.filename)
+            if table.num_rows == 0:
+                return 0
+
+            # Build a boolean keep-mask: keep rows that are NOT for this job_id,
+            # or that belong to a completed (trial_idx, lag_idx) pair.
+            keep_mask = []
+            job_id_col   = table["job_id"].to_pylist()
+            lag_idx_col  = table["lag_idx"].to_pylist()
+            trial_idx_col = table["trial_idx"].to_pylist()
+
+            for jid, lid, tid in zip(job_id_col, lag_idx_col, trial_idx_col):
+                if jid != job_id:
+                    keep_mask.append(True)
+                else:
+                    # Keep only if this (trial_idx, lag_idx) is in completed_lags
+                    keep_mask.append(
+                        tid in completed_lags and lid in completed_lags[tid]
+                    )
+
+            n_stale = keep_mask.count(False)
+            if n_stale == 0:
+                return 0
+
+            stale_pairs: set[tuple[int, int]] = set()
+            for i, k in enumerate(keep_mask):
+                if not k:
+                    stale_pairs.add((trial_idx_col[i], lag_idx_col[i]))
+
+            keep_indices = [i for i, k in enumerate(keep_mask) if k]
+            if keep_indices:
+                filtered = table.take(keep_indices)
+            else:
+                filtered = _empty_table(table.schema.remove_metadata())
+            meta = table.schema.metadata or {}
+            filtered = filtered.replace_schema_metadata(meta)
+            _write_table_atomic(filtered, self.filename, compression="snappy")
+
+        pairs_str = ", ".join(
+            f"trial={trial} lag={lag_id}" for trial, lag_id in sorted(stale_pairs)
+        )
+        logger.info(
+            "Removed %d stale trigger(s) for job %d [%s]",
+            n_stale, job_id, pairs_str,
+        )
+        return n_stale
     # ------------------------------------------------------------------
     # Progress tracking
     # ------------------------------------------------------------------
@@ -405,15 +474,20 @@ class Catalog(BaseCatalog):
         table = pq.read_table(self.filename)
 
         if deduplicate and table.num_rows > 0:
-            job_col = pc.cast(table["job_id"], pa.string())
-            key_col = pc.binary_join_element_wise(job_col, table["id"], "_")
+            # Build composite key: job_id + id, plus trial_idx / lag_idx when present
+            key_cols = ["job_id", "id"] + [c for c in ("trial_idx", "lag_idx") if c in table.schema.names]
+            parts = [pc.cast(table["job_id"], pa.string()), table["id"]]
+            for col in ("trial_idx", "lag_idx"):
+                if col in table.schema.names:
+                    parts.append(pc.cast(table[col], pa.string()))
+            key_col = pc.binary_join_element_wise(*parts, "_")
             seen: dict[str, int] = {}
             for i, k in enumerate(key_col.to_pylist()):
                 seen[k] = i
             keep = sorted(seen.values())
             if len(keep) < table.num_rows:
                 removed = table.num_rows - len(keep)
-                logger.info("Removed %d duplicate trigger(s)", removed)
+                logger.info("Removed %d duplicate trigger(s) (dedup keys: %s)", removed, key_cols)
                 table = table.take(keep)
 
         return table

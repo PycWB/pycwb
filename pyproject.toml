@@ -48,6 +48,8 @@ dependencies = [
     "plotly",
     "wdm-wavelet",
     "burst-waveform",
+    "pandas",
+    "duckdb"
 ]
 
 [project.optional-dependencies]

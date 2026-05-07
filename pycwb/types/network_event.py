@@ -1,8 +1,6 @@
-import base64
 import hashlib
 
 import numpy as np
-import json
 from dataclasses import dataclass, field
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.job import WaveSegment
@@ -79,6 +77,8 @@ class Event:
     Deff: list[float] = field(default_factory=list)
     injection: dict = field(default_factory=dict)
     job_id: int = None
+    trial_idx: int = None
+    lag_idx: int = None
 
 
     # def __init__(self):
@@ -229,8 +229,6 @@ class Event:
         self.range = [0]
 
         TAU = psm.get(self.theta[0], self.phi[0])
-        M = 0
-        gC = 0
         self.strain = [0]
         self.penalty = 0
         self.neted = [0, 0, 0, 0, 0]
@@ -656,8 +654,10 @@ class Event:
                 theta_geo = float(np.radians(theta_deg))  # C++ theta (geographic co-latitude)
                 phi_geo = float(np.radians(phi_deg))      # C++ phi (geographic longitude)
                 psi_rad = float(np.radians(meta.psi)) if hasattr(meta, 'psi') else 0.0
-                cT = np.cos(theta_geo); sT = np.sin(theta_geo)
-                cP = np.cos(phi_geo);  sP = np.sin(phi_geo)
+                cT = np.cos(theta_geo)
+                sT = np.sin(theta_geo)
+                cP = np.cos(phi_geo)
+                sP = np.sin(phi_geo)
                 # Polarization basis vectors in geographic Cartesian frame
                 e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
                 e_ph = np.array([-sP, cP, 0.0])            # e_phi   (C++ b)
@@ -733,8 +733,13 @@ class Event:
         :return: Hash ID of the event
         :rtype: str
         """
-        hash_object = hashlib.md5()
-        hash_object.update(f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}".encode("utf-8"))  # Encoding the string to bytes
+        hash_object = hashlib.md5(usedforsecurity=False)  # identifier only, not for cryptography
+        parts = f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}"
+        if self.trial_idx is not None:
+            parts += f"_{self.trial_idx}"
+        if self.lag_idx is not None:
+            parts += f"_{self.lag_idx}"
+        hash_object.update(parts.encode("utf-8"))
         return hash_object.hexdigest()[-10:]
 
     @property
@@ -747,7 +752,15 @@ class Event:
         """
         if len(self.stop) == 0:
             return "unknown"
-        return f"{self.stop[0]}_{self.hash_id}"
+        prefix_parts = []
+        if self.job_id is not None:
+            prefix_parts.append(str(self.job_id))
+        if self.trial_idx is not None:
+            prefix_parts.append(str(self.trial_idx))
+        if self.lag_idx is not None:
+            prefix_parts.append(str(self.lag_idx))
+        base = f"{self.stop[0]}_{self.hash_id}"
+        return "_".join(prefix_parts + [base]) if prefix_parts else base
 
     def dump(self):
         """
