@@ -49,7 +49,7 @@ dependencies = [
     "wdm-wavelet",
     "burst-waveform",
     "pandas",
-    "duckdb"
+    "duckdb",
     "tqdm",
 ]
 
