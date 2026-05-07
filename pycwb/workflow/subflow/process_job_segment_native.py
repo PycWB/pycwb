@@ -370,6 +370,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 event = Event()
                 event.output_py(sub_job_seg, result_cluster, config)
                 event.job_id = sub_job_seg.index
+                event.trial_idx = trial_idx
+                event.lag_idx = lag
+                event.id = event.long_id  # recompute id with job_id, trial_idx, lag_idx
 
                 # Match this event to its injection by GPS overlap.
                 # FIXME: overlapping signals share the same GPS window; only the
@@ -467,8 +470,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger in events_data:
                 event, _, _ = trigger
                 trigger_obj = Trigger.from_event(event)
-                trigger_obj.lag_idx = lag
-                trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 elif catalog_file:

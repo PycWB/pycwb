@@ -219,9 +219,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             #################### Add event to catalog ####################
             for trigger in events_data:
                 event, _, _ = trigger
+                event.trial_idx = trial_idx
+                event.lag_idx = lag
+                event.id = event.long_id  # recompute id with trial_idx and lag_idx
                 trigger_obj = Trigger.from_event(event)
-                trigger_obj.lag_idx = lag
-                trigger_obj.trial_idx = trial_idx
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 elif catalog_file:

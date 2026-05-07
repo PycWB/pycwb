@@ -827,6 +827,8 @@ class Trigger:
         # --- identity ---
         t.id           = getattr(ev, "id", "")
         t.job_id       = getattr(ev, "job_id", 0) or getattr(ev, "run", 0)
+        t.trial_idx    = getattr(ev, "trial_idx", None) or 0
+        t.lag_idx      = getattr(ev, "lag_idx",   None) or 0
         t.cluster_id   = ev.eventID[0] if len(getattr(ev, "eventID", [])) > 0 else 0
         t.event_index  = getattr(ev, "nevent", 0)
         t.n_detectors  = getattr(ev, "ndim", 0)

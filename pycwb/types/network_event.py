@@ -79,6 +79,8 @@ class Event:
     Deff: list[float] = field(default_factory=list)
     injection: dict = field(default_factory=dict)
     job_id: int = None
+    trial_idx: int = None
+    lag_idx: int = None
 
 
     # def __init__(self):
@@ -734,7 +736,12 @@ class Event:
         :rtype: str
         """
         hash_object = hashlib.md5()
-        hash_object.update(f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}".encode("utf-8"))  # Encoding the string to bytes
+        parts = f"{self.start[0]}_{self.stop[0]}_{self.low[0]}_{self.high[0]}"
+        if self.trial_idx is not None:
+            parts += f"_{self.trial_idx}"
+        if self.lag_idx is not None:
+            parts += f"_{self.lag_idx}"
+        hash_object.update(parts.encode("utf-8"))
         return hash_object.hexdigest()[-10:]
 
     @property
@@ -747,7 +754,15 @@ class Event:
         """
         if len(self.stop) == 0:
             return "unknown"
-        return f"{self.stop[0]}_{self.hash_id}"
+        prefix_parts = []
+        if self.job_id is not None:
+            prefix_parts.append(str(self.job_id))
+        if self.trial_idx is not None:
+            prefix_parts.append(str(self.trial_idx))
+        if self.lag_idx is not None:
+            prefix_parts.append(str(self.lag_idx))
+        base = f"{self.stop[0]}_{self.hash_id}"
+        return "_".join(prefix_parts + [base]) if prefix_parts else base
 
     def dump(self):
         """
