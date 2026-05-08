@@ -149,7 +149,7 @@ def _parse_job_range(spec: str) -> set[int]:
 
 def _load_jobs_from_catalogs(catalog_files: list[str]) -> dict[int, object]:
     """Return {job_index: WaveSegment} for all unique jobs found in *catalog_files*."""
-    from dacite import from_dict
+    from dacite import from_dict, Config as DaciteConfig
     from pycwb.modules.catalog import Catalog
     from pycwb.types.job import WaveSegment
 
@@ -158,7 +158,7 @@ def _load_jobs_from_catalogs(catalog_files: list[str]) -> dict[int, object]:
         try:
             cat = Catalog.open(cf)
             for jd in cat.jobs:
-                ws = from_dict(WaveSegment, jd)
+                ws = from_dict(WaveSegment, jd, config=DaciteConfig(cast=[tuple]))
                 if ws.index not in jobs:
                     jobs[ws.index] = ws
         except Exception as exc:  # noqa: BLE001

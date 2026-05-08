@@ -213,7 +213,7 @@ pycwb merge --work-dir={working_dir}
             # Pre-create per-job catalog and progress files on the submit node so HTCondor
             # can always find them in transfer_input_files, even on the first run.
             from pycwb.modules.catalog.catalog import Catalog
-            from dacite import from_dict
+            from dacite import from_dict, Config as DaciteConfig
             from pycwb.types.job import WaveSegment
             from pycwb.modules.catalog import read_catalog_metadata
             from pycwb.utils.parser import parse_id_string
@@ -224,7 +224,7 @@ pycwb merge --work-dir={working_dir}
             )
             config_obj = Config()
             config_obj.load_from_dict(catalog_meta['config'])
-            all_segments = [from_dict(WaveSegment, s) for s in catalog_meta['jobs']]
+            all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
 
             catalog_dir = os.path.join(working_dir, 'catalog')
             os.makedirs(catalog_dir, exist_ok=True)

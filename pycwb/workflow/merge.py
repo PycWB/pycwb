@@ -5,7 +5,7 @@ import glob
 import logging
 import click
 import h5py as h5
-from dacite import from_dict
+from dacite import from_dict, Config as DaciteConfig
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pycwb.config import Config
@@ -20,7 +20,7 @@ def _collect_jobs_from_fragments(catalog_files: list) -> list:
     jobs = []
     for f in catalog_files:
         for job in Catalog.open(f).jobs:
-            jobs.append(from_dict(WaveSegment, job))
+            jobs.append(from_dict(WaveSegment, job, config=DaciteConfig(cast=[tuple])))
     jobs.sort(key=lambda j: j.index)
     return jobs
 
