@@ -183,6 +183,58 @@ def data_collector(working_dir: str, config: Any, catalog_file: str, queue: Any)
                 stats["progress"], stats["trigger"], stats["wave"])
 
 
+def _cleanup_stale_lock(lock_path: str) -> None:
+    """Remove a stale SoftFileLock file if the holder process is no longer alive.
+
+    ``SoftFileLock`` stores the holder's PID (one per line) in the lock file.
+    On the same host we can verify liveness via ``kill(pid, 0)``.  If the
+    process is gone the lock is stale and safe to remove.  On a different host
+    the PID is meaningless, so we also remove the lock if the hostname stored
+    in the file does not match the current host — the original holder cannot
+    possibly still be running on this machine.
+    """
+    import socket
+    if not os.path.exists(lock_path):
+        return
+    try:
+        with open(lock_path) as fh:
+            lines = [ln.strip() for ln in fh.readlines() if ln.strip()]
+        # SoftFileLock format: "<pid>\n<hostname>" (one entry per line pair)
+        # Older versions wrote only the PID; handle both.
+        pid = None
+        hostname = None
+        if lines:
+            try:
+                pid = int(lines[0])
+            except ValueError:
+                pass
+        if len(lines) >= 2:
+            hostname = lines[1]
+
+        current_host = socket.gethostname()
+        stale = False
+
+        if hostname and hostname != current_host:
+            # Lock was held by a process on a different node — always stale here.
+            stale = True
+        elif pid is not None:
+            try:
+                os.kill(pid, 0)  # signal 0: just check existence
+            except ProcessLookupError:
+                stale = True  # process does not exist
+            except PermissionError:
+                pass  # process exists but owned by another user — not stale
+        else:
+            # Cannot determine holder; remove to be safe at startup.
+            stale = True
+
+        if stale:
+            os.remove(lock_path)
+            logger.warning("Removed stale lock file: %s (pid=%s, host=%s)", lock_path, pid, hostname)
+    except Exception as exc:
+        logger.warning("Could not inspect lock file %s: %s", lock_path, exc)
+
+
 def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None, skip_lags: dict[int, set[int]] | None = None):
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
@@ -204,6 +256,16 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     job_segments, config, working_dir, catalog_file = load_batch_run(working_dir, config_file, jobs,
                                                        n_proc=n_proc, compress_json=compress_json)
     logger_init(log_file, log_level)
+
+    # ------------------------------------------------------------------ #
+    # 1b. Pre-flight stale lock cleanup                                    #
+    #     Must run before any subprocess spawns so there are no racing     #
+    #     writers when we inspect or delete lock files.                    #
+    # ------------------------------------------------------------------ #
+    if catalog_file:
+        for _lock in (catalog_file + ".lock",
+                      catalog_file.replace("catalog", "progress", 1) + ".lock"):
+            _cleanup_stale_lock(_lock)
 
     logger.info(f"Loading segment processer: {config.segment_processer}")
     main_func = import_function(config.segment_processer)
