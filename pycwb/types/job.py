@@ -2,67 +2,104 @@ from typing import List, Optional, Dict
 from dataclasses import dataclass, asdict
 import numpy as np
 
+from numba import njit as _numba_njit
 
-def _generate_extended_lag_ids(n_ifo, lag_size, lag_off, lag_max, lag_site=None, max_iter=10_000_000):
-    """
-    Generate integer lag IDs for extended-lag mode (lagMax > 0).
 
-    This is a deterministic Python adaptation of cWB random extended-lag generation.
-    """
-    n_ifo = int(n_ifo)
-    lag_size = int(max(1, lag_size))
-    lag_off = int(max(0, lag_off))
-    lag_max = int(max(0, lag_max))
+@_numba_njit(cache=True)
+def _generate_extended_lag_ids_core(
+        n_ifo, lag_size, lag_off, lag_max, lag_site, use_lag_site, max_iter
+    ):
+        """Numba-compiled inner loop for extended-lag ID generation.
 
-    if lag_site is not None:
-        lag_site = np.asarray(lag_site, dtype=int)
-        if lag_site.size != n_ifo:
-            raise ValueError("lag_site size mismatch with n_ifo")
-        if np.any((lag_site < 0) | (lag_site >= n_ifo)):
-            raise ValueError("lag_site values must be in [0, n_ifo)")
+        Uses MT19937 (np.random.seed(13)) instead of PCG64 — lag sequences
+        differ from the pure-Python fallback for the same parameters.
+        Polynomial hash encodes each (n_ifo,) int64 tuple as a single int64
+        key; valid for ids[i] in [0, 2*lag_max] when base = 2*lag_max+1.
+        """
+        target = lag_off + lag_size
+        base = np.int64(2 * lag_max + 1)
 
-    target = lag_off + lag_size
-    rng = np.random.default_rng(13)
+        # Pre-allocate result; slot 0 = zero lag (already zeros).
+        result = np.zeros((target, n_ifo), dtype=np.int64)
+        count = np.int64(1)
 
-    lag_ids = [tuple([0] * n_ifo)]
-    seen = {lag_ids[0]}
+        seen = set()
+        seen.add(np.int64(0))  # zero-lag key = 0
 
-    for _ in range(int(max_iter)):
-        if len(lag_ids) >= target:
-            break
+        np.random.seed(13)
 
-        sampled = np.zeros(n_ifo, dtype=int)
-        sampled[1:] = rng.integers(-lag_max, lag_max + 1, size=n_ifo - 1)
+        sampled = np.zeros(n_ifo, dtype=np.int64)
+        ids = np.zeros(n_ifo, dtype=np.int64)
 
-        if lag_site is None:
-            ids = sampled.copy()
-        else:
-            ids = sampled[lag_site]
+        for _ in range(max_iter):
+            if count >= target:
+                break
 
-        check = True
-        for i in range(n_ifo - 1, -1, -1):
-            for j in range(i - 1, -1, -1):
-                if lag_site is not None:
-                    if lag_site[i] != lag_site[j] and ids[i] == ids[j]:
-                        check = False
-                else:
-                    if ids[i] == ids[j]:
-                        check = False
+            sampled[0] = np.int64(0)
+            for i in range(1, n_ifo):
+                # Uniform in [-lag_max, lag_max] via [0, 2*lag_max+1) shift.
+                sampled[i] = (
+                    np.int64(np.random.randint(np.int64(0), np.int64(2 * lag_max + 1)))
+                    - np.int64(lag_max)
+                )
 
-        if not check:
-            continue
+            if use_lag_site:
+                for i in range(n_ifo):
+                    ids[i] = sampled[lag_site[i]]
+            else:
+                for i in range(n_ifo):
+                    ids[i] = sampled[i]
 
-        if np.all(ids == 0):
-            continue
+            # Uniqueness check: no two IFOs from different sites share the same shift.
+            check = True
+            for i in range(n_ifo - 1, -1, -1):
+                if not check:
+                    break
+                for j in range(i - 1, -1, -1):
+                    if use_lag_site:
+                        if lag_site[i] != lag_site[j] and ids[i] == ids[j]:
+                            check = False
+                            break
+                    else:
+                        if ids[i] == ids[j]:
+                            check = False
+                            break
+            if not check:
+                continue
 
-        ids = ids - int(np.min(ids))
-        key = tuple(int(x) for x in ids)
-        if key in seen:
-            continue
-        seen.add(key)
-        lag_ids.append(key)
+            # Skip all-zero (already in slot 0).
+            all_zero = True
+            for i in range(n_ifo):
+                if ids[i] != np.int64(0):
+                    all_zero = False
+                    break
+            if all_zero:
+                continue
 
-    return lag_ids
+            # Normalize: shift so minimum is 0.
+            min_val = ids[0]
+            for i in range(1, n_ifo):
+                if ids[i] < min_val:
+                    min_val = ids[i]
+            for i in range(n_ifo):
+                ids[i] -= min_val
+
+            # Polynomial hash: sum(ids[i] * base^i).
+            key = np.int64(0)
+            mult = np.int64(1)
+            for i in range(n_ifo):
+                key += ids[i] * mult
+                mult *= base
+
+            if key in seen:
+                continue
+            seen.add(key)
+
+            for i in range(n_ifo):
+                result[count, i] = ids[i]
+            count += 1
+
+        return result[:count]
 
 
 @dataclass
@@ -373,13 +410,21 @@ class WaveSegment:
             ]
             selected_ids = full_ids
         else:
-            full_ids = _generate_extended_lag_ids(
-                n_ifo=n_ifo,
-                lag_size=self.lag_size,
-                lag_off=self.lag_off,
-                lag_max=self.lag_max,
-                lag_site=self.lag_site,
+            _lag_site_arr = (
+                np.asarray(self.lag_site, dtype=np.int64)
+                if self.lag_site is not None
+                else np.zeros(n_ifo, dtype=np.int64)
             )
+            _result = _generate_extended_lag_ids_core(
+                np.int64(n_ifo),
+                np.int64(self.lag_size),
+                np.int64(self.lag_off),
+                np.int64(self.lag_max),
+                _lag_site_arr,
+                self.lag_site is not None,
+                np.int64(10_000_000),
+            )
+            full_ids = [tuple(int(x) for x in row) for row in _result]
             if self.lag_off >= len(full_ids):
                 selected_ids = []
             else:
