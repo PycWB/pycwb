@@ -18,6 +18,9 @@ from .pixel_batch_ops import load_data_from_pixels_vectorized
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.xtalk.monster import _compute_null_likelihood_numba
 from .typing import SkyStatistics, SkyMapStatistics
+from pycwb.modules.reconstruction.getMRAwaveform import (
+    _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
+)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -1193,113 +1196,110 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     To = 0.0
     Fo = 0.0
 
-    if config is not None and len(core_indices) > 0:
-        # --- WDM synthesis path: exact getMRAwave equivalent (pure Python, no ROOT) ---
-        # Reconstructs whitened time-domain waveforms per IFO:
-        #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
-        from pycwb.modules.reconstruction.getMRAwaveform import (
-            _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
-        )
+    # if config is not None and len(core_indices) > 0:
+    # --- WDM synthesis path: exact getMRAwave equivalent (pure Python, no ROOT) ---
+    # Reconstructs whitened time-domain waveforms per IFO:
+    #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
 
-        # Reuse the wdm_list built in likelihood() when provided; otherwise build it
-        # here (one-off / standalone calls).  Building it per-cluster was ~1 s overhead.
-        if wdm_list is None:
-            wdm_list = _create_wdm_set_python(config)
-        rate_ana = float(config.rateANA)
+    # Reuse the wdm_list built in likelihood() when provided; otherwise build it
+    # here (one-off / standalone calls).  Building it per-cluster was ~1 s overhead.
+    if wdm_list is None:
+        wdm_list = _create_wdm_set_python(config)
+    rate_ana = float(config.rateANA)
 
-        # Pre-build pixel array tuple and WDM kernel data once; shared across all
-        # (ifo, a_type, whiten) combinations so get_MRA_wave skips redundant extraction.
-        _pixel_arrays  = _pa_to_tuple(cluster.pixel_arrays)
-        _wdm_njit_data = _build_wdm_njit_data(wdm_list)
+    # Pre-build pixel array tuple and WDM kernel data once; shared across all
+    # (ifo, a_type, whiten) combinations so get_MRA_wave skips redundant extraction.
+    _pixel_arrays  = _pa_to_tuple(cluster.pixel_arrays)
+    _wdm_njit_data = _build_wdm_njit_data(wdm_list)
 
-        for ifo_i in range(n_ifo):
-            z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='signal', mode=0, nproc=1, whiten=True,
-                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='strain', mode=0, nproc=1, whiten=True,
-                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            # For hrss: get un-whitened signal energy (physical strain units)
-            z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                          a_type='signal', mode=0, nproc=1, whiten=False,
-                                          _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            if z_sig_ts is None or z_dat_ts is None:
-                continue
-            z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
-            z_dat = np.asarray(z_dat_ts.data, dtype=np.float64)
-            sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
-            snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
-            null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
-            if z_sig_physical is not None:
-                z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
-                signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
+    for ifo_i in range(n_ifo):
+        z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                a_type='signal', mode=0, nproc=1, whiten=True,
+                                _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                a_type='strain', mode=0, nproc=1, whiten=True,
+                                _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        # For hrss: get un-whitened signal energy (physical strain units)
+        z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                        a_type='signal', mode=0, nproc=1, whiten=False,
+                                        _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        if z_sig_ts is None or z_dat_ts is None:
+            continue
+        z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
+        z_dat = np.asarray(z_dat_ts.data, dtype=np.float64)
+        sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
+        snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
+        null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
+        if z_sig_physical is not None:
+            z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
+            signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
 
-            # getWFtime() / getWFfreq() equivalents (mirrors C++ detector::getWFtime/getWFfreq)
-            # Used to compute To/Fo exactly as C++: Fo += sSNR_i * getWFfreq_i; To /= Lw
-            n_fft = len(z_sig)
-            rate_wf = float(z_sig_ts.sample_rate)
-            e_sig = z_sig ** 2
-            E_sig = float(np.sum(e_sig))
-            if E_sig > 0.0:
-                t_start = float(z_sig_ts.start_time)
-                wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
-                Z_fft = np.fft.rfft(z_sig)
-                power = Z_fft.real ** 2 + Z_fft.imag ** 2
-                E_fft = float(np.sum(power))
-                if E_fft > 0.0:
-                    wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
-                else:
-                    wf_freq_ifo = 0.0
-                To += sSNR_ifo[ifo_i] * wf_time_ifo
-                Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
+        # getWFtime() / getWFfreq() equivalents (mirrors C++ detector::getWFtime/getWFfreq)
+        # Used to compute To/Fo exactly as C++: Fo += sSNR_i * getWFfreq_i; To /= Lw
+        n_fft = len(z_sig)
+        rate_wf = float(z_sig_ts.sample_rate)
+        e_sig = z_sig ** 2
+        E_sig = float(np.sum(e_sig))
+        if E_sig > 0.0:
+            t_start = float(z_sig_ts.start_time)
+            wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
+            Z_fft = np.fft.rfft(z_sig)
+            power = Z_fft.real ** 2 + Z_fft.imag ** 2
+            E_fft = float(np.sum(power))
+            if E_fft > 0.0:
+                wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
+            else:
+                wf_freq_ifo = 0.0
+            To += sSNR_ifo[ifo_i] * wf_time_ifo
+            Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
 
-        Lw    = float(np.sum(sSNR_ifo))
-        Ew_wf = float(np.sum(snr_ifo))
-        Nw_wf = float(np.sum(null_ifo))
-        if Lw > 0.0:
-            To /= Lw
-            Fo /= Lw
+    Lw    = float(np.sum(sSNR_ifo))
+    Ew_wf = float(np.sum(snr_ifo))
+    Nw_wf = float(np.sum(null_ifo))
+    if Lw > 0.0:
+        To /= Lw
+        Fo /= Lw
 
-    else:
-        # Fallback: xtalk-catalog double-sum (used when config is not available).
-        # Approximate because the catalog may omit weak-overlap pixel pairs.
-        cross_ifo = np.zeros(n_ifo, dtype=np.float64)
-        sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
-        snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
-        _pa_fb    = cluster.pixel_arrays
-        for i_idx in core_indices:
-            for k_idx in core_indices:
-                xt = xtalk.get_xtalk(
-                    pix1=(_pa_fb.layers[i_idx], _pa_fb.time[i_idx]),
-                    pix2=(_pa_fb.layers[k_idx], _pa_fb.time[k_idx]),
-                )
-                if xt[0] > 2:
-                    continue
-                ps_i = ps_arr_np[:, i_idx]
-                pS_i = pS_arr_np[:, i_idx]
-                ps_k = ps_arr_np[:, k_idx]
-                pS_k = pS_arr_np[:, k_idx]
-                pd_i = pd_arr_np[:, i_idx]
-                pD_i = pD_arr_np[:, i_idx]
-                pd_k = pd_arr_np[:, k_idx]
-                pD_k = pD_arr_np[:, k_idx]
-                sSNR_ifo += (xt[0]*ps_i*ps_k + xt[1]*ps_i*pS_k + xt[2]*pS_i*ps_k + xt[3]*pS_i*pS_k)
-                snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
-                cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
-            s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
-            _r  = float(_pa_fb.rate[i_idx])
-            _ly = float(_pa_fb.layers[i_idx])
-            pix_time = float(_pa_fb.time[i_idx]) / (_r * _ly) if (_r > 0 and _ly > 0) else 0.0
-            pix_freq = float(_pa_fb.frequency[i_idx]) * _r / 2.0 if _r > 0 else 0.0
-            To += s_snr_pix * pix_time
-            Fo += s_snr_pix * pix_freq
-        Lw = float(np.sum(sSNR_ifo))
-        null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
-        Ew_wf = float(np.sum(snr_ifo))
-        Nw_wf = float(np.sum(null_ifo))
-        if Lw > 0.0:
-            To /= Lw
-            Fo /= Lw
+    # else:
+    #     # Fallback: xtalk-catalog double-sum (used when config is not available).
+    #     # Approximate because the catalog may omit weak-overlap pixel pairs.
+    #     cross_ifo = np.zeros(n_ifo, dtype=np.float64)
+    #     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
+    #     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
+    #     _pa_fb    = cluster.pixel_arrays
+    #     for i_idx in core_indices:
+    #         for k_idx in core_indices:
+    #             xt = xtalk.get_xtalk(
+    #                 pix1=(_pa_fb.layers[i_idx], _pa_fb.time[i_idx]),
+    #                 pix2=(_pa_fb.layers[k_idx], _pa_fb.time[k_idx]),
+    #             )
+    #             if xt[0] > 2:
+    #                 continue
+    #             ps_i = ps_arr_np[:, i_idx]
+    #             pS_i = pS_arr_np[:, i_idx]
+    #             ps_k = ps_arr_np[:, k_idx]
+    #             pS_k = pS_arr_np[:, k_idx]
+    #             pd_i = pd_arr_np[:, i_idx]
+    #             pD_i = pD_arr_np[:, i_idx]
+    #             pd_k = pd_arr_np[:, k_idx]
+    #             pD_k = pD_arr_np[:, k_idx]
+    #             sSNR_ifo += (xt[0]*ps_i*ps_k + xt[1]*ps_i*pS_k + xt[2]*pS_i*ps_k + xt[3]*pS_i*pS_k)
+    #             snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
+    #             cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
+    #         s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
+    #         _r  = float(_pa_fb.rate[i_idx])
+    #         _ly = float(_pa_fb.layers[i_idx])
+    #         pix_time = float(_pa_fb.time[i_idx]) / (_r * _ly) if (_r > 0 and _ly > 0) else 0.0
+    #         pix_freq = float(_pa_fb.frequency[i_idx]) * _r / 2.0 if _r > 0 else 0.0
+    #         To += s_snr_pix * pix_time
+    #         Fo += s_snr_pix * pix_freq
+    #     Lw = float(np.sum(sSNR_ifo))
+    #     null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
+    #     Ew_wf = float(np.sum(snr_ifo))
+    #     Nw_wf = float(np.sum(null_ifo))
+    #     if Lw > 0.0:
+    #         To /= Lw
+    #         Fo /= Lw
 
     _fds_timings["mra_waveform_reconstruction"] = time.perf_counter() - _t0
 
