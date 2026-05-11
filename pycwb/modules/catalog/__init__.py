@@ -9,3 +9,4 @@ from .catalog import (
 )
 from .catalog_json import JSONCatalog
 from .convert_root import convert_root_to_catalog, read_root_triggers
+from pycwb.workflow.matching import match_triggers_to_simulations, match_simulations_parquet
