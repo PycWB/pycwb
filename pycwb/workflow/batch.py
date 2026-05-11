@@ -193,6 +193,8 @@ def _cleanup_stale_lock(lock_path: str) -> None:
     in the file does not match the current host — the original holder cannot
     possibly still be running on this machine.
     """
+    logger_init(log_file=None, log_level="INFO", worker_prefix='LockCleanup')
+
     import socket
     if not os.path.exists(lock_path):
         return
@@ -250,6 +252,8 @@ def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_j
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
               jobs=None, n_proc=1, compress_json=True, n_workers=1):
+    logger_init(log_file=None, log_level="INFO", worker_prefix=f'BatchRun-{jobs or "all"}')
+
     # ------------------------------------------------------------------ #
     # 1. Load configuration and job segments                               #
     # ------------------------------------------------------------------ #
