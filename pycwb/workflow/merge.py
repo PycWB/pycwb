@@ -54,9 +54,24 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
 
     # Handle existing file: labeled runs ask for confirmation; unlabeled reuses existing structure
     if os.path.exists(merged_catalog_file):
-        if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
-            return
-        os.remove(merged_catalog_file)
+        if merge_label is None:
+            existing_master_catalog = Catalog.open(merged_catalog_file)
+            n_events = len(existing_master_catalog.triggers())
+            if n_events == 0:
+                logger.info("Reusing existing empty master catalog %s", merged_catalog_file)
+                # File structure is intact; pq.write_table below will populate trigger rows
+            else:
+                if not click.confirm(
+                    f"Master catalog {merged_catalog_file} already contains {n_events} events. "
+                    "Remove all trigger rows and re-merge?",
+                    default=False,
+                ):
+                    return
+                # pq.write_table at the end will overwrite the trigger rows
+        else:
+            if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
+                return
+            os.remove(merged_catalog_file)
 
     # Create catalog structure from fragments if not present
     if not os.path.exists(merged_catalog_file):
