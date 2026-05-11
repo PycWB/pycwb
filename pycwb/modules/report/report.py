@@ -128,3 +128,17 @@ def report_zero_lag(source, livetime_key='livetime_zerolag', far_rho_source='far
     plt.legend()
     plt.savefig(f"{source}_far_n_events.png")
     plt.close()
+
+def calculate_detection_efficiency(catalog, simulation, inj_key: str = 'hrss', inj_factors: list = None):
+    if inj_factors is None:
+        inj_factors = sorted(simulation.column(inj_key).combine_chunks().unique().to_pylist())
+    
+    det_eff, det_err = [], []
+    for inj_factor in inj_factors:
+        catalog_fac = catalog.filter(pc.equal(catalog['injection'].combine_chunks().field(inj_key), inj_factor))
+        simulation_fac = simulation.filter(pc.equal(simulation[inj_key], inj_factor))
+
+        det_eff.append(len(catalog_fac) / len(simulation_fac))
+        det_err.append(np.sqrt(det_eff[-1] * (1-det_eff[-1]) / len(simulation_fac)))
+    
+    return det_eff, det_err
