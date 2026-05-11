@@ -234,6 +234,21 @@ schema = {
             "default": {},
             "cwb": False
         },
+        "sky_mask": {
+            "type": "object",
+            "description": (
+                "Restrict the likelihood sky scan to a sub-region of the sky. "
+                "Uses the same format as the injection sky_distribution config. "
+                "Supported types: UniformAllSky (no restriction), Patch (circular cap — "
+                "requires patch.center.phi, patch.center.theta, patch.radius, patch.unit), "
+                "Fixed (nearest single direction — requires coordinates.sky_loc.phi/theta, "
+                "coordinates.unit), Custom (HEALPix map threshold — requires "
+                "custom.healpix_map, custom.nside, optional custom.threshold). "
+                "If omitted, all sky directions are evaluated."
+            ),
+            "default": None,
+            "cwb": False
+        },
         "gps_start": {
             "type": "number",
             "description": "start gps time, used together with gps_end for generating job segments",

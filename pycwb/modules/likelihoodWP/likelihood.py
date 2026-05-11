@@ -21,6 +21,7 @@ from .typing import SkyStatistics, SkyMapStatistics
 from pycwb.modules.reconstruction.getMRAwaveform import (
     _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
 )
+from .sky_mask import compute_sky_valid_indices
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -259,6 +260,18 @@ def setup_likelihood(
     healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
     ra_arr, dec_arr = _build_sky_directions(n_sky, healpix_order)
 
+    # Sky mask: restrict the sky scan to a user-defined region (mirrors C++ skyMask).
+    # Parsed once per job segment and stored as a sorted int64 index array.
+    _sky_mask_config = getattr(config, 'sky_mask', None)
+    sky_valid_indices = compute_sky_valid_indices(ra_arr, dec_arr, _sky_mask_config)
+
+    # Separate valid-index array for the coarse (big-cluster) sky grid
+    if n_sky_big is not None:
+        ra_arr_big, dec_arr_big = _build_sky_directions(n_sky_big, big_cluster_healpix_order)
+        sky_valid_indices_big = compute_sky_valid_indices(ra_arr_big, dec_arr_big, _sky_mask_config)
+    else:
+        sky_valid_indices_big = None
+
     return {
         "network_energy_threshold": network_energy_threshold,
         "xgb_rho_mode": xgb_rho_mode,
@@ -276,11 +289,13 @@ def setup_likelihood(
         "healpix_order": healpix_order,
         "ra_arr": ra_arr,
         "dec_arr": dec_arr,
+        "sky_valid_indices": sky_valid_indices,
         "ml_big_cluster": ml_big_raw,
         "FP_big_cluster_t": FP_big_t,
         "FX_big_cluster_t": FX_big_t,
         "n_sky_big_cluster": n_sky_big,
         "big_cluster_healpix_order": big_cluster_healpix_order,
+        "sky_valid_indices_big": sky_valid_indices_big,
     }
 
 
@@ -388,6 +403,7 @@ def likelihood(
     FP                       = setup["FP_t"]  # (n_sky, nIFO) float32 — already transposed
     FX                       = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
     n_sky                    = setup["n_sky"]
+    sky_valid_indices        = setup.get("sky_valid_indices", np.arange(n_sky, dtype=np.int64))
 
     # REG[0] = delta * sqrt(2): amplitude regulator; REG[1] filled below by DPF scan
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
@@ -406,6 +422,7 @@ def likelihood(
         FP    = setup["FP_big_cluster_t"]
         FX    = setup["FX_big_cluster_t"]
         n_sky = setup["n_sky_big_cluster"]
+        sky_valid_indices = setup.get("sky_valid_indices_big", np.arange(n_sky, dtype=np.int64))
         logger.info(
             "Cluster-id=%s is big (%d px > csize_threshold=%d): "
             "using coarse sky grid (%d directions, healpix order=%s)",
@@ -427,14 +444,14 @@ def likelihood(
 
     # REG[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     _t0 = time.perf_counter()
-    REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold)
+    REG[1] = calculate_dpf(FP, FX, rms, n_sky, nIFO, gamma_regulator, network_energy_threshold, sky_valid_indices)
     stage_timings["dpf_regulator"] = time.perf_counter() - _t0
 
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
     _t0 = time.perf_counter()
     skymap_statistics = find_optimal_sky_localization(nIFO, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC,
-                                          delta_regulator, network_energy_threshold)
+                                          delta_regulator, network_energy_threshold, sky_valid_indices)
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0
 
@@ -671,7 +688,7 @@ def load_data_from_ifo(
 
 
 @njit(cache=True, parallel=True)
-def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold):
+def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator, network_energy_threshold, sky_valid_indices):
     """
     Find the optimal sky localization by calculating sky statistics for each sky location.
 
@@ -686,7 +703,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     n_pix : int
         Number of pixels.
     n_sky : int
-        Number of sky locations.
+        Total number of sky locations (length of FP/FX/ml first axis).
     FP : np.ndarray
         f+ polarization data, shape (n_sky, nIFO), float32.
     FX : np.ndarray
@@ -707,6 +724,9 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         Delta regulator value.
     network_energy_threshold : float
         Energy threshold for the network.
+    sky_valid_indices : np.ndarray
+        1-D int64 array of sky indices to evaluate (sky mask).  Pass
+        ``np.arange(n_sky)`` to evaluate all directions (no mask).
 
     Returns
     -------
@@ -734,9 +754,12 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     nAntenaPrior = np.zeros(n_sky, dtype=float32)
 
     offset = int(td00.shape[0] / 2)
-    # TODO: sky sky mask
-    AA_array = np.zeros(n_sky, dtype=float32)
-    for sky_idx in prange(n_sky):
+    # AA_array is initialised to -1e12 so that masked / netCC-rejected directions
+    # never win the tie-breaking scan (mirrors C++ skyProb.data[l] = -1.e12).
+    AA_array = np.full(n_sky, np.float32(-1.e12))
+    n_valid = len(sky_valid_indices)
+    for _k in prange(n_valid):
+        sky_idx = sky_valid_indices[_k]
         # --- Apply time delay and load pixel data for this sky direction ---
         v00 = np.empty((n_ifo, n_pix), dtype=float32)
         v90 = np.empty((n_ifo, n_pix), dtype=float32)
@@ -799,10 +822,11 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         AA_array[sky_idx] = AA
     # Mirror C++ tie-breaking: C++ uses `if (AA >= STAT)` in a forward loop,
     # so the LAST pixel with the maximum value wins on ties.
-    # np.argmax returns the FIRST, so scan forward explicitly.
+    # Iterate only over valid (unmasked) indices to match C++ behaviour.
     STAT = np.float32(-1.e12)
-    l_max = 0
-    for _l in range(n_sky):
+    l_max = int(sky_valid_indices[0])
+    for _k in range(n_valid):
+        _l = sky_valid_indices[_k]
         if AA_array[_l] >= STAT:
             STAT = AA_array[_l]
             l_max = _l
