@@ -18,6 +18,9 @@ from .pixel_batch_ops import load_data_from_pixels_vectorized
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.xtalk.monster import _compute_null_likelihood_numba
 from .typing import SkyStatistics, SkyMapStatistics
+from pycwb.modules.reconstruction.getMRAwaveform import (
+    _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
+)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -1193,113 +1196,110 @@ def fill_detection_statistic(sky_statistics: SkyStatistics, skymap_statistics: S
     To = 0.0
     Fo = 0.0
 
-    if config is not None and len(core_indices) > 0:
-        # --- WDM synthesis path: exact getMRAwave equivalent (pure Python, no ROOT) ---
-        # Reconstructs whitened time-domain waveforms per IFO:
-        #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
-        from pycwb.modules.reconstruction.getMRAwaveform import (
-            _create_wdm_set_python, get_MRA_wave, _pa_to_tuple, _build_wdm_njit_data,
-        )
+    # if config is not None and len(core_indices) > 0:
+    # --- WDM synthesis path: exact getMRAwave equivalent (pure Python, no ROOT) ---
+    # Reconstructs whitened time-domain waveforms per IFO:
+    #   z_i(t) = Σ_{j∈core} [ a00_ij·ψ00_j(t) + a90_ij·ψ90_j(t) ]
 
-        # Reuse the wdm_list built in likelihood() when provided; otherwise build it
-        # here (one-off / standalone calls).  Building it per-cluster was ~1 s overhead.
-        if wdm_list is None:
-            wdm_list = _create_wdm_set_python(config)
-        rate_ana = float(config.rateANA)
+    # Reuse the wdm_list built in likelihood() when provided; otherwise build it
+    # here (one-off / standalone calls).  Building it per-cluster was ~1 s overhead.
+    if wdm_list is None:
+        wdm_list = _create_wdm_set_python(config)
+    rate_ana = float(config.rateANA)
 
-        # Pre-build pixel array tuple and WDM kernel data once; shared across all
-        # (ifo, a_type, whiten) combinations so get_MRA_wave skips redundant extraction.
-        _pixel_arrays  = _pa_to_tuple(cluster.pixel_arrays)
-        _wdm_njit_data = _build_wdm_njit_data(wdm_list)
+    # Pre-build pixel array tuple and WDM kernel data once; shared across all
+    # (ifo, a_type, whiten) combinations so get_MRA_wave skips redundant extraction.
+    _pixel_arrays  = _pa_to_tuple(cluster.pixel_arrays)
+    _wdm_njit_data = _build_wdm_njit_data(wdm_list)
 
-        for ifo_i in range(n_ifo):
-            z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='signal', mode=0, nproc=1, whiten=True,
-                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                    a_type='strain', mode=0, nproc=1, whiten=True,
-                                    _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            # For hrss: get un-whitened signal energy (physical strain units)
-            z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
-                                          a_type='signal', mode=0, nproc=1, whiten=False,
-                                          _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
-            if z_sig_ts is None or z_dat_ts is None:
-                continue
-            z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
-            z_dat = np.asarray(z_dat_ts.data, dtype=np.float64)
-            sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
-            snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
-            null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
-            if z_sig_physical is not None:
-                z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
-                signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
+    for ifo_i in range(n_ifo):
+        z_sig_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                a_type='signal', mode=0, nproc=1, whiten=True,
+                                _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        z_dat_ts = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                a_type='strain', mode=0, nproc=1, whiten=True,
+                                _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        # For hrss: get un-whitened signal energy (physical strain units)
+        z_sig_physical = get_MRA_wave(cluster, wdm_list, rate_ana, ifo_i,
+                                        a_type='signal', mode=0, nproc=1, whiten=False,
+                                        _pixel_arrays=_pixel_arrays, _wdm_njit_data=_wdm_njit_data)
+        if z_sig_ts is None or z_dat_ts is None:
+            continue
+        z_sig = np.asarray(z_sig_ts.data, dtype=np.float64)
+        z_dat = np.asarray(z_dat_ts.data, dtype=np.float64)
+        sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
+        snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
+        null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
+        if z_sig_physical is not None:
+            z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
+            signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
 
-            # getWFtime() / getWFfreq() equivalents (mirrors C++ detector::getWFtime/getWFfreq)
-            # Used to compute To/Fo exactly as C++: Fo += sSNR_i * getWFfreq_i; To /= Lw
-            n_fft = len(z_sig)
-            rate_wf = float(z_sig_ts.sample_rate)
-            e_sig = z_sig ** 2
-            E_sig = float(np.sum(e_sig))
-            if E_sig > 0.0:
-                t_start = float(z_sig_ts.start_time)
-                wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
-                Z_fft = np.fft.rfft(z_sig)
-                power = Z_fft.real ** 2 + Z_fft.imag ** 2
-                E_fft = float(np.sum(power))
-                if E_fft > 0.0:
-                    wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
-                else:
-                    wf_freq_ifo = 0.0
-                To += sSNR_ifo[ifo_i] * wf_time_ifo
-                Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
+        # getWFtime() / getWFfreq() equivalents (mirrors C++ detector::getWFtime/getWFfreq)
+        # Used to compute To/Fo exactly as C++: Fo += sSNR_i * getWFfreq_i; To /= Lw
+        n_fft = len(z_sig)
+        rate_wf = float(z_sig_ts.sample_rate)
+        e_sig = z_sig ** 2
+        E_sig = float(np.sum(e_sig))
+        if E_sig > 0.0:
+            t_start = float(z_sig_ts.start_time)
+            wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
+            Z_fft = np.fft.rfft(z_sig)
+            power = Z_fft.real ** 2 + Z_fft.imag ** 2
+            E_fft = float(np.sum(power))
+            if E_fft > 0.0:
+                wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
+            else:
+                wf_freq_ifo = 0.0
+            To += sSNR_ifo[ifo_i] * wf_time_ifo
+            Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
 
-        Lw    = float(np.sum(sSNR_ifo))
-        Ew_wf = float(np.sum(snr_ifo))
-        Nw_wf = float(np.sum(null_ifo))
-        if Lw > 0.0:
-            To /= Lw
-            Fo /= Lw
+    Lw    = float(np.sum(sSNR_ifo))
+    Ew_wf = float(np.sum(snr_ifo))
+    Nw_wf = float(np.sum(null_ifo))
+    if Lw > 0.0:
+        To /= Lw
+        Fo /= Lw
 
-    else:
-        # Fallback: xtalk-catalog double-sum (used when config is not available).
-        # Approximate because the catalog may omit weak-overlap pixel pairs.
-        cross_ifo = np.zeros(n_ifo, dtype=np.float64)
-        sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
-        snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
-        _pa_fb    = cluster.pixel_arrays
-        for i_idx in core_indices:
-            for k_idx in core_indices:
-                xt = xtalk.get_xtalk(
-                    pix1=(_pa_fb.layers[i_idx], _pa_fb.time[i_idx]),
-                    pix2=(_pa_fb.layers[k_idx], _pa_fb.time[k_idx]),
-                )
-                if xt[0] > 2:
-                    continue
-                ps_i = ps_arr_np[:, i_idx]
-                pS_i = pS_arr_np[:, i_idx]
-                ps_k = ps_arr_np[:, k_idx]
-                pS_k = pS_arr_np[:, k_idx]
-                pd_i = pd_arr_np[:, i_idx]
-                pD_i = pD_arr_np[:, i_idx]
-                pd_k = pd_arr_np[:, k_idx]
-                pD_k = pD_arr_np[:, k_idx]
-                sSNR_ifo += (xt[0]*ps_i*ps_k + xt[1]*ps_i*pS_k + xt[2]*pS_i*ps_k + xt[3]*pS_i*pS_k)
-                snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
-                cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
-            s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
-            _r  = float(_pa_fb.rate[i_idx])
-            _ly = float(_pa_fb.layers[i_idx])
-            pix_time = float(_pa_fb.time[i_idx]) / (_r * _ly) if (_r > 0 and _ly > 0) else 0.0
-            pix_freq = float(_pa_fb.frequency[i_idx]) * _r / 2.0 if _r > 0 else 0.0
-            To += s_snr_pix * pix_time
-            Fo += s_snr_pix * pix_freq
-        Lw = float(np.sum(sSNR_ifo))
-        null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
-        Ew_wf = float(np.sum(snr_ifo))
-        Nw_wf = float(np.sum(null_ifo))
-        if Lw > 0.0:
-            To /= Lw
-            Fo /= Lw
+    # else:
+    #     # Fallback: xtalk-catalog double-sum (used when config is not available).
+    #     # Approximate because the catalog may omit weak-overlap pixel pairs.
+    #     cross_ifo = np.zeros(n_ifo, dtype=np.float64)
+    #     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
+    #     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
+    #     _pa_fb    = cluster.pixel_arrays
+    #     for i_idx in core_indices:
+    #         for k_idx in core_indices:
+    #             xt = xtalk.get_xtalk(
+    #                 pix1=(_pa_fb.layers[i_idx], _pa_fb.time[i_idx]),
+    #                 pix2=(_pa_fb.layers[k_idx], _pa_fb.time[k_idx]),
+    #             )
+    #             if xt[0] > 2:
+    #                 continue
+    #             ps_i = ps_arr_np[:, i_idx]
+    #             pS_i = pS_arr_np[:, i_idx]
+    #             ps_k = ps_arr_np[:, k_idx]
+    #             pS_k = pS_arr_np[:, k_idx]
+    #             pd_i = pd_arr_np[:, i_idx]
+    #             pD_i = pD_arr_np[:, i_idx]
+    #             pd_k = pd_arr_np[:, k_idx]
+    #             pD_k = pD_arr_np[:, k_idx]
+    #             sSNR_ifo += (xt[0]*ps_i*ps_k + xt[1]*ps_i*pS_k + xt[2]*pS_i*ps_k + xt[3]*pS_i*pS_k)
+    #             snr_ifo  += (xt[0]*pd_i*pd_k + xt[1]*pd_i*pD_k + xt[2]*pD_i*pd_k + xt[3]*pD_i*pD_k)
+    #             cross_ifo += (xt[0]*pd_i*ps_k + xt[1]*pd_i*pS_k + xt[2]*pD_i*ps_k + xt[3]*pD_i*pS_k)
+    #         s_snr_pix = float(np.sum(ps_arr_np[:, i_idx] ** 2 + pS_arr_np[:, i_idx] ** 2))
+    #         _r  = float(_pa_fb.rate[i_idx])
+    #         _ly = float(_pa_fb.layers[i_idx])
+    #         pix_time = float(_pa_fb.time[i_idx]) / (_r * _ly) if (_r > 0 and _ly > 0) else 0.0
+    #         pix_freq = float(_pa_fb.frequency[i_idx]) * _r / 2.0 if _r > 0 else 0.0
+    #         To += s_snr_pix * pix_time
+    #         Fo += s_snr_pix * pix_freq
+    #     Lw = float(np.sum(sSNR_ifo))
+    #     null_ifo = snr_ifo - 2.0 * cross_ifo + sSNR_ifo
+    #     Ew_wf = float(np.sum(snr_ifo))
+    #     Nw_wf = float(np.sum(null_ifo))
+    #     if Lw > 0.0:
+    #         To /= Lw
+    #         Fo /= Lw
 
     _fds_timings["mra_waveform_reconstruction"] = time.perf_counter() - _t0
 
@@ -1505,6 +1505,172 @@ def get_error_region(cluster: Cluster):
     pass
 
 
+@njit(cache=True, parallel=True)
+def _hough_count_overlaps_numba(x, y, xerr, yerr, kk, m_vals):
+    """Phase 1 of mchirp Hough transform: compute the max interval-overlap count
+    for each mass value (independent → parallelised with prange).
+
+    For each mass m the t-f locus is a line  y = sl*x + b  in (time, F^{-8/3})
+    space.  Each pixel defines an error ellipse that, projected onto the b-axis,
+    gives an interval [bmin, bmax].  The maximum number of overlapping intervals
+    is the Hough vote count for that mass.
+
+    Parameters
+    ----------
+    x, y, xerr, yerr : 1-D float64 arrays, length n_pts
+        Pixel coordinates and their uncertainties.
+    kk : float
+        Pre-computed chirp-mass constant.
+    m_vals : 1-D float64 array, length n_mass
+        Mass grid to scan.
+
+    Returns
+    -------
+    nsel_arr : 1-D int64 array, length n_mass
+        Maximum overlap count per mass value.
+    """
+    n_mass = len(m_vals)
+    n_pts  = len(x)
+    nsel_arr = np.zeros(n_mass, dtype=np.int64)
+
+    for mi in prange(n_mass):
+        m  = m_vals[mi]
+        sl = kk * np.abs(m) ** (5.0 / 3.0)
+        if m > 0.0:
+            sl = -sl
+
+        Db   = np.sqrt(2.0 * (sl * sl * xerr * xerr + yerr * yerr))
+        bmin = y - sl * x - Db
+        bmax = bmin + 2.0 * Db
+
+        # Build flat endpoint list: opens (+1) followed by closes (-1)
+        ep_val  = np.empty(2 * n_pts, dtype=np.float64)
+        ep_type = np.empty(2 * n_pts, dtype=np.float64)
+        for i in range(n_pts):
+            ep_val[i]          = bmin[i]
+            ep_type[i]         = 1.0
+            ep_val[n_pts + i]  = bmax[i]
+            ep_type[n_pts + i] = -1.0
+
+        order = np.argsort(ep_val)
+
+        # Walk sorted endpoints; track running overlap count
+        cum    = 0
+        maxcum = 0
+        for i in range(2 * n_pts):
+            idx = order[i]
+            cum += int(ep_type[idx])
+            if cum > maxcum:
+                maxcum = cum
+
+        nsel_arr[mi] = maxcum
+
+    return nsel_arr
+
+
+@njit(cache=True)
+def _fine_search_numba(x, y, xerr, yerr, wgt, kk, m_vals, cand_indices, nselmax, chi2_thr):
+    """Phase 2 of mchirp Hough transform: fine b-grid search among candidate masses.
+
+    For each candidate mass (those achieving *nselmax* votes in phase 1) the
+    b-axis is scanned at step 0.0025 within segments that attain the maximum
+    overlap.  The (m, b) pair minimising the likelihood-weighted mean chi2 is
+    returned.
+
+    Parameters
+    ----------
+    x, y, xerr, yerr, wgt : 1-D float64 arrays, length n_pts
+    kk : float
+    m_vals : 1-D float64 array (full mass grid)
+    cand_indices : 1-D int64 array — indices into m_vals with nsel == nselmax
+    nselmax : int
+    chi2_thr : float
+
+    Returns
+    -------
+    m0, b0 : float
+        Best-fit chirp-mass slope and intercept.
+    """
+    n_pts   = len(x)
+    b_step  = 0.0025
+    chi2min = 1e100
+    m0 = m_vals[cand_indices[0]]
+    b0 = 0.0
+
+    for jj in range(len(cand_indices)):
+        mi = cand_indices[jj]
+        m  = m_vals[mi]
+        sl = kk * np.abs(m) ** (5.0 / 3.0)
+        if m > 0.0:
+            sl = -sl
+
+        # Per-pixel chi2 denominator
+        eps  = sl * sl * xerr * xerr + yerr * yerr
+
+        # Recompute sorted endpoints (cheap — only a few candidate masses)
+        Db   = np.sqrt(2.0 * (sl * sl * xerr * xerr + yerr * yerr))
+        bmin = y - sl * x - Db
+        bmax = bmin + 2.0 * Db
+
+        ep_val  = np.empty(2 * n_pts, dtype=np.float64)
+        ep_type = np.empty(2 * n_pts, dtype=np.float64)
+        for i in range(n_pts):
+            ep_val[i]          = bmin[i]
+            ep_type[i]         = 1.0
+            ep_val[n_pts + i]  = bmax[i]
+            ep_type[n_pts + i] = -1.0
+
+        order = np.argsort(ep_val)
+        sorted_val  = np.empty(2 * n_pts, dtype=np.float64)
+        sorted_type = np.empty(2 * n_pts, dtype=np.float64)
+        for i in range(2 * n_pts):
+            sorted_val[i]  = ep_val[order[i]]
+            sorted_type[i] = ep_type[order[i]]
+
+        # Build cumulative-type array
+        cum_types = np.empty(2 * n_pts, dtype=np.int64)
+        cum = 0
+        for i in range(2 * n_pts):
+            cum += int(sorted_type[i])
+            cum_types[i] = cum
+
+        # Walk segments that achieve nselmax and scan b grid
+        for k in range(2 * n_pts - 1):
+            if cum_types[k] != nselmax:
+                continue
+            b_lo = sorted_val[k]
+            b_hi = sorted_val[k + 1]
+            if b_hi <= b_lo:
+                continue
+
+            n_b_steps = int((b_hi - b_lo) / b_step)
+            if n_b_steps < 1:
+                n_b_steps = 1
+
+            for bi in range(n_b_steps + 1):
+                b = b_lo + bi * b_step
+                if b > b_hi:
+                    b = b_hi
+
+                chi2_sum = 0.0
+                wgt_sum  = 0.0
+                for i in range(n_pts):
+                    res      = y[i] - sl * x[i] - b
+                    chi2_val = res * res / eps[i]
+                    if chi2_val <= chi2_thr:
+                        chi2_sum += chi2_val * wgt[i]
+                        wgt_sum  += wgt[i]
+
+                if wgt_sum > 0.0:
+                    totchi = chi2_sum / wgt_sum
+                    if totchi < chi2min:
+                        chi2min = totchi
+                        m0 = m
+                        b0 = b
+
+    return m0, b0
+
+
 def get_chirp_mass(cluster: Cluster, xgb_rho_mode: bool = False, pat0: bool = False):
     """Python implementation of C++ netcluster::mchirp().
 
@@ -1519,7 +1685,6 @@ def get_chirp_mass(cluster: Cluster, xgb_rho_mode: bool = False, pat0: bool = Fa
     fill_detection_statistic is preserved (mirrors netevent.cc lines 974-981).
     """
     import math
-    import numpy as np
 
     # --- C++ watconstants (same as in netcluster::mchirp, from constants.hh) ---
     G  = 6.67259e-11        # WAT_G_SI: gravitational constant [N m^2 kg^-2]
@@ -1569,90 +1734,24 @@ def get_chirp_mass(cluster: Cluster, xgb_rho_mode: bool = False, pat0: bool = Fa
     stepM    = 0.2
     m_vals   = np.arange(-maxM, maxM + 1e-9, stepM)   # 1001 values
 
-    # Pre-compute per-mass interval arrays: shape (nMass, 2*np_pts)
-    # Each row: sorted cumulative-sum of +1 (start) and -1 (end) endpoints
-    # We store bint[massIndex] = sorted interval endpoints for fine search
-    bint_list  = []   # list of sorted (value, type) arrays — each shape (2*np_pts,)
+    # Phase 1: parallel Numba scan — O(n_mass * n_pts * log n_pts) with prange
+    nsel_arr = _hough_count_overlaps_numba(
+        x.astype(np.float64), y.astype(np.float64),
+        xerr.astype(np.float64), yerr.astype(np.float64),
+        float(kk), m_vals.astype(np.float64),
+    )
 
-    nselmax = 0
-    maxMasses_idx = []
+    nselmax      = int(np.max(nsel_arr))
+    cand_indices = np.where(nsel_arr == nselmax)[0].astype(np.int64)
 
-    for mi, m in enumerate(m_vals):
-        sl  = kk * math.pow(abs(m), 5.0 / 3.0)
-        if m > 0:
-            sl = -sl
-
-        Db   = np.sqrt(2.0 * (sl * sl * xerr * xerr + yerr * yerr))
-        bmin = y - sl * x - Db
-        bmax = bmin + 2.0 * Db
-
-        # Build endpoint array: (value, type)  type ∈ {+1, -1}
-        endpoints = np.empty((2 * np_pts, 2), dtype=float)
-        endpoints[:np_pts, 0] = bmin
-        endpoints[:np_pts, 1] = 1.0
-        endpoints[np_pts:, 0] = bmax
-        endpoints[np_pts:, 1] = -1.0
-
-        order = np.argsort(endpoints[:, 0], kind='mergesort')
-        endpoints = endpoints[order]
-
-        # Running cumulative sum of types to find max overlap
-        cum = np.cumsum(endpoints[:, 1])
-        nsel = int(np.max(cum))
-
-        if nsel > nselmax:
-            nselmax = nsel
-            maxMasses_idx = [mi]
-            bint_list = [endpoints.copy()]
-        elif nsel == nselmax:
-            maxMasses_idx.append(mi)
-            bint_list.append(endpoints.copy())
-
-    # --- Fine search: minimize weighted chi2 over best mass candidates ---
-    chi2min = 1e100
-    m0 = m_vals[maxMasses_idx[0]] if maxMasses_idx else 0.0
-    b0 = 0.0
-
-    for jj, mi in enumerate(maxMasses_idx):
-        m   = m_vals[mi]
-        sl  = kk * math.pow(abs(m), 5.0 / 3.0)
-        if m > 0:
-            sl = -sl
-
-        eps = sl * sl * xerr * xerr + yerr * yerr   # per-pixel denominator
-
-        endpoints = bint_list[jj]
-
-        # C++: for(k=0; k<2*np-1; ++k) if(bint[..][k].type==nselmax)
-        #          for(b = bint[..][k].value; b < bint[..][k+1].value; b+=0.0025)
-        # "type" after cumsum is the running count at that point
-        cum_types = np.cumsum(endpoints[:, 1]).astype(int)
-        for k in range(2 * np_pts - 1):
-            if cum_types[k] != nselmax:
-                continue
-            b_lo = endpoints[k, 0]
-            b_hi = endpoints[k + 1, 0]
-            # Grid in b at step 0.0025
-            b_vals = np.arange(b_lo, b_hi, 0.0025)
-            if len(b_vals) == 0:
-                b_vals = np.array([b_lo])
-
-            # Vectorised over b_vals
-            # chi2[b, i] = (y[i] - sl*x[i] - b)^2 / eps[i]
-            residuals = y[np.newaxis, :] - sl * x[np.newaxis, :] - b_vals[:, np.newaxis]
-            chi2_mat  = residuals * residuals / eps[np.newaxis, :]
-            sel_mask  = chi2_mat <= chi2_thr
-
-            for bi, b in enumerate(b_vals):
-                mask = sel_mask[bi]
-                if not np.any(mask):
-                    continue
-                totchi = (np.sum(chi2_mat[bi, mask] * wgt[mask]) /
-                          np.sum(wgt[mask]))
-                if totchi < chi2min:
-                    chi2min = totchi
-                    m0 = m
-                    b0 = b
+    # Phase 2: fine b-grid search over candidate masses — tight Numba inner loop
+    m0, b0 = _fine_search_numba(
+        x.astype(np.float64), y.astype(np.float64),
+        xerr.astype(np.float64), yerr.astype(np.float64),
+        wgt.astype(np.float64),
+        float(kk), m_vals.astype(np.float64),
+        cand_indices, int(nselmax), float(chi2_thr),
+    )
 
     # --- Compute Efrac ---
     sl  = kk * math.pow(abs(m0), 5.0 / 3.0)
