@@ -47,8 +47,6 @@ def convert_to_celestial_coordinates(phi: float | np.ndarray, theta: float | np.
             declination = theta
         
         elif coordinate_system.lower() == 'geo':
-            # FIXME: convert_phi_to_ra can take geo as an input only for forward conversion
-            # phi_cwb, _ = convert_cwb_to_geo(phi, 0., inverse=True)
             right_ascension = convert_phi_to_ra(phi, gps_time)
             declination = theta
 
@@ -61,77 +59,94 @@ def convert_to_celestial_coordinates(phi: float | np.ndarray, theta: float | np.
 
         return right_ascension, declination
 
-def convert_phi_to_ra(phi, gps_time, inverse=False):
+def convert_phi_to_ra(phi, gps_time):
     """
-    Convert between cWB phi and RA by rotating by GMST. Both in radians.
+    Convert cWB phi to RA by rotating by GMST, in radians.
 
     Parameters
     ----------
     phi : float or np.ndarray
-        cWB phi [rad] if inverse=False, or RA [rad] if inverse=True.
+        cWB phi [rad]. Tolerates geo phi as input; modular arithmetic handles
+        negative values correctly.
     gps_time : float
-        GPS time used to compute GMST for the rotation to RA.
-    inverse : bool, optional
-        If False (default): phi(CWB) -> RA. If True: RA -> phi(CWB).
+        GPS time used to compute GMST for the rotation.
 
     Returns
     -------
     float or np.ndarray
-        RA [0, 2π) [rad] if inverse=False, or phi(CWB) [0, 2π) [rad] if inverse=True.
-
-    Notes
-    -----
-    Forward (inverse=False) tolerates geo phi as input because the modular
-    arithmetic handles negative values correctly. Inverse always returns [0, 2π) (cWB convention).
+        RA [0, 2π) [rad].
     """
     gmst = gmst_rad(gps_time)
-    if inverse:
-        gmst = -gmst
-    ra = (phi + gmst) % (2 * np.pi)
-    return ra
+    return (phi + gmst) % (2 * np.pi)
 
 def convert_ra_to_phi(ra, gps_time):
-    return convert_phi_to_ra(ra, gps_time, inverse=True)
+    """
+    Convert RA to cWB phi by rotating by GMST, in radians.
+
+    Parameters
+    ----------
+    ra : float or np.ndarray
+        RA [rad].
+    gps_time : float
+        GPS time used to compute GMST for the rotation.
+
+    Returns
+    -------
+    float or np.ndarray
+        cWB phi [0, 2π) [rad].
+    """
+    gmst = gmst_rad(gps_time)
+    return (ra - gmst) % (2 * np.pi)
 
 def convert_theta_to_dec(theta):
     return  -(theta - np.pi / 2)
 
 def convert_dec_to_theta(dec):
-    return convert_theta_to_dec(dec)
+    return -(dec - np.pi / 2)
 
-def convert_cwb_to_geo(phi, theta, inverse=False):
+def convert_cwb_to_geo(phi, theta):
     """
-    Convert between cWB and geo angle conventions, in radians.
+    Convert cWB to geo angle conventions, in radians.
 
     Parameters
     ----------
     phi : float or np.ndarray
-        cWB phi [rad] if inverse=False, or geo phi [rad] if inverse=True.
+        cWB phi [rad].
     theta : float or np.ndarray
-        cWB theta [rad] if inverse=False, or Dec [rad] if inverse=True.
-    inverse : bool, optional
-        If False (default): cWB -> geo. If True: geo -> cWB.
+        cWB theta [rad].
 
     Returns
     -------
     phi : float or np.ndarray
-        geo phi [-π, π) [rad] if inverse=False, or cWB phi [0, 2π) [rad] if inverse=True.
+        geo phi [-π, π) [rad].
     theta : float or np.ndarray
-        Dec [-π/2, π/2] [rad] if inverse=False, or cWB theta [0, π] [rad] if inverse=True.
+        Dec [-π/2, π/2] [rad].
     """
-    if inverse:
-        # geo -> cwb
-        phi = phi % (2 * np.pi)
-        theta = -(theta - np.pi / 2)
-        return phi, theta
-
-    # cwb -> geo
     phi = (phi + np.pi) % (2 * np.pi) - np.pi
     theta = convert_theta_to_dec(theta)
     return phi, theta
 
 def convert_geo_to_cwb(phi, theta):
-    return convert_cwb_to_geo(phi, theta, inverse=True)
+    """
+    Convert geo to cWB angle conventions, in radians.
+
+    Parameters
+    ----------
+    phi : float or np.ndarray
+        geo phi [rad].
+    theta : float or np.ndarray
+        Dec [rad].
+
+    Returns
+    -------
+    phi : float or np.ndarray
+        cWB phi [0, 2π) [rad].
+    theta : float or np.ndarray
+        cWB theta [0, π] [rad].
+    """
+    phi = phi % (2 * np.pi)
+    theta = convert_dec_to_theta(theta)
+    return phi, theta
 
 def gmst_rad(gps_time):
     """Compute GMST (Greenwich Mean Sidereal Time) in radians."""
