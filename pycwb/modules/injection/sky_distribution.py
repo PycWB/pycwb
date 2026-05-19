@@ -125,8 +125,12 @@ def distribute_injections_on_sky(injections, sky_locations, shuffle=True, coords
 
     # shuffle the sky locations
     if shuffle:
-        np.random.shuffle(phi)
-        np.random.shuffle(theta)
+        coords = np.column_stack((phi, theta))
+        np.random.shuffle(coords)
+
+        theta = coords[:, 1]
+        phi = coords[:, 0]
+
 
     if coordsys == 'icrs':
         # If the coordinate system is ICRS, save the sky location directly in ra and dec attributes
