@@ -10,6 +10,9 @@ import logging
 
 import numpy as np
 
+from pycwb.types.detector import gmst_accurate
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +82,6 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config, t_ref=None):
         # at the reference time of the analyzed strain data.
         if coordsys.lower() == 'icrs':
             if t_ref is not None:
-                from pycwb.types.detector import gmst_accurate
                 gmst = gmst_accurate(t_ref)
                 center_phi = (center_phi - gmst) % (2.0 * np.pi)  # RA -> GEO phi
         # Angular separation via dot-product formula (numerically stable)
@@ -107,7 +109,6 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config, t_ref=None):
         # at the reference time of the analyzed strain data.
         if coordsys.lower() == 'icrs':
             if t_ref is not None:
-                from pycwb.types.detector import gmst_accurate
                 gmst = gmst_accurate(t_ref)
                 phi = (phi - gmst) % (2.0 * np.pi)  # RA -> GEO phi
         cos_d = (np.sin(dec_arr) * np.sin(theta) +
