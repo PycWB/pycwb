@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 from scipy.stats import poisson
 from .continues_poisson import get_percentiles, get_percentiles_ROOT
 
@@ -135,9 +137,13 @@ def calculate_detection_efficiency(catalog, simulation, inj_key: str = 'hrss', i
     
     det_eff, det_err = [], []
     for inj_factor in inj_factors:
-        catalog_fac = catalog.filter(pc.equal(catalog['injection'].combine_chunks().field(inj_key), inj_factor))
+        catalog_fac = catalog.filter(pc.equal(catalog['injection'].combine_chunks().field(inj_key), pa.scalar(inj_factor, type=pa.float32())))
         simulation_fac = simulation.filter(pc.equal(simulation[inj_key], inj_factor))
 
+        # check if injections exist for the given factor
+        if len(simulation_fac) == 0:
+            raise ValueError(f'{simulation["name"][0]}: No injections in simulation for {inj_key}={inj_factor}')
+            
         det_eff.append(len(catalog_fac) / len(simulation_fac))
         det_err.append(np.sqrt(det_eff[-1] * (1-det_eff[-1]) / len(simulation_fac)))
     
