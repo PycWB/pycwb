@@ -98,24 +98,24 @@ class DQFile:
 
         # check if all start > 0
         if np.any(start < 0):
-            error_indexes = np.where(start < 0)
+            error_indexes = np.where(start < 0)[0]
             for i in error_indexes:
-                logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-            raise Exception("Error Ranges")
+                logger.error(f"Negative start time at index {i}: start={float(start[i])} stop={float(stop[i])}")
+            raise Exception("Error Ranges: negative start times found")
 
         # check if all start < stop
         if np.any(start > stop):
-            error_indexes = np.where(start > stop)
+            error_indexes = np.where(start > stop)[0]
             for i in error_indexes:
-                logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-            raise Exception("Error Ranges")
+                logger.error(f"Start exceeds stop at index {i}: start={float(start[i])} stop={float(stop[i])}")
+            raise Exception("Error Ranges: start > stop")
 
         # check if all stop < next start
         if np.any(stop[:-1] > start[1:]):
-            error_indexes = np.where(stop[:-1] > start[1:])
+            error_indexes = np.where(stop[:-1] > start[1:])[0]
             for i in error_indexes:
-                logger.error(f"Error Ranges : {float(start[i])} {float(stop[i])}")
-            raise Exception("Error Ranges")
+                logger.error(f"Overlapping segments at index {i}-{i+1}: [{float(start[i])}, {float(stop[i])}] overlaps [{float(start[i+1])}, {float(stop[i+1])}]")
+            raise Exception("Error Ranges: overlapping segments")
 
         if self.invert:
             start, stop = np.append(0, stop), np.append(start, np.inf)
