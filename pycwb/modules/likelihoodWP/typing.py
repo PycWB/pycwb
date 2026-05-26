@@ -89,6 +89,7 @@ class SkyMapStatistics:
     nNetIndex: np.array  # cc
     nEllipticity: np.array  # Cr
     nPolarisation: np.array  # Mp
+    STAT: float = np.float32(-1.e12)  # best AA across sky loop; -1e12 means no pixel passed netCC gate
     nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
     stage_timings: dict = None  # per-stage wall-clock timings (GPU only)
 

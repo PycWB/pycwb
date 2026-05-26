@@ -479,11 +479,12 @@ def likelihood(
     # calculate sky statistics for the cluster at the optimal sky location l_max,
     # dozens of parameters will be returned in SkyStatistics dataclass
     _t0 = time.perf_counter()
-    sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
-                                                             FP, FX, rms, td00, td90, ml, REG, 
+    sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix,
+                                                             FP, FX, rms, td00, td90, ml, REG,
                                                              network_energy_threshold,
                                                              cluster_xtalk, cluster_xtalk_lookup,
-                                                             xgb_rho_mode=xgb_rho_mode)
+                                                             xgb_rho_mode=xgb_rho_mode,
+                                                             sky_scan_stat=skymap_statistics.STAT)
     stage_timings["sky_statistics_at_lmax"] = time.perf_counter() - _t0
 
     # --- Threshold cuts — reject cluster if any condition fails ---
@@ -832,7 +833,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
             l_max = _l
 
     return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \
-              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)
+              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation, STAT)
 
 
 def calculate_sky_statistics(
@@ -851,6 +852,7 @@ def calculate_sky_statistics(
     cluster_xtalk_lookup_table: np.ndarray,
     DEBUG: bool = False,
     xgb_rho_mode: bool = False,
+    sky_scan_stat: float = None,
 ) -> SkyStatistics:
     """
     Calculate the sky statistics for a specific sky location.
@@ -952,7 +954,11 @@ def calculate_sky_statistics(
     Em = xtalk_energy_sum_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain data energy
     Np = xtalk_energy_sum_numpy(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain null energy
     D_snr = Em  # alias for backward compat
-    Lm = Em - Np - Gn   # time-domain signal energy
+    # If no sky pixel passed the Cr >= netCC gate, STAT stayed at -1e12.
+    # Mirror C++ behaviour: Lm is only written inside the gated second-pass loop body,
+    # so it remains 0 when nothing passes — causing threshold_cut to reject via Lm <= 0.
+    Lm = np.float32(0.) if (sky_scan_stat is not None and sky_scan_stat <= np.float32(-1.e12)) \
+         else Em - Np - Gn   # time-domain signal energy
     norm = (Eo - Eh) / Em if Em > 0 else 1.e9
     if norm < 1:
         norm = 1
@@ -1496,7 +1502,7 @@ def threshold_cut(
             net_rho_threshold = (netEC_threshold / 2.0) ** 0.5
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
-        condition_3 = rho < net_rho_threshold
+        condition_3 = not np.isfinite(rho) or rho < net_rho_threshold
         condition_4 = N < 1   # C++: N < 1 (pixel count)
         if condition_1 or condition_2 or condition_3 or condition_4:
             rejection_reason = ""
