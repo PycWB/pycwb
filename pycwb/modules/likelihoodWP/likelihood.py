@@ -787,7 +787,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
         Co = Ec / (Ec + No * cc - Mo * (n_ifo - 1))  # network correlation coefficient in TF
 
-        if Cr < netCC:
+        if not np.isfinite(Cr) or Cr < netCC:
             continue
 
         # --- Sky statistics: likelihood and cross-correlation ---
