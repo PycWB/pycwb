@@ -980,7 +980,11 @@ def calculate_sky_statistics(
     else:  # XGB.rho0
         penalty = ch
         ecor = Ec
-        rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1)))
+        # TODO: The ecor can be negative for certain cases, which causes rho to be NaN. 
+        # And in Python NaN < netRHO is always False, which means the cluster will never be rejected by the rho threshold cut. 
+        # This is fixed in cWB 6.9.6.9. The investigation of the root cause of negative ecor is leave to the future,
+        # for now we clamp it to zero to avoid NaN issues and ensure proper thresholding.
+        rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1))) if ecor > 0 else 0 
         cc = ch if ch > 1 else 1             # noise correction factor (kept for xrho)
         xrho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # original 2G rho (reference only)
         if DEBUG:
