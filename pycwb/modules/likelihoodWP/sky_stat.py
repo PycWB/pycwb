@@ -148,7 +148,7 @@ def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
     p_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
     q_updated = np.empty((n_ifo, n_pix), dtype=np.float32)
 
-    _o = np.float32(1e-5)
+    _o = np.float32(1e-9)
     _rr = np.float32(reg[0])
     _RR = np.float32(reg[1])
     NN = np.int32(0)
@@ -337,7 +337,7 @@ def avx_stat_ps(v00, v90, s, S, si, co, mask):
     n_ifo = len(v00)  # Number of interferometers
     n_pix = len(v00[0])  # Number of pixels
 
-    _o = np.float32(0.001)
+    _o = np.float32(1.e-9)
     _0 = np.float32(0)
     _1 = np.float32(1)
     _2 = np.float32(2)

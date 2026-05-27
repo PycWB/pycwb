@@ -383,7 +383,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 #    static const __m128 _0  = _mm_set1_ps(0);
 #    static const __m128 _1  = _mm_set1_ps(1);
-#    static const __m128 _o  = _mm_set1_ps(1.e-5);
+#    static const __m128 _o  = _mm_set1_ps(1.e-9);
 
 #    __m128 _ss,_cc,_SS,_CC;
 #    float rpol[4],cpol[4],spol[4];
@@ -596,7 +596,7 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     new_p = np.empty((n_ifo, n_pix), dtype=np.float32)
     new_q = np.empty((n_ifo, n_pix), dtype=np.float32)
 
-    _o = float(1.e-5)
+    _o = float(1.e-9)
 
     # Vectorized pixel loop — replaces the interpreted for i in range(n_pix) loop
     p_arr = np.asarray(p, dtype=np.float64)   # (n_ifo, n_pix)
@@ -692,7 +692,7 @@ def avx_packet_ps(v00, v90, mask):
     """
     n_ifo = len(v00)
     n_pix = len(v00[0])
-    _o = float(0.0001)
+    _o = float(1.e-9)
 
     mk = np.empty(n_pix, dtype=np.float32)
     aa = np.zeros(n_ifo, dtype=np.float32)

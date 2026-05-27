@@ -64,7 +64,7 @@ def avx_dpf_ps(Fp0, Fx0, rms):
         ss = si ** 2
         nn = sqrt(cc + ss)  # co/si norm
         fp = (AP + nn) / 2  # |f+|^2
-        cc = co / (nn + 0.0001)  # cos(2p)
+        cc = co / (nn + 1e-9)  # cos(2p)
         ss = 1 if si > 0 else -1  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
         si = sqrt((1 - cc) / 2)  # |sin(p)|
         co = sqrt((1 + cc) / 2)  # |cos(p)|
@@ -75,13 +75,13 @@ def avx_dpf_ps(Fp0, Fx0, rms):
         nn = np.dot(_cc, _cc)
         fF = np.dot(f, F)
 
-        fF = fF / (fp + 0.0001)
+        fF = fF / (fp + 1e-9)
 
         F -= f * fF
         fx = np.dot(F, F)
 
-        ni = nn / (fp ** 2 + 0.0001)  # network index
-        ff = ni + 0.0001  # network index
+        ni = nn / (fp ** 2 + 1e-9)  # network index
+        ff = ni + 1e-9  # network index
         NI += fx / ff  # sum of |fx|^2/2/ni
         NN += 1 if fp > 0 else 0  # pixel count
 
@@ -108,7 +108,7 @@ def dpf_np_loops_local(Fp0, Fx0, rms):
     ni = np.zeros(NPIX, dtype=np.float32)
 
     # Prepare constants
-    _o = np.float32(0.0001)
+    _o = np.float32(1e-9)
     # _0 = np.float32(0)
     # _2 = np.float32(2)
     # _1 = np.float32(1)
@@ -202,7 +202,7 @@ def dpf_np_loops(Fp0, Fx0, rms):
         AP[i] = ff[i] + FF[i]
         nn[i] = sqrt(co[i] * co[i] + si[i] * si[i])
         fp[i] = (AP[i] + nn[i]) / 2
-        cc[i] = co[i] / (nn[i] + 0.0001)
+        cc[i] = co[i] / (nn[i] + 1e-9)
         si[i], co[i] = sqrt((1 - cc[i]) / 2), sqrt((1 + cc[i]) / 2) * (1 if si[i] > 0 else -1)
 
     # Compute f_new, F_new, fF_new, F_new, fx, ni
@@ -210,7 +210,7 @@ def dpf_np_loops(Fp0, Fx0, rms):
         for j in range(NIFO):
             f[i, j], F[i, j] = f[i, j] * co[i] + F[i, j] * si[i], F[i, j] * co[i] - f[i, j] * si[i]
             fF_new[i] += f[i, j] * F[i, j]
-        fF_new[i] /= (fp[i] + 0.0001)
+        fF_new[i] /= (fp[i] + 1e-9)
         for j in range(NIFO):
             F[i, j] -= f[i, j] * fF_new[i]
             fx[i] += F[i, j] * F[i, j]
@@ -220,8 +220,8 @@ def dpf_np_loops(Fp0, Fx0, rms):
     NI = 0
     NN = 0
     for i in range(NPIX):
-        ni[i] /= (fp[i] * fp[i] + 0.0001)
-        NI += fx[i] / (ni[i] + 0.0001)
+        ni[i] /= (fp[i] * fp[i] + 1e-9)
+        NI += fx[i] / (ni[i] + 1e-9)
         NN += 1 if fp[i] > 0 else 0
 
     return sqrt(NI / (NN + 0.01)), fp, fx, si, co, ni
@@ -250,20 +250,20 @@ def dpf_np(Fp0, Fx0, rms):
 
     nn = np.sqrt(co * co + si * si)  # co/si norm
     fp = (AP + nn) / 2  # |f+|^2
-    cc = co / (nn + 0.0001)  # cos(2p)
+    cc = co / (nn + 1e-9)  # cos(2p)
     si, co = np.sqrt((1 - cc) / 2), np.sqrt((1 + cc) / 2) * np.where(si > 0, 1, -1)
 
     f, F = f * co[:, np.newaxis] + F * si[:, np.newaxis], F * co[:, np.newaxis] - f * si[:, np.newaxis]
 
-    fF = (f * F).sum(axis=1) / (fp + 0.0001)
+    fF = (f * F).sum(axis=1) / (fp + 1e-9)
 
     F -= f * fF[:, None]
 
     fx = (F * F).sum(axis=1)
 
-    ni = (f ** 4).sum(axis=1) / (fp * fp + 0.0001)  # network index
+    ni = (f ** 4).sum(axis=1) / (fp * fp + 1e-9)  # network index
 
-    NI = (fx / (ni + 0.0001)).sum()  # sum of |fx|^2/2/ni
+    NI = (fx / (ni + 1e-9)).sum()  # sum of |fx|^2/2/ni
 
     NN = (fp > 0).sum()  # pixel count
 
@@ -277,7 +277,7 @@ def mul_vec(a, b):
 
 @vectorize([float32(float32, float32)])
 def div_vec(a, b):
-    _o = float32(0.0001)
+    _o = float32(1e-9)
     return a / (b + _o)
 
 
@@ -386,7 +386,7 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
     fx = np.zeros(NPIX, dtype=np.float32)
     ni = np.zeros(NPIX, dtype=np.float32)
 
-    _o = float32(0.0001)
+    _o = float32(1e-9)
 
     # Prepare constants
     # NI = np.float32(0.0)
@@ -414,7 +414,7 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
         _co = sub_vec(_ff, _FF)          # rotation (cos^2-sin^2)*norm
         _AP = add_vec(_ff, _FF)          # total antenna norm
         _nn = norm_vec(_co, _si)         # co/si norm    np.sqrt(_co * _co + _si * _si)
-        _cc = div_vec(_co, _nn)          # cos(2p)       _co / (_nn + 0.0001)
+        _cc = div_vec(_co, _nn)          # cos(2p)       _co / (_nn + 1e-9)
         fp[i] = avg_vec(_AP, _nn)        # |f+|^2        (_AP + _nn) / 2.
         si[i] = sin_from_cc(_cc)         # |sin(p)|      sqrt((1. - _cc) / 2.)
         co[i] = cos_from_cc(_cc, _si)    # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
