@@ -125,6 +125,13 @@ def _write_table_atomic(table: pa.Table, filename: str, compression: str = "snap
     os.makedirs(target_dir, exist_ok=True)
 
     fd, tmp_path = tempfile.mkstemp(prefix=".catalog_tmp_", suffix=".parquet", dir=target_dir)
+    # mkstemp creates files with mode 0o600, bypassing the system umask.
+    # Restore umask-respecting permissions so catalog files are group/world
+    # readable as expected (equivalent to what a normal open(O_CREAT, 0666)
+    # would produce after the umask is applied).
+    _umask = os.umask(0)
+    os.umask(_umask)
+    os.fchmod(fd, 0o666 & ~_umask)
     os.close(fd)
     try:
         pq.write_table(table, tmp_path, compression=compression)
