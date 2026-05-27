@@ -455,6 +455,15 @@ def likelihood(
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0
 
+    if skymap_statistics.sky_stat_max <= 0.0:
+        logger.info("Cluster rejected: non-positive sky_stat_max=%.3f", skymap_statistics.sky_stat_max)
+        stage_timings["total"] = time.perf_counter() - timer_start
+        logger.info("-------------------------------------------------------")
+        logger.info("Total events: %d", 0)
+        logger.info("Total time: %.2f s", stage_timings["total"])
+        logger.info("-------------------------------------------------------")
+        return None, None
+
     # --- Compute normalised sky probability map (softmax over nSkyStat) ---
     _t0 = time.perf_counter()
     _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
@@ -479,8 +488,8 @@ def likelihood(
     # calculate sky statistics for the cluster at the optimal sky location l_max,
     # dozens of parameters will be returned in SkyStatistics dataclass
     _t0 = time.perf_counter()
-    sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix, 
-                                                             FP, FX, rms, td00, td90, ml, REG, 
+    sky_statistics: SkyStatistics = calculate_sky_statistics(skymap_statistics.l_max, nIFO, n_pix,
+                                                             FP, FX, rms, td00, td90, ml, REG,
                                                              network_energy_threshold,
                                                              cluster_xtalk, cluster_xtalk_lookup,
                                                              xgb_rho_mode=xgb_rho_mode)
@@ -786,7 +795,7 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
         cc = CH if CH > float(1.0) else 1.0  # noise correction factor in TF domain
         Co = Ec / (Ec + No * cc - Mo * (n_ifo - 1))  # network correlation coefficient in TF
 
-        if Cr < netCC:
+        if not np.isfinite(Cr) or Cr < netCC:
             continue
 
         # --- Sky statistics: likelihood and cross-correlation ---
@@ -823,16 +832,16 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     # Mirror C++ tie-breaking: C++ uses `if (AA >= STAT)` in a forward loop,
     # so the LAST pixel with the maximum value wins on ties.
     # Iterate only over valid (unmasked) indices to match C++ behaviour.
-    STAT = np.float32(-1.e12)
+    sky_stat_max = 0
     l_max = int(sky_valid_indices[0])
     for _k in range(n_valid):
         _l = sky_valid_indices[_k]
-        if AA_array[_l] >= STAT:
-            STAT = AA_array[_l]
+        if AA_array[_l] >= sky_stat_max:
+            sky_stat_max = AA_array[_l]
             l_max = _l
 
     return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \
-              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)
+              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation, sky_stat_max)
 
 
 def calculate_sky_statistics(
@@ -974,7 +983,11 @@ def calculate_sky_statistics(
     else:  # XGB.rho0
         penalty = ch
         ecor = Ec
-        rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1)))
+        # TODO: The ecor can be negative for certain cases, which causes rho to be NaN. 
+        # And in Python NaN < netRHO is always False, which means the cluster will never be rejected by the rho threshold cut. 
+        # This is fixed in cWB 6.9.6.9. The investigation of the root cause of negative ecor is leave to the future,
+        # for now we clamp it to zero to avoid NaN issues and ensure proper thresholding.
+        rho = np.sqrt(ecor / (1 + penalty * (max(float(1), penalty) - 1))) if ecor > 0 else 0 
         cc = ch if ch > 1 else 1             # noise correction factor (kept for xrho)
         xrho = np.sqrt(Ec * Rc / 2.) if Ec > 0 else 0  # original 2G rho (reference only)
         if DEBUG:
@@ -1496,7 +1509,7 @@ def threshold_cut(
             net_rho_threshold = (netEC_threshold / 2.0) ** 0.5
         condition_1 = Lm <= 0.
         condition_2 = (Eo - Eh) <= 0.
-        condition_3 = rho < net_rho_threshold
+        condition_3 = not np.isfinite(rho) or rho < net_rho_threshold
         condition_4 = N < 1   # C++: N < 1 (pixel count)
         if condition_1 or condition_2 or condition_3 or condition_4:
             rejection_reason = ""

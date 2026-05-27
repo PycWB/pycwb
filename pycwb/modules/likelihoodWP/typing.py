@@ -89,6 +89,7 @@ class SkyMapStatistics:
     nNetIndex: np.array  # cc
     nEllipticity: np.array  # Cr
     nPolarisation: np.array  # Mp
+    sky_stat_max: float = 0 
     nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
     stage_timings: dict = None  # per-stage wall-clock timings (GPU only)
 
