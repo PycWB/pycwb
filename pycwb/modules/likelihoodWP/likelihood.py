@@ -455,6 +455,15 @@ def likelihood(
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0
 
+    if skymap_statistics.sky_stat_max <= 0.0:
+        logger.info("Cluster rejected: non-positive sky_stat_max=%.3f", skymap_statistics.sky_stat_max)
+        stage_timings["total"] = time.perf_counter() - timer_start
+        logger.info("-------------------------------------------------------")
+        logger.info("Total events: %d", 0)
+        logger.info("Total time: %.2f s", stage_timings["total"])
+        logger.info("-------------------------------------------------------")
+        return None, None
+
     # --- Compute normalised sky probability map (softmax over nSkyStat) ---
     _t0 = time.perf_counter()
     _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
@@ -824,16 +833,16 @@ def find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, 
     # Mirror C++ tie-breaking: C++ uses `if (AA >= STAT)` in a forward loop,
     # so the LAST pixel with the maximum value wins on ties.
     # Iterate only over valid (unmasked) indices to match C++ behaviour.
-    STAT = np.float32(-1.e12)
+    sky_stat_max = 0
     l_max = int(sky_valid_indices[0])
     for _k in range(n_valid):
         _l = sky_valid_indices[_k]
-        if AA_array[_l] >= STAT:
-            STAT = AA_array[_l]
+        if AA_array[_l] >= sky_stat_max:
+            sky_stat_max = AA_array[_l]
             l_max = _l
 
     return (l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy, \
-              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation, STAT)
+              nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation, sky_stat_max)
 
 
 def calculate_sky_statistics(
@@ -852,7 +861,6 @@ def calculate_sky_statistics(
     cluster_xtalk_lookup_table: np.ndarray,
     DEBUG: bool = False,
     xgb_rho_mode: bool = False,
-    sky_scan_stat: float = None,
 ) -> SkyStatistics:
     """
     Calculate the sky statistics for a specific sky location.
@@ -954,11 +962,7 @@ def calculate_sky_statistics(
     Em = xtalk_energy_sum_numpy(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain data energy
     Np = xtalk_energy_sum_numpy(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)  # time-domain null energy
     D_snr = Em  # alias for backward compat
-    # If no sky pixel passed the Cr >= netCC gate, STAT stayed at -1e12.
-    # Mirror C++ behaviour: Lm is only written inside the gated second-pass loop body,
-    # so it remains 0 when nothing passes — causing threshold_cut to reject via Lm <= 0.
-    Lm = np.float32(0.) if (sky_scan_stat is not None and sky_scan_stat <= np.float32(-1.e12)) \
-         else Em - Np - Gn   # time-domain signal energy
+    Lm = Em - Np - Gn   # time-domain signal energy
     norm = (Eo - Eh) / Em if Em > 0 else 1.e9
     if norm < 1:
         norm = 1
