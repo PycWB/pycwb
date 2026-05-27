@@ -492,8 +492,7 @@ def likelihood(
                                                              FP, FX, rms, td00, td90, ml, REG,
                                                              network_energy_threshold,
                                                              cluster_xtalk, cluster_xtalk_lookup,
-                                                             xgb_rho_mode=xgb_rho_mode,
-                                                             sky_scan_stat=skymap_statistics.STAT)
+                                                             xgb_rho_mode=xgb_rho_mode)
     stage_timings["sky_statistics_at_lmax"] = time.perf_counter() - _t0
 
     # --- Threshold cuts — reject cluster if any condition fails ---
