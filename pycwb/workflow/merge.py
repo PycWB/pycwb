@@ -5,7 +5,8 @@ import glob
 import logging
 import click
 import h5py as h5
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import itertools
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from dacite import from_dict, Config as DaciteConfig
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -163,18 +164,33 @@ def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: 
     start = time.time()
     with h5.File(merged_wave_file, 'w') as f_out:
         with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_read_wave_file, wf): wf for wf in wave_files}
-            for future in as_completed(futures):
-                source_file, event_data = future.result()
-                logger.info(f"Adding waveforms of {len(event_data)} events from {source_file}")
-                for event_id, event_info in event_data.items():
-                    grp = f_out.create_group(event_id)
-                    for attr_key, attr_val in event_info['attrs'].items():
-                        grp.attrs[attr_key] = attr_val
-                    for ds_name, ds_info in event_info['datasets'].items():
-                        ds = grp.create_dataset(ds_name, data=ds_info['data'])
-                        for attr_key, attr_val in ds_info['attrs'].items():
-                            ds.attrs[attr_key] = attr_val
+            file_iter = iter(wave_files)
+
+            # Seed the pool with the first `workers` files
+            pending = {executor.submit(_read_wave_file, wf): wf
+                       for wf in itertools.islice(file_iter, workers)}
+
+            while pending:
+                # Block until at least one read finishes
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    del pending[future]
+                    source_file, event_data = future.result()
+                    logger.info(f"Adding waveforms of {len(event_data)} events from {source_file}")
+                    for event_id, event_info in event_data.items():
+                        grp = f_out.create_group(event_id)
+                        for attr_key, attr_val in event_info['attrs'].items():
+                            grp.attrs[attr_key] = attr_val
+                        for ds_name, ds_info in event_info['datasets'].items():
+                            ds = grp.create_dataset(ds_name, data=ds_info['data'])
+                            for attr_key, attr_val in ds_info['attrs'].items():
+                                ds.attrs[attr_key] = attr_val
+                    # Only submit the next file after this result has been written
+                    try:
+                        wf = next(file_iter)
+                        pending[executor.submit(_read_wave_file, wf)] = wf
+                    except StopIteration:
+                        pass
     
     logger.info(f"Finished merging: {merged_wave_file}")
     logger.info(f"Elapsed time: {time.time() - start:.2f} s")
