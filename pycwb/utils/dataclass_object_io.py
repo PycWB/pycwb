@@ -1,6 +1,13 @@
 import orjson
 import gzip
+import numpy as np
 from dacite import from_dict
+
+
+def _numpy_default(obj):
+    if isinstance(obj, np.ndarray):
+        return np.ascontiguousarray(obj).tolist()
+    raise TypeError
 
 
 def save_dataclass_to_json(dataclass_object, output_file, compress_json=False):
@@ -18,10 +25,12 @@ def save_dataclass_to_json(dataclass_object, output_file, compress_json=False):
         if not output_file.endswith('.gz'):
             output_file += '.gz'
         with gzip.open(output_file, 'wb') as f:
-            f.write(orjson.dumps(dataclass_object, option=orjson.OPT_SERIALIZE_NUMPY))
+            f.write(orjson.dumps(dataclass_object, default=_numpy_default,
+                                 option=orjson.OPT_SERIALIZE_NUMPY))
     else:
         with open(output_file, 'wb') as f:
-            f.write(orjson.dumps(dataclass_object, option=orjson.OPT_SERIALIZE_NUMPY))
+            f.write(orjson.dumps(dataclass_object, default=_numpy_default,
+                                 option=orjson.OPT_SERIALIZE_NUMPY))
 
 
 def load_dataclass_from_json(dataclass_object, input_file):

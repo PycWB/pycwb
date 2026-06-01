@@ -246,6 +246,76 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     }
 
 
+def select_pixels_single_lag(
+    coherence_setups: list[dict],
+    lag_idx: int,
+    veto_windows: list[tuple[float, float]] | None = None,
+) -> list[dict]:
+    """Select significant pixels for one lag without clustering.
+
+    This is the pixel-selection half of :func:`coherence_single_lag`.  It
+    runs :func:`select_network_pixels` for every resolution and returns the
+    raw candidate payload, enriched with the setup metadata that clustering
+    backends need (``pattern``, ``select_subrho``, ``select_subnet``,
+    ``level``, ``segEdge``).
+
+    Parameters
+    ----------
+    coherence_setups : list[dict]
+        Returned by :func:`setup_coherence`.
+    lag_idx : int
+        Zero-based lag index.
+    veto_windows : list[tuple[float, float]] or None
+        GPS intervals ``(start, end)`` to keep.
+
+    Returns
+    -------
+    list[dict]
+        One candidate dict per resolution.  Each dict contains all keys
+        from :func:`select_network_pixels` plus:
+
+        * ``"pattern"``       — wavelet pattern flag
+        * ``"select_subrho"`` — subrho coherence threshold
+        * ``"select_subnet"`` — subnet coherence threshold
+        * ``"level"``         — WDM resolution level
+        * ``"segEdge"``       — segment edge margin in seconds
+    """
+    result = []
+    for setup in coherence_setups:
+        tf_maps = setup["tf_maps"]
+        Eo = setup["Eo"]
+        job_seg = setup["job_seg"]
+
+        if lag_idx >= job_seg.n_lag:
+            raise IndexError(
+                f"lag_idx={lag_idx} is out of range n_lag={job_seg.n_lag}"
+            )
+
+        veto = None
+        if veto_windows is not None:
+            veto = build_veto_mask(tf_maps[0], veto_windows, edge=setup["segEdge"])
+
+        candidates = select_network_pixels(
+            tf_maps=tf_maps,
+            lag_index=lag_idx,
+            energy_threshold=Eo,
+            lag_shifts=job_seg.lag_shifts[lag_idx],
+            veto=veto,
+            edge=setup["segEdge"],
+        )
+
+        result.append({
+            **candidates,
+            "pattern":       setup["pattern"],
+            "select_subrho": setup["select_subrho"],
+            "select_subnet": setup["select_subnet"],
+            "level":         setup["level"],
+            "segEdge":       setup["segEdge"],
+        })
+
+    return result
+
+
 def coherence_single_lag(
     coherence_setups: list[dict],
     lag_idx: int,
@@ -257,6 +327,10 @@ def coherence_single_lag(
 
     This is the per-lag cheap counterpart: only pixel selection and clustering
     are performed here; all expensive TF/WDM work is already done.
+
+    The pixel-selection step is factored out into :func:`select_pixels_single_lag`
+    so that clustering backends can consume raw candidates without going through
+    this function.
 
     Parameters
     ----------
@@ -276,45 +350,22 @@ def coherence_single_lag(
     list[FragmentCluster]
         One FragmentCluster per resolution for this lag.
     """
+    t0_select = time.perf_counter()
+    pixel_candidates = select_pixels_single_lag(coherence_setups, lag_idx, veto_windows)
+    t_select = time.perf_counter() - t0_select
+
     fragment_clusters = []
-    for setup in coherence_setups:
-        # Unpack lag-independent setup data for this resolution
-        tf_maps = setup["tf_maps"]
-        Eo = setup["Eo"]
-        job_seg = setup["job_seg"]
-        pattern = setup["pattern"]
-
-        # Validate lag index is within range
-        if lag_idx >= job_seg.n_lag:
-            raise IndexError(
-                f"lag_idx={lag_idx} is out of range n_lag={job_seg.n_lag}"
-            )
-
-        # Select significant pixels above threshold for this lag
-        # (applies time shifts and optional veto masks)
-        veto = None
-        if veto_windows is not None:
-            veto = build_veto_mask(tf_maps[0], veto_windows, edge=setup["segEdge"])
-        t0_select = time.perf_counter()
-        candidates = select_network_pixels(
-            tf_maps=tf_maps,
-            lag_index=lag_idx,
-            energy_threshold=Eo,
-            lag_shifts=job_seg.lag_shifts[lag_idx],
-            veto=veto,
-            edge=setup["segEdge"],
-        )
-        t_select = time.perf_counter() - t0_select
-        n_candidates = int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
+    for candidates in pixel_candidates:
+        pattern = candidates["pattern"]
+        n_candidates = int(len(candidates.get("frequency", [])))
 
         # Cluster selected pixels and apply statistical selection criteria
-        # (min/max cluster sizes depend on wave pattern)
         t0_cluster = time.perf_counter()
         if pattern != 0:
             # Multi-pixel clusters for network patterns (kt=2 time bins, kf=3 freq bins)
             c = cluster_pixels(candidates, kt=2, kf=3)
-            c.select("subrho", setup["select_subrho"])
-            c.select("subnet", setup["select_subnet"])
+            c.select("subrho", candidates["select_subrho"])
+            c.select("subnet", candidates["select_subnet"])
         else:
             # Single-pixel clusters for non-network patterns
             c = cluster_pixels(candidates, kt=1, kf=1)
@@ -326,8 +377,8 @@ def coherence_single_lag(
 
         logger.info(
             "lag=%3d level=%d | events=%d pixels=%d candidates=%d | select=%.3fs cluster=%.3fs",
-            lag_idx, setup["level"], c.event_count(), c.pixel_count(), n_candidates,
-            t_select, t_cluster,
+            lag_idx, candidates["level"], c.event_count(), c.pixel_count(), n_candidates,
+            t_select / max(len(pixel_candidates), 1), t_cluster,
         )
         fragment_clusters.append(c)
 

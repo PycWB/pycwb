@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MRA Clustering Algorithms — PycWB</title>
+<style>
+  :root {
+    --bg: #f8f9fb;
+    --card-bg: #ffffff;
+    --text: #1a1a2e;
+    --text-secondary: #555;
+    --border: #e2e6ed;
+    --accent: #4f6ef7;
+    --accent2: #e8549b;
+    --code-bg: #f0f2f5;
+    --hdbscan-color: #4f6ef7;
+    --wgraph-color: #e8549b;
+    --step-bg: #f0f4ff;
+    --note-bg: #fff9e6;
+    --note-border: #f0c040;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: #fff;
+    padding: 3rem 2rem 2.5rem;
+    text-align: center;
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    margin-top: 0.6rem;
+    font-size: 1.05rem;
+    opacity: 0.8;
+    max-width: 700px;
+    margin-inline: auto;
+  }
+
+  /* ── Main wrapper ── */
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+  .card h2 {
+    font-size: 1.35rem;
+    margin-bottom: 0.6rem;
+  }
+  .card h3 {
+    font-size: 1.1rem;
+    margin: 1.4rem 0 0.5rem;
+  }
+  .card p, .card li {
+    color: var(--text-secondary);
+    font-size: 0.96rem;
+  }
+  .card ul, .card ol {
+    padding-left: 1.4rem;
+    margin: 0.6rem 0;
+  }
+  .card li { margin-bottom: 0.35rem; }
+
+  /* ── Two-column comparison ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  @media (max-width: 700px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+  .col-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.8rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+  .col-card.hdbscan { border-top: 4px solid var(--hdbscan-color); }
+  .col-card.wgraph  { border-top: 4px solid var(--wgraph-color); }
+  .col-card h3 { font-size: 1.15rem; margin-bottom: 0.6rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.55rem;
+    border-radius: 6px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+  .badge.hdbscan { background: #eef1ff; color: var(--hdbscan-color); }
+  .badge.wgraph  { background: #fde8f2; color: var(--wgraph-color); }
+
+  /* ── Pipeline diagram ── */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 1.2rem 0;
+    font-size: 0.9rem;
+  }
+  .pipe-step {
+    background: var(--step-bg);
+    border: 1px solid #d0d7f0;
+    border-radius: 8px;
+    padding: 0.5rem 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pipe-arrow { font-size: 1.1rem; color: #aaa; }
+
+  /* ── Inline code ── */
+  code {
+    font-family: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 0.12em 0.4em;
+    border-radius: 4px;
+    color: #c7254e;
+  }
+
+  /* ── Parameter tables ── */
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.8rem 0;
+    font-size: 0.9rem;
+  }
+  .param-table th {
+    text-align: left;
+    background: #f5f6f8;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  .param-table td {
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+  .param-table td:first-child {
+    font-family: "SF Mono", monospace;
+    color: var(--text);
+  }
+
+  /* ── Note callout ── */
+  .note {
+    background: var(--note-bg);
+    border-left: 4px solid var(--note-border);
+    padding: 0.9rem 1.1rem;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.93rem;
+    color: #664d03;
+    margin: 1rem 0;
+  }
+  .note strong { color: #5c3f00; }
+
+  /* ── Math ── */
+  .math {
+    font-family: "KaTeX_Main", "Times New Roman", serif;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MRA Clustering Algorithms</h1>
+  <p>
+    Multi-Resolution Analysis (MRA) clustering backends for gravitational-wave
+    burst trigger formation in the PycWB pipeline.
+  </p>
+</header>
+
+<div class="container">
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Motivation -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>1. Why MRA Clustering?</h2>
+  <p>
+    The Wilson-Daubechies-Meyer (WDM) transform decomposes strain data into
+    <strong>multiple time-frequency resolutions</strong> (levels). At each
+    resolution, "hot" pixels — time-frequency cells with excess power — are
+    selected.  Coarse resolutions capture broadband, long-duration signals;
+    fine resolutions capture narrowband, short transients.
+  </p>
+  <p style="margin-top:0.6rem;">
+    A real gravitational-wave signal may span several resolutions, producing
+    pixel clusters at each level.  <strong>Clustering each resolution
+    independently</strong> (the legacy approach) can fragment a single
+    astrophysical event into multiple triggers.  The <strong>MRA</strong>
+    backends instead pool pixels from <em>all</em> resolutions before
+    clustering, so a real signal is reconstructed as <em>one</em> coherent
+    cluster.
+  </p>
+
+  <div class="pipeline">
+    <span class="pipe-step">Res. 0 pixels</span>
+    <span class="pipe-step">Res. 1 pixels</span>
+    <span class="pipe-step">Res. 2 pixels</span>
+    <span class="pipe-step">… Res. M pixels</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-step" style="background:#e0e7ff; border-color:#4f6ef7;">Pooled MRA pixel table</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-step" style="background:#fde2e8; border-color:#e8549b;">Clustering</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-step">FragmentCluster</span>
+    <span class="pipe-arrow">→</span>
+    <span class="pipe-step">Likelihood eval</span>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Shared: Pixel Pooling -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>2. Shared Step — Pixel Pooling</h2>
+  <p>
+    Both MRA backends begin with
+    <code>pool_mra_pixel_candidates(pixel_candidates_by_resolution)</code>,
+    which flattens per-resolution pixel candidates into a single
+    <code>MRAPixelPool</code>:
+  </p>
+  <ul>
+    <li>
+      <strong>PixelArrays</strong> — concatenated time, frequency, likelihood,
+      rate, and detector-energy arrays from all resolutions.
+    </li>
+    <li>
+      <strong>Sidecar metadata</strong> — resolution index, WDM level,
+      raw time &amp; frequency (in bins), physical time bounds
+      (<code>time_start</code>/<code>time_stop</code>), and physical
+      frequency bounds (<code>frequency_low</code>/<code>frequency_high</code>)
+      for each pixel.
+    </li>
+  </ul>
+  <p style="margin-top:0.6rem;">
+    Physical coordinates are computed from <code>rate</code> (the sampling
+    rate of each resolution):
+    <span class="math">Δt = 1/rate</span>,
+    <span class="math">Δf = rate/2</span>.
+    These physical coordinates enable <strong>cross-resolution</strong>
+    comparisons — pixels from different levels can be compared in the same
+    time-frequency space.
+  </p>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Algorithm comparison -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="two-col">
+
+  <!-- HDBSCAN -->
+  <div class="col-card hdbscan">
+    <h3>
+      mra_hdbscan
+      <span class="badge hdbscan">density-based</span>
+    </h3>
+    <p>
+      Uses <strong>HDBSCAN</strong> (Hierarchical Density-Based Spatial
+      Clustering of Applications with Noise) from scikit-learn.  All pooled
+      pixels are embedded into a feature space, and HDBSCAN identifies
+      clusters as regions of high density separated by regions of low density.
+    </p>
+
+    <h4>Feature Matrix</h4>
+    <p>
+      Each pooled pixel is mapped to a vector of up to 5 dimensions:
+    </p>
+    <ol>
+      <li>
+        <strong>Time center</strong> —
+        <code>(t<sub>start</sub> + t<sub>stop</sub>) / (2 · time_scale)</code>
+      </li>
+      <li>
+        <strong>Frequency center</strong> —
+        <code>(f<sub>low</sub> + f<sub>high</sub>) / (2 · freq_scale)</code>
+      </li>
+      <li>
+        <strong>Level</strong> (optional) —
+        WDM resolution level, zero-based, to separate pixels by scale.
+      </li>
+      <li>
+        <strong>Log-energy</strong> (optional) —
+        <code>log(1 + likelihood)</code>, normalized by its median, to
+        separate signal from background.
+      </li>
+      <li>
+        <strong>Detector balance</strong> (optional) —
+        fraction of total energy in the first detector, to distinguish
+        coherent signals from glitches.
+      </li>
+    </ol>
+
+    <h4>Cluster Extraction</h4>
+    <p>
+      HDBSCAN's <code>fit_predict</code> assigns each pixel a cluster label
+      or −1 (noise).  Noise pixels are optionally promoted to singleton
+      clusters if <code>noise_as_singletons=True</code>.  Clusters with fewer
+      than <code>min_pixels</code> are discarded.
+    </p>
+
+    <div class="note">
+      <strong>Key idea:</strong> HDBSCAN automatically discovers the number of
+      clusters and is robust to noise.  It does not require a fixed distance
+      threshold — instead it builds a hierarchy of density-based clusters and
+      selects the most persistent ones.
+    </div>
+  </div>
+
+  <!-- Weighted Graph -->
+  <div class="col-card wgraph">
+    <h3>
+      mra_weighted_graph
+      <span class="badge wgraph">graph-based</span>
+    </h3>
+    <p>
+      Builds a <strong>weighted adjacency graph</strong> over all pooled
+      pixels, then extracts clusters as <strong>connected components</strong>
+      using scipy's sparse graph routines.
+    </p>
+
+    <h4>Edge Weights</h4>
+    <p>
+      An edge between pixels <span class="math">i</span> and
+      <span class="math">j</span> is scored by a product of compatibility
+      factors:
+    </p>
+    <ol>
+      <li>
+        <strong>Time–frequency overlap</strong> —
+        <code>0.5·(score<sub>time</sub> + score<sub>freq</sub>)</code>.
+        Each axis score decays linearly from 1 to 0 as the gap between
+        intervals grows from 0 to the allowed radius.
+      </li>
+      <li>
+        <strong>Detector similarity</strong> —
+        cosine similarity between per-detector energy vectors.
+      </li>
+      <li>
+        <strong>Energy similarity</strong> —
+        <code>exp(−β · |log(1+L<sub>i</sub>)−log(1+L<sub>j</sub>)|)</code>,
+        penalizing large likelihood gaps.
+      </li>
+      <li>
+        <strong>Resolution penalty</strong> —
+        <code>exp(−γ · |level<sub>i</sub> − level<sub>j</sub>|)</code>,
+        discouraging edges between very different resolutions.
+      </li>
+    </ol>
+    <p>
+      Edges with weight below <code>min_edge_weight</code> are dropped.
+      <strong>Cross-resolution edges</strong> can be disabled via
+      <code>enable_cross_resolution_edges=False</code>, in which case only
+      same-resolution pixels connect.
+    </p>
+
+    <h4>Cluster Extraction</h4>
+    <p>
+      The upper-triangle edges are symmetrized into a sparse CSR adjacency
+      matrix, and <code>scipy.sparse.csgraph.connected_components</code>
+      labels each pixel by its connected component.  Components smaller than
+      <code>min_pixels</code> are discarded.
+    </p>
+
+    <div class="note">
+      <strong>Key idea:</strong> The graph formulation makes physical
+      constraints (time/frequency adjacency, detector coherence, energy
+      consistency) explicit and tunable.  It is deterministic — the same input
+      always produces the same clusters.
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Parameters -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>3. Configuration Parameters</h2>
+  <p>
+    Both backends are configured in the YAML config file under the
+    <code>clustering</code> block:
+  </p>
+
+  <div class="two-col" style="margin-top:1rem;">
+    <div>
+      <h3 style="color:var(--hdbscan-color);">mra_hdbscan</h3>
+      <table class="param-table">
+        <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+        <tr><td>time_scale_seconds</td><td>0.01</td><td>Normalisation scale for time axis (s)</td></tr>
+        <tr><td>freq_scale_hz</td><td>64.0</td><td>Normalisation scale for frequency axis (Hz)</td></tr>
+        <tr><td>level_weight</td><td>0.5</td><td>Weight for resolution-level feature (0 disables)</td></tr>
+        <tr><td>log_energy_weight</td><td>0.25</td><td>Weight for log-likelihood feature</td></tr>
+        <tr><td>detector_balance_weight</td><td>0.5</td><td>Weight for detector-balance feature</td></tr>
+        <tr><td>min_cluster_size</td><td>2</td><td>Smallest cluster HDBSCAN will return</td></tr>
+        <tr><td>min_samples</td><td>None</td><td>HDBSCAN core-point neighbourhood size</td></tr>
+        <tr><td>cluster_selection_epsilon</td><td>0.0</td><td>HDBSCAN cluster extraction threshold</td></tr>
+        <tr><td>cluster_selection_method</td><td>eom</td><td>"eom" (excess of mass) or "leaf"</td></tr>
+        <tr><td>noise_as_singletons</td><td>True</td><td>Promote each noise pixel to its own cluster</td></tr>
+        <tr><td>min_pixels</td><td>1</td><td>Minimum pixels per output cluster</td></tr>
+        <tr><td>final_defrag</td><td>False</td><td>Run final defrag pass after clustering</td></tr>
+      </table>
+    </div>
+
+    <div>
+      <h3 style="color:var(--wgraph-color);">mra_weighted_graph</h3>
+      <table class="param-table">
+        <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+        <tr><td>time_radius_bins</td><td>2.0</td><td>Allowed time gap (in time bins)</td></tr>
+        <tr><td>freq_radius_bins</td><td>3.0</td><td>Allowed freq gap (in freq bins)</td></tr>
+        <tr><td>time_gap_seconds</td><td>None</td><td>If set, overrides time_radius_bins (s)</td></tr>
+        <tr><td>freq_gap_hz</td><td>None</td><td>If set, overrides freq_radius_bins (Hz)</td></tr>
+        <tr><td>min_edge_weight</td><td>0.1</td><td>Threshold below which edges are dropped</td></tr>
+        <tr><td>detector_similarity_weight</td><td>0.5</td><td>Blend weight for detector cosine similarity</td></tr>
+        <tr><td>energy_similarity_weight</td><td>0.25</td><td>Blend weight for energy consistency</td></tr>
+        <tr><td>energy_balance_wt</td><td>0.5</td><td>Exponential decay rate in energy factor</td></tr>
+        <tr><td>resolution_penalty</td><td>0.1</td><td>Exponential penalty per level gap</td></tr>
+        <tr><td>max_level_gap</td><td>99</td><td>Hard cut: max allowed resolution difference</td></tr>
+        <tr><td>enable_cross_resolution_edges</td><td>True</td><td>Allow edges between different levels</td></tr>
+        <tr><td>min_pixels</td><td>1</td><td>Minimum pixels per output cluster</td></tr>
+        <tr><td>final_defrag</td><td>False</td><td>Run final defrag pass after clustering</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Post-processing -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>4. Post-Processing — Likelihood &amp; Output</h2>
+  <p>
+    Both backends wrap their clusters in a single <code>FragmentCluster</code>
+    whose metadata spans the union of all contributing resolutions (earliest
+    start, latest stop, lowest <span class="math">f<sub>low</sub></span>,
+    highest <span class="math">f<sub>high</sub></span>, max rate).  This
+    FragmentCluster is then passed through
+    <code>finalize_mra_clusters_for_likelihood</code>, which:
+  </p>
+  <ol>
+    <li>
+      Computes SNR and χ² statistics for the merged cluster.
+    </li>
+    <li>
+      Optionally runs a <strong>final defragmentation</strong> pass
+      (<code>final_defrag=True</code>) to re-cluster with tighter constraints.
+    </li>
+    <li>
+      Writes per-lag trigger output to the Parquet catalog.
+    </li>
+  </ol>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Choosing -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>5. Choosing Between the Two</h2>
+
+  <div class="two-col">
+    <div style="border-right: 1px solid var(--border); padding-right: 1.5rem;">
+      <h3 style="color:var(--hdbscan-color);">Prefer mra_hdbscan when…</h3>
+      <ul>
+        <li>The number of clusters is unknown <em>a priori</em>.</li>
+        <li>You need automatic noise rejection (unclustered pixels).</li>
+        <li>
+          Signals have complex, non-convex shapes in the time-frequency plane
+          (HDBSCAN handles arbitrary cluster geometries).
+        </li>
+        <li>
+          You want a single, well-studied hyperparameter
+          (<code>min_cluster_size</code>) to control granularity.
+        </li>
+      </ul>
+    </div>
+    <div style="padding-left: 1.5rem;">
+      <h3 style="color:var(--wgraph-color);">Prefer mra_weighted_graph when…</h3>
+      <ul>
+        <li>Reproducibility is paramount — the graph method is deterministic.</li>
+        <li>
+          You want explicit, physically-motivated constraints (time/frequency
+          adjacency, detector coherence, energy consistency).
+        </li>
+        <li>
+          The signal morphology is well-understood and can be encoded in edge
+          thresholds.
+        </li>
+        <li>
+          You need to disable cross-resolution edges to study
+          resolution-by-resolution behaviour.
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:1.4rem;">
+    <strong>Computational cost:</strong> The graph backend builds
+    <span class="math">O(N²)</span> edges and is dominated by nested loops
+    in Python — acceptable for typical MRA pixel counts
+    (<span class="math">N ≲ few×10³</span> per lag).  HDBSCAN uses
+    scikit-learn's optimized C implementation and scales better to larger
+    pixel sets.
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────── -->
+<!-- Configuration example -->
+<!-- ──────────────────────────────────────────────────── -->
+<div class="card">
+  <h2>6. YAML Configuration Example</h2>
+  <pre style="background:var(--code-bg); border-radius:8px; padding:1.2rem; overflow-x:auto; font-size:0.88rem; line-height:1.6;"><code>clustering:
+  backend: mra_hdbscan          # or mra_weighted_graph
+
+  mra_hdbscan:
+    time_scale_seconds: 0.01
+    freq_scale_hz: 64.0
+    level_weight: 0.5
+    log_energy_weight: 0.25
+    detector_balance_weight: 0.5
+    min_cluster_size: 3
+    min_samples: null
+    cluster_selection_epsilon: 0.0
+    cluster_selection_method: eom
+    noise_as_singletons: true
+    min_pixels: 2
+    final_defrag: false
+
+  mra_weighted_graph:
+    time_radius_bins: 2.0
+    freq_radius_bins: 3.0
+    min_edge_weight: 0.1
+    detector_similarity_weight: 0.5
+    energy_similarity_weight: 0.25
+    energy_balance_wt: 0.5
+    resolution_penalty: 0.1
+    max_level_gap: 99
+    enable_cross_resolution_edges: true
+    min_pixels: 2
+    final_defrag: false</code></pre>
+</div>
+
+</div>
+</body>
+</html>
