@@ -664,8 +664,8 @@ def command(args: Any) -> None:
     print()
 
     # ── Discover files ──────────────────────────────────────────────────
-    frac_catalog_files = sorted(glob.glob(os.path.join(catalog_dir, "catalog_*.parquet")), key=_frac_sort_key)
-    frac_progress_files = sorted(glob.glob(os.path.join(catalog_dir, "progress_*.parquet")), key=_frac_sort_key)
+    frac_catalog_files = sorted(glob.glob(os.path.join(catalog_dir, "fragment", "catalog_*.parquet")), key=_frac_sort_key)
+    frac_progress_files = sorted(glob.glob(os.path.join(catalog_dir, "fragment", "progress_*.parquet")), key=_frac_sort_key)
     label = args.label
     if label:
         main_progress_file = os.path.join(catalog_dir, f"progress.{label}.parquet")

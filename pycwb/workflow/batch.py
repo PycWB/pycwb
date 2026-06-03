@@ -268,7 +268,8 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     # ------------------------------------------------------------------ #
     if catalog_file:
         for _lock in (catalog_file + ".lock",
-                      catalog_file.replace("catalog", "progress", 1) + ".lock"):
+                      os.path.join(os.path.dirname(catalog_file),
+                                   os.path.basename(catalog_file).replace("catalog", "progress", 1)) + ".lock"):
             _cleanup_stale_lock(_lock)
 
     logger.info(f"Loading segment processer: {config.segment_processer}")

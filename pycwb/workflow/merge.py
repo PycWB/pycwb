@@ -38,7 +38,7 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
     merge_label : str, optional
         The label to be added to the merged catalog file name. If None, the merged catalog file will be named as "catalog.parquet".
     """
-    catalog_files = sorted(glob.glob(f"{working_dir}/{catalog_dir}/catalog_*{Catalog.DEFAULT_EXTENSION}"))
+    catalog_files = sorted(glob.glob(f"{working_dir}/{catalog_dir}/fragment/catalog_*{Catalog.DEFAULT_EXTENSION}"))
     if not catalog_files:
         logger.warning("No catalog files found")
         return
@@ -155,7 +155,7 @@ def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog', merge_l
     """
     from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA
 
-    progress_files = glob.glob(f"{working_dir}/{catalog_dir}/progress_*{Catalog.DEFAULT_EXTENSION}")
+    progress_files = glob.glob(f"{working_dir}/{catalog_dir}/fragment/progress_*{Catalog.DEFAULT_EXTENSION}")
     if not progress_files:
         logger.info("No progress files to merge")
         return
