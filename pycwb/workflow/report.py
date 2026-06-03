@@ -1,4 +1,6 @@
 import os
+import re
+from functools import reduce
 from pathlib import Path
 import logging
 import matplotlib.pyplot as plt
@@ -6,7 +8,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
-from pycwb.modules.report.report import calculate_detection_efficiency
+from pycwb.modules.report.report import plot_2d_histogram, plot_1d_histogram, rate, calculate_detection_efficiency
 from pycwb.modules.statistics.sigmoid_fit import fit, estimate_hrss, logNfit
 
 logger = logging.getLogger(__name__)
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 def generate_report(catalog_file: str, simulation: bool,
                     lag: int = None, slag: int = None,
                     simulation_file: str = None, far_threshold: float = 1e-2, inj_key: str = 'hrss',
-                    working_dir: str = '.', report_dir: str = 'report'):
+                    working_dir: str = '.', report_dir: str = 'report', cuts: str = None):
     # TODO: add rho/cc/param cuts?
 
     working_dir = os.path.abspath(working_dir)
@@ -33,35 +35,101 @@ def generate_report(catalog_file: str, simulation: bool,
         if lag and slag:
             report_background_lag(catalog_file)
         else:
-            report_background(catalog_file)
+            report_background(catalog_file, cuts=cuts, report_dir=report_dir)
     
 
-def report_background(catalog_file: str):
+def report_background(catalog_file: str, cuts: str = None, report_dir: str = 'report'):
+    
+    # FIXME: follow cWB's report naming convention?
+    report_dir = Path(report_dir)
+    report_dirname = f'{report_dir.parent.name}.R_rMRA'
+    
+    report_dir = report_dir / report_dirname
+    data_dir = report_dir / 'data'
+    os.makedirs(report_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    
     # open catalog file
+    logger.info(f'Open {catalog_file}')
+    cat = pq.read_table(catalog_file)
 
-    
+    # check zero-lag livetime and nonzero-lag livetime
+    # FIXME: Implement livetime checks
+
+    # filter out zero-lag triggers
+    ifos = cat['ifo_list'][0].as_py()
+    zlag_mask = reduce(pc.and_, [pc.and_(pc.equal(cat[f'time_lag_{ifo}'], 0.0), pc.equal(cat[f'segment_lag_{ifo}'], 0.0)) for ifo in ifos])
+    cat = cat.filter(pc.invert(zlag_mask))
+
+    # apply dq vetoes
+    # veto_mask = pc.and_(pc.invert(pc.if_else(pc.is_null(cat['vetoed_cat0']), False, cat['vetoed_cat0'])), pc.and_(pc.invert(pc.if_else(pc.is_null(cat['vetoed_cat1']), False, cat['vetoed_cat1'])), pc.invert(pc.if_else(pc.is_null(cat['vetoed_cat2']), False, cat['vetoed_cat2']))))
+    # cat = cat.filter(veto_mask)
+
+    # FIXME: Implement additional cuts if specified
+    if cuts:
+        pass
+
     # ------------------------------------------------------
     # plot detection statistic distributions
     # ------------------------------------------------------
     # rho vs subnet
+    rho = cat['rho'].to_numpy(zero_copy_only=False)
+    subnet = cat['subnet_cc'].to_numpy(zero_copy_only=False)
+    fig, ax = plot_2d_histogram(subnet, rho, xlabel='subnet', ylabel='rho', ybins=50, ylim = (0, max(80, np.nanmax(rho)*1.1)))
+    file_name = data_dir / 'rho_subnet.jpg'
+    logger.info(f'Save {file_name}')
+    fig.savefig(file_name); plt.close(fig)
 
     # rho vs log10(chi2)
+    penalty = cat['penalty'].to_numpy(zero_copy_only=False)
+    fig, ax = plot_2d_histogram(np.log10(penalty), rho, xlabel='log10(chi2)', ylabel='rho', ybins=50, ylim = (0, max(80, np.nanmax(rho)*1.1)))
+    file_name = data_dir / 'rho_penalty.jpg'
+    logger.info(f'Save {file_name}')
+    fig.savefig(file_name); plt.close(fig)
 
     # rho vs cc
+    netcc = cat['net_cc'].to_numpy(zero_copy_only=False)
+    fig, ax = plot_2d_histogram(netcc, rho, xlabel='network correlation', ylabel='rho', ybins=50, ylim = (0, max(80, np.nanmax(rho)*1.1)))
+    file_name = data_dir / 'rho_cc.jpg'
+    logger.info(f'Save {file_name}')
+    fig.savefig(file_name); plt.close(fig)
 
     # rho distribution
+    ax = plot_1d_histogram(rho, colors='#00FF00', bins=50)
+    ax.set_xlabel('rho'); ax.set_ylabel('counts')
+    ax.set_yscale('log')
+    file_name = data_dir / 'rho.jpg'
+    logger.info(f'Save {file_name}')
+    ax.get_figure().savefig(file_name); plt.close(ax.get_figure())
 
     # rate vs rho
+    x, y, xerr, yerr = rate(rho, livetime, binwidth=0.01)
+
+    plt.figure(figsize=(6, 5))
+    plt.errorbar(x[::50], y[::50]*60*60*24*365, yerr=yerr[::50]*60*60*24*365, fmt='.', color='k', linewidth=0.8, markersize=2)
+    plt.xlim(0, max(80, np.nanmax(rho)*1.1))
+    plt.yscale('log')
+    plt.xlabel(r'$\rho$', fontsize=10)
+    plt.ylabel('rate, 1/year', fontsize=10)
+    plt.grid(ls='dotted')
+    file_name = f'{data_dir}/rate_threshold.jpg'
+    logger.info(f'Save {file_name}')
+    plt.savefig(file_name)
+    plt.close()
+
+    # ------------------------------------------------------
+    # Time and frequency dependence
+    # ------------------------------------------------------
+
 
     # ------------------------------------------------------
     # plot rates
     # ------------------------------------------------------
-    # detector fraction
+    # TODO
 
-    # 
 
     # generate html report
-    print('report_background')
+    # TODO
 
 def report_background_lag(catalog_file: str):
     print('report_background_lag')
