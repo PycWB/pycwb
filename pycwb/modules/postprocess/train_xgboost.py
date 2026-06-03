@@ -49,9 +49,16 @@ import pandas as pd
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 
+@action_spec(
+    outputs=['model_file'],
+    inputs=['bkg_catalog', 'sim_catalog', 'config_file'],
+    description='Train XGBoost classifier from BKG + SIM catalogs',
+)
 def train_xgboost(
     work_dir: str,
     bkg_catalog: str,

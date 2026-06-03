@@ -27,6 +27,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +36,11 @@ logger = logging.getLogger(__name__)
 # select_jobs_by_livetime
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['progress_file'],
+    description='Select random subset of jobs by live time fraction',
+)
 def select_jobs_by_livetime(
     work_dir: str,
     progress_file: str,
@@ -120,6 +127,11 @@ def select_jobs_by_livetime(
 # filter_catalog_by_jobs
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['input_file', 'job_ids_file'],
+    description='Filter catalog parquet by job ID list',
+)
 def filter_catalog_by_jobs(
     work_dir: str,
     input_file: str,
@@ -177,6 +189,11 @@ def filter_catalog_by_jobs(
 # compute_livetime
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=[],
+    inputs=['progress_file', 'job_ids_file'],
+    description='Compute total live time for selected jobs (result spread into global context)',
+)
 def compute_livetime(
     work_dir: str,
     progress_file: str,

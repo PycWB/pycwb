@@ -50,6 +50,8 @@ from typing import Optional
 
 import pandas as pd
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 # Columns checked for zero-lag filtering (in priority order)
@@ -58,6 +60,11 @@ _ZERO_LAG_COLS_CATALOG = ["lag_idx"]
 _ZERO_LAG_COLS_FLAT = ["lag", "shift"]
 
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['input_file'],
+    description='Random subsample + optional zero-lag filter on parquet catalog',
+)
 def random_filter_parquet(
     work_dir: str,
     input_file: str,

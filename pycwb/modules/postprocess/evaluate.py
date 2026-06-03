@@ -32,6 +32,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,6 +113,11 @@ def _resolve_path(work_dir: str, path: str) -> str:
 # evaluate_efficiency
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['catalog_file', 'model_file', 'config_file'],
+    description='Score SIM catalog and compute efficiency vs threshold',
+)
 def evaluate_efficiency(
     work_dir: str,
     catalog_file: str,
@@ -187,6 +194,11 @@ def evaluate_efficiency(
 # evaluate_far_rho
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file', 'scored_catalog'],
+    inputs=['catalog_file', 'model_file', 'config_file'],
+    description='Score BKG catalog and compute FAR vs ranking statistic',
+)
 def evaluate_far_rho(
     work_dir: str,
     catalog_file: str,
@@ -284,6 +296,11 @@ def evaluate_far_rho(
 # MDC blind scoring
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_csv'],
+    inputs=['mdc_catalog', 'model_file', 'bkg_scored_catalog', 'progress_file', 'job_ids_file', 'config_file'],
+    description='Score blind MDC catalog and output detections above IFAR threshold',
+)
 def score_mdc_catalog(
     work_dir: str,
     mdc_catalog: str,

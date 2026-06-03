@@ -24,6 +24,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 # IFAR presets (seconds)
@@ -37,6 +39,11 @@ _IFAR_PRESETS = {
 }
 
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file'],
+    description='Compute hrss at 50% efficiency for a given IFAR threshold',
+)
 def compute_hrss50(
     work_dir: str,
     sim_catalog: str,
@@ -235,6 +242,11 @@ def compute_hrss50(
 # plot_efficiency_vs_hrss (alias with plot output)
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file'],
+    description='Plot efficiency vs hrss at a given IFAR threshold',
+)
 def plot_efficiency_vs_hrss(
     work_dir: str,
     sim_catalog: str,
@@ -333,6 +345,11 @@ def _plot_efficiency_curve(
 # Waveform-level efficiency using matched_right.parquet
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    description='Compute per-waveform efficiency using matched_right cross-match',
+)
 def compute_efficiency_by_waveform(
     work_dir: str,
     sim_catalog: str,
@@ -544,6 +561,11 @@ def _plot_waveform_efficiency(
 # Efficiency vs hrss by waveform (per-waveform curves)
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_file'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    description='Efficiency vs hrss curves for each waveform, grouped by Q-factor',
+)
 def compute_efficiency_vs_hrss_by_waveform(
     work_dir: str,
     sim_catalog: str,
@@ -745,6 +767,11 @@ def _plot_efficiency_by_waveform_panels(
 # Per-waveform hrss50 CSV report (multiple IFARs)
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=['output_csv'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    description='Compute hrss50 for each waveform at multiple IFARs, save CSV',
+)
 def compute_hrss50_by_waveform_csv(
     work_dir: str,
     sim_catalog: str,

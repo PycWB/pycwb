@@ -22,6 +22,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from pycwb.post_production.action_spec import action_spec
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,11 @@ logger = logging.getLogger(__name__)
 # far_rho_plot
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=[],
+    inputs=['catalog_file', 'progress_file', 'job_ids_file'],
+    description='Compute FAR vs ranking parameter and save plots',
+)
 def far_rho_plot(
     work_dir: str,
     catalog_file: str,
@@ -131,6 +138,11 @@ def far_rho_plot(
 # zero_lag_report
 # ---------------------------------------------------------------------------
 
+@action_spec(
+    outputs=[],
+    inputs=['catalog_file', 'progress_file', 'job_ids_file'],
+    description='Compute zero-lag significance and plot triggers with FAR',
+)
 def zero_lag_report(
     work_dir: str,
     catalog_file: str,
