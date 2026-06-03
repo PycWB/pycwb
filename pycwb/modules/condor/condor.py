@@ -101,10 +101,12 @@ pycwb merge --work-dir={working_dir}
 
     def generate_simulation_summary_script(self):
         """Generate simulation_summary.sh — runs pycwb simulation-summary in parallel
-        with the analysis jobs.  Uses the absolute working_dir path (no file transfer)
-        so it behaves like merge.sh."""
+        with the analysis jobs."""
         working_dir = self.working_dir
         dag_dir = self.dag_dir
+        should_transfer_files = self.should_transfer_files
+        if should_transfer_files:
+            working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -113,6 +115,7 @@ pycwb merge --work-dir={working_dir}
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
+{ 'mkdir -p catalog log' if should_transfer_files else ''}
 pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={working_dir}
             """)
 
@@ -231,6 +234,16 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             merge_job_config['transfer_output_files'] = "catalog, log"
             merge_job_config['should_transfer_files'] = "yes"
             merge_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
+            # Simulation summary: needs config + input to read job metadata;
+            # writes catalog/simulations.parquet (the CLI default).
+            # Transfer only the specific file, not the whole catalog/ dir,
+            # to avoid conflicts with batch-job catalog transfers.
+            sim_summary_job_config['transfer_input_files'] = (
+                f"{working_dir}/config, {working_dir}/input"
+            )
+            sim_summary_job_config['transfer_output_files'] = "catalog/simulations.parquet, log"
+            sim_summary_job_config['should_transfer_files'] = "yes"
+            sim_summary_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
 
         batch_job = htcondor.Submit(batch_job_config)
         merge_job = htcondor.Submit(merge_job_config)
