@@ -143,7 +143,7 @@ def build_simulation_summary(
         ==================  ============  ============================================
         Column              dtype         Description
         ==================  ============  ============================================
-        ``sim_idx``         int           Global simulation index (sequential)
+        ``sim_idx``         int           Canonical generated-simulation id
         ``trial_idx``       int           Trial index (0 = first/only trial)
         ``gps_time``        float         Requested coalescence GPS time
         ``name``            str           Injection waveform name
@@ -156,8 +156,13 @@ def build_simulation_summary(
         ``real_start``      float         Earliest waveform sample across all IFOs
         ``real_end``        float         Latest waveform sample across all IFOs
         ``real_duration``   float         ``real_end - real_start``
+        ``job_id``          int           ``WaveSegment.index`` of the job that
+                                          owns this scheduled simulation
+        ``shift``           list[float]   Superlag shift vector of the owning job
         ``segment_idx``     int           ``WaveSegment.index`` of the containing
-                                          segment, or ``-1`` if none
+                                          segment, or ``-1`` if none.  For new
+                                          summaries this is kept as a
+                                          backward-compatible alias of ``job_id``.
         ``vetoed_cat0``     bool/None     GPS not in any CAT0 good interval
                                           (``None`` = no CAT0 DQ files present)
         ``vetoed_cat1``     bool          GPS outside every job-segment window
@@ -221,11 +226,12 @@ def build_simulation_summary(
         enumerate(all_simulations), total=len(all_simulations),
         desc="Building simulation summary", unit="sim",
     ):
+        sim_idx_value = int(simulation.get('sim_idx', sim_idx))
         gps_time = float(simulation.get('gps_time', float('nan')))
         trial_idx = int(simulation.get('trial_idx', 0))
 
         row = {
-            'sim_idx':   sim_idx,
+            'sim_idx':   sim_idx_value,
             'trial_idx': trial_idx,
             'gps_time':  gps_time,
             'name':        str(simulation.get('name', '')),
@@ -240,7 +246,12 @@ def build_simulation_summary(
             'real_start':      None,
             'real_end':        None,
             'real_duration':   None,
-            'segment_idx':     -1,
+            'job_id':          int(simulation.get('job_id', owning_seg.index)),
+            'shift':           list(simulation.get(
+                'shift',
+                owning_seg.shift if owning_seg.shift is not None else [0.0 for _ in owning_seg.ifos],
+            )),
+            'segment_idx':     int(simulation.get('job_id', owning_seg.index)),
             'vetoed_cat0':     None,
             'vetoed_cat1':     None,
             'vetoed_cat2':     None,
@@ -249,7 +260,8 @@ def build_simulation_summary(
             # verbatim copy of raw injection dict — expanded to flat columns
             # when saving (see rows_to_flat_table below)
             'parameters':      {k: v for k, v in simulation.items()
-                                if k not in ('real_start', 'real_end')},
+                                if k not in ('real_start', 'real_end', 'job_id',
+                                             'shift', 'sim_idx')},
         }
 
         # ── Step 1 : generate waveform → real_start / real_end ────────────
@@ -268,7 +280,7 @@ def build_simulation_summary(
             del sim_strains  # free memory immediately
         except Exception as exc:
             logger.error("Waveform generation failed for simulation %d (gps=%.3f): %s",
-                         sim_idx, gps_time, exc)
+                         sim_idx_value, gps_time, exc)
             row['error'] = str(exc)
             rows.append(row)
             continue
@@ -279,7 +291,6 @@ def build_simulation_summary(
 
         # ── Step 2 : identify containing job segment ───────────────────────
         containing_seg = _find_segment(gps_time, job_segments)
-        row['segment_idx'] = containing_seg.index if containing_seg is not None else -1
 
         # ── Step 3a : CAT0 veto ────────────────────────────────────────────
         if has_cat0:
@@ -291,15 +302,12 @@ def build_simulation_summary(
 
         # ── Step 3c : CAT2 veto ────────────────────────────────────────────
         if has_cat2:
-            if containing_seg is None:
-                # Outside all segments — CAT2 status is undefined / not applicable
-                row['vetoed_cat2'] = None
-            elif not containing_seg.veto_windows:
-                # Segment exists but carries no CAT2 windows → not vetoed
+            if not owning_seg.veto_windows:
+                # Owning segment carries no CAT2 windows → not vetoed
                 row['vetoed_cat2'] = False
             else:
                 row['vetoed_cat2'] = not _gps_in_windows(
-                    gps_time, containing_seg.veto_windows
+                    gps_time, owning_seg.veto_windows
                 )
         # else remains None
 
@@ -318,7 +326,7 @@ def build_simulation_summary(
         rows.append(row)
         logger.debug(
             "sim %d  gps=%.3f  seg=%s  vetoed(0=%s,1=%s,2=%s)  across=%s",
-            sim_idx, gps_time, row['segment_idx'],
+            sim_idx_value, gps_time, row['segment_idx'],
             row['vetoed_cat0'], row['vetoed_cat1'], row['vetoed_cat2'],
             row['across_segments'],
         )
