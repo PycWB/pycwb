@@ -13,7 +13,7 @@ def logNfit(x, par0, par1, par2, par3, par4):
     s = np.where(y < 0, par1 * np.exp(y * par2), par1 * np.exp(y * par3))
 
     # Adjust s when y > 0 and par3 > 1. / y
-    mask = (y > 0) & (par3 > 1. / y)
+    mask = (y > 0) & (par3 * y > 1.)
     s = np.where(mask, par1 * par3 * np.exp(1.), s)
     y = np.where(mask, 1, y)
 

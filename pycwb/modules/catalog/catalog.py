@@ -728,4 +728,3 @@ def read_catalog_triggers(filename: str) -> pa.Table:
         Prefer ``Catalog.open(filename).triggers()``.
     """
     return Catalog.open(filename).triggers()
-

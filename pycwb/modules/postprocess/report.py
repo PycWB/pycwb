@@ -10,6 +10,10 @@ Workflow actions
 
 ``postprocess.report.zero_lag_report``
     Compute zero-lag significance and plot triggers with FAR attached.
+
+``postprocess.report.standard_background_report``
+    Composite action that calls the smaller background report actions and
+    returns their summaries.
 """
 
 from __future__ import annotations
@@ -23,8 +27,26 @@ import numpy as np
 import pandas as pd
 
 from pycwb.post_production.action_spec import action_spec
+from pycwb.modules.postprocess.lag_filters import (
+    nonzero_lag_mask,
+    try_unshifted_job_ids_from_catalog,
+    unshifted_job_ids_from_progress,
+    zero_lag_mask,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _unshifted_jobs_for_progress(progress_path: str) -> Optional[set[int]]:
+    try:
+        return unshifted_job_ids_from_progress(progress_path)
+    except (FileNotFoundError, ValueError, KeyError):
+        logger.warning(
+            "Could not read unshifted job metadata for progress file %s; "
+            "falling back to row shift columns when available",
+            progress_path,
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -33,14 +55,15 @@ logger = logging.getLogger(__name__)
 
 @action_spec(
     outputs=[],
-    inputs=['catalog_file', 'progress_file', 'job_ids_file'],
+    inputs=['catalog_file', 'progress_file', 'job_ids_file', 'livetime'],
     description='Compute FAR vs ranking parameter and save plots',
 )
 def far_rho_plot(
     work_dir: str,
     catalog_file: str,
     progress_file: str,
-    job_ids_file: str,
+    job_ids_file: Optional[str] = None,
+    livetime: Optional[float] = None,
     ranking_par: str = "rho",
     exclude_zero_lag: bool = True,
     bin_size: float = 0.1,
@@ -57,12 +80,16 @@ def far_rho_plot(
         Path to BKG catalog parquet.
     progress_file : str
         Path to progress parquet.
-    job_ids_file : str
-        Path to job list file (determines which jobs' live time to use).
+    job_ids_file : str, optional
+        Path to job list file. Used to compute live time only when
+        ``livetime`` is not provided.
+    livetime : float, optional
+        Live time in seconds. Preferred for interval-based splits because a
+        job list alone cannot describe selected ``(shift, lag_idx)`` rows.
     ranking_par : str
         Column name for ranking (default ``"rho"``).
     exclude_zero_lag : bool
-        Exclude ``lag_idx == 0`` from live time.
+        Exclude physically unshifted zero-lag rows from live time.
     bin_size : float
         Histogram bin size for ranking parameter.
     output_dir : str
@@ -78,24 +105,35 @@ def far_rho_plot(
 
     cat_path = _resolve(catalog_file)
     prog_path = _resolve(progress_file)
-    jobs_path = _resolve(job_ids_file)
+    jobs_path = _resolve(job_ids_file) if job_ids_file else None
     out_dir = _resolve(output_dir)
+    trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    progress_unshifted_jobs = _unshifted_jobs_for_progress(prog_path)
 
     # ── Load triggers ────────────────────────────────────────────────────
     df = pd.read_parquet(cat_path)
+    if exclude_zero_lag:
+        df = df[nonzero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
     if ranking_par not in df.columns:
         raise KeyError(f"Ranking parameter '{ranking_par}' not in catalog. Columns: {list(df.columns)}")
     values = df[ranking_par].dropna().values
     logger.info("Triggers: %d total, %d with valid %s", len(df), len(values), ranking_par)
 
     # ── Live time ────────────────────────────────────────────────────────
-    with open(jobs_path) as f:
-        job_ids = {int(l.strip()) for l in f if l.strip()}
-    prog = pd.read_parquet(prog_path)
-    prog = prog[prog["job_id"].isin(job_ids)]
-    if exclude_zero_lag and "lag_idx" in prog.columns:
-        prog = prog[prog["lag_idx"] != 0]
-    livetime = float(prog["livetime"].sum())
+    if livetime is None:
+        if jobs_path is None:
+            raise ValueError("far_rho_plot requires either livetime or job_ids_file")
+        with open(jobs_path) as f:
+            job_ids = {int(l.strip()) for l in f if l.strip()}
+        prog = pd.read_parquet(prog_path)
+        prog = prog[prog["job_id"].isin(job_ids)]
+        if "status" in prog.columns:
+            prog = prog[prog["status"] == "completed"]
+        if exclude_zero_lag:
+            prog = prog[nonzero_lag_mask(prog, unshifted_job_ids=progress_unshifted_jobs)]
+        livetime = float(prog["livetime"].sum())
+    else:
+        livetime = float(livetime)
     livetime_years = livetime / 86400.0 / 365.25
     logger.info("Live time: %.0f s = %.2f yr", livetime, livetime_years)
 
@@ -120,8 +158,8 @@ def far_rho_plot(
 
     # ── Plots ────────────────────────────────────────────────────────────
     os.makedirs(out_dir, exist_ok=True)
-    _plot_far_rho(data, out_dir)
-    _plot_n_events(data, out_dir)
+    plot_far_rho(data, out_dir)
+    plot_n_events(data, out_dir)
 
     # Save JSON
     json_path = os.path.join(out_dir, "far_rho.json")
@@ -147,10 +185,12 @@ def zero_lag_report(
     work_dir: str,
     catalog_file: str,
     progress_file: str,
-    job_ids_file: str,
+    job_ids_file: Optional[str] = None,
     far_rho_data: Optional[dict] = None,
     ranking_par: str = "rho",
     output_dir: str = "public",
+    public_alerts_file: Optional[str] = None,
+    public_alert_time_window: float = 1.0,
     **kwargs,
 ) -> dict:
     """Plot zero-lag triggers with FAR values and Poisson significance.
@@ -163,8 +203,10 @@ def zero_lag_report(
         Path to zero-lag BKG catalog parquet.
     progress_file : str
         Path to progress parquet.
-    job_ids_file : str
-        Path to job list for zero-lag slice.
+    job_ids_file : str, optional
+        Optional job list for a restricted zero-lag slice. If omitted, all
+        physically unshifted ``lag_idx == 0`` jobs in the progress/catalog
+        are used.
     far_rho_data : dict, optional
         FAR data from :func:`far_rho_plot`.  If not provided, reads from
         ``kwargs["far_rho"]`` or ``{output_dir}/far_rho.json``.
@@ -172,6 +214,11 @@ def zero_lag_report(
         Ranking column name.
     output_dir : str
         Output directory.
+    public_alerts_file : str, optional
+        Two-column public alert table: ``candidate_id gps_time``.
+    public_alert_time_window : float
+        Maximum absolute GPS-time difference, in seconds, for matching a
+        public alert to a zero-lag trigger.
 
     Returns
     -------
@@ -183,8 +230,10 @@ def zero_lag_report(
 
     cat_path = _resolve(catalog_file)
     prog_path = _resolve(progress_file)
-    jobs_path = _resolve(job_ids_file)
+    jobs_path = _resolve(job_ids_file) if job_ids_file else None
     out_dir = _resolve(output_dir)
+    trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    progress_unshifted_jobs = _unshifted_jobs_for_progress(prog_path)
 
     # ── Resolve FAR data ─────────────────────────────────────────────────
     if far_rho_data is None:
@@ -202,54 +251,46 @@ def zero_lag_report(
 
     # ── Load zero-lag triggers ───────────────────────────────────────────
     df = pd.read_parquet(cat_path)
-    # Filter to zero-lag only
-    if "lag_idx" in df.columns:
-        df = df[df["lag_idx"] == 0].reset_index(drop=True)
-        logger.info("Zero-lag triggers (lag_idx==0): %d", len(df))
+    job_ids = None
+    if jobs_path:
+        with open(jobs_path) as f:
+            job_ids = {int(l.strip()) for l in f if l.strip()}
+        df = df[df["job_id"].isin(job_ids)].reset_index(drop=True)
+    df = df[zero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
+    logger.info("Zero-lag triggers (unshifted): %d", len(df))
     if ranking_par not in df.columns:
         raise KeyError(f"Ranking parameter '{ranking_par}' not found")
     logger.info("Zero-lag triggers: %d", len(df))
 
     # ── Live time ────────────────────────────────────────────────────────
-    with open(jobs_path) as f:
-        job_ids = {int(l.strip()) for l in f if l.strip()}
     prog = pd.read_parquet(prog_path)
-    prog = prog[prog["job_id"].isin(job_ids)]
-    if "lag_idx" in prog.columns:
-        prog = prog[prog["lag_idx"] == 0]  # zero-lag only
+    if job_ids is not None:
+        prog = prog[prog["job_id"].isin(job_ids)]
+    prog = prog[zero_lag_mask(prog, unshifted_job_ids=progress_unshifted_jobs)]
+    if "status" in prog.columns:
+        prog = prog[prog["status"] == "completed"]
     zl_livetime = float(prog["livetime"].sum())
     zl_livetime_years = zl_livetime / 86400.0 / 365.25
     logger.info("Zero-lag live time: %.0f s = %.4f yr", zl_livetime, zl_livetime_years)
 
-    # ── Attach FAR to each trigger ───────────────────────────────────────
-    bins = np.array(far_rho_data["bins"])
-    far = np.array(far_rho_data["far"])
-    # Use zero-lag live time for Poisson expectation, not the far_rho (non-zero-lag) live time
-
-    rho_vals = df[ranking_par].values
-    attached_far = np.zeros(len(df))
-    for i, r in enumerate(rho_vals):
-        idx = np.searchsorted(bins, r, side="right") - 1
-        if 0 <= idx < len(far):
-            attached_far[i] = far[idx]
-        else:
-            attached_far[i] = far[-1] if idx >= len(far) else far[0]
-
-    df["far_attached"] = attached_far
-    df["ifar_years"] = 1.0 / np.maximum(attached_far, 1e-30)
-
-    # ── Poisson significance ─────────────────────────────────────────────
-    # Expected number of BKG events above each rho threshold
-    # For each trigger, expected = FAR * zl_livetime (in years)
-    expected = attached_far * zl_livetime / 86400 / 365.25
-    from scipy.stats import poisson
-    p_values = 1.0 - poisson.cdf(0, expected)
-    df["p_value"] = p_values
-    df["significance"] = -np.log10(np.maximum(p_values, 1e-300))
+    df = _attach_far_and_significance(df, far_rho_data, ranking_par, zl_livetime)
 
     # ── Plot ─────────────────────────────────────────────────────────────
     os.makedirs(out_dir, exist_ok=True)
-    _plot_zero_lag(df, ranking_par, zl_livetime_years, out_dir)
+    known_candidates = {}
+    if public_alerts_file:
+        known_candidates = load_public_alert_candidates(
+            df,
+            _resolve(public_alerts_file),
+            public_alert_time_window,
+        )
+    plot_zero_lag(
+        df,
+        ranking_par,
+        zl_livetime_years,
+        out_dir,
+        known_candidates=known_candidates,
+    )
 
     # Save CSV
     csv_path = os.path.join(out_dir, "zero_lag_triggers.csv")
@@ -264,14 +305,302 @@ def zero_lag_report(
         "zero_lag_n": len(df),
         "livetime_years": float(zl_livetime_years),
         "max_significance": float(df["significance"].max()) if len(df) > 0 else 0.0,
+        "known_candidate_n": len(known_candidates),
     }
+
+
+@action_spec(
+    outputs=[],
+    inputs=['catalog_file', 'intervals_file'],
+    description='Select fake-openbox FAR intervals and plot them with openbox-style significance',
+)
+def fake_openbox_report(
+    work_dir: str,
+    catalog_file: str,
+    intervals_file: str,
+    far_rho_data: Optional[dict] = None,
+    ranking_par: str = "rho",
+    output_dir: str = "public",
+    fake_openbox_n: int = 3,
+    fake_openbox_seed: int = 150914,
+    exclude_zero_lag: bool = True,
+    **kwargs,
+) -> dict:
+    """Select random FAR intervals and report them as fake openbox data."""
+    def _resolve(p: str) -> str:
+        return p if os.path.isabs(p) else os.path.join(work_dir, p)
+
+    cat_path = _resolve(catalog_file)
+    intervals_path = _resolve(intervals_file)
+    out_dir = _resolve(output_dir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    if far_rho_data is None:
+        far_rho_data = kwargs.get("far_rho")
+    if isinstance(far_rho_data, dict) and "far_rho" in far_rho_data and "bins" not in far_rho_data:
+        far_rho_data = far_rho_data["far_rho"]
+    if far_rho_data is None:
+        json_path = os.path.join(out_dir, "far_rho.json")
+        if os.path.exists(json_path):
+            with open(json_path) as f:
+                far_rho_data = json.load(f)
+    if far_rho_data is None:
+        raise ValueError("far_rho_data not provided and far_rho.json not found")
+
+    intervals = _read_intervals_file(intervals_path)
+    if intervals.empty:
+        raise ValueError(f"No intervals available for fake openbox: {intervals_path}")
+    required = {"shift_key", "lag_idx", "livetime"}
+    missing = required - set(intervals.columns)
+    if missing:
+        raise KeyError(f"Fake openbox intervals missing columns: {sorted(missing)}")
+
+    n_select = min(int(fake_openbox_n), len(intervals))
+    selected_intervals = intervals.sample(n=n_select, random_state=int(fake_openbox_seed)).sort_values(
+        ["shift_key", "lag_idx"],
+    ).reset_index(drop=True)
+    selected_keys = set(zip(selected_intervals["shift_key"].astype(str), selected_intervals["lag_idx"].astype(int)))
+
+    df = pd.read_parquet(cat_path)
+    if exclude_zero_lag:
+        trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+        df = df[nonzero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
+    df = _add_trigger_shift_key(df)
+    df = df[
+        pd.MultiIndex.from_arrays([df["shift_key"].astype(str), df["lag_idx"].astype(int)]).isin(selected_keys)
+    ].reset_index(drop=True)
+    if ranking_par not in df.columns:
+        raise KeyError(f"Ranking parameter '{ranking_par}' not found")
+
+    selected_path = os.path.join(out_dir, "fake_openbox_intervals.csv")
+    selected_intervals.to_csv(selected_path, index=False)
+
+    cols = [c for c in ["id", "job_id", "lag_idx", "shift_key", ranking_par, "ifar", "far_attached",
+                         "ifar_years", "significance", "p_value", "gps_time",
+                         "net_cc", "likelihood", "coherent_energy"]
+            if c in set(df.columns) | {"far_attached", "ifar_years", "significance", "p_value"}]
+
+    reports = []
+    combined_frames = []
+    for idx, interval in selected_intervals.iterrows():
+        shift_key = str(interval["shift_key"])
+        lag_idx = int(interval["lag_idx"])
+        interval_livetime = float(interval["livetime"])
+        interval_livetime_years = interval_livetime / 86400.0 / 365.25
+        interval_df = df[
+            (df["shift_key"].astype(str) == shift_key)
+            & (df["lag_idx"].astype(int) == lag_idx)
+        ].reset_index(drop=True)
+        interval_df = _attach_far_and_significance(interval_df, far_rho_data, ranking_par, interval_livetime)
+        fake_id = f"fake_openbox_{idx + 1:02d}"
+        plot_label = f"Fake openbox {idx + 1}: slag {shift_key}, lag {lag_idx}"
+        interval_csv = os.path.join(out_dir, f"{fake_id}_triggers.csv")
+        interval_cols = [col for col in cols if col in interval_df.columns]
+        interval_df[interval_cols].to_csv(interval_csv, index=False)
+        plot_zero_lag(
+            interval_df,
+            ranking_par,
+            interval_livetime_years,
+            out_dir,
+            output_prefix=fake_id,
+            plot_label=plot_label,
+        )
+        interval_df = interval_df.copy()
+        interval_df["fake_openbox_id"] = fake_id
+        combined_frames.append(interval_df)
+        reports.append({
+            "id": fake_id,
+            "shift_key": shift_key,
+            "lag_idx": lag_idx,
+            "livetime": interval_livetime,
+            "livetime_years": float(interval_livetime_years),
+            "n_triggers": int(len(interval_df)),
+            "triggers_csv": interval_csv,
+            "report_png": os.path.join(out_dir, f"{fake_id}_report.png"),
+            "poisson_png": os.path.join(out_dir, f"{fake_id}_poisson.png"),
+            "max_significance": float(interval_df["significance"].max()) if len(interval_df) > 0 else 0.0,
+        })
+
+    combined = pd.concat(combined_frames, ignore_index=True) if combined_frames else pd.DataFrame()
+    csv_path = os.path.join(out_dir, "fake_openbox_triggers.csv")
+    combined_cols = ["fake_openbox_id"] + [col for col in cols if col in combined.columns]
+    combined[combined_cols].to_csv(csv_path, index=False)
+    fake_livetime = float(selected_intervals["livetime"].sum())
+    logger.info(
+        "Fake openbox: %d reports, %d triggers, %.0f s combined live time",
+        len(reports), len(combined), fake_livetime,
+    )
+    return {
+        "fake_openbox_n_intervals": int(len(selected_intervals)),
+        "fake_openbox_n": int(len(combined)),
+        "livetime": fake_livetime,
+        "livetime_years": float(fake_livetime / 86400.0 / 365.25),
+        "intervals_csv": selected_path,
+        "triggers_csv": csv_path,
+        "reports": reports,
+        "max_significance": max((item["max_significance"] for item in reports), default=0.0),
+    }
+
+
+@action_spec(
+    outputs=[],
+    inputs=[
+        'catalog_file',
+        'progress_file',
+        'job_ids_file',
+        'livetime',
+        'zero_lag_catalog_file',
+        'zero_lag_job_ids_file',
+        'fake_openbox_intervals_file',
+    ],
+    display_name='Background report',
+    description='Generate the standard background FAR and zero-lag report',
+    help=(
+        "Composite action for common background-report production. It calls "
+        "far_rho_plot first, then zero_lag_report with the resulting FAR data."
+    ),
+    composite=True,
+)
+def standard_background_report(
+    work_dir: str,
+    catalog_file: str,
+    progress_file: str,
+    job_ids_file: Optional[str] = None,
+    livetime: Optional[float] = None,
+    ranking_par: str = "rho",
+    exclude_zero_lag: bool = True,
+    bin_size: float = 0.1,
+    output_dir: str = "public",
+    include_zero_lag: bool = True,
+    zero_lag_catalog_file: Optional[str] = None,
+    zero_lag_job_ids_file: Optional[str] = None,
+    include_fake_openbox: bool = False,
+    fake_openbox_intervals_file: Optional[str] = None,
+    fake_openbox_n: int = 3,
+    fake_openbox_seed: int = 150914,
+    public_alerts_file: Optional[str] = None,
+    public_alert_time_window: float = 1.0,
+    **kwargs,
+) -> dict:
+    """Generate standard background report artifacts."""
+    far_result = far_rho_plot(
+        work_dir=work_dir,
+        catalog_file=catalog_file,
+        progress_file=progress_file,
+        job_ids_file=job_ids_file,
+        livetime=livetime,
+        ranking_par=ranking_par,
+        exclude_zero_lag=exclude_zero_lag,
+        bin_size=bin_size,
+        output_dir=output_dir,
+        **kwargs,
+    )
+    result = {"far_rho": far_result}
+    if include_zero_lag:
+        zero_lag_jobs = zero_lag_job_ids_file
+        if zero_lag_catalog_file is None and zero_lag_jobs is None:
+            zero_lag_jobs = job_ids_file
+        result["zero_lag"] = zero_lag_report(
+            work_dir=work_dir,
+            catalog_file=zero_lag_catalog_file or catalog_file,
+            progress_file=progress_file,
+            job_ids_file=zero_lag_jobs,
+            far_rho_data=far_result,
+            ranking_par=ranking_par,
+            output_dir=output_dir,
+            public_alerts_file=public_alerts_file,
+            public_alert_time_window=public_alert_time_window,
+            **kwargs,
+        )
+    if include_fake_openbox:
+        if fake_openbox_intervals_file is None:
+            raise ValueError("include_fake_openbox=True requires fake_openbox_intervals_file")
+        result["fake_openbox"] = fake_openbox_report(
+            work_dir=work_dir,
+            catalog_file=catalog_file,
+            intervals_file=fake_openbox_intervals_file,
+            far_rho_data=far_result,
+            ranking_par=ranking_par,
+            output_dir=output_dir,
+            fake_openbox_n=fake_openbox_n,
+            fake_openbox_seed=fake_openbox_seed,
+            exclude_zero_lag=exclude_zero_lag,
+            **kwargs,
+        )
+    return result
+
+
+def _attach_far_and_significance(
+    df: pd.DataFrame,
+    far_rho_data: dict,
+    ranking_par: str,
+    livetime_seconds: float,
+) -> pd.DataFrame:
+    """Attach FAR, IFAR, p-value, and significance columns to trigger rows."""
+    df = df.copy()
+    bins = np.array(far_rho_data["bins"])
+    far = np.array(far_rho_data["far"])
+    rho_vals = df[ranking_par].values
+    attached_far = np.zeros(len(df))
+    for i, r in enumerate(rho_vals):
+        idx = np.searchsorted(bins, r, side="right") - 1
+        if 0 <= idx < len(far):
+            attached_far[i] = far[idx]
+        else:
+            attached_far[i] = far[-1] if idx >= len(far) else far[0]
+
+    df["far_attached"] = attached_far
+    df["ifar_years"] = 1.0 / np.maximum(attached_far, 1e-30)
+
+    from scipy.stats import poisson
+    expected = attached_far * livetime_seconds / 86400 / 365.25
+    p_values = 1.0 - poisson.cdf(0, expected)
+    df["p_value"] = p_values
+    df["significance"] = -np.log10(np.maximum(p_values, 1e-300))
+    return df
+
+
+def _read_intervals_file(path: str) -> pd.DataFrame:
+    if path.endswith(".csv"):
+        return pd.read_csv(path)
+    return pd.read_parquet(path)
+
+
+def _add_trigger_shift_key(df: pd.DataFrame) -> pd.DataFrame:
+    """Add a shift_key column from trigger segment_lag columns."""
+    segment_cols = [col for col in df.columns if col.startswith("segment_lag_")]
+    if "shift_key" in df.columns:
+        return df.copy()
+    if not segment_cols:
+        raise KeyError("Fake openbox matching requires trigger segment_lag_* columns")
+
+    out = df.copy()
+    out["shift_key"] = [
+        _shift_key(tuple(float(row[col]) for col in segment_cols))
+        for _, row in out[segment_cols].iterrows()
+    ]
+    return out
+
+
+def _shift_key(shift: tuple[float, ...]) -> str:
+    return ",".join(f"{value:.12g}" for value in shift)
 
 
 # ---------------------------------------------------------------------------
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def _plot_far_rho(data: dict, out_dir: str) -> None:
+def plot_far_rho(data: dict, out_dir: str) -> None:
+    """Plot false-alarm rate vs ranking parameter (step plot, log-y).
+
+    Parameters
+    ----------
+    data : dict
+        FAR data from :func:`far_rho_plot`, with keys ``bins``, ``far``,
+        ``ranking_par``.
+    out_dir : str
+        Directory to write ``far_rho.png``.
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -295,7 +624,17 @@ def _plot_far_rho(data: dict, out_dir: str) -> None:
     plt.close(fig)
 
 
-def _plot_n_events(data: dict, out_dir: str) -> None:
+def plot_n_events(data: dict, out_dir: str) -> None:
+    """Plot cumulative event count vs ranking parameter (step plot, log-y).
+
+    Parameters
+    ----------
+    data : dict
+        FAR data from :func:`far_rho_plot`, with keys ``bins``,
+        ``cum_events``, ``ranking_par``.
+    out_dir : str
+        Directory to write ``far_rho_n_events.png``.
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -319,7 +658,78 @@ def _plot_n_events(data: dict, out_dir: str) -> None:
     plt.close(fig)
 
 
-def _plot_zero_lag(df: pd.DataFrame, ranking_par: str, livetime_years: float, out_dir: str) -> None:
+def load_public_alert_candidates(
+    zero_lag_df: pd.DataFrame,
+    public_alerts_file: str,
+    gps_time_window: float,
+) -> dict[int, str]:
+    """Match two-column public alerts to zero-lag triggers by GPS time.
+
+    The returned dictionary is keyed by the index of the zero-lag/IFAR array,
+    so plotting can compute the IFAR value and cumulative rank directly.
+    """
+    if "gps_time" not in zero_lag_df.columns:
+        raise KeyError("zero-lag catalog must contain gps_time to mark public alerts")
+    if not os.path.exists(public_alerts_file):
+        raise FileNotFoundError(f"public_alerts_file not found: {public_alerts_file}")
+
+    trigger_gps = pd.to_numeric(zero_lag_df["gps_time"], errors="coerce").reset_index(drop=True)
+    known_candidates: dict[int, str] = {}
+
+    with open(public_alerts_file) as f:
+        for line in f:
+            fields = line.split()
+            if len(fields) < 2 or fields[0].startswith("#"):
+                continue
+            try:
+                alert_gps = float(fields[1])
+            except ValueError:
+                continue
+
+            time_delta = (trigger_gps - alert_gps).abs()
+            if not time_delta.notna().any():
+                continue
+            trigger_index = int(time_delta.idxmin())
+            if time_delta.iloc[trigger_index] <= gps_time_window:
+                candidate_id = fields[0]
+                if trigger_index in known_candidates:
+                    known_candidates[trigger_index] += f", {candidate_id}"
+                else:
+                    known_candidates[trigger_index] = candidate_id
+
+    logger.info("Public alert candidates matched from %s: %d", public_alerts_file, len(known_candidates))
+    return known_candidates
+
+
+def plot_zero_lag(
+    df: pd.DataFrame,
+    ranking_par: str,
+    livetime_years: float,
+    out_dir: str,
+    known_candidates: Optional[dict[int, str]] = None,
+    output_prefix: str = "zero_lag",
+    plot_label: str = "Zero-lag",
+) -> None:
+    """Plot zero-lag trigger IFAR scatter + significance histogram.
+
+    Produces two subplots:
+    1. IFAR vs *ranking_par* scatter, colour-coded by Poisson significance.
+    2. Significance distribution histogram with 3σ / 5σ markers.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Zero-lag triggers with columns *ranking_par*, ``significance``,
+        ``ifar_years``.
+    ranking_par : str
+        Column name for the ranking statistic (e.g. ``"rho"``).
+    livetime_years : float
+        Zero-lag live time in years (for plot title).
+    out_dir : str
+        Directory to write ``zero_lag_report.png``.
+    known_candidates : dict, optional
+        Public alert names keyed by index in the zero-lag IFAR array.
+    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -328,7 +738,7 @@ def _plot_zero_lag(df: pd.DataFrame, ranking_par: str, livetime_years: float, ou
         return
 
     if len(df) == 0:
-        logger.warning("No zero-lag triggers to plot")
+        logger.warning("No %s triggers to plot", plot_label)
         return
 
     rho = df[ranking_par].values
@@ -342,7 +752,7 @@ def _plot_zero_lag(df: pd.DataFrame, ranking_par: str, livetime_years: float, ou
     ax1.set_xlabel(ranking_par)
     ax1.set_ylabel("IFAR [yr]")
     ax1.set_yscale("log")
-    ax1.set_title(f"Zero-lag triggers (livetime={livetime_years:.1f} yr)")
+    ax1.set_title(f"{plot_label} triggers (livetime={livetime_years:.1f} yr)")
     ax1.grid(True, alpha=0.3)
     cbar = plt.colorbar(ax1.collections[0], ax=ax1, label="significance")
 
@@ -356,26 +766,49 @@ def _plot_zero_lag(df: pd.DataFrame, ranking_par: str, livetime_years: float, ou
     ax2.grid(True, alpha=0.3)
 
     fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, "zero_lag_report.png"), dpi=120)
+    fig.savefig(os.path.join(out_dir, f"{output_prefix}_report.png"), dpi=120)
     plt.close(fig)
 
     # ── Figure 2: Cumulative events vs IFAR with Poisson confidence ──────
-    _plot_zero_lag_poisson(df, ifar, livetime_years, out_dir)
+    plot_zero_lag_poisson(
+        ifar,
+        livetime_years,
+        out_dir,
+        known_candidates=known_candidates,
+        output_prefix=output_prefix,
+        plot_label=plot_label,
+    )
 
 
-def _plot_zero_lag_poisson(
-    df: pd.DataFrame,
+def plot_zero_lag_poisson(
     ifar: np.ndarray,
     livetime_years: float,
     out_dir: str,
+    known_candidates: Optional[dict[int, str]] = None,
+    output_prefix: str = "zero_lag",
+    plot_label: str = "Zero-lag",
 ) -> None:
-    """Cumulative events vs IFAR with Poisson confidence bands.
+    """Plot zero-lag cumulative events vs IFAR with Poisson confidence bands.
 
     Follows the approach in ``Make_PP_IFAR.C``:
-    - Sorted foreground (zero-lag) events plotted as stepwise cumulative count.
-    - Expected background = livetime_years / IFAR (a 1/x line in log-log).
-    - Poisson confidence belts computed from the expected background using
-      continuos Poisson percentiles (FAP0=1σ, FAP1=2σ, FAP2=3σ).
+
+    * Foreground (zero-lag) events are drawn as a red stepwise cumulative
+      count sorted by descending IFAR.
+    * Expected background is the diagonal
+      :math:`N_{\\text{bkg}} = T / \\text{IFAR}` (a 1/x line in log-log).
+    * Poisson confidence belts (1σ, 2σ, 3σ) are shaded around the expected
+      background using :func:`scipy.stats.poisson.ppf`.
+
+    Parameters
+    ----------
+    ifar : np.ndarray
+        IFAR values in years, one per zero-lag trigger.
+    livetime_years : float
+        Zero-lag live time in years.
+    out_dir : str
+        Directory to write ``zero_lag_poisson.png``.
+    known_candidates : dict, optional
+        Public alert names keyed by index in the IFAR array.
     """
     try:
         import matplotlib
@@ -384,31 +817,29 @@ def _plot_zero_lag_poisson(
     except ImportError:
         return
 
-    if len(df) == 0:
+    ifar = np.asarray(ifar, dtype=float)
+    valid_event_indices = np.where(np.isfinite(ifar) & (ifar > 0))[0]
+    if len(valid_event_indices) == 0:
         return
 
     # ── Sort by IFAR descending (most significant first) ─────────────────
-    order = np.argsort(-ifar)
+    order = valid_event_indices[np.argsort(-ifar[valid_event_indices])]
     sorted_ifar = ifar[order]
 
-    # Stepwise cumulative count (matching Make_PP_IFAR step style)
+    # Draw foreground as separate horizontal/vertical segments.  This avoids
+    # dense step-path artifacts on log axes at very low IFAR.
     n_events = len(sorted_ifar)
-    zl_ifar = np.empty(2 * n_events - 1)
-    zl_nevt = np.empty(2 * n_events - 1)
-    k = 0
-    for i in range(n_events - 1, -1, -1):
-        zl_ifar[k] = sorted_ifar[i]
-        zl_nevt[k] = i + 1
-        k += 1
-        if k >= len(zl_nevt) - 1:
-            break
-        # Add step point
-        zl_ifar[k] = zl_ifar[k - 1]
-        zl_nevt[k] = zl_nevt[k - 1] - 1
-        k += 1
+    foreground_ifar = sorted_ifar[::-1]
+    foreground_count = np.arange(n_events, 0, -1, dtype=float)
 
-    ifar_max = zl_ifar.max()
-    ifar_min = max(zl_ifar.min(), 1e-10)
+    ranks = {int(event_index): rank + 1 for rank, event_index in enumerate(order)}
+    markers = []
+    for event_index, candidate_id in (known_candidates or {}).items():
+        if event_index in ranks and np.isfinite(ifar[event_index]) and ifar[event_index] > 0:
+            markers.append((float(ifar[event_index]), float(ranks[event_index]), candidate_id))
+
+    ifar_max = foreground_ifar.max()
+    ifar_min = max(foreground_ifar.min(), 1e-10)
 
     # ── Log-spaced IFAR bins for background & belts ──────────────────────
     # Extend far beyond foreground to fill the entire lower-right plot area.
@@ -455,13 +886,36 @@ def _plot_zero_lag_poisson(
                 label="Expected BKG")
 
         # Foreground (zero-lag) step plot
-        ax.step(zl_ifar, zl_nevt, where="post", color="red", linewidth=1.5,
+        ax.step(foreground_ifar, foreground_count, where="pre", color="red", linewidth=1.5,
                 label="Foreground")
+        if len(markers) > 0:
+            marker_ifar = [marker[0] for marker in markers]
+            marker_rank = [marker[1] for marker in markers]
+            ax.scatter(
+                marker_ifar,
+                marker_rank,
+                s=34,
+                color="blue",
+                edgecolors="navy",
+                linewidths=0.6,
+                label="Known candidates",
+                zorder=6,
+            )
+            for marker_ifar, marker_rank, candidate_id in markers:
+                ax.annotate(
+                    candidate_id,
+                    (marker_ifar, marker_rank),
+                    xytext=(6, 4),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color="black",
+                    zorder=7,
+                )
 
         # Loudest event marker
         if n_events > 0:
-            loudest_ifar = zl_ifar[-1]
-            loudest_nevt = zl_nevt[-1]
+            loudest_ifar = foreground_ifar[-1]
+            loudest_nevt = foreground_count[-1]
             ax.plot(loudest_ifar, loudest_nevt, marker="o", color="red",
                     markersize=6, markeredgecolor="darkred", markeredgewidth=1)
 
@@ -470,15 +924,17 @@ def _plot_zero_lag_poisson(
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlim(ifar_min_bg, ifar_max_bg)
-        ax.set_ylim(0.1, max(mu[0], zl_nevt[0]) * 1.5)
-        ax.set_title(f"cWB Zero-lag Events vs IFAR\nlivetime = {livetime_years:.4f} yr")
+        y_max = max(mu[0], foreground_count[0])
+        ax.set_ylim(0.1, y_max * 1.5)
+        ax.set_title(f"cWB {plot_label} Events vs IFAR\nlivetime = {livetime_years:.4f} yr")
         ax.legend(loc="upper right", fontsize=9)
         ax.grid(True, alpha=0.3, which="both")
 
         fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, "zero_lag_poisson.png"), dpi=150)
+        poisson_path = os.path.join(out_dir, f"{output_prefix}_poisson.png")
+        fig.savefig(poisson_path, dpi=150)
         plt.close(fig)
-        logger.info("Zero-lag Poisson plot → %s", os.path.join(out_dir, "zero_lag_poisson.png"))
+        logger.info("%s Poisson plot → %s", plot_label, poisson_path)
 
     except Exception as e:
         logger.warning("Poisson confidence intervals failed: %s", e)

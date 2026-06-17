@@ -47,9 +47,15 @@ import textwrap
 import zlib
 from typing import Any, Optional
 
-import yaml
-
 from pycwb.post_production.action_spec import get_action_spec
+from pycwb.post_production.workflow_config import (
+    load_workflow,
+    prepare_step_for_diagram,
+    resolve_value,
+    workflow_base_context,
+    workflow_refs,
+    workflow_runtime,
+)
 from pycwb.utils.module import import_helper
 
 logger = logging.getLogger(__name__)
@@ -117,22 +123,35 @@ def build_dag(workflow: dict) -> dict:
         ``via`` is one of ``'file'``, ``'alias'``, or ``'heuristic'``.
     """
     steps = workflow.get('steps', [])
-    global_args = workflow.get('global', {})
+    global_args = workflow_base_context(workflow)
+    runtime = workflow_runtime(workflow, global_args)
 
     # ---- build nodes ----
     nodes: list[dict] = []
+    workflow_id_to_node: dict[str, str] = {}
     for i, step in enumerate(steps):
         action = step.get('action', '')
         func = _resolve_action_func(action)
         spec = get_action_spec(func) if func else {}
+        raw_args = prepare_step_for_diagram(step)
+        try:
+            node_args = resolve_value(raw_args, global_args, runtime, resolve_refs=False)
+        except Exception:
+            node_args = raw_args
+        workflow_id = str(step.get('id') or step.get('output_alias') or f'step{i}')
+        workflow_id_to_node[workflow_id] = f'step{i}'
         nodes.append({
             'id': f'step{i}',
-            'label': _short_name(action),
+            'workflow_id': workflow_id,
+            'label': step.get('name') or spec.get('display_name') or _short_name(action),
+            'action_label': _short_name(action),
             'description': spec.get('description', _short_name(action)),
+            'help': spec.get('help', ''),
+            'composite': spec.get('composite', False),
             'action': action,
             'step_index': i,
             'output_alias': step.get('output_alias', None),
-            'args': step.get('args', {}),
+            'args': node_args,
         })
 
     # ---- build known-output map: step_id → {param_name: arg_value} ----
@@ -156,7 +175,11 @@ def build_dag(workflow: dict) -> dict:
         # Also track output_alias
         alias = node.get('output_alias')
         if alias:
-            alias_to_step[str(alias)] = sid
+            if isinstance(alias, list):
+                for item in alias:
+                    alias_to_step[str(item)] = sid
+            else:
+                alias_to_step[str(alias)] = sid
 
         known_outputs[sid] = step_outputs
 
@@ -187,9 +210,25 @@ def build_dag(workflow: dict) -> dict:
 
     # ---- build edges ----
     edges: list[dict] = []
+    seen_edges: set[tuple[str, str, str, str]] = set()
+
+    def add_edge(src: str, dst: str, label: str, via: str) -> None:
+        key = (src, dst, label, via)
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
+        edges.append({'from': src, 'to': dst, 'label': label, 'via': via})
+
     for i, target in enumerate(nodes):
         tid = target['id']
         target_args = target['args']
+
+        # --- explicit @step.path references ---
+        for ref in workflow_refs(target_args):
+            source_key = ref.split('.', 1)[0]
+            sid = workflow_id_to_node.get(source_key) or alias_to_step.get(source_key)
+            if sid and sid != tid:
+                add_edge(sid, tid, f'@{ref}', 'ref')
 
         # Check each earlier step as potential source
         for j in range(i):
@@ -201,44 +240,51 @@ def build_dag(workflow: dict) -> dict:
             func_t = _resolve_action_func(target['action'])
             spec_t = get_action_spec(func_t) if func_t else {}
             for in_param in spec_t.get('inputs', []):
-                in_val = target_args.get(in_param)
-                if in_val is None:
-                    continue
-                in_val_str = str(in_val)
+                in_values = _value_strings(target_args.get(in_param))
                 # Match against source outputs
-                for out_param, out_val in src_outputs.items():
-                    if out_param.startswith('_spread_'):
-                        # spread key — match by key name appearing in arg value
-                        spread_key = out_val
-                        if spread_key in in_val_str:
-                            edges.append({
-                                'from': sid, 'to': tid,
-                                'label': f'[{spread_key}]',
-                                'via': 'alias',
-                            })
-                            break
-                    elif out_val == in_val_str:
-                        edges.append({
-                            'from': sid, 'to': tid,
-                            'label': os.path.basename(in_val_str),
-                            'via': 'file',
-                        })
-                        break
+                for in_val_str in in_values:
+                    for out_param, out_val in src_outputs.items():
+                        if out_param.startswith('_spread_'):
+                            # spread key — match by key name appearing in arg value
+                            spread_key = out_val
+                            if spread_key in in_val_str:
+                                add_edge(sid, tid, f'[{spread_key}]', 'alias')
+                                break
+                        else:
+                            for out_val_str in _value_strings(out_val):
+                                if out_val_str == in_val_str:
+                                    add_edge(sid, tid, os.path.basename(in_val_str), 'file')
+                                    break
 
             # --- alias-based matching ---
             # Check if any target arg value matches a source output_alias name
             src_alias = source.get('output_alias')
             if src_alias:
-                for arg_key, arg_val in target_args.items():
-                    if str(arg_val) == str(src_alias):
-                        edges.append({
-                            'from': sid, 'to': tid,
-                            'label': f'alias: {src_alias}',
-                            'via': 'alias',
-                        })
+                aliases = src_alias if isinstance(src_alias, list) else [src_alias]
+                target_values = set(_value_strings(target_args))
+                for alias in aliases:
+                    if str(alias) in target_values:
+                        add_edge(sid, tid, f'alias: {alias}', 'alias')
                         break
 
     return {'nodes': nodes, 'edges': edges}
+
+
+def _value_strings(value: Any) -> list[str]:
+    """Return all scalar string representations inside a nested value."""
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        out: list[str] = []
+        for item in value.values():
+            out.extend(_value_strings(item))
+        return out
+    if isinstance(value, (list, tuple)):
+        out: list[str] = []
+        for item in value:
+            out.extend(_value_strings(item))
+        return out
+    return [str(value)]
 
 
 # ---------------------------------------------------------------------------
@@ -518,12 +564,30 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
 
     # Build vis.js node data
     vis_nodes: list[dict] = []
+    positions = _html_node_positions(dag)
     for node in dag['nodes']:
         nid = node['id']
         idx = node['step_index'] + 1
         label = node['label']
+        action_label = node.get('action_label') or _short_name(node['action'])
         desc = node['description']
+        help_text = node.get('help') or ''
         action = node['action']
+        args_preview = json.dumps(node.get('args', {}), indent=2, default=str)
+        if len(args_preview) > 2500:
+            args_preview = args_preview[:2500] + '\n...'
+        title_html = (
+            f'<b>{idx}. {html_mod.escape(label)}</b><br>'
+            f'<small>{html_mod.escape(action)}</small><br><br>'
+            f'{html_mod.escape(desc)}'
+        )
+        if help_text:
+            title_html += f'<br><br><b>Help</b><br>{html_mod.escape(help_text)}'
+        if args_preview != '{}':
+            title_html += (
+                '<br><br><details open><summary>Arguments</summary>'
+                f'<pre>{html_mod.escape(args_preview)}</pre></details>'
+            )
 
         # Color by role
         if nid not in has_incoming and nid not in has_outgoing:
@@ -541,8 +605,13 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
 
         vis_nodes.append({
             'id': nid,
-            'label': f'{idx}. {label}',
-            'title': f'<b>{idx}. {label}</b><br>{html_mod.escape(desc)}<br><code>{html_mod.escape(action)}</code>',
+            'label': f'{idx}. {label}\n{action_label}',
+            'title': title_html,
+            'detailHtml': title_html,
+            'initialX': positions.get(nid, {}).get('x', 0),
+            'initialY': positions.get(nid, {}).get('y', 0),
+            'x': positions.get(nid, {}).get('x', 0),
+            'y': positions.get(nid, {}).get('y', 0),
             'color': {'background': color, 'border': border},
             'font': {'size': 13, 'face': 'Helvetica, Arial, sans-serif'},
             'shape': 'box',
@@ -598,8 +667,44 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
     width: 12px; height: 12px; border-radius: 3px; display: inline-block;
   }}
   #mynetwork {{ width: 100vw; height: calc(100vh - 44px); background: #fafafa; }}
+  #toolbar {{
+    position: absolute; left: 14px; top: 58px; z-index: 10;
+    display: flex; gap: 6px; align-items: center;
+  }}
+  #toolbar button {{
+    border: 1px solid #b0bec5; background: #ffffff; color: #263238;
+    border-radius: 4px; padding: 6px 9px; cursor: pointer;
+    font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }}
+  #toolbar button:hover {{ background: #eceff1; }}
+  #details {{
+    position: absolute; right: 14px; top: 58px; z-index: 11;
+    width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - 82px);
+    overflow: auto; background: #ffffff; border: 1px solid #b0bec5;
+    border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    padding: 12px; display: none; font-size: 13px; line-height: 1.4;
+  }}
+  #details.visible {{ display: block; }}
+  #detailsHeader {{
+    display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px;
+    position: sticky; top: -12px; background: #ffffff; padding: 0 0 8px 0;
+  }}
+  #detailsHeader button {{
+    border: 1px solid #b0bec5; background: #ffffff; border-radius: 4px;
+    padding: 4px 7px; cursor: pointer; font-size: 12px;
+  }}
+  #details pre {{
+    max-height: none; overflow: visible; background: #f6f8fa;
+    border: 1px solid #d0d7de; border-radius: 4px; padding: 8px;
+    font-size: 11px; line-height: 1.35; white-space: pre-wrap;
+  }}
   .vis-network:focus {{ outline: none; }}
   .vis-tooltip {{ max-width: 320px; }}
+  .vis-tooltip pre {{
+    max-height: 220px; overflow: auto; background: #f6f8fa;
+    border: 1px solid #d0d7de; border-radius: 4px; padding: 6px;
+    font-size: 11px; line-height: 1.35;
+  }}
 </style>
 </head>
 <body>
@@ -609,9 +714,22 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
     <span><span class="dot" style="background:#bbdefb;border:2px solid #0288d1"></span> Source</span>
     <span><span class="dot" style="background:#fff9c4;border:2px solid #fbc02d"></span> Intermediate</span>
     <span><span class="dot" style="background:#e1bee7;border:2px solid #7b1fa2"></span> Sink</span>
-    <span style="color:#888">| Click node → highlight | Scroll → zoom</span>
+    <span style="color:#888">| Click node → pin details | Drag nodes freely | Scroll → zoom</span>
   </div>
 </div>
+<div id="toolbar">
+  <button id="fitBtn" type="button">Fit</button>
+  <button id="resetBtn" type="button">Reset Columns</button>
+  <button id="relaxBtn" type="button">Relax Layout</button>
+  <button id="clearBtn" type="button">Clear</button>
+</div>
+<aside id="details" aria-live="polite">
+  <div id="detailsHeader">
+    <button id="copyDetailsBtn" type="button">Copy</button>
+    <button id="closeDetailsBtn" type="button">Close</button>
+  </div>
+  <div id="detailsContent"></div>
+</aside>
 <div id="mynetwork"></div>
 
 <script>
@@ -621,18 +739,7 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
   var container = document.getElementById('mynetwork');
   var data = {{ nodes: nodes, edges: edges }};
   var options = {{
-    layout: {{
-      hierarchical: {{
-        enabled: true,
-        direction: 'LR',
-        sortMethod: 'directed',
-        levelSeparation: 220,
-        nodeSpacing: 160,
-        treeSpacing: 100,
-        blockShifting: true,
-        edgeMinimization: true,
-      }},
-    }},
+    layout: {{ hierarchical: {{ enabled: false }} }},
     physics: {{ enabled: false }},
     interaction: {{
       hover: true,
@@ -652,6 +759,8 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
   }};
 
   var network = new vis.Network(container, data, options);
+  var details = document.getElementById('details');
+  var detailsContent = document.getElementById('detailsContent');
 
   // Click-to-highlight: select node → dim unrelated nodes/edges
   var highlighted = null;
@@ -683,15 +792,109 @@ def render_html(dag: dict, title: str = "Workflow DAG") -> str:
         color: active ? e.color : {{color: '#dddddd'}},
       }});
     }});
+
+    var node = nodes.get(highlighted);
+    if (node) {{
+      detailsContent.innerHTML = node.detailHtml || node.title || '';
+      details.classList.add('visible');
+    }}
+  }});
+
+  document.getElementById('closeDetailsBtn').addEventListener('click', function() {{
+    details.classList.remove('visible');
+  }});
+  document.getElementById('copyDetailsBtn').addEventListener('click', async function() {{
+    var text = detailsContent.innerText || '';
+    try {{ await navigator.clipboard.writeText(text); }}
+    catch (err) {{
+      var range = document.createRange();
+      range.selectNodeContents(detailsContent);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }}
+  }});
+  document.getElementById('fitBtn').addEventListener('click', function() {{
+    network.fit({{ animation: {{ duration: 300 }} }});
+  }});
+  document.getElementById('resetBtn').addEventListener('click', function() {{
+    nodes.forEach(function(n) {{
+      nodes.update({{ id: n.id, x: n.initialX, y: n.initialY, fixed: false }});
+    }});
+    network.setOptions({{ physics: false }});
+    network.fit({{ animation: {{ duration: 300 }} }});
+  }});
+  document.getElementById('relaxBtn').addEventListener('click', function() {{
+    network.setOptions({{
+      physics: {{
+        enabled: true,
+        solver: 'forceAtlas2Based',
+        stabilization: {{ iterations: 120 }},
+      }}
+    }});
+    setTimeout(function() {{ network.setOptions({{ physics: false }}); }}, 1800);
+  }});
+  document.getElementById('clearBtn').addEventListener('click', function() {{
+    highlighted = null;
+    details.classList.remove('visible');
+    nodes.forEach(function(n) {{ nodes.update({{id: n.id, opacity: 1.0}}); }});
+    edges.forEach(function(e) {{ edges.update({{id: e.id, opacity: 1.0, color: e.color}}); }});
+    network.unselectAll();
   }});
 
   // Fit on load
-  network.once('stabilized', function() {{
+  setTimeout(function() {{
     network.fit({{ animation: {{ duration: 500 }} }});
-  }});
+  }}, 100);
 </script>
 </body>
 </html>'''
+
+
+def _html_node_positions(dag: dict) -> dict[str, dict[str, int]]:
+    """Compute unlocked initial column positions for the HTML graph."""
+    nodes = dag.get('nodes', [])
+    edges = dag.get('edges', [])
+    node_ids = [node['id'] for node in nodes]
+    incoming: dict[str, list[str]] = {nid: [] for nid in node_ids}
+    for edge in edges:
+        if edge['to'] in incoming:
+            incoming[edge['to']].append(edge['from'])
+
+    levels: dict[str, int] = {}
+
+    def level(nid: str, visiting: Optional[set[str]] = None) -> int:
+        if nid in levels:
+            return levels[nid]
+        visiting = visiting or set()
+        if nid in visiting:
+            return 0
+        visiting.add(nid)
+        parents = incoming.get(nid, [])
+        if not parents:
+            levels[nid] = 0
+        else:
+            levels[nid] = 1 + max(level(parent, visiting) for parent in parents)
+        return levels[nid]
+
+    for nid in node_ids:
+        level(nid)
+
+    groups: dict[int, list[str]] = {}
+    for nid in node_ids:
+        groups.setdefault(levels.get(nid, 0), []).append(nid)
+
+    positions: dict[str, dict[str, int]] = {}
+    x_gap = 290
+    y_gap = 115
+    for lvl, ids in groups.items():
+        total_height = (len(ids) - 1) * y_gap
+        for idx, nid in enumerate(ids):
+            positions[nid] = {
+                'x': lvl * x_gap,
+                'y': idx * y_gap - total_height // 2,
+            }
+    return positions
 
 def _render_mermaid_png(mermaid_text: str, png_path: str) -> bool:
     """Render Mermaid markup to PNG via the mermaid.ink HTTP API.
@@ -931,11 +1134,10 @@ def generate_workflow_diagram(
     dict
         ``{'mmd': path, 'png': path or None, 'dot': path, 'dag': dag_dict}``
     """
-    with open(workflow_file, 'r') as f:
-        workflow = yaml.safe_load(f)
+    workflow = load_workflow(workflow_file)
 
     if output_prefix is None:
-        work_dir = workflow.get('global', {}).get('work_dir', '.')
+        work_dir = workflow_base_context(workflow).get('work_dir', '.')
         output_prefix = os.path.join(work_dir, 'workflow_diagram')
 
     dag = build_dag(workflow)

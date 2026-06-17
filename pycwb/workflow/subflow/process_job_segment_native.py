@@ -257,6 +257,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         for lag in range(n_lag):
             lag_timer = time.perf_counter()  # measures only this lag, not the setup above
             lag_shifts = sub_job_seg.lag_shifts[lag]
+            time_lag = [float(v) for v in lag_shifts]
+            segment_lag = (
+                [float(v) for v in sub_job_seg.shift]
+                if sub_job_seg.shift is not None
+                else [0.0 for _ in sub_job_seg.ifos]
+            )
             lag_shift_str = ", ".join(
                 f"{ifo}={shift:.3f}s"
                 for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
@@ -279,7 +285,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     )
                     progress_record = dict(
                         job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
-                        n_triggers=0, livetime=lag_livetime, status="skipped_segTHR",
+                        n_triggers=0, livetime=0.0, status="skipped_segTHR",
                     )
                     if queue is not None:
                         queue.put({"type": "progress", **progress_record})
@@ -471,6 +477,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             for trigger in events_data:
                 event, _, _ = trigger
                 trigger_obj = Trigger.from_event(event)
+                trigger_obj.time_lag = time_lag
+                trigger_obj.segment_lag = segment_lag
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 elif catalog_file:

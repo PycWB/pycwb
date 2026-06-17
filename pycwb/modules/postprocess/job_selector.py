@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from pycwb.post_production.action_spec import action_spec
+from pycwb.modules.postprocess.lag_filters import nonzero_lag_mask, unshifted_job_ids_from_progress
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def select_jobs_by_livetime(
     fraction : float
         Target fraction of total live time (default 0.10 = 10%).
     exclude_zero_lag : bool
-        If True, exclude ``lag_idx == 0`` rows from live-time calculation.
+        If True, exclude physically unshifted zero-lag rows from live-time calculation.
     seed : int
         Random seed.
 
@@ -78,10 +79,16 @@ def select_jobs_by_livetime(
 
     prog_path = _resolve(progress_file)
     out_path = _resolve(output_file)
+    try:
+        unshifted_job_ids = unshifted_job_ids_from_progress(prog_path)
+    except (FileNotFoundError, ValueError, KeyError):
+        unshifted_job_ids = None
 
     df = pd.read_parquet(prog_path)
-    if exclude_zero_lag and "lag_idx" in df.columns:
-        df = df[df["lag_idx"] != 0]
+    if "status" in df.columns:
+        df = df[df["status"] == "completed"]
+    if exclude_zero_lag:
+        df = df[nonzero_lag_mask(df, unshifted_job_ids=unshifted_job_ids)]
 
     # Livetime per job
     job_lt = df.groupby("job_id")["livetime"].sum()
@@ -212,7 +219,7 @@ def compute_livetime(
     job_ids_file : str
         Path to job list file.
     exclude_zero_lag : bool
-        Exclude ``lag_idx == 0`` from the sum.
+        Exclude physically unshifted zero-lag rows from the sum.
 
     Returns
     -------
@@ -224,14 +231,20 @@ def compute_livetime(
 
     prog_path = _resolve(progress_file)
     jobs_path = _resolve(job_ids_file)
+    try:
+        unshifted_job_ids = unshifted_job_ids_from_progress(prog_path)
+    except (FileNotFoundError, ValueError, KeyError):
+        unshifted_job_ids = None
 
     with open(jobs_path) as f:
         job_ids = {int(line.strip()) for line in f if line.strip()}
 
     df = pd.read_parquet(prog_path)
     df = df[df["job_id"].isin(job_ids)]
-    if exclude_zero_lag and "lag_idx" in df.columns:
-        df = df[df["lag_idx"] != 0]
+    if "status" in df.columns:
+        df = df[df["status"] == "completed"]
+    if exclude_zero_lag:
+        df = df[nonzero_lag_mask(df, unshifted_job_ids=unshifted_job_ids)]
 
     lt = df["livetime"].sum()
     logger.info("Live time: %.0f s = %.2f days", lt, lt / 86400.0)

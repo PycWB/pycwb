@@ -562,7 +562,7 @@ def _plot_waveform_efficiency(
 # ---------------------------------------------------------------------------
 
 @action_spec(
-    outputs=['output_file'],
+    outputs=['output_file', 'fit_parameters_file'],
     inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
     description='Efficiency vs hrss curves for each waveform, grouped by Q-factor',
 )
@@ -610,6 +610,23 @@ def compute_efficiency_vs_hrss_by_waveform(
         ``curves`` list of per-waveform efficiency data,
         ``prob_threshold``, ``ifar_sec``.
     """
+    use_unique_sim = kwargs.get("use_unique_sim", False)
+    if use_unique_sim:
+        return _compute_efficiency_vs_hrss_by_waveform_matched(
+            work_dir=work_dir,
+            matched_file=matched_file,
+            bkg_catalog=bkg_catalog,
+            livetime=livetime,
+            model_file=model_file,
+            search=search,
+            nifo=nifo,
+            config_file=config_file,
+            ifar_label=ifar,
+            output_file=output_file,
+            exclude_vetoed=kwargs.get("exclude_vetoed", False),
+            fit_parameters_file=kwargs.get("fit_parameters_file"),
+        )
+
     from .train_xgboost import _map_catalog_columns
     import xgboost as xgb
 
@@ -705,6 +722,7 @@ def _plot_efficiency_by_waveform_panels(
     ifar_label: str,
     ifar_sec: float,
     output_path: str,
+    show_sigmoid_fit: bool = False,
 ) -> None:
     """Multi-panel plot: efficiency vs hrss, one panel per Q-factor."""
     try:
@@ -745,6 +763,19 @@ def _plot_efficiency_by_waveform_panels(
             color = freq_colors[c["frequency"]]
             ax.semilogx(hrs, effs, "o-", color=color, markersize=4, linewidth=1.5,
                         label=f"{c['frequency']}Hz", alpha=0.8)
+            fit_data = c.get("fit") or {}
+            if show_sigmoid_fit and fit_data.get("status") == "ok":
+                ax.semilogx(
+                    fit_data["fit_x"],
+                    np.array(fit_data["fit_y"]) * 100,
+                    "-",
+                    color=color,
+                    linewidth=1.0,
+                    alpha=0.45,
+                )
+                hrss50 = fit_data.get("hrss50")
+                if hrss50:
+                    ax.axvline(hrss50, color=color, linestyle=":", linewidth=0.8, alpha=0.35)
 
         ax.axhline(50, color="gray", linestyle="--", alpha=0.4)
         ax.set_xlabel("hrss")
@@ -761,6 +792,170 @@ def _plot_efficiency_by_waveform_panels(
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     logger.info("Efficiency vs hrss by waveform → %s", output_path)
+
+
+def _compute_efficiency_vs_hrss_by_waveform_matched(
+    work_dir: str,
+    matched_file: str,
+    bkg_catalog: str,
+    livetime: float,
+    model_file: str,
+    search: str,
+    nifo: int,
+    config_file: Optional[str],
+    ifar_label: str,
+    output_file: Optional[str],
+    exclude_vetoed: bool = False,
+    fit_parameters_file: Optional[str] = None,
+) -> dict:
+    """Efficiency-vs-hrss curves using one matched_right row per simulation."""
+    import xgboost as xgb
+    from pycwb.modules.statistics.sigmoid_fit import estimate_hrss, fit, logNfit
+
+    def _resolve(p: str) -> str:
+        return p if os.path.isabs(p) else os.path.join(work_dir, p)
+
+    ifar_sec = _IFAR_PRESETS.get(
+        ifar_label,
+        float(ifar_label) if ifar_label.replace(".", "").isdigit() else 31557600,
+    )
+
+    mr = pd.read_parquet(_resolve(matched_file))
+    if exclude_vetoed:
+        veto_mask = (
+            mr["sim_vetoed_cat0"].fillna(False).astype(bool)
+            | mr["sim_vetoed_cat1"].fillna(False).astype(bool)
+            | mr["sim_vetoed_cat2"].fillna(False).astype(bool)
+            | mr["sim_across_segments"].fillna(False).astype(bool)
+        )
+        mr = mr[~veto_mask].reset_index(drop=True)
+
+    clf = xgb.XGBClassifier()
+    clf.load_model(_resolve(model_file))
+    from .evaluate import _preprocess_and_score
+
+    recovered = mr[mr["id"].notna()].copy()
+    mr["xgb_prob"] = 0.0
+    if len(recovered) > 0:
+        recovered["xgb_prob"] = _preprocess_and_score(
+            recovered, nifo, search, config_file, work_dir, clf,
+        )
+        mr.loc[recovered.index, "xgb_prob"] = recovered["xgb_prob"]
+
+    bkg_df = pd.read_parquet(_resolve(bkg_catalog))
+    bkg_probs = np.sort(bkg_df["xgb_prob"].values)[::-1]
+    far_values = np.arange(1, len(bkg_probs) + 1) / max(livetime, 1.0)
+    target_far = 1.0 / ifar_sec
+    idx = np.searchsorted(far_values, target_far)
+    prob_threshold = bkg_probs[idx] if idx < len(bkg_probs) else 1.0
+    mr["detected"] = mr["id"].notna() & (mr["xgb_prob"] >= prob_threshold)
+
+    curves = []
+    fit_rows = []
+    waveform_names = sorted(
+        s for s in mr["sim_name"].dropna().unique()
+        if not (isinstance(s, float) and np.isnan(s))
+    )
+    for name in waveform_names:
+        sub = mr[mr["sim_name"] == name].copy()
+        q_val, f_val = _parse_waveform_q_frequency(name)
+        hrss_vals = sorted(pd.to_numeric(sub["sim_hrss"], errors="coerce").dropna().unique())
+        eff_data = []
+        for h in hrss_vals:
+            s = sub[pd.to_numeric(sub["sim_hrss"], errors="coerce") == h]
+            n_total = s["sim_sim_idx"].nunique()
+            n_det = int(s["detected"].sum())
+            eff_data.append({
+                "hrss": float(h),
+                "efficiency": float(n_det / max(n_total, 1)),
+                "n_total": int(n_total),
+                "n_detected": int(n_det),
+            })
+
+        fit_result = _fit_efficiency_curve(name, eff_data, fit, estimate_hrss, logNfit)
+        curves.append({
+            "waveform": name,
+            "Q": q_val,
+            "frequency": f_val,
+            "data": eff_data,
+            "fit": fit_result,
+        })
+        fit_rows.append({
+            "waveform": name,
+            "ifar": ifar_label,
+            "ifar_sec": ifar_sec,
+            "prob_threshold": float(prob_threshold),
+            **{k: v for k, v in fit_result.items() if k != "fit_x" and k != "fit_y"},
+        })
+
+    if fit_parameters_file:
+        fit_path = _resolve(fit_parameters_file)
+        os.makedirs(os.path.dirname(fit_path) or ".", exist_ok=True)
+        pd.DataFrame(fit_rows).to_csv(fit_path, index=False)
+        logger.info("Waveform sigmoid fit parameters → %s", fit_path)
+
+    if output_file:
+        out_path = _resolve(output_file)
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        _plot_efficiency_by_waveform_panels(
+            curves, prob_threshold, ifar_label, ifar_sec, out_path,
+            show_sigmoid_fit=True,
+        )
+
+    return {
+        "curves": curves,
+        "fit_parameters": fit_rows,
+        "prob_threshold": float(prob_threshold),
+        "ifar_sec": ifar_sec,
+        "method": "unique_simulation_sigmoid_fit",
+        "exclude_vetoed": exclude_vetoed,
+    }
+
+
+def _fit_efficiency_curve(name, eff_data, fit_func, estimate_func, logn_func) -> dict:
+    hrs = np.array([d["hrss"] for d in eff_data], dtype=float)
+    effs = np.array([d["efficiency"] for d in eff_data], dtype=float)
+    valid = np.isfinite(hrs) & np.isfinite(effs) & (hrs > 0)
+    hrs = hrs[valid]
+    effs = effs[valid]
+    if len(hrs) < 3:
+        return {"status": "skipped", "reason": "fewer than 3 hrss points"}
+
+    order = np.argsort(hrs)
+    hrs = hrs[order]
+    effs = effs[order]
+    try:
+        chi2, hrss50, hrssEr, sigma, betam, betap, flag = fit_func(np.log10(hrs), effs)
+        xlim = (float(np.log10(hrs.min())), float(np.log10(hrs.max())))
+        hrss10 = estimate_func((hrss50, sigma, betam, betap, flag), xlim, 0.1)
+        hrss90 = estimate_func((hrss50, sigma, betam, betap, flag), xlim, 0.9)
+        fit_x = np.linspace(xlim[0], xlim[1], 300)
+        fit_y = logn_func(fit_x, np.log10(hrss50), sigma, betam, betap, flag)
+        return {
+            "status": "ok",
+            "chi2": float(chi2),
+            "hrss10": float(hrss10) if np.isfinite(hrss10) else np.nan,
+            "hrss50": float(hrss50),
+            "hrss90": float(hrss90) if np.isfinite(hrss90) else np.nan,
+            "hrssEr": float(hrssEr),
+            "sigma": float(sigma),
+            "betam": float(betam),
+            "betap": float(betap),
+            "flag": int(flag),
+            "fit_x": (10 ** fit_x).tolist(),
+            "fit_y": fit_y.tolist(),
+        }
+    except Exception as exc:
+        logger.warning("Sigmoid fit failed for %s: %s", name, exc)
+        return {"status": "failed", "reason": str(exc)}
+
+
+def _parse_waveform_q_frequency(name: str) -> tuple[int, int]:
+    q_match = pd.Series([name]).str.extract(r"_Q(\d+)_", expand=False).iloc[0]
+    f_match = pd.Series([name]).str.extract(r"_(\d+)Hz", expand=False).iloc[0]
+    q_val = int(q_match) if q_match else 0
+    f_val = int(f_match) if f_match else 0
+    return q_val, f_val
 
 
 # ---------------------------------------------------------------------------
@@ -809,6 +1004,7 @@ def compute_hrss50_by_waveform_csv(
     # Load model
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)
+    from pycwb.modules.statistics.sigmoid_fit import estimate_hrss, fit, logNfit
 
     # Score SIM
     sim_df = pd.read_parquet(sim_path)
@@ -845,20 +1041,35 @@ def compute_hrss50_by_waveform_csv(
         for name in waveforms:
             sub = sim_df[sim_df["inj_name"] == name]
             hrs_vals = sorted(sub["inj_hrss"].dropna().unique())
-            hrs_arr = np.array(hrs_vals)
             effs = []
+            eff_data = []
             for h in hrs_vals:
                 s = sub[sub["inj_hrss"] == h]
                 n_det = int((s["matched"] & (s["xgb_prob"] >= prob_thr)).sum())
-                effs.append(n_det / max(len(s), 1))
-            effs = np.array(effs)
-            hrss50 = _interpolate_hrss50_curve(hrs_arr, effs)
+                eff = n_det / max(len(s), 1)
+                effs.append(eff)
+                eff_data.append({
+                    "hrss": float(h),
+                    "efficiency": float(eff),
+                    "n_total": int(len(s)),
+                    "n_detected": int(n_det),
+                })
+            fit_result = _fit_efficiency_curve(name, eff_data, fit, estimate_hrss, logNfit)
             rows.append({
                 "ifar": ifar_label,
                 "ifar_sec": ifar_sec,
                 "prob_threshold": float(prob_thr),
                 "waveform": name,
-                "hrss50": float(hrss50) if hrss50 is not None else None,
+                "fit_status": fit_result.get("status"),
+                "hrss10": fit_result.get("hrss10"),
+                "hrss50": fit_result.get("hrss50"),
+                "hrss90": fit_result.get("hrss90"),
+                "hrssEr": fit_result.get("hrssEr"),
+                "chi2": fit_result.get("chi2"),
+                "sigma": fit_result.get("sigma"),
+                "betam": fit_result.get("betam"),
+                "betap": fit_result.get("betap"),
+                "flag": fit_result.get("flag"),
             })
 
     df_out = pd.DataFrame(rows)

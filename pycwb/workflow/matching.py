@@ -18,8 +18,10 @@ Matching criterion
 A trigger **T** and simulation **S** match when all three conditions hold:
 
 * ``T.trial_idx == S.trial_idx``  — same injection trial (no cross-trial matches)
-* ``min(T.event_start) < S.real_end``   — trigger starts before injection ends
-* ``max(T.event_stop)  > S.real_start`` — trigger ends after injection starts
+* ``T.job_id == S.job_id`` when simulation summaries carry ``job_id`` —
+  same scheduled job/superlag owner
+* ``min(T.event_start + T.segment_lag) < S.real_end``   — trigger starts before injection ends
+* ``max(T.event_stop  + T.segment_lag) > S.real_start`` — trigger ends after injection starts
 
 i.e. the trigger's reconstructed time window overlaps the injected waveform's
 true GPS extent.  An optional ``window_buffer`` (seconds) can be added
@@ -58,6 +60,51 @@ if TYPE_CHECKING:
     from pycwb.types.trigger import Trigger
 
 logger = logging.getLogger(__name__)
+
+
+def _trigger_window(trig: "Trigger") -> tuple[float, float]:
+    """Return a trigger window in the common analysis-time frame."""
+    starts = list(trig.event_start) if trig.event_start else [trig.gps_time]
+    stops = list(trig.event_stop) if trig.event_stop else [trig.gps_time]
+    segment_lag = list(getattr(trig, "segment_lag", []) or [])
+    if segment_lag and len(segment_lag) == len(starts) == len(stops):
+        starts = [start + lag for start, lag in zip(starts, segment_lag)]
+        stops = [stop + lag for stop, lag in zip(stops, segment_lag)]
+    starts.append(trig.gps_time)
+    stops.append(trig.gps_time)
+    return min(starts), max(stops)
+
+
+def _parquet_trigger_window_exprs(trig_schema: "pa.Schema") -> tuple[str, str]:
+    """Build DuckDB trigger-window expressions in common analysis time."""
+    names = set(trig_schema.names)
+
+    def quoted(name: str) -> str:
+        return f't."{name}"'
+
+    def aligned_expr(prefix: str, ifo: str) -> str:
+        col = f"{prefix}_{ifo}"
+        lag_col = f"segment_lag_{ifo}"
+        if lag_col in names:
+            return f"({quoted(col)} + COALESCE({quoted(lag_col)}, 0.0))"
+        return quoted(col)
+
+    start_terms = [
+        f"COALESCE({aligned_expr('event_start', name.removeprefix('event_start_'))}, t.gps_time)"
+        for name in trig_schema.names
+        if name.startswith("event_start_")
+    ]
+    stop_terms = [
+        f"COALESCE({aligned_expr('event_stop', name.removeprefix('event_stop_'))}, t.gps_time)"
+        for name in trig_schema.names
+        if name.startswith("event_stop_")
+    ]
+    if not start_terms or not stop_terms:
+        return "t.gps_time", "t.gps_time"
+    return (
+        f"LEAST({', '.join(start_terms + ['t.gps_time'])})",
+        f"GREATEST({', '.join(stop_terms + ['t.gps_time'])})",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -105,16 +152,21 @@ def match_triggers_to_simulations(
         raise ValueError(f"how must be 'inner', 'left', 'right', or 'outer'; got {how!r}")
 
     # ── 1. Group and sort simulations by trial ──────────────────────────
-    sims_by_trial: dict[int, list[dict]] = defaultdict(list)
+    sims_by_trial: dict[tuple[int, int | None], list[dict]] = defaultdict(list)
+    use_job_id = any("job_id" in sim for sim in simulations)
     for sim in simulations:
-        sims_by_trial[int(sim.get("trial_idx", 0))].append(sim)
+        key = (
+            int(sim.get("trial_idx", 0)),
+            int(sim["job_id"]) if use_job_id and sim.get("job_id") is not None else None,
+        )
+        sims_by_trial[key].append(sim)
 
     # Pre-sort each trial group once; keep parallel arrays for fast bisect.
     # Two sorted arrays are maintained:
     #   real_starts — used for both lo (bisect_right) and hi (bisect_left)
     #   real_ends   — used to compute lo; assumed roughly monotone when
     #                 injection gaps >> waveform duration (true for GW searches).
-    sorted_sims: dict[int, tuple[list[float], list[float], list[dict]]] = {}
+    sorted_sims: dict[tuple[int, int | None], tuple[list[float], list[float], list[dict]]] = {}
     for trial, sims in sims_by_trial.items():
         sims.sort(key=lambda s: s["real_start"])
         sorted_sims[trial] = (
@@ -131,13 +183,16 @@ def match_triggers_to_simulations(
     n_unmatched_triggers = 0
 
     for trig in triggers:
-        t_start = (min(trig.event_start) if trig.event_start else trig.gps_time) - window_buffer
-        t_stop  = (max(trig.event_stop)  if trig.event_stop  else trig.gps_time) + window_buffer
+        trigger_start, trigger_stop = _trigger_window(trig)
+        t_start = trigger_start - window_buffer
+        t_stop  = trigger_stop + window_buffer
         trial   = int(trig.trial_idx)
+        trig_job = int(getattr(trig, "job_id")) if use_job_id and getattr(trig, "job_id", None) is not None else None
+        key = (trial, trig_job)
 
         found = False
-        if trial in sorted_sims:
-            real_starts, real_ends, sims = sorted_sims[trial]
+        if key in sorted_sims:
+            real_starts, real_ends, sims = sorted_sims[key]
 
             # Upper bound: sims with real_start >= t_stop cannot overlap.
             hi = bisect.bisect_left(real_starts, t_stop)
@@ -201,8 +256,8 @@ def match_simulations_parquet(
         FROM   triggers   t
         <JOIN> simulations s
           ON   t.trial_idx = s.trial_idx
-         AND   t.gps_time - buffer  <  s.real_end
-         AND   t.gps_time + buffer  >  s.real_start
+         AND   trigger_start - buffer  <  s.real_end
+         AND   trigger_stop  + buffer  >  s.real_start
 
     where ``<JOIN>`` is ``INNER``, ``LEFT``, ``RIGHT``, or ``FULL OUTER``
     depending on *how*.
@@ -269,6 +324,18 @@ def match_simulations_parquet(
 
     sim_cols   = [f"s.{c} AS sim_{c}" for c in sim_schema.names]
     sim_select = ", ".join(sim_cols)
+    trigger_start_expr, trigger_stop_expr = _parquet_trigger_window_exprs(trig_schema)
+    job_join = ""
+    if "job_id" in trig_schema.names:
+        if "job_id" in sim_schema.names:
+            job_join = "AND   t.job_id     =  s.job_id"
+        elif "segment_idx" in sim_schema.names:
+            logger.warning(
+                "Simulation summary %s has segment_idx but no job_id; matching "
+                "will use trial/window only. Regenerate it with job_id/shift for "
+                "shift-aware matching.",
+                sim_parquet,
+            )
 
     # ── Step 1: inner join with 1-to-1 deduplication via QUALIFY ────────────
     #
@@ -294,8 +361,9 @@ def match_simulations_parquet(
             FROM   read_parquet('{catalog_parquet}') t
             INNER JOIN read_parquet('{sim_parquet}') s
               ON   t.trial_idx  =  s.trial_idx
-             AND   t.gps_time - {buf}  <  s.real_end
-             AND   t.gps_time + {buf}  >  s.real_start
+             {job_join}
+             AND   {trigger_start_expr} - {buf}  <  s.real_end
+             AND   {trigger_stop_expr} + {buf}  >  s.real_start
             QUALIFY
                 ROW_NUMBER() OVER (
                     PARTITION BY sim_sim_idx

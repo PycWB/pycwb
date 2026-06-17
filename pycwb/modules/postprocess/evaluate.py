@@ -33,6 +33,12 @@ import pandas as pd
 import xgboost as xgb
 
 from pycwb.post_production.action_spec import action_spec
+from pycwb.modules.postprocess.lag_filters import (
+    nonzero_lag_mask,
+    try_unshifted_job_ids_from_catalog,
+    unshifted_job_ids_from_progress,
+    zero_lag_mask,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +215,7 @@ def evaluate_far_rho(
     config_file: Optional[str] = None,
     ranking_par: str = "rho",
     output_file: Optional[str] = None,
+    exclude_zero_lag: bool = True,
     **kwargs,
 ) -> dict:
     """Score a BKG catalog and compute FAR vs. ranking parameter.
@@ -241,11 +248,14 @@ def evaluate_far_rho(
     """
     cat_path = _resolve_path(work_dir, catalog_file)
     model_path = _resolve_path(work_dir, model_file)
+    trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
 
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)
 
     df = pd.read_parquet(cat_path)
+    if exclude_zero_lag:
+        df = df[nonzero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
     probs = _preprocess_and_score(df, nifo, search, config_file, work_dir, clf)
 
     if ranking_par not in df.columns:
@@ -298,7 +308,7 @@ def evaluate_far_rho(
 
 @action_spec(
     outputs=['output_csv'],
-    inputs=['mdc_catalog', 'model_file', 'bkg_scored_catalog', 'progress_file', 'job_ids_file', 'config_file'],
+    inputs=['mdc_catalog', 'model_file', 'bkg_scored_catalog', 'progress_file', 'job_ids_file', 'livetime', 'config_file'],
     description='Score blind MDC catalog and output detections above IFAR threshold',
 )
 def score_mdc_catalog(
@@ -306,8 +316,9 @@ def score_mdc_catalog(
     mdc_catalog: str,
     model_file: str,
     bkg_scored_catalog: str,
-    progress_file: str,
-    job_ids_file: str,
+    progress_file: Optional[str] = None,
+    job_ids_file: Optional[str] = None,
+    livetime: Optional[float] = None,
     search: str = "blf",
     nifo: int = 2,
     config_file: Optional[str] = None,
@@ -325,10 +336,14 @@ def score_mdc_catalog(
         Trained XGBoost model.
     bkg_scored_catalog : str
         Scored BKG catalog (with ``xgb_prob``) for IFAR calibration.
-    progress_file : str
-        Progress parquet for live-time computation.
-    job_ids_file : str
-        Job IDs used for the BKG live time.
+    progress_file : str, optional
+        Progress parquet for live-time computation when ``livetime`` is not
+        provided.
+    job_ids_file : str, optional
+        Job IDs used for legacy BKG live-time computation when ``livetime`` is
+        not provided.
+    livetime : float, optional
+        FAR live time in seconds. Preferred for interval-based BKG splits.
     search : str
         Search label.
     nifo : int
@@ -351,8 +366,8 @@ def score_mdc_catalog(
     mdc_path = _resolve_path(work_dir, mdc_catalog)
     model_path = _resolve_path(work_dir, model_file)
     bkg_path = _resolve_path(work_dir, bkg_scored_catalog)
-    prog_path = _resolve_path(work_dir, progress_file)
-    jobs_path = _resolve_path(work_dir, job_ids_file)
+    prog_path = _resolve_path(work_dir, progress_file) if progress_file else None
+    jobs_path = _resolve_path(work_dir, job_ids_file) if job_ids_file else None
 
     # ── IFAR presets ────────────────────────────────────────────────────
     _IFAR_PRESETS = {
@@ -363,12 +378,23 @@ def score_mdc_catalog(
         float(ifar_threshold) if ifar_threshold.replace(".", "").isdigit() else 31557600)
 
     # ── Live time ────────────────────────────────────────────────────────
-    prog = pd.read_parquet(prog_path)
-    with open(jobs_path) as f:
-        job_ids = {int(l.strip()) for l in f if l.strip()}
-    prog = prog[prog["job_id"].isin(job_ids)]
-    prog_nz = prog[prog["lag_idx"] != 0]
-    livetime = float(prog_nz["livetime"].sum())
+    if livetime is None:
+        if prog_path is None or jobs_path is None:
+            raise ValueError("score_mdc_catalog requires either livetime or both progress_file and job_ids_file")
+        prog = pd.read_parquet(prog_path)
+        try:
+            progress_unshifted_jobs = unshifted_job_ids_from_progress(prog_path)
+        except (FileNotFoundError, ValueError, KeyError):
+            progress_unshifted_jobs = None
+        with open(jobs_path) as f:
+            job_ids = {int(l.strip()) for l in f if l.strip()}
+        prog = prog[prog["job_id"].isin(job_ids)]
+        if "status" in prog.columns:
+            prog = prog[prog["status"] == "completed"]
+        prog_nz = prog[nonzero_lag_mask(prog, unshifted_job_ids=progress_unshifted_jobs)]
+        livetime = float(prog_nz["livetime"].sum())
+    else:
+        livetime = float(livetime)
     logger.info("Livetime: %.0f s = %.2f yr", livetime, livetime / 31557600)
 
     # ── Load model ──────────────────────────────────────────────────────
@@ -377,7 +403,8 @@ def score_mdc_catalog(
 
     # ── Load MDC catalog (zero-lag only) ────────────────────────────────
     mdc_df = pd.read_parquet(mdc_path)
-    mdc_zl = mdc_df[mdc_df["lag_idx"] == 0].copy()
+    mdc_unshifted_jobs = try_unshifted_job_ids_from_catalog(mdc_path)
+    mdc_zl = mdc_df[zero_lag_mask(mdc_df, unshifted_job_ids=mdc_unshifted_jobs)].copy()
     logger.info("MDC: %d total, %d zero-lag", len(mdc_df), len(mdc_zl))
 
     # ── Score with preprocessing ────────────────────────────────────────
@@ -386,6 +413,7 @@ def score_mdc_catalog(
 
     # ── BKG calibration ─────────────────────────────────────────────────
     bkg_s = pd.read_parquet(bkg_path)
+    bkg_s = bkg_s[nonzero_lag_mask(bkg_s)].reset_index(drop=True)
     bkg_probs = np.sort(bkg_s["xgb_prob"].values)[::-1]
     far_values = np.arange(1, len(bkg_probs) + 1) / max(livetime, 1.0)
     target_far = 1.0 / ifar_sec

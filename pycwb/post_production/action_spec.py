@@ -40,6 +40,10 @@ def action_spec(
     outputs: Optional[list[str]] = None,
     inputs: Optional[list[str]] = None,
     description: Optional[str] = None,
+    display_name: Optional[str] = None,
+    help: Optional[str] = None,
+    args_schema: Optional[dict] = None,
+    composite: bool = False,
 ) -> Callable:
     """Decorator that annotates a workflow action with I/O metadata.
 
@@ -54,6 +58,15 @@ def action_spec(
     description : str, optional
         Human-readable label shown in the diagram node.  Falls back
         to the first line of the function's docstring.
+    display_name : str, optional
+        Short user-facing action name for diagrams.
+    help : str, optional
+        Longer help text for interactive diagrams and developer tooling.
+    args_schema : dict, optional
+        Lightweight argument metadata for UI/help rendering.  This is not a
+        validation schema yet; it is intentionally permissive.
+    composite : bool
+        True if this action intentionally wraps smaller reusable actions.
 
     Returns
     -------
@@ -68,6 +81,10 @@ def action_spec(
                 func.__doc__.strip().split('\n')[0].strip()
                 if func.__doc__ else func.__name__
             ),
+            'display_name': display_name or func.__name__,
+            'help': help or '',
+            'args_schema': dict(args_schema) if args_schema else {},
+            'composite': bool(composite),
         }
         return func
     return decorator
@@ -94,4 +111,8 @@ def get_action_spec(func: Callable) -> dict:
             func.__doc__.strip().split('\n')[0].strip()
             if func.__doc__ else func.__name__
         ),
+        'display_name': func.__name__,
+        'help': '',
+        'args_schema': {},
+        'composite': False,
     })

@@ -120,6 +120,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # compute likelihood for each lag
         for lag, fragment_cluster in enumerate(super_fragment_clusters):
+            time_lag = [float(v) for v in sub_job_seg.lag_shifts[lag]]
+            segment_lag = (
+                [float(v) for v in sub_job_seg.shift]
+                if sub_job_seg.shift is not None
+                else [0.0 for _ in sub_job_seg.ifos]
+            )
             if skip_lags and lag in skip_lags.get(trial_idx, set()):
                 logger.info("Skipping lag %d (trial %d) due to skip_lags", lag, trial_idx)
                 continue
@@ -224,6 +230,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 event.lag_idx = lag
                 event.id = event.long_id  # recompute id with trial_idx and lag_idx
                 trigger_obj = Trigger.from_event(event)
+                trigger_obj.time_lag = time_lag
+                trigger_obj.segment_lag = segment_lag
                 if queue is not None:
                     queue.put({"type": "trigger", "trigger": trigger_obj})
                 elif catalog_file:

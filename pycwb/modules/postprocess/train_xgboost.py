@@ -14,9 +14,15 @@ Parameters (via YAML ``args``)
 work_dir : str
     Base directory; relative paths are resolved against this.
 bkg_catalog : str
-    Path to the background parquet catalog (plain parquet).
+    Path to the background parquet catalog (plain parquet).  Deprecated in
+    favor of ``bkg_catalogs`` for new workflows.
 sim_catalog : str
-    Path to the signal/injection parquet catalog (plain parquet).
+    Path to the signal/injection parquet catalog (plain parquet).  Deprecated
+    in favor of ``sim_catalogs`` for new workflows.
+bkg_catalogs : list[str], optional
+    Background catalogs to concatenate for training.
+sim_catalogs : list[str], optional
+    Simulation catalogs to concatenate for training.
 model_file : str
     Destination for the trained model (``.ubj`` recommended).
 search : str
@@ -50,20 +56,28 @@ import xgboost as xgb
 from sklearn.model_selection import train_test_split
 
 from pycwb.post_production.action_spec import action_spec
+from pycwb.modules.postprocess.lag_filters import nonzero_lag_mask
 
 logger = logging.getLogger(__name__)
 
 
 @action_spec(
     outputs=['model_file'],
-    inputs=['bkg_catalog', 'sim_catalog', 'config_file'],
+    inputs=['bkg_catalog', 'sim_catalog', 'bkg_catalogs', 'sim_catalogs', 'config_file'],
     description='Train XGBoost classifier from BKG + SIM catalogs',
+    help=(
+        "New workflows should pass bkg_catalogs and sim_catalogs lists. "
+        "Keep SIM cleaning in an explicit upstream filter_real_simulation "
+        "action; matched_outer_file remains supported for old workflows."
+    ),
 )
 def train_xgboost(
     work_dir: str,
-    bkg_catalog: str,
-    sim_catalog: str,
-    model_file: str,
+    bkg_catalog: Optional[str] = None,
+    sim_catalog: Optional[str] = None,
+    model_file: str = "models/xgb_model.ubj",
+    bkg_catalogs: Optional[list[str]] = None,
+    sim_catalogs: Optional[list[str]] = None,
     search: str = "blf",
     nifo: int = 0,
     config_file: Optional[str] = None,
@@ -78,14 +92,16 @@ def train_xgboost(
             return relpath
         return os.path.join(work_dir, relpath)
 
-    bkg_path = _resolve(bkg_catalog)
-    sim_path = _resolve(sim_catalog)
+    bkg_files = _catalog_files(bkg_catalogs, bkg_catalog, "bkg_catalogs")
+    sim_files = _catalog_files(sim_catalogs, sim_catalog, "sim_catalogs")
+    bkg_paths = [_resolve(path) for path in bkg_files]
+    sim_paths = [_resolve(path) for path in sim_files]
     model_path = _resolve(model_file)
     config_path = _resolve(config_file) if config_file else None
 
     logger.info("Training XGBoost  search=%s  nifo=%d", search, nifo)
-    logger.info("  BKG : %s", bkg_path)
-    logger.info("  SIM : %s", sim_path)
+    logger.info("  BKG : %s", ", ".join(bkg_paths))
+    logger.info("  SIM : %s", ", ".join(sim_paths))
     logger.info("  model : %s", model_path)
 
     # ── imports (lazy, avoid circular issues) ────────────────────────────
@@ -103,8 +119,12 @@ def train_xgboost(
     from pycwb.utils.module import import_function_from_file
 
     # ── read filtered parquets ───────────────────────────────────────────
-    bdf = pd.read_parquet(bkg_path)
-    sdf = pd.read_parquet(sim_path)
+    bdf = _read_and_concat(bkg_paths, "BKG")
+    sdf = _read_and_concat(sim_paths, "SIM")
+    if "lag_idx" in bdf.columns:
+        n_before = len(bdf)
+        bdf = bdf[nonzero_lag_mask(bdf)].reset_index(drop=True)
+        logger.info("Filtered BKG lag 0 for training: %d -> %d rows", n_before, len(bdf))
     bdf["classifier"] = 0
     sdf["classifier"] = 1
     logger.info("BKG rows: %d  |  SIM rows: %d", len(bdf), len(sdf))
@@ -245,6 +265,34 @@ def train_xgboost(
 
     auc = float(getattr(XGB_clf, "best_score", 0.0))
     return {"model_file": model_path, "auc": auc}
+
+
+def _catalog_files(
+    catalogs: Optional[list[str]],
+    legacy_catalog: Optional[str],
+    name: str,
+) -> list[str]:
+    """Return normalized catalog paths from list or legacy single argument."""
+    files: list[str] = []
+    if catalogs:
+        files.extend(str(path) for path in catalogs)
+    if legacy_catalog:
+        files.append(str(legacy_catalog))
+    if not files:
+        raise ValueError(f"{name} or legacy single-catalog argument is required")
+    return files
+
+
+def _read_and_concat(paths: list[str], label: str) -> pd.DataFrame:
+    """Read one or more parquet catalogs and concatenate them."""
+    frames = []
+    for path in paths:
+        df = pd.read_parquet(path)
+        logger.info("  %s rows from %s: %d", label, path, len(df))
+        frames.append(df)
+    if len(frames) == 1:
+        return frames[0].reset_index(drop=True)
+    return pd.concat(frames, ignore_index=True)
 
 
 # ---------------------------------------------------------------------------

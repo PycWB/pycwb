@@ -20,10 +20,9 @@ output_file : str
 fraction : float, default 1.0
     Fraction of events to retain after filtering (0 < fraction ≤ 1).
 zero_lag_filter : bool, default False
-    If True, remove rows where ``lag_idx == 0`` (the nominal zero-lag
-    coincident background).  Works with both pycWB Catalog parquet
-    (which uses ``lag_idx``) and flat parquet (which may use ``lag`` +
-    ``shift[0]`` / ``shift[1]`` columns).
+    If True, remove physically unshifted zero-lag rows. Works with both
+    pycWB Catalog parquet and flat parquet where regular-lag and shift
+    columns are available.
 seed : int, default 150914
     Random seed for reproducible subsampling.
 
@@ -38,8 +37,8 @@ Notes
 - Input is read with ``pandas.read_parquet()`` — works with both pycWB
   Catalog parquet files and plain pandas parquet files.
 - Output is written as a plain pandas parquet (NOT a Catalog).
-- Zero-lag detection tries ``lag_idx`` first (pycWB Catalog), then falls
-  back to ``lag`` + ``shiftN`` columns (flat parquet).
+- Zero-lag detection requires zero regular lag and zero segment/superlag
+  shift where those columns are available.
 """
 
 from __future__ import annotations
@@ -51,14 +50,9 @@ from typing import Optional
 import pandas as pd
 
 from pycwb.post_production.action_spec import action_spec
+from pycwb.modules.postprocess.lag_filters import zero_lag_mask
 
 logger = logging.getLogger(__name__)
-
-# Columns checked for zero-lag filtering (in priority order)
-# pycWB Catalog uses 'lag_idx'; flat parquets may use 'lag' + 'shiftN'
-_ZERO_LAG_COLS_CATALOG = ["lag_idx"]
-_ZERO_LAG_COLS_FLAT = ["lag", "shift"]
-
 
 @action_spec(
     outputs=['output_file'],
@@ -148,28 +142,13 @@ def _filter_zero_lag(df: pd.DataFrame):
 
     Returns (-1) for n_removed if no recognised zero-lag column exists.
     """
-    # Try Catalog-style: lag_idx == 0
-    if "lag_idx" in df.columns:
+    if any(
+        c == "lag_idx" or c == "lag" or c.startswith("time_lag") or c.startswith("segment_lag") or c.startswith("shift")
+        for c in df.columns
+    ):
         n_before = len(df)
-        df = df[df["lag_idx"] != 0].reset_index(drop=True)
+        df = df[~zero_lag_mask(df)].reset_index(drop=True)
         return df, n_before - len(df)
-
-    # Try flat-parquet style: lag == 0 & shift[0] == 0 & shift[1] == 0 ...
-    if "lag" in df.columns:
-        has_shift = any(c.startswith("shift") for c in df.columns)
-        if has_shift:
-            mask = df["lag"] == 0
-            for c in df.columns:
-                if c.startswith("shift"):
-                    mask = mask & (df[c] == 0)
-            n_before = len(df)
-            df = df[~mask].reset_index(drop=True)
-            return df, n_before - len(df)
-        else:
-            # Only lag column, no shift — filter by lag == 0
-            n_before = len(df)
-            df = df[df["lag"] != 0].reset_index(drop=True)
-            return df, n_before - len(df)
 
     return df, -1
 
