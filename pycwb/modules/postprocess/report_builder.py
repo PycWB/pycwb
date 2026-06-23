@@ -150,6 +150,9 @@ def postproduction_report(
     Parameters are intentionally workflow-friendly: nested ``bkg``,
     ``training`` and ``simulation_runs`` dictionaries point at existing
     artifacts, and missing optional files are recorded rather than fatal.
+    ``bkg.zero_lag_reference_catalog_file`` may be provided when zero-lag
+    progress belongs to a different original catalog than
+    ``production_catalog_file``.
     """
     work_dir = os.path.abspath(str(work_dir))
     output_path = _resolve_path(work_dir, output_file)
@@ -325,6 +328,10 @@ def _build_bkg_section(
     zero_lag_progress_file = bkg.get("zero_lag_progress_file") or _catalog_progress_path(
         ctx.resolve(bkg.get("zero_lag_catalog_file") or production_catalog_file)
     )
+    zero_lag_reference_catalog_file = (
+        bkg.get("zero_lag_reference_catalog_file")
+        or production_catalog_file
+    )
     zero_lag_progress_artifact = ctx.register_artifact(
         zero_lag_progress_file,
         label="Zero-lag progress",
@@ -345,7 +352,7 @@ def _build_bkg_section(
     interval_summary = _interval_summary(ctx.resolve(bkg.get("intervals_file")))
     zero_lag_livetime = _zero_lag_livetime_summary(
         progress_path=ctx.resolve(zero_lag_progress_file),
-        catalog_path=ctx.resolve(bkg.get("zero_lag_catalog_file") or production_catalog_file),
+        catalog_path=ctx.resolve(zero_lag_reference_catalog_file),
     )
     livetime_choice = _select_bkg_livetime(
         explicit_livetime=livetime,
@@ -1299,12 +1306,23 @@ def _zero_lag_livetime_summary(
         zero = zero[zero["status"] == "completed"]
     zero["livetime"] = pd.to_numeric(zero["livetime"], errors="coerce").fillna(0.0)
     seconds = float(zero["livetime"].sum())
+    has_shift_columns = any(
+        col in progress.columns
+        or any(existing_col.startswith(f"{col}_") for existing_col in progress.columns)
+        for col in ("segment_lag", "segment_shift", "shift")
+    )
+    warning = ""
+    if unshifted_job_ids is None and not has_shift_columns:
+        warning = (
+            "Zero-lag live time was selected without catalog job metadata or "
+            "segment-shift columns, so shifted jobs may be included."
+        )
     return {
         "source": os.path.basename(progress_path),
         "livetime": _livetime_dict(seconds),
         "n_jobs": int(zero["job_id"].nunique()) if "job_id" in zero.columns else None,
         "n_rows": int(len(zero)),
-        "warning": "",
+        "warning": warning,
     }
 
 
