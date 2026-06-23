@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -165,6 +166,12 @@ def postproduction_report(
     os.makedirs(os.path.dirname(data_path) or ".", exist_ok=True)
 
     ctx = ReportContext(work_dir=work_dir, output_dir=output_dir)
+    workflow_path = ctx.resolve(workflow_file)
+    workflow_copy_path = _copy_into_output_dir(
+        ctx,
+        workflow_path,
+        os.path.basename(workflow_path or str(workflow_file)),
+    )
     production_artifact = ctx.register_artifact(
         production_catalog_file,
         label="Production catalog",
@@ -172,18 +179,17 @@ def postproduction_report(
         required=True,
     )
     workflow_artifact = ctx.register_artifact(
-        workflow_file,
+        workflow_copy_path,
         label="Workflow YAML",
         kind="yaml",
         required=True,
     )
 
-    workflow_path = ctx.resolve(workflow_file)
     workflow_text, workflow_data = _load_workflow_yaml(workflow_path)
     metadata = _build_metadata(
         ctx=ctx,
         title=title,
-        workflow_file=workflow_file,
+        workflow_file=workflow_copy_path,
         production_catalog_file=production_catalog_file,
     )
     bkg_data = _build_bkg_section(
@@ -572,6 +578,8 @@ def _build_workflow_section(
         os.path.join(workflow_dir, "workflow_diagram.html"),
     ]
     html_path = next((path for path in html_candidates if os.path.exists(path)), html_candidates[0])
+    png_path = _copy_into_output_dir(ctx, png_path, "workflow_diagram.png")
+    html_path = _copy_into_output_dir(ctx, html_path, "workflow_diagram.html")
 
     diagram_png = ctx.register_artifact(
         png_path,
@@ -590,6 +598,21 @@ def _build_workflow_section(
         "diagram_png": diagram_png,
         "diagram_html": diagram_html,
     }
+
+
+def _copy_into_output_dir(
+    ctx: ReportContext,
+    source_path: Optional[str],
+    output_name: str,
+) -> str:
+    destination = os.path.join(ctx.output_dir, output_name)
+    if source_path and os.path.exists(source_path):
+        try:
+            if os.path.abspath(source_path) != os.path.abspath(destination):
+                shutil.copy2(source_path, destination)
+        except OSError as exc:
+            logger.warning("Could not copy %s to report output: %s", source_path, exc)
+    return destination
 
 
 def _build_basic_information(
