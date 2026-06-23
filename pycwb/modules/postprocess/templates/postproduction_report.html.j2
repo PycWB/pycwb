@@ -691,9 +691,9 @@
   <section id="tab-bkg" class="tab-panel">
     <h2>BKG</h2>
     <div class="compact-info">
-      <div class="compact-item"><div class="compact-label">BKG live time</div><div class="compact-value">{{ report.bkg.livetime.compact_label }}</div></div>
-      <div class="compact-item"><div class="compact-label">Zero-lag live time</div><div class="compact-value">{{ report.bkg.zero_lag_livetime.livetime.compact_label }}</div></div>
-      <div class="compact-item"><div class="compact-label">Scored triggers</div><div class="compact-value">{{ report.bkg.scored_catalog.info.rows if report.bkg.scored_catalog.info.rows is defined else 0 }}</div></div>
+      <div class="compact-item"><div class="compact-label">BKG live time</div><div class="compact-value">{{ report.bkg.livetime.bkg_compact_label }}</div></div>
+      <div class="compact-item"><div class="compact-label">Zero-lag live time</div><div class="compact-value">{{ report.bkg.zero_lag_livetime.livetime.zero_lag_compact_label }}</div></div>
+      <div class="compact-item"><div class="compact-label">Scored triggers</div><div class="compact-value">{{ report.bkg.scored_catalog.info.rows_label if report.bkg.scored_catalog.info.rows_label is defined else 0 }}</div></div>
       <div class="compact-item"><div class="compact-label">Progress jobs</div><div class="compact-value">{{ report.bkg.progress.n_jobs if report.bkg.progress.n_jobs is not none else "" }}</div></div>
       <div class="compact-item"><div class="compact-label">Zero-lag rows</div><div class="compact-value">{{ report.bkg.zero_lag_table.n_rows }}</div></div>
       <div class="compact-item"><div class="compact-label">Zero-lag LT rows</div><div class="compact-value">{{ report.bkg.zero_lag_livetime.n_rows }}</div></div>

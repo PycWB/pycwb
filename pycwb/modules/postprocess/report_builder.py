@@ -910,8 +910,8 @@ def _build_summary(
         {"label": "Creator", "value": metadata.get("creator") or ""},
         {"label": "Created", "value": metadata.get("created_local") or ""},
         {"label": "BKG triggers", "value": _format_int(bkg_rows)},
-        {"label": "BKG live time", "value": bkg_livetime.get("compact_label", "unknown")},
-        {"label": "Zero-lag live time", "value": zero_lag_livetime.get("compact_label", "unknown")},
+        {"label": "BKG live time", "value": bkg_livetime.get("bkg_compact_label", "unknown")},
+        {"label": "Zero-lag live time", "value": zero_lag_livetime.get("zero_lag_compact_label", "unknown")},
         {"label": "Training BKG / SIM", "value": f"{_format_int(train_bkg_rows)} / {_format_int(train_sim_rows)}"},
         {"label": "SIM evaluated", "value": _format_int(sim_rows)},
     ]
@@ -1735,19 +1735,26 @@ def _livetime_dict(seconds: Optional[float]) -> dict[str, Any]:
             "days_label": "unknown",
             "years_label": "unknown",
             "compact_label": "unknown",
+            "bkg_compact_label": "unknown",
+            "zero_lag_compact_label": "unknown",
         }
     seconds = float(seconds)
     days = seconds / 86400.0
     years = seconds / SECONDS_PER_YEAR
+    seconds_label = f"{seconds:.0f} s"
+    days_label = f"{days:.3f} d"
+    years_label = f"{years:.3f} yr"
     return {
         "seconds": seconds,
         "days": days,
         "years": years,
-        "label": f"{years:.4g} yr",
-        "seconds_label": f"{seconds:,.0f} s",
-        "days_label": f"{days:,.6g} d",
-        "years_label": f"{years:.6g} yr",
-        "compact_label": f"{years:.6g} yr / {days:,.6g} d / {seconds:,.0f} s",
+        "label": years_label,
+        "seconds_label": seconds_label,
+        "days_label": days_label,
+        "years_label": years_label,
+        "compact_label": f"{years_label} / {days_label} / {seconds_label}",
+        "bkg_compact_label": f"{years_label} / {seconds_label}",
+        "zero_lag_compact_label": f"{years_label} / {days_label} / {seconds_label}",
     }
 
 
@@ -1810,8 +1817,10 @@ def _parquet_file_info(path: Optional[str]) -> dict[str, Any]:
         return {}
     try:
         parquet = pq.ParquetFile(path)
+        rows = int(parquet.metadata.num_rows)
         return {
-            "rows": int(parquet.metadata.num_rows),
+            "rows": rows,
+            "rows_label": _format_int(rows),
             "columns": int(len(parquet.schema_arrow.names)),
             "column_names": list(parquet.schema_arrow.names),
         }
