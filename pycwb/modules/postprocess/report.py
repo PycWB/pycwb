@@ -37,6 +37,20 @@ from pycwb.modules.postprocess.lag_filters import (
 logger = logging.getLogger(__name__)
 
 
+_PARQUET_BATCH_SIZE = 100_000
+
+_BASE_TRIGGER_COLUMNS = [
+    "id",
+    "job_id",
+    "lag_idx",
+    "ifar",
+    "gps_time",
+    "net_cc",
+    "likelihood",
+    "coherent_energy",
+]
+
+
 def _unshifted_jobs_for_progress(progress_path: str) -> Optional[set[int]]:
     try:
         return unshifted_job_ids_from_progress(progress_path)
@@ -47,6 +61,122 @@ def _unshifted_jobs_for_progress(progress_path: str) -> Optional[set[int]]:
             progress_path,
         )
         return None
+
+
+def _parquet_schema_names(path: str) -> list[str]:
+    import pyarrow.parquet as pq
+
+    return list(pq.ParquetFile(path).schema.names)
+
+
+def _available_columns(path: str, requested: list[str], required: Optional[list[str]] = None) -> list[str]:
+    names = _parquet_schema_names(path)
+    available = set(names)
+    missing = [col for col in (required or []) if col not in available]
+    if missing:
+        raise KeyError(f"Parquet file {path} missing required columns: {missing}")
+
+    columns: list[str] = []
+    for col in requested:
+        if col in available and col not in columns:
+            columns.append(col)
+    return columns
+
+
+def _lag_filter_columns(path: str, include_segment_shift: bool = True) -> list[str]:
+    columns: list[str] = []
+    for col in _parquet_schema_names(path):
+        if col in {"job_id", "lag_idx", "lag", "time_lag"} or col.startswith("time_lag_"):
+            columns.append(col)
+        elif include_segment_shift and (
+            col in {"segment_lag", "segment_shift", "shift"}
+            or col.startswith("segment_lag_")
+            or col.startswith("segment_shift_")
+            or col.startswith("shift_")
+        ):
+            columns.append(col)
+    return columns
+
+
+def _iter_parquet_row_groups(path: str, columns: list[str]):
+    import pyarrow.parquet as pq
+    import pyarrow as pa
+
+    pf = pq.ParquetFile(path)
+    for batch in pf.iter_batches(batch_size=_PARQUET_BATCH_SIZE, columns=columns, use_threads=True):
+        df = batch.to_pandas(split_blocks=True, self_destruct=True)
+        yield df
+        del df, batch
+        pa.default_memory_pool().release_unused()
+
+
+def _read_job_ids(path: Optional[str]) -> Optional[set[int]]:
+    if path is None:
+        return None
+    with open(path) as f:
+        return {int(line.strip()) for line in f if line.strip()}
+
+
+def _trigger_report_columns(ranking_par: str, include_shift_key: bool = False) -> list[str]:
+    columns = list(_BASE_TRIGGER_COLUMNS)
+    if ranking_par not in columns:
+        columns.insert(3, ranking_par)
+    if include_shift_key:
+        columns.insert(3, "shift_key")
+    return columns
+
+
+def _trigger_read_columns(path: str, ranking_par: str, extra_columns: Optional[list[str]] = None) -> list[str]:
+    requested = _trigger_report_columns(ranking_par)
+    requested.extend(_lag_filter_columns(path, include_segment_shift=True))
+    requested.extend(extra_columns or [])
+    return _available_columns(path, requested, required=[ranking_par])
+
+
+def _sum_progress_livetime(
+    progress_path: str,
+    *,
+    zero_lag: Optional[bool],
+    job_ids: Optional[set[int]] = None,
+    unshifted_job_ids: Optional[set[int]] = None,
+) -> float:
+    requested = ["job_id", "lag_idx", "lag", "livetime", "status"]
+    requested.extend(_lag_filter_columns(progress_path, include_segment_shift=True))
+    columns = _available_columns(progress_path, requested, required=["livetime"])
+    total = 0.0
+
+    for prog in _iter_parquet_row_groups(progress_path, columns):
+        if job_ids is not None and "job_id" in prog.columns:
+            prog = prog[prog["job_id"].isin(job_ids)]
+        if "status" in prog.columns:
+            prog = prog[prog["status"] == "completed"]
+        if prog.empty:
+            continue
+
+        if zero_lag is None:
+            selected = prog
+        else:
+            mask = zero_lag_mask(prog, unshifted_job_ids=unshifted_job_ids)
+            selected = prog[mask if zero_lag else ~mask]
+        total += float(pd.to_numeric(selected["livetime"], errors="coerce").sum())
+
+    return total
+
+
+def _resolve_far_rho_data(far_rho_data: Optional[dict], out_dir: str, kwargs: dict) -> dict:
+    if far_rho_data is None:
+        far_rho_data = kwargs.get("far_rho")
+    # Unwrap if double-wrapped (output_alias stores {far_rho: {...}})
+    if isinstance(far_rho_data, dict) and "far_rho" in far_rho_data and "bins" not in far_rho_data:
+        far_rho_data = far_rho_data["far_rho"]
+    if far_rho_data is None:
+        json_path = os.path.join(out_dir, "far_rho.json")
+        if os.path.exists(json_path):
+            with open(json_path) as f:
+                far_rho_data = json.load(f)
+    if far_rho_data is None:
+        raise ValueError("far_rho_data not provided and far_rho.json not found")
+    return far_rho_data
 
 
 # ---------------------------------------------------------------------------
@@ -110,37 +240,60 @@ def far_rho_plot(
     trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
     progress_unshifted_jobs = _unshifted_jobs_for_progress(prog_path)
 
-    # ── Load triggers ────────────────────────────────────────────────────
-    df = pd.read_parquet(cat_path)
-    if exclude_zero_lag:
-        df = df[nonzero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
-    if ranking_par not in df.columns:
-        raise KeyError(f"Ranking parameter '{ranking_par}' not in catalog. Columns: {list(df.columns)}")
-    values = df[ranking_par].dropna().values
-    logger.info("Triggers: %d total, %d with valid %s", len(df), len(values), ranking_par)
+    # ── Stream trigger ranking values ────────────────────────────────────
+    columns = _available_columns(
+        cat_path,
+        [ranking_par] + _lag_filter_columns(cat_path, include_segment_shift=True),
+        required=[ranking_par],
+    )
+
+    n_triggers = 0
+    n_valid = 0
+    vmin: Optional[float] = None
+    vmax: Optional[float] = None
+    for chunk in _iter_parquet_row_groups(cat_path, columns):
+        if exclude_zero_lag:
+            chunk = chunk[nonzero_lag_mask(chunk, unshifted_job_ids=trigger_unshifted_jobs)]
+        n_triggers += len(chunk)
+        values = pd.to_numeric(chunk[ranking_par], errors="coerce").dropna().to_numpy()
+        if len(values) == 0:
+            continue
+        n_valid += len(values)
+        chunk_min = float(values.min())
+        chunk_max = float(values.max())
+        vmin = chunk_min if vmin is None else min(vmin, chunk_min)
+        vmax = chunk_max if vmax is None else max(vmax, chunk_max)
+
+    if vmin is None or vmax is None:
+        raise ValueError(f"No valid '{ranking_par}' values found in {cat_path}")
+    logger.info("Triggers: %d total, %d with valid %s", n_triggers, n_valid, ranking_par)
 
     # ── Live time ────────────────────────────────────────────────────────
     if livetime is None:
         if jobs_path is None:
             raise ValueError("far_rho_plot requires either livetime or job_ids_file")
-        with open(jobs_path) as f:
-            job_ids = {int(l.strip()) for l in f if l.strip()}
-        prog = pd.read_parquet(prog_path)
-        prog = prog[prog["job_id"].isin(job_ids)]
-        if "status" in prog.columns:
-            prog = prog[prog["status"] == "completed"]
-        if exclude_zero_lag:
-            prog = prog[nonzero_lag_mask(prog, unshifted_job_ids=progress_unshifted_jobs)]
-        livetime = float(prog["livetime"].sum())
+        livetime = _sum_progress_livetime(
+            prog_path,
+            zero_lag=False if exclude_zero_lag else None,
+            job_ids=_read_job_ids(jobs_path),
+            unshifted_job_ids=progress_unshifted_jobs,
+        )
     else:
         livetime = float(livetime)
     livetime_years = livetime / 86400.0 / 365.25
     logger.info("Live time: %.0f s = %.2f yr", livetime, livetime_years)
 
     # ── Histogram & FAR ──────────────────────────────────────────────────
-    vmin, vmax = float(values.min()), float(values.max())
     bins = np.arange(vmin, vmax + bin_size, bin_size)
-    hist, _ = np.histogram(values, bins=bins)
+    if len(bins) < 2:
+        bins = np.array([vmin, vmin + bin_size])
+    hist = np.zeros(len(bins) - 1, dtype=np.int64)
+    for chunk in _iter_parquet_row_groups(cat_path, columns):
+        if exclude_zero_lag:
+            chunk = chunk[nonzero_lag_mask(chunk, unshifted_job_ids=trigger_unshifted_jobs)]
+        values = pd.to_numeric(chunk[ranking_par], errors="coerce").dropna().to_numpy()
+        if len(values) > 0:
+            hist += np.histogram(values, bins=bins)[0]
     # Cumulative from high to low
     cum_hist = np.cumsum(hist[::-1])[::-1]
     far = cum_hist / max(livetime_years, 1e-10)
@@ -236,40 +389,32 @@ def zero_lag_report(
     progress_unshifted_jobs = _unshifted_jobs_for_progress(prog_path)
 
     # ── Resolve FAR data ─────────────────────────────────────────────────
-    if far_rho_data is None:
-        far_rho_data = kwargs.get("far_rho")
-    # Unwrap if double-wrapped (output_alias stores {far_rho: {...}})
-    if isinstance(far_rho_data, dict) and "far_rho" in far_rho_data and "bins" not in far_rho_data:
-        far_rho_data = far_rho_data["far_rho"]
-    if far_rho_data is None:
-        json_path = os.path.join(out_dir, "far_rho.json")
-        if os.path.exists(json_path):
-            with open(json_path) as f:
-                far_rho_data = json.load(f)
-    if far_rho_data is None:
-        raise ValueError("far_rho_data not provided and far_rho.json not found")
+    far_rho_data = _resolve_far_rho_data(far_rho_data, out_dir, kwargs)
 
-    # ── Load zero-lag triggers ───────────────────────────────────────────
-    df = pd.read_parquet(cat_path)
-    job_ids = None
-    if jobs_path:
-        with open(jobs_path) as f:
-            job_ids = {int(l.strip()) for l in f if l.strip()}
-        df = df[df["job_id"].isin(job_ids)].reset_index(drop=True)
-    df = df[zero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
+    # ── Stream zero-lag triggers ─────────────────────────────────────────
+    job_ids = _read_job_ids(jobs_path)
+    columns = _trigger_read_columns(cat_path, ranking_par)
+    frames = []
+    for chunk in _iter_parquet_row_groups(cat_path, columns):
+        if job_ids is not None and "job_id" in chunk.columns:
+            chunk = chunk[chunk["job_id"].isin(job_ids)]
+        if chunk.empty:
+            continue
+        mask = zero_lag_mask(chunk, unshifted_job_ids=trigger_unshifted_jobs)
+        selected = chunk[mask]
+        if not selected.empty:
+            frames.append(selected.copy())
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
     logger.info("Zero-lag triggers (unshifted): %d", len(df))
-    if ranking_par not in df.columns:
-        raise KeyError(f"Ranking parameter '{ranking_par}' not found")
     logger.info("Zero-lag triggers: %d", len(df))
 
     # ── Live time ────────────────────────────────────────────────────────
-    prog = pd.read_parquet(prog_path)
-    if job_ids is not None:
-        prog = prog[prog["job_id"].isin(job_ids)]
-    prog = prog[zero_lag_mask(prog, unshifted_job_ids=progress_unshifted_jobs)]
-    if "status" in prog.columns:
-        prog = prog[prog["status"] == "completed"]
-    zl_livetime = float(prog["livetime"].sum())
+    zl_livetime = _sum_progress_livetime(
+        prog_path,
+        zero_lag=True,
+        job_ids=job_ids,
+        unshifted_job_ids=progress_unshifted_jobs,
+    )
     zl_livetime_years = zl_livetime / 86400.0 / 365.25
     logger.info("Zero-lag live time: %.0f s = %.4f yr", zl_livetime, zl_livetime_years)
 
@@ -335,17 +480,7 @@ def fake_openbox_report(
     out_dir = _resolve(output_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    if far_rho_data is None:
-        far_rho_data = kwargs.get("far_rho")
-    if isinstance(far_rho_data, dict) and "far_rho" in far_rho_data and "bins" not in far_rho_data:
-        far_rho_data = far_rho_data["far_rho"]
-    if far_rho_data is None:
-        json_path = os.path.join(out_dir, "far_rho.json")
-        if os.path.exists(json_path):
-            with open(json_path) as f:
-                far_rho_data = json.load(f)
-    if far_rho_data is None:
-        raise ValueError("far_rho_data not provided and far_rho.json not found")
+    far_rho_data = _resolve_far_rho_data(far_rho_data, out_dir, kwargs)
 
     intervals = _read_intervals_file(intervals_path)
     if intervals.empty:
@@ -359,38 +494,76 @@ def fake_openbox_report(
     selected_intervals = intervals.sample(n=n_select, random_state=int(fake_openbox_seed)).sort_values(
         ["shift_key", "lag_idx"],
     ).reset_index(drop=True)
-    selected_keys = set(zip(selected_intervals["shift_key"].astype(str), selected_intervals["lag_idx"].astype(int)))
+    selected_keys = [
+        (str(row["shift_key"]), int(row["lag_idx"]))
+        for _, row in selected_intervals.iterrows()
+    ]
 
-    df = pd.read_parquet(cat_path)
+    schema_columns = _parquet_schema_names(cat_path)
+    segment_cols = [col for col in schema_columns if col.startswith("segment_lag_")]
+    if not segment_cols:
+        raise KeyError("Fake openbox matching requires trigger segment_lag_* columns")
+    interval_shift_cols = _interval_shift_columns(selected_intervals)
+
+    columns = _trigger_read_columns(cat_path, ranking_par, extra_columns=segment_cols)
+    if "lag_idx" not in columns:
+        raise KeyError("Fake openbox matching requires trigger lag_idx column")
+    frames_by_key: dict[tuple[str, int], list[pd.DataFrame]] = {key: [] for key in selected_keys}
+    trigger_unshifted_jobs = None
     if exclude_zero_lag:
         trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
-        df = df[nonzero_lag_mask(df, unshifted_job_ids=trigger_unshifted_jobs)].reset_index(drop=True)
-    df = _add_trigger_shift_key(df)
-    df = df[
-        pd.MultiIndex.from_arrays([df["shift_key"].astype(str), df["lag_idx"].astype(int)]).isin(selected_keys)
-    ].reset_index(drop=True)
-    if ranking_par not in df.columns:
-        raise KeyError(f"Ranking parameter '{ranking_par}' not found")
+
+    for chunk in _iter_parquet_row_groups(cat_path, columns):
+        if exclude_zero_lag:
+            chunk = chunk[nonzero_lag_mask(chunk, unshifted_job_ids=trigger_unshifted_jobs)]
+        if chunk.empty:
+            continue
+        fallback_shift_keys = None
+        if not interval_shift_cols or len(interval_shift_cols) != len(segment_cols):
+            fallback_shift_keys = _shift_key_series(chunk, segment_cols)
+
+        lag_values = pd.to_numeric(chunk["lag_idx"], errors="coerce")
+        for _, interval in selected_intervals.iterrows():
+            shift_key = str(interval["shift_key"])
+            lag_idx = int(interval["lag_idx"])
+            key = (shift_key, lag_idx)
+            mask = lag_values.eq(lag_idx)
+            if fallback_shift_keys is None:
+                for segment_col, shift_col in zip(segment_cols, interval_shift_cols):
+                    target = float(interval[shift_col])
+                    values = pd.to_numeric(chunk[segment_col], errors="coerce").to_numpy(dtype=float)
+                    mask = mask & pd.Series(np.isclose(values, target, rtol=0.0, atol=1e-12), index=chunk.index)
+            else:
+                mask = mask & fallback_shift_keys.eq(shift_key)
+            selected = chunk[mask]
+            if not selected.empty:
+                selected = selected.copy()
+                selected["shift_key"] = shift_key
+                frames_by_key[key].append(selected)
 
     selected_path = os.path.join(out_dir, "fake_openbox_intervals.csv")
     selected_intervals.to_csv(selected_path, index=False)
 
-    cols = [c for c in ["id", "job_id", "lag_idx", "shift_key", ranking_par, "ifar", "far_attached",
-                         "ifar_years", "significance", "p_value", "gps_time",
-                         "net_cc", "likelihood", "coherent_energy"]
-            if c in set(df.columns) | {"far_attached", "ifar_years", "significance", "p_value"}]
+    cols = _trigger_report_columns(ranking_par, include_shift_key=True) + [
+        "far_attached",
+        "ifar_years",
+        "significance",
+        "p_value",
+    ]
 
     reports = []
     combined_frames = []
+    empty_columns = list(dict.fromkeys(columns + ["shift_key"]))
     for idx, interval in selected_intervals.iterrows():
         shift_key = str(interval["shift_key"])
         lag_idx = int(interval["lag_idx"])
         interval_livetime = float(interval["livetime"])
         interval_livetime_years = interval_livetime / 86400.0 / 365.25
-        interval_df = df[
-            (df["shift_key"].astype(str) == shift_key)
-            & (df["lag_idx"].astype(int) == lag_idx)
-        ].reset_index(drop=True)
+        interval_frames = frames_by_key.get((shift_key, lag_idx), [])
+        interval_df = (
+            pd.concat(interval_frames, ignore_index=True)
+            if interval_frames else pd.DataFrame(columns=empty_columns)
+        )
         interval_df = _attach_far_and_significance(interval_df, far_rho_data, ranking_par, interval_livetime)
         fake_id = f"fake_openbox_{idx + 1:02d}"
         plot_label = f"Fake openbox {idx + 1}: slag {shift_key}, lag {lag_idx}"
@@ -538,16 +711,15 @@ def _attach_far_and_significance(
 ) -> pd.DataFrame:
     """Attach FAR, IFAR, p-value, and significance columns to trigger rows."""
     df = df.copy()
-    bins = np.array(far_rho_data["bins"])
-    far = np.array(far_rho_data["far"])
-    rho_vals = df[ranking_par].values
-    attached_far = np.zeros(len(df))
-    for i, r in enumerate(rho_vals):
-        idx = np.searchsorted(bins, r, side="right") - 1
-        if 0 <= idx < len(far):
-            attached_far[i] = far[idx]
-        else:
-            attached_far[i] = far[-1] if idx >= len(far) else far[0]
+    bins = np.asarray(far_rho_data["bins"], dtype=float)
+    far = np.asarray(far_rho_data["far"], dtype=float)
+    if len(bins) == 0 or len(far) == 0:
+        raise ValueError("far_rho_data must contain non-empty 'bins' and 'far' arrays")
+
+    rho_vals = pd.to_numeric(df[ranking_par], errors="coerce").to_numpy(dtype=float)
+    idx = np.searchsorted(bins, rho_vals, side="right") - 1
+    idx = np.clip(idx, 0, len(far) - 1)
+    attached_far = far[idx]
 
     df["far_attached"] = attached_far
     df["ifar_years"] = 1.0 / np.maximum(attached_far, 1e-30)
@@ -566,20 +738,39 @@ def _read_intervals_file(path: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-def _add_trigger_shift_key(df: pd.DataFrame) -> pd.DataFrame:
-    """Add a shift_key column from trigger segment_lag columns."""
-    segment_cols = [col for col in df.columns if col.startswith("segment_lag_")]
-    if "shift_key" in df.columns:
-        return df.copy()
+def _interval_shift_columns(intervals: pd.DataFrame) -> list[str]:
+    def suffix_index(column: str) -> int:
+        return int(column[len("shift_"):])
+
+    return sorted(
+        [
+            col for col in intervals.columns
+            if col.startswith("shift_") and col[len("shift_"):].isdigit()
+        ],
+        key=suffix_index,
+    )
+
+
+def _shift_key_series(df: pd.DataFrame, segment_cols: list[str]) -> pd.Series:
+    """Build cWB-style shift keys for one already-pruned trigger chunk."""
     if not segment_cols:
         raise KeyError("Fake openbox matching requires trigger segment_lag_* columns")
 
-    out = df.copy()
-    out["shift_key"] = [
-        _shift_key(tuple(float(row[col]) for col in segment_cols))
-        for _, row in out[segment_cols].iterrows()
-    ]
+    parts = []
+    for col in segment_cols:
+        values = pd.to_numeric(df[col], errors="coerce")
+        parts.append(values.map(_format_shift_value).astype(str))
+
+    out = parts[0]
+    for part in parts[1:]:
+        out = out + "," + part
     return out
+
+
+def _format_shift_value(value) -> str:
+    if pd.isna(value):
+        return "nan"
+    return f"{float(value):.12g}"
 
 
 def _shift_key(shift: tuple[float, ...]) -> str:

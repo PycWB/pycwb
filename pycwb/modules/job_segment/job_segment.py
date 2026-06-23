@@ -46,6 +46,47 @@ def _validate_lag_config(job_segments):
             )
 
 
+def flatten_job_segments_by_trial(job_segments):
+    """Return one job segment per unique injection trial.
+
+    Flattened job ids are reassigned contiguously from 1 so runtime trigger
+    rows and simulation-summary rows can still match on ``job_id``.
+    """
+    from dataclasses import replace
+
+    flat_job_segments = []
+    index = 1
+    for job_segment in job_segments:
+        trial_indices = {
+            int(inj.get('trial_idx', 0))
+            for inj in (job_segment.injections or [])
+        }
+        if not trial_indices:
+            flat_job_segments.append(replace(job_segment, index=index, trial_idx=0))
+            index += 1
+            continue
+        for trial_idx in sorted(trial_indices):
+            trial_injections = []
+            for inj in job_segment.injections:
+                if int(inj.get('trial_idx', 0)) != trial_idx:
+                    continue
+                flat_inj = dict(inj)
+                flat_inj['trial_idx'] = trial_idx
+                flat_inj['source_job_id'] = int(flat_inj.get('job_id', job_segment.index))
+                flat_inj['job_id'] = index
+                trial_injections.append(flat_inj)
+            flat_job_segments.append(
+                replace(
+                    job_segment,
+                    index=index,
+                    trial_idx=trial_idx,
+                    injections=trial_injections,
+                )
+            )
+            index += 1
+    return flat_job_segments
+
+
 def create_job_segment_from_config(config):
     """
     Create job segments based on the configuration file. Currently, the following cases are supported:
@@ -164,27 +205,9 @@ def create_job_segment_from_config(config):
     _validate_lag_config(job_segments)
 
     ############################################
-    ## flatten job segments by injection trail index if parallel_injection_trail is enabled
+    ## flatten job segments by injection trial index if parallel_injection_trail is enabled
     if getattr(config, 'parallel_injection_trail', False):
-        from dataclasses import replace
-        flat_job_segments = []
-        index = 0
-        for job_segment in job_segments:
-            trial_indices = set(
-                inj.get('trial_idx')
-                for inj in (job_segment.injections or [])
-                if 'trial_idx' in inj
-            )
-            if not trial_indices:
-                flat_job_segments.append(replace(job_segment, index=index))
-                index += 1
-                continue
-            for trial_idx in trial_indices:
-                trial_injections = [inj for inj in job_segment.injections
-                                    if inj.get('trial_idx') == trial_idx]
-                flat_job_segments.append(replace(job_segment, index=index, injections=trial_injections))
-                index += 1
-        job_segments = flat_job_segments
+        job_segments = flatten_job_segments_by_trial(job_segments)
 
     ############################################
     ## Validate job segments

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report.title }}</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --surface-soft: #f1f5f9;
+    --border: #d8dee8;
+    --text: #1f2937;
+    --muted: #64748b;
+    --accent: #0f766e;
+    --accent-weak: #ccfbf1;
+    --warn: #b45309;
+    --missing: #991b1b;
+    --ink: #111827;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.45;
+  }
+
+  header {
+    background: #17202a;
+    color: #f8fafc;
+    padding: 18px 28px 14px;
+    border-bottom: 4px solid var(--accent);
+  }
+
+  .header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
+    letter-spacing: 0;
+    font-weight: 650;
+  }
+
+  .meta-line {
+    margin-top: 8px;
+    color: #cbd5e1;
+    font-size: 13px;
+  }
+
+  .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+
+  .tab-button {
+    appearance: none;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 13px 12px 10px;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .tab-button:hover,
+  .tab-button.active {
+    color: var(--ink);
+    border-bottom-color: var(--accent);
+  }
+
+  main {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 24px 28px 56px;
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  h2 {
+    margin: 4px 0 16px;
+    font-size: 22px;
+    line-height: 1.25;
+    letter-spacing: 0;
+    color: var(--ink);
+  }
+
+  h3 {
+    margin: 24px 0 10px;
+    font-size: 16px;
+    line-height: 1.25;
+    letter-spacing: 0;
+    color: #334155;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+
+  .grid.wide {
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .panel.full { grid-column: 1 / -1; }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .metric-value {
+    color: var(--ink);
+    font-size: 20px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
+  .metric-label {
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  .compact-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1px;
+    margin-bottom: 18px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--border);
+  }
+
+  .compact-item {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    background: #ffffff;
+    padding: 8px 10px;
+    min-width: 0;
+  }
+
+  .compact-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .compact-value {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .artifact-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 72px;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .artifact-status.ok {
+    background: var(--accent-weak);
+    color: #115e59;
+  }
+
+  .artifact-status.missing {
+    background: #fee2e2;
+    color: var(--missing);
+  }
+
+  .table-wrap {
+    width: 100%;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: #ffffff;
+  }
+
+  th,
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 700;
+  }
+
+  tr:last-child td { border-bottom: 0; }
+
+  pre {
+    margin: 0;
+    padding: 12px;
+    max-height: 540px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  .plot-card img {
+    display: block;
+    width: 100%;
+    max-height: 620px;
+    object-fit: contain;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+  }
+
+  .plot-title {
+    margin: 0 0 10px;
+    color: #334155;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .plotly-panel {
+    width: 100%;
+    min-height: 360px;
+  }
+
+  .placeholder {
+    display: flex;
+    min-height: 140px;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: var(--muted);
+    padding: 16px;
+    text-align: center;
+  }
+
+  .kv-list {
+    display: grid;
+    grid-template-columns: minmax(130px, 220px) 1fr;
+    gap: 8px 14px;
+    font-size: 13px;
+  }
+
+  .kv-list dt {
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .kv-list dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .section-note {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .missing-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--missing);
+    font-size: 13px;
+  }
+
+  iframe.workflow-frame {
+    width: 100%;
+    min-height: 620px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+  }
+
+  @media (max-width: 720px) {
+    header { padding: 16px; }
+    main { padding: 18px 14px 42px; }
+    .tabs { padding: 0 10px; }
+    .grid,
+    .grid.wide { grid-template-columns: 1fr; }
+    .kv-list { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+{% macro render_table(table, empty_message="No rows available") -%}
+  {% if table and table.rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% for col in table.columns %}
+          <th>{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in table.rows %}
+        <tr>
+          {% for col in table.columns %}
+          <td>{{ row[col] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="placeholder">{{ empty_message }}</div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_plot_grid(plots) -%}
+  {% if plots %}
+  <div class="grid wide">
+    {% for plot in plots %}
+    <div class="panel plot-card">
+      <div class="plot-title">{{ plot.label }}</div>
+      {% if plot.exists %}
+      <a href="{{ plot.href }}"><img src="{{ plot.href }}" alt="{{ plot.label }}"></a>
+      {% else %}
+      <div class="placeholder">Missing artifact: {{ plot.path }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="placeholder">No static plot artifacts were declared.</div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro render_artifact_table(artifacts) -%}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Label</th>
+          <th>Kind</th>
+          <th>Path</th>
+          <th>Rows</th>
+          <th>Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for artifact in artifacts %}
+        <tr>
+          <td>
+            {% if artifact.exists %}
+            <span class="artifact-status ok">OK</span>
+            {% else %}
+            <span class="artifact-status missing">Missing</span>
+            {% endif %}
+          </td>
+          <td>{{ artifact.label }}</td>
+          <td>{{ artifact.kind }}</td>
+          <td>
+            {% if artifact.exists and artifact.href %}
+            <a href="{{ artifact.href }}">{{ artifact.path }}</a>
+            {% else %}
+            {{ artifact.path }}
+            {% endif %}
+          </td>
+          <td>{{ artifact.rows if artifact.rows is defined else "" }}</td>
+          <td>{{ artifact.size }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{%- endmacro %}
+
+<header>
+  <div class="header-row">
+    <h1>{{ report.title }}</h1>
+    <div>{{ report.metadata.created_local }}</div>
+  </div>
+  <div class="meta-line">
+    {{ report.metadata.workflow_file }} | creator {{ report.metadata.creator }} |
+    production pycWB {{ report.metadata.production_pycwb_version or "unknown" }} |
+    postproduction pycWB {{ report.metadata.postproduction_pycwb_version or "unknown" }}
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Report tabs">
+  <button class="tab-button active" type="button" data-tab="summary">Summary</button>
+  <button class="tab-button" type="button" data-tab="bkg">BKG</button>
+  <button class="tab-button" type="button" data-tab="training">Training</button>
+  {% for run in report.simulation_runs %}
+  <button class="tab-button" type="button" data-tab="sim-{{ run.id }}">{{ run.label }}</button>
+  {% endfor %}
+  <button class="tab-button" type="button" data-tab="workflow">Workflow / YAML</button>
+</nav>
+
+<main>
+  <section id="tab-summary" class="tab-panel active">
+    <h2>Summary</h2>
+    <div class="compact-info">
+      {% for item in report.summary["items"] %}
+      <div class="compact-item">
+        <div class="compact-label">{{ item.label }}</div>
+        <div class="compact-value">{{ item.value }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <h3>Software And Provenance</h3>
+        <dl class="kv-list">
+          <dt>Production catalog</dt><dd>{{ report.metadata.production_catalog_file }}</dd>
+          <dt>Workflow</dt><dd>{{ report.metadata.workflow_file }}</dd>
+          <dt>Created UTC</dt><dd>{{ report.metadata.created_utc }}</dd>
+          <dt>Catalog jobs</dt><dd>{{ report.metadata.n_catalog_jobs if report.metadata.n_catalog_jobs is not none else "" }}</dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <h3>Config Summary</h3>
+        {% if report.metadata.config_summary %}
+        <dl class="kv-list">
+          {% for item in report.metadata.config_summary %}
+          <dt>{{ item.key }}</dt><dd>{{ item.value }}</dd>
+          {% endfor %}
+        </dl>
+        {% else %}
+        <div class="placeholder">No catalog Config metadata was found.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <h3>Artifact Health</h3>
+    {{ render_artifact_table(report.artifacts) }}
+    {% if report.missing_artifacts %}
+    <h3>Missing Artifacts</h3>
+    <ul class="missing-list">
+      {% for artifact in report.missing_artifacts %}
+      <li>{{ artifact.label }}: {{ artifact.path }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <section id="tab-bkg" class="tab-panel">
+    <h2>BKG</h2>
+    <div class="compact-info">
+      <div class="compact-item"><div class="compact-label">BKG live time</div><div class="compact-value">{{ report.bkg.livetime.compact_label }}</div></div>
+      <div class="compact-item"><div class="compact-label">Zero-lag live time</div><div class="compact-value">{{ report.bkg.zero_lag_livetime.livetime.compact_label }}</div></div>
+      <div class="compact-item"><div class="compact-label">Scored triggers</div><div class="compact-value">{{ report.bkg.scored_catalog.info.rows if report.bkg.scored_catalog.info.rows is defined else 0 }}</div></div>
+      <div class="compact-item"><div class="compact-label">Progress jobs</div><div class="compact-value">{{ report.bkg.progress.n_jobs if report.bkg.progress.n_jobs is not none else "" }}</div></div>
+      <div class="compact-item"><div class="compact-label">Zero-lag rows</div><div class="compact-value">{{ report.bkg.zero_lag_table.n_rows }}</div></div>
+      <div class="compact-item"><div class="compact-label">Zero-lag LT rows</div><div class="compact-value">{{ report.bkg.zero_lag_livetime.n_rows }}</div></div>
+    </div>
+    <p class="section-note">
+      BKG live time source: {{ report.bkg.livetime_source }}.
+      {% if report.bkg.livetime_warning %}{{ report.bkg.livetime_warning }}{% endif %}
+      Zero-lag live time source: {{ report.bkg.zero_lag_livetime.source }}.
+    </p>
+
+    <h3>Existing Plots</h3>
+    {{ render_plot_grid(report.bkg.plots) }}
+
+    <h3>Interactive Derived Panels</h3>
+    {% if report.bkg.figures %}
+    <div class="grid wide">
+      {% for fig in report.bkg.figures %}
+      <div class="panel">
+        <div class="plot-title">{{ fig.title }}</div>
+        <div id="fig-{{ fig.id }}" class="plotly-panel"></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="placeholder">No reduced BKG figure data was available.</div>
+    {% endif %}
+
+    <div class="grid">
+      <div class="panel full">
+        <h3>Loudest BKG Events</h3>
+        {{ render_table(report.bkg.scored_catalog.loudest_events) }}
+      </div>
+      <div class="panel full">
+        <h3>Zero-Lag Trigger Preview</h3>
+        {{ render_table(report.bkg.zero_lag_table) }}
+      </div>
+      <div class="panel full">
+        <h3>Live Time By Lag</h3>
+        {{ render_table(report.bkg.progress.by_lag) }}
+      </div>
+      <div class="panel full">
+        <h3>Live Time Intervals</h3>
+        {{ render_table(report.bkg.intervals.table) }}
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-training" class="tab-panel">
+    <h2>Training</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>BKG Training Data</h3>
+        <dl class="kv-list">
+          <dt>Rows</dt><dd>{{ report.training.bkg_stats.info.rows if report.training.bkg_stats.info.rows is defined else "" }}</dd>
+          <dt>Columns</dt><dd>{{ report.training.bkg_stats.info.columns if report.training.bkg_stats.info.columns is defined else "" }}</dd>
+        </dl>
+        {{ render_table({"columns": ["column", "count", "min", "median", "max"], "rows": report.training.bkg_stats.numeric}) }}
+      </div>
+      <div class="panel">
+        <h3>SIM Training Data</h3>
+        <dl class="kv-list">
+          <dt>Rows</dt><dd>{{ report.training.sim_stats.info.rows if report.training.sim_stats.info.rows is defined else "" }}</dd>
+          <dt>Columns</dt><dd>{{ report.training.sim_stats.info.columns if report.training.sim_stats.info.columns is defined else "" }}</dd>
+        </dl>
+        {{ render_table({"columns": ["column", "count", "min", "median", "max"], "rows": report.training.sim_stats.numeric}) }}
+      </div>
+    </div>
+
+    <h3>Training Diagnostics</h3>
+    <div class="grid wide">
+      {% for fig in report.training.bkg_stats.histograms + report.training.sim_stats.histograms %}
+      <div class="panel">
+        <div class="plot-title">{{ fig.title }}</div>
+        <div id="fig-{{ fig.id }}" class="plotly-panel"></div>
+      </div>
+      {% endfor %}
+      {% for item in report.training.placeholders %}
+      <div class="panel"><div class="placeholder">{{ item }}</div></div>
+      {% endfor %}
+    </div>
+
+    <h3>Workflow Steps Used For Training</h3>
+    {% if report.training.workflow_steps %}
+    <div class="grid">
+      {% for step in report.training.workflow_steps %}
+      <div class="panel">
+        <h3>{{ step.index }}. {{ step.name }}</h3>
+        <dl class="kv-list">
+          <dt>ID</dt><dd>{{ step.id }}</dd>
+          <dt>Action</dt><dd>{{ step.action }}</dd>
+        </dl>
+        <pre>{{ {"inputs": step.inputs, "args": step.args, "outputs": step.outputs} | tojson(indent=2) }}</pre>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="placeholder">No training workflow steps were found in the YAML.</div>
+    {% endif %}
+
+    <h3>XGBoost Config</h3>
+    {% if report.training.config_text %}
+    <pre>{{ report.training.config_text }}</pre>
+    {% else %}
+    <div class="placeholder">No XGBoost config file was available.</div>
+    {% endif %}
+  </section>
+
+  {% for run in report.simulation_runs %}
+  <section id="tab-sim-{{ run.id }}" class="tab-panel">
+    <h2>{{ run.label }}</h2>
+    <div class="grid">
+      <div class="panel">
+        <h3>Scored Catalog</h3>
+        <dl class="kv-list">
+          <dt>Rows</dt><dd>{{ run.scored_stats.info.rows if run.scored_stats.info.rows is defined else "" }}</dd>
+          <dt>Columns</dt><dd>{{ run.scored_stats.info.columns if run.scored_stats.info.columns is defined else "" }}</dd>
+        </dl>
+        {{ render_table({"columns": ["column", "count", "min", "median", "max"], "rows": run.scored_stats.numeric}) }}
+      </div>
+      <div class="panel">
+        <h3>Matched Simulations</h3>
+        {% if run.matched_summary.metrics %}
+        <dl class="kv-list">
+          {% for item in run.matched_summary.metrics %}
+          <dt>{{ item.label }}</dt><dd>{{ item.value }}</dd>
+          {% endfor %}
+        </dl>
+        {% else %}
+        <div class="placeholder">No matched simulation summary was available.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <h3>HRSS And Efficiency Plots</h3>
+    {{ render_plot_grid(run.plots) }}
+
+    <h3>Fit Parameter Tables</h3>
+    {% if run.fit_tables %}
+      {% for table in run.fit_tables %}
+      <div class="panel">
+        <div class="plot-title">{{ table.artifact.label if table.artifact else "Fit parameters" }}</div>
+        {{ render_table(table) }}
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="placeholder">No fit parameter CSVs were declared.</div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section id="tab-workflow" class="tab-panel">
+    <h2>Workflow / YAML</h2>
+    <div class="grid">
+      <div class="panel full">
+        <h3>Workflow Diagram</h3>
+        {% if report.workflow.diagram_html and report.workflow.diagram_html.exists %}
+        <iframe class="workflow-frame" src="{{ report.workflow.diagram_html.href }}" title="Workflow diagram"></iframe>
+        {% elif report.workflow.diagram_png and report.workflow.diagram_png.exists %}
+        <a href="{{ report.workflow.diagram_png.href }}"><img src="{{ report.workflow.diagram_png.href }}" alt="Workflow diagram"></a>
+        {% else %}
+        <div class="placeholder">No workflow diagram artifact was found.</div>
+        {% endif %}
+      </div>
+      <div class="panel full">
+        <h3>YAML</h3>
+        {% if report.workflow.workflow_text %}
+        <pre>{{ report.workflow.workflow_text }}</pre>
+        {% else %}
+        <div class="placeholder">No workflow YAML text was available.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+</main>
+
+<script id="report-data" type="application/json">{{ report | tojson }}</script>
+<script>
+(function () {
+  "use strict";
+
+  var reportData = JSON.parse(document.getElementById("report-data").textContent);
+  var buttons = Array.prototype.slice.call(document.querySelectorAll(".tab-button"));
+  var panels = Array.prototype.slice.call(document.querySelectorAll(".tab-panel"));
+
+  function showTab(name) {
+    buttons.forEach(function (button) {
+      button.classList.toggle("active", button.getAttribute("data-tab") === name);
+    });
+    panels.forEach(function (panel) {
+      panel.classList.toggle("active", panel.id === "tab-" + name);
+    });
+    window.location.hash = name;
+    renderVisibleFigures();
+  }
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      showTab(button.getAttribute("data-tab"));
+    });
+  });
+
+  function allFigures() {
+    var figures = [];
+    if (reportData.bkg && reportData.bkg.figures) {
+      figures = figures.concat(reportData.bkg.figures);
+    }
+    if (reportData.training && reportData.training.bkg_stats) {
+      figures = figures.concat(reportData.training.bkg_stats.histograms || []);
+    }
+    if (reportData.training && reportData.training.sim_stats) {
+      figures = figures.concat(reportData.training.sim_stats.histograms || []);
+    }
+    return figures;
+  }
+
+  var rendered = {};
+  function renderFigure(fig) {
+    var target = document.getElementById("fig-" + fig.id);
+    if (!target || rendered[fig.id]) return;
+    if (!window.Plotly) {
+      target.innerHTML = '<div class="placeholder">Interactive plotting is unavailable; static artifacts remain available.</div>';
+      rendered[fig.id] = true;
+      return;
+    }
+    Plotly.newPlot(target, fig.traces, fig.layout, {
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ["lasso2d", "select2d"]
+    });
+    rendered[fig.id] = true;
+  }
+
+  function renderVisibleFigures() {
+    allFigures().forEach(function (fig) {
+      var target = document.getElementById("fig-" + fig.id);
+      if (target && target.offsetParent !== null) {
+        renderFigure(fig);
+      }
+    });
+  }
+
+  var initial = window.location.hash ? window.location.hash.slice(1) : "summary";
+  if (!document.getElementById("tab-" + initial)) initial = "summary";
+  showTab(initial);
+})();
+</script>
+</body>
+</html>
