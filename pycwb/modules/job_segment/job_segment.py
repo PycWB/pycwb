@@ -367,17 +367,44 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     if cat2_windows:
         for js in job_segments:
             # Clip global CAT2 windows to each segment's analysis window
-            seg_start = js.analyze_start
-            seg_end = js.analyze_end
-            clipped = []
-            for ws, we in cat2_windows:
-                lo = max(ws, seg_start)
-                hi = min(we, seg_end)
-                if hi > lo:
-                    clipped.append((lo, hi))
+            clipped = _clip_windows_to_segment(cat2_windows, js.analyze_start, js.analyze_end)
             js.veto_windows = clipped if clipped else None
 
+    # cWB applies superlag shifts to DQ lists before building the CAT2 keep mask.
+    # Keep this mask separate because ``veto_windows`` is still used by
+    # simulation/injection code as an absolute-GPS overlap.
+    cwb_cat2_cache: dict[tuple[float, ...], list[tuple[float, float]] | None] = {}
+    for js in job_segments:
+        shift_values = js.shift if js.shift is not None else [0.0 for _ in ifos]
+        shift_key = tuple(float(v) for v in shift_values)
+        if shift_key not in cwb_cat2_cache:
+            # ``WaveSegment.shift`` is stored in the same sign convention used
+            # to build shifted CAT1 job timelines. Detector physical GPS is
+            # analyze_time - shift, so DQ lists must receive +shift here.
+            shifts_by_ifo = {ifo: shift for ifo, shift in zip(ifos, shift_key)}
+            cwb_cat2_cache[shift_key] = build_cat2_veto_windows(
+                dq_file_list, ifos, periods, shifts_by_ifo=shifts_by_ifo,
+            )
+        cwb_windows = cwb_cat2_cache[shift_key]
+        if cwb_windows is not None:
+            clipped = _clip_windows_to_segment(cwb_windows, js.analyze_start, js.analyze_end)
+            js.cwb_veto_windows = clipped
+
     return job_segments
+
+
+def _clip_windows_to_segment(
+    windows: list[tuple[float, float]],
+    start: float,
+    end: float,
+) -> list[tuple[float, float]]:
+    clipped = []
+    for ws, we in windows:
+        lo = max(float(ws), float(start))
+        hi = min(float(we), float(end))
+        if hi > lo:
+            clipped.append((lo, hi))
+    return clipped
 
 
 def attach_frame_files_to_job_segments(job_segments, ifos, frame_files, seg_edge):

@@ -729,7 +729,7 @@ def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energ
                 else np.zeros(0, dtype=np.int16))
 
     # Merged align + threshold + pixel selection in one Numba pass
-    combined_raw, selected = _align_threshold_select_numba(
+    combined_raw, selected, live_mask = _align_threshold_select_numba(
         arrays_stack, shift_bins_arr,
         int(valid_start), int(nn_valid),
         veto_arr, (veto is not None and len(veto) == n_time),
@@ -766,6 +766,8 @@ def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energ
         "stop": float(getattr(tf0, "stop", 0.0)),
         "f_low": float(getattr(tf0, "f_low", 0.0) or 0.0),
         "f_high": float(getattr(tf0, "f_high", (n_freq - 1) * float(getattr(tf0, "df", 0.0))) or 0.0),
+        "live_mask": live_mask,
+        "live_samples": int(np.sum(live_mask)),
     }
 
 
@@ -1102,7 +1104,7 @@ def _align_threshold_select_numba(
     eo: float,
     em: float,
     eh: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Align detectors, apply thresholds, and select pixels in one Numba pass.
 
     Replaces the Python ``align`` and ``thresh`` phases of
@@ -1125,12 +1127,25 @@ def _align_threshold_select_numba(
     -------
     combined_raw : float64[n_freq, n_time]  — raw shifted sum (unclipped)
     selected     : bool[n_freq, n_time]     — pixel selection mask
+    live_mask    : bool[n_time]             — shifted-veto live output bins
     """
     n_ifo  = arrays_stack.shape[0]
     n_freq = arrays_stack.shape[1]
     n_time = arrays_stack.shape[2]
 
     combined_raw = np.zeros((n_freq, n_time), dtype=np.float64)
+    live_mask = np.zeros(n_time, dtype=np.bool_)
+
+    for t in range(valid_start, valid_start + nn_valid):
+        u = t - valid_start
+        live = True
+        if has_veto:
+            for d in range(n_ifo):
+                src_t = valid_start + (u + shift_bins[d]) % nn_valid
+                if veto[src_t] == 0:
+                    live = False
+                    break
+        live_mask[t] = live
 
     # Phase 1: shift-align each detector and accumulate into combined_raw
     for fi in range(n_freq):
@@ -1147,7 +1162,7 @@ def _align_threshold_select_numba(
 
     if has_veto:
         for t in range(n_time):
-            if veto[t] == 0:
+            if not live_mask[t]:
                 for fi in range(n_freq):
                     combined[fi, t] = 0.0
 
@@ -1203,4 +1218,4 @@ def _align_threshold_select_numba(
                     and e_val < em):
                 selected[fi, t] = True
 
-    return combined_raw, selected
+    return combined_raw, selected, live_mask

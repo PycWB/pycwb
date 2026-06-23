@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,7 +64,7 @@ class ReportContext:
             return ""
         abs_path = self.resolve(path) or ""
         try:
-            return os.path.relpath(abs_path, self.work_dir)
+            return os.path.relpath(abs_path, self.output_dir).replace(os.sep, "/")
         except ValueError:
             return abs_path
 
@@ -208,10 +209,20 @@ def postproduction_report(
         workflow_text=workflow_text,
         workflow_artifact=workflow_artifact,
     )
+    basic_info = _build_basic_information(
+        metadata=metadata,
+        bkg_data=bkg_data,
+        training_data=training_data,
+        simulation_data=simulation_data,
+        workflow_data=workflow_data,
+        production_artifact=production_artifact,
+        workflow_artifact=workflow_artifact,
+    )
 
     data: dict[str, Any] = {
         "title": title,
         "metadata": metadata,
+        "basic_info": basic_info,
         "summary": _build_summary(metadata, bkg_data, training_data, simulation_data),
         "bkg": bkg_data,
         "training": training_data,
@@ -429,6 +440,16 @@ def _build_training_section(
         label="XGBoost config",
         kind="python",
     )
+    settings_artifact = ctx.register_artifact(
+        training.get("training_settings_file"),
+        label="XGBoost training settings",
+        kind="text",
+    )
+    output_artifact = ctx.register_artifact(
+        training.get("training_output_file"),
+        label="XGBoost training output",
+        kind="text",
+    )
 
     bkg_stats = _catalog_numeric_summary(
         ctx.resolve(training.get("bkg_catalog")),
@@ -459,6 +480,8 @@ def _build_training_section(
                 sim_artifact,
                 model_artifact,
                 config_artifact,
+                settings_artifact,
+                output_artifact,
             ] if item
         ],
         "bkg_stats": bkg_stats,
@@ -560,6 +583,303 @@ def _build_workflow_section(
         "diagram_png": diagram_png,
         "diagram_html": diagram_html,
     }
+
+
+def _build_basic_information(
+    metadata: dict[str, Any],
+    bkg_data: dict[str, Any],
+    training_data: dict[str, Any],
+    simulation_data: list[dict[str, Any]],
+    workflow_data: dict[str, Any],
+    production_artifact: Optional[dict[str, Any]],
+    workflow_artifact: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a compact cWB-style basic-information summary."""
+    config = metadata.get("config_metadata") or {}
+    bkg_split_step = _workflow_step_by_id(workflow_data, "bkg_split")
+    far_step = _workflow_step_by_id(workflow_data, "far_rho")
+    report_step = _workflow_step_by_id(workflow_data, "background_report")
+    model_step = _workflow_step_by_id(workflow_data, "model")
+
+    ranking_par = (
+        _nested_get(far_step, ["args", "ranking_par"])
+        or _nested_get(report_step, ["args", "ranking_par"])
+        or bkg_data.get("ranking_par")
+        or "rho"
+    )
+
+    run_parameters = [
+        _info_item("IFOs", _join_value(_config_value(config, "ifo") or _config_value(config, "nIFO")), accent=True),
+        _info_item("Search", _join_nonempty([
+            _config_value(config, "cfg_search"),
+            _config_value(config, "Search"),
+        ], sep=" / "), accent=True),
+        _info_item("Frequency band", _format_band(_config_value(config, "fLow"), _config_value(config, "fHigh"), "Hz"), accent=True),
+        _info_item("Analysis rate", _format_rate_block(config), accent=True),
+        _info_item("Lag plan", _format_lag_plan(config), accent=True),
+        _info_item("Superlags", _format_superlag_plan(config), accent=True),
+        _info_item("Pixel selection", _format_thresholds(config, ["bpp", "netRHO", "netCC"]), accent=True),
+        _info_item("Subnet cuts", _format_thresholds(config, ["subnet", "subcut", "subnorm"])),
+        _info_item("Cluster gaps", _format_thresholds(config, ["Tgap", "Fgap", "LOUD"])),
+        _info_item("Sky map", _format_skymap(config)),
+        _info_item("Segmenting", _format_thresholds(config, ["segEdge", "segMLS", "segTHR"])),
+        _info_item("DQ definitions", _format_dq_summary(config)),
+    ]
+
+    workflow_vars = workflow_data.get("vars", {}) if isinstance(workflow_data, dict) else {}
+    split = _resolve_workflow_refs(_nested_get(bkg_split_step, ["args", "split"]) or {}, workflow_vars)
+    fractions = split.get("fractions") if isinstance(split, dict) else {}
+    selection_cuts = [
+        _info_item("Ranking statistic", ranking_par, accent=True),
+        _info_item("BKG split", _format_split(split, fractions), accent=True),
+        _info_item("Training action", _nested_get(model_step, ["action"]) or ""),
+        _info_item(
+            "Report output",
+            _resolve_workflow_refs(_nested_get(report_step, ["args", "output_dir"]) or "", workflow_vars),
+        ),
+        _info_item("Zero lag", _enabled_label(_nested_get(report_step, ["args", "include_zero_lag"]))),
+        _info_item("Fake openbox", _format_fake_openbox(report_step)),
+        _info_item("Public alert window", _format_public_alert_window(report_step)),
+        _info_item("Simulation runs", _format_int(len(simulation_data))),
+    ]
+
+    bkg_livetime = bkg_data.get("livetime") or _livetime_dict(None)
+    zero_lag = _nested_get(bkg_data, ["zero_lag_livetime", "livetime"]) or _livetime_dict(None)
+    interval_livetime = _nested_get(bkg_data, ["intervals", "total_livetime"]) or _livetime_dict(None)
+    progress_livetime = _nested_get(bkg_data, ["progress", "total_livetime"]) or _livetime_dict(None)
+    livetimes = [
+        _info_item("Zero lag", _livetime_detail(zero_lag), accent=True),
+        _info_item("FAR non-zero lag", _livetime_detail(bkg_livetime), accent=True),
+        _info_item("Progress total", _livetime_detail(progress_livetime)),
+        _info_item("Interval total", _livetime_detail(interval_livetime)),
+        _info_item("Live-time source", bkg_data.get("livetime_source") or ""),
+        _info_item("Completed progress jobs", _format_int(_nested_get(bkg_data, ["progress", "n_jobs"]))),
+        _info_item("Live-time intervals", _format_int(_nested_get(bkg_data, ["intervals", "table", "n_rows"]))),
+        _info_item("Zero-lag rows", _format_int(_nested_get(bkg_data, ["zero_lag_livetime", "n_rows"]))),
+    ]
+
+    review_links = [
+        _artifact_link("Production catalog", production_artifact),
+        _artifact_link("Workflow YAML", workflow_artifact),
+    ]
+    for artifact in training_data.get("artifacts", []) or []:
+        if artifact.get("label") in {
+            "XGBoost config",
+            "XGBoost model",
+            "XGBoost training settings",
+            "XGBoost training output",
+        }:
+            review_links.append(_artifact_link(artifact.get("label"), artifact))
+    for artifact in bkg_data.get("artifacts", []) or []:
+        if artifact.get("label") in {"BKG scored catalog", "Zero-lag trigger table", "BKG progress"}:
+            review_links.append(_artifact_link(artifact.get("label"), artifact))
+
+    return {
+        "run_parameters": [item for item in run_parameters if item["value"]],
+        "selection_cuts": [item for item in selection_cuts if item["value"]],
+        "livetimes": [item for item in livetimes if item["value"]],
+        "review_links": [item for item in review_links if item],
+    }
+
+
+def _workflow_step_by_id(workflow_data: dict[str, Any], step_id: str) -> dict[str, Any]:
+    for step in workflow_data.get("steps", []) or []:
+        if str(step.get("id") or "") == step_id:
+            return step
+    return {}
+
+
+def _info_item(label: str, value: Any, accent: bool = False) -> dict[str, Any]:
+    return {
+        "label": label,
+        "value": _join_value(value),
+        "accent": bool(accent),
+    }
+
+
+def _artifact_link(label: str, artifact: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not artifact:
+        return None
+    return {
+        "label": label,
+        "path": artifact.get("path") or "",
+        "href": artifact.get("href") or "",
+        "exists": bool(artifact.get("exists")),
+        "kind": artifact.get("kind") or "file",
+    }
+
+
+def _config_value(config: dict[str, Any], key: str) -> Any:
+    return config.get(key) if isinstance(config, dict) else None
+
+
+def _join_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(_join_value(item) for item in value if _join_value(item))
+    if isinstance(value, dict):
+        return ", ".join(f"{key}: {_join_value(item)}" for key, item in value.items())
+    return _format_cell(value)
+
+
+def _join_nonempty(values: list[Any], sep: str = " - ") -> str:
+    parts = [_join_value(value) for value in values]
+    return sep.join(part for part in parts if part)
+
+
+def _format_band(low: Any, high: Any, unit: str) -> str:
+    if low is None and high is None:
+        return ""
+    return f"{_format_cell(low)} - {_format_cell(high)} {unit}".strip()
+
+
+def _format_rate_block(config: dict[str, Any]) -> str:
+    parts = []
+    for key, label in [
+        ("inRate", "input"),
+        ("fResample", "resample"),
+        ("rateANA", "analysis"),
+    ]:
+        value = _config_value(config, key)
+        if value is not None:
+            parts.append(f"{label}: {_format_cell(value)} Hz")
+    return " / ".join(parts)
+
+
+def _format_lag_plan(config: dict[str, Any]) -> str:
+    parts = []
+    for key in ["lagSize", "lagStep", "lagOff", "lagMax"]:
+        value = _config_value(config, key)
+        if value is not None:
+            suffix = " s" if key == "lagStep" else ""
+            parts.append(f"{key}: {_format_cell(value)}{suffix}")
+    return " / ".join(parts)
+
+
+def _format_superlag_plan(config: dict[str, Any]) -> str:
+    parts = []
+    for key in ["slagSize", "slagMin", "slagMax", "slagOff"]:
+        value = _config_value(config, key)
+        if value is not None:
+            parts.append(f"{key}: {_format_cell(value)}")
+    return " / ".join(parts)
+
+
+def _format_thresholds(config: dict[str, Any], keys: list[str]) -> str:
+    parts = []
+    for key in keys:
+        value = _config_value(config, key)
+        if value is not None:
+            parts.append(f"{key}: {_format_cell(value)}")
+    return " / ".join(parts)
+
+
+def _format_skymap(config: dict[str, Any]) -> str:
+    healpix = _to_float(_config_value(config, "healpix"))
+    if healpix is None:
+        return ""
+    order = int(healpix)
+    nside = 2 ** order
+    pixels = 12 * nside * nside
+    pixel_area = 41252.96124941927 / pixels
+    return f"healpix order {order} / {pixels:,} pixels / {pixel_area:.4g} deg^2 per pixel"
+
+
+def _format_dq_summary(config: dict[str, Any]) -> str:
+    dqf = _config_value(config, "DQF")
+    if not isinstance(dqf, list):
+        return ""
+    categories = []
+    ifos = []
+    for row in dqf:
+        if isinstance(row, (list, tuple)) and len(row) >= 3:
+            ifos.append(str(row[0]))
+            categories.append(str(row[2]))
+    category_label = ", ".join(sorted(set(categories)))
+    ifo_label = ", ".join(sorted(set(ifos)))
+    return f"{len(dqf)} entries / {ifo_label} / {category_label}".strip(" /")
+
+
+def _format_split(split: Any, fractions: Any) -> str:
+    if not isinstance(split, dict):
+        return ""
+    by = split.get("by")
+    seed = split.get("seed")
+    fraction_text = _join_value(fractions) if fractions else ""
+    return _join_nonempty([
+        f"by {by}" if by else "",
+        f"fractions {fraction_text}" if fraction_text else "",
+        f"seed {seed}" if seed is not None else "",
+    ], sep=" / ")
+
+
+def _resolve_workflow_refs(value: Any, variables: dict[str, Any]) -> Any:
+    """Resolve simple workflow ${var} and ${nested.var} references for display."""
+    if isinstance(value, dict):
+        return {key: _resolve_workflow_refs(item, variables) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_workflow_refs(item, variables) for item in value]
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.startswith("${") and text.endswith("}"):
+        key = text[2:-1]
+        found = _lookup_workflow_var(variables, key)
+        return found if found is not None else value
+
+    def replace(match: re.Match[str]) -> str:
+        found = _lookup_workflow_var(variables, match.group(1))
+        return str(found) if found is not None else match.group(0)
+
+    return re.sub(r"\$\{([^}]+)\}", replace, value)
+
+
+def _lookup_workflow_var(variables: dict[str, Any], key: str) -> Any:
+    current: Any = variables
+    for part in key.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _enabled_label(value: Any) -> str:
+    if value is None:
+        return ""
+    return "enabled" if bool(value) else "disabled"
+
+
+def _format_fake_openbox(report_step: dict[str, Any]) -> str:
+    enabled = _nested_get(report_step, ["args", "include_fake_openbox"])
+    if enabled is None:
+        return ""
+    parts = [_enabled_label(enabled)]
+    n = _nested_get(report_step, ["args", "fake_openbox_n"])
+    seed = _nested_get(report_step, ["args", "fake_openbox_seed"])
+    if n is not None:
+        parts.append(f"n={n}")
+    if seed is not None:
+        parts.append(f"seed={seed}")
+    return " / ".join(parts)
+
+
+def _format_public_alert_window(report_step: dict[str, Any]) -> str:
+    window = _nested_get(report_step, ["args", "public_alert_time_window"])
+    if window is None:
+        return ""
+    return f"{_format_cell(window)} s"
+
+
+def _livetime_detail(livetime: dict[str, Any]) -> str:
+    seconds = livetime.get("seconds") if isinstance(livetime, dict) else None
+    if seconds is None:
+        return ""
+    return (
+        f"{livetime.get('seconds_label', '')} = "
+        f"{livetime.get('days_label', '')} = "
+        f"{livetime.get('years_label', '')}"
+    )
 
 
 def _build_summary(

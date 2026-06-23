@@ -134,7 +134,11 @@ def _lag_progress_record(
 
 
 def _effective_veto_windows(config: Config, sub_job_seg: WaveSegment) -> list[tuple[float, float]] | None:
-    veto_windows = sub_job_seg.veto_windows
+    veto_windows = (
+        sub_job_seg.cwb_veto_windows
+        if getattr(sub_job_seg, 'cwb_veto_windows', None) is not None
+        else sub_job_seg.veto_windows
+    )
     if not (getattr(config, 'analyze_injection_only', False) and sub_job_seg.injections):
         return veto_windows
 
@@ -144,9 +148,16 @@ def _effective_veto_windows(config: Config, sub_job_seg: WaveSegment) -> list[tu
         padding=getattr(config, 'injection_padding', 1.0),
         duration=sub_job_seg.duration,
     )
-    if veto_windows:
+    if veto_windows is not None:
         return intersect_intervals(sorted(veto_windows), sorted(inj_windows))
     return inj_windows
+
+
+def _lag_livetime(context: LagAnalysisContext, lag: int) -> float:
+    sub_job_seg = context.sub_job_seg
+    if hasattr(sub_job_seg, 'circular_livetime'):
+        return sub_job_seg.circular_livetime(lag, context.veto_windows)
+    return sub_job_seg.livetime(lag)
 
 
 @contextmanager
@@ -207,8 +218,8 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
     logger.info("Processing lag %d / %d  [%s]", lag, sub_job_seg.n_lag - 1, lag_shift_str)
 
     seg_thr = getattr(config, 'segTHR', 0.0) or 0.0
-    if seg_thr > 0 and context.veto_windows:
-        lag_livetime = sub_job_seg.livetime(lag)
+    if seg_thr > 0 and context.veto_windows is not None:
+        lag_livetime = _lag_livetime(context, lag)
         if lag_livetime < seg_thr:
             logger.warning(
                 "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
@@ -258,7 +269,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 events_data=[],
                 progress_record=_lag_progress_record(
                     context, lag, n_triggers=0,
-                    livetime=sub_job_seg.livetime(lag), status="completed",
+                    livetime=_lag_livetime(context, lag), status="completed",
                 ),
             )
 
@@ -304,7 +315,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
         events_data=events_data,
         progress_record=_lag_progress_record(
             context, lag, n_triggers=len(events_data),
-            livetime=sub_job_seg.livetime(lag), status="completed",
+            livetime=_lag_livetime(context, lag), status="completed",
         ),
     )
 
@@ -708,7 +719,6 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # and then saves the accepted triggers before releasing lag-local memory.
         likelihood_timer = time.perf_counter()
         veto_windows = _effective_veto_windows(config, sub_job_seg)
-        sub_job_seg.veto_windows = veto_windows
         analysis_context = LagAnalysisContext(
             config=config,
             job_seg=job_seg,

@@ -32,13 +32,20 @@ Evaluation
 """
 
 from .cwb_xgboost import xgb_predict
-from .training import train, train_classifier, make_train_test_split
+from .training import (
+    train,
+    train_classifier,
+    make_train_test_split,
+    dump_training_settings,
+    dump_training_output,
+)
 from .read_data import (
     load_flat_parquet,
     build_features_from_parquet,
     read_catalog_to_dataframe,
     preprocess_events,
     apply_training_cuts,
+    apply_user_ranking_statistics,
 )
 from .plots import (
     evaluate_classifier,
@@ -67,6 +74,8 @@ __all__ = [
     "train",
     "train_classifier",
     "make_train_test_split",
+    "dump_training_settings",
+    "dump_training_output",
     # Flat-Parquet data helpers
     "load_flat_parquet",
     "build_features_from_parquet",
@@ -74,6 +83,7 @@ __all__ = [
     "read_catalog_to_dataframe",
     "preprocess_events",
     "apply_training_cuts",
+    "apply_user_ranking_statistics",
     # Evaluation / plotting
     "evaluate_classifier",
     "plot_hist_rho",

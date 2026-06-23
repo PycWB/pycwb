@@ -241,9 +241,17 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                     Catalog.open(catalog_file).add_triggers(trigger_obj)
 
             #################### Record lag progress ####################
+            if hasattr(sub_job_seg, "circular_livetime"):
+                cwb_veto_windows = getattr(sub_job_seg, "cwb_veto_windows", None)
+                progress_livetime = sub_job_seg.circular_livetime(
+                    lag,
+                    cwb_veto_windows if cwb_veto_windows is not None else getattr(sub_job_seg, "veto_windows", None),
+                )
+            else:
+                progress_livetime = sub_job_seg.livetime(lag)
             progress_record = dict(
                 job_id=sub_job_seg.index, trial_idx=trial_idx, lag_idx=lag,
-                n_triggers=len(events_data), livetime=sub_job_seg.livetime(lag),
+                n_triggers=len(events_data), livetime=progress_livetime,
             )
             if queue is not None:
                 queue.put({"type": "progress", **progress_record})

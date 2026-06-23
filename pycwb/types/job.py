@@ -220,6 +220,7 @@ class WaveSegment:
     injections: Optional[List[Dict]] = None
     trial_idx: int = 0
     veto_windows: list[tuple[float, float]] | None = None
+    cwb_veto_windows: list[tuple[float, float]] | None = None
 
     # ------------------------------------------------------------------
     # Analysis-window accessors (no edge padding)
@@ -278,6 +279,55 @@ class WaveSegment:
                     if hi > lo:
                         new_live.append((lo, hi))
             live = new_live
+            if not live:
+                return 0.0
+
+        return sum(e - s for s, e in live)
+
+    def circular_livetime(
+        self,
+        lag: int = 0,
+        veto_windows: list[tuple[float, float]] | None = None,
+    ) -> float:
+        """cWB-style post-veto livetime using circular lag-buffer semantics.
+
+        cWB applies lag shifts inside the finite analysis buffer.  Shifted
+        source indices that cross the right boundary wrap back to the first
+        valid sample.  This method mirrors that behavior for CAT2 keep windows
+        and is intended for background lag accounting and ``segTHR`` checks.
+
+        The older :meth:`livetime` method intentionally remains a linear
+        absolute-GPS overlap for simulation/injection scheduling.
+        """
+        if veto_windows is not None:
+            windows = veto_windows
+        elif self.cwb_veto_windows is not None:
+            windows = self.cwb_veto_windows
+        elif self.veto_windows is not None:
+            windows = self.veto_windows
+        else:
+            return self.duration
+
+        if not windows:
+            return 0.0
+
+        duration = float(self.duration)
+        if duration <= 0:
+            return 0.0
+
+        base = _merge_intervals(
+            (max(0.0, float(s) - self.analyze_start), min(duration, float(e) - self.analyze_start))
+            for s, e in windows
+        )
+        if not base:
+            return 0.0
+
+        shifts = np.asarray(self.lag_shifts[lag], dtype=float)
+        ref = float(np.min(shifts))
+        live = [(0.0, duration)]
+        for shift in shifts:
+            shifted = _shift_intervals_circular(base, float(shift) - ref, duration)
+            live = _intersect_intervals(live, shifted)
             if not live:
                 return 0.0
 
@@ -369,11 +419,17 @@ class WaveSegment:
         2. ``lag_array`` — user-provided list of lag vectors.
         3. Computed from ``lag_size/lag_step/lag_off/lag_max/lag_site`` and segment geometry.
         """
+        cached = getattr(self, "_lag_shifts_cache", None)
+        if cached is not None:
+            return cached
         if self.lag_file is not None:
-            return self._load_lag_file()
-        if self.lag_array is not None:
-            return np.asarray(self.lag_array, dtype=float)
-        return self._compute_lag_shifts()
+            cached = self._load_lag_file()
+        elif self.lag_array is not None:
+            cached = np.asarray(self.lag_array, dtype=float)
+        else:
+            cached = self._compute_lag_shifts()
+        self._lag_shifts_cache = cached
+        return cached
 
     def _load_lag_file(self) -> np.ndarray:
         """Load lag shifts from a whitespace-delimited text file."""
@@ -443,6 +499,54 @@ class WaveSegment:
         return np.vstack(valid).astype(float) * lag_step
 
     to_dict = asdict
+
+
+def _merge_intervals(intervals) -> list[tuple[float, float]]:
+    merged: list[list[float]] = []
+    for start, end in sorted((float(s), float(e)) for s, e in intervals if e > s):
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(s, e) for s, e in merged]
+
+
+def _intersect_intervals(
+    a: list[tuple[float, float]],
+    b: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    result: list[tuple[float, float]] = []
+    i = j = 0
+    while i < len(a) and j < len(b):
+        lo = max(a[i][0], b[j][0])
+        hi = min(a[i][1], b[j][1])
+        if hi > lo:
+            result.append((lo, hi))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return result
+
+
+def _shift_intervals_circular(
+    intervals: list[tuple[float, float]],
+    shift: float,
+    duration: float,
+) -> list[tuple[float, float]]:
+    shifted = []
+    for start, end in intervals:
+        length = end - start
+        if length >= duration:
+            return [(0.0, duration)]
+        wrapped_start = (start - shift) % duration
+        wrapped_end = wrapped_start + length
+        if wrapped_end <= duration:
+            shifted.append((wrapped_start, wrapped_end))
+        else:
+            shifted.append((wrapped_start, duration))
+            shifted.append((0.0, wrapped_end - duration))
+    return _merge_intervals(shifted)
 
 
 @dataclass

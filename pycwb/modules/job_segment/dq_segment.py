@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import math
+from dataclasses import replace
 from pycwb.types.job import WaveSegment
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def merge_seg_list(seg_list_1, seg_list_2):
     return merged_start, merged_stop
 
 
-def build_cat2_veto_windows(dq_file_list, ifos, periods=None):
+def build_cat2_veto_windows(dq_file_list, ifos, periods=None, shifts_by_ifo=None):
     """Build per-IFO CAT2 veto windows from DQ files.
 
     Reads all DQ files up to ``CWB_CAT2`` for each IFO, intersects them
@@ -113,8 +114,14 @@ def build_cat2_veto_windows(dq_file_list, ifos, periods=None):
         return None
 
     seg_lists = []
+    shifts_by_ifo = shifts_by_ifo or {}
     for ifo in ifos:
         dq_files = [dqf for dqf in dq_file_list if dqf.ifo == ifo]
+        if ifo in shifts_by_ifo:
+            dq_files = [
+                replace(dqf, shift=dqf.shift + float(shifts_by_ifo[ifo]))
+                for dqf in dq_files
+            ]
         cat2_list = read_seg_list(dq_files, 'CWB_CAT2', periods)
         seg_lists.append(cat2_list)
 

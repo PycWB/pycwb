@@ -7,10 +7,10 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
-    --bg: #f7f8fb;
+    --bg: #f4f6f8;
     --surface: #ffffff;
-    --surface-soft: #f1f5f9;
-    --border: #d8dee8;
+    --surface-soft: #f8fafc;
+    --border: #dfe5ed;
     --text: #1f2937;
     --muted: #64748b;
     --accent: #0f766e;
@@ -31,31 +31,31 @@
   }
 
   header {
-    background: #17202a;
+    background: #111827;
     color: #f8fafc;
-    padding: 18px 28px 14px;
-    border-bottom: 4px solid var(--accent);
+    padding: 16px 30px 14px;
+    border-bottom: 3px solid var(--accent);
   }
 
   .header-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
 
   h1 {
     margin: 0;
-    font-size: 24px;
+    font-size: 22px;
     line-height: 1.2;
     letter-spacing: 0;
-    font-weight: 650;
+    font-weight: 700;
   }
 
   .meta-line {
-    margin-top: 8px;
-    color: #cbd5e1;
+    margin-top: 6px;
+    color: #d6dee8;
     font-size: 13px;
   }
 
@@ -64,11 +64,12 @@
     top: 0;
     z-index: 20;
     display: flex;
-    gap: 4px;
+    gap: 10px;
     overflow-x: auto;
     background: #ffffff;
     border-bottom: 1px solid var(--border);
-    padding: 0 24px;
+    padding: 0 30px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
 
   .tab-button {
@@ -78,9 +79,9 @@
     background: transparent;
     color: var(--muted);
     cursor: pointer;
-    padding: 13px 12px 10px;
+    padding: 12px 4px 9px;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 700;
     white-space: nowrap;
   }
 
@@ -91,25 +92,25 @@
   }
 
   main {
-    max-width: 1480px;
+    max-width: 1680px;
     margin: 0 auto;
-    padding: 24px 28px 56px;
+    padding: 20px 30px 44px;
   }
 
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
   h2 {
-    margin: 4px 0 16px;
-    font-size: 22px;
+    margin: 0 0 14px;
+    font-size: 21px;
     line-height: 1.25;
     letter-spacing: 0;
     color: var(--ink);
   }
 
   h3 {
-    margin: 24px 0 10px;
-    font-size: 16px;
+    margin: 18px 0 9px;
+    font-size: 15px;
     line-height: 1.25;
     letter-spacing: 0;
     color: #334155;
@@ -118,7 +119,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 16px;
+    gap: 14px;
     align-items: start;
   }
 
@@ -129,25 +130,24 @@
   .panel {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    border-radius: 6px;
+    padding: 14px;
   }
 
   .panel.full { grid-column: 1 / -1; }
 
   .metric-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px;
-    margin-bottom: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
   }
 
   .metric {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
+    border-radius: 6px;
+    padding: 10px 12px;
   }
 
   .metric-value {
@@ -164,38 +164,141 @@
     text-transform: uppercase;
   }
 
+  .basic-layout {
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    gap: 14px;
+    align-items: start;
+    margin-bottom: 16px;
+  }
+
+  .basic-stack {
+    display: grid;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .basic-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .basic-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #fbfcfe;
+  }
+
+  .basic-heading h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 15px;
+  }
+
+  .basic-kicker {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .info-list {
+    display: grid;
+  }
+
+  .info-row {
+    display: grid;
+    grid-template-columns: minmax(132px, 190px) minmax(0, 1fr);
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .info-row:last-child { border-bottom: 0; }
+
+  .info-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+  }
+
+  .info-value {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+  }
+
+  .info-value.accent {
+    color: #b42318;
+  }
+
+  .basic-links {
+    display: grid;
+    gap: 7px;
+    padding: 10px 14px 12px;
+  }
+
+  .basic-link {
+    display: grid;
+    grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+
+  .basic-link-label {
+    color: var(--muted);
+    font-weight: 750;
+  }
+
+  .basic-link a,
+  .basic-link span {
+    overflow-wrap: anywhere;
+  }
+
   .compact-info {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1px;
-    margin-bottom: 18px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--border);
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: stretch;
   }
 
   .compact-item {
     display: grid;
-    grid-template-columns: 118px minmax(0, 1fr);
-    gap: 10px;
-    align-items: baseline;
+    grid-template-rows: auto 1fr;
+    gap: 6px;
+    align-content: start;
     background: #ffffff;
-    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-left: 4px solid #94a3b8;
+    border-radius: 6px;
+    padding: 10px 12px;
     min-width: 0;
   }
 
   .compact-label {
     color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 750;
+    line-height: 1.25;
+    letter-spacing: 0;
     text-transform: uppercase;
   }
 
   .compact-value {
     color: var(--ink);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 750;
+    line-height: 1.35;
     overflow-wrap: anywhere;
   }
 
@@ -224,19 +327,19 @@
     width: 100%;
     overflow: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 6px;
   }
 
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 12px;
     background: #ffffff;
   }
 
   th,
   td {
-    padding: 8px 10px;
+    padding: 7px 9px;
     border-bottom: 1px solid #e5e7eb;
     text-align: left;
     vertical-align: top;
@@ -287,19 +390,19 @@
 
   .plotly-panel {
     width: 100%;
-    min-height: 360px;
+    min-height: 320px;
   }
 
   .placeholder {
     display: flex;
-    min-height: 140px;
+    min-height: 96px;
     align-items: center;
     justify-content: center;
     border: 1px dashed #cbd5e1;
-    border-radius: 8px;
+    border-radius: 6px;
     background: #f8fafc;
     color: var(--muted);
-    padding: 16px;
+    padding: 12px;
     text-align: center;
   }
 
@@ -334,16 +437,23 @@
 
   iframe.workflow-frame {
     width: 100%;
-    min-height: 620px;
+    min-height: 560px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 6px;
     background: #ffffff;
+  }
+
+  @media (max-width: 960px) {
+    .basic-layout { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 720px) {
     header { padding: 16px; }
     main { padding: 18px 14px 42px; }
     .tabs { padding: 0 10px; }
+    .basic-layout { grid-template-columns: 1fr; }
+    .info-row,
+    .basic-link { grid-template-columns: 1fr; gap: 4px; }
     .grid,
     .grid.wide { grid-template-columns: 1fr; }
     .kv-list { grid-template-columns: 1fr; }
@@ -438,6 +548,21 @@
   </div>
 {%- endmacro %}
 
+{% macro render_info_list(items) -%}
+  {% if items %}
+  <div class="info-list">
+    {% for item in items %}
+    <div class="info-row">
+      <div class="info-label">{{ item.label }}</div>
+      <div class="info-value{% if item.accent %} accent{% endif %}">{{ item.value }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="placeholder">No information was available for this section.</div>
+  {% endif %}
+{%- endmacro %}
+
 <header>
   <div class="header-row">
     <h1>{{ report.title }}</h1>
@@ -463,6 +588,61 @@
 <main>
   <section id="tab-summary" class="tab-panel active">
     <h2>Summary</h2>
+    {% if report.basic_info %}
+    <div class="basic-layout">
+      <div class="basic-stack">
+        <div class="basic-section">
+          <div class="basic-heading">
+            <h3>Run Parameters</h3>
+            <span class="basic-kicker">Production</span>
+          </div>
+          {{ render_info_list(report.basic_info.run_parameters) }}
+        </div>
+
+        {% if report.basic_info.review_links %}
+        <div class="basic-section">
+          <div class="basic-heading">
+            <h3>Review Files</h3>
+            <span class="basic-kicker">Artifacts</span>
+          </div>
+          <div class="basic-links">
+            {% for item in report.basic_info.review_links %}
+            <div class="basic-link">
+              <div class="basic-link-label">{{ item.label }}</div>
+              <div>
+                {% if item.exists and item.href %}
+                <a href="{{ item.href }}">{{ item.path }}</a>
+                {% else %}
+                <span>{{ item.path }}</span>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="basic-stack">
+        <div class="basic-section">
+          <div class="basic-heading">
+            <h3>Post-Production Selection</h3>
+            <span class="basic-kicker">Review</span>
+          </div>
+          {{ render_info_list(report.basic_info.selection_cuts) }}
+        </div>
+
+        <div class="basic-section">
+          <div class="basic-heading">
+            <h3>Live Time</h3>
+            <span class="basic-kicker">DQ Flags</span>
+          </div>
+          {{ render_info_list(report.basic_info.livetimes) }}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="compact-info">
       {% for item in report.summary["items"] %}
       <div class="compact-item">
@@ -563,6 +743,9 @@
 
   <section id="tab-training" class="tab-panel">
     <h2>Training</h2>
+    <h3>Training Review Files</h3>
+    {{ render_artifact_table(report.training.artifacts) }}
+
     <div class="grid">
       <div class="panel">
         <h3>BKG Training Data</h3>

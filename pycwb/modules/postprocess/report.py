@@ -50,6 +50,8 @@ _BASE_TRIGGER_COLUMNS = [
     "coherent_energy",
 ]
 
+_LOUDEST_BACKGROUND_N = 10
+
 
 def _unshifted_jobs_for_progress(progress_path: str) -> Optional[set[int]]:
     try:
@@ -133,6 +135,70 @@ def _trigger_read_columns(path: str, ranking_par: str, extra_columns: Optional[l
     return _available_columns(path, requested, required=[ranking_par])
 
 
+def _update_loudest_triggers(
+    current: Optional[pd.DataFrame],
+    chunk: pd.DataFrame,
+    ranking_par: str,
+    n: int = _LOUDEST_BACKGROUND_N,
+) -> Optional[pd.DataFrame]:
+    if chunk.empty:
+        return current
+
+    ranked = chunk.copy()
+    ranked[ranking_par] = pd.to_numeric(ranked[ranking_par], errors="coerce")
+    ranked = ranked.dropna(subset=[ranking_par])
+    if ranked.empty:
+        return current
+
+    ranked = ranked.nlargest(n, ranking_par)
+    if current is not None and not current.empty:
+        ranked = pd.concat([current, ranked], ignore_index=True)
+        ranked = ranked.nlargest(n, ranking_par)
+    return ranked.reset_index(drop=True)
+
+
+def _write_loudest_background_triggers(
+    df: Optional[pd.DataFrame],
+    out_dir: str,
+    ranking_par: str,
+    far_rho_data: Optional[dict] = None,
+) -> tuple[str, int]:
+    csv_path = os.path.join(out_dir, "loudest_background_triggers.csv")
+    if df is None or df.empty:
+        pd.DataFrame(columns=_trigger_report_columns(ranking_par)).to_csv(csv_path, index=False)
+        return csv_path, 0
+
+    df = df.sort_values(ranking_par, ascending=False).reset_index(drop=True).copy()
+    df.insert(0, "bkg_rank", np.arange(1, len(df) + 1, dtype=int))
+    if far_rho_data is not None:
+        bins = np.asarray(far_rho_data["bins"], dtype=float)
+        far = np.asarray(far_rho_data["far"], dtype=float)
+        rho_vals = pd.to_numeric(df[ranking_par], errors="coerce").to_numpy(dtype=float)
+        idx = np.searchsorted(bins, rho_vals, side="right") - 1
+        idx = np.clip(idx, 0, len(far) - 1)
+        attached_far = far[idx]
+        df["far_attached"] = attached_far
+        df["ifar_years"] = 1.0 / np.maximum(attached_far, 1e-30)
+
+    cols = [
+        col for col in ["bkg_rank", *_trigger_report_columns(ranking_par, include_shift_key=True)]
+        if col in df.columns
+    ]
+    for col in ["far_attached", "ifar_years"]:
+        if col in df.columns and col not in cols:
+            cols.append(col)
+    extra_cols = [
+        col for col in df.columns
+        if (
+            col.startswith(("time_lag_", "segment_lag_", "segment_shift_", "shift_"))
+            or col in {"time_lag", "segment_lag", "segment_shift", "shift"}
+        ) and col not in cols
+    ]
+    cols.extend(extra_cols)
+    df[cols].to_csv(csv_path, index=False)
+    return csv_path, len(df)
+
+
 def _sum_progress_livetime(
     progress_path: str,
     *,
@@ -197,6 +263,8 @@ def far_rho_plot(
     ranking_par: str = "rho",
     exclude_zero_lag: bool = True,
     bin_size: float = 0.1,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
     output_dir: str = "public",
     **kwargs,
 ) -> dict:
@@ -222,6 +290,12 @@ def far_rho_plot(
         Exclude physically unshifted zero-lag rows from live time.
     bin_size : float
         Histogram bin size for ranking parameter.
+    vmin : float, optional
+        Override the minimum bin edge.  If *None* (default), the minimum
+        value in the catalog is used.
+    vmax : float, optional
+        Override the maximum bin edge.  If *None* (default), the maximum
+        value in the catalog is used.
     output_dir : str
         Directory for output plots (relative to *work_dir*).
 
@@ -246,6 +320,7 @@ def far_rho_plot(
         [ranking_par] + _lag_filter_columns(cat_path, include_segment_shift=True),
         required=[ranking_par],
     )
+    loudest_columns = _trigger_read_columns(cat_path, ranking_par)
 
     n_triggers = 0
     n_valid = 0
@@ -264,9 +339,16 @@ def far_rho_plot(
         vmin = chunk_min if vmin is None else min(vmin, chunk_min)
         vmax = chunk_max if vmax is None else max(vmax, chunk_max)
 
+    # ── Override bin range with user-supplied vmin/vmax ──────────────────
+    if vmin is not None:
+        vmin = float(vmin)
+    if vmax is not None:
+        vmax = float(vmax)
+
     if vmin is None or vmax is None:
         raise ValueError(f"No valid '{ranking_par}' values found in {cat_path}")
     logger.info("Triggers: %d total, %d with valid %s", n_triggers, n_valid, ranking_par)
+    logger.info("Bin range: [%s, %s], bin_size=%s", vmin, vmax, bin_size)
 
     # ── Live time ────────────────────────────────────────────────────────
     if livetime is None:
@@ -288,12 +370,16 @@ def far_rho_plot(
     if len(bins) < 2:
         bins = np.array([vmin, vmin + bin_size])
     hist = np.zeros(len(bins) - 1, dtype=np.int64)
-    for chunk in _iter_parquet_row_groups(cat_path, columns):
+    loudest_triggers: Optional[pd.DataFrame] = None
+    for chunk in _iter_parquet_row_groups(cat_path, loudest_columns):
         if exclude_zero_lag:
             chunk = chunk[nonzero_lag_mask(chunk, unshifted_job_ids=trigger_unshifted_jobs)]
         values = pd.to_numeric(chunk[ranking_par], errors="coerce").dropna().to_numpy()
         if len(values) > 0:
             hist += np.histogram(values, bins=bins)[0]
+        loudest_triggers = _update_loudest_triggers(
+            loudest_triggers, chunk, ranking_par, _LOUDEST_BACKGROUND_N,
+        )
     # Cumulative from high to low
     cum_hist = np.cumsum(hist[::-1])[::-1]
     far = cum_hist / max(livetime_years, 1e-10)
@@ -313,6 +399,9 @@ def far_rho_plot(
     os.makedirs(out_dir, exist_ok=True)
     plot_far_rho(data, out_dir)
     plot_n_events(data, out_dir)
+    loudest_csv, loudest_n = _write_loudest_background_triggers(
+        loudest_triggers, out_dir, ranking_par, data,
+    )
 
     # Save JSON
     json_path = os.path.join(out_dir, "far_rho.json")
@@ -321,8 +410,15 @@ def far_rho_plot(
     with open(json_path, "w") as f:
         json.dump(json_data, f, indent=2)
     logger.info("FAR data → %s", json_path)
+    logger.info("Loudest BKG triggers → %s", loudest_csv)
 
-    return {"far_rho": data}
+    return {
+        "far_rho": data,
+        "loudest_background_triggers": {
+            "csv": loudest_csv,
+            "n": loudest_n,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +531,7 @@ def zero_lag_report(
         zl_livetime_years,
         out_dir,
         known_candidates=known_candidates,
+        far_rho_data=far_rho_data,
     )
 
     # Save CSV
@@ -466,6 +563,7 @@ def fake_openbox_report(
     far_rho_data: Optional[dict] = None,
     ranking_par: str = "rho",
     output_dir: str = "public",
+    ifo_order: Optional[list[str]] = None,
     fake_openbox_n: int = 3,
     fake_openbox_seed: int = 150914,
     exclude_zero_lag: bool = True,
@@ -500,7 +598,7 @@ def fake_openbox_report(
     ]
 
     schema_columns = _parquet_schema_names(cat_path)
-    segment_cols = [col for col in schema_columns if col.startswith("segment_lag_")]
+    segment_cols = _segment_lag_columns_for_config_order(cat_path, schema_columns, ifo_order=ifo_order)
     if not segment_cols:
         raise KeyError("Fake openbox matching requires trigger segment_lag_* columns")
     interval_shift_cols = _interval_shift_columns(selected_intervals)
@@ -577,6 +675,7 @@ def fake_openbox_report(
             out_dir,
             output_prefix=fake_id,
             plot_label=plot_label,
+            far_rho_data=far_rho_data,
         )
         interval_df = interval_df.copy()
         interval_df["fake_openbox_id"] = fake_id
@@ -643,31 +742,75 @@ def standard_background_report(
     ranking_par: str = "rho",
     exclude_zero_lag: bool = True,
     bin_size: float = 0.1,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    far_rho_file: Optional[str] = None,
     output_dir: str = "public",
     include_zero_lag: bool = True,
     zero_lag_catalog_file: Optional[str] = None,
     zero_lag_job_ids_file: Optional[str] = None,
     include_fake_openbox: bool = False,
     fake_openbox_intervals_file: Optional[str] = None,
+    ifo_order: Optional[list[str]] = None,
     fake_openbox_n: int = 3,
     fake_openbox_seed: int = 150914,
     public_alerts_file: Optional[str] = None,
     public_alert_time_window: float = 1.0,
     **kwargs,
 ) -> dict:
-    """Generate standard background report artifacts."""
-    far_result = far_rho_plot(
-        work_dir=work_dir,
-        catalog_file=catalog_file,
-        progress_file=progress_file,
-        job_ids_file=job_ids_file,
-        livetime=livetime,
-        ranking_par=ranking_par,
-        exclude_zero_lag=exclude_zero_lag,
-        bin_size=bin_size,
-        output_dir=output_dir,
-        **kwargs,
-    )
+    """Generate standard background report artifacts.
+
+    Parameters
+    ----------
+    far_rho_file : str, optional
+        Path to a pre-computed binned FAR JSON file (from
+        :func:`evaluate_far_rho` with *bin_size*).  When provided,
+        ``far_rho_plot`` is skipped entirely and the binned data is
+        loaded from this file.  The file must contain ``"bins"``,
+        ``"far"``, ``"cum_events"``, ``"livetime"``, ``"ranking_par"``.
+    """
+    def _resolve(p: str) -> str:
+        return p if os.path.isabs(p) else os.path.join(work_dir, p)
+
+    if far_rho_file:
+        # ── Load pre-computed binned FAR ─────────────────────────────
+        import json as _json
+        far_path = _resolve(far_rho_file)
+        with open(far_path) as f:
+            binned = _json.load(f)
+        # Unwrap if double-wrapped
+        if "bins" not in binned and "far_rho" in binned:
+            binned = binned["far_rho"]
+        required = {"bins", "far", "cum_events", "livetime", "ranking_par"}
+        missing = required - set(binned.keys())
+        if missing:
+            raise KeyError(f"far_rho_file missing required keys: {sorted(missing)}")
+        out_dir = _resolve(output_dir)
+        os.makedirs(out_dir, exist_ok=True)
+        # Generate plots from the loaded data
+        plot_far_rho(binned, out_dir)
+        plot_n_events(binned, out_dir)
+        # Save a local copy of the binned JSON in the output dir
+        json_path = os.path.join(out_dir, "far_rho.json")
+        with open(json_path, "w") as f:
+            _json.dump(binned, f, indent=2)
+        logger.info("Loaded binned FAR from %s → %s", far_path, json_path)
+        far_result = {"far_rho": binned}
+    else:
+        far_result = far_rho_plot(
+            work_dir=work_dir,
+            catalog_file=catalog_file,
+            progress_file=progress_file,
+            job_ids_file=job_ids_file,
+            livetime=livetime,
+            ranking_par=ranking_par,
+            exclude_zero_lag=exclude_zero_lag,
+            bin_size=bin_size,
+            vmin=vmin,
+            vmax=vmax,
+            output_dir=output_dir,
+            **kwargs,
+        )
     result = {"far_rho": far_result}
     if include_zero_lag:
         zero_lag_jobs = zero_lag_job_ids_file
@@ -695,6 +838,7 @@ def standard_background_report(
             far_rho_data=far_result,
             ranking_par=ranking_par,
             output_dir=output_dir,
+            ifo_order=ifo_order,
             fake_openbox_n=fake_openbox_n,
             fake_openbox_seed=fake_openbox_seed,
             exclude_zero_lag=exclude_zero_lag,
@@ -719,7 +863,15 @@ def _attach_far_and_significance(
     rho_vals = pd.to_numeric(df[ranking_par], errors="coerce").to_numpy(dtype=float)
     idx = np.searchsorted(bins, rho_vals, side="right") - 1
     idx = np.clip(idx, 0, len(far) - 1)
-    attached_far = far[idx]
+    attached_far = far[idx].copy()
+
+    # Replace zero FAR (empty bins beyond the data range) with the
+    # smallest non-zero FAR so that triggers louder than any background
+    # get a meaningful IFAR estimate instead of 1e30.
+    far_nonzero = far[far > 0]
+    if len(far_nonzero) > 0:
+        far_min = far_nonzero.min()
+        attached_far = np.maximum(attached_far, far_min)
 
     df["far_attached"] = attached_far
     df["ifar_years"] = 1.0 / np.maximum(attached_far, 1e-30)
@@ -749,6 +901,38 @@ def _interval_shift_columns(intervals: pd.DataFrame) -> list[str]:
         ],
         key=suffix_index,
     )
+
+
+def _segment_lag_columns_for_config_order(
+    path: str,
+    schema_columns: list[str],
+    ifo_order: Optional[list[str]] = None,
+) -> list[str]:
+    """Return segment-lag columns ordered like config['ifo'] when available."""
+    segment_cols = [col for col in schema_columns if col.startswith("segment_lag_")]
+    if not segment_cols:
+        return []
+
+    ifos = ifo_order
+    if not ifos:
+        try:
+            from pycwb.modules.catalog.catalog import Catalog
+
+            config = Catalog.open(path).config
+        except Exception:
+            config = {}
+
+        ifos = config.get("ifo") if isinstance(config, dict) else None
+    if not ifos:
+        return segment_cols
+
+    by_ifo = {
+        col[len("segment_lag_"):]: col
+        for col in segment_cols
+    }
+    ordered = [by_ifo[ifo] for ifo in ifos if ifo in by_ifo]
+    ordered.extend(col for col in segment_cols if col not in ordered)
+    return ordered
 
 
 def _shift_key_series(df: pd.DataFrame, segment_cols: list[str]) -> pd.Series:
@@ -900,26 +1084,31 @@ def plot_zero_lag(
     known_candidates: Optional[dict[int, str]] = None,
     output_prefix: str = "zero_lag",
     plot_label: str = "Zero-lag",
+    far_rho_data: Optional[dict] = None,
 ) -> None:
-    """Plot zero-lag trigger IFAR scatter + significance histogram.
+    """Plot zero-lag trigger FAR scatter + significance histogram.
 
     Produces two subplots:
-    1. IFAR vs *ranking_par* scatter, colour-coded by Poisson significance.
+    1. FAR vs *ranking_par* scatter, colour-coded by Poisson significance,
+       with optional background FAR step-curve overlay.
     2. Significance distribution histogram with 3σ / 5σ markers.
 
     Parameters
     ----------
     df : pd.DataFrame
         Zero-lag triggers with columns *ranking_par*, ``significance``,
-        ``ifar_years``.
+        ``far_attached``.
     ranking_par : str
         Column name for the ranking statistic (e.g. ``"rho"``).
     livetime_years : float
         Zero-lag live time in years (for plot title).
     out_dir : str
-        Directory to write ``zero_lag_report.png``.
+        Directory to write ``{output_prefix}_report.png``.
     known_candidates : dict, optional
         Public alert names keyed by index in the zero-lag IFAR array.
+    far_rho_data : dict, optional
+        FAR data from :func:`far_rho_plot`, with keys ``bins`` and ``far``.
+        If provided, overlaid as a background step curve on the scatter plot.
     """
     try:
         import matplotlib
@@ -935,17 +1124,26 @@ def plot_zero_lag(
     rho = df[ranking_par].values
     sig = df["significance"].values if "significance" in df.columns else np.zeros(len(df))
     ifar = df["ifar_years"].values if "ifar_years" in df.columns else np.zeros(len(df))
+    far_attached = df["far_attached"].values if "far_attached" in df.columns else np.zeros(len(df))
 
-    # ── Figure 1: IFAR scatter + significance histogram ──────────────────
+    # ── Figure 1: FAR scatter + significance histogram ───────────────────
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-    ax1.scatter(rho, ifar, c=sig, cmap="viridis", s=30, alpha=0.8, edgecolors="gray", linewidth=0.3)
+    ax1.scatter(rho, far_attached, c=sig, cmap="viridis", s=30, alpha=0.8, edgecolors="gray", linewidth=0.3)
     ax1.set_xlabel(ranking_par)
-    ax1.set_ylabel("IFAR [yr]")
+    ax1.set_ylabel("FAR [yr⁻¹]")
     ax1.set_yscale("log")
     ax1.set_title(f"{plot_label} triggers (livetime={livetime_years:.1f} yr)")
     ax1.grid(True, alpha=0.3)
     cbar = plt.colorbar(ax1.collections[0], ax=ax1, label="significance")
+
+    # ── Overlay background FAR step curve ────────────────────────────────
+    if far_rho_data is not None:
+        bins = np.asarray(far_rho_data["bins"], dtype=float)
+        bkg_far = np.asarray(far_rho_data["far"], dtype=float)
+        ax1.step(bins, bkg_far, where="mid", color="crimson", linewidth=1.5,
+                 label="Background FAR", zorder=10)
+        ax1.legend(loc="upper right")
 
     ax2.hist(sig, bins=30, color="steelblue", edgecolor="white", alpha=0.8)
     ax2.axvline(3, color="crimson", linestyle="--", alpha=0.7, label="3σ")
@@ -1009,7 +1207,12 @@ def plot_zero_lag_poisson(
         return
 
     ifar = np.asarray(ifar, dtype=float)
-    valid_event_indices = np.where(np.isfinite(ifar) & (ifar > 0))[0]
+    # Exclude NaN, non-positive, and absurdly large IFAR values
+    # (e.g. 1e30 from zero-FAR bins — see _attach_far_and_significance).
+    ifar_ceiling = max(livetime_years * 1e6, 1e10)
+    valid_event_indices = np.where(
+        np.isfinite(ifar) & (ifar > 0) & (ifar <= ifar_ceiling)
+    )[0]
     if len(valid_event_indices) == 0:
         return
 
