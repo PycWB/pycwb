@@ -19,14 +19,12 @@ from pycwb.types.job import WaveSegment
 from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
-from pycwb.types.network_pixel import Pixel, PixelData
+from pycwb.types.pixel_arrays import PixelArrays
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
 from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
 from numba import njit
 from typing import Any
 from scipy.special import gammaincc as _scipy_gammaincc
-from scipy.sparse import csr_matrix
-from scipy.sparse.csgraph import connected_components as _cc
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +140,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     dict
         Keys: ``tf_maps``, ``Eo``, ``job_seg``, ``pattern``, ``level``,
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
-        ``segEdge``.
+        ``segEdge``, ``selection_cache``.
     """
     timer_start = time.perf_counter()
     level = config.l_high - i
@@ -226,6 +224,11 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         alp=alp if pattern != 0 else None,
         edge=config.segEdge,
     )
+    selection_cache = _build_selection_cache(
+        tf_maps,
+        edge=config.segEdge,
+        lag_shifts_by_lag=getattr(job_seg, "lag_shifts", None),
+    )
 
     # Extract lag count from job segment for setup dictionary
     n_lag = job_seg.n_lag
@@ -243,6 +246,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         "select_subrho": config.select_subrho,
         "select_subnet": config.select_subnet,
         "segEdge": config.segEdge,
+        "selection_cache": selection_cache,
     }
 
 
@@ -303,6 +307,7 @@ def coherence_single_lag(
             lag_shifts=job_seg.lag_shifts[lag_idx],
             veto=veto,
             edge=setup["segEdge"],
+            selection_cache=setup.get("selection_cache"),
         )
         t_select = time.perf_counter() - t0_select
         n_candidates = int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
@@ -638,7 +643,104 @@ def apply_veto(tf_map: TimeFrequencyMap, tw: float, segment_list: list[tuple[flo
     return (live, veto) if return_mask else live
 
 
-def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energy_threshold: float, lag_shifts: np.ndarray | list | None = None, veto: np.ndarray | None = None, edge: float = 0.0) -> dict:
+def _shift_bins_from_lag_shifts(lag_shifts: np.ndarray | list | None, n_ifo: int, rate: float) -> np.ndarray:
+    """Convert per-detector lag shifts in seconds to circular TF-bin shifts."""
+    if lag_shifts is None:
+        shifts_sec = np.zeros(n_ifo, dtype=float)
+    else:
+        shifts_sec = np.asarray(lag_shifts, dtype=float)
+        if shifts_sec.size != n_ifo:
+            raise ValueError("lag_shifts size mismatch with number of detectors")
+    ref = float(np.min(shifts_sec)) if shifts_sec.size else 0.0
+    return np.asarray([int((float(s) - ref) * rate + 0.001) for s in shifts_sec], dtype=np.int64)
+
+
+def _build_selection_cache(
+    tf_maps: list[TimeFrequencyMap],
+    edge: float = 0.0,
+    lag_shifts_by_lag: np.ndarray | list | None = None,
+) -> dict:
+    """Build lag-invariant numeric inputs for :func:`select_network_pixels`."""
+    if not tf_maps or not hasattr(tf_maps[0], "data"):
+        raise ValueError("select_network_pixels requires TF maps")
+
+    arrays = [_get_tf_energy_array(tfm, edge=None) for tfm in tf_maps]
+    if not all(arr.ndim == 2 for arr in arrays):
+        raise ValueError("python get_network_pixels expects 2D TF arrays")
+
+    n_freq, n_time = arrays[0].shape
+    for arr in arrays[1:]:
+        if arr.shape != (n_freq, n_time):
+            raise ValueError("all detector TF maps must have the same shape")
+
+    dt = float(tf_maps[0].dt)
+    if dt <= 0.0:
+        raise ValueError("tf_map.dt must be positive")
+    rate = 1.0 / dt
+
+    edge_bins = int(max(0, float(edge) * rate + 0.001))
+    valid_start = edge_bins
+    valid_stop = n_time - edge_bins
+    nn_valid = valid_stop - valid_start
+
+    f_low = float(getattr(tf_maps[0], "f_low", 0.0) or 0.0)
+    f_high_attr = getattr(tf_maps[0], "f_high", None)
+    f_high = float(f_high_attr) if f_high_attr is not None else float((n_freq - 1) * tf_maps[0].df)
+    df = float(getattr(tf_maps[0], "df", 0.0) or 0.0)
+
+    ib = 1
+    ie = n_freq
+    if df > 0:
+        freqs = np.arange(n_freq, dtype=np.float64) * df
+        for idx_f, freq in enumerate(freqs):
+            if freq <= f_high:
+                ie = idx_f
+            if freq <= f_low:
+                ib = idx_f + 1
+    ie = min(ie, n_freq - 1)
+    ib = max(ib, 1)
+
+    shift_bins_by_lag = None
+    if lag_shifts_by_lag is not None:
+        lag_shift_rows = list(lag_shifts_by_lag)
+        shift_bins_by_lag = (np.vstack([
+            _shift_bins_from_lag_shifts(lag_shifts, len(arrays), rate)
+            for lag_shifts in lag_shift_rows
+        ]).astype(np.int64, copy=False)
+            if lag_shift_rows
+            else np.empty((0, len(arrays)), dtype=np.int64))
+
+    tf0 = tf_maps[0]
+    return {
+        "arrays_stack": np.ascontiguousarray(np.stack(arrays, axis=0), dtype=np.float64),
+        "n_ifo": len(arrays),
+        "n_freq": n_freq,
+        "n_time": n_time,
+        "dt": dt,
+        "rate": rate,
+        "edge_bins": edge_bins,
+        "valid_start": valid_start,
+        "valid_stop": valid_stop,
+        "nn_valid": nn_valid,
+        "ib": ib,
+        "ie": ie,
+        "start": float(getattr(tf0, "start", 0.0)),
+        "stop": float(getattr(tf0, "stop", 0.0)),
+        "f_low": f_low,
+        "f_high": float(getattr(tf0, "f_high", (n_freq - 1) * df) or 0.0),
+        "shift_bins_by_lag": shift_bins_by_lag,
+    }
+
+
+def select_network_pixels(
+    tf_maps: list[TimeFrequencyMap],
+    lag_index: int,
+    energy_threshold: float,
+    lag_shifts: np.ndarray | list | None = None,
+    veto: np.ndarray | None = None,
+    edge: float = 0.0,
+    selection_cache: dict | None = None,
+) -> dict:
     """
     Select significant pixels above energy threshold for one lag.
 
@@ -656,6 +758,10 @@ def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energ
         Binary veto array in time bins (1 keep, 0 reject).
     edge : float, optional
         Edge margin in seconds. Default is 0.0.
+    selection_cache : dict or None, optional
+        Lag-invariant numeric cache produced by :func:`_build_selection_cache`.
+        When omitted, it is built from ``tf_maps`` for backwards-compatible
+        direct calls.
 
     Returns
     -------
@@ -675,84 +781,49 @@ def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energ
         - ``f_low``          : float | None — low-frequency edge
         - ``f_high``         : float | None — high-frequency edge
     """
-    if not tf_maps or not hasattr(tf_maps[0], "data"):
-        raise ValueError("select_network_pixels requires TF maps")
-    arrays = [_get_tf_energy_array(tfm, edge=None) for tfm in tf_maps]
-    if not all(arr.ndim == 2 for arr in arrays):
-        raise ValueError("python get_network_pixels expects 2D TF arrays")
+    if selection_cache is None:
+        selection_cache = _build_selection_cache(tf_maps, edge=edge)
 
-    n_ifo = len(arrays)
-    n_freq, n_time = arrays[0].shape
-    dt = float(tf_maps[0].dt)
+    arrays_stack = selection_cache["arrays_stack"]
+    n_ifo = int(selection_cache["n_ifo"])
+    n_freq = int(selection_cache["n_freq"])
+    n_time = int(selection_cache["n_time"])
+    rate = float(selection_cache["rate"])
 
-    if lag_shifts is None:
-        shifts_sec = np.zeros(n_ifo, dtype=float)
+    shift_bins_by_lag = selection_cache.get("shift_bins_by_lag")
+    if shift_bins_by_lag is not None and 0 <= int(lag_index) < len(shift_bins_by_lag):
+        shift_bins_arr = np.asarray(shift_bins_by_lag[int(lag_index)], dtype=np.int64)
     else:
-        shifts_sec = np.asarray(lag_shifts, dtype=float)
-        if shifts_sec.size != n_ifo:
-            raise ValueError("lag_shifts size mismatch with number of detectors")
-    ref = min(shifts_sec)
-    rate = 1.0 / dt
-    shift_bins = [int((s - ref) * rate + 0.001) for s in shifts_sec]
-
-    edge_bins = int(max(0, float(edge) * rate + 0.001))
-    valid_start = edge_bins
-    valid_stop = n_time - edge_bins
-    nn_valid = valid_stop - valid_start
-
-    # Pre-compute frequency band limits (passed to the Numba kernel)
-    f_low = float(getattr(tf_maps[0], "f_low", 0.0) or 0.0)
-    f_high_attr = getattr(tf_maps[0], "f_high", None)
-    f_high = float(f_high_attr) if f_high_attr is not None else float((n_freq - 1) * tf_maps[0].df)
-    df = float(getattr(tf_maps[0], "df", 0.0) or 0.0)
-
-    ib = 1
-    ie = n_freq
-    if df > 0:
-        freqs = np.arange(n_freq, dtype=np.float64) * df
-        for idx_f, freq in enumerate(freqs):
-            if freq <= f_high:
-                ie = idx_f
-            if freq <= f_low:
-                ib = idx_f + 1
-    ie = min(ie, n_freq - 1)
-    ib = max(ib, 1)
+        shift_bins_arr = _shift_bins_from_lag_shifts(lag_shifts, n_ifo, rate)
+    edge_bins = int(selection_cache["edge_bins"])
+    valid_start = int(selection_cache["valid_start"])
+    valid_stop = int(selection_cache["valid_stop"])
+    nn_valid = int(selection_cache["nn_valid"])
+    ib = int(selection_cache["ib"])
+    ie = int(selection_cache["ie"])
 
     eo = float(energy_threshold)
     em = 2.0 * eo
     eh = em * em
 
-    # Build detector stack once; reused below by _compute_pixel_data_arrays
-    arrays_stack   = np.stack(arrays, axis=0).astype(np.float64)  # (n_ifo, n_freq, n_time)
-    shift_bins_arr = np.asarray(shift_bins, dtype=np.int64)
-    veto_arr = (veto.astype(np.int16) if (veto is not None and len(veto) == n_time)
+    veto_arr = (veto.astype(np.int16, copy=False) if (veto is not None and len(veto) == n_time)
                 else np.zeros(0, dtype=np.int16))
 
-    # Merged align + threshold + pixel selection in one Numba pass
-    combined_raw, selected, live_mask = _align_threshold_select_numba(
+    # Build the clipped support map, then emit sparse selected pixels directly.
+    combined, live_mask = _align_threshold_map_numba(
         arrays_stack, shift_bins_arr,
         int(valid_start), int(nn_valid),
         veto_arr, (veto is not None and len(veto) == n_time),
         int(edge_bins), int(ib), int(ie),
+        eo, em,
+    )
+    selected, freq_idx, time_idx, values, pix_det_energy, pix_det_index = _select_candidates_numba(
+        combined, arrays_stack, shift_bins_arr,
+        int(valid_start), int(valid_stop), int(nn_valid), int(n_freq),
+        int(edge_bins), int(ib), int(ie),
         eo, em, eh,
     )
-    freq_idx, time_idx = np.where(selected)
-    values = combined_raw[freq_idx, time_idx]
 
-    # Precompute per-(pixel, detector) numeric values with Numba (avoids inner Python loop)
-    # arrays_stack and shift_bins_arr already built above the kernel call
-    if len(freq_idx) > 0:
-        pix_det_energy, pix_det_index = _compute_pixel_data_arrays(
-            freq_idx.astype(np.int64), time_idx.astype(np.int64),
-            arrays_stack.astype(np.float64),
-            shift_bins_arr,
-            int(valid_start), int(valid_stop), int(nn_valid), int(n_freq),
-        )
-    else:
-        pix_det_energy = np.empty((0, n_ifo), dtype=np.float64)
-        pix_det_index  = np.empty((0, n_ifo), dtype=np.int64)
-
-    tf0 = tf_maps[0]
     return {
         "mask": selected,
         "time": time_idx,
@@ -760,12 +831,12 @@ def select_network_pixels(tf_maps: list[TimeFrequencyMap], lag_index: int, energ
         "energy": values,
         "pix_det_energy": pix_det_energy,  # (n_pix, n_ifo) float64: energy per pixel per detector
         "pix_det_index": pix_det_index,    # (n_pix, n_ifo) int64: TF index per pixel per detector
-        "rate": float(1.0 / dt),
+        "rate": rate,
         "layers": n_freq,
-        "start": float(getattr(tf0, "start", 0.0)),
-        "stop": float(getattr(tf0, "stop", 0.0)),
-        "f_low": float(getattr(tf0, "f_low", 0.0) or 0.0),
-        "f_high": float(getattr(tf0, "f_high", (n_freq - 1) * float(getattr(tf0, "df", 0.0))) or 0.0),
+        "start": float(selection_cache["start"]),
+        "stop": float(selection_cache["stop"]),
+        "f_low": float(selection_cache["f_low"]),
+        "f_high": float(selection_cache["f_high"]),
         "live_mask": live_mask,
         "live_samples": int(np.sum(live_mask)),
     }
@@ -798,8 +869,8 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> Fragment
 
     f_idx_arr      = np.asarray(pixel_candidates.get("frequency", []), dtype=np.int64)
     t_idx_arr      = np.asarray(pixel_candidates.get("time", []), dtype=np.int64)
-    pix_det_energy = pixel_candidates.get("pix_det_energy", np.empty((0, 0), dtype=np.float64))
-    pix_det_index  = pixel_candidates.get("pix_det_index",  np.empty((0, 0), dtype=np.int64))
+    pix_det_energy = np.asarray(pixel_candidates.get("pix_det_energy", np.empty((0, 0), dtype=np.float64)), dtype=np.float64)
+    pix_det_index  = np.asarray(pixel_candidates.get("pix_det_index",  np.empty((0, 0), dtype=np.int64)), dtype=np.int64)
     energy_arr     = np.asarray(pixel_candidates.get("energy", []), dtype=np.float64)
     layers = int(pixel_candidates.get("layers", 1))
     rate   = float(pixel_candidates.get("rate", 0.0))
@@ -811,44 +882,23 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> Fragment
         clusters = []
     else:
         # --- Connected-components labeling with rectangular (kf, kt) connectivity ---
-        # scipy.ndimage.label requires structure shape (3, 3) for 2D inputs in
-        # newer scipy versions, so we build a sparse adjacency graph instead.
         # Two pixels are directly connected if |Δfreq| ≤ kf AND |Δtime| ≤ kt.
+        raw_labels = _label_components_grid(
+            f_idx_arr, t_idx_arr, mask.shape[0], mask.shape[1], kf, kt
+        )
 
-        # Build sparse adjacency via Numba COO builder (avoids O(n²) dense arrays)
-        if n_pix > 0:
-            rows_coo, cols_coo = _build_adj_coo(f_idx_arr, t_idx_arr, kf, kt)
-            n_edges  = len(rows_coo)
-            all_rows = np.concatenate([rows_coo, cols_coo])
-            all_cols = np.concatenate([cols_coo, rows_coo])
-            adj = csr_matrix(
-                (np.ones(2 * n_edges, dtype=np.bool_), (all_rows, all_cols)),
-                shape=(n_pix, n_pix),
-            )
-            _, raw_labels = _cc(adj, directed=False, connection='weak')
-            # raw_labels is 0-indexed; shift to 1-indexed to match ndimage convention
-            raw_labels = raw_labels + 1
-        else:
-            raw_labels = np.array([], dtype=np.int64)
-
-        # Build a labeled 2D array (same shape as mask) for downstream code
-        labeled = np.zeros(mask.shape, dtype=np.int64)
-        labeled[f_idx_arr, t_idx_arr] = raw_labels
-
-        # Group pixel indices by their 2D label (O(n))
-        grouped: dict = {}
-        for pix_idx in range(n_pix):
-            lbl = int(labeled[f_idx_arr[pix_idx], t_idx_arr[pix_idx]])
+        n_groups = int(raw_labels.max()) if raw_labels.size else 0
+        group_list = [[] for _ in range(n_groups)]
+        for pix_idx, lbl in enumerate(raw_labels):
             if lbl > 0:
-                grouped.setdefault(lbl, []).append(pix_idx)
+                group_list[int(lbl) - 1].append(pix_idx)
 
         # Batch subnet/subrho: one Numba call across all clusters instead of ~n_clusters calls.
-        group_list = [g for g in grouped.values() if g]
-        n_groups = len(group_list)
+        pix_asnr = np.sqrt(pix_det_energy) if n_ifo > 0 else np.empty((n_pix, 0), dtype=np.float64)
         if n_groups > 0 and n_ifo > 1:
             n_sub_c = 2.0 * _igamma_inv_upper(float(n_ifo - 1), 0.314)
             all_pix_idx = np.array([pid for g in group_list for pid in g], dtype=np.int64)
-            asnr_all = np.sqrt(pix_det_energy[all_pix_idx])   # (n_flat, n_ifo)
+            asnr_all = pix_asnr[all_pix_idx]                  # (n_flat, n_ifo)
             noise_rms_all = np.ones_like(asnr_all)            # noise_rms=1.0 at this stage
             sizes = np.array([len(g) for g in group_list], dtype=np.int64)
             offsets_arr = np.zeros(n_groups + 1, dtype=np.int64)
@@ -860,37 +910,30 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> Fragment
             subnet_arr = np.zeros(n_groups, dtype=np.float64)
             subrho_arr = np.zeros(n_groups, dtype=np.float64)
 
-        # Construct Cluster objects; build Pixel objects here (deferred from select_network_pixels)
+        # Construct Cluster objects with PixelArrays directly; legacy Pixel
+        # objects can still be reconstructed lazily through Cluster.pixels.
         clusters = []
         for c_idx, group_indices in enumerate(group_list):
             idx_arr = np.array(group_indices, dtype=np.int64)
-            group_pixels = []
-            for pid in group_indices:
-                f_i = int(f_idx_arr[pid])
-                t_i = int(t_idx_arr[pid])
-                pixel_data_list = [
-                    PixelData(
-                        noise_rms=1.0,
-                        wave=0.0, w_90=0.0,
-                        asnr=float(np.sqrt(pix_det_energy[pid, d])),
-                        a_90=0.0, rank=0.0,
-                        index=int(pix_det_index[pid, d]),
-                    )
-                    for d in range(n_ifo)
-                ]
-                group_pixels.append(Pixel(
-                    time=int(t_i * layers + f_i),
-                    frequency=f_i,
-                    layers=layers,
-                    rate=rate,
-                    likelihood=float(energy_arr[pid]),
-                    null=0.0, theta=0.0, phi=0.0,
-                    ellipticity=0.0, polarisation=0.0,
-                    core=1, data=pixel_data_list, td_amp=[], neighbors=[],
-                ))
+            f_group = f_idx_arr[idx_arr]
+            t_group = t_idx_arr[idx_arr]
+            n_group = len(idx_arr)
+            pixel_arrays = PixelArrays.from_arrays(
+                time=t_group * layers + f_group,
+                frequency=f_group,
+                layers=np.full(n_group, layers, dtype=np.int32),
+                rate=np.full(n_group, rate, dtype=np.float32),
+                core=np.ones(n_group, dtype=bool),
+                likelihood=energy_arr[idx_arr],
+                null=np.zeros(n_group, dtype=np.float32),
+                noise_rms=np.ones((n_ifo, n_group), dtype=np.float32),
+                pixel_index=pix_det_index[idx_arr].T if n_ifo > 0 else np.zeros((0, n_group), dtype=np.int32),
+                asnr=pix_asnr[idx_arr].T if n_ifo > 0 else np.zeros((0, n_group), dtype=np.float32),
+                n_ifo=n_ifo,
+            )
             energy = float(energy_arr[idx_arr].sum())
-            c_time = float(np.mean(t_idx_arr[idx_arr].astype(float) * dt - dt / 2))
-            c_freq = float(np.mean(f_idx_arr[idx_arr].astype(float) * (rate / 2)))
+            c_time = float(np.mean(t_group.astype(float) * dt - dt / 2))
+            c_freq = float(np.mean(f_group.astype(float) * (rate / 2)))
             cluster_meta = ClusterMeta(
                 energy=energy,
                 like_net=energy,
@@ -899,9 +942,9 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> Fragment
                 c_time=c_time,
                 c_freq=c_freq,
             )
-            clusters.append(Cluster(pixels=group_pixels, cluster_meta=cluster_meta))
+            clusters.append(Cluster(pixel_arrays=pixel_arrays, cluster_meta=cluster_meta))
 
-    n_pix_final = int(sum(len(c.pixels) for c in clusters))
+    n_pix_final = int(sum(len(c.pixel_arrays) for c in clusters))
     logger.info("cluster_pixels: n_clusters=%d n_pix=%d", len(clusters), n_pix_final)
     return FragmentCluster(
         rate=float(pixel_candidates.get("rate", 0.0)),
@@ -924,82 +967,127 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1) -> Fragment
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
-def _build_adj_coo(f_arr: np.ndarray, t_arr: np.ndarray, kf: int, kt: int) -> tuple[np.ndarray, np.ndarray]:
-    """Build COO edge list for the pixel neighbourhood graph.
-
-    Two pixels are adjacent when |Δfreq| ≤ kf AND |Δtime| ≤ kt.
-    Sorts pixels by (f, t) so the inner loop can break early once
-    Δf > kf, reducing O(n²) to O(n × avg_neighbors_in_freq_band).
-    """
-    n = len(f_arr)
-    if n == 0:
-        return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
-
-    # Sort by f (primary), t (secondary) via a combined key
-    max_t_val = np.max(t_arr) + 1
-    sort_key = f_arr * max_t_val + t_arr
-    order = np.argsort(sort_key)
-    sf = f_arr[order]
-    st = t_arr[order]
-
-    # Two-pass: count then fill.
-    # After sorting, sf[j] >= sf[i] for j > i, so we break as soon as sf[j] - sf[i] > kf.
-    count = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            if sf[j] - sf[i] > kf:
-                break
-            if abs(st[j] - st[i]) <= kt:
-                count += 1
-    rows = np.empty(count, dtype=np.int64)
-    cols = np.empty(count, dtype=np.int64)
-    k = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            if sf[j] - sf[i] > kf:
-                break
-            if abs(st[j] - st[i]) <= kt:
-                rows[k] = order[i]
-                cols[k] = order[j]
-                k += 1
-    return rows, cols
+def _uf_find(parent: np.ndarray, x: int) -> int:
+    """Find a union-find root with path compression."""
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
 
 
 @njit(cache=True)
-def _compute_pixel_data_arrays(freq_idx: np.ndarray, time_idx: np.ndarray, arrays_stack: np.ndarray,
-                                shift_bins: np.ndarray, valid_start: int, valid_stop: int,
-                                nn_valid: int, n_freq: int) -> tuple[np.ndarray, np.ndarray]:
-    """Precompute per-(pixel, detector) energy and flat index values.
+def _label_components_grid(
+    f_arr: np.ndarray,
+    t_arr: np.ndarray,
+    n_freq: int,
+    n_time: int,
+    kf: int,
+    kt: int,
+) -> np.ndarray:
+    """Label rectangular-connectivity components for sparse TF pixels.
 
-    Parameters
-    ----------
-    freq_idx, time_idx : int64[n_pix]
-    arrays_stack       : float64[n_ifo, n_freq, n_time]
-    shift_bins         : int64[n_ifo]
-    valid_start, valid_stop, nn_valid, n_freq : int
-
-    Returns
-    -------
-    det_energy : float64[n_pix, n_ifo]
-    det_index  : int64[n_pix, n_ifo]
+    This is equivalent to building an undirected graph with an edge whenever
+    ``abs(df_bin) <= kf`` and ``abs(dt_bin) <= kt``, then running connected
+    components.  The grid index lets each pixel inspect only its bounded local
+    neighbourhood.
     """
-    n_pix = len(freq_idx)
-    n_ifo = arrays_stack.shape[0]
-    det_energy = np.empty((n_pix, n_ifo), dtype=np.float64)
-    det_index  = np.empty((n_pix, n_ifo), dtype=np.int64)
-    for idx in range(n_pix):
-        f_i = freq_idx[idx]
-        t_i = time_idx[idx]
-        for d in range(n_ifo):
-            if nn_valid > 0 and valid_start <= t_i < valid_stop:
-                u     = t_i - valid_start
-                det_t = valid_start + (u + shift_bins[d]) % nn_valid
-            else:
-                det_t = t_i
-            e = arrays_stack[d, f_i, det_t]
-            det_energy[idx, d] = e if e > 0.0 else 0.0
-            det_index[idx, d]  = det_t * n_freq + f_i
-    return det_energy, det_index
+    n = len(f_arr)
+    labels = np.empty(n, dtype=np.int64)
+    if n == 0:
+        return labels
+
+    parent = np.arange(n, dtype=np.int64)
+    index_map = np.full((n_freq, n_time), -1, dtype=np.int64)
+    for i in range(n):
+        f = f_arr[i]
+        t = t_arr[i]
+        if 0 <= f < n_freq and 0 <= t < n_time:
+            old = index_map[f, t]
+            if old >= 0:
+                ri = _uf_find(parent, i)
+                rj = _uf_find(parent, old)
+                if ri != rj:
+                    if ri < rj:
+                        parent[rj] = ri
+                    else:
+                        parent[ri] = rj
+            index_map[f, t] = i
+
+    for i in range(n):
+        f = f_arr[i]
+        t = t_arr[i]
+        if f < 0 or f >= n_freq or t < 0 or t >= n_time:
+            continue
+
+        f0 = f - kf
+        if f0 < 0:
+            f0 = 0
+        f1 = f + kf + 1
+        if f1 > n_freq:
+            f1 = n_freq
+        t0 = t - kt
+        if t0 < 0:
+            t0 = 0
+        t1 = t + kt + 1
+        if t1 > n_time:
+            t1 = n_time
+
+        for ff in range(f0, f1):
+            for tt in range(t0, t1):
+                j = index_map[ff, tt]
+                if j >= 0 and j < i:
+                    ri = _uf_find(parent, i)
+                    rj = _uf_find(parent, j)
+                    if ri != rj:
+                        if ri < rj:
+                            parent[rj] = ri
+                        else:
+                            parent[ri] = rj
+
+    root_to_label = np.full(n, -1, dtype=np.int64)
+    next_label = 1
+    for i in range(n):
+        root = _uf_find(parent, i)
+        lbl = root_to_label[root]
+        if lbl < 0:
+            lbl = next_label
+            root_to_label[root] = lbl
+            next_label += 1
+        labels[i] = lbl
+
+    return labels
+
+
+@njit(cache=True)
+def _candidate_passes_support_numba(
+    combined: np.ndarray,
+    fi: int,
+    t: int,
+    ii: int,
+    eo: float,
+    em: float,
+    eh: float,
+) -> bool:
+    """Return True when one clipped support-map pixel passes cWB selection."""
+    e_val = combined[fi, t]
+    if e_val < eo:
+        return False
+
+    ct = combined[fi + 1, t] + combined[fi, t + 1] + combined[fi + 1, t + 1]
+    cb = combined[fi - 1, t] + combined[fi, t - 1] + combined[fi - 1, t - 1]
+
+    ht = combined[fi + 1, t + 2]
+    if fi < ii:
+        ht += combined[fi + 2, t + 2] + combined[fi + 2, t + 1]
+
+    hb = combined[fi - 1, t - 2]
+    if fi >= 2:
+        hb += combined[fi - 2, t - 2] + combined[fi - 2, t - 1]
+
+    return not ((ct + cb) * e_val < eh
+                and (ct + ht) * e_val < eh
+                and (cb + hb) * e_val < eh
+                and e_val < em)
 
 
 @njit(cache=True)
@@ -1091,7 +1179,7 @@ def _subnet_subrho_batch_numba(
 
 
 @njit(cache=True)
-def _align_threshold_select_numba(
+def _align_threshold_map_numba(
     arrays_stack: np.ndarray,
     shift_bins: np.ndarray,
     valid_start: int,
@@ -1103,13 +1191,8 @@ def _align_threshold_select_numba(
     ie: int,
     eo: float,
     em: float,
-    eh: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Align detectors, apply thresholds, and select pixels in one Numba pass.
-
-    Replaces the Python ``align`` and ``thresh`` phases of
-    :func:`select_network_pixels`, eliminating all intermediate array
-    allocations (no temporary ``aligned`` list, no broadcast copies).
+) -> tuple[np.ndarray, np.ndarray]:
+    """Align detectors and build the clipped support map used for selection.
 
     Parameters
     ----------
@@ -1121,19 +1204,18 @@ def _align_threshold_select_numba(
     has_veto     : bool
     edge_bins    : int
     ib, ie       : int  — inclusive first / exclusive last valid freq indices
-    eo, em, eh   : float  — energy threshold, hard cap (2*eo), cap² (em²)
+    eo, em       : float  — energy threshold, hard cap (2*eo)
 
     Returns
     -------
-    combined_raw : float64[n_freq, n_time]  — raw shifted sum (unclipped)
-    selected     : bool[n_freq, n_time]     — pixel selection mask
-    live_mask    : bool[n_time]             — shifted-veto live output bins
+    combined  : float64[n_freq, n_time]  — clipped support map
+    live_mask : bool[n_time]             — shifted-veto live output bins
     """
     n_ifo  = arrays_stack.shape[0]
     n_freq = arrays_stack.shape[1]
     n_time = arrays_stack.shape[2]
 
-    combined_raw = np.zeros((n_freq, n_time), dtype=np.float64)
+    combined = np.zeros((n_freq, n_time), dtype=np.float64)
     live_mask = np.zeros(n_time, dtype=np.bool_)
 
     for t in range(valid_start, valid_start + nn_valid):
@@ -1147,45 +1229,49 @@ def _align_threshold_select_numba(
                     break
         live_mask[t] = live
 
-    # Phase 1: shift-align each detector and accumulate into combined_raw
+    valid_stop = valid_start + nn_valid
     for fi in range(n_freq):
-        for t in range(valid_start, valid_start + nn_valid):
+        if fi < ib:
+            continue
+        for t in range(valid_start, valid_stop):
+            if has_veto and not live_mask[t]:
+                continue
             u = t - valid_start
             v = 0.0
             for d in range(n_ifo):
                 src_t = valid_start + (u + shift_bins[d]) % nn_valid
                 v += arrays_stack[d, fi, src_t]
-            combined_raw[fi, t] = v
 
-    # Phase 2: copy → apply veto / edge-zeroing / freq-band / threshold clipping
-    combined = combined_raw.copy()
-
-    if has_veto:
-        for t in range(n_time):
-            if not live_mask[t]:
-                for fi in range(n_freq):
-                    combined[fi, t] = 0.0
-
-    for t in range(edge_bins):
-        for fi in range(n_freq):
-            combined[fi, t] = 0.0
-    for t in range(n_time - edge_bins, n_time):
-        for fi in range(n_freq):
-            combined[fi, t] = 0.0
-
-    for fi in range(ib):
-        for t in range(n_time):
-            combined[fi, t] = 0.0
-
-    for fi in range(n_freq):
-        for t in range(n_time):
-            v = combined[fi, t]
             if v < eo:
-                combined[fi, t] = 0.0
+                continue
             elif v > em:
                 combined[fi, t] = em + 0.1
+            else:
+                combined[fi, t] = v
 
-    # Phase 3: neighbourhood support test (pixel selection)
+    return combined, live_mask
+
+
+@njit(cache=True)
+def _select_candidates_numba(
+    combined: np.ndarray,
+    arrays_stack: np.ndarray,
+    shift_bins: np.ndarray,
+    valid_start: int,
+    valid_stop: int,
+    nn_valid: int,
+    n_freq: int,
+    edge_bins: int,
+    ib: int,
+    ie: int,
+    eo: float,
+    em: float,
+    eh: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Emit selected pixels and per-detector payload directly from support map."""
+    n_ifo = arrays_stack.shape[0]
+    n_time = combined.shape[1]
+
     ii     = n_freq - 2
     margin = max(edge_bins, 2)
     t_s    = margin
@@ -1195,27 +1281,39 @@ def _align_threshold_select_numba(
 
     selected = np.zeros((n_freq, n_time), dtype=np.bool_)
 
+    n_pix = 0
     for fi in range(f_s, f_e):
         for t in range(t_s, t_e):
-            e_val = combined[fi, t]
-            if e_val < eo:
-                continue
-
-            ct = combined[fi + 1, t] + combined[fi, t + 1] + combined[fi + 1, t + 1]
-            cb = combined[fi - 1, t] + combined[fi, t - 1] + combined[fi - 1, t - 1]
-
-            ht = combined[fi + 1, t + 2]
-            if fi < ii:
-                ht += combined[fi + 2, t + 2] + combined[fi + 2, t + 1]
-
-            hb = combined[fi - 1, t - 2]
-            if fi >= 2:
-                hb += combined[fi - 2, t - 2] + combined[fi - 2, t - 1]
-
-            if not ((ct + cb) * e_val < eh
-                    and (ct + ht) * e_val < eh
-                    and (cb + hb) * e_val < eh
-                    and e_val < em):
+            if _candidate_passes_support_numba(combined, fi, t, ii, eo, em, eh):
                 selected[fi, t] = True
+                n_pix += 1
 
-    return combined_raw, selected, live_mask
+    freq_idx = np.empty(n_pix, dtype=np.int64)
+    time_idx = np.empty(n_pix, dtype=np.int64)
+    values = np.empty(n_pix, dtype=np.float64)
+    pix_det_energy = np.empty((n_pix, n_ifo), dtype=np.float64)
+    pix_det_index = np.empty((n_pix, n_ifo), dtype=np.int64)
+
+    k = 0
+    for fi in range(f_s, f_e):
+        for t in range(t_s, t_e):
+            if selected[fi, t]:
+                freq_idx[k] = fi
+                time_idx[k] = t
+
+                raw_energy = 0.0
+                for d in range(n_ifo):
+                    if nn_valid > 0 and valid_start <= t < valid_stop:
+                        u = t - valid_start
+                        det_t = valid_start + (u + shift_bins[d]) % nn_valid
+                    else:
+                        det_t = t
+                    e = arrays_stack[d, fi, det_t]
+                    raw_energy += e
+                    pix_det_energy[k, d] = e if e > 0.0 else 0.0
+                    pix_det_index[k, d] = det_t * n_freq + fi
+
+                values[k] = raw_energy
+                k += 1
+
+    return selected, freq_idx, time_idx, values, pix_det_energy, pix_det_index
