@@ -8,7 +8,7 @@ from numba import njit, types
 from numba.typed import List
 
 from pycwb.types.network_cluster import Cluster
-from .sub_net_cut import sub_net_cut
+from .sub_net_cut import sub_net_cut_from_pixel_arrays
 
 if TYPE_CHECKING:
     from pycwb.modules.xtalk.type import XTalk
@@ -196,7 +196,11 @@ def get_cluster_links(
     # TODO: check if it is correct to expose dF as a return value
     dF = 0.0
 
-    cluster_links = []
+    n_clusters = int(np.max(pixels[:, 4])) + 1
+    max_links = n_clusters * (n_clusters - 1) // 2
+    cluster_links = np.empty((max_links, 2), dtype=np.int32)
+    seen = np.zeros((n_clusters, n_clusters), dtype=np.bool_)
+    link_count = 0
     n_pixels = len(pixels)
     for i in range(n_pixels):
         p = pixels[i]
@@ -228,16 +232,21 @@ def get_cluster_links(
 
             if gap >= eps:
                 if p[4] < q[4]:
-                    link = (int(p[4]), int(q[4]))
+                    a = int(p[4])
+                    b = int(q[4])
                 else:
-                    link = (int(q[4]), int(p[4]))
+                    a = int(q[4])
+                    b = int(p[4])
 
-                if link not in cluster_links:
-                    cluster_links.append(link)
+                if not seen[a, b]:
+                    seen[a, b] = True
+                    cluster_links[link_count, 0] = a
+                    cluster_links[link_count, 1] = b
+                    link_count += 1
 
-    if len(cluster_links) == 0:
+    if link_count == 0:
         return np.empty((0, 2), dtype=np.int32), dF
-    return np.array(cluster_links, dtype=np.int32), dF
+    return cluster_links[:link_count], dF
 
 
 @njit(cache=True)
@@ -274,7 +283,11 @@ def get_defragment_link(
     if Tgap < t_gap:
         Tgap = t_gap
 
-    cluster_links = []
+    n_clusters = int(np.max(pixels[:, 4])) + 1
+    max_links = n_clusters * (n_clusters - 1) // 2
+    cluster_links = np.empty((max_links, 2), dtype=np.int32)
+    seen = np.zeros((n_clusters, n_clusters), dtype=np.bool_)
+    link_count = 0
     n_pixels = len(pixels)
     for i in range(n_pixels):
         p = pixels[i]
@@ -305,17 +318,159 @@ def get_defragment_link(
 
             if dT < t_gap and dF < f_gap:
                 if p[4] < q[4]:
-                    link = (int(p[4]), int(q[4]))
+                    a = int(p[4])
+                    b = int(q[4])
                 else:
-                    link = (int(q[4]), int(p[4]))
+                    a = int(q[4])
+                    b = int(p[4])
 
-                if link not in cluster_links:
-                    cluster_links.append(link)
+                if not seen[a, b]:
+                    seen[a, b] = True
+                    cluster_links[link_count, 0] = a
+                    cluster_links[link_count, 1] = b
+                    link_count += 1
 
-    if len(cluster_links) == 0:
+    if link_count == 0:
         return np.empty((0, 2), dtype=np.int32)
     else:
-        return np.array(cluster_links, dtype=np.int32)
+        return cluster_links[:link_count]
+
+
+@njit(cache=True)
+def calculate_statistics_arrays(
+    core_arr: np.ndarray,
+    time_arr: np.ndarray,
+    freq_arr: np.ndarray,
+    rate_arr: np.ndarray,
+    layers_arr: np.ndarray,
+    likelihood_arr: np.ndarray,
+    asnr_arr: np.ndarray,
+    atype: str,
+    core: bool,
+    pair: bool,
+    nPIX: int,
+    S: float,
+    dF: float,
+) -> tuple[bool, float, float, float, float, float]:
+    """
+    Array-argument version of :func:`calculate_statistics`.
+
+    Returns ``(ok, cTime, cFreq, rate_max, rate_min, total_energy)`` and keeps
+    the public matrix-wrapper available for compatibility.
+    """
+    oEo = atype == 'E' or atype == 'P'
+    cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
+    max_size = len(time_arr)
+    rate = np.zeros(max_size, dtype=np.float64)
+    ampl = np.zeros(max_size, dtype=np.float64)
+    powr = np.zeros(max_size, dtype=np.float64)
+    sIZe = np.zeros(max_size, dtype=np.int32)
+    cuts = np.zeros(max_size, dtype=np.bool_)
+    like = np.zeros(max_size, dtype=np.float64)
+    rate_counter = 0
+    pixel_counter = 0
+    n_ifo = asnr_arr.shape[0]
+
+    for i in range(max_size):
+        if not core_arr[i] and core:
+            continue
+        L = likelihood_arr[i]
+        e = 0.0
+        for j in range(n_ifo):
+            a_ifo = asnr_arr[j, i]
+            if abs(a_ifo) > 1.0:
+                e += abs(a_ifo)
+
+        a = L if atype == 'L' else e
+        tt = 1.0 / rate_arr[i]
+        mm = layers_arr[i]
+        cT += int(time_arr[i] / mm) * a
+        nT += a / tt
+        cF += (freq_arr[i] + dF) * a
+        nF += a * 2.0 * tt
+
+        insert = True
+        rate_i = int(rate_arr[i] + 0.1)
+        for j in range(rate_counter):
+            if rate[j] == rate_i:
+                insert = False
+                ampl[j] += e
+                sIZe[j] += 1
+                like[j] += L
+                break
+
+        if insert:
+            rate[rate_counter] = rate_i
+            ampl[rate_counter] = e
+            powr[rate_counter] = 0.0
+            sIZe[rate_counter] = 1
+            cuts[rate_counter] = True
+            like[rate_counter] = L
+            rate_counter += 1
+
+        pixel_counter += 1
+        E += e
+
+    if rate_counter < pair + 1 or pixel_counter < nPIX:
+        return False, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    cut = True
+    for i in range(rate_counter):
+        if (atype == 'L' and like[i] < S) or (oEo and ampl[i] < S):
+            continue
+        if not pair:
+            cuts[i] = False
+            cut = False
+            continue
+        for j in range(rate_counter):
+            if (atype == 'L' and like[j] < S) or (oEo and ampl[j] < S):
+                continue
+            if rate[i] / 2 == rate[j] or rate[j] / 2 == rate[i]:
+                cuts[i] = False
+                cuts[j] = False
+                cut = False
+
+    if cut:
+        return False, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    a = -1.0e99
+    idx_max = -1
+    for j in range(rate_counter):
+        powr[j] = ampl[j] / sIZe[j]
+        if atype == 'E' and ampl[j] > a and not cuts[j]:
+            idx_max = j
+            a = ampl[j]
+        if atype == 'L' and like[j] > a and not cuts[j]:
+            idx_max = j
+            a = like[j]
+        if atype == 'P' and powr[j] > a and not cuts[j]:
+            idx_max = j
+            a = powr[j]
+
+    if a < S:
+        return False, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    idx_min = -1
+    a = -1.0e99
+    for j in range(rate_counter):
+        if idx_max == j:
+            continue
+        if atype == 'E' and ampl[j] < a and not cuts[j]:
+            idx_min = j
+            a = ampl[j]
+        if atype == 'L' and like[j] < a and not cuts[j]:
+            idx_min = j
+            a = like[j]
+        if atype == 'P' and powr[j] < a and not cuts[j]:
+            idx_min = j
+            a = powr[j]
+
+    if idx_min < 0:
+        idx_min = rate_counter - 1
+
+    cTime = cT / nT
+    cFreq = cF / nF
+    return True, cTime, cFreq, rate[idx_max], rate[idx_min], E
 
 
 @njit(cache=True)
@@ -354,120 +509,25 @@ def calculate_statistics(
         ``[cTime, cFreq, rate_max, rate_min, total_energy]`` when the cluster
         passes all cuts, or ``None`` if it should be rejected.
     """
-    oEo = atype == 'E' or atype == 'P'
-    cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
-    max_size = len(pixels)
-    rate = np.zeros(max_size, dtype=np.float64)
-    ampl = np.zeros(max_size, dtype=np.float64)
-    powr = np.zeros(max_size, dtype=np.float64)
-    sIZe = np.zeros(max_size, dtype=np.int32)
-    cuts = np.zeros(max_size, dtype=np.bool_)
-    like = np.zeros(max_size, dtype=np.float64)
-    rate_counter = 0
-    pixel_counter = 0
-    for i in range(len(pixels)):
-        pix = pixels[i]
-        if not pix[0] and core:
-            continue
-        L = pix[5]  # Assuming likelihood is another property, adjust as needed.
-        e = 0.0
-        for a in pix[6:]:  # Assuming data values start from the 6th column
-            e += abs(a) if abs(a) > 1.0 else 0.0
-
-        a = L if atype == 'L' else e
-        tt = 1.0 / pix[3]  # wavelet time resolution
-        mm = pix[4]  # number of wavelet layers
-        cT += int(pix[1] / mm) * a
-        nT += a / tt
-        cF += (pix[2] + dF) * a
-        nF += a * 2.0 * tt
-
-        insert = True
-        for j in range(rate_counter):
-            if rate[j] == int(pix[3] + 0.1):
-                insert = False
-                ampl[j] += e
-                sIZe[j] += 1
-                like[j] += L
-                break
-
-        if insert:
-            rate[rate_counter] = int(pix[3] + 0.1)
-            ampl[rate_counter] = e
-            powr[rate_counter] = 0.0  # Adjust as needed
-            sIZe[rate_counter] = 1
-            cuts[rate_counter] = True  # Adjust as needed
-            like[rate_counter] = L
-            rate_counter += 1
-
-        pixel_counter += 1
-        E += e
-
-    # Trim the arrays to the actual size used
-    rate = rate[:rate_counter]
-    ampl = ampl[:rate_counter]
-    powr = powr[:rate_counter]
-    sIZe = sIZe[:rate_counter]
-    cuts = cuts[:rate_counter]
-    like = like[:rate_counter]
-
-    # cut off single level clusters coincidence between levels
-    if len(rate) < pair + 1 or pixel_counter < nPIX:
+    asnr = pixels[:, 6:].T
+    ok, c_time, c_freq, rate_max, rate_min, energy = calculate_statistics_arrays(
+        pixels[:, 0].astype(np.bool_),
+        pixels[:, 1],
+        pixels[:, 2],
+        pixels[:, 3],
+        pixels[:, 4],
+        pixels[:, 5],
+        asnr,
+        atype,
+        core,
+        pair,
+        nPIX,
+        S,
+        dF,
+    )
+    if not ok:
         return None
-
-    cut = True
-    for i in range(len(rate)):
-        if (atype == 'L' and like[i] < S) or (oEo and ampl[i] < S):
-            continue
-        if not pair:
-            cuts[i] = cut = False
-            continue
-        for j in range(len(rate)):
-            if (atype == 'L' and like[j] < S) or (oEo and ampl[j] < S):
-                continue
-            if rate[i] / 2 == rate[j] or rate[j] / 2 == rate[i]:
-                cuts[i] = cuts[j] = cut = False
-
-    if cut:
-        return None
-
-    # Select the optimal resolution: find the level with the highest and lowest statistic.
-    a = -1.0e99
-    idx_max = -1
-    for j in range(len(rate)):
-        powr[j] = ampl[j] / sIZe[j]
-        if atype == 'E' and ampl[j] > a and not cuts[j]:
-            idx_max = j
-            a = ampl[j]
-        if atype == 'L' and like[j] > a and not cuts[j]:
-            idx_max = j
-            a = like[j]
-        if atype == 'P' and powr[j] > a and not cuts[j]:
-            idx_max = j
-            a = powr[j]
-
-    if a < S:
-        return None
-
-    idx_min = -1
-    a = -1.0e99
-    for j in range(len(rate)):
-        if idx_max == j:
-            continue
-        if atype == 'E' and ampl[j] < a and not cuts[j]:
-            idx_min = j
-            a = ampl[j]
-        if atype == 'L' and like[j] < a and not cuts[j]:
-            idx_min = j
-            a = like[j]
-        if atype == 'P' and powr[j] < a and not cuts[j]:
-            idx_min = j
-            a = powr[j]
-
-    cTime = cT / nT
-    cFreq = cF / nF
-
-    return [cTime, cFreq, rate[idx_max], rate[idx_min], E]
+    return [c_time, c_freq, rate_max, rate_min, energy]
 
 
 def aggregate_clusters_from_links(
@@ -592,6 +652,7 @@ def apply_subnet_cut(
     subnorm_local: float,
     subrho_local: float,
     xtalk_local: XTalk,
+    arrays_prepared: bool = False,
 ) -> list[Cluster]:
     """
     Apply the sub-network cut and mark clusters that pass or fail.
@@ -633,12 +694,23 @@ def apply_subnet_cut(
         Clusters with ``cluster_status <= 0``, i.e. those that passed the cut.
     """
     for i, c in enumerate(superclusters):
-        _top_idx = np.argsort(-c.pixel_arrays.likelihood)[:n_loudest_local]
-        top_pa = c.pixel_arrays[_top_idx]
-        results = sub_net_cut(
-            top_pa, ml_local, FP_local, FX_local,
-            acor_local, e2or_local, n_ifo_local, n_sky_local,
-            subnet_local, subcut_local, subnorm_local, subrho_local, xtalk_local,
+        _top_idx = _top_loudest_indices(c.pixel_arrays.likelihood, n_loudest_local)
+        results = sub_net_cut_from_pixel_arrays(
+            c.pixel_arrays,
+            _top_idx,
+            ml_local,
+            FP_local,
+            FX_local,
+            acor_local,
+            e2or_local,
+            n_ifo_local,
+            n_sky_local,
+            subnet_local,
+            subcut_local,
+            subnorm_local,
+            subrho_local,
+            xtalk_local,
+            arrays_prepared=arrays_prepared,
         )
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
@@ -658,3 +730,32 @@ def apply_subnet_cut(
             c.cluster_status = 1
 
     return [c for c in superclusters if c.cluster_status <= 0]
+
+
+def _top_loudest_indices(likelihood: np.ndarray, n_loudest: int) -> np.ndarray:
+    """Return the same top-loudest ordering as ``np.argsort(-likelihood)``.
+
+    Uses ``argpartition`` only when it can prove no selected equal-likelihood
+    ordering can differ from the full sort.
+    """
+    n_pix = len(likelihood)
+    n_loudest = int(n_loudest)
+    if n_loudest <= 0:
+        return np.argsort(-likelihood)[:0]
+    if n_loudest >= n_pix:
+        return np.argsort(-likelihood)
+
+    kth = n_loudest - 1
+    candidate = np.argpartition(-likelihood, kth)[:n_loudest]
+    candidate_values = likelihood[candidate]
+    cutoff = float(np.min(candidate_values))
+
+    count_gt = int(np.count_nonzero(likelihood > cutoff))
+    count_eq = int(np.count_nonzero(likelihood == cutoff))
+    boundary_tie = count_gt < n_loudest and count_gt + count_eq > n_loudest
+    selected_has_tie = len(np.unique(candidate_values)) != len(candidate_values)
+    if boundary_tie or selected_has_tie:
+        return np.argsort(-likelihood)[:n_loudest]
+
+    order = np.argsort(-candidate_values)
+    return candidate[order]
