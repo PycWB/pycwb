@@ -19,7 +19,6 @@ else:
     from exceptiongroup import ExceptionGroup
 
 logger = logging.getLogger(__name__)
-_WORKER_QUEUE = None
 
 
 def batch_setup(file_name, working_dir='.',
@@ -94,10 +93,8 @@ def batch_setup(file_name, working_dir='.',
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")
 
 
-def _worker_initializer(queue=None):
+def _worker_initializer():
     """Enable faulthandler in each worker to capture segmentation violations."""
-    global _WORKER_QUEUE
-    _WORKER_QUEUE = queue
     faulthandler.enable()
 
 
@@ -241,11 +238,6 @@ def _cleanup_stale_lock(lock_path: str) -> None:
 
 
 def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_json=True, catalog_file=None, skip_lags: dict[int, set[int]] | None = None):
-    if queue is None:
-        queue = _WORKER_QUEUE
-    if queue is None:
-        raise RuntimeError("Batch worker queue was not initialized")
-
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
     try:
@@ -357,9 +349,9 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     # 3. Start the data-collector process                                  #
     #    Single writer that serialises all catalog/wave I/O from workers. #
     # ------------------------------------------------------------------ #
-    mp_context = multiprocessing.get_context("spawn")
-    queue = mp_context.Queue()
-    data_collector_worker = mp_context.Process(
+    manager = multiprocessing.Manager()
+    queue = manager.Queue()
+    data_collector_worker = multiprocessing.Process(
         target=data_collector, args=(working_dir, config, catalog_file, queue)
     )
     data_collector_worker.start()
@@ -374,14 +366,12 @@ def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",
     executor = ProcessPoolExecutor(
         max_workers=n_workers,
         max_tasks_per_child=1,
-        mp_context=mp_context,
         initializer=_worker_initializer,
-        initargs=(queue,),
     )
     try:
         logger.info(f"Starting {n_workers} workers")
         futures = {
-            executor.submit(processor_wrapper, main_func, None, working_dir, config, job_seg,
+            executor.submit(processor_wrapper, main_func, queue, working_dir, config, job_seg,
                             compress_json, catalog_file, skip_lags_map.get(job_seg.index)): job_seg
             for job_seg in pending_segments
         }
