@@ -324,6 +324,9 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     config = output_context.config
     sub_job_seg = output_context.sub_job_seg
     events_data = result.events_data
+    plot_elapsed = 0.0
+    trigger_convert_elapsed = 0.0
+    trigger_write_elapsed = 0.0
 
     trigger_folders = []
     for trigger in events_data:
@@ -389,19 +392,25 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
         except Exception as e:
             logger.error("Error calculating Qveto for event %s: %s", event.hash_id, e)
 
+        plot_timer = time.perf_counter()
         if config.plot_trigger:
             plot_trigger_flow(trigger_folder, event, cluster_out)
 
         if config.plot_sky_map:
             plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
+        plot_elapsed += time.perf_counter() - plot_timer
 
         del reconst_data
 
     for trigger in events_data:
         event, _, _ = trigger
+        convert_timer = time.perf_counter()
         trigger_obj = Trigger.from_event(event)
         trigger_obj.time_lag = result.time_lag
         trigger_obj.segment_lag = result.segment_lag
+        trigger_convert_elapsed += time.perf_counter() - convert_timer
+
+        write_timer = time.perf_counter()
         if output_context.queue is not None:
             output_context.queue.put({"type": "trigger", "trigger": trigger_obj})
         else:
@@ -409,11 +418,25 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
             if catalog_path:
                 from pycwb.modules.catalog.catalog import Catalog
                 Catalog.open(catalog_path).add_triggers(trigger_obj)
+        trigger_write_elapsed += time.perf_counter() - write_timer
 
+    progress_timer = time.perf_counter()
     _record_lag_progress(
         output_context.working_dir, config, output_context.catalog_file,
         output_context.queue, result.progress_record,
     )
+    progress_elapsed = time.perf_counter() - progress_timer
+
+    finalization_elapsed = (
+        plot_elapsed + trigger_convert_elapsed + trigger_write_elapsed + progress_elapsed
+    )
+    if finalization_elapsed >= 0.1:
+        logger.info(
+            "Lag %d output finalization time: plot=%.2f s, "
+            "trigger_convert=%.2f s, trigger_write=%.2f s, progress=%.2f s",
+            result.lag, plot_elapsed, trigger_convert_elapsed,
+            trigger_write_elapsed, progress_elapsed,
+        )
 
     logger.info("-------------------------------------------")
     logger.info("Lag %d processing time: %.2f s", result.lag, time.perf_counter() - result.lag_timer)
