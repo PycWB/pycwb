@@ -242,6 +242,12 @@ schema = {
             "minimum": 1,
             "cwb": False
         },
+        "max_energy_backend": {
+            "enum": ["jax", "numba"],
+            "description": "backend used by coherence setup for time-delay max-energy maps",
+            "default": "jax",
+            "cwb": False
+        },
         "injection": {
             "type": "object",
             "description": "injection parameters",

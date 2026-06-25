@@ -22,7 +22,10 @@ from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.pixel_arrays import PixelArrays
 from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
-from pycwb.modules.cwb_coherence.time_delay_max_energy import time_delay_max_energy
+from pycwb.modules.cwb_coherence.time_delay_max_energy import (
+    time_delay_max_energy,
+    time_delay_max_energy_numba,
+)
 from numba import njit
 from typing import Any
 from scipy.special import gammaincc as _scipy_gammaincc
@@ -36,6 +39,31 @@ def _coherence_timing_enabled(config: Config) -> bool:
     if flag in {"1", "true", "yes", "on"}:
         return True
     return bool(getattr(config, "coherence_timing", False))
+
+
+def _normalize_max_energy_backend(backend: str | None) -> str:
+    """Validate and normalize a max-energy backend name."""
+    backend = str(backend or "jax").strip().lower()
+    aliases = {
+        "xla": "jax",
+        "jax": "jax",
+        "numba": "numba",
+        "nb": "numba",
+    }
+    if backend not in aliases:
+        raise ValueError(
+            "max_energy_backend must be one of {'jax', 'numba'} "
+            f"(got {backend!r})"
+        )
+    return aliases[backend]
+
+
+def _max_energy_backend(config: Config | None = None) -> str:
+    """Resolve the configured max-energy backend."""
+    backend = os.getenv("PYCWB_MAX_ENERGY_BACKEND")
+    if backend is None and config is not None:
+        backend = getattr(config, "max_energy_backend", None)
+    return _normalize_max_energy_backend(backend)
 
 
 def coherence(config: Config, strains: list[TimeSeries], return_rejected: bool = False, job_seg: WaveSegment | None = None) -> list[list[FragmentCluster]]:
@@ -153,6 +181,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     """
     timer_start = time.perf_counter()
     timing_enabled = _coherence_timing_enabled(config)
+    max_energy_backend = _max_energy_backend(config)
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
@@ -229,13 +258,14 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
             pattern=pattern,
             f_low=config.fLow,
             f_high=config.fHigh,
+            backend=max_energy_backend,
         )
         t_ifo = time.perf_counter() - t_stage
         t_max_energy_total += t_ifo
         if timing_enabled:
             logger.info(
-                "level %d max_energy ifo=%d done in %.3f s (alp=%.6g)",
-                level, n, t_ifo, alp_n,
+                "level %d max_energy backend=%s ifo=%d done in %.3f s (alp=%.6g)",
+                level, max_energy_backend, n, t_ifo, alp_n,
             )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
@@ -266,9 +296,10 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     if timing_enabled:
         logger.info(
             "level %d setup timing: wdm=%.3fs tf_maps=%.3fs max_energy=%.3fs "
-            "threshold=%.3fs selection_cache=%.3fs total=%.3fs",
+            "threshold=%.3fs selection_cache=%.3fs total=%.3fs backend=%s",
             level, t_wdm, t_tf_maps, t_max_energy_total, t_threshold,
             t_selection_cache, time.perf_counter() - timer_start,
+            max_energy_backend,
         )
 
     logger.info("level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)", level, Eo, n_lag, time.perf_counter() - timer_start)
@@ -285,6 +316,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         "select_subnet": config.select_subnet,
         "segEdge": config.segEdge,
         "selection_cache": selection_cache,
+        "max_energy_backend": max_energy_backend,
     }
 
 
@@ -378,7 +410,8 @@ def coherence_single_lag(
 
 
 def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: int,
-               f_low: float | None = None, f_high: float | None = None, hist: list | None = None) -> tuple[TimeFrequencyMap, float]:
+               f_low: float | None = None, f_high: float | None = None,
+               hist: list | None = None, backend: str = "jax") -> tuple[TimeFrequencyMap, float]:
     """
     Compute max-energy skymap projection for a detector TF map.
 
@@ -402,6 +435,10 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: i
         High-frequency cutoff in Hz.
     hist : list | None, optional
         Optional histogram container for statistics.
+    backend : {"jax", "numba"}, optional
+        Backend for the time-delay max-energy kernel. ``"jax"`` preserves the
+        historical behavior. ``"numba"`` uses the compiled numba pattern path
+        and delegates pattern 0 to JAX.
 
     Returns
     -------
@@ -412,7 +449,15 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: i
     if hasattr(tf_map, "bandpass"):
         tf_map.bandpass(f_low=f_low, f_high=f_high)
 
-    new_tf_map, result = time_delay_max_energy(tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist)
+    backend = _normalize_max_energy_backend(backend)
+    if backend == "numba":
+        new_tf_map, result = time_delay_max_energy_numba(
+            tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist,
+        )
+    else:
+        new_tf_map, result = time_delay_max_energy(
+            tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist,
+        )
     return new_tf_map, result
 
 
