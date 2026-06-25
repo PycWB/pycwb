@@ -1,6 +1,7 @@
 import dataclasses
 import os
 import logging
+import time
 from typing import Dict, List
 import math
 import numpy as np
@@ -26,39 +27,56 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                           wave_file: str = '', save: bool = True, plot: bool = False,
                           queue=None) -> Dict[str, TimeSeries]:
 
+    flow_timer = time.perf_counter()
+    timings = {"save": 0.0, "plot": 0.0}
+
     # vREC: reconstructed signal
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_signals = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True, whiten=False)
+    timings["signal"] = time.perf_counter() - step_timer
     
     # whitened vREC: whitened reconstructed signal
     logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_signals_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                       'signal', 0, True, whiten=True)
+    timings["signal_whiten"] = time.perf_counter() - step_timer
 
     # vDAT: reconstructed data (signal + noise)
     logger.info(f"Reconstructing strain for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_data  = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                 'strain', 0, True, whiten=False)
+    timings["strain"] = time.perf_counter() - step_timer
     
     # whitened_vDAT: whitened reconstructed data (signal+noise)
     logger.info(f"Reconstructing whitened strain for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_data_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                       'strain', 0, True, whiten=True)
+    timings["strain_whiten"] = time.perf_counter() - step_timer
 
     # vNUL: reconstructed noise (vDAT - vREC)
+    step_timer = time.perf_counter()
     reconstructed_nulls = [reconstructed_data[i] - reconstructed_signals[i] for i in range(len(ifos))]
+    timings["null"] = time.perf_counter() - step_timer
 
     # whitened vNUL: whitened reconstructed noise (whitened_vDAT - whitened_vREC)
+    step_timer = time.perf_counter()
     reconstructed_nulls_whiten = [reconstructed_data_whiten[i] - reconstructed_signals_whiten[i] for i in range(len(ifos))]
+    timings["null_whiten"] = time.perf_counter() - step_timer
 
     # apply epoch
+    step_timer = time.perf_counter()
     for w in reconstructed_signals: w.start_time += epoch
     for w in reconstructed_signals_whiten: w.start_time += epoch
     for w in reconstructed_data: w.start_time += epoch
     for w in reconstructed_data_whiten: w.start_time += epoch
     for w in reconstructed_nulls: w.start_time += epoch
     for w in reconstructed_nulls_whiten: w.start_time += epoch
+    timings["epoch"] = time.perf_counter() - step_timer
 
     # reconstructed_signals_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', -1, True, whiten=True)
@@ -74,6 +92,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
     #     ts.data *= rescale
 
+    step_timer = time.perf_counter()
     data = {}
     for i, ifo in enumerate(ifos):
         data[f"{ifo}_wf_REC"] = reconstructed_signals[i]
@@ -82,8 +101,10 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
         data[f"{ifo}_wf_DAT_whiten"] = reconstructed_data_whiten[i]
         data[f"{ifo}_wf_NUL"] = reconstructed_nulls[i]
         data[f"{ifo}_wf_NUL_whiten"] = reconstructed_nulls_whiten[i]
+    timings["package"] = time.perf_counter() - step_timer
     
     if save:
+        step_timer = time.perf_counter()
         # rescaling factor to preserve amplitude
         rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
 
@@ -97,8 +118,10 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                        "waves": rescaled_data, "wave_file": wave_file})
         else:
             add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
+        timings["save"] = time.perf_counter() - step_timer
         
     if plot:
+        step_timer = time.perf_counter()
         from pycwb.modules.plot.waveform import plot
         from matplotlib import pyplot as plt
         # rescaling factor to preserve amplitude
@@ -133,6 +156,21 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
             plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL_whiten.png')
             plt.close()
+        timings["plot"] = time.perf_counter() - step_timer
+
+    timings["total"] = time.perf_counter() - flow_timer
+    logger.info(
+        "reconstruct_waveforms_flow timing for event %s: "
+        "signal=%.3f s, signal_whiten=%.3f s, "
+        "strain=%.3f s, strain_whiten=%.3f s, "
+        "null=%.3f s, null_whiten=%.3f s, epoch=%.3f s, "
+        "package=%.3f s, save=%.3f s, plot=%.3f s, total=%.3f s",
+        event.hash_id,
+        timings["signal"], timings["signal_whiten"],
+        timings["strain"], timings["strain_whiten"],
+        timings["null"], timings["null_whiten"], timings["epoch"],
+        timings["package"], timings["save"], timings["plot"], timings["total"],
+    )
 
     return data
 

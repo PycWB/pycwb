@@ -324,6 +324,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     config = output_context.config
     sub_job_seg = output_context.sub_job_seg
     events_data = result.events_data
+    reconstruct_elapsed = 0.0
     plot_elapsed = 0.0
     trigger_convert_elapsed = 0.0
     trigger_write_elapsed = 0.0
@@ -342,6 +343,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     for trigger_folder, trigger in zip(trigger_folders, events_data):
         event, cluster_out, event_skymap_statistics = trigger
 
+        reconstruct_timer = time.perf_counter()
         reconst_data = reconstruct_waveforms_flow(
             trigger_folder, config, sub_job_seg.ifos,
             event, cluster_out, epoch=sub_job_seg.padded_start,
@@ -349,6 +351,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
             save=config.save_waveform, plot=config.plot_waveform,
             queue=output_context.queue,
         )
+        reconstruct_elapsed += time.perf_counter() - reconstruct_timer
 
         if event.injection:
             injected_data = reconstruct_INJwaveforms_flow(
@@ -428,13 +431,14 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     progress_elapsed = time.perf_counter() - progress_timer
 
     finalization_elapsed = (
-        plot_elapsed + trigger_convert_elapsed + trigger_write_elapsed + progress_elapsed
+        reconstruct_elapsed + plot_elapsed
+        + trigger_convert_elapsed + trigger_write_elapsed + progress_elapsed
     )
     if finalization_elapsed >= 0.1:
         logger.info(
-            "Lag %d output finalization time: plot=%.2f s, "
+            "Lag %d output finalization time: reconstruct_waveforms=%.2f s, plot=%.2f s, "
             "trigger_convert=%.2f s, trigger_write=%.2f s, progress=%.2f s",
-            result.lag, plot_elapsed, trigger_convert_elapsed,
+            result.lag, reconstruct_elapsed, plot_elapsed, trigger_convert_elapsed,
             trigger_write_elapsed, progress_elapsed,
         )
 
