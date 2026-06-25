@@ -39,9 +39,19 @@ class XTalk:
         """
         from pycwb.types.pixel_arrays import PixelArrays
         if isinstance(pixels, PixelArrays):
-            pix_mat = np.column_stack([pixels.layers, pixels.time]).astype(np.int64)
+            return self.get_xtalk_pixels_from_arrays(pixels.layers, pixels.time, check)
         else:
             pix_mat = np.array([[pix.layers, pix.time] for pix in pixels])
+        cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_fast(
+            pix_mat, check, self.layers, self.coeff, self.lookup_table
+        )
+        return cluster_xtalk_lookup, cluster_xtalk
+
+    def get_xtalk_pixels_from_arrays(self, layers, times, check=True):
+        """Get crosstalk coefficients from ``layers`` and ``time`` arrays."""
+        pix_mat = np.empty((len(layers), 2), dtype=np.int64)
+        pix_mat[:, 0] = np.asarray(layers, dtype=np.int64)
+        pix_mat[:, 1] = np.asarray(times, dtype=np.int64)
         cluster_xtalk_lookup, cluster_xtalk = getXTalk_pixels_fast(
             pix_mat, check, self.layers, self.coeff, self.lookup_table
         )
@@ -62,7 +72,3 @@ class XTalk:
         else:
             l2, t2 = pix2.layers, pix2.time
         return getXTalk(l1, t1, l2, t2, self.layers, self.coeff, self.lookup_table)
-
-
-
-    

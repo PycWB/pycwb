@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -693,8 +694,18 @@ def apply_subnet_cut(
     list[Cluster]
         Clusters with ``cluster_status <= 0``, i.e. those that passed the cut.
     """
+    timing = {
+        "topk": 0.0,
+        "data_prep": 0.0,
+        "sky_scan": 0.0,
+        "xtalk": 0.0,
+        "mra": 0.0,
+        "total": 0.0,
+    }
     for i, c in enumerate(superclusters):
+        t_topk = time.perf_counter()
         _top_idx = _top_loudest_indices(c.pixel_arrays.likelihood, n_loudest_local)
+        timing["topk"] += time.perf_counter() - t_topk
         results = sub_net_cut_from_pixel_arrays(
             c.pixel_arrays,
             _top_idx,
@@ -711,6 +722,7 @@ def apply_subnet_cut(
             subrho_local,
             xtalk_local,
             arrays_prepared=arrays_prepared,
+            timing=timing,
         )
 
         if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
@@ -728,6 +740,17 @@ def apply_subnet_cut(
                 log_output += f"subthr cut condition: {results['subthr_condition']}, "
             logger.debug(log_output)
             c.cluster_status = 1
+
+    logger.info(
+        "   subnet timing detail      : clusters=%d topk=%.3fs data=%.3fs sky=%.3fs xtalk=%.3fs mra=%.3fs total=%.3fs",
+        len(superclusters),
+        timing["topk"],
+        timing["data_prep"],
+        timing["sky_scan"],
+        timing["xtalk"],
+        timing["mra"],
+        timing["topk"] + timing["total"],
+    )
 
     return [c for c in superclusters if c.cluster_status <= 0]
 
