@@ -11,6 +11,7 @@ combined with :func:`coherence_single_lag` (streaming mode).
 """
 import time
 import logging
+import os
 import numpy as np
 from scipy.special import gammainccinv
 from wdm_wavelet.wdm import WDM as WDMWavelet
@@ -27,6 +28,14 @@ from typing import Any
 from scipy.special import gammaincc as _scipy_gammaincc
 
 logger = logging.getLogger(__name__)
+
+
+def _coherence_timing_enabled(config: Config) -> bool:
+    """Return True when detailed coherence setup timing logs are requested."""
+    flag = str(os.getenv("PYCWB_COHERENCE_TIMING", "")).strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    return bool(getattr(config, "coherence_timing", False))
 
 
 def coherence(config: Config, strains: list[TimeSeries], return_rejected: bool = False, job_seg: WaveSegment | None = None) -> list[list[FragmentCluster]]:
@@ -143,10 +152,12 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         ``segEdge``, ``selection_cache``.
     """
     timer_start = time.perf_counter()
+    timing_enabled = _coherence_timing_enabled(config)
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
 
+    t_stage = time.perf_counter()
     # Ensure at least one WDM layer for zero-lag case
     wdm_layers = max(1, layers)
     wdm_wavelet = WDMWavelet(
@@ -155,8 +166,10 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         beta_order=config.WDM_beta_order,
         precision=config.WDM_precision,
     )
+    t_wdm = time.perf_counter() - t_stage
 
     # Build time-frequency maps via batch WDM transform (preferring fast path)
+    t_stage = time.perf_counter()
     try:
         batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
         tf_maps = [
@@ -175,10 +188,12 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
             )
             for n in range(len(strains))
         ]
+        t_tf_maps = time.perf_counter() - t_stage
     except Exception as exc:  # broad catch intentional: batch_t2w_detectors may raise any of
         # TypeError / ValueError / AttributeError / RuntimeError / numpy internals depending on
         # the WDM implementation version; we always want the serial fallback to succeed.
         logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
+        t_stage = time.perf_counter()
         tf_maps = [
             TimeFrequencyMap.from_timeseries(
                 ts=strain,
@@ -190,6 +205,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
             )
             for strain in strains
         ]
+        t_tf_maps = time.perf_counter() - t_stage
 
     logger.info(
         "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
@@ -203,7 +219,9 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     max_delay = config.max_delay
     pattern = config.pattern
     alp = 0.0
+    t_max_energy_total = 0.0
     for n, tf_map in enumerate(tf_maps):
+        t_stage = time.perf_counter()
         tf_maps[n], alp_n = max_energy(
             tf_map=tf_map,
             max_delay=max_delay,
@@ -212,26 +230,46 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
             f_low=config.fLow,
             f_high=config.fHigh,
         )
+        t_ifo = time.perf_counter() - t_stage
+        t_max_energy_total += t_ifo
+        if timing_enabled:
+            logger.info(
+                "level %d max_energy ifo=%d done in %.3f s (alp=%.6g)",
+                level, n, t_ifo, alp_n,
+            )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
     alp = alp / config.nIFO
 
     # Compute pixel energy threshold based on black-pixel probability
     # (independent of lag since TF maps are lag-independent)
+    t_stage = time.perf_counter()
     Eo = compute_threshold(
         tf_maps,
         config.bpp,
         alp=alp if pattern != 0 else None,
         edge=config.segEdge,
     )
+    t_threshold = time.perf_counter() - t_stage
+
+    t_stage = time.perf_counter()
     selection_cache = _build_selection_cache(
         tf_maps,
         edge=config.segEdge,
         lag_shifts_by_lag=getattr(job_seg, "lag_shifts", None),
     )
+    t_selection_cache = time.perf_counter() - t_stage
 
     # Extract lag count from job segment for setup dictionary
     n_lag = job_seg.n_lag
+
+    if timing_enabled:
+        logger.info(
+            "level %d setup timing: wdm=%.3fs tf_maps=%.3fs max_energy=%.3fs "
+            "threshold=%.3fs selection_cache=%.3fs total=%.3fs",
+            level, t_wdm, t_tf_maps, t_max_energy_total, t_threshold,
+            t_selection_cache, time.perf_counter() - timer_start,
+        )
 
     logger.info("level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)", level, Eo, n_lag, time.perf_counter() - timer_start)
 

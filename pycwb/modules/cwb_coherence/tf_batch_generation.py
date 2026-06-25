@@ -23,28 +23,89 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+try:
+    from wdm_wavelet.core.t2w import _t2w_jax_impl as _LOW_LEVEL_T2W_JAX_IMPL
+except ImportError:
+    _LOW_LEVEL_T2W_JAX_IMPL = None
+
+try:
+    from wdm_wavelet.core.t2w import t2w_jax as _T2W_JAX
+except ImportError:
+    _T2W_JAX = None
+
 
 def _build_extended_signal(ts_data, n_filter_taps, mm_eff):
     """Mirror-pad signal to match the convention in TimeFrequencyMap._t2w_data_jax."""
+    ts_data = np.asarray(ts_data, dtype=np.float64)
     n_input = ts_data.shape[0]
     aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
     ext_len = aligned_length + 2 * n_filter_taps
 
-    extended = jnp.zeros((ext_len,), dtype=jnp.float64)
+    extended = np.zeros((ext_len,), dtype=np.float64)
 
     left_mirror_max = min(n_filter_taps, n_input - 1)
     if left_mirror_max >= 0:
-        idx = jnp.arange(left_mirror_max + 1, dtype=jnp.int32)
-        extended = extended.at[n_filter_taps - idx].set(ts_data[idx])
+        extended[n_filter_taps - left_mirror_max:n_filter_taps + 1] = (
+            ts_data[:left_mirror_max + 1][::-1]
+        )
 
-    extended = extended.at[n_filter_taps: n_filter_taps + n_input].set(ts_data)
+    extended[n_filter_taps:n_filter_taps + n_input] = ts_data
 
     n_right = ext_len - n_filter_taps - n_input
     if n_right > 0:
-        idx = jnp.arange(n_right, dtype=jnp.int32)
-        extended = extended.at[n_filter_taps + n_input + idx].set(ts_data[n_input - idx - 1])
+        idx = n_input - np.arange(n_right) - 1
+        extended[n_filter_taps + n_input:n_filter_taps + n_input + n_right] = (
+            ts_data[idx]
+        )
 
     return extended, aligned_length
+
+
+if _LOW_LEVEL_T2W_JAX_IMPL is not None:
+    @partial(jax.jit, static_argnames=(
+        "M", "n_filter_taps", "mm_eff", "return_quadrature", "n_time_bins",
+    ))
+    def _batch_t2w_impl(
+        extended_signals,
+        filter_taps,
+        M,
+        n_filter_taps,
+        mm_eff,
+        return_quadrature,
+        n_time_bins,
+    ):
+        """Stable batched JIT wrapper for the low-level WDM transform."""
+
+        def _single_t2w_impl(extended_signal):
+            return _LOW_LEVEL_T2W_JAX_IMPL(
+                M=M,
+                n_filter_taps=n_filter_taps,
+                mm_eff=mm_eff,
+                return_quadrature=return_quadrature,
+                n_time_bins=n_time_bins,
+                extended_signal=extended_signal,
+                filter_taps=filter_taps,
+            )
+
+        return jax.vmap(_single_t2w_impl)(extended_signals)
+else:
+    def _batch_t2w_impl(*args, **kwargs):
+        raise RuntimeError("low-level JAX WDM transform is unavailable")
+
+
+if _T2W_JAX is not None:
+    @partial(jax.jit, static_argnames=("M", "m_H"))
+    def _batch_t2w_fallback(signals, filter_taps, M, m_H):
+        """Stable batched JIT wrapper for the high-level fallback transform."""
+
+        def _single_t2w(signal):
+            _, _, tf = _T2W_JAX(M, m_H, signal, filter_taps, -1)
+            return tf
+
+        return jax.vmap(_single_t2w)(signals)
+else:
+    def _batch_t2w_fallback(*args, **kwargs):
+        raise RuntimeError("JAX WDM transform fallback is unavailable")
 
 
 def batch_t2w_detectors(strains, wdm_wavelet):
@@ -67,11 +128,6 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     tuple (dt, df)
         Time and frequency resolution metadata.
     """
-    try:
-        from wdm_wavelet.core.t2w import _t2w_jax_impl
-    except ImportError:
-        _t2w_jax_impl = None
-
     M = int(wdm_wavelet.M)
     m_H = int(wdm_wavelet.m_H)
     filter_taps = jnp.asarray(np.asarray(wdm_wavelet.filter)[:m_H], dtype=jnp.float64)
@@ -87,20 +143,12 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
     n_time_bins = aligned_length // mm_eff
 
-    if _t2w_jax_impl is None:
+    if _LOW_LEVEL_T2W_JAX_IMPL is None:
         # Fallback: call high-level t2w_jax per detector
-        from wdm_wavelet.core.t2w import t2w_jax
-
-        def _single_t2w(signal_np):
-            sig_jax = jnp.asarray(signal_np, dtype=jnp.float64)
-            _, _, tf = t2w_jax(M, m_H, sig_jax, filter_taps, -1)
-            return tf  # (2, n_time, M+1)
-
-        # Stack input signals and vmap
         signals_np = np.stack([np.asarray(s.data, dtype=np.float64) for s in strains])
         signals_jax = jnp.asarray(signals_np)  # (n_det, n_input)
 
-        batched = jax.jit(jax.vmap(_single_t2w))(signals_jax)  # (n_det, 2, n_time, M+1)
+        batched = _batch_t2w_fallback(signals_jax, filter_taps, M, m_H)  # (n_det, 2, n_time, M+1)
         batched = jax.block_until_ready(batched)
 
         result = []
@@ -110,34 +158,29 @@ def batch_t2w_detectors(strains, wdm_wavelet):
             result.append(data.astype(np.complex128))
         return result, (dt, df)
 
-    # Fast path using the low-level fused kernel
-    # Bind all static args via closure; only extended_signal is dynamic.
-    def _single_t2w_impl(extended_signal):
-        return _t2w_jax_impl(
-            M=M,
-            n_filter_taps=m_H,
-            mm_eff=mm_eff,
-            return_quadrature=return_quadrature,
-            n_time_bins=n_time_bins,
-            extended_signal=extended_signal,
-            filter_taps=filter_taps,
-        )
-
     # Pre-compute extended signals for all detectors (mirror-padded, on CPU)
     n_filter_taps = m_H
     ext_len = aligned_length + 2 * n_filter_taps
     all_extended = np.zeros((len(strains), ext_len), dtype=np.float64)
     for i, strain in enumerate(strains):
         ext, _ = _build_extended_signal(
-            jnp.asarray(np.asarray(strain.data, dtype=np.float64)),
+            np.asarray(strain.data, dtype=np.float64),
             n_filter_taps,
             mm_eff,
         )
-        all_extended[i] = np.asarray(ext)
+        all_extended[i] = ext
 
     extended_jax = jnp.asarray(all_extended)  # (n_det, ext_len)
 
-    batched = jax.jit(jax.vmap(_single_t2w_impl))(extended_jax)   # (n_det, 2, n_time, M+1)
+    batched = _batch_t2w_impl(
+        extended_jax,
+        filter_taps,
+        M,
+        n_filter_taps,
+        mm_eff,
+        return_quadrature,
+        n_time_bins,
+    )   # (n_det, 2, n_time, M+1)
     batched = jax.block_until_ready(batched)
 
     result = []
