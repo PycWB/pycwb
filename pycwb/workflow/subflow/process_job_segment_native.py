@@ -325,6 +325,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     sub_job_seg = output_context.sub_job_seg
     events_data = result.events_data
     reconstruct_elapsed = 0.0
+    qveto_elapsed = 0.0
     plot_elapsed = 0.0
     trigger_convert_elapsed = 0.0
     trigger_write_elapsed = 0.0
@@ -379,6 +380,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
             ]
             del injected_data, inj_waveforms, rec_waveforms
 
+        qveto_timer = time.perf_counter()
         try:
             min_qveto   = 1e23
             min_qfactor = 1e23
@@ -394,6 +396,13 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
                         event.hash_id, event.qveto, event.qfactor)
         except Exception as e:
             logger.error("Error calculating Qveto for event %s: %s", event.hash_id, e)
+        finally:
+            event_qveto_elapsed = time.perf_counter() - qveto_timer
+            qveto_elapsed += event_qveto_elapsed
+            logger.info(
+                "Qveto/Qfactor computation time for event %s: %.3f s",
+                event.hash_id, event_qveto_elapsed,
+            )
 
         plot_timer = time.perf_counter()
         if config.plot_trigger:
@@ -431,14 +440,15 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     progress_elapsed = time.perf_counter() - progress_timer
 
     finalization_elapsed = (
-        reconstruct_elapsed + plot_elapsed
+        reconstruct_elapsed + qveto_elapsed + plot_elapsed
         + trigger_convert_elapsed + trigger_write_elapsed + progress_elapsed
     )
     if finalization_elapsed >= 0.1:
         logger.info(
-            "Lag %d output finalization time: reconstruct_waveforms=%.2f s, plot=%.2f s, "
+            "Lag %d output finalization time: reconstruct_waveforms=%.2f s, "
+            "qveto=%.2f s, plot=%.2f s, "
             "trigger_convert=%.2f s, trigger_write=%.2f s, progress=%.2f s",
-            result.lag, reconstruct_elapsed, plot_elapsed, trigger_convert_elapsed,
+            result.lag, reconstruct_elapsed, qveto_elapsed, plot_elapsed, trigger_convert_elapsed,
             trigger_write_elapsed, progress_elapsed,
         )
 
