@@ -45,6 +45,8 @@ def _normalize_max_energy_backend(backend: str | None) -> str:
     """Validate and normalize a max-energy backend name."""
     backend = str(backend or "jax").strip().lower()
     aliases = {
+        "auto": "auto",
+        "hybrid": "auto",
         "xla": "jax",
         "jax": "jax",
         "numba": "numba",
@@ -52,18 +54,35 @@ def _normalize_max_energy_backend(backend: str | None) -> str:
     }
     if backend not in aliases:
         raise ValueError(
-            "max_energy_backend must be one of {'jax', 'numba'} "
+            "max_energy_backend must be one of {'jax', 'numba', 'auto'} "
             f"(got {backend!r})"
         )
     return aliases[backend]
 
 
-def _max_energy_backend(config: Config | None = None) -> str:
+def _auto_max_energy_backend_for_layers(layers: int) -> str:
+    """Choose the fastest observed backend for a WDM layer count."""
+    return "numba" if 32 <= int(layers) <= 256 else "jax"
+
+
+def _max_energy_backend(config: Config | None = None, layers: int | None = None) -> str:
     """Resolve the configured max-energy backend."""
     backend = os.getenv("PYCWB_MAX_ENERGY_BACKEND")
     if backend is None and config is not None:
         backend = getattr(config, "max_energy_backend", None)
-    return _normalize_max_energy_backend(backend)
+    backend = _normalize_max_energy_backend(backend)
+    if backend == "auto" and layers is not None:
+        return _auto_max_energy_backend_for_layers(layers)
+    return backend
+
+
+def _max_energy_backend_label(backend: str) -> str:
+    """Human-readable backend label for timing logs."""
+    if backend == "numba":
+        mode = os.getenv("PYCWB_NUMBA_MAX_ENERGY_MODE")
+        if mode:
+            return f"{backend}:{mode}"
+    return backend
 
 
 def coherence(config: Config, strains: list[TimeSeries], return_rejected: bool = False, job_seg: WaveSegment | None = None) -> list[list[FragmentCluster]]:
@@ -181,10 +200,11 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
     """
     timer_start = time.perf_counter()
     timing_enabled = _coherence_timing_enabled(config)
-    max_energy_backend = _max_energy_backend(config)
     level = config.l_high - i
     layers = 2 ** level if level > 0 else 0
     rate = config.rateANA // 2 ** level
+    max_energy_backend = _max_energy_backend(config, layers=layers)
+    max_energy_backend_log = _max_energy_backend_label(max_energy_backend)
 
     t_stage = time.perf_counter()
     # Ensure at least one WDM layer for zero-lag case
@@ -265,7 +285,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
         if timing_enabled:
             logger.info(
                 "level %d max_energy backend=%s ifo=%d done in %.3f s (alp=%.6g)",
-                level, max_energy_backend, n, t_ifo, alp_n,
+                level, max_energy_backend_log, n, t_ifo, alp_n,
             )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
@@ -299,7 +319,7 @@ def _setup_coherence_single_res(i: int, config: Config, strains: list[TimeSeries
             "threshold=%.3fs selection_cache=%.3fs total=%.3fs backend=%s",
             level, t_wdm, t_tf_maps, t_max_energy_total, t_threshold,
             t_selection_cache, time.perf_counter() - timer_start,
-            max_energy_backend,
+            max_energy_backend_log,
         )
 
     logger.info("level %d setup done: Eo=%.4g, n_lag=%d  (%.2f s)", level, Eo, n_lag, time.perf_counter() - timer_start)
@@ -435,10 +455,11 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: i
         High-frequency cutoff in Hz.
     hist : list | None, optional
         Optional histogram container for statistics.
-    backend : {"jax", "numba"}, optional
+    backend : {"jax", "numba", "auto"}, optional
         Backend for the time-delay max-energy kernel. ``"jax"`` preserves the
         historical behavior. ``"numba"`` uses the compiled numba pattern path
-        and delegates pattern 0 to JAX.
+        and delegates pattern 0 to JAX. ``"auto"`` chooses from the WDM layer
+        count.
 
     Returns
     -------
@@ -450,6 +471,8 @@ def max_energy(tf_map: TimeFrequencyMap, max_delay: float, up_n: int, pattern: i
         tf_map.bandpass(f_low=f_low, f_high=f_high)
 
     backend = _normalize_max_energy_backend(backend)
+    if backend == "auto":
+        backend = _auto_max_energy_backend_for_layers(int(tf_map.wavelet.M))
     if backend == "numba":
         new_tf_map, result = time_delay_max_energy_numba(
             tf_map, max_delay, downsample=up_n, pattern=pattern, hist=hist,

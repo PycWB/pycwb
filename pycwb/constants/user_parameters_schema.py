@@ -243,8 +243,8 @@ schema = {
             "cwb": False
         },
         "max_energy_backend": {
-            "enum": ["jax", "numba"],
-            "description": "backend used by coherence setup for time-delay max-energy maps",
+            "enum": ["jax", "numba", "auto"],
+            "description": "backend used by coherence setup for time-delay max-energy maps; auto uses numba for middle WDM resolutions and JAX for endpoint resolutions",
             "default": "jax",
             "cwb": False
         },

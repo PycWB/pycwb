@@ -18,6 +18,7 @@ time (zero runtime cost after the first compile).
 import dataclasses
 import math
 import logging
+import os
 import numpy as np
 from functools import partial
 
@@ -572,6 +573,82 @@ if _HAS_NUMBA:
 
         return energy
 
+    @numba.njit(cache=True, fastmath=True)
+    def _wdm_packet_energy_tm_nb(real_f, imag_f, M, T, J, jb, je, mL, mH, mean, p):
+        """Numba packet-energy kernel with time-major output (T, M)."""
+        energy = np.zeros((T, M), dtype=np.float64)
+        for j in range(J):
+            m = j % M
+            t = j // M
+
+            if j < jb or j >= je:
+                boundary_raw = real_f[j]
+                if boundary_raw > 0.0:
+                    energy[t, m] = boundary_raw
+                continue
+            if m < mL or m > mH:
+                continue
+
+            ss = 0.0
+            ee = 0.0
+            EE = 0.0
+            for n in range(1, 9):
+                idx = j + p[n]
+                if idx < 0:
+                    idx = 0
+                elif idx >= J:
+                    idx = J - 1
+                qr = real_f[idx]
+                qi = imag_f[idx]
+                ss += qr * qi
+                ee += qr * qr
+                EE += qi * qi
+
+            q0r = real_f[j]
+            q0i = imag_f[j]
+            ss += q0r * q0i * (mean - 8.0)
+            ee += q0r * q0r * (mean - 8.0)
+            EE += q0i * q0i * (mean - 8.0)
+
+            cc = ee - EE
+            ss2 = 2.0 * ss
+            nn_sq = cc * cc + ss2 * ss2
+            nn = math.sqrt(nn_sq) if nn_sq > 0.0 else 0.0
+            sum_eeEE = ee + EE
+            if sum_eeEE < nn:
+                nn = sum_eeEE
+
+            h1 = (sum_eeEE + nn) / 2.0
+            h2 = (sum_eeEE - nn) / 2.0
+            a1 = math.sqrt(h1) if h1 > 0.0 else 0.0
+            a2 = math.sqrt(h2) if h2 > 0.0 else 0.0
+            aa = a1 + a2
+
+            em = sum_eeEE / 2.0 if mean == 1.0 else (aa * aa) / 4.0
+            energy[t, m] = em
+
+        return energy
+
+    @numba.njit(cache=True, fastmath=True)
+    def _max_inplace_2d_nb(current_max, candidate):
+        """Update a 2D max array in-place."""
+        n0, n1 = current_max.shape
+        for i in range(n0):
+            for j in range(n1):
+                val = candidate[i, j]
+                if val > current_max[i, j]:
+                    current_max[i, j] = val
+
+    @numba.njit(cache=True, fastmath=True)
+    def _transpose_tm_to_mt_nb(current_max_tm):
+        """Return a contiguous (M, T) copy from a time-major (T, M) array."""
+        T, M = current_max_tm.shape
+        out = np.empty((M, T), dtype=np.float64)
+        for t in range(T):
+            for m in range(M):
+                out[m, t] = current_max_tm[t, m]
+        return out
+
     @numba.njit(cache=True, parallel=True, fastmath=True)
     def _time_delay_max_energy_pattern_loop_nb(
         ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
@@ -639,10 +716,80 @@ if _HAS_NUMBA:
 
         return current_max
 
+    @numba.njit(cache=True, parallel=True, fastmath=True)
+    def _time_delay_max_energy_pattern_loop_tm_nb(
+        ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
+        max_delay, downsample,
+        M_val, T_val, J, jb, je, mL, mH, mean, p,
+        pattern,
+    ):
+        """Delay-parallel loop using time-major packet-energy buffers."""
+        _, tf0 = _wdm_t2w_numba_core(ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+        current_max = _wdm_packet_energy_tm_nb(
+            tf0[0].ravel(), tf0[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+        )
+
+        size = len(ts_data)
+        n_iters = 0
+        k = downsample
+        while k <= max_delay and k < size:
+            n_iters += 1
+            k += downsample
+
+        if n_iters > 0:
+            all_en = np.empty((n_iters * 2, T_val, M_val), dtype=np.float64)
+
+            for i in numba.prange(n_iters):
+                k_i = (i + 1) * downsample
+
+                xx_l = ts_data.copy()
+                xx_l[:size - k_i] = ts_data[k_i:]
+                _, tf_l = _wdm_t2w_numba_core(xx_l, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+                all_en[2 * i] = _wdm_packet_energy_tm_nb(
+                    tf_l[0].ravel(), tf_l[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+                )
+
+                xx_r = ts_data.copy()
+                xx_r[k_i:] = ts_data[:size - k_i]
+                _, tf_r = _wdm_t2w_numba_core(xx_r, filt, n_filter_taps, MM_eff, M_int, return_quadrature)
+                all_en[2 * i + 1] = _wdm_packet_energy_tm_nb(
+                    tf_r[0].ravel(), tf_r[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+                )
+
+            for i in range(n_iters * 2):
+                _max_inplace_2d_nb(current_max, all_en[i])
+
+        current_max[:, 0] = 0.0
+        if pattern in (5, 6, 9) and current_max.shape[1] > 2:
+            current_max[:, 1] = 0.0
+
+        return _transpose_tm_to_mt_nb(current_max)
+
+    def _normalize_numba_max_energy_mode(mode):
+        mode = str(mode or "parallel").strip().lower()
+        aliases = {
+            "parallel": "parallel",
+            "prange": "parallel",
+            "default": "parallel",
+            "time-major": "time-major",
+            "time_major": "time-major",
+            "tm": "time-major",
+            "parallel-tm": "time-major",
+            "parallel_tm": "time-major",
+        }
+        if mode not in aliases:
+            raise ValueError(
+                "PYCWB_NUMBA_MAX_ENERGY_MODE must be one of "
+                "{'parallel', 'time-major'} "
+                f"(got {mode!r})"
+            )
+        return aliases[mode]
+
     def _time_delay_max_energy_pattern_nb(
         ts_data, wavelet_M, wavelet_m_H, wavelet_filter,
         max_delay, downsample, mm_mode,
         pattern, edge, wavelet_rate, f_low, f_high, df,
+        mode="parallel",
     ):
         """Numba-accelerated time-delay max-energy loop (pattern path).
 
@@ -678,6 +825,14 @@ if _HAS_NUMBA:
 
         # ---- fully-JIT path (t2w_numba_core is njit-compiled, i.e. rocket-fft present) ----
         if _HAS_T2W_NUMBA_CORE:
+            mode = _normalize_numba_max_energy_mode(mode)
+            if mode == "time-major":
+                return _time_delay_max_energy_pattern_loop_tm_nb(
+                    ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
+                    int(max_delay), int(downsample),
+                    M_val, T_val, J, jb, je, mL, mH, mean, p,
+                    pattern_abs,
+                )
             return _time_delay_max_energy_pattern_loop_nb(
                 ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature,
                 int(max_delay), int(downsample),
@@ -728,6 +883,9 @@ if _HAS_NUMBA:
 
 else:
     def _wdm_packet_energy_nb(*args, **kwargs):
+        raise RuntimeError(f"numba is required for the numba backend but is unavailable: {_NUMBA_IMPORT_ERROR}")
+
+    def _normalize_numba_max_energy_mode(mode):
         raise RuntimeError(f"numba is required for the numba backend but is unavailable: {_NUMBA_IMPORT_ERROR}")
 
     def _time_delay_max_energy_pattern_nb(*args, **kwargs):
@@ -845,7 +1003,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     return new_tf_map, 1.0
 
 
-def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None):
+def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, mode=None):
     """
     Numba-accelerated version of :func:`time_delay_max_energy`.
 
@@ -865,6 +1023,9 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
     :type pattern: int
     :param hist: optional list-like container to collect transformed samples
     :type hist: list | None
+    :param mode: numba loop strategy, ``"parallel"`` or ``"time-major"``.
+        Defaults to ``PYCWB_NUMBA_MAX_ENERGY_MODE`` or ``"parallel"``.
+    :type mode: str | None
     :return: ``(new_tf_map, alp)``
     :rtype: tuple[TimeFrequencyMap, float]
     """
@@ -918,6 +1079,9 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
 
     wavelet_M = int(tf_map.wavelet.M)
     wavelet_m_H = int(tf_map.wavelet.m_H)
+    numba_mode = _normalize_numba_max_energy_mode(
+        os.getenv("PYCWB_NUMBA_MAX_ENERGY_MODE") if mode is None else mode
+    )
 
     f_low = 0.0 if tf_map.f_low is None else float(tf_map.f_low)
     f_high = (float(tf_map.df) * (n_freq - 1)) if tf_map.f_high is None else float(tf_map.f_high)
@@ -931,6 +1095,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
         int(tf_map.wavelet_rate),
         f_low, f_high,
         float(tf_map.df),
+        mode=numba_mode,
     )
 
     new_tf_map = dataclasses.replace(tf_map, data=current_max)
