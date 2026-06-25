@@ -1,3 +1,65 @@
+"""
+Core analysis pipeline for a single job segment (native Python path).
+
+Pipeline overview (one job segment = one GPS time window)
+--------------------------------------------------------
+
+  ┌──────────────────────────────────────────────────────────┐
+  │                  process_job_segment()                   │
+  │  For each trial_idx (injection realisation):             │
+  │                                                          │
+  │  1. DATA LOADING    read frames / generate noise        │
+  │                     inject simulated signals (MDC)       │
+  │                          │                               │
+  │  2. CONDITIONING    resample → whiten data + MDC         │
+  │                     ──────── (one-time setup) ────────   │
+  │  3. SETUP           coherence (WDM TF maps)              │
+  │                     TD-input cache (float32 planes)      │
+  │                     supercluster (sky patterns + XTalk)  │
+  │                     likelihood (sky scan arrays)         │
+  │                          │                               │
+  │  4. PER-LAG LOOP    ┌──────────────────────────┐        │
+  │    for lag 0..N-1:  │ coherence → supercluster │        │
+  │                     │    → likelihood (per cluster) │    │
+  │                     │    → save & post-process  │        │
+  │                     └──────────────────────────┘        │
+  │                                                          │
+  │  Lags are parallelized via ThreadPoolExecutor when       │
+  │  parallel_lag_workers > 1 and no injections present.     │
+  │  Each lag produces a LagResult; outputs are saved        │
+  │  via LagOutputContext (catalog / waveforms / plots).     │
+  └──────────────────────────────────────────────────────────┘
+
+Data flow between pipeline stages
+----------------------------------
+
+  raw data (TimeSeries[])
+    │
+    ├─[check_and_resample_py]──► resampled strains
+    ├─[data_conditioning]──────► conditioned strains + nRMS
+    │
+    ├─[setup_coherence]────────► coherence_setup (WDM TF maps)
+    ├─[build_td_inputs_cache]──► td_inputs_cache (float32)
+    ├─[setup_supercluster]─────► supercluster_setup + xtalk catalog
+    ├─[setup_likelihood]───────► likelihood_setup (sky arrays)
+    │
+    └─[per lag]────────────────► LagResult (events + metadata)
+                                  │
+                                  └─[_save_lag_outputs]──► catalog / HDF5 / plots
+
+Key abstractions (why they exist)
+---------------------------------
+- ``LagAnalysisContext`` : frozen snapshot of everything one lag needs.
+  Avoids passing 10+ parameters to every per-lag function.
+- ``LagOutputContext``   : I/O handles (dirs, catalog, queue) kept
+  separate from physics state so analysis and persistence don't couple.
+- ``LagResult``          : value object bundling a lag's products;
+  makes the analysis→save handoff explicit and testable.
+
+Reference
+---------
+See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
+"""
 import gc
 import logging
 import os
@@ -34,6 +96,28 @@ from pycwb.workflow.subflow.postprocess_and_plots import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# JAX device buffer cleanup helper (mitigates known memory leak across lags)
+# ---------------------------------------------------------------------------
+def _free_jax_buffers():
+    """Release JAX device arrays still held in memory.
+
+    JAX allocates GPU/CPU device buffers that Python's GC does not always
+    reclaim promptly.  Call this between lags to prevent accumulation.
+    Safe to call even when JAX is not installed or not in use.
+    """
+    try:
+        import jax
+        for _device in jax.devices():
+            try:
+                # Clear the live arrays tracked by the JAX memory allocator.
+                jax.clear_backends()
+                break  # clear_backends() clears *all* backends at once
+            except Exception:
+                pass
+    except Exception:
+        pass  # JAX not installed — nothing to free
 
 
 @dataclass(frozen=True)
@@ -162,38 +246,39 @@ def _lag_livetime(context: LagAnalysisContext, lag: int) -> float:
 
 @contextmanager
 def _temporary_numba_threads(n_threads: int | None):
+    """Temporarily override the Numba thread count, restoring on exit.
+
+    Usage::
+
+        with _temporary_numba_threads(4):
+            ...  # Numba uses ≤4 threads inside this block
+    """
     if n_threads is None:
         yield
         return
+
+    # Best-effort: if Numba isn't available, just run the block unchanged.
     try:
         import numba
-    except Exception as exc:
-        logger.warning("Could not import numba to set per-lag thread count: %s", exc)
+    except Exception:
         yield
         return
 
-    old_threads = None
-    try:
-        old_threads = int(numba.get_num_threads())
-        max_threads = int(getattr(numba.config, "NUMBA_NUM_THREADS", old_threads))
-        target = max(1, int(n_threads))
-        if max_threads > 0:
-            target = min(target, max_threads)
-        if target != old_threads:
-            numba.set_num_threads(target)
-    except Exception as exc:
-        logger.warning("Could not set numba threads to %s: %s", n_threads, exc)
-        yield
-        return
+    old_threads = numba.get_num_threads()
+    max_allowed = getattr(numba.config, "NUMBA_NUM_THREADS", old_threads)
+    target = max(1, int(n_threads))
+    if max_allowed > 0:
+        target = min(target, int(max_allowed))
+
+    if target != old_threads:
+        numba.set_num_threads(target)
+        logger.debug("Numba threads: %d → %d (max %d)", old_threads, target, max_allowed)
 
     try:
         yield
     finally:
-        if old_threads is not None:
-            try:
-                numba.set_num_threads(old_threads)
-            except Exception as exc:
-                logger.warning("Could not restore numba threads to %s: %s", old_threads, exc)
+        if target != old_threads:
+            numba.set_num_threads(old_threads)
 
 
 def _parallel_inner_threads(config: Config, lag_workers: int) -> int:
@@ -278,11 +363,17 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             if selected_cluster.cluster_status > 0:
                 continue
             selected_cluster.cluster_id = k + 1
+
+            # NOTE: likelihood() errors are intentionally NOT caught here.
+            # A failure indicates a systemic issue (e.g. corrupt sky arrays,
+            # OOM, NaN propagation) that requires investigation — silently
+            # skipping the cluster would mask the root cause.
             result_cluster, sky_stats = likelihood(
                 config.nIFO, selected_cluster, config,
                 cluster_id=k + 1, nRMS=context.nRMS,
                 setup=context.likelihood_setup, xtalk=context.xtalk,
             )
+
             if result_cluster is None or result_cluster.cluster_status != -1:
                 continue
             logger.info(
@@ -330,18 +421,34 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     trigger_convert_elapsed = 0.0
     trigger_write_elapsed = 0.0
 
+    # ── Phase A: create trigger folders & persist raw cluster/skymap data ──
     trigger_folders = []
     for trigger in events_data:
-        trigger_folder = create_single_trigger_folder(
-            output_context.working_dir, config.trigger_dir, sub_job_seg, trigger,
-        )
-        trigger_folders.append(trigger_folder)
-        save_trigger(trigger_folder=trigger_folder, trigger_data=trigger,
-                     save_cluster=config.save_cluster, save_sky_map=config.save_sky_map)
+        try:
+            trigger_folder = create_single_trigger_folder(
+                output_context.working_dir, config.trigger_dir, sub_job_seg, trigger,
+            )
+            trigger_folders.append(trigger_folder)
+            save_trigger(trigger_folder=trigger_folder, trigger_data=trigger,
+                         save_cluster=config.save_cluster, save_sky_map=config.save_sky_map)
+        except Exception:
+            event = trigger[0]  # (Event, cluster, sky_stats) tuple
+            logger.exception(
+                "Failed to save trigger folder for event hash_id=%s cluster_id=%s lag=%d — skipping event",
+                getattr(event, 'hash_id', '?'),
+                getattr(event, 'cluster_id', '?'),
+                result.lag,
+            )
+            # Keep trigger_folders aligned with events_data by appending None.
+            trigger_folders.append(None)
 
     logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
+    # ── Phase B: per-event post-processing (waveforms, injections, Q-veto, plots) ──
     for trigger_folder, trigger in zip(trigger_folders, events_data):
+        # Skip events whose trigger folder could not be created in Phase A.
+        if trigger_folder is None:
+            continue
         event, cluster_out, event_skymap_statistics = trigger
 
         reconstruct_timer = time.perf_counter()
@@ -414,22 +521,36 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
 
         del reconst_data
 
+    # ── Phase C: convert events → Trigger objects and persist to catalog ──
     for trigger in events_data:
         event, _, _ = trigger
         convert_timer = time.perf_counter()
-        trigger_obj = Trigger.from_event(event)
-        trigger_obj.time_lag = result.time_lag
-        trigger_obj.segment_lag = result.segment_lag
+        try:
+            trigger_obj = Trigger.from_event(event)
+            trigger_obj.time_lag = result.time_lag
+            trigger_obj.segment_lag = result.segment_lag
+        except Exception:
+            logger.exception(
+                "Failed to convert event hash_id=%s to Trigger at lag=%d — skipping",
+                getattr(event, 'hash_id', '?'), result.lag,
+            )
+            continue
         trigger_convert_elapsed += time.perf_counter() - convert_timer
 
         write_timer = time.perf_counter()
-        if output_context.queue is not None:
-            output_context.queue.put({"type": "trigger", "trigger": trigger_obj})
-        else:
-            catalog_path = _catalog_path(output_context.working_dir, config, output_context.catalog_file)
-            if catalog_path:
-                from pycwb.modules.catalog.catalog import Catalog
-                Catalog.open(catalog_path).add_triggers(trigger_obj)
+        try:
+            if output_context.queue is not None:
+                output_context.queue.put({"type": "trigger", "trigger": trigger_obj})
+            else:
+                catalog_path = _catalog_path(output_context.working_dir, config, output_context.catalog_file)
+                if catalog_path:
+                    from pycwb.modules.catalog.catalog import Catalog
+                    Catalog.open(catalog_path).add_triggers(trigger_obj)
+        except Exception:
+            logger.exception(
+                "Failed to write trigger hash_id=%s to catalog at lag=%d — skipping",
+                trigger_obj.hash_id, result.lag,
+            )
         trigger_write_elapsed += time.perf_counter() - write_timer
 
     progress_timer = time.perf_counter()
@@ -459,6 +580,7 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
 
     del events_data, trigger_folders
     gc.collect()
+    _free_jax_buffers()  # release JAX device memory accumulated during this lag
 
 
 def _iter_pending_lags(

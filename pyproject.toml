@@ -46,7 +46,7 @@ dependencies = [
     "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
-    "wdm-wavelet",
+    "wdm-wavelet>=0.3.1",
     "burst-waveform",
     "pandas",
     "duckdb",
