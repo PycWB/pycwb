@@ -2,8 +2,18 @@ import numpy as np
 import time
 # from numba import float32
 from numba import njit
-from numpy import float32
-from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
+from numpy import float32, uint32
+from pycwb.modules.likelihoodWP.dpf import (
+    dpf_np_loops_vec,
+    add_vec,
+    avg_vec,
+    cos_from_cc,
+    div_vec,
+    mul_vec,
+    norm_vec,
+    sin_from_cc,
+    sub_vec,
+)
 from pycwb.modules.xtalk.monster import getXTalk_pixels_fast
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
@@ -412,78 +422,81 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
     reduced_rms = np.empty((n_pix, n_ifo), dtype=float32)
     reduced_v00 = np.empty((n_pix, n_ifo), dtype=float32)
     reduced_v90 = np.empty((n_pix, n_ifo), dtype=float32)
+    dpf_f = np.empty((n_pix, n_ifo), dtype=float32)
+    dpf_F = np.empty((n_pix, n_ifo), dtype=float32)
+    dpf_si = np.empty(n_pix, dtype=float32)
+    dpf_co = np.empty(n_pix, dtype=float32)
+    dpf_fp = np.empty(n_pix, dtype=float32)
 
     for l in range(n_sky):
-        m = float32(0)
-        Eo = float32(0)
-        Ls = float32(0)
-        Ln = float32(0)
+        m_gt = float32(0)
+        Eo_gt = float32(0)
+        Ls_gt = float32(0)
+        Ln_gt = float32(0)
+        Eo_ge = float32(0)
+        Ls_ge = float32(0)
+        Ln_ge = float32(0)
         for j in range(n_pix):
             _rE = float32(0.0)
-            for i in range(n_ifo):
-                delay_idx = ml[i, l] + offset
-                v00_ij = td00[delay_idx, i, j]
-                v90_ij = td90[delay_idx, i, j]
-                _rE += v00_ij * v00_ij + v90_ij * v90_ij
-            rNRG[j] = _rE
-            _msk = float32(1.0) if rNRG[j] > network_energy_threshold else float32(0.0)
-            m += _msk
-            pNRG[j] = rNRG[j] * _msk
-            Eo += pNRG[j]
+            _em = float32(0.0)
             for i in range(n_ifo):
                 delay_idx = ml[i, l] + offset
                 v00_ij = td00[delay_idx, i, j]
                 v90_ij = td90[delay_idx, i, j]
                 detector_energy = v00_ij * v00_ij + v90_ij * v90_ij
-                pNRG[j] = min(rNRG[j] - detector_energy, pNRG[j])
-            Ls += pNRG[j]
-            _msk = float32(1.0) if pNRG[j] > Es else float32(0.0)
-            Ln += rNRG[j] * _msk
+                _rE += detector_energy
+                if detector_energy > _em:
+                    _em = detector_energy
+            rNRG[j] = _rE
+            sub_energy = _rE - _em
+            if _rE >= network_energy_threshold:
+                pNRG[j] = sub_energy
+                Eo_ge += _rE
+                Ls_ge += sub_energy
+                if sub_energy > Es:
+                    Ln_ge += _rE
+            else:
+                pNRG[j] = float32(0.0)
+            if _rE > network_energy_threshold:
+                m_gt += float32(1.0)
+                Eo_gt += _rE
+                Ls_gt += sub_energy
+                if sub_energy > Es:
+                    Ln_gt += _rE
 
-        Eo = Eo + float32(0.01)
-        m = int(2 * m + 0.01)
-        aa = float32(Ls * Ln / (Eo - Ls))
-        if subcut >= 0 and (aa - m) / (aa + m + float32(1e-16)) < subcut:
+        Eo_cut = Eo_gt + float32(0.01)
+        m_cut = int(2 * m_gt + 0.01)
+        aa = float32(Ls_gt * Ln_gt / (Eo_cut - Ls_gt))
+        if subcut >= 0 and (aa - m_cut) / (aa + m_cut + float32(1e-16)) < subcut:
             continue
 
         m = 0
-        Ls = Ln = Eo = float32(0.0)
         for j in range(n_pix):
-            ee = float32(0.)
-            for i in range(n_ifo):
-                delay_idx = ml[i, l] + offset
-                v00_ij = td00[delay_idx, i, j]
-                v90_ij = td90[delay_idx, i, j]
-                ee += v00_ij * v00_ij + v90_ij * v90_ij
-            if ee < network_energy_threshold:
+            if rNRG[j] < network_energy_threshold:
                 continue
 
-            em = float32(0.0)
             for i in range(n_ifo):
                 reduced_rms[m, i] = rms[j, i]
                 delay_idx = ml[i, l] + offset
-                v00_ij = td00[delay_idx, i, j]
-                v90_ij = td90[delay_idx, i, j]
-                reduced_v00[m, i] = v00_ij
-                reduced_v90[m, i] = v90_ij
-                _em = v00_ij * v00_ij + v90_ij * v90_ij
-                if _em > em:
-                    em = _em
+                reduced_v00[m, i] = td00[delay_idx, i, j]
+                reduced_v90[m, i] = td90[delay_idx, i, j]
             m += 1
 
-            Ls += ee - em
-            Eo += ee
-            if ee - em > Es:
-                Ln += ee
+        Eo = Eo_ge
+        Ls = Ls_ge
+        Ln = Ln_ge
 
         if Eo <= 0:
             continue
 
         Lo = float32(0.0)
-        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l], FX[l], reduced_rms[:m, :])
+        _dpf_np_loops_vec_into(
+            FP[l], FX[l], reduced_rms, m, n_ifo,
+            dpf_f, dpf_F, dpf_si, dpf_co, dpf_fp,
+        )
 
         for j in range(m):
-            Lo += sse_like_ps(f[j], F[j], reduced_v00[j], reduced_v90[j])
+            Lo += sse_like_ps(dpf_f[j], dpf_F[j], reduced_v00[j], reduced_v90[j])
 
         AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)
         ee = Ls * Eo / (Eo - Ls)
@@ -502,6 +515,52 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
             EE = em
 
     return l_max, stat, Em, Am, lm, Vm, suball, EE
+
+
+@njit(cache=True)
+def _dpf_np_loops_vec_into(Fp0, Fx0, rms, n_pix, n_ifo, f, F, si, co, fp):
+    """Fill DPF ``f``/``F`` arrays with the same math as dpf_np_loops_vec."""
+    NPIX = uint32(n_pix)
+    NIFO = uint32(n_ifo)
+
+    for j in range(NIFO):
+        for i in range(NPIX):
+            f[i, j] = mul_vec(rms[i, j], Fp0[j])
+            F[i, j] = mul_vec(rms[i, j], Fx0[j])
+
+    for i in range(NPIX):
+        _ff = float32(0.)
+        _FF = float32(0.)
+        _fF = float32(0.)
+
+        for j in range(NIFO):
+            _ff += f[i, j] * f[i, j]
+            _FF += F[i, j] * F[i, j]
+            _fF += F[i, j] * f[i, j]
+
+        _si = mul_vec(float32(2.), _fF)
+        _co = sub_vec(_ff, _FF)
+        _AP = add_vec(_ff, _FF)
+        _nn = norm_vec(_co, _si)
+        _cc = div_vec(_co, _nn)
+        fp[i] = avg_vec(_AP, _nn)
+        si[i] = sin_from_cc(_cc)
+        co[i] = cos_from_cc(_cc, _si)
+
+    for i in range(NPIX):
+        for j in range(NIFO):
+            f[i, j], F[i, j] = (
+                f[i, j] * co[i] + F[i, j] * si[i],
+                F[i, j] * co[i] - f[i, j] * si[i],
+            )
+
+        fF_new = float32(0.)
+        for j in range(NIFO):
+            fF_new += f[i, j] * F[i, j]
+        fF_new = div_vec(fF_new, fp[i])
+
+        for j in range(NIFO):
+            F[i, j] -= f[i, j] * fF_new
 
 
 @njit(cache=True)
