@@ -3,18 +3,13 @@ import os
 import logging
 import time
 from typing import Dict, List
-import math
 import numpy as np
-import pycwb
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.plot import event
-from pycwb.modules.reconstruction.getResiduals import get_ASD
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
-from pycwb.modules.plot_map.world_map import plot_skymap_contour
 # from pycwb.modules.read_data import generate_strain_from_injection
-from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform, get_residuals
+from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 from filelock import SoftFileLock
@@ -70,12 +65,18 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
     # apply epoch
     step_timer = time.perf_counter()
-    for w in reconstructed_signals: w.start_time += epoch
-    for w in reconstructed_signals_whiten: w.start_time += epoch
-    for w in reconstructed_data: w.start_time += epoch
-    for w in reconstructed_data_whiten: w.start_time += epoch
-    for w in reconstructed_nulls: w.start_time += epoch
-    for w in reconstructed_nulls_whiten: w.start_time += epoch
+    for w in reconstructed_signals:
+        w.start_time += epoch
+    for w in reconstructed_signals_whiten:
+        w.start_time += epoch
+    for w in reconstructed_data:
+        w.start_time += epoch
+    for w in reconstructed_data_whiten:
+        w.start_time += epoch
+    for w in reconstructed_nulls:
+        w.start_time += epoch
+    for w in reconstructed_nulls_whiten:
+        w.start_time += epoch
     timings["epoch"] = time.perf_counter() - step_timer
 
     # reconstructed_signals_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
@@ -279,43 +280,6 @@ def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -
                     grp[key] = np.asarray(value)
                 logger.info(f"Added waveform {key} for event {event_id} to {wave_file}")
 
-def load_wf_from_wave(wave_file: str, ifo: str, keys: List[str]) -> Dict[str, list]:
-    """
-    Load waveforms for a given IFO and keys from the consolidated wave HDF5 file.
-    Paired reader for add_wf_to_wave.
-
-    Parameters
-    ----------
-    wave_file : str
-        Path to the wave HDF5 file.
-    ifo : str
-        Interferometer name.
-    keys : list[str]
-        Waveform keys to load, e.g. ['wf_REC', 'wf_INJ']. Each key is prefixed
-        with ``ifo_`` when looking up in the file.
-
-    Returns
-    -------
-    dict[str, list[TimeSeries]]
-        Mapping from each key to a list of TimeSeries (one per event, sorted by event id).
-    """
-    result: Dict[str, list] = {key: [] for key in keys}
-    with h5.File(wave_file, 'r') as f:
-        for event_id in sorted(f.keys()):
-            for key in keys:
-                full_key = f'{ifo}_{key}'
-                if full_key in f[event_id]:
-                    dataset = f[event_id][full_key]
-                    if 'sample_rate' in dataset.attrs and 'start_time' in dataset.attrs:
-                        value = TimeSeries(dataset[:],
-                                          delta_t=1.0 / dataset.attrs['sample_rate'],
-                                          epoch=dataset.attrs['start_time'])
-                    else:
-                        # plain array (e.g. ASD)
-                        value = dataset[:]
-                    result[key].append(value)
-    return result
-
 def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[str], event: Event, data: list[TimeSeries], reconst_data: Dict[str, TimeSeries], tf_maps: list[TimeFrequencySeries],
                              nrms: list[TimeFrequencySeries], save: bool = True, wave_file: str = None,
                              save_gwf: bool = False, plot: bool = False, queue=None) -> Dict[str, TimeSeries]:
@@ -412,6 +376,8 @@ def plot_trigger_flow(trigger_folder: str,
 
 def plot_skymap_flow(trigger_folder: str,
                  event: Event, event_skymap_statistics) -> None:
+    from pycwb.modules.plot.skymap import plot_skymap_contour
+
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
         logger.info(f"Creating trigger folder: {trigger_folder}")

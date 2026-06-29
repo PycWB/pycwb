@@ -4,7 +4,7 @@ from prefect.utilities.annotations import quote
 
 
 from pycwb.modules.plot.cluster_statistics import plot_statistics
-from pycwb.modules.plot_map.world_map import plot_skymap_contour
+from pycwb.modules.plot.skymap import plot_skymap_contour
 from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence_single_res
