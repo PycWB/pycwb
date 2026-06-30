@@ -39,6 +39,8 @@ test:
         --ignore=pycwb/modules/injection/tests \
         --ignore=pycwb/modules/statistics/tests/test_sigmoid_fit.py \
         -m "not slow" \
+        --cov=pycwb \
+        --cov-report=term \
         --tb=short \
         -v
   coverage: '/TOTAL.*\s+(\d+%)$/'

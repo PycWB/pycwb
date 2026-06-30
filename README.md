@@ -2,6 +2,7 @@
 
 [![Documentation](https://readthedocs.org/projects/pycwb/badge/?version=latest)](https://pycwb.readthedocs.io)
 [![Build Status](https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/pipelines)
+[![Coverage](https://git.ligo.org/yumeng.xu/pycwb/badges/main/coverage.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/pipelines)
 [![Releases](https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/releases)
 [![PyPI version](https://badge.fury.io/py/pycWB.svg)](https://badge.fury.io/py/pycWB)
 [![License](https://img.shields.io/badge/license-GPLv3-blue)](https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE)
