@@ -24,6 +24,29 @@ include:
       test_script:
         - cd /opt && pycwb --version # change dir to prevent use the source code
 
+# ── Unit & integration tests ──────────────────────────────────
+test:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
+  needs: [build]
+  script:
+    - pip install --no-cache-dir pytest pytest-mock pytest-cov iminuit
+    - |
+      pytest pycwb/modules/ tests/ \
+        --ignore=pycwb/modules/clustering \
+        --ignore=tests/sample \
+        --ignore=tests/injection_consistency \
+        --ignore=pycwb/modules/injection/tests \
+        --ignore=pycwb/modules/statistics/tests/test_sigmoid_fit.py \
+        -m "not slow" \
+        --tb=short \
+        -v
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
 build-latest:
   rules:
     - if: $CI_COMMIT_TAG
