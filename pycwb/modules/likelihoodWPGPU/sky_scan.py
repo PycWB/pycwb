@@ -158,7 +158,8 @@ def find_optimal_sky_localization(n_ifo: int,
                                  netCC: float,
                                  delta_regulator: float,
                                  network_energy_threshold: float,
-                                 sky_batch_size: int = 8192):
+                                 sky_batch_size: int = 8192,
+                                 sky_valid_indices: np.ndarray | None = None):
     """Find the sky direction that maximises the cross-correlation statistic.
 
     This is the JAX equivalent of the Numba ``find_optimal_sky_localization``.
@@ -181,14 +182,22 @@ def find_optimal_sky_localization(n_ifo: int,
     sky_batch_size : int
         Number of sky directions processed per vmap call.  Reduce this if
         GPU/XLA runs out of memory for large clusters.  Default: 8192.
+    sky_valid_indices : np.ndarray or None
+        1-D array of sky indices to evaluate.  ``None`` evaluates all
+        directions.
 
     Returns
     -------
     SkyMapStatistics-compatible tuple:
         (l_max, nAntennaPrior, nAlignment, nLikelihood, nNullEnergy,
          nCorrEnergy, nCorrelation, nSkyStat, nDisbalance, nNetIndex,
-         nEllipticity, nPolarisation)
+         nEllipticity, nPolarisation, sky_stat_max)
     """
+    if sky_valid_indices is None:
+        sky_valid_indices_np = np.arange(n_sky, dtype=np.int64)
+    else:
+        sky_valid_indices_np = np.asarray(sky_valid_indices, dtype=np.int64)
+
     # Convert inputs to JAX arrays
     FP_j = jnp.asarray(FP, dtype=jnp.float32)
     FX_j = jnp.asarray(FX, dtype=jnp.float32)
@@ -201,6 +210,7 @@ def find_optimal_sky_localization(n_ifo: int,
     delta_j = jnp.float32(delta_regulator)
     ethr_j = jnp.float32(network_energy_threshold)
     nifo_j = jnp.float32(n_ifo)
+    sky_indices_j = jnp.asarray(sky_valid_indices_np, dtype=jnp.int32)
 
     offset = td00_j.shape[0] // 2
 
@@ -234,18 +244,20 @@ def find_optimal_sky_localization(n_ifo: int,
         "net_index", "ellipticity", "polarisation",
     ]
     result_parts = {k: [] for k in result_keys}
+    n_valid = len(sky_valid_indices_np)
 
-    for _start in range(0, n_sky, sky_batch_size):
-        _end = min(_start + sky_batch_size, n_sky)
+    for _start in range(0, n_valid, sky_batch_size):
+        _end = min(_start + sky_batch_size, n_valid)
+        _batch_indices = sky_indices_j[_start:_end]
 
         # Gather delayed data for this batch: (batch, n_ifo, n_pix) each
-        _all_v00, _all_v90 = jax.vmap(_gather_delayed_data)(ml_t[_start:_end])
+        _all_v00, _all_v90 = jax.vmap(_gather_delayed_data)(ml_t[_batch_indices])
 
         # Compute per-sky statistics for this batch
         _chunk = jax.vmap(
             _sky_direction_statistics,
             in_axes=(0, 0, None, 0, 0, None, None, None, None, None),
-        )(FP_j[_start:_end], FX_j[_start:_end], rms_j,
+        )(FP_j[_batch_indices], FX_j[_batch_indices], rms_j,
           _all_v00, _all_v90,
           REG_j, netCC_j, delta_j, ethr_j, nifo_j)
 
@@ -253,17 +265,23 @@ def find_optimal_sky_localization(n_ifo: int,
         for k in result_keys:
             result_parts[k].append(np.asarray(_chunk[k]))
 
-    # Concatenate all batches
-    sky_results_np = {k: np.concatenate(result_parts[k]) for k in result_keys}
+    # Concatenate valid-direction batches back into full-sky arrays.  Masked
+    # directions remain zero, matching the CPU skymap arrays.
+    sky_results_np = {k: np.zeros(n_sky, dtype=np.float32) for k in result_keys}
+    if n_valid > 0:
+        for k in result_keys:
+            sky_results_np[k][sky_valid_indices_np] = (
+                np.concatenate(result_parts[k]).astype(np.float32)
+            )
 
     # --- Find l_max: last index with maximum AA (mirrors C++ tie-breaking) ---
     AA_np = sky_results_np["AA"]
-    STAT = np.float32(-1e12)
-    l_max = 0
-    for _l in range(n_sky):
+    STAT = np.float32(0.0)
+    l_max = int(sky_valid_indices_np[0]) if n_valid > 0 else 0
+    for _l in sky_valid_indices_np:
         if AA_np[_l] >= STAT:
             STAT = AA_np[_l]
-            l_max = _l
+            l_max = int(_l)
 
     # --- Collect per-sky arrays ---
     nAntennaPrior = sky_results_np["antenna_prior"].astype(np.float32)
@@ -280,4 +298,4 @@ def find_optimal_sky_localization(n_ifo: int,
 
     return (l_max, nAntennaPrior, nAlignment, nLikelihood, nNullEnergy,
             nCorrEnergy, nCorrelation, nSkyStat, nDisbalance, nNetIndex,
-            nEllipticity, nPolarisation)
+            nEllipticity, nPolarisation, float(STAT))

@@ -136,7 +136,8 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
                             rms: jnp.ndarray,
                             gamma_regulator: float,
                             network_energy_threshold: float,
-                            sky_batch_size: int = 8192) -> float:
+                            sky_batch_size: int = 8192,
+                            sky_valid_indices=None) -> float:
     """Compute the DPF-based energy regulator REG[1].
 
     Scans all sky directions, counts how many have DPF quality above
@@ -159,6 +160,9 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
     sky_batch_size : int
         Number of sky directions processed per vmap call.  Reduce this if
         GPU/XLA runs out of memory for large clusters.  Default: 8192.
+    sky_valid_indices : array-like or None
+        Sky indices to include in the regulator scan.  ``None`` scans every
+        direction.
 
     Returns
     -------
@@ -168,21 +172,32 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
     import numpy as _np
 
     n_sky_total = FP.shape[0]
+    if sky_valid_indices is None:
+        sky_valid_indices_np = _np.arange(n_sky_total, dtype=_np.int64)
+    else:
+        sky_valid_indices_np = _np.asarray(sky_valid_indices, dtype=_np.int64)
+
+    n_sky_valid = len(sky_valid_indices_np)
+    if n_sky_valid == 0:
+        return float(-network_energy_threshold)
+
     FP_j = jnp.asarray(FP, dtype=jnp.float32)
     FX_j = jnp.asarray(FX, dtype=jnp.float32)
     rms_j = jnp.asarray(rms, dtype=jnp.float32)
+    sky_indices_j = jnp.asarray(sky_valid_indices_np, dtype=jnp.int32)
 
     quality_parts = []
-    for start in range(0, n_sky_total, sky_batch_size):
-        end = min(start + sky_batch_size, n_sky_total)
+    for start in range(0, n_sky_valid, sky_batch_size):
+        end = min(start + sky_batch_size, n_sky_valid)
+        batch_indices = sky_indices_j[start:end]
         batch_qualities = jax.vmap(
             _dpf_quality_single, in_axes=(0, 0, None)
-        )(FP_j[start:end], FX_j[start:end], rms_j)
+        )(FP_j[batch_indices], FX_j[batch_indices], rms_j)
         quality_parts.append(_np.asarray(batch_qualities))
 
     dpf_qualities = _np.concatenate(quality_parts)
 
-    n_sky = float(n_sky_total)
+    n_sky = float(n_sky_valid)
     n_gamma = float(_np.sum(dpf_qualities > gamma_regulator))
 
     reg = (n_sky ** 2 / (n_gamma ** 2 + 1e-9) - 1.0) * network_energy_threshold

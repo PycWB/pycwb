@@ -16,7 +16,7 @@ from pycwb.modules.likelihoodWP.dpf import (
 )
 from pycwb.modules.xtalk.monster import getXTalk_pixels_fast
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
+from pycwb.modules.likelihoodWP.pixel_data import load_data_from_pixels
 
 
 def sub_net_cut(

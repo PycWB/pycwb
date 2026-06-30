@@ -24,11 +24,15 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.modules.xtalk.type import XTalk
 
-# Re-use setup_likelihood from CPU module (it only builds numpy arrays)
+# Re-use helpers from CPU phase submodules
 from pycwb.modules.likelihoodWP.likelihood import (
     setup_likelihood,
+)
+from pycwb.modules.likelihoodWP.pixel_data import (
     load_data_from_ifo,
     load_data_from_pixels,
+)
+from pycwb.modules.likelihoodWP.detection_statistics import (
     threshold_cut,
     fill_detection_statistic,
     get_chirp_mass,
@@ -251,7 +255,7 @@ def calculate_sky_statistics_gpu(
 
 def _numpy_packet_rotation(v00, v90, mask):
     """Wrapper to call avx_packet_ps from the CPU module (numba-compiled)."""
-    from pycwb.modules.likelihoodWP.utils import avx_packet_ps
+    from pycwb.modules.likelihoodWP.packet_ops import avx_packet_ps
     return avx_packet_ps(np.asarray(v00), np.asarray(v90), np.asarray(mask))
 
 
@@ -319,6 +323,9 @@ def likelihood(
     FP                       = setup["FP_t"]
     FX                       = setup["FX_t"]
     n_sky                    = setup["n_sky"]
+    sky_valid_indices        = setup.get("sky_valid_indices")
+    if sky_valid_indices is None:
+        sky_valid_indices = np.arange(n_sky, dtype=np.int64)
 
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
     n_pix = len(cluster.pixel_arrays)
@@ -334,6 +341,9 @@ def likelihood(
         FP = setup["FP_big_cluster_t"]
         FX = setup["FX_big_cluster_t"]
         n_sky = setup["n_sky_big_cluster"]
+        sky_valid_indices = setup.get("sky_valid_indices_big")
+        if sky_valid_indices is None:
+            sky_valid_indices = np.arange(n_sky, dtype=np.int64)
         logger.info("Cluster-id=%s is big (%d px): using coarse sky grid (%d dirs)",
                     cluster_id, n_pix, n_sky)
 
@@ -348,7 +358,10 @@ def likelihood(
 
     # --- DPF regulator (JAX) ---
     _t0 = time.perf_counter()
-    REG[1] = calculate_dpf_regulator(FP, FX, rms_t, gamma_regulator, network_energy_threshold)
+    REG[1] = calculate_dpf_regulator(
+        FP, FX, rms_t, gamma_regulator, network_energy_threshold,
+        sky_valid_indices=sky_valid_indices,
+    )
     stage_timings["dpf_regulator"] = time.perf_counter() - _t0
 
     # --- Sky scan (JAX vmap) ---
@@ -356,9 +369,19 @@ def likelihood(
     skymap_statistics = find_optimal_sky_localization(
         nIFO, n_pix, n_sky, FP, FX, rms_t, td00, td90, ml, REG, netCC,
         delta_regulator, network_energy_threshold,
+        sky_valid_indices=sky_valid_indices,
     )
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0
+
+    if skymap_statistics.sky_stat_max <= 0.0:
+        logger.info("Cluster rejected: non-positive sky_stat_max=%.3f", skymap_statistics.sky_stat_max)
+        stage_timings["total"] = time.perf_counter() - timer_start
+        logger.info("-------------------------------------------------------")
+        logger.info("Total events: %d", 0)
+        logger.info("Total time: %.2f s", stage_timings["total"])
+        logger.info("-------------------------------------------------------")
+        return None, None
 
     # --- Normalised sky probability (softmax) ---
     _t0 = time.perf_counter()
