@@ -218,11 +218,30 @@ def _lag_progress_record(
 
 
 def _effective_veto_windows(config: Config, sub_job_seg: WaveSegment) -> list[tuple[float, float]] | None:
-    veto_windows = (
+    """Return the CAT2 veto windows for the segment.
+
+    When ``analyze_injection_only`` is enabled, injection windows are NOT
+    folded in here — they are applied later inside the lag loop, after the
+    ``segTHR`` check, so that the injection time window cannot cause the
+    analysis to be skipped.
+    """
+    return (
         sub_job_seg.cwb_veto_windows
         if getattr(sub_job_seg, 'cwb_veto_windows', None) is not None
         else sub_job_seg.veto_windows
     )
+
+
+def _injection_aware_veto_windows(
+    config: Config,
+    sub_job_seg: WaveSegment,
+    veto_windows: list[tuple[float, float]] | None,
+) -> list[tuple[float, float]] | None:
+    """Return veto windows intersected with injection envelopes when applicable.
+
+    Called *after* the ``segTHR`` check so that small injection windows
+    do not cause the lag to be skipped.
+    """
     if not (getattr(config, 'analyze_injection_only', False) and sub_job_seg.injections):
         return veto_windows
 
@@ -326,11 +345,17 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             lag, lag_livetime, seg_thr, sub_job_seg.duration - lag_livetime,
         )
 
+    # Build injection-aware veto windows AFTER the segTHR check so that
+    # small injection windows cannot cause the analysis to be skipped.
+    effective_veto = _injection_aware_veto_windows(
+        config, sub_job_seg, context.veto_windows,
+    )
+
     with _temporary_numba_threads(context.numba_threads):
         timer_coherence = time.perf_counter()
         frag_clusters_this_lag = coherence_single_lag(
             context.coherence_setup, lag,
-            veto_windows=context.veto_windows,
+            veto_windows=effective_veto,
         )
         logger.info("Coherence time for lag %d: %.2f s", lag, time.perf_counter() - timer_coherence)
 
