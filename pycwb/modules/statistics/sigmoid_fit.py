@@ -5,6 +5,32 @@ from scipy.special import erfc
 from iminuit import Minuit
 
 def logNfit(x, par0, par1, par2, par3, par4):
+    """
+    Vectorized sigmoid (log-normal) fit function for efficiency curves.
+
+    Computes the detection efficiency at a given hrss value x, parameterized
+    by a piecewise sigmoid in log-space. Fully vectorized over x.
+
+    Parameters
+    ----------
+    x : array-like
+        hrss values at which to evaluate the efficiency.
+    par0 : float
+        log10(hrss50), the hrss at 50% detection efficiency.
+    par1 : float
+        Sigma (width) parameter of the sigmoid.
+    par2 : float
+        Beta-minus slope (below hrss50).
+    par3 : float
+        Beta-plus slope (above hrss50).
+    par4 : int (0 or 1)
+        Flag controlling sigmoid orientation.
+
+    Returns
+    -------
+    ndarray
+        Detection efficiency values in [0, 1] for each input x.
+    """
     # Vectorized computation of y based on par0 and par4
     y = x - par0
     y = np.where(par4, -y, y)

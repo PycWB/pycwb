@@ -19,7 +19,7 @@ def read_data_file(file_path: str, i: int) -> pd.DataFrame:
     pd.DataFrame
         DataFrame with the data read from the file
     """
-    data = pd.read_csv(file_path, sep='\s+', header=None, names=['hrss', f'evt_{i}', f'inj_{i}', f'ratio_{i}'])
+    data = pd.read_csv(file_path, sep=r'\s+', header=None, names=['hrss', f'evt_{i}', f'inj_{i}', f'ratio_{i}'])
 
     return data
 
