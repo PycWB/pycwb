@@ -1,0 +1,171 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 clustering test configuration
+# Based on tests/sample/user_parameters_injection.yaml with:
+#   - clustering workflow enabled
+#   - two CBC injections at different GPS times / distances
+#   - deterministic seed for reproducibility
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Extend the built-in schema to accept clustering_method and clustering keys
+pycwb_schema:
+  mode: extend
+  properties:
+    clustering_method:
+      type: string
+      default: "connected_components"
+    clustering:
+      type: object
+      default: {}
+
+###### project ######
+outputDir: "output"
+nproc: 2
+
+###### search ######
+analysis: "2G"
+cfg_search: "r"
+
+plot_trigger: False
+save_waveform: False
+plot_waveform: False
+save_injection: False
+plot_injection: False
+compress_output_json: False
+
+optim: False
+
+###### network configuration ######
+ifo: ["L1", "H1"]
+refIFO: "L1"
+
+# lags
+lagSize: 1
+lagStep: 1.
+lagOff: 0
+lagMax: 0
+
+# superlags
+slagSize: 1
+slagMin: 0
+slagMax: 0
+slagOff: 0
+
+# job
+segLen: 1200
+segMLS: 600
+segTHR: 200
+segEdge: 10
+
+# frequency
+fLow: 16.
+fHigh: 1024.
+
+levelR: 3
+l_low: 4
+l_high: 10
+
+wdmXTalk: "wdmXTalk/OverlapCatalog16-1024.bin"
+
+healpix: 7
+
+###### cWB production thresholds ######
+bpp: 0.001
+subnet: 0.5
+subcut: -1.0
+netRHO: 5.0
+cedRHO: 5.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+delta: 0.5
+cfg_gamma: 0.0
+LOUD: 300
+
+pattern: 10
+
+iwindow: 100
+
+gps_start: 1126258862.4
+gps_end: 1126260062.4
+
+segment_processer: pycwb.workflow.subflow.process_job_segment_clustering.process_job_segment
+
+analyze_injection_only: True
+
+# ── Clustering configuration ─────────────────────────────────────────────────
+clustering_method: "weighted_graph"
+
+clustering:
+  weighted_graph:
+    time_radius_bins: 2
+    freq_radius_bins: 3
+    min_edge_weight: 0.1
+    energy_balance_wt: 0.5
+    min_pixels: 1
+
+# ── Injections ───────────────────────────────────────────────────────────────
+# Three injection types (CBC, WNB, SGE) spread across the segment.
+# Seeds are fixed for reproducibility.
+injection:
+  seed: 150914
+  parameters:
+    # Injection 1 – CBC (GW150914-like) via GWSignal / IMRPhenomXPHM
+    - mass1: 36
+      mass2: 29
+      spin1x: 0.3
+      spin1z: 0.2
+      spin2z: 0.1
+      distance: 1030
+      inclination: 0
+      polarization: 0
+      gps_time: 1126259162.4
+      coa_phase: 0
+      t_start: -5
+      t_end: 2
+      ra: 0
+      dec: 0
+      pol: 0
+      f_lower: 16
+      approximant: "IMRPhenomXPHM"
+      generator: "pycwb.modules.injection.gwsignal_waveform.get_td_waveform"
+
+    # Injection 2 – White Noise Burst (WNB) via burst_waveform
+    - approximant: "WNB"
+      generator: "burst_waveform.interface.generate_waveform_pycwb.get_td_waveform"
+      frequency: 150.0        # central frequency [Hz]
+      bandwidth: 100.0        # bandwidth [Hz]
+      duration: 0.1           # duration [s]
+      ellipticity: 0.0        # 0 = linearly polarised
+      hrss: 1.0e-22           # root-sum-squared strain amplitude
+      pseed: 42               # plus-polarisation seed
+      xseed: 43               # cross-polarisation seed
+      gps_time: 1126259362.4
+      t_start: -1
+      t_end: 1
+      ra: 0.5
+      dec: 0.3
+      pol: 0.0
+
+    # Injection 3 – Sine-Gaussian (SGE) via burst_waveform
+    - approximant: "SGE"
+      generator: "burst_waveform.interface.generate_waveform_pycwb.get_td_waveform"
+      frequency: 235.0        # central frequency [Hz]
+      Q: 9.0                  # quality factor (duration = Q / (2π f))
+      ellipticity: 0.0        # 0 = linearly polarised
+      hrss: 1.0e-22           # root-sum-squared strain amplitude
+      gps_time: 1126259562.4
+      t_start: -1
+      t_end: 1
+      ra: 1.0
+      dec: -0.5
+      pol: 0.3
+
+  noise:
+    type: "GaussianNoise"
+    psds:
+      H1: "input/aligo_O4high.txt"
+      L1: "input/aligo_O4high.txt"
+    delta_seeds:
+      H1: 10
+      L1: 20
