@@ -60,7 +60,7 @@ Find the coherent pixel clusters and generate the sparse table to reduce the com
 
 .. code-block:: python
 
-    from pycwb.modules.coherence import coherence
+    from pycwb.modules.coherence_root import coherence
 
     # calculate coherence
     fragment_clusters = coherence(config, strains, nRMS)
@@ -69,7 +69,7 @@ Create a network using the whitened data and the noise RMS, then merge the clust
 
 .. code-block:: python
 
-    from pycwb.modules.super_cluster import supercluster
+    from pycwb.modules.super_cluster_native import supercluster
     from pycwb.types.network import Network
 
     network = Network(config, strains, nRMS)
@@ -80,7 +80,7 @@ Finally, calculate the likelihood for each supercluster:
 
 .. code-block:: python
 
-    from pycwb.modules.likelihood import likelihood
+    from pycwb.modules.likelihood_root import likelihood
 
     events, clusters, skymap_statistics = likelihood(config, network, pwc_list)
 

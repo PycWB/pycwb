@@ -49,19 +49,14 @@ If the injections are set in the config, the injections will be added to the job
    job_segments = create_job_segment_from_config(config)
 
 A catalog file will be created in the output folder. The catalog file is a json file containing all the events found
-in the search. The catalog file will be updated after each job segment is analyzed. A web viewer will also be created in the output folder. It is a web app that can be used to view the events in the
-output folder. The web viewer is created by copying the web_viewer folder in pycWB to the output folder.
+in the search. The catalog file will be updated after each job segment is analyzed.
 
 .. code-block:: python
 
     from pycwb.modules.catalog import create_catalog, add_events_to_catalog
-    from pycwb.modules.web_viewer.create import create_web_viewer
 
     # create catalog
     create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
-
-    # copy all files in web_viewer to output folder
-    create_web_viewer(config.outputDir)
 
 each job segment will be analyzed with :py:func:`pycwb.search.analyze_job_segment`.
 To avoid memory leak in c code, the function is called in a subprocess.
@@ -119,26 +114,26 @@ will be returned.
     tf_maps, nRMS_list = data_conditioning(config, data)
 
 
-Next, it will select the pixels and do the clustering with :py:func:`pycwb.modules.coherence.coherence`
-and :py:func:`pycwb.modules.super_cluster.supercluster`. The output is a list of :py:class:`.Cluster` objects.
+Next, it will select the pixels and do the clustering with :py:func:`pycwb.modules.coherence_root.coherence`
+and :py:func:`pycwb.modules.super_cluster_native.supercluster`. The output is a list of :py:class:`.Cluster` objects.
 
 .. code-block:: python
 
-    from pycwb.modules.coherence import coherence
-    from pycwb.modules.super_cluster import supercluster
+    from pycwb.modules.coherence_root import coherence
+    from pycwb.modules.super_cluster_native import supercluster
 
     fragment_clusters = coherence(config, tf_maps, nRMS_list)
 
     pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
 
-Finally, it will do the likelihood analysis with :py:func:`pycwb.modules.likelihood.likelihood`.
+Finally, it will do the likelihood analysis with :py:func:`pycwb.modules.likelihood_root.likelihood`.
 The output is a list of :py:class:`.Event` objects containing the statistics of each event from the likelihood analysis.
 and a list of :py:class:`.Cluster` objects which contains the more detailed statistics of each pixels.
 The clusters and events will be saved in the output folder. The catalog file will be updated with the new events.
 
 .. code-block:: python
 
-    from pycwb.modules.likelihood import likelihood, save_likelihood_data
+    from pycwb.modules.likelihood_root import likelihood, save_likelihood_data
     from pycwb.modules.catalog import add_events_to_catalog
 
     events, clusters = likelihood(config, network, pwc_list)
