@@ -9,7 +9,6 @@ from jinja2 import Template
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog, read_catalog_metadata
 from pycwb.modules.job_segment import create_job_segment_from_config
-from pycwb.modules.web_viewer.create import create_web_viewer
 from pycwb.modules.workflow_utils.job_setup import create_working_directory, \
     check_if_output_exists, create_output_directory
 from pycwb.types.job import WaveSegment
@@ -111,8 +110,6 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
 
         if not os.path.exists(catalog_file):
             Catalog.create(catalog_file, config, job_segments)
-        create_web_viewer(f"{working_dir}/public")
-        # save_job_segments_to_json(job_segments, f"{working_dir}/config/job_segments.json")
 
     return job_segments, config, working_dir
 

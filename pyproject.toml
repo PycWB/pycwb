@@ -69,7 +69,7 @@ write_to = "pycwb/_version.py"
 
 [tool.setuptools]
 include-package-data = true
-script-files = ["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"]
+script-files = ["bin/pycwb"]
 
 [tool.setuptools.packages.find]
 where = ["."]

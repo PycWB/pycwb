@@ -4,7 +4,6 @@
 # pycwb create, pycwb run, pycwb server, etc. It is a wrapper around the pycwb package
 
 import argparse
-import pycwb.cli.server as server
 import pycwb.cli.run as run
 import pycwb.cli.flow as flow
 import pycwb.cli.batch_setup as batch_setup
@@ -29,11 +28,6 @@ def main():
 
     # Show version
     parser.add_argument('-v', '--version', action='version', version=f'pycwb {__version__}')
-
-    # Create subcommand
-    create_parser = subparsers.add_parser('server', help='Run a simple server to show the results')
-    server.init_parser(create_parser)
-    create_parser.set_defaults(func=server.command)
 
     # Run subcommand
     run_parser = subparsers.add_parser('run', help='Run search')
