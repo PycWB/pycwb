@@ -1,89 +1,24 @@
-import warnings
+"""
+Pure-Python whitening of MDC strain using a pre-computed nRMS map.
+
+.. deprecated::
+    The ROOT version at :mod:`pycwb.modules.data_conditioning_root.whitening_mdc`
+    is the compatibility path.  This module is the native replacement.
+"""
+
+import logging
 
 import numpy as np
-
-try:
-    import ROOT
-except ImportError:
-    ROOT = None
-    warnings.warn(
-        "ROOT module not found. CWB conversions will not work. This warning will be removed in future versions when ROOT is no longer a dependency.",
-        ImportWarning,
-        stacklevel=2,
-    )
-import logging
-from pycwb.modules.cwb_conversions import convert_to_wavearray, convert_wseries_to_time_frequency_series, convert_to_wseries
-from pycwb.types.time_frequency_series import TimeFrequencySeries
-from pycwb.types.wdm import WDM
 
 logger = logging.getLogger(__name__)
 
 
-
 def whitening_mdc(config, h, nRMS):
     """
-    Performs whitening on the given strain data with provided nRMS
+    Pure-Python whitening of MDC strain using a pre-computed nRMS map (no ROOT).
 
-    :param config: config object
-    :type config: Config
-    :param h: strain data
-    :type h: pycwb.types.time_series.TimeSeries or gwpy.timeseries.TimeSeries or ROOT.wavearray(np.double)
-    :param nRMS: noise rms data
-    :type nRMS: pycwb.types.time_frequency_series.TimeFrequencySeries or ROOT.WSeries<double>
-    :return: (whitened strain, original strain)
-    :rtype: tuple[pycwb.types.time_frequency_series.TimeFrequencySeries, pycwb.types.time_frequency_series.TimeFrequencySeries]
-    """
-    layers_white = 2 ** config.l_white if config.l_white > 0 else 2 ** config.l_high
-    wdm_white = WDM(layers_white, layers_white, config.WDM_beta_order, config.WDM_precision)
-
-    # TODO: check the length of data and white parameters to prevent freezing
-    # check if whitening WDM filter lenght is less than cwb scratch
-    wdmFlen = wdm_white.m_H / config.rateANA
-    if wdmFlen > config.segEdge + 0.001:
-        logger.error("Error - filter scratch must be <= cwb scratch!!!")
-        logger.error(f"filter length : {wdmFlen} sec")
-        logger.error(f"cwb   scratch : {config.segEdge} sec")
-        raise ValueError("Filter scratch must be <= cwb scratch!!!")
-    else:
-        logger.info(f"WDM filter max length = {wdmFlen} (sec)")
-    
-    tf_map = ROOT.WSeries(np.double)(convert_to_wavearray(h), wdm_white.wavelet)
-    tf_map.Forward()
-    tf_map.setlow(config.fLow)
-    tf_map.sethigh(config.fHigh)
-
-    if isinstance(nRMS, TimeFrequencySeries):
-        nRMS = convert_to_wseries(nRMS)
-            
-    # save original data
-    hot = ROOT.WSeries(np.double)(tf_map)
-    hot.Inverse()
-
-    # whiten  0 phase WSeries
-    tf_map.white(nRMS, 1)
-    # whiten 90 phase WSeries
-    tf_map.white(nRMS, -1)
-
-    wtmp = ROOT.WSeries(np.double)(tf_map)
-    # average 00 and 90 phase
-    tf_map.Inverse()
-    wtmp.Inverse(-2)
-    tf_map += wtmp
-    tf_map *= 0.5
-
-    tf_map_whitened = convert_wseries_to_time_frequency_series(tf_map)
-    HoT = convert_wseries_to_time_frequency_series(hot)
-    wtmp.resize(0)
-
-    return tf_map_whitened, HoT
-
-
-def whitening_mdc_py(config, h, nRMS):
-    """
-    Pure-Python whitening of MDC strain using a pre-computed nRMS map (no ROOT required).
-
-    Mirrors :func:`whitening_mdc` but uses the ``wdm_wavelet`` Python library for the
-    wavelet transform instead of ROOT/WSeries.
+    Mirrors the ROOT-based :func:`~pycwb.modules.data_conditioning_root.whitening_mdc.whitening_mdc`
+    but uses the ``wdm_wavelet`` Python library for the wavelet transform.
 
     Parameters
     ----------
@@ -93,8 +28,8 @@ def whitening_mdc_py(config, h, nRMS):
     h : pycwb.types.time_series.TimeSeries or gwpy.TimeSeries
         MDC strain data for a single detector.
     nRMS : wdm_wavelet.types.time_frequency_map.TimeFrequencyMap
-        Per-frequency noise RMS, as returned by the pure-Python
-        :func:`~pycwb.modules.data_conditioning.whitening_py.whitening_python`.
+        Per-frequency noise RMS, as returned by
+        :func:`~pycwb.modules.data_conditioning.whitening.whitening_python`.
         Its ``data`` array has shape ``(n_freq, K+1)`` (anchor columns spanning the segment).
 
     Returns
@@ -112,9 +47,6 @@ def whitening_mdc_py(config, h, nRMS):
     beta_order = getattr(config, "WDM_beta_order", 6)
     precision = getattr(config, "WDM_precision", 10)
 
-    # ------------------------------------------------------------------
-    # Normalise input to pycwb TimeSeries
-    # ------------------------------------------------------------------
     if not isinstance(h, TimeSeries):
         h_ts = TimeSeries.from_input(h)
     else:
@@ -129,15 +61,9 @@ def whitening_mdc_py(config, h, nRMS):
         layers, beta_order, precision, sample_rate,
     )
 
-    # ------------------------------------------------------------------
-    # Forward WDM transform
-    # ------------------------------------------------------------------
     wdm = WDMpy(M=layers, K=layers, beta_order=beta_order, precision=precision)
     tf_map = wdm.t2w(signal_data, sample_rate=sample_rate, t0=t0, MM=-1)
 
-    # ------------------------------------------------------------------
-    # Save original (un-whitened) inverse transform → HoT
-    # ------------------------------------------------------------------
     original_gwpy = wdm.w2t(tf_map)
     original_ts = TimeSeries(
         data=np.asarray(original_gwpy.value, dtype=np.float64),
@@ -145,9 +71,6 @@ def whitening_mdc_py(config, h, nRMS):
         t0=h_ts.start_time,
     )
 
-    # ------------------------------------------------------------------
-    # Interpolate anchor nRMS  (n_freq, K+1)  →  (n_freq, n_time)
-    # ------------------------------------------------------------------
     coeff = np.asarray(tf_map.data, dtype=np.complex128)
     n_freq, n_time = coeff.shape
 
@@ -156,7 +79,6 @@ def whitening_mdc_py(config, h, nRMS):
     else:
         nrms_anchor = np.asarray(nRMS, dtype=np.float64)
 
-    # Safety: make sure nrms_anchor is 2-D
     if nrms_anchor.ndim == 1:
         nrms_anchor = nrms_anchor[:, np.newaxis]
 
@@ -170,9 +92,6 @@ def whitening_mdc_py(config, h, nRMS):
     else:
         nrms_interp = nrms_anchor
 
-    # ------------------------------------------------------------------
-    # Whiten within the analysis band
-    # ------------------------------------------------------------------
     f_low = float(config.fLow)
     f_high = float(config.fHigh)
     freqs = np.arange(n_freq, dtype=np.float64) * float(tf_map.df)
@@ -182,13 +101,10 @@ def whitening_mdc_py(config, h, nRMS):
     whitened_coeff = np.zeros_like(coeff)
     whitened_coeff[in_band, :] = coeff[in_band, :] / safe_nrms[in_band, :]
 
-    # ------------------------------------------------------------------
-    # Inverse transform → whitened time series
-    # ------------------------------------------------------------------
-    original_coeff = tf_map.data          # keep reference
+    original_coeff = tf_map.data
     tf_map.data = whitened_coeff
     whitened_gwpy = wdm.w2t(tf_map)
-    tf_map.data = original_coeff          # restore (non-destructive)
+    tf_map.data = original_coeff
 
     whitened_ts = TimeSeries(
         data=np.asarray(whitened_gwpy.value, dtype=np.float64),

@@ -286,7 +286,7 @@ def supercluster_wrapper(
     ----------
     config : Config
     fragment_clusters : list[list[FragmentCluster]]
-        ``fragment_clusters[res][lag]`` — output of :func:`~pycwb.modules.cwb_coherence.coherence.coherence`.
+        ``fragment_clusters[res][lag]`` — output of :func:`~pycwb.modules.coherence_native.coherence.coherence`.
     strains : list
         Whitened strain time series (one per IFO).
     xtalk_coeff : np.ndarray
@@ -470,7 +470,7 @@ def supercluster_single_lag(
         directly from *config* rather than being pre-parsed into *setup*.
     fragment_clusters_single_lag : list[FragmentCluster]
         One ``FragmentCluster`` per resolution for *this* lag only
-        (i.e. the output of :func:`~pycwb.modules.cwb_coherence.coherence.coherence_single_lag`).
+        (i.e. the output of :func:`~pycwb.modules.coherence_native.coherence.coherence_single_lag`).
     lag_idx : int
         Zero-based lag index (used for logging only).
     xtalk : XTalk

@@ -1,4 +1,3 @@
-from .super_cluster_cwb import supercluster
 from .super_cluster import (
     supercluster_wrapper,
     setup_supercluster,
@@ -7,7 +6,6 @@ from .super_cluster import (
 )
 
 __all__ = [
-    "supercluster",
     "supercluster_wrapper",
     "setup_supercluster",
     "supercluster_single_lag",

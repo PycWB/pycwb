@@ -1,0 +1,4 @@
+name: data_conditioning_root
+author: pycWB
+description: ROOT-backed data conditioning compatibility module
+dependencies: ["@multi_resolution_wdm", "@pycwb.constants", "@cwb_conversions", "numpy", "ROOT"]

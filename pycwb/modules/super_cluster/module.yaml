@@ -1,4 +1,0 @@
-name: super_cluster
-author: pycWB
-description: "Super cluster"
-dependencies: ["@multi_resolution_wdm", "@cwb_conversions", "@sparse_series", "ROOT", "matplotlib"]

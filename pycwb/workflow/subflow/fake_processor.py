@@ -4,13 +4,13 @@ import psutil
 from copy import copy
 from pycwb.config import Config
 from pycwb.modules.catalog import add_events_to_catalog
-from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
-from pycwb.modules.super_cluster.super_cluster_cwb import supercluster
+from pycwb.modules.super_cluster_native.super_cluster import supercluster_wrapper
+from pycwb.modules.super_cluster_root.super_cluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
-from pycwb.modules.coherence.coherence import coherence
+from pycwb.modules.coherence_root.coherence import coherence
 from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
-from pycwb.modules.data_conditioning import data_conditioning
-from pycwb.modules.likelihood import likelihood
+from pycwb.modules.data_conditioning_root import data_conditioning
+from pycwb.modules.likelihood_root import likelihood
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info

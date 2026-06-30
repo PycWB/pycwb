@@ -107,7 +107,7 @@ def likelihood_wrapper(
     fragment_clusters : list[FragmentCluster]
         One :class:`~pycwb.types.network_cluster.FragmentCluster` per lag —
         the direct output of
-        :func:`~pycwb.modules.super_cluster.super_cluster.supercluster_wrapper`.
+        :func:`~pycwb.modules.super_cluster_native.super_cluster.supercluster_wrapper`.
         Clusters with ``cluster_status != 0`` are skipped automatically.
     strains : list
         Whitened strain time series (one per IFO); used for sky-pattern
@@ -325,7 +325,7 @@ def likelihood(
         Number of interferometers.
     cluster : Cluster
         Cluster with ``td_amp`` already set on every pixel
-        (guaranteed by :func:`~pycwb.modules.super_cluster.super_cluster.supercluster_single_lag`).
+        (guaranteed by :func:`~pycwb.modules.super_cluster_native.super_cluster.supercluster_single_lag`).
     config : Config
         Analysis configuration.
     MRAcatalog : str or None, optional

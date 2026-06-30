@@ -1,0 +1,4 @@
+name: coherence_native
+author: pycWB
+description: Native Python coherence module
+dependencies: ["numpy", "scipy", "numba", "jax", "wdm-wavelet"]

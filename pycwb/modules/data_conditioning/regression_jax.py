@@ -5,11 +5,11 @@ This module exposes the JAX backend for the WDM regression filter, which
 uses ``jax.vmap`` to process all TF frequency layers simultaneously inside a
 single ``@jax.jit``-compiled call instead of a sequential Numba prange loop.
 
-The public entry point is ``regression_jax``, which has an identical interface
-to ``regression_python`` in ``regression_py.py`` but always enforces the JAX
+    The public entry point is ``regression_jax``, which has an identical interface
+    to ``regression_python`` in ``regression.py`` but always enforces the JAX
 backend regardless of the ``PYCWB_REGRESSION_ENGINE`` environment variable.
 
-Key JAX components (all defined in regression_py.py and re-exported here)
+Key JAX components (all defined in regression.py and re-exported here)
 --------------------------------------------------------------------------
 ``_jax_process_layers``
     vmap'd JIT function — processes all selected TF layers in one call.
@@ -59,7 +59,7 @@ def regression_jax(config, h):
     pycwb.types.time_series.TimeSeries
         Regression-cleaned time series, same sample rate and start time.
     """
-    from pycwb.modules.data_conditioning.regression_py import regression_python
+    from pycwb.modules.data_conditioning.regression import regression_python
 
     class _JAXConfig:
         """Proxy that forces REGRESSION_ENGINE='jax' without modifying config."""

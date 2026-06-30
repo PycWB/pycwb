@@ -21,8 +21,8 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.network_cluster import FragmentCluster, Cluster, ClusterMeta
 from pycwb.types.pixel_arrays import PixelArrays
-from pycwb.modules.cwb_coherence.tf_batch_generation import batch_t2w_detectors
-from pycwb.modules.cwb_coherence.time_delay_max_energy import (
+from pycwb.modules.coherence_native.tf_batch_generation import batch_t2w_detectors
+from pycwb.modules.coherence_native.time_delay_max_energy import (
     time_delay_max_energy,
     time_delay_max_energy_numba,
 )

@@ -72,13 +72,13 @@ from copy import copy
 from dataclasses import dataclass, replace
 from pycwb.config import Config
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.super_cluster.super_cluster import setup_supercluster, supercluster_single_lag
+from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
+from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
+from pycwb.modules.data_conditioning.data_conditioning import data_conditioning
 from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
 from pycwb.modules.qveto.qveto import get_qveto
@@ -818,8 +818,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         mdc_maps = None
         HoT_list = None
         if mdc is not None and hasattr(sub_job_seg, 'injections') and sub_job_seg.injections:
-            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc_py
-            mdc_maps, HoT_list = zip(*[whitening_mdc_py(config, m, nrms) for m, nrms in zip(mdc, nRMS)])
+            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc
+            mdc_maps, HoT_list = zip(*[whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS)])
             del mdc
             release_memory()
 

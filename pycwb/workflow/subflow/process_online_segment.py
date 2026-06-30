@@ -31,10 +31,10 @@ from pycwb.types.network_event import Event
 
 # ── Per-item functions imported from existing modules ────────────────────
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning_python import (
+from pycwb.modules.data_conditioning.data_conditioning import (
     data_conditioning_single,
 )
-from pycwb.modules.cwb_coherence.coherence import (
+from pycwb.modules.coherence_native.coherence import (
     _setup_coherence_single_res,
     coherence_single_lag,
 )
@@ -42,7 +42,7 @@ from pycwb.utils.td_vector_batch import (
     build_td_inputs_cache,
     _build_td_inputs_single_level,
 )
-from pycwb.modules.super_cluster.super_cluster import (
+from pycwb.modules.super_cluster_native.super_cluster import (
     setup_supercluster,
     supercluster_single_lag,
 )

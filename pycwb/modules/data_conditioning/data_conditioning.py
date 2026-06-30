@@ -1,47 +1,68 @@
+"""
+Pure-Python data conditioning (regression + whitening).
+
+Native implementations:
+- regression.py
+- whitening.py
+"""
+
 import time
 import logging
-from .regression import regression
-from .whitening_mesa import whitening_mesa
-from .whitening_cwb import whitening_cwb
-from multiprocessing import Pool
 
+from .regression import (
+    regression_python,
+)
+from .whitening import (
+    whitening_python,
+    _estimate_noise_rms,
+    _estimate_noise_rms_cwb,
+    _bandpass_rms,
+    _whiten_coefficients,
+    _apply_wiener_filter,
+    _average_phases,
+)
 logger = logging.getLogger(__name__)
 
 
 def data_conditioning(config, strains, nproc=1):
     """
-    Performs data conditioning on the given strain data, including regression and whitening
+    Perform pure-Python data conditioning (regression + whitening).
 
-    :param config: config object
-    :type config: Config
-    :param strains: list of strain data
-    :type strains: list[pycwb.types.time_series.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)]
-    :return: (conditioned_strains, nRMS_list)
-    :rtype: tuple[list[TimeFrequencySeries], list[TimeFrequencySeries]]
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+    strains : list
+        Input strain time series per detector.
+    nproc : int
+        Unused. Kept for API compatibility.
+
+    Returns
+    -------
+    tuple
+        `(conditioned_strains, nRMS_list)` where conditioned strains are
+        time-domain series and `nRMS_list` are 2D TF maps.
     """
-    # timer
     timer_start = time.perf_counter()
 
-    if nproc > 1:
-        logger.info("Start data conditioning in parallel")
-        with Pool(processes=min(nproc, config.nIFO)) as p:
-            data_regressions = p.starmap(regression, [(config, h) for h in strains])
-            res = p.starmap(whitening_cwb, [(config, d) for d in data_regressions])
+    white_method = getattr(config, "whiteMethod", "wavelet")
+    if white_method not in {"wavelet", "python", "mesa"}:
+        logger.error(f"Method {white_method} is not a valid pure-Python whitening method")
+        raise ValueError(f"Method {white_method} is not a valid pure-Python whitening method")
+
+    data_regressions = [regression_python(config, h) for h in strains]
+    if white_method == "mesa":
+        from .whitening_mesa import whitening_mesa_python
+
+        res = [whitening_mesa_python(config, h) for h in data_regressions]
     else:
-        data_regressions = [regression(config, h) for h in strains]
-        if config.whiteMethod == 'wavelet': 
-            res = [whitening_cwb(config, h) for h in data_regressions]
-        elif config.whiteMethod == 'mesa': 
-            res = [whitening_mesa(config, h) for h in data_regressions]
-        else: 
-            logger.error(f"Method {config.whiteMethod} is not a valid whitening method")
-            raise ValueError(f"Method {config.whiteMethod} is not a valid whitening method")
+        res = [whitening_python(config, h) for h in data_regressions]
+
     conditioned_strains, nRMS_list = zip(*res)
 
-    # timer
     timer_end = time.perf_counter()
     logger.info("-------------------------------------------------------")
-    logger.info(f"Data Conditioning Time: {timer_end - timer_start:.2f} seconds")
+    logger.info(f"Pure-Python Data Conditioning Time: {timer_end - timer_start:.2f} seconds")
     logger.info("-------------------------------------------------------")
 
     return conditioned_strains, nRMS_list
@@ -49,22 +70,52 @@ def data_conditioning(config, strains, nproc=1):
 
 def data_conditioning_single(config, strain):
     """
-    Performs data conditioning on the given strain data, including regression and whitening
+    Perform pure-Python data conditioning for a single detector strain.
 
-    :param config: config object
-    :type config: Config
-    :param strain: strain data
-    :type strain: pycwb.types.time_series.TimeSeries | gwpy.timeseries.TimeSeries | ROOT.wavearray(np.double)
-    :return: (conditioned_strain, nRMS)
-    :rtype: tuple[TimeFrequencySeries, TimeFrequencySeries]
+    Parameters
+    ----------
+    config : Config
+        Configuration object.
+    strain : object
+        Input strain time series.
+
+    Returns
+    -------
+    tuple
+        `(conditioned_strain, nRMS)`.
     """
-    data_regression = regression(config, strain)
-    if config.whiteMethod == 'wavelet': 
-        conditioned_strain, nRMS = whitening_cwb(config, data_regression) 
-    elif config.whiteMethod == 'mesa': 
-        conditioned_strain, nRMS = whitening_mesa(config, data_regression)
+    white_method = getattr(config, "whiteMethod", "wavelet")
+    if white_method not in {"wavelet", "python", "mesa"}: 
+        logger.error(f"Method {white_method} is not a valid pure-Python whitening method")
+        raise ValueError(f"Method {white_method} is not a valid pure-Python whitening method")
+
+    data_regression = regression_python(config, strain)
+    if white_method == 'mesa':
+        from .whitening_mesa import whitening_mesa_python
+
+        conditioned_strain, nRMS = whitening_mesa_python(config, data_regression)
     else:
-        logger.error(f"Method {config.whiteMethod} is not a valid whitening method")
-        raise ValueError(f"Method {config.whiteMethod} is not a valid whitening method")
+        conditioned_strain, nRMS = whitening_python(config, data_regression)
 
     return conditioned_strain, nRMS
+
+
+def whitening_mesa_python(*args, **kwargs):
+    from .whitening_mesa import whitening_mesa_python as _whitening_mesa_python
+
+    return _whitening_mesa_python(*args, **kwargs)
+
+
+__all__ = [
+    "data_conditioning",
+    "data_conditioning_single",
+    "regression_python",
+    "whitening_python",
+    "whitening_mesa_python",
+    "_estimate_noise_rms",
+    "_estimate_noise_rms_cwb",
+    "_bandpass_rms",
+    "_whiten_coefficients",
+    "_apply_wiener_filter",
+    "_average_phases",
+]
