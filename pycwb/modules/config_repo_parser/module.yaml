@@ -1,0 +1,4 @@
+name: config_repo_parser
+author: pycWB
+description: External cWB repository configuration parser — project name parsing, GPS chunk extraction, DQ file discovery
+dependencies: ["yaml", "numpy", "@pycwb.utils"]

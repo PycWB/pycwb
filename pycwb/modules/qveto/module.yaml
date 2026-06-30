@@ -1,0 +1,4 @@
+name: qveto
+author: pycWB
+description: Q-veto post-processing hook for native pipeline
+dependencies: ["numpy", "@pycwb.types"]

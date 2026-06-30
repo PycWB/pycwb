@@ -1,0 +1,4 @@
+name: energy_threshold
+author: pycWB
+description: WaveBurst energy threshold calculation for pixel selection
+dependencies: ["numba"]

@@ -1,0 +1,4 @@
+name: clustering
+author: pycWB
+description: Future-generation clustering algorithms (connected_components, DBSCAN, HDBSCAN, OPTICS, weighted_graph) — experimental, source not yet implemented
+dependencies: ["numpy", "scipy"]

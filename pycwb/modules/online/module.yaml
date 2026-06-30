@@ -1,0 +1,4 @@
+name: online
+author: pycWB
+description: Online gravitational-wave search — data acquisition, ring buffer, trigger handler, latency monitor
+dependencies: ["numpy", "@pycwb.types"]

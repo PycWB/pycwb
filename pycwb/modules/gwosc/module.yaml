@@ -1,0 +1,4 @@
+name: gwosc
+author: pycWB
+description: GWOSC data access — event info, segment queries, frame URL location
+dependencies: ["gwosc", "requests"]

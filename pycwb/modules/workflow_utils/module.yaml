@@ -1,0 +1,4 @@
+name: workflow_utils
+author: pycWB
+description: Workflow utilities — working directory creation, trigger utilities for batch jobs
+dependencies: ["numpy", "@pycwb.types"]

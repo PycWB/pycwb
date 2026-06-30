@@ -1,0 +1,4 @@
+name: xtalk
+author: pycWB
+description: Cross-talk data loading and null-likelihood computation
+dependencies: ["numpy", "numba"]

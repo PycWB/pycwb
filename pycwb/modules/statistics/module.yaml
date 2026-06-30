@@ -1,0 +1,4 @@
+name: statistics
+author: pycWB
+description: Statistics module — sigmoid fitting (iminuit), cWB efficiency result parsing and plotting
+dependencies: ["numpy", "scipy", "iminuit", "matplotlib", "pandas"]

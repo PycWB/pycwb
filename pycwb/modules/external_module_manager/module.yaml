@@ -1,0 +1,4 @@
+name: external_module_manager
+author: pycWB
+description: External module manager — load, validate, and pull external PycWB extension modules
+dependencies: ["yaml", "@pycwb.utils"]
