@@ -29,8 +29,7 @@ test:
   image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
   needs: [build]
   script:
-    - pip install --no-cache-dir pytest pytest-mock pytest-cov iminuit
-    - pip install --no-cache-dir --no-build-isolation --no-deps -e .
+    - pip install --no-cache-dir --no-build-isolation -e ".[test]"
     - |
       pytest pycwb/modules/ tests/ \
         --ignore=pycwb/modules/clustering \
@@ -57,8 +56,7 @@ injection-consistency:
   when: manual
   allow_failure: false
   script:
-    - pip install --no-cache-dir pytest pytest-mock pytest-cov iminuit
-    - pip install --no-cache-dir --no-build-isolation --no-deps -e .
+    - pip install --no-cache-dir --no-build-isolation -e ".[test]"
     - |
       pytest tests/injection_consistency/ \
         -m "slow" \
