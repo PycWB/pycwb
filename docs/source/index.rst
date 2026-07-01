@@ -46,6 +46,7 @@ pycWB is a modularized Python package for gravitational wave burst search based 
 
    tutorials
    schema
+   postproduction_workflow
 
 .. toctree::
    :hidden:
