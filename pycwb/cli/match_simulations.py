@@ -73,8 +73,8 @@ def init_parser(parser):
 
 
 def command(args):
+    from pycwb.modules.catalog.matching import match_simulations_parquet
     from pycwb.modules.logger import logger_init
-    from pycwb.workflow.matching import match_simulations_parquet
 
     logger_init()
 

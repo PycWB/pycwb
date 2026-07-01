@@ -35,11 +35,11 @@ from pycwb.modules.injection.injection import (
 from pycwb.modules.job_segment.job_segment import (
     add_scheduled_injections_into_job_segments,
 )
-from pycwb.types.job import WaveSegment
-from pycwb.workflow.matching import (
+from pycwb.modules.catalog.matching import (
     match_simulations_parquet,
     match_triggers_to_simulations,
 )
+from pycwb.types.job import WaveSegment
 from pycwb.workflow.subflow.simulation_summary import build_simulation_summary
 
 
