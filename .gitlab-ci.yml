@@ -50,6 +50,26 @@ test:
     reports:
       junit: report.xml
 
+injection-consistency:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
+  needs: [build]
+  when: manual
+  allow_failure: false
+  script:
+    - pip install --no-cache-dir pytest pytest-mock pytest-cov iminuit
+    - pip install --no-cache-dir --no-build-isolation --no-deps -e .
+    - |
+      pytest tests/injection_consistency/ \
+        -m "slow" \
+        --tb=short \
+        --junitxml=injection-consistency-report.xml \
+        -v
+  artifacts:
+    when: always
+    reports:
+      junit: injection-consistency-report.xml
+
 build-latest:
   rules:
     - if: $CI_COMMIT_TAG
