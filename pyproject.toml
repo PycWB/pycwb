@@ -33,6 +33,7 @@ dependencies = [
     "lalsuite>=7.23",
     "healpy>=1.17",
     "scikit-learn>=1.4.2",
+    "xgboost",
     "pyarrow>=17",
     "pillow>=9.0.0",
     "click",
@@ -59,6 +60,7 @@ pycbc = ["pycbc"]
 # nds2-client and python-nds2-client are not on PyPI; install via conda-forge.
 # gwpy (a hard dependency) will use them automatically when present.
 nds2 = ["python-nds2-client"]
+test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit"]
 
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
@@ -73,3 +75,8 @@ script-files = ["bin/pycwb"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
