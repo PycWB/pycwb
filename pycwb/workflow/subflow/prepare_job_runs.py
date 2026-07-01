@@ -152,7 +152,7 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # only that file is present (file-transfer / container mode: the scheduler
     # transfers catalog_$(jobs).parquet but not catalog.parquet).
     default_catalog_path = f'catalog/{Catalog.DEFAULT_FILENAME}'
-    per_job_catalog_path = f'catalog/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}'
+    per_job_catalog_path = f'catalog/fragment/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}'
     if os.path.exists(default_catalog_path):
         catalog_meta_file = default_catalog_path
     elif os.path.exists(per_job_catalog_path):
@@ -181,7 +181,7 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)
 
-    catalog_file = f"{working_dir}/{config.catalog_dir}/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}"
+    catalog_file = f"{working_dir}/{config.catalog_dir}/fragment/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}"
 
     if not os.path.exists(catalog_file):
         Catalog.create(catalog_file, config, selected_job_segments)
