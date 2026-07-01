@@ -193,10 +193,19 @@ def workflow_refs(value: Any) -> list[str]:
     return refs
 
 
-def _expand_vars(text: str, context: dict) -> str:
+def _expand_vars(text: str, context: dict, seen: set[str] | None = None) -> str:
+    seen = seen or set()
+
     def repl(match: re.Match) -> str:
-        value = get_path(context, match.group(1))
+        key = match.group(1)
+        if key in seen:
+            chain = " -> ".join([*seen, key])
+            raise ValueError(f"Circular workflow variable reference: {chain}")
+        value = get_path(context, key)
+        if isinstance(value, str):
+            return _expand_vars(value, context, seen | {key})
         return str(value)
+
     return _VAR_PATTERN.sub(repl, text)
 
 

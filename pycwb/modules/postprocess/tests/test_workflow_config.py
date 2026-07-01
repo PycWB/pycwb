@@ -66,6 +66,22 @@ def test_resolve_value_expands_nested_values_without_refs():
     assert resolved["x"][2] == "@later.value"
 
 
+def test_resolve_value_expands_variables_recursively():
+    context = {
+        "work_dir": "/analysis",
+        "analysis_slug": "bkg_k20_k22_k21_10pct",
+        "paths": {
+            "output_dir": "${work_dir}/public/O4_K21_run1",
+            "model_file": "${paths.output_dir}/models/${analysis_slug}_xgb_model_blf.ubj",
+        },
+    }
+    runtime = {"tmp_dir": "${work_dir}/tmp"}
+
+    resolved = resolve_value("${paths.model_file}", context, runtime)
+
+    assert resolved == "/analysis/public/O4_K21_run1/models/bkg_k20_k22_k21_10pct_xgb_model_blf.ubj"
+
+
 def test_relative_runtime_tmp_dir_is_normalized_to_absolute_path():
     workflow = {
         "vars": {"work_dir": "tests/postprod/O4_K21"},
