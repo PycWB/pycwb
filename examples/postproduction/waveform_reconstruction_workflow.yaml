@@ -13,8 +13,8 @@
 # the analysis folder.
 #
 # Usage:
-#   pycwb post_process examples/postproduction/waveform_reconstruction_workflow.yaml
-#   pycwb post_process examples/postproduction/waveform_reconstruction_workflow.yaml --diagram-only
+#   pycwb post-process examples/postproduction/waveform_reconstruction_workflow.yaml
+#   pycwb post-process examples/postproduction/waveform_reconstruction_workflow.yaml --diagram-only
 # ============================================================================
 
 vars:
