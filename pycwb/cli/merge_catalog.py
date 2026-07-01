@@ -45,7 +45,13 @@ def init_parser(parser):
                         default=None,
                         help='merge label')
 
-logger = logging.getLogger(__name__)
+    parser.add_argument('--n-proc',
+                        '-n',
+                        metavar='n_proc',
+                        type=int,
+                        default=None,
+                        help='number of worker processes for parallel wave-file reading '
+                             '(default: os.cpu_count())')
 
 def command(args):
     """Execute merge command based on parsed arguments.
@@ -64,5 +70,6 @@ def command(args):
         merge_catalog(working_dir=args.work_dir, catalog_dir=args.catalog_dir, merge_label=args.mlabel)
         merge_progress(working_dir=args.work_dir, catalog_dir=args.catalog_dir, merge_label=args.mlabel)
     else:
-        merge_wave(working_dir=args.work_dir, output_dir=args.output_dir, merge_label=args.mlabel)
+        merge_wave(working_dir=args.work_dir, output_dir=args.output_dir, merge_label=args.mlabel,
+                   n_proc=args.n_proc)
     

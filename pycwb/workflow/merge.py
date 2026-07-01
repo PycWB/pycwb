@@ -5,14 +5,37 @@ import glob
 import logging
 import click
 import h5py as h5
+import itertools
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from dacite import from_dict, Config as DaciteConfig
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pycwb.config import Config
 from pycwb.types.job import WaveSegment
 from pycwb.modules.catalog import Catalog
+import time
 
 logger = logging.getLogger(__name__)
+
+
+def _read_wave_file(wave_file: str) -> tuple:
+    """Read all event data from one wave HDF5 file into plain Python/numpy objects.
+
+    Returns ``(wave_file, events)`` where *events* maps
+    ``event_id -> {'attrs': dict, 'datasets': {name -> {'data': ndarray, 'attrs': dict}}}``.
+    Must be a module-level function so ProcessPoolExecutor can pickle it.
+    """
+    import h5py
+    events = {}
+    with h5py.File(wave_file, 'r') as f:
+        for event_id in f.keys():
+            grp = f[event_id]
+            datasets = {}
+            for ds_name in grp.keys():
+                ds = grp[ds_name]
+                datasets[ds_name] = {'data': ds[()], 'attrs': dict(ds.attrs)}
+            events[event_id] = {'attrs': dict(grp.attrs), 'datasets': datasets}
+    return wave_file, events
 
 
 def _collect_jobs_from_fragments(catalog_files: list) -> list:
@@ -94,18 +117,23 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
     meta = pq.read_schema(merged_catalog_file).metadata
     pq.write_table(merged_table.replace_schema_metadata(meta), merged_catalog_file, compression="snappy")
 
-def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: str = None):
+def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: str = None, n_proc: int = None):
     """
     Merge the reconstructed waveforms in the output directory from batch runs into a single wave file.
+
+    Source files are read in parallel using ``n_proc`` worker processes; the
+    single output file is written serially as each worker finishes.
 
     Parameters
     ----------
     working_dir : str
         The working directory.
     output_dir : str
-        The directory containing the wave files to be merged. 
+        The directory containing the wave files to be merged.
     merge_label : str, optional
         The label to be added to the merged wave file name. If None, the merged wave file will be named as "wave.h5".
+    n_proc : int, optional
+        Number of worker processes for parallel reading. Defaults to ``os.cpu_count()``, capped at the number of source files.
     """
     default_wave_file = os.path.abspath(f"{working_dir}/output/wave.h5")
     if merge_label is not None:
@@ -129,16 +157,43 @@ def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: 
         logger.warning("No waveform files found")
         return
 
-    # read the merged file wave.h5
-    logger.info(f"Create merged wave file {merged_wave_file}")
-    with h5.File(merged_wave_file, 'w') as f:
-        # read the sub wave files
-        for wave_file in wave_files:
-            with h5.File(wave_file, 'r') as f_sub:
-                logger.info(f"Adding waveforms of {len(f_sub.keys())} events from {wave_file}")
-                for event_id in f_sub.keys():
-                    f_sub.copy(event_id, f)
+    workers = min(n_proc or os.cpu_count() or 1, len(wave_files))
+    logger.info(f"Create merged wave file {merged_wave_file} from {len(wave_files)} source files "
+                f"using {workers} workers")
 
+    start = time.time()
+    with h5.File(merged_wave_file, 'w') as f_out:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            file_iter = iter(wave_files)
+
+            # Seed the pool with the first `workers` files
+            pending = {executor.submit(_read_wave_file, wf): wf
+                       for wf in itertools.islice(file_iter, workers)}
+
+            while pending:
+                # Block until at least one read finishes
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    del pending[future]
+                    source_file, event_data = future.result()
+                    logger.info(f"Adding waveforms of {len(event_data)} events from {source_file}")
+                    for event_id, event_info in event_data.items():
+                        grp = f_out.create_group(event_id)
+                        for attr_key, attr_val in event_info['attrs'].items():
+                            grp.attrs[attr_key] = attr_val
+                        for ds_name, ds_info in event_info['datasets'].items():
+                            ds = grp.create_dataset(ds_name, data=ds_info['data'])
+                            for attr_key, attr_val in ds_info['attrs'].items():
+                                ds.attrs[attr_key] = attr_val
+                    # Only submit the next file after this result has been written
+                    try:
+                        wf = next(file_iter)
+                        pending[executor.submit(_read_wave_file, wf)] = wf
+                    except StopIteration:
+                        pass
+    
+    logger.info(f"Finished merging: {merged_wave_file}")
+    logger.info(f"Elapsed time: {time.time() - start:.2f} s")
 
 def merge_progress(working_dir: str = '.', catalog_dir: str = 'catalog', merge_label: str = None) -> None:
     """Merge per-batch progress Parquet files into a single progress.parquet.
