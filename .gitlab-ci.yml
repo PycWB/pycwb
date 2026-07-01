@@ -41,6 +41,7 @@ test:
         -m "not slow" \
         --cov=pycwb \
         --cov-report=term \
+        --junitxml=report.xml \
         --tb=short \
         -v
   coverage: '/TOTAL.*\s+(\d+%)$/'
