@@ -46,7 +46,7 @@ def _warm_types() -> None:
 
 
 def _warm_td_vector_batch() -> None:
-    from pycwb.utils import td_vector_batch as td
+    from pycwb.utils import td_vector_kernels as td
 
     m = 4
     n_coeffs = 2
@@ -362,7 +362,7 @@ def main() -> int:
     print("NUMBA_CACHE_DIR=" + os.environ.get("NUMBA_CACHE_DIR", ""), flush=True)
     tasks: list[tuple[str, Callable[[], None]]] = [
         ("types", _warm_types),
-        ("td-vector-batch", _warm_td_vector_batch),
+        ("td-vector-kernels", _warm_td_vector_batch),
         ("likelihood-dpf", _warm_likelihood_dpf),
         ("likelihood-sky", _warm_likelihood_sky),
         ("likelihood-packets", _warm_likelihood_packets),
