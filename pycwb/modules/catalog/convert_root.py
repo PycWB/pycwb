@@ -31,9 +31,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-import numpy as np
+if TYPE_CHECKING:
+    from pycwb.types.trigger import Trigger
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ _ARRAY_BRANCHES = [
 ]
 
 
-def _safe(arr, idx: int, default=0.0):
+def _safe(arr: object, idx: int, default: float = 0.0) -> float:
     """Return element *idx* of *arr* as float, or *default* if out of range."""
     if arr is None:
         return default
@@ -91,7 +92,7 @@ def _safe(arr, idx: int, default=0.0):
         return default
 
 
-def _fl(arr, default=0.0) -> list[float]:
+def _fl(arr: object, default: float = 0.0) -> list[float]:
     """Convert an array-like to ``list[float]``, returning ``[]`` for None."""
     if arr is None:
         return []
@@ -106,7 +107,7 @@ def _make_id(job_id: int, cluster_id: int, event_index: int) -> str:
     return hashlib.md5(raw.encode()).hexdigest()[:16]  # noqa: S324
 
 
-def _row_to_trigger(row: dict, job_id: int) -> "Trigger":
+def _row_to_trigger(row: dict, job_id: int) -> Trigger:
     """Build a :class:`~pycwb.types.trigger.Trigger` from a single *row* dict.
 
     *row* maps branch name → scalar / 1-D numpy array for that event.
@@ -289,7 +290,7 @@ def read_root_triggers(
     job_id: int = 0,
     tree_name: str = "waveburst",
     batch_size: int = 10_000,
-) -> list["Trigger"]:
+) -> list[Trigger]:
     """Read all events from a cWB ROOT file and return a list of :class:`~pycwb.types.trigger.Trigger`.
 
     Parameters
@@ -342,7 +343,7 @@ def convert_root_to_catalog(
     root_file: str,
     catalog_file: str,
     ifo_list: list[str],
-    config=None,
+    config: object = None,
     jobs: Optional[list] = None,
     job_id: int = 0,
     tree_name: str = "waveburst",
@@ -382,7 +383,7 @@ def convert_root_to_catalog(
             # minimal stub so the file is self-describing
             class _StubConfig:
                 ifo = list(ifo_list)
-                def __init__(self):
+                def __init__(self) -> None:
                     self.__dict__ = {"ifo": list(ifo_list)}
             config = _StubConfig()
         Catalog.create(catalog_file, config, jobs or [])

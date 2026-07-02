@@ -1,3 +1,5 @@
+from typing import Any
+
 from importlib import import_module
 
 from pycwb.types.base_catalog import BaseCatalog
@@ -34,7 +36,7 @@ __all__ = [
 _ROOT_EXPORTS = {"convert_root_to_catalog", "read_root_triggers"}
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     """Lazily resolve optional ROOT conversion exports on first access."""
     if name in _ROOT_EXPORTS:
         module = import_module("pycwb.modules.catalog.convert_root")
@@ -45,5 +47,5 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __dir__():
+def __dir__() -> list[str]:
     return sorted(set(globals()) | set(__all__))
