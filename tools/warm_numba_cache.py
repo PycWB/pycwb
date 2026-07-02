@@ -253,29 +253,86 @@ def _warm_supercluster() -> None:
     utils.calculate_statistics(stat_pixels, "L", True, False, 1, 0.1, 0.0)
 
 
+def _warm_supercluster_subnet() -> None:
+    from pycwb.modules.super_cluster_native import sub_net_cut
+
+    n_ifo = 2
+    n_pix = 3
+    tsize2 = 3
+
+    # _gather_selected_td_halves
+    td_amp_flat = np.ones(n_pix * n_ifo * tsize2 * 2, dtype=np.float32)
+    td_amp_offsets = np.arange(n_pix * n_ifo, dtype=np.int64) * (tsize2 * 2)
+    rows = np.array([0, 1, 2], dtype=np.int64)
+    sub_net_cut._gather_selected_td_halves(td_amp_flat, td_amp_offsets, rows, n_ifo, tsize2)
+
+    # _dpf_np_loops_vec_into
+    rms = np.ones((n_pix, n_ifo), dtype=np.float32)
+    fp0 = np.array([0.35, 0.75], dtype=np.float32)
+    fx0 = np.array([0.25, -0.45], dtype=np.float32)
+    f = np.zeros((n_pix, n_ifo), dtype=np.float32)
+    F_arr = np.zeros((n_pix, n_ifo), dtype=np.float32)
+    si = np.zeros(n_pix, dtype=np.float32)
+    co = np.zeros(n_pix, dtype=np.float32)
+    fp = np.zeros(n_pix, dtype=np.float32)
+    sub_net_cut._dpf_np_loops_vec_into(fp0, fx0, rms, n_pix, n_ifo, f, F_arr, si, co, fp)
+
+    # sse_like_ps
+    sub_net_cut.sse_like_ps(
+        fp0.astype(np.float32),
+        fx0.astype(np.float32),
+        np.ones(n_ifo, dtype=np.float32),
+        np.ones(n_ifo, dtype=np.float32),
+    )
+
+    # sse_MRA_ps
+    rNRG = np.ones(n_pix, dtype=np.float32)
+    v00 = np.ones((n_ifo, n_pix), dtype=np.float32)
+    v90 = np.ones((n_ifo, n_pix), dtype=np.float32)
+    xtalks = np.array(
+        [
+            [0, 0, 0, 0, 0.5, 0.0, 0.0, 0.5],
+            [1, 0, 0, 0, 0.5, 0.0, 0.0, 0.5],
+        ],
+        dtype=np.float32,
+    )
+    xtalks_lookup = np.array([[0, 1], [1, 2]], dtype=np.int64)
+    sub_net_cut.sse_MRA_ps(1.0, 1, rNRG, v00, v90, xtalks, xtalks_lookup)
+
+
 def _warm_coherence_helpers() -> None:
     import importlib
 
-    coherence = importlib.import_module("pycwb.modules.coherence_native.coherence")
+    kernels = importlib.import_module("pycwb.modules.coherence_native.kernels")
 
     f_arr = np.array([1, 1, 2], dtype=np.int64)
     t_arr = np.array([1, 2, 2], dtype=np.int64)
-    coherence._label_components_grid(f_arr, t_arr, 4, 4, 1, 1)
+    kernels._label_components_grid(f_arr, t_arr, 4, 4, 1, 1)
 
     combined = np.ones((5, 6), dtype=np.float64)
-    coherence._candidate_passes_support_numba(combined, 2, 2, 3, 0.1, 10.0, 0.1)
+    kernels._candidate_passes_support_numba(combined, 2, 2, 3, 0.1, 10.0, 0.1)
 
     asnr = np.array([[0.8, 0.7], [0.6, 0.5], [0.9, 0.4]], dtype=np.float64)
     noise = np.ones_like(asnr)
     offsets = np.array([0, 2, 3], dtype=np.int64)
-    coherence._subnet_subrho_numba(asnr, noise, 1.0)
-    coherence._subnet_subrho_batch_numba(asnr, noise, offsets, 1.0)
+    kernels._subnet_subrho_numba(asnr, noise, 1.0)
+    kernels._subnet_subrho_batch_numba(asnr, noise, offsets, 1.0)
 
     arrays_stack = np.ones((2, 5, 8), dtype=np.float64)
     shift_bins = np.array([0, 1], dtype=np.int64)
     veto = np.ones(8, dtype=np.int16)
-    coherence._align_threshold_map_numba(
+    kernels._align_threshold_map_numba(
         arrays_stack, shift_bins, 1, 5, veto, True, 1, 1, 4, 0.1, 2.0
+    )
+
+    # _select_candidates_numba: pixel selection kernel added during
+    # coherence_native refactoring (kernels.py).
+    combined2 = np.ones((4, 10), dtype=np.float64)
+    arrays_stack2 = np.ones((2, 4, 10), dtype=np.float64)
+    shift_bins2 = np.array([0, 0], dtype=np.int64)
+    kernels._select_candidates_numba(
+        combined2, arrays_stack2, shift_bins2,
+        0, 10, 10, 4, 2, 0, 3, 0.1, 10.0, 0.1,
     )
 
 
@@ -312,6 +369,7 @@ def main() -> int:
         ("detection-statistics", _warm_detection_statistics),
         ("xtalk", _warm_xtalk),
         ("supercluster", _warm_supercluster),
+        ("supercluster-subnet", _warm_supercluster_subnet),
         ("coherence-helpers", _warm_coherence_helpers),
     ]
 
