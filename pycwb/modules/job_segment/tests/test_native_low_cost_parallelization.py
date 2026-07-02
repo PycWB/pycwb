@@ -206,6 +206,10 @@ def _output_context(queue=None):
     )
 
 
+def _raise(error):
+    raise error
+
+
 def _run_fake_lag_loop(monkeypatch, *, workers, n_lag=4, skip_lags=None):
     compute_calls = []
     persisted = []
@@ -252,11 +256,119 @@ def test_parallel_lag_config_defaults_are_registered():
     assert schema["properties"]["parallel_lag_inner_threads"]["default"] is None
 
 
+def test_native_workflow_import_contract_points_to_support_helpers():
+    from pycwb.workflow.subflow import job_segment_output
+    from pycwb.workflow.subflow import job_segment_progress
+    from pycwb.workflow.subflow import job_segment_resources
+    from pycwb.workflow.subflow import job_segment_veto
+
+    default_processor = schema["properties"]["segment_processer"]["default"]
+    assert default_processor == "pycwb.workflow.subflow.process_job_segment_native.process_job_segment"
+    assert getattr(native, default_processor.rsplit(".", 1)[1]) is native.process_job_segment
+
+    assert native._catalog_path is job_segment_progress._catalog_path
+    assert native._record_lag_progress is job_segment_progress._record_lag_progress
+    assert native._effective_veto_windows is job_segment_veto._effective_veto_windows
+    assert native._lag_livetime is job_segment_veto._lag_livetime
+    assert native._parallel_inner_threads is job_segment_resources._parallel_inner_threads
+    assert native._free_jax_buffers is job_segment_resources._free_jax_buffers
+    assert native._create_and_save_trigger_folders is job_segment_output._create_and_save_trigger_folders
+
+
+def test_progress_helpers_build_metadata_and_route_queue_or_catalog(monkeypatch):
+    config = SimpleNamespace(catalog_dir="catalog")
+    sub_job_seg = SimpleNamespace(
+        ifos=["H1", "L1"],
+        lag_shifts=np.asarray([[1.5, -2.0]]),
+        shift=np.asarray([0.25, -0.5]),
+    )
+    time_lag, segment_lag, lag_shifts = native._lag_metadata(sub_job_seg, 0)
+    assert time_lag == [1.5, -2.0]
+    assert segment_lag == [0.25, -0.5]
+    assert lag_shifts.tolist() == [1.5, -2.0]
+    assert native._catalog_path("/work", config, "catalog_1.h5") == "/work/catalog/catalog_1.h5"
+
+    queue = ListQueue()
+    record = {"job_id": 1, "trial_idx": 0, "lag_idx": 2, "n_triggers": 0}
+    native._record_lag_progress("/work", config, "catalog_1.h5", queue, record)
+    assert queue.items == [{"type": "progress", **record}]
+
+    catalog_rows = []
+
+    class FakeCatalog:
+        @classmethod
+        def open(cls, path):
+            assert path == "/work/catalog/catalog_1.h5"
+            return cls()
+
+        def add_lag_progress(self, **kwargs):
+            catalog_rows.append(kwargs)
+
+    catalog_pkg = ModuleType("pycwb.modules.catalog")
+    catalog_pkg.__path__ = []
+    catalog_module = ModuleType("pycwb.modules.catalog.catalog")
+    catalog_module.Catalog = FakeCatalog
+    monkeypatch.setitem(sys.modules, "pycwb.modules.catalog", catalog_pkg)
+    monkeypatch.setitem(sys.modules, "pycwb.modules.catalog.catalog", catalog_module)
+
+    native._record_lag_progress("/work", config, "catalog_1.h5", None, record)
+    assert catalog_rows == [record]
+
+
+def test_veto_helpers_preserve_cat2_injection_and_livetime_semantics():
+    config = SimpleNamespace(analyze_injection_only=True, injection_padding=1.0)
+    sub_job_seg = SimpleNamespace(
+        cwb_veto_windows=[(10.0, 20.0)],
+        veto_windows=[(0.0, 30.0)],
+        injections=[{"real_start": 12.0, "real_end": 15.0}],
+        duration=100.0,
+        circular_livetime=lambda lag, veto_windows=None: 88.0,
+    )
+
+    assert native._effective_veto_windows(config, sub_job_seg) == [(10.0, 20.0)]
+    assert native._injection_aware_veto_windows(
+        config,
+        sub_job_seg,
+        [(0.0, 13.0), (14.0, 30.0)],
+    ) == [(11.0, 13.0), (14.0, 16.0)]
+    assert native._lag_livetime(SimpleNamespace(sub_job_seg=sub_job_seg, veto_windows=[]), 0) == 88.0
+
+
+def test_resource_helpers_compute_inner_threads_and_restore_numba(monkeypatch):
+    assert native._parallel_inner_threads(SimpleNamespace(parallel_lag_inner_threads=5), 2) == 5
+    assert native._parallel_inner_threads(
+        SimpleNamespace(parallel_lag_inner_threads=None, nproc=7),
+        3,
+    ) == 2
+    assert native._parallel_inner_threads(
+        SimpleNamespace(parallel_lag_inner_threads=None, nproc=0),
+        3,
+    ) == 1
+
+    state = {"threads": 8}
+
+    def set_num_threads(value):
+        state["threads"] = value
+
+    fake_numba = SimpleNamespace(
+        config=SimpleNamespace(NUMBA_NUM_THREADS=8),
+        get_num_threads=lambda: state["threads"],
+        set_num_threads=set_num_threads,
+    )
+    monkeypatch.setitem(sys.modules, "numba", fake_numba)
+
+    with native._temporary_numba_threads(3):
+        assert state["threads"] == 3
+    assert state["threads"] == 8
+
+
 def test_serial_and_threaded_background_lag_paths_persist_same_progress(monkeypatch):
     _, serial_progress, _ = _run_fake_lag_loop(monkeypatch, workers=1)
     _, threaded_progress, threaded_numba_threads = _run_fake_lag_loop(monkeypatch, workers=2)
 
-    key = lambda row: (row["job_id"], row["trial_idx"], row["lag_idx"])
+    def key(row):
+        return row["job_id"], row["trial_idx"], row["lag_idx"]
+
     assert sorted(serial_progress, key=key) == sorted(threaded_progress, key=key)
     assert set(threaded_numba_threads) == {2}
 
@@ -348,6 +460,85 @@ def test_zero_trigger_lag_progress_is_recorded_by_persist_helper():
     )
 
     assert queue.items == [{"type": "progress", **result.progress_record}]
+
+
+def test_output_helper_writes_trigger_queue_and_preserves_lag_metadata(monkeypatch):
+    from pycwb.workflow.subflow import job_segment_output
+
+    queue = ListQueue()
+    trigger_obj = SimpleNamespace(hash_id="trigger-1")
+    monkeypatch.setattr(
+        job_segment_output,
+        "Trigger",
+        SimpleNamespace(from_event=lambda event: trigger_obj),
+    )
+
+    event = SimpleNamespace(hash_id="event-1")
+    result = native.LagResult(
+        lag=2,
+        lag_timer=0.0,
+        time_lag=[1.0, -1.0],
+        segment_lag=[0.0, 0.0],
+        events_data=[(event, object(), object())],
+        progress_record={},
+    )
+
+    convert_elapsed, write_elapsed = job_segment_output._write_trigger_records(
+        _output_context(queue=queue),
+        result,
+    )
+
+    assert convert_elapsed >= 0.0
+    assert write_elapsed >= 0.0
+    assert trigger_obj.time_lag == [1.0, -1.0]
+    assert trigger_obj.segment_lag == [0.0, 0.0]
+    assert queue.items == [{"type": "trigger", "trigger": trigger_obj}]
+
+
+def test_output_helper_skips_failed_trigger_conversion(monkeypatch):
+    from pycwb.workflow.subflow import job_segment_output
+
+    queue = ListQueue()
+    monkeypatch.setattr(
+        job_segment_output,
+        "Trigger",
+        SimpleNamespace(from_event=lambda event: _raise(RuntimeError("boom"))),
+    )
+    result = native.LagResult(
+        lag=2,
+        lag_timer=0.0,
+        time_lag=[],
+        segment_lag=[],
+        events_data=[(SimpleNamespace(hash_id="bad-event"), object(), object())],
+        progress_record={},
+    )
+
+    job_segment_output._write_trigger_records(_output_context(queue=queue), result)
+
+    assert queue.items == []
+
+
+def test_output_helper_keeps_event_when_qveto_fails(monkeypatch):
+    from pycwb.workflow.subflow import job_segment_output
+
+    event = SimpleNamespace(hash_id="event-1")
+    monkeypatch.setattr(
+        job_segment_output,
+        "get_qveto",
+        lambda data: _raise(RuntimeError("qveto failed")),
+    )
+
+    elapsed = job_segment_output._compute_event_qveto(
+        ["H1"],
+        event,
+        {
+            "H1_wf_DAT_whiten": object(),
+            "H1_wf_REC_whiten": object(),
+        },
+    )
+
+    assert elapsed >= 0.0
+    assert not hasattr(event, "qveto")
 
 
 def test_flatten_job_segments_by_trial_preserves_trial_and_updates_job_id():

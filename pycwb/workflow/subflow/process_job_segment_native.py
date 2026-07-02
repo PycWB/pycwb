@@ -60,14 +60,12 @@ Reference
 ---------
 See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
 """
-import gc
 import logging
 import os
 import time
 import psutil
 import numpy as np
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass, replace
 from pycwb.config import Config
@@ -81,43 +79,37 @@ from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning import data_conditioning
 from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
-from pycwb.modules.qveto.qveto import get_qveto
-from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
-from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
-from pycwb.types.trigger import Trigger
 from pycwb.utils.memory import release_memory
-from pycwb.modules.job_segment import build_injection_veto_windows, intersect_intervals
-from pycwb.workflow.subflow.postprocess_and_plots import (
-    plot_trigger_flow, reconstruct_waveforms_flow,
-    reconstruct_INJwaveforms_flow, plot_skymap_flow,
+from pycwb.workflow.subflow.job_segment_output import (
+    _cleanup_lag_output_state,
+    _create_and_save_trigger_folders,
+    _log_lag_completion,
+    _log_lag_output_timing,
+    _postprocess_saved_triggers,
+    _record_output_progress,
+    _write_trigger_records,
+)
+from pycwb.workflow.subflow.job_segment_progress import (
+    _catalog_path as _catalog_path,
+    _lag_metadata,
+    _lag_progress_record,
+    _record_lag_progress as _record_lag_progress,
+)
+from pycwb.workflow.subflow.job_segment_resources import (
+    _free_jax_buffers as _free_jax_buffers,
+    _parallel_inner_threads,
+    _temporary_numba_threads,
+)
+from pycwb.workflow.subflow.job_segment_veto import (
+    _effective_veto_windows,
+    _injection_aware_veto_windows,
+    _lag_livetime,
 )
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# JAX device buffer cleanup helper (mitigates known memory leak across lags)
-# ---------------------------------------------------------------------------
-def _free_jax_buffers():
-    """Release JAX device arrays still held in memory.
-
-    JAX allocates GPU/CPU device buffers that Python's GC does not always
-    reclaim promptly.  Call this between lags to prevent accumulation.
-    Safe to call even when JAX is not installed or not in use.
-    """
-    try:
-        import jax
-        for _device in jax.devices():
-            try:
-                # Clear the live arrays tracked by the JAX memory allocator.
-                jax.clear_backends()
-                break  # clear_backends() clears *all* backends at once
-            except Exception:
-                pass
-    except Exception:
-        pass  # JAX not installed — nothing to free
 
 
 @dataclass(frozen=True)
@@ -163,151 +155,6 @@ class LagResult:
     segment_lag: list[float]
     events_data: list[tuple[Event, object, object]]
     progress_record: dict
-
-
-def _catalog_path(working_dir: str, config: Config, catalog_file: str | None) -> str | None:
-    if not catalog_file:
-        return None
-    if os.path.isabs(catalog_file):
-        return catalog_file
-    return os.path.join(working_dir, config.catalog_dir, catalog_file)
-
-
-def _record_lag_progress(
-    working_dir: str,
-    config: Config,
-    catalog_file: str | None,
-    queue,
-    progress_record: dict,
-) -> None:
-    if queue is not None:
-        queue.put({"type": "progress", **progress_record})
-        return
-    catalog_path = _catalog_path(working_dir, config, catalog_file)
-    if catalog_path:
-        from pycwb.modules.catalog.catalog import Catalog
-        Catalog.open(catalog_path).add_lag_progress(**progress_record)
-
-
-def _lag_metadata(sub_job_seg: WaveSegment, lag: int) -> tuple[list[float], list[float], np.ndarray]:
-    lag_shifts = sub_job_seg.lag_shifts[lag]
-    time_lag = [float(v) for v in lag_shifts]
-    segment_lag = (
-        [float(v) for v in sub_job_seg.shift]
-        if sub_job_seg.shift is not None
-        else [0.0 for _ in sub_job_seg.ifos]
-    )
-    return time_lag, segment_lag, lag_shifts
-
-
-def _lag_progress_record(
-    context: LagAnalysisContext,
-    lag: int,
-    n_triggers: int,
-    livetime: float,
-    status: str,
-) -> dict:
-    return dict(
-        job_id=context.sub_job_seg.index,
-        trial_idx=context.trial_idx,
-        lag_idx=lag,
-        n_triggers=n_triggers,
-        livetime=livetime,
-        status=status,
-    )
-
-
-def _effective_veto_windows(config: Config, sub_job_seg: WaveSegment) -> list[tuple[float, float]] | None:
-    """Return the CAT2 veto windows for the segment.
-
-    When ``analyze_injection_only`` is enabled, injection windows are NOT
-    folded in here — they are applied later inside the lag loop, after the
-    ``segTHR`` check, so that the injection time window cannot cause the
-    analysis to be skipped.
-    """
-    return (
-        sub_job_seg.cwb_veto_windows
-        if getattr(sub_job_seg, 'cwb_veto_windows', None) is not None
-        else sub_job_seg.veto_windows
-    )
-
-
-def _injection_aware_veto_windows(
-    config: Config,
-    sub_job_seg: WaveSegment,
-    veto_windows: list[tuple[float, float]] | None,
-) -> list[tuple[float, float]] | None:
-    """Return veto windows intersected with injection envelopes when applicable.
-
-    Called *after* the ``segTHR`` check so that small injection windows
-    do not cause the lag to be skipped.
-    """
-    if not (getattr(config, 'analyze_injection_only', False) and sub_job_seg.injections):
-        return veto_windows
-
-    injection_envelopes = [(inj['real_start'], inj['real_end']) for inj in sub_job_seg.injections]
-    inj_windows = build_injection_veto_windows(
-        injection_envelopes,
-        padding=getattr(config, 'injection_padding', 1.0),
-        duration=sub_job_seg.duration,
-    )
-    if veto_windows is not None:
-        return intersect_intervals(sorted(veto_windows), sorted(inj_windows))
-    return inj_windows
-
-
-def _lag_livetime(context: LagAnalysisContext, lag: int) -> float:
-    sub_job_seg = context.sub_job_seg
-    if hasattr(sub_job_seg, 'circular_livetime'):
-        return sub_job_seg.circular_livetime(lag, context.veto_windows)
-    return sub_job_seg.livetime(lag)
-
-
-@contextmanager
-def _temporary_numba_threads(n_threads: int | None):
-    """Temporarily override the Numba thread count, restoring on exit.
-
-    Usage::
-
-        with _temporary_numba_threads(4):
-            ...  # Numba uses ≤4 threads inside this block
-    """
-    if n_threads is None:
-        yield
-        return
-
-    # Best-effort: if Numba isn't available, just run the block unchanged.
-    try:
-        import numba
-    except Exception:
-        yield
-        return
-
-    old_threads = numba.get_num_threads()
-    max_allowed = getattr(numba.config, "NUMBA_NUM_THREADS", old_threads)
-    target = max(1, int(n_threads))
-    if max_allowed > 0:
-        target = min(target, int(max_allowed))
-
-    if target != old_threads:
-        numba.set_num_threads(target)
-        logger.debug("Numba threads: %d → %d (max %d)", old_threads, target, max_allowed)
-
-    try:
-        yield
-    finally:
-        if target != old_threads:
-            numba.set_num_threads(old_threads)
-
-
-def _parallel_inner_threads(config: Config, lag_workers: int) -> int:
-    configured = getattr(config, 'parallel_lag_inner_threads', None)
-    if configured is not None:
-        return max(1, int(configured))
-    nproc = int(getattr(config, 'nproc', 0) or 0)
-    if nproc <= 0:
-        return 1
-    return max(1, nproc // max(1, int(lag_workers)))
 
 
 def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
@@ -437,175 +284,33 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
 
 def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> None:
-    config = output_context.config
-    sub_job_seg = output_context.sub_job_seg
-    events_data = result.events_data
-    reconstruct_elapsed = 0.0
-    qveto_elapsed = 0.0
-    plot_elapsed = 0.0
-    trigger_convert_elapsed = 0.0
-    trigger_write_elapsed = 0.0
+    # Phase A: create trigger folders and persist raw cluster/skymap data.
+    trigger_folders = _create_and_save_trigger_folders(output_context, result)
 
-    # ── Phase A: create trigger folders & persist raw cluster/skymap data ──
-    trigger_folders = []
-    for trigger in events_data:
-        try:
-            trigger_folder = create_single_trigger_folder(
-                output_context.working_dir, config.trigger_dir, sub_job_seg, trigger,
-            )
-            trigger_folders.append(trigger_folder)
-            save_trigger(trigger_folder=trigger_folder, trigger_data=trigger,
-                         save_cluster=config.save_cluster, save_sky_map=config.save_sky_map)
-        except Exception:
-            event = trigger[0]  # (Event, cluster, sky_stats) tuple
-            logger.exception(
-                "Failed to save trigger folder for event hash_id=%s cluster_id=%s lag=%d — skipping event",
-                getattr(event, 'hash_id', '?'),
-                getattr(event, 'cluster_id', '?'),
-                result.lag,
-            )
-            # Keep trigger_folders aligned with events_data by appending None.
-            trigger_folders.append(None)
-
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-
-    # ── Phase B: per-event post-processing (waveforms, injections, Q-veto, plots) ──
-    for trigger_folder, trigger in zip(trigger_folders, events_data):
-        # Skip events whose trigger folder could not be created in Phase A.
-        if trigger_folder is None:
-            continue
-        event, cluster_out, event_skymap_statistics = trigger
-
-        reconstruct_timer = time.perf_counter()
-        reconst_data = reconstruct_waveforms_flow(
-            trigger_folder, config, sub_job_seg.ifos,
-            event, cluster_out, epoch=sub_job_seg.padded_start,
-            wave_file=output_context.wave_file,
-            save=config.save_waveform, plot=config.plot_waveform,
-            queue=output_context.queue,
-        )
-        reconstruct_elapsed += time.perf_counter() - reconstruct_timer
-
-        if event.injection:
-            injected_data = reconstruct_INJwaveforms_flow(
-                trigger_folder, config, sub_job_seg.ifos, event,
-                output_context.HoT_list, output_context.mdc_maps,
-                config.iwindow / 2, config.segEdge, config.inRate,
-                wave_file=output_context.wave_file,
-                save=config.save_injection, plot=config.plot_injection,
-                queue=output_context.queue,
-            )
-            event.hrss      += injected_data['hrss']
-            event.time      += injected_data['central_time']
-            event.iSNR       = injected_data['snr']
-            event.frequency += injected_data['central_freq']
-            event.bandwidth += injected_data['bandwidth']
-            event.duration  += injected_data['duration']
-
-            inj_waveforms = injected_data['whitened_injected_waveform']
-            rec_waveforms = [reconst_data[f'{ifo}_wf_REC_whiten'] for ifo in sub_job_seg.ifos]
-            event.oSNR  = [estimate_snr(rec) for rec in rec_waveforms]
-            event.ioSNR = [
-                estimate_snr(inj, rec)
-                if (inj is not None) and (rec is not None) else None
-                for inj, rec in zip(inj_waveforms, rec_waveforms)
-            ]
-            del injected_data, inj_waveforms, rec_waveforms
-
-        qveto_timer = time.perf_counter()
-        try:
-            min_qveto   = 1e23
-            min_qfactor = 1e23
-            for ifo in sub_job_seg.ifos:
-                for a_type in ['DAT', 'REC']:
-                    [qveto, qfactor] = get_qveto(reconst_data[f'{ifo}_wf_{a_type}_whiten'])
-                    min_qveto   = min(min_qveto, qveto)
-                    min_qfactor = min(min_qfactor, qfactor)
-            event.Qveto   = [min_qveto, min_qfactor]
-            event.qveto   = min_qveto
-            event.qfactor = min_qfactor
-            logger.info("Qveto for event %s: %s, Qfactor: %s",
-                        event.hash_id, event.qveto, event.qfactor)
-        except Exception as e:
-            logger.error("Error calculating Qveto for event %s: %s", event.hash_id, e)
-        finally:
-            event_qveto_elapsed = time.perf_counter() - qveto_timer
-            qveto_elapsed += event_qveto_elapsed
-            logger.info(
-                "Qveto/Qfactor computation time for event %s: %.3f s",
-                event.hash_id, event_qveto_elapsed,
-            )
-
-        plot_timer = time.perf_counter()
-        if config.plot_trigger:
-            plot_trigger_flow(trigger_folder, event, cluster_out)
-
-        if config.plot_sky_map:
-            plot_skymap_flow(trigger_folder, event, event_skymap_statistics)
-        plot_elapsed += time.perf_counter() - plot_timer
-
-        del reconst_data
-
-    # ── Phase C: convert events → Trigger objects and persist to catalog ──
-    for trigger in events_data:
-        event, _, _ = trigger
-        convert_timer = time.perf_counter()
-        try:
-            trigger_obj = Trigger.from_event(event)
-            trigger_obj.time_lag = result.time_lag
-            trigger_obj.segment_lag = result.segment_lag
-        except Exception:
-            logger.exception(
-                "Failed to convert event hash_id=%s to Trigger at lag=%d — skipping",
-                getattr(event, 'hash_id', '?'), result.lag,
-            )
-            continue
-        trigger_convert_elapsed += time.perf_counter() - convert_timer
-
-        write_timer = time.perf_counter()
-        try:
-            if output_context.queue is not None:
-                output_context.queue.put({"type": "trigger", "trigger": trigger_obj})
-            else:
-                catalog_path = _catalog_path(output_context.working_dir, config, output_context.catalog_file)
-                if catalog_path:
-                    from pycwb.modules.catalog.catalog import Catalog
-                    Catalog.open(catalog_path).add_triggers(trigger_obj)
-        except Exception:
-            logger.exception(
-                "Failed to write trigger hash_id=%s to catalog at lag=%d — skipping",
-                trigger_obj.hash_id, result.lag,
-            )
-        trigger_write_elapsed += time.perf_counter() - write_timer
-
-    progress_timer = time.perf_counter()
-    _record_lag_progress(
-        output_context.working_dir, config, output_context.catalog_file,
-        output_context.queue, result.progress_record,
+    # Phase B: per-event post-processing: waveforms, injections, Q-veto, plots.
+    reconstruct_elapsed, qveto_elapsed, plot_elapsed = _postprocess_saved_triggers(
+        output_context, result, trigger_folders,
     )
-    progress_elapsed = time.perf_counter() - progress_timer
 
-    finalization_elapsed = (
-        reconstruct_elapsed + qveto_elapsed + plot_elapsed
-        + trigger_convert_elapsed + trigger_write_elapsed + progress_elapsed
+    # Phase C: convert events to Trigger objects and persist them.
+    trigger_convert_elapsed, trigger_write_elapsed = _write_trigger_records(
+        output_context, result,
     )
-    if finalization_elapsed >= 0.1:
-        logger.info(
-            "Lag %d output finalization time: reconstruct_waveforms=%.2f s, "
-            "qveto=%.2f s, plot=%.2f s, "
-            "trigger_convert=%.2f s, trigger_write=%.2f s, progress=%.2f s",
-            result.lag, reconstruct_elapsed, qveto_elapsed, plot_elapsed, trigger_convert_elapsed,
-            trigger_write_elapsed, progress_elapsed,
-        )
 
-    logger.info("-------------------------------------------")
-    logger.info("Lag %d processing time: %.2f s", result.lag, time.perf_counter() - result.lag_timer)
-    logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
-    logger.info("-------------------------------------------")
+    progress_elapsed = _record_output_progress(output_context, result)
+    _log_lag_output_timing(
+        result,
+        reconstruct_elapsed,
+        qveto_elapsed,
+        plot_elapsed,
+        trigger_convert_elapsed,
+        trigger_write_elapsed,
+        progress_elapsed,
+    )
+    _log_lag_completion(result)
 
-    del events_data, trigger_folders
-    gc.collect()
-    _free_jax_buffers()  # release JAX device memory accumulated during this lag
+    del trigger_folders
+    _cleanup_lag_output_state()
 
 
 def _iter_pending_lags(
