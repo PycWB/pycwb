@@ -91,4 +91,4 @@ For one-command project setup and optional job submission, see [QUICKSTART_CONFI
 
 ## Interactive tutorial
 
- - Google Colab tutorial: [pycWB_GW150914.ipynb](https://colab.research.google.com/github/PycWB/pycwb/blob/main/examples/colab/pycWB_GW150914.ipynb)
+ - Google Colab tutorial: [GW150914.ipynb](https://colab.research.google.com/github/PycWB/pycwb/blob/main/examples/colab/GW150914.ipynb)

@@ -8,7 +8,7 @@ Welcome to pycWB's documentation!
 
 .. image:: https://readthedocs.org/projects/pycwb/badge/?version=latest
    :target: https://pycwb.readthedocs.io/en/latest/
-   :alt: Documentations
+   :alt: Documentation
 
 .. image:: https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg
    :target: https://git.ligo.org/yumeng.xu/pycwb/-/pipelines
@@ -27,7 +27,8 @@ Welcome to pycWB's documentation!
    :alt: License
 
 
-pycWB is a modularized Python package for gravitational wave burst search based on the core function of cWB.
+PycWB is a modularized Python package for coherent gravitational-wave burst
+searches based on the core algorithms of cWB.
 
 
 .. toctree::
@@ -46,6 +47,7 @@ pycWB is a modularized Python package for gravitational wave burst search based 
 
    tutorials
    schema
+   config_repository
    postproduction_workflow
 
 .. toctree::
@@ -62,16 +64,20 @@ Getting Started
 Installation
 ------------
 
-PycWB is available on `PyPI <https://pypi.org/project/pycWB/>`_. You can install it with pip.
-Some dependencies are required to be installed before installing pycWB with pip.
-The easiest way is to install them with conda.
+PycWB is available on `PyPI <https://pypi.org/project/pycWB/>`_. It requires
+Python 3.10 or newer. Some scientific and gravitational-wave dependencies are
+easiest to install with conda before installing ``pycwb`` with pip.
 
 .. code-block:: bash
 
-   conda create -n pycwb "python>=3.9,<3.11"
+   conda create -n pycwb python=3.13
    conda activate pycwb
-   conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+   conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
    python3 -m pip install pycwb
+
+If ROOT is not available, PycWB builds without the ROOT-backed C++ wavelet
+extension and uses the native Python analysis path. See
+:ref:`installing_pycwb` for source, pure-Python, and Apple Silicon notes.
 
 
 Run your first burst search
@@ -80,24 +86,34 @@ Run your first burst search
 In your first burst search, we will use a built-in noise generator and waveform generator
 to minimize the requirement for external data. What you need is just one configuration file in YAML format.
 
-To start with, copy the example configuration folder from the source code or download the
-``user_parameters_injection.yaml`` manually from `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/user_parameters_injection.yaml>`_.
+To start with, copy the example configuration folder from the source code or download
+``user_parameters_injection.yaml`` manually from
+`examples/injection <https://git.ligo.org/yumeng.xu/pycwb/-/tree/main/examples/injection>`_.
 
 .. code-block:: bash
 
     cp -r [path_to_source_code]/examples/injection my_first_search
+    cd my_first_search
 
-Now, you are all set! You can directly run the example in the terminal with the ``pycwb run`` command
+Now you can run the example in the terminal with the ``pycwb run`` command.
 
 .. code-block:: bash
 
     pycwb run user_parameters_injection.yaml
 
-Or you can open the juptyer notebook ``pycwb_injection.ipynb`` (download `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/pycwb_injection.ipynb>`_)
-and run the search step by step
+You can also run the same workflow from Python:
 
-Go deeper into pycWB.search
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. code-block:: python
+
+   from pycwb.workflow.run import search
+
+   search("user_parameters_injection.yaml")
+
+Or open the Jupyter notebook ``pycwb_injection.ipynb`` in the example folder and
+run the search step by step.
+
+Go deeper into the search workflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to know more about the search process, please refer to
 :ref:`tutorial_search`
@@ -106,7 +122,7 @@ Step by step injection!
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to know more about the injection process step by step, please refer to
-:ref:`tutorial_injection` or the juptyer notebook `pycwb_injection.ipynb`
+:ref:`tutorial_injection` or the Jupyter notebook ``pycwb_injection.ipynb``.
 
 Command line interfaces (CLI)
 ------------------------------
@@ -121,22 +137,36 @@ You can get help by running the command with the ``-h`` option. Here are the cur
      - Description
    * - ``pycwb run``
      - Run a single search
-   * - ``pycwb batch-setup``
-     - Setup batch run
-   * - ``pycwb batch-runner``
-     - Runner for batch run, used for the job submission
-   * - ``pycwb post-process``
-     - Run the post process workflow
-   * - ``pycwb gwosc``
-     - Download data from GWOSC and setup the search
    * - ``pycwb flow``
-     - Run search with prefect flow
+     - Run a search through the Prefect flow wrapper
+   * - ``pycwb batch-setup``
+     - Set up an HTCondor or SLURM batch run
+   * - ``pycwb config-setup``
+     - Create a project from a configuration repository and optionally submit it
+   * - ``pycwb clone-dir``
+     - Clone an existing directory layout
+   * - ``pycwb batch-runner``
+     - Run one batch job payload
+   * - ``pycwb post-process``
+     - Run a post-production workflow
+   * - ``pycwb gwosc``
+     - Download data and set up a GWOSC event analysis
+   * - ``pycwb gwosc-data``
+     - Download GWOSC data for an existing user-parameter file
+   * - ``pycwb get-external-modules``
+     - Fetch configured external modules
+   * - ``pycwb online``
+     - Run an online gravitational-wave search
+   * - ``pycwb progress``
+     - Summarize run progress from catalog/progress Parquet files
    * - ``pycwb xtalk``
-     - Convert xtalk file
-   * - ``pycwb merge-catalog``
-     - Merge catalog files
-   * - ``pycwb server``
-     - Run a simple server to show the results
+     - Convert an xtalk file
+   * - ``pycwb merge``
+     - Merge catalog or wave files
+   * - ``pycwb simulation-summary``
+     - Build a per-simulation summary Parquet file
+   * - ``pycwb match-simulations``
+     - Match trigger catalogs to simulation summaries
 
 
 Basic Workflow

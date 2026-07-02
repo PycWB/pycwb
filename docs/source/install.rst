@@ -9,35 +9,68 @@ Installation Guide
 Installation with Conda/Pip
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-The project is available on PyPI
+The project is available on PyPI. PycWB requires Python 3.10 or newer.
+Some dependencies are easiest to install from conda-forge before installing
+``pycwb`` with pip.
 
 .. code-block:: bash
 
-   conda create -n pycwb "python>=3.9,<3.11"
+   conda create -n pycwb python=3.13
    conda activate pycwb
-   conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
+   conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
+   python3 -m pip install pycwb
+
+Currently, the ROOT-enabled build is available on ``x86_64`` platforms. If you
+do not need the ROOT-backed extension, install the pure Python path without
+ROOT and Healpix C++:
+
+.. code-block:: bash
+
+   conda create -n pycwb python=3.13
+   conda activate pycwb
+   conda install -c conda-forge nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
+   python3 -m pip install pycwb
+
+Apple Silicon users who need the ROOT-enabled build can create an ``osx-64``
+conda environment under Rosetta:
+
+.. code-block:: bash
+
+   softwareupdate --install-rosetta --agree-to-license
+   conda create -n pycwb_x64
+   conda activate pycwb_x64
+   conda config --env --set subdir osx-64
+   conda install python==3.11 root=6.28 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config ruamel.yaml htcondor
    python3 -m pip install pycwb
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Installing from Source with Conda and Pip
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-We recommend installing pycwb from source with conda environment,
-because all the dependencies can be installed with conda and some of them are not available in pip.
-pycWB can be installed with pip from source.
-
-The command `make install` will help you pack the source code and install
-it with pip.
+We recommend installing PycWB from source inside a conda environment because
+some dependencies are easier to resolve from conda-forge. Install the package
+with pip from the repository root:
 
 .. code-block:: bash
 
     conda create -n pycwb python
     conda activate pycwb
-    conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm
+    conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
     git clone git@git.ligo.org:yumeng.xu/pycwb.git
     cd pycwb
-    make install
+    python -m pip install .
 
+If ROOT is not available, setup skips the C++ wavelet extension and installs the
+native Python path.
+
+=====================================
+Verify installation
+=====================================
+
+.. code-block:: bash
+
+    pycwb --version
+    pycwb --help
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 Other scenarios
@@ -52,7 +85,7 @@ then run the ``make doc`` command.
 
 .. code-block:: bash
 
-    pip install "sphinx<7.0.0" sphinx_rtd_theme
+    pip install sphinx furo
     make doc
 
 The documentation will be built in the ``docs/build/html`` directory.
