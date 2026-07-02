@@ -1,4 +1,5 @@
 import math
+from importlib import import_module
 import numpy as np
 from dataclasses import dataclass
 from copy import deepcopy
@@ -523,7 +524,9 @@ class Detector:
             go.Figure: A Plotly figure with the detector arms plotted on a globe.
         """
         import warnings
-        from pycwb.modules.plot.detector_globe import plot_detector_on_globe
+        plot_detector_on_globe = import_module(
+            "pycwb.modules.plot.detector_globe"
+        ).plot_detector_on_globe
         warnings.warn(
             "Detector.plot_on_globe() is deprecated. "
             "Use pycwb.modules.plot.plot_detector_on_globe() instead.",
@@ -702,7 +705,9 @@ class Detector:
         ax : matplotlib.axes.Axes
         """
         import warnings
-        from pycwb.modules.plot.detector_antenna import plot_detector_antenna_pattern
+        plot_detector_antenna_pattern = import_module(
+            "pycwb.modules.plot.detector_antenna"
+        ).plot_detector_antenna_pattern
         warnings.warn(
             "Detector.draw_antenna_pattern() is deprecated. "
             "Use pycwb.modules.plot.plot_detector_antenna_pattern() instead.",
@@ -992,7 +997,9 @@ class DetectorNetwork:
             Use :func:`pycwb.modules.plot.plot_network_antenna_pattern` instead.
         """
         import warnings
-        from pycwb.modules.plot.detector_antenna import plot_network_antenna_pattern
+        plot_network_antenna_pattern = import_module(
+            "pycwb.modules.plot.detector_antenna"
+        ).plot_network_antenna_pattern
         warnings.warn(
             "DetectorNetwork.draw_antenna_pattern() is deprecated. "
             "Use pycwb.modules.plot.plot_network_antenna_pattern() instead.",

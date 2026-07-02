@@ -10,7 +10,7 @@ except ImportError:
         stacklevel=2
     )
 import numpy as np
-from pycwb.modules.cwb_conversions import convert_numpy_to_wavearray
+from pycwb.modules.cwb_conversions.wavearray import convert_numpy_to_wavearray
 from ctypes import c_double
 
 def declare_function():

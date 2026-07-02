@@ -374,7 +374,7 @@ def convert_root_to_catalog(
     batch_size : int
         Number of events read from ROOT per iteration.
     """
-    from pycwb.modules.catalog import Catalog
+    from pycwb.modules.catalog.catalog import Catalog
 
     # --- ensure catalog exists ---
     if not append or not os.path.exists(catalog_file):
