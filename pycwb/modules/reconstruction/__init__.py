@@ -1,3 +1,11 @@
+"""
+pycwb.modules.reconstruction — Waveform reconstruction from pixel data.
+
+Reconstructs GW waveforms from coherent pixel sums using multi-resolution
+analysis (MRA). Computes injected waveform statistics, residuals,
+matched-filter SNR, and amplitude spectral densities (ASD).
+"""
+
 from importlib import import_module
 
 

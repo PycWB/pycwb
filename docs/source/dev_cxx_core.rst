@@ -1,7 +1,7 @@
-.. modification_cwb:
+.. _dev_cxx_core:
 
-Notes on modifications of cWB core code
-=======================================
+C++ Core Modifications
+======================
 
 This file contains notes on modifications of the cWB core code.  It is
 not intended to be a complete list of all modifications, but rather a

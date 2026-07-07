@@ -1,3 +1,12 @@
+"""
+pycwb.modules.cwb_conversions — Native ↔ legacy cWB type conversions.
+
+Bidirectional conversion layer between native PycWB types (NumPy arrays,
+``TimeSeries``, ``FragmentCluster``, ``PixelArrays``) and legacy cWB
+ROOT types (``wavearray``, ``WSeries``, ``netcluster``, ``sseries``).
+Uses lazy imports to avoid loading ROOT at package import time.
+"""
+
 from importlib import import_module
 
 _EXPORTS = {

@@ -25,7 +25,8 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
+    'sphinxcontrib.mermaid',
 ]
 
 templates_path = ['_templates']
@@ -53,7 +54,7 @@ autosummary_mock_imports = autodoc_mock_imports
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "furo"
+html_theme = "sphinxawesome_theme"
 html_static_path = ['_static']
 
 # -- external links ----------------------------------------------------------

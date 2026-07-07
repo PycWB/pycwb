@@ -1,3 +1,11 @@
+"""
+pycwb.modules.plot — Visualization toolkit.
+
+Provides spectrograms, 1D/2D histograms, event overlays, detector antenna
+patterns, globe plots, fragment cluster visualization, and data quality
+diagnostic plots.
+"""
+
 from . import event as event
 from . import spectrogram as spectrogram
 from .data_quality import plot_data_quality as plot_data_quality

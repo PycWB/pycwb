@@ -1,3 +1,11 @@
+"""
+pycwb.modules.data_conditioning — Native data conditioning pipeline.
+
+Pure-Python resampling, regression (line removal), and whitening
+(wavelet-based or MESA) for GW strain data. Operates per-lag on native
+NumPy time series. This is the production conditioning engine.
+"""
+
 from .regression import *
 from .whitening import whitening_python
 from .whitening_mdc import whitening_mdc

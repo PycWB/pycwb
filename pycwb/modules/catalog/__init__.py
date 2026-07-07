@@ -1,3 +1,12 @@
+"""
+pycwb.modules.catalog — Arrow/Parquet trigger and event catalog.
+
+Primary I/O layer for PycWB. Stores triggers and events in self-contained
+Parquet files with schema metadata, supports atomic writes via
+``SoftFileLock``, deduplication on merge, and SQL/DuckDB query support.
+Also provides JSON catalog format and trigger-to-simulation matching.
+"""
+
 from typing import Any
 
 from importlib import import_module

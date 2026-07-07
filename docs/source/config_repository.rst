@@ -2,8 +2,8 @@
 
 .. _pycwb_config:
 
-pycwb-config User Guide
-=======================
+Setup Config Templates
+======================
 
 ``pycwb-config`` is the central configuration repository used to prepare
 standard pycWB burst searches. It stores search parameter templates, chunk

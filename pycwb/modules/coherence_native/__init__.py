@@ -1,3 +1,12 @@
+"""
+pycwb.modules.coherence_native — Native coherence engine.
+
+Production coherence pipeline using JAX-accelerated WDM time→frequency
+transforms, max-energy computation, threshold-based pixel selection,
+veto application, and single-resolution pixel clustering. Builds lag
+plans from configuration.
+"""
+
 from .coherence import (
     coherence,
     setup_coherence,
