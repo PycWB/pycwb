@@ -1,10 +1,11 @@
-from ..injection import distribute_inj_in_gps_time
 import unittest
 
+from ..injection import distribute_inj_in_gps_time_by_rate
 
-# unittest for distribute_inj_in_gps_time
-class TestDistributeInjInGpsTime(unittest.TestCase):
-    def test_distribute_inj_in_gps_time(self):
+
+# unittest for distribute_inj_in_gps_time_by_rate
+class TestDistributeInjInGpsTimeByRate(unittest.TestCase):
+    def test_distribute_inj_in_gps_time_by_rate(self):
         
         injections = [{'mass1': 50, 'mass2': 20, 'spin1z': 0, 'spin2z': 0, 'distance': 200, 'inclination': 0, 'polarization': 0, 'coa_phase': 0},
                        {'mass1': 70, 'mass2': 20, 'spin1z': 0, 'spin2z': 0, 'distance': 200, 'inclination': 0, 'polarization': 0, 'coa_phase': 0},
@@ -19,7 +20,9 @@ class TestDistributeInjInGpsTime(unittest.TestCase):
         
         # should raise ValueError
         with self.assertRaises(ValueError):
-            distribute_inj_in_gps_time(injections, rate, jitter, start_gps_time, end_gps_time)
+            distribute_inj_in_gps_time_by_rate(
+                injections, rate, jitter, start_gps_time, end_gps_time
+            )
 
         # test case 2: too small data
         rate = 1/200
@@ -29,7 +32,9 @@ class TestDistributeInjInGpsTime(unittest.TestCase):
 
         # should raise ValueError
         with self.assertRaises(ValueError):
-            distribute_inj_in_gps_time(injections, rate, jitter, start_gps_time, end_gps_time)
+            distribute_inj_in_gps_time_by_rate(
+                injections, rate, jitter, start_gps_time, end_gps_time
+            )
 
         # test case 3: normal case
         rate = 1/200
@@ -38,13 +43,21 @@ class TestDistributeInjInGpsTime(unittest.TestCase):
         end_gps_time = start_gps_time + 300
 
         # should return the distributed injections
-        distributed_injections = distribute_inj_in_gps_time(injections, rate, jitter, start_gps_time, end_gps_time)
+        distributed_injections, n_trials = distribute_inj_in_gps_time_by_rate(
+            injections,
+            rate,
+            jitter,
+            start_gps_time,
+            end_gps_time,
+            shuffle=False,
+        )
         self.assertEqual(len(distributed_injections), 4)
-        # the gps time of the first injection should be in the range of [80, 120]
-        self.assertTrue(80 <= distributed_injections[0]['gps_time'] <= 120)
-        # the trail number of the first injection should be 0
-        self.assertEqual(distributed_injections[0]['trail'], 0)
-        # the gps time of the second injection should be in the range of [80, 120]
-        self.assertTrue(80 <= distributed_injections[1]['gps_time'] <= 120)
-        # the trail number of the second injection should be 1
-        self.assertEqual(distributed_injections[1]['trail'], 1)
+        self.assertEqual(n_trials, 4)
+        self.assertTrue(
+            all(80 <= injection['gps_time'] <= 120
+                for injection in distributed_injections)
+        )
+        self.assertEqual(
+            [injection['trial_idx'] for injection in distributed_injections],
+            [0, 1, 2, 3],
+        )
