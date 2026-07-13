@@ -2,7 +2,7 @@
 GWSignal-based time-domain waveform generator.
 
 Drop-in replacement for ``pycbc.waveform.get_td_waveform`` used as the default
-waveform generator in ``pycwb.modules.read_data.mdc``.
+waveform generator by ``pycwb.modules.injection.strain``.
 
 The function accepts the same parameter names as pycbc (``mass1``, ``mass2``,
 ``f_lower``, ``coa_phase``, ``delta_t``, ``approximant``, …) and translates
@@ -35,7 +35,7 @@ _PASSTHROUGH = {
 # Parameters consumed by the wrapper (not forwarded to GWSignal)
 _CONSUMED = {
     "approximant", "delta_t",
-    # mdc.py injects these into the kwargs — ignore them
+    # The strain-generation layer injects these into the kwargs — ignore them.
     "gps_time", "ra", "dec", "pol", "t_start", "t_end",
     "generator", "coordsys", "sky_loc",
     "polarization",

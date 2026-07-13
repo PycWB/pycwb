@@ -8,7 +8,11 @@ from pycwb.modules.super_cluster_native.super_cluster import supercluster_wrappe
 from pycwb.modules.super_cluster_root.super_cluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence_root.coherence import coherence
-from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
+from pycwb.modules.read_data import read_from_job_segment, check_and_resample
+from pycwb.modules.read_data.simulations import (
+    generate_injections,
+    generate_noise_for_job_seg,
+)
 from pycwb.modules.data_conditioning_root import data_conditioning
 from pycwb.modules.likelihood_root import likelihood
 from pycwb.types.job import WaveSegment

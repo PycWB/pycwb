@@ -1,4 +1,4 @@
 name: injection
 author: pycWB
-description: Generate injections
+description: Generate, schedule, and project simulated signal injections
 dependencies: ["astropy", "healpy", "numpy"]

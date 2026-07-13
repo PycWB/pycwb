@@ -1,4 +1,4 @@
 name: read_data
 author: pycWB
-description: Read data module
+description: Read and write strain data and construct simulated job-segment input
 dependencies: ["gwpy", "numpy", "lalsimulation"]

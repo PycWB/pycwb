@@ -9,8 +9,11 @@ from pycwb.modules.super_cluster_native.super_cluster import supercluster_wrappe
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence_root.coherence import coherence_single_res
 from pycwb.modules.reconstruction import get_network_MRA_wave
-from pycwb.modules.read_data import generate_injection, merge_frames, \
-    read_single_frame_from_job_segment, generate_noise_for_job_seg
+from pycwb.modules.read_data import merge_frames, read_single_frame_from_job_segment
+from pycwb.modules.read_data.simulations import (
+    generate_injection,
+    generate_noise_for_job_seg,
+)
 from pycwb.modules.data_conditioning_root import regression, whitening
 from pycwb.modules.likelihood_root import likelihood
 from pycwb.modules.catalog import add_events_to_catalog

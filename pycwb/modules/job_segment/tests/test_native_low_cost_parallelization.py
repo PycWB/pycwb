@@ -36,8 +36,10 @@ _STUBBED_MODULES = [
     "pycwb.utils.td_vector_batch",
     "pycwb.modules.xtalk.type",
     "pycwb.modules.coherence_native.coherence",
+    "pycwb.modules.injection",
     "pycwb.modules.read_data",
     "pycwb.modules.read_data.data_check",
+    "pycwb.modules.read_data.simulations",
     "pycwb.modules.data_conditioning",
     "pycwb.modules.data_conditioning.data_conditioning",
     "pycwb.modules.cwb_interop",
@@ -73,6 +75,7 @@ _stub_module(
 )
 for package_name in [
     "pycwb.modules.super_cluster_native",
+    "pycwb.modules.injection",
     "pycwb.modules.read_data",
     "pycwb.modules.data_conditioning",
     "pycwb.modules.likelihoodWP",
@@ -95,10 +98,16 @@ _stub_module(
     coherence_single_lag=_not_called,
 )
 _stub_module(
-    "pycwb.modules.read_data",
+    "pycwb.modules.injection",
     generate_strain_from_injection=_not_called,
-    generate_noise_for_job_seg=_not_called,
+)
+_stub_module(
+    "pycwb.modules.read_data",
     read_from_job_segment=_not_called,
+)
+_stub_module(
+    "pycwb.modules.read_data.simulations",
+    generate_noise_for_job_seg=_not_called,
 )
 _stub_module("pycwb.modules.read_data.data_check", check_and_resample_py=_not_called)
 _stub_module("pycwb.modules.data_conditioning.data_conditioning", data_conditioning=_not_called)

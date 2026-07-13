@@ -111,7 +111,7 @@ def generate_noise(
     noise_type: str = "gaussian",
     psd_model: str = "aLIGOZeroDetHighPower",
 ):
-    """High-level noise generator — drop-in replacement for mdc.generate_noise.
+    """Generate Gaussian noise from a PSD or an analytic detector model.
 
     Parameters
     ----------

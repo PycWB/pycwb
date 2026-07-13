@@ -74,7 +74,9 @@ from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster,
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.modules.xtalk.type import XTalk
 from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment
+from pycwb.modules.injection import generate_strain_from_injection
+from pycwb.modules.read_data import read_from_job_segment
+from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning import data_conditioning
 from pycwb.modules.cwb_interop import create_cwb_workdir

@@ -37,7 +37,7 @@ import numpy as np
 import pandas as pd
 
 from pycwb.config import Config
-from pycwb.modules.read_data import generate_strain_from_injection
+from pycwb.modules.injection import generate_strain_from_injection
 from pycwb.types.job import WaveSegment
 from pycwb.types.simulation import (
     infer_injection_fields,
@@ -213,7 +213,7 @@ def build_simulation_summary(
     # Suppress verbose INFO logs from waveform generation sub-modules while the
     # progress bar is active; they would flood the terminal for every injection.
     _noisy_loggers = [
-        logging.getLogger("pycwb.modules.read_data.mdc"),
+        logging.getLogger("pycwb.modules.injection.strain"),
         logging.getLogger("pycwb.utils.module"),
     ]
     _saved_levels = [lg.level for lg in _noisy_loggers]

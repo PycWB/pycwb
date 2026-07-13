@@ -7,10 +7,12 @@ identical to what PyCBC uses internally.
 
 Public API
 ----------
-generate_noise       High-level dispatcher (routes to gaussian / non-gaussian).
 load_psd             Load a two-column (freq, ASD) text file onto a uniform grid.
 analytic_psd         Evaluate a named lalsimulation noise model on a uniform grid.
 gaussian_noise_from_psd  Generate coloured Gaussian noise from a PSD array.
+
+Import ``generate_noise`` from ``pycwb.modules.noise.gaussian`` explicitly so
+call sites identify the selected noise model.
 
 Stubs (not yet implemented)
 ---------------------------
@@ -19,10 +21,9 @@ inject_glitches      Placeholder for glitch injection.
 """
 
 from .psd import load_psd, analytic_psd
-from .gaussian import gaussian_noise_from_psd, generate_noise
+from .gaussian import gaussian_noise_from_psd
 
 __all__ = [
-    "generate_noise",
     "load_psd",
     "analytic_psd",
     "gaussian_noise_from_psd",

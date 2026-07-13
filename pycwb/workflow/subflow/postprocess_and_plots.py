@@ -8,7 +8,7 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
-# from pycwb.modules.read_data import generate_strain_from_injection
+# from pycwb.modules.injection import generate_strain_from_injection
 from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
@@ -320,7 +320,7 @@ def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[s
     
     if save_gwf: 
         
-        from pycwb.modules.read_data import save_to_gwf
+        from pycwb.modules.read_data.write_data import save_to_gwf
 
         logger.info(f"Saving residuals to GWF for event {event.hash_id}")
         strain_residuals_full = [get_residuals(tf_maps[i].data, reconst_data[f"{ifos[i]}_reconstructed_signals_whiten"], config.inRate,\
