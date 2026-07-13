@@ -7,4 +7,7 @@ dependencies:
   - nds2-client
   - python-nds2-client
   - python=3.13
+  - pip
   - setuptools_scm
+  - pip:
+      - sphinxawesome-theme==6.0.5
