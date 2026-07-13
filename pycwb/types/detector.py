@@ -1,4 +1,5 @@
 import math
+from importlib import import_module
 import numpy as np
 from dataclasses import dataclass
 from copy import deepcopy
@@ -8,12 +9,7 @@ from astropy.coordinates.matrix_utilities import rotation_matrix
 from astropy.units.si import meter
 from pycwb.constants.physics_constants import LAL_EARTHFLAT, LAL_REARTH_SI
 from pycwb.constants.detectors import DETECTORS
-from pycwb.utils.network import local_to_earth_centered
-import plotly.graph_objects as go
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from matplotlib import cm
+from pycwb.utils.geometry import local_to_earth_centered
 from scipy.special import gammaincc, gammainccinv
 
 
@@ -497,12 +493,15 @@ class Detector:
         projected = fplus * hp_ts.data + fcross * hc_ts.data
         return TimeSeries(data=projected, dt=hp_ts.dt, t0=hp_ts.t0)
 
-    def plot_on_globe(self, fig=False, 
+    def plot_on_globe(self, fig=False,
                       distance_km=500,
                       projection_type='orthographic',
                       width=800, height=800, color='red'):
         """
         Plot the detector's X and Y arms on a globe using Plotly.
+
+        .. deprecated::
+            Use :func:`pycwb.modules.plot.plot_detector_on_globe` instead.
 
         Parameters:
             fig (go.Figure or bool): A Plotly figure to add the detector arms to. If False, a new figure is created.
@@ -524,45 +523,20 @@ class Detector:
         Returns:
             go.Figure: A Plotly figure with the detector arms plotted on a globe.
         """
-        if fig is False:
-            fig = go.Figure()
-
-            fig.update_layout(
-                geo=dict(
-                    showland=True,
-                    showcountries=False,
-                    lataxis_showgrid=True,
-                    lonaxis_showgrid=True,
-                    projection_type=projection_type
-                ),
-                width=width,
-                height=height
-            )
-
-        x_arm_endpoint = np.rad2deg(self.get_x_arm_endpoint_in_geo(distance_km))
-        y_arm_endpoint = np.rad2deg(self.get_y_arm_endpoint_in_geo(distance_km))
-        longitude = np.rad2deg(self.longitude)
-        latitude = np.rad2deg(self.latitude)
-
-        fig.add_trace(go.Scattergeo(
-            lon=[longitude, x_arm_endpoint[0]],
-            lat=[latitude, x_arm_endpoint[1]],
-            mode='lines',
-            line=dict(width=2, color=color),
-            marker=dict(size=5),
-            name=f'{self.name} X Arm',
-        ))
-
-        fig.add_trace(go.Scattergeo(
-            lon=[longitude, y_arm_endpoint[0]],
-            lat=[latitude, y_arm_endpoint[1]],
-            mode='lines',
-            line=dict(width=2, color=color),
-            marker=dict(size=5),
-            name=f'{self.name} Y Arm'
-        ))
-
-        return fig
+        import warnings
+        plot_detector_on_globe = import_module(
+            "pycwb.modules.plot.detector_globe"
+        ).plot_detector_on_globe
+        warnings.warn(
+            "Detector.plot_on_globe() is deprecated. "
+            "Use pycwb.modules.plot.plot_detector_on_globe() instead.",
+            DeprecationWarning, stacklevel=2,
+        )
+        return plot_detector_on_globe(
+            self, fig=fig, distance_km=distance_km,
+            projection_type=projection_type,
+            width=width, height=height, color=color,
+        )
 
     def compute_detector_tensor(self):
         """
@@ -695,7 +669,10 @@ class Detector:
                            ax=None, vmin=0.0, vmax=None):
         """
         Draw antenna pattern for this detector.
-        
+
+        .. deprecated::
+            Use :func:`pycwb.modules.plot.plot_detector_antenna_pattern` instead.
+
         Parameters
         ----------
         polarization : int
@@ -721,134 +698,27 @@ class Detector:
             Minimum value for colorbar
         vmax : float, optional
             Maximum value for colorbar (auto if None)
-            
+
         Returns
         -------
         fig : matplotlib.figure.Figure
         ax : matplotlib.axes.Axes
         """
-        # Create sky grid
-        n_lon = 360 * resolution
-        n_lat = 180 * resolution
-        lon_rad = np.linspace(0, 2 * np.pi, n_lon)
-        lat_rad = np.linspace(0, np.pi, n_lat)
-        lon_grid, lat_grid = np.meshgrid(lon_rad, lat_rad)
-        
-        # Compute antenna patterns
-        F_plus, F_cross = self.compute_antenna_pattern_for_grid(lat_grid, lon_grid)
-        
-        # Compute requested polarization pattern
-        if polarization == 0:
-            pattern = np.abs(F_cross)
-        elif polarization == 1:
-            pattern = np.abs(F_plus)
-        elif polarization == 2:
-            with np.errstate(divide='ignore', invalid='ignore'):
-                pattern = np.abs(F_cross) / np.abs(F_plus)
-                pattern[~np.isfinite(pattern)] = 0
-        elif polarization == 3:
-            pattern = np.sqrt(F_plus**2 + F_cross**2)
-        elif polarization == 4:
-            pattern = F_cross**2
-        elif polarization == 5:
-            pattern = F_plus**2
-        else:
-            raise ValueError(f"Unsupported polarization: {polarization}")
-        
-        # Create figure if needed
-        if ax is None:
-            if projection.lower() == 'hammer':
-                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'aitoff'})
-            elif projection.lower() == 'mollweide':
-                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'mollweide'})
-            elif projection.lower() == 'sinusoidal':
-                projection_ccrs = ccrs.Sinusoidal(central_longitude=0)
-                fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': projection_ccrs})
-            else:
-                projection_ccrs = ccrs.PlateCarree()
-                fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': projection_ccrs})
-        else:
-            fig = ax.get_figure()
-        
-        # Convert coordinates for plotting
-        lon_deg = np.degrees(lon_grid) - 180
-        lat_deg = 90 - np.degrees(lat_grid)
-        pattern_flipped = np.flipud(pattern)
-        
-        # Set vmax if not provided
-        if vmax is None:
-            vmax = np.max(pattern)
-        
-        # Plot pattern
-        if projection.lower() in ['hammer', 'mollweide']:
-            lon_plot = lon_deg * np.pi / 180
-            lat_plot = lat_deg * np.pi / 180
-            im = ax.pcolormesh(lon_plot, lat_plot, pattern_flipped,
-                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
-            ax.grid(True, linestyle='--', alpha=0.5)
-        else:
-            im = ax.pcolormesh(lon_deg, lat_deg, pattern_flipped,
-                              transform=ccrs.PlateCarree(),
-                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
-        
-        # Add world map
-        if display_world_map and projection.lower() not in ['hammer', 'mollweide']:
-            try:
-                ax.coastlines(linewidth=0.5, alpha=0.7)
-                ax.add_feature(cfeature.BORDERS, linewidth=0.3, alpha=0.5, linestyle=':')
-                ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.2)
-                ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.1)
-                
-                if projection.lower() != 'sinusoidal':
-                    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                                     linewidth=0.5, color='gray', alpha=0.5, linestyle='--')
-                    gl.top_labels = False
-                    gl.right_labels = False
-                    gl.xlabel_style = {'size': 8}
-                    gl.ylabel_style = {'size': 8}
-            except Exception:
-                ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
-        else:
-            ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
-        
-        # Plot detector site
-        lat_deg_det = np.degrees(self.latitude)
-        lon_deg_det = np.degrees(self.longitude)
-        
-        if projection.lower() in ['hammer', 'mollweide']:
-            lon_plot = np.radians(lon_deg_det)
-            if lon_plot > np.pi:
-                lon_plot -= 2 * np.pi
-            lat_plot = np.radians(lat_deg_det)
-            ax.plot(lon_plot, lat_plot, 'k.', markersize=10, markeredgewidth=2, transform=ax.transData)
-            ax.text(lon_plot + 0.05, lat_plot + 0.05, self.name,
-                   fontsize=12, fontweight='bold', ha='left', va='bottom', transform=ax.transData)
-        else:
-            ax.plot(lon_deg_det, lat_deg_det, 'k.', markersize=10,
-                   transform=ccrs.PlateCarree(), markeredgewidth=2)
-            ax.text(lon_deg_det + 1, lat_deg_det + 1, self.name,
-                   transform=ccrs.PlateCarree(), fontsize=12, fontweight='bold', ha='left', va='bottom')
-        
-        # Colorbar
-        cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.45)
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_label('Pattern Value', fontsize=11)
-        
-        # Title
-        if add_title:
-            polarization_names = {
-                0: r"$|F_x|$ (DPF)",
-                1: r"$|F_+|$ (DPF)",
-                2: r"$|F_x|/|F_+|$ (DPF)",
-                3: r"$\sqrt{|F_+|^2 + |F_x|^2}$ (DPF)",
-                4: "$|F_x|^2$ (DPF)",
-                5: "$|F_+|^2$ (DPF)"
-            }
-            title = f"Detector: {self.name} - {polarization_names.get(polarization, f'Polarization {polarization}')}"
-            ax.set_title(title, fontsize=14, pad=20)
-        
-        plt.tight_layout()
-        return fig, ax
+        import warnings
+        plot_detector_antenna_pattern = import_module(
+            "pycwb.modules.plot.detector_antenna"
+        ).plot_detector_antenna_pattern
+        warnings.warn(
+            "Detector.draw_antenna_pattern() is deprecated. "
+            "Use pycwb.modules.plot.plot_detector_antenna_pattern() instead.",
+            DeprecationWarning, stacklevel=2,
+        )
+        return plot_detector_antenna_pattern(
+            self, polarization=polarization, palette=palette,
+            resolution=resolution, projection=projection,
+            display_world_map=display_world_map, add_title=add_title,
+            ax=ax, vmin=vmin, vmax=vmax,
+        )
 
 
 class DetectorNetwork:
@@ -1056,63 +926,6 @@ class DetectorNetwork:
         pattern_max = np.max(pattern)
         return pattern, pattern_max
 
-    @staticmethod
-    def _create_plot_figure(projection):
-        if projection.lower() == 'hammer':
-            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'aitoff'})
-        elif projection.lower() == 'mollweide':
-            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'mollweide'})
-        elif projection.lower() == 'sinusoidal':
-            projection_ccrs = ccrs.Sinusoidal(central_longitude=0)
-            fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': projection_ccrs})
-        else:
-            projection_ccrs = ccrs.PlateCarree()
-            fig, ax = plt.subplots(figsize=(12, 6), subplot_kw={'projection': projection_ccrs})
-        return fig, ax
-
-    @staticmethod
-    def _plot_pattern(ax, pattern, lon_deg, lat_deg, palette, projection, vmin=0.0, vmax=None):
-        pattern_flipped = np.flipud(pattern)
-        if projection.lower() in ['hammer', 'mollweide']:
-            lon_plot = lon_deg * np.pi / 180
-            lat_plot = lat_deg * np.pi / 180
-            im = ax.pcolormesh(lon_plot, lat_plot, pattern_flipped,
-                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
-            ax.grid(True, linestyle='--', alpha=0.5)
-        else:
-            im = ax.pcolormesh(lon_deg, lat_deg, pattern_flipped,
-                              transform=ccrs.PlateCarree(),
-                              cmap=palette, shading='auto', vmin=vmin, vmax=vmax)
-        return im
-
-    @staticmethod
-    def _add_world_map(ax, display_world_map, projection):
-        if not display_world_map:
-            return
-        if projection.lower() not in ['hammer', 'mollweide']:
-            try:
-                ax.coastlines(linewidth=0.5, alpha=0.7)
-                ax.add_feature(cfeature.BORDERS, linewidth=0.3, alpha=0.5, linestyle=':')
-                ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.2)
-                ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.1)
-                if projection.lower() != 'sinusoidal':
-                    gl = ax.gridlines(
-                        crs=ccrs.PlateCarree(),
-                        draw_labels=True,
-                        linewidth=0.5,
-                        color='gray',
-                        alpha=0.5,
-                        linestyle='--'
-                    )
-                    gl.top_labels = False
-                    gl.right_labels = False
-                    gl.xlabel_style = {'size': 8}
-                    gl.ylabel_style = {'size': 8}
-            except Exception:
-                ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
-        else:
-            ax.grid(True, color='gray', linestyle='--', alpha=0.3, linewidth=0.5)
-
     @classmethod
     def _compute_arm_endpoints(cls, detector, arm_length_factor=8.0):
         lat, lon = detector['lat'], detector['lon']
@@ -1173,109 +986,32 @@ class DetectorNetwork:
             y_lon_deg += 360
         return (x_lon_deg, x_lat_deg), (y_lon_deg, y_lat_deg)
 
-    @classmethod
-    def _plot_detector_sites(cls, ax, detectors, projection):
-        for det in detectors:
-            lat_deg = np.degrees(det['lat'])
-            lon_deg = np.degrees(det['lon'])
-            (x_lon, x_lat), (y_lon, y_lat) = cls._compute_arm_endpoints(det, arm_length_factor=6.0)
-            if projection.lower() in ['hammer', 'mollweide']:
-                lon_plot = np.radians(lon_deg)
-                if lon_plot > np.pi:
-                    lon_plot -= 2 * np.pi
-                lat_plot = np.radians(lat_deg)
-                x_lon_plot = np.radians(x_lon)
-                if x_lon_plot > np.pi:
-                    x_lon_plot -= 2 * np.pi
-                x_lat_plot = np.radians(x_lat)
-                y_lon_plot = np.radians(y_lon)
-                if y_lon_plot > np.pi:
-                    y_lon_plot -= 2 * np.pi
-                y_lat_plot = np.radians(y_lat)
-                ax.plot(lon_plot, lat_plot, 'k.', markersize=10,
-                       markeredgewidth=2, transform=ax.transData)
-                ax.plot([lon_plot, x_lon_plot], [lat_plot, x_lat_plot],
-                       'k-', linewidth=2.0, transform=ax.transData)
-                ax.plot([lon_plot, y_lon_plot], [lat_plot, y_lat_plot],
-                       'k-', linewidth=2.0, transform=ax.transData)
-                ax.text(lon_plot + 0.05, lat_plot + 0.05, det['code'],
-                       fontsize=12, fontweight='bold', ha='left', va='bottom',
-                       transform=ax.transData)
-            else:
-                ax.plot(lon_deg, lat_deg, 'k.', markersize=10,
-                       transform=ccrs.PlateCarree(), markeredgewidth=2)
-                ax.plot([lon_deg, x_lon], [lat_deg, x_lat],
-                       'k-', linewidth=2.0, transform=ccrs.PlateCarree())
-                ax.plot([lon_deg, y_lon], [lat_deg, y_lat],
-                       'k-', linewidth=2.0, transform=ccrs.PlateCarree())
-                ax.text(lon_deg + 1, lat_deg + 1, det['code'],
-                       transform=ccrs.PlateCarree(), fontsize=12,
-                       fontweight='bold', ha='left', va='bottom')
-
     def draw_antenna_pattern(self, polarization=3, palette='turbo',
                              resolution=2, projection='rectilinear',
                              display_world_map=True, add_title=True,
                              uniform_colorbar=True, ax=None, detector_scales=None):
         """
         Draw antenna pattern for the detector network.
+
+        .. deprecated::
+            Use :func:`pycwb.modules.plot.plot_network_antenna_pattern` instead.
         """
-        detectors = self._get_detector_info()
-        if not detectors:
-            raise ValueError("No valid detectors found")
-
-        scales = np.ones(len(detectors))
-        if detector_scales is not None:
-            if isinstance(detector_scales, dict):
-                scales = np.array([detector_scales.get(det['code'], 1.0) for det in detectors])
-            elif isinstance(detector_scales, (list, np.ndarray)):
-                if len(detector_scales) == len(detectors):
-                    scales = np.array(detector_scales)
-
-        lon_grid, lat_grid, _, _ = self._create_sky_grid(resolution)
-        theta_grid = lat_grid
-        phi_grid = lon_grid
-
-        F_plus, F_cross = self._compute_antenna_patterns(theta_grid, phi_grid, detectors)
-
-        reference_max = None
-        if uniform_colorbar:
-            reference_max = self._compute_reference_max(F_plus, F_cross, scales)
-
-        pattern, pattern_max = self._compute_antenna_pattern(F_plus, F_cross, polarization, scales)
-
-        if ax is None:
-            fig, ax = self._create_plot_figure(projection)
-        else:
-            fig = ax.get_figure()
-
-        lon_deg = np.degrees(lon_grid) - 180
-        lat_deg = 90 - np.degrees(lat_grid)
-
-        vmax = reference_max if uniform_colorbar and reference_max is not None else pattern_max
-        im = self._plot_pattern(ax, pattern, lon_deg, lat_deg, palette, projection, vmin=0.0, vmax=vmax)
-
-        self._add_world_map(ax, display_world_map, projection)
-
-        cbar = plt.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.45)
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_label('Pattern Value', fontsize=11)
-
-        self._plot_detector_sites(ax, detectors, projection)
-
-        if add_title:
-            polarization_names = {
-                0: r"$|F_x|$ (DPF)",
-                1: r"$|F_+|$ (DPF)",
-                2: r"$|F_x|/|F_+|$ (DPF)",
-                3: r"$\sqrt{|F_+|^2 + |F_x|^2}$ (DPF)",
-                4: "|F_x|^2 (DPF)",
-                5: "|F_+|^2 (DPF)"
-            }
-            title = f"Network: {' '.join([d['code'] for d in detectors])} - {polarization_names.get(polarization, f'Polarization {polarization}')}"
-            ax.set_title(title, fontsize=14, pad=20)
-
-        plt.tight_layout()
-        return fig, ax
+        import warnings
+        plot_network_antenna_pattern = import_module(
+            "pycwb.modules.plot.detector_antenna"
+        ).plot_network_antenna_pattern
+        warnings.warn(
+            "DetectorNetwork.draw_antenna_pattern() is deprecated. "
+            "Use pycwb.modules.plot.plot_network_antenna_pattern() instead.",
+            DeprecationWarning, stacklevel=2,
+        )
+        return plot_network_antenna_pattern(
+            self, polarization=polarization, palette=palette,
+            resolution=resolution, projection=projection,
+            display_world_map=display_world_map, add_title=add_title,
+            uniform_colorbar=uniform_colorbar, ax=ax,
+            detector_scales=detector_scales,
+        )
 
 
 def gmst_accurate(gps_time):

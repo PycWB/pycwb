@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 
 import numpy as np
 import pandas as pd
@@ -7,6 +8,73 @@ import pandas as pd
 from .utils import getcapname
 
 logger = logging.getLogger(__name__)
+
+
+def _iter_user_function_names(ML_options: dict | None) -> list[str]:
+    """Return configured and conventional post-score user hook names."""
+    names: list[str] = []
+    if ML_options:
+        for key in (
+            "ranking_statistics(functions)",
+            "ranking_statistics",
+            "postprocess(functions)",
+        ):
+            configured = ML_options.get(key)
+            if configured is None:
+                continue
+            if isinstance(configured, str):
+                names.extend(
+                    name.strip()
+                    for name in configured.replace(",", " ").split()
+                    if name.strip()
+                )
+            else:
+                names.extend(str(name) for name in configured)
+
+    names.extend(["postprocess_scores", "postprocess_dataframe", "getrhor"])
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name and name not in seen:
+            seen.add(name)
+            unique.append(name)
+    return unique
+
+
+def apply_user_ranking_statistics(
+    events: pd.DataFrame,
+    search: str,
+    config_file: str | None = None,
+    ML_options: dict | None = None,
+) -> pd.DataFrame:
+    """Apply optional user-defined score/ranking-statistic hooks.
+
+    A workflow ``config_file`` may define any of the conventional functions
+    ``postprocess_scores(events, search)``, ``postprocess_dataframe(events,
+    search)``, or ``getrhor(events, search)``.  Additional function names can
+    be listed in ``ML_options['ranking_statistics(functions)']``.
+
+    Each hook receives a scored event DataFrame and may mutate it in-place or
+    return a replacement DataFrame.  Missing hooks are ignored so existing
+    config files that only define ``update_config`` remain valid.
+    """
+    if not config_file:
+        return events
+
+    from pycwb.utils.module import import_helper
+
+    module_name = os.path.splitext(os.path.basename(config_file))[0]
+    module = import_helper(config_file, module_name)
+    for name in _iter_user_function_names(ML_options):
+        fn = getattr(module, name, None)
+        if not callable(fn):
+            continue
+        result = fn(events, search)
+        if result is not None:
+            events = result
+        logger.info("Applied user ranking statistic hook %s from %s", name, config_file)
+    return events
 
 
 

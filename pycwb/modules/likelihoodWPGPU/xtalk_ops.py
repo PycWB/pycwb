@@ -6,7 +6,7 @@ sequential.  They run once at the best sky direction only (not in the sky scan)
 so they are not performance-critical.  We reuse the Numba implementations.
 """
 
-from pycwb.modules.likelihoodWP.utils import (
+from pycwb.modules.likelihoodWP.packet_ops import (
     packet_norm_numpy,
     gw_norm_numpy,
 )

@@ -176,7 +176,7 @@ class Catalog(BaseCatalog):
     #: Default bare filename used when callers do not specify one.
     DEFAULT_FILENAME: str = "catalog.parquet"
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str) -> None:
         self.filename = os.path.abspath(filename)
         # Lazy-loaded cache; invalidated after every write
         self._meta_cache: Optional[dict] = None
@@ -286,7 +286,7 @@ class Catalog(BaseCatalog):
 
         self._meta_cache = None  # invalidate after write
 
-    def add_events(self, events) -> None:
+    def add_events(self, events: object) -> None:
         """Convert legacy :class:`~pycwb.types.network_event.Event` objects and append.
 
         Accepts a single ``Event`` or a list.  This shim lets existing pipeline
@@ -507,7 +507,7 @@ class Catalog(BaseCatalog):
     # Filtering / searching
     # ------------------------------------------------------------------
 
-    def filter(self, *conditions) -> pa.Table:
+    def filter(self, *conditions: str | pa.Expression) -> pa.Table:
         """Filter triggers by one or more conditions.
 
         Each condition can be:
@@ -693,7 +693,7 @@ def create_catalog(filename: str, config: Config,
     return Catalog.create(filename, config, jobs)
 
 
-def add_triggers_to_catalog(filename: str, triggers) -> None:
+def add_triggers_to_catalog(filename: str, triggers: object) -> None:
     """Append trigger(s) to an existing catalog file.
 
     .. deprecated::
@@ -702,7 +702,7 @@ def add_triggers_to_catalog(filename: str, triggers) -> None:
     Catalog.open(filename).add_triggers(triggers)
 
 
-def add_events_to_catalog(filename: str, events) -> None:
+def add_events_to_catalog(filename: str, events: object) -> None:
     """Convert legacy Event(s) and append to the catalog.
 
     .. deprecated::
@@ -728,4 +728,3 @@ def read_catalog_triggers(filename: str) -> pa.Table:
         Prefer ``Catalog.open(filename).triggers()``.
     """
     return Catalog.open(filename).triggers()
-

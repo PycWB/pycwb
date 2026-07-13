@@ -19,6 +19,8 @@ FROM condaforge/miniforge3:latest
 # ── Environment ─────────────────────────────────────────────
 ENV DEBIAN_FRONTEND=noninteractive \
     PYCWB_DISABLE_WAT=1 \
+    NUMBA_CACHE_DIR=/opt/pycwb-numba-cache \
+    NUMBA_CPU_NAME=generic \
     CONDA_DEFAULT_ENV=pycwb \
     PATH=/opt/conda/envs/pycwb/bin:/opt/conda/bin:${PATH}
 
@@ -41,6 +43,9 @@ COPY . /tmp/src
 RUN pip install --no-cache-dir --upgrade pip setuptools setuptools_scm build \
  && python -m build --wheel \
  && pip install --no-cache-dir /tmp/src/dist/*.whl \
+ && mkdir -p "${NUMBA_CACHE_DIR}" \
+ && cd /tmp && PYTHONPATH= python /tmp/src/tools/warm_numba_cache.py \
+ && chmod -R a+rwX "${NUMBA_CACHE_DIR}" \
  && rm -rf /tmp/src /root/.cache/pip
 
 # ── Sanity checks ───────────────────────────────────────────

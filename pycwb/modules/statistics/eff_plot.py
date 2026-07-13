@@ -5,6 +5,26 @@ import pandas as pd
 
 def hrss50_bar_plot(data_sets: list[tuple[dict[str, pd.DataFrame], str]],
                     wf_selections=None, output_dir='.', filename='hrss50_comparison.png'):
+    """
+    Grouped bar chart comparing hrss50 across pre-loaded datasets.
+
+    Unlike ``barplot_hrss_from_mdc``, this function accepts already-loaded
+    data rather than reading from disk. Each dataset is a dict mapping
+    waveform name → ``[hrss50, hrss50_err]``.
+
+    Parameters
+    ----------
+    data_sets : list of tuple
+        List of ``(data_dict, label)`` pairs, where ``data_dict`` maps
+        waveform name to ``[hrss50, hrss50_err]``.
+    wf_selections : list of str, optional
+        Subset of waveform names to include. If None, uses all keys from
+        the first dataset.
+    output_dir : str, optional
+        Directory to save the plot. Default ``'.'``.
+    filename : str, optional
+        Output filename. Default ``'hrss50_comparison.png'``.
+    """
     if wf_selections is None:
         wf_names_plot = list(data_sets[0][0].keys())
     else:

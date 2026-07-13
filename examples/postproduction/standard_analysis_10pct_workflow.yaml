@@ -1,0 +1,399 @@
+# ============================================================================
+# Standard Post-Production Analysis — Configurable 10% Target Training Workflow
+#
+# This is a user-facing example adapted from the runnable test workflow at
+#   tests/postprod/postprocess_workflow_bkg_k20_k22_k21_10pct.yaml
+#
+# Strategy:
+#   Train the XGBoost ranking model with two full background (BKG) and
+#   simulation (SIM) training chunks, plus a 10% subset of a target chunk.
+#   The remaining 90% target BKG is held out for unbiased FAR estimation.
+#
+# Pipeline phases:
+#   1. SELECTION  — split target background into disjoint train (10%) and FAR
+#                   (90%) partitions by live-time interval.  Match and filter
+#                   SIM training catalogs for recovered/usable injections.
+#   2. TRAINING   — train XGBoost classifier on BKG + SIM training catalogs.
+#   3. FAR        — score the FAR holdout BKG with the model, build FAR(ρ)
+#                   mapping.
+#   4. EFFICIENCY — score SIM evaluation injections, compute detection
+#                   efficiency vs. hrss by waveform family.
+#   5. REPORT     — generate background report (FAR plots, zero-lag,
+#                   fake-open-box) and MDC detection tables.
+#   6. AGGREGATE  — build the final post-production HTML report.
+#
+# Usage:
+#   pycwb post-process examples/postproduction/standard_analysis_10pct_workflow.yaml
+#   pycwb post-process examples/postproduction/standard_analysis_10pct_workflow.yaml --diagram-only
+#
+# NOTE: This is a template with placeholder paths.  For a runnable version
+#       with real test data, see tests/postprod/.
+# ============================================================================
+
+vars:
+  # ── Global settings ────────────────────────────────────────────────────
+  work_dir: /path/to/postproduction/output   # <-- set to your working directory
+  search: blf                                 # search label (e.g. blf, bbh)
+  nifo: 2                                     # number of interferometers
+  ifo_order: [L1, H1]                        # IFO ordering for plots
+
+  # ── Target split fractions ─────────────────────────────────────────────
+  target_train_fraction: 0.1                  # 10% -> XGBoost training
+  target_far_fraction: 0.9                    # 90% -> FAR holdout
+  train_fraction_label: 10pct
+
+  # To swap K22 for K23, update chunks.train_bkg_2 and chunks.tag.
+  chunks:
+    train_bkg_1: K20
+    train_bkg_2: K22
+    target: K21
+    tag: k20_k22_k21
+
+  run:
+    output_name: O4_${chunks.target}_run1
+    analysis_slug: bkg_${chunks.tag}_${train_fraction_label}
+
+  roots:
+    bkg: /path/to/BKG
+    sim: /path/to/SIM
+    xgb: /path/to/XGB
+
+  # ── Data paths (REPLACE these with your actual paths) ──────────────────
+  paths:
+    # --- Training background catalogs ---
+    train_bkg_1_catalog: ${roots.bkg}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_BKG_tst1/catalog/catalog.parquet
+    train_bkg_2_catalog: ${roots.bkg}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_BKG_tst1/catalog/catalog.parquet
+
+    # --- Target background (will be split train/FAR) ---
+    target_bkg_catalog: ${roots.bkg}/O4_${chunks.target}_C00_BurstLF_LH_BKG_tst2/catalog/catalog.parquet
+    target_bkg_progress: ${roots.bkg}/O4_${chunks.target}_C00_BurstLF_LH_BKG_tst2/catalog/progress.parquet
+
+    # --- Training simulation catalogs ---
+    train_sim_1_catalog: ${roots.sim}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
+    train_sim_2_catalog: ${roots.sim}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
+    target_sim_train_catalog: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
+    target_sim_train_progress: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/progress.parquet
+    target_sim_train_simulations: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/simulations.parquet
+
+    # --- Evaluation simulation catalog ---
+    sim_eval_catalog: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_STDINJs_Set1_tst5/catalog/catalog.parquet
+    sim_eval_progress: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_STDINJs_Set1_tst5/catalog/progress.parquet
+    sim_eval_simulations: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_STDINJs_Set1_tst5/catalog/simulations.parquet
+
+    # --- MDC catalog (optional) ---
+    mdc_catalog: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_MDC_short0/catalog/catalog.M1.parquet
+
+    # --- Output paths ---
+    output_dir: ${work_dir}/public/${run.output_name}
+    model_file: ${paths.output_dir}/models/${run.analysis_slug}_xgb_model_blf.ubj
+    xgb_training_settings: ${paths.output_dir}/models/${run.analysis_slug}_xgb_training_settings.cfg
+    xgb_training_output: ${paths.output_dir}/models/${run.analysis_slug}_xgb_training_output.out
+    far_rho_file: ${paths.output_dir}/models/${run.analysis_slug}_far_rho.json
+    sim_eval_scored: ${paths.output_dir}/simulations/sim_stdinj_eval_scored.parquet
+    bkg_far_scored: tmp://bkg_far_scored.parquet
+    bkg_zero_lag_scored: tmp://bkg_zero_lag_scored.parquet
+    config_file: ${roots.xgb}/O4_${chunks.target}_XGB/xgb_config.py
+    public_alerts_file: /path/to/public_alerts.txt
+    workflow_filename: standard_analysis_10pct_workflow.yaml
+
+runtime:
+  tmp_dir: ${work_dir}/tmp/${run.analysis_slug}
+  cleanup_tmp: never                            # keep intermediates for debugging
+
+# ============================================================================
+# WORKFLOW STEPS
+# ============================================================================
+
+steps:
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 1: SELECTION — Split data into train / FAR / eval partitions
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: target_bkg_split
+    name: Split Target Background Into Train And FAR
+    action: postprocess.selection.trigger_selection
+    inputs:
+      catalog_file: ${paths.target_bkg_catalog}
+      progress_file: ${paths.target_bkg_progress}
+    args:
+      exclude_zero_lag: true                    # BKG: no zero-lag triggers
+      returns: [jobs, triggers, livetime]
+      split:
+        by: interval_livetime                   # split by disjoint time intervals
+        seed: 42
+        fractions:
+          train: ${target_train_fraction}       # 10%
+          far: ${target_far_fraction}           # 90%
+    outputs:
+      train:
+        jobs_file: tmp://target_bkg_train_jobs.txt
+        progress_file: tmp://target_bkg_train_progress.parquet
+        intervals_file: tmp://target_bkg_train_intervals.parquet
+        intervals_csv_file: tmp://target_bkg_train_intervals.csv
+        triggers_file: tmp://target_bkg_train.parquet
+      far:
+        jobs_file: tmp://target_bkg_far_jobs.txt
+        progress_file: tmp://target_bkg_far_progress.parquet
+        intervals_file: tmp://target_bkg_far_intervals.parquet
+        intervals_csv_file: tmp://target_bkg_far_intervals.csv
+        triggers_file: tmp://target_bkg_far.parquet
+
+  - id: target_sim_train_match
+    name: Match Target SIM Training Catalog
+    action: postprocess.matching.match_simulations
+    inputs:
+      catalog_file: ${paths.target_sim_train_catalog}
+      simulation_file: ${paths.target_sim_train_simulations}
+    args:
+      how: outer                                # keep recovered and unrecovered rows
+      window_buffer: 0.0
+    outputs:
+      output_file: tmp://target_sim_train_matched_outer.parquet
+
+  - id: target_sim_train_real
+    name: Filter Target SIM Training (Recovered + Non-Vetoed Only)
+    action: postprocess.selection.filter_real_simulation
+    inputs:
+      matched_file: "@target_sim_train_match.matched_file"
+      sim_catalog: ${paths.target_sim_train_catalog}
+    args:
+      require_recovered: true
+      exclude_vetoed: true
+      output_schema: matched
+    outputs:
+      output_file: tmp://target_sim_training_real.parquet
+
+  - id: target_sim_train_select
+    name: Select Target SIM Training Fraction
+    action: postprocess.selection.trigger_selection
+    inputs:
+      catalog_file: "@target_sim_train_real.triggers_file"
+      progress_file: ${paths.target_sim_train_progress}
+    args:
+      exclude_zero_lag: false                   # SIM: zero-lag IS allowed
+      returns: [jobs, triggers, livetime]
+      selection:
+        fraction: ${target_train_fraction}      # match BKG train fraction
+        seed: 43
+    outputs:
+      jobs_file: tmp://target_sim_train_jobs.txt
+      triggers_file: tmp://target_sim_train.parquet
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 2: TRAINING — Train the XGBoost ranking model
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: model
+    name: Train XGBoost Classifier
+    action: postprocess.train_xgboost.train_xgboost
+    inputs:
+      bkg_catalogs:
+        - ${paths.train_bkg_1_catalog}
+        - ${paths.train_bkg_2_catalog}
+        - "@target_bkg_split.train.triggers_file"
+      sim_catalogs:
+        - ${paths.train_sim_1_catalog}
+        - ${paths.train_sim_2_catalog}
+        - "@target_sim_train_select.triggers_file"
+      config_file: ${paths.config_file}
+    args:
+      model_file: ${paths.model_file}
+      dump: false
+      dump_training_review: true
+      verbose: false
+    outputs:
+      training_settings_file: ${paths.xgb_training_settings}
+      training_output_file: ${paths.xgb_training_output}
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 3: FAR — Build false-alarm-rate mapping
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: far_rho
+    name: Score Target FAR Holdout And Build FAR(ρ)
+    action: postprocess.evaluate.evaluate_far_rho
+    inputs:
+      catalog_file: "@target_bkg_split.far.triggers_file"
+      model_file: ${paths.model_file}
+      config_file: ${paths.config_file}
+    args:
+      livetime: "@target_bkg_split.far.livetime.seconds"
+      ranking_par: rhor
+      bin_size: 0.0001
+      vmin: 0.0
+      vmax: 10.0
+    outputs:
+      output_file: ${paths.far_rho_file}
+      scored_catalog: ${paths.bkg_far_scored}
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 4: EFFICIENCY — Score SIM evaluation and compute sensitivity
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: sim_eval_selection
+    name: Select Full SIM Evaluation Catalog
+    action: postprocess.selection.trigger_selection
+    inputs:
+      catalog_file: ${paths.sim_eval_catalog}
+      progress_file: ${paths.sim_eval_progress}
+    args:
+      exclude_zero_lag: false
+      returns: [jobs, triggers, livetime]
+      selection:
+        fraction: 1.0                            # use 100% of eval SIM
+        seed: 44
+    outputs:
+      jobs_file: tmp://sim_eval_jobs.txt
+      triggers_file: tmp://sim_eval.parquet
+
+  - id: sim_eval_match
+    name: Match SIM Evaluation Catalog
+    action: postprocess.matching.match_simulations
+    inputs:
+      catalog_file: ${paths.sim_eval_catalog}
+      simulation_file: ${paths.sim_eval_simulations}
+    args:
+      how: right                                # one row per simulation for efficiency
+      window_buffer: 0.0
+    outputs:
+      output_file: tmp://sim_eval_matched_right.parquet
+
+  - id: zero_lag_score
+    name: Score Target Zero-Lag Background
+    action: postprocess.evaluate.score_catalog
+    inputs:
+      catalog_file: ${paths.target_bkg_catalog}
+      model_file: ${paths.model_file}
+      config_file: ${paths.config_file}
+    args:
+      lag_selection: zero_lag
+    outputs:
+      output_file: ${paths.bkg_zero_lag_scored}
+
+  - id: sim_efficiency_score
+    name: Score SIM Evaluation Triggers
+    action: postprocess.evaluate.evaluate_efficiency
+    inputs:
+      catalog_file: "@sim_eval_selection.triggers_file"
+      model_file: ${paths.model_file}
+      config_file: ${paths.config_file}
+    args:
+      threshold: 0.5
+    outputs:
+      output_file: ${paths.sim_eval_scored}
+
+  - id: waveform_hrss_curves_100yr
+    name: Sensitivity Curves At 100-Year IFAR
+    action: postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+    inputs:
+      sim_catalog: ${paths.sim_eval_catalog}
+      matched_file: "@sim_eval_match.matched_file"
+      bkg_catalog: ${paths.bkg_far_scored}
+      model_file: ${paths.model_file}
+      config_file: ${paths.config_file}
+    args:
+      livetime: "@target_bkg_split.far.livetime.seconds"
+      ifar: 100yr
+      use_unique_sim: true
+      exclude_vetoed: false
+    outputs:
+      output_file: ${paths.output_dir}/simulations/${run.analysis_slug}_efficiency_vs_hrss_by_waveform_100yr.png
+      fit_parameters_file: ${paths.output_dir}/simulations/${run.analysis_slug}_fit_parameters_by_waveform_100yr.csv
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 5: REPORT — Background report, zero-lag, MDC detections
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: background_report
+    name: Standard Background Report
+    action: postprocess.report.standard_background_report
+    inputs:
+      catalog_file: ${paths.bkg_far_scored}
+      zero_lag_catalog_file: ${paths.bkg_zero_lag_scored}
+      fake_openbox_intervals_file: "@target_bkg_split.far.intervals_csv_file"
+      progress_file: ${paths.target_bkg_progress}
+      job_ids_file: "@target_bkg_split.far.jobs_file"
+    args:
+      livetime: "@target_bkg_split.far.livetime.seconds"
+      ranking_par: rhor
+      exclude_zero_lag: true
+      far_rho_file: ${paths.far_rho_file}
+      output_dir: ${paths.output_dir}
+      include_zero_lag: true
+      include_fake_openbox: true
+      ifo_order: [L1, H1]
+      fake_openbox_n: 3
+      fake_openbox_seed: 42
+      public_alerts_file: ${paths.public_alerts_file}
+      public_alert_time_window: 1.0
+
+  - id: mdc_10yr
+    name: MDC Detections At 10-Year IFAR
+    action: postprocess.evaluate.score_mdc_catalog
+    inputs:
+      mdc_catalog: ${paths.mdc_catalog}
+      model_file: ${paths.model_file}
+      bkg_scored_catalog: ${paths.bkg_far_scored}
+      progress_file: ${paths.target_bkg_progress}
+      job_ids_file: "@target_bkg_split.far.jobs_file"
+      config_file: ${paths.config_file}
+    args:
+      livetime: "@target_bkg_split.far.livetime.seconds"
+      ranking_par: rhor
+      ifar_threshold: 10yr
+    outputs:
+      output_csv: ${paths.output_dir}/mdc_detections_10yr.csv
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Phase 6: AGGREGATE — Build final HTML post-production report
+  # ────────────────────────────────────────────────────────────────────────
+
+  - id: postproduction_report
+    name: Build Final Post-Production Report
+    action: postprocess.report_builder.postproduction_report
+    inputs:
+      workflow_file: ${paths.workflow_filename}
+      production_catalog_file: ${paths.target_bkg_catalog}
+    args:
+      title: O4 ${chunks.train_bkg_1}+${chunks.train_bkg_2} full plus ${chunks.target} ${train_fraction_label} BKG training postproduction report
+      output_file: ${paths.output_dir}/index.html
+      data_file: ${paths.output_dir}/report_data.json
+      bkg:
+        scored_catalog: ${paths.bkg_far_scored}
+        far_json: ${paths.far_rho_file}
+        binned_far_json: ${paths.far_rho_file}
+        progress_file: "@target_bkg_split.far.progress_file"
+        intervals_file: "@target_bkg_split.far.intervals_file"
+        zero_lag_progress_file: ${paths.target_bkg_progress}
+        zero_lag_catalog_file: ${paths.bkg_zero_lag_scored}
+        livetime: "@target_bkg_split.far.livetime.seconds"
+        ranking_par: rhor
+        zero_lag_csv: ${paths.output_dir}/zero_lag_triggers.csv
+        plots:
+          - ${paths.output_dir}/far_rho.png
+          - ${paths.output_dir}/far_rho_n_events.png
+          - ${paths.output_dir}/zero_lag_poisson.png
+          - ${paths.output_dir}/zero_lag_report.png
+          - ${paths.output_dir}/fake_openbox_01_report.png
+          - ${paths.output_dir}/fake_openbox_01_poisson.png
+          - ${paths.output_dir}/fake_openbox_02_report.png
+          - ${paths.output_dir}/fake_openbox_02_poisson.png
+          - ${paths.output_dir}/fake_openbox_03_report.png
+          - ${paths.output_dir}/fake_openbox_03_poisson.png
+      training:
+        bkg_catalog: "@target_bkg_split.train.triggers_file"
+        bkg_progress_file: "@target_bkg_split.train.progress_file"
+        bkg_intervals_file: "@target_bkg_split.train.intervals_file"
+        sim_catalog: "@target_sim_train_select.triggers_file"
+        model_file: ${paths.model_file}
+        config_file: ${paths.config_file}
+        training_settings_file: ${paths.xgb_training_settings}
+        training_output_file: ${paths.xgb_training_output}
+      simulation_runs:
+        - label: STDINJs Set1
+          scored_catalog: ${paths.sim_eval_scored}
+          matched_file: "@sim_eval_match.matched_file"
+          plots:
+            - ${paths.output_dir}/simulations/${run.analysis_slug}_efficiency_vs_hrss_by_waveform_100yr.png
+          fit_parameter_files:
+            - ${paths.output_dir}/simulations/${run.analysis_slug}_fit_parameters_by_waveform_100yr.csv

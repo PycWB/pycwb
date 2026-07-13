@@ -1,0 +1,50 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+"Selected\nPixels" -> "Per-Resolution\nClusters" -> "Multi-Resolution\nMerge" -> "Sub-Network\nCut" -> Superclusters -> Defragmentation -> "To\nLikelihood"
+
+"Selected\nPixels".style.fill: "#e3f2fd"
+"Per-Resolution\nClusters".style.fill: "#e8f5e9"
+"Multi-Resolution\nMerge".style.fill: "#fff3e0"
+"Sub-Network\nCut".style.fill: "#fce4ec"
+Superclusters.style.fill: "#f3e5f5"
+Defragmentation.style.fill: "#e8eaf6"
+"To\nLikelihood".style.fill: "#c8e6c9"
+
+# Annotations
+"Per-Resolution\nClusters" -- "Multi-Resolution\nMerge": {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"TFgap"
+
+"Sub-Network\nCut" -- Superclusters: {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"subnet / subcut"
+
+Superclusters -- Defragmentation: {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"Tgap / Fgap"

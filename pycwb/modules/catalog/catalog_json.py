@@ -123,7 +123,7 @@ class JSONCatalog(BaseCatalog):
     DEFAULT_EXTENSION: str = ".json"
     DEFAULT_FILENAME: str = "catalog.json"
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str) -> None:
         self.filename = os.path.abspath(filename)
         self._meta_cache: Optional[dict] = None
 
@@ -132,7 +132,7 @@ class JSONCatalog(BaseCatalog):
     # ------------------------------------------------------------------
 
     @classmethod
-    def create(cls, filename: str, config, jobs: list) -> "JSONCatalog":
+    def create(cls, filename: str, config: object, jobs: list) -> "JSONCatalog":
         """Create an empty JSON catalog and return a :class:`JSONCatalog` for it.
 
         Parameters
@@ -215,7 +215,7 @@ class JSONCatalog(BaseCatalog):
         self._meta_cache = None  # invalidate after write
         logger.info("Appended %d trigger(s) to %s", len(new_rows), self.filename)
 
-    def add_events(self, events) -> None:
+    def add_events(self, events: object) -> None:
         """Convert legacy :class:`~pycwb.types.network_event.Event` objects and append.
 
         Accepts a single ``Event`` or a list.
@@ -262,7 +262,7 @@ class JSONCatalog(BaseCatalog):
     # Filtering / searching
     # ------------------------------------------------------------------
 
-    def filter(self, *conditions) -> list[dict]:
+    def filter(self, *conditions: str) -> list[dict]:
         """Filter triggers by one or more string expression conditions.
 
         Each condition is a Python boolean expression evaluated against the

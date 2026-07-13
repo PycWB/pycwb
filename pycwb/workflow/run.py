@@ -1,5 +1,6 @@
 import copy
 import logging
+import multiprocessing
 import os
 
 from pycwb.modules.logger import logger_init
@@ -69,20 +70,37 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
 
     # Construct catalog_file path (same as prepare_job_runs creates)
     from pycwb.modules.catalog.catalog import Catalog
+    from pycwb.workflow.batch import data_collector
     catalog_file = os.path.join(working_dir, config.catalog_dir, Catalog.DEFAULT_FILENAME)
 
-    for job_seg in job_segments:
-        if trial_ids is not None:
-            for tid in trial_ids:
-                sub_job_seg = copy.deepcopy(job_seg)
-                sub_job_seg.trial_idx = tid
-                if job_seg.injections:
-                    sub_job_seg.injections = [inj for inj in job_seg.injections
-                                              if inj.get('trial_idx', 0) == tid]
-                logger.info(f"Processing job segment {job_seg.index}, trial_idx={tid}")
-                main_func(working_dir, config, sub_job_seg, compress_json=compress_json,
-                          catalog_file=catalog_file)
-        else:
-            logger.info(f"Processing job segment {job_seg.index}")
-            main_func(working_dir, config, job_seg, compress_json=compress_json,
-                      catalog_file=catalog_file)
+    queue = multiprocessing.Queue()
+    data_collector_worker = multiprocessing.Process(
+        target=data_collector, args=(working_dir, config, catalog_file, queue)
+    )
+    data_collector_worker.start()
+
+    try:
+        for job_seg in job_segments:
+            if trial_ids is not None:
+                for tid in trial_ids:
+                    sub_job_seg = copy.deepcopy(job_seg)
+                    sub_job_seg.trial_idx = tid
+                    if job_seg.injections:
+                        sub_job_seg.injections = [inj for inj in job_seg.injections
+                                                  if inj.get('trial_idx', 0) == tid]
+                    logger.info(f"Processing job segment {job_seg.index}, trial_idx={tid}")
+                    main_func(working_dir, config, sub_job_seg, compress_json=compress_json,
+                              catalog_file=catalog_file, queue=queue)
+            else:
+                logger.info(f"Processing job segment {job_seg.index}")
+                main_func(working_dir, config, job_seg, compress_json=compress_json,
+                          catalog_file=catalog_file, queue=queue)
+    finally:
+        logger.info("Run jobs are done, waiting for data collector to finish")
+        queue.put(None)
+        data_collector_worker.join()
+        queue.close()
+        queue.join_thread()
+
+    if data_collector_worker.exitcode not in (0, None):
+        raise RuntimeError(f"Data collector failed with exit code {data_collector_worker.exitcode}")

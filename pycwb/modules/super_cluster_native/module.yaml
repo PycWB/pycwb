@@ -1,0 +1,4 @@
+name: super_cluster_native
+author: pycWB
+description: Native Python supercluster module
+dependencies: ["numpy", "numba"]

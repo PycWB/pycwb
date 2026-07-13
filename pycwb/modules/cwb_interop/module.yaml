@@ -1,0 +1,4 @@
+name: cwb_interop
+author: pycWB
+description: cWB ROOT workdir setup — creates standalone cWB working directories for native-vs-ROOT comparison
+dependencies: ["numpy", "ROOT", "@pycwb.config", "@pycwb.types"]

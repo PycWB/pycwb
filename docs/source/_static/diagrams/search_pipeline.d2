@@ -1,0 +1,53 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+WaveSegment: {
+  style.fill: "#e3f2fd"
+  style.stroke: "#1e88e5"
+}
+WaveSegment.shape: hexagon
+
+WaveSegment -> "Prepare\nTime Series": {
+  style.stroke: "#1e88e5"
+  style.stroke-width: 2
+}
+
+"Data preparation": {
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
+  "Read frame data" -> "Regression /\nconditioning" -> Whitening
+  "Generate noise" -> Whitening
+  "Add injections" -> Whitening
+  "Read frame data".style.fill: "#e8f5e9"
+  "Regression /\nconditioning".style.fill: "#fff3e0"
+  Whitening.style.fill: "#fce4ec"
+  "Generate noise".style.fill: "#e8f5e9"
+  "Add injections".style.fill: "#e8f5e9"
+}
+
+Whitening -> "Time-frequency\ntransform" -> "Coherence\nanalysis" -> "Select significant\npixels" -> "Cluster\npixels" -> Supercluster -> "Likelihood\nreconstruction" -> "Events and\ncluster statistics"
+
+"Time-frequency\ntransform".style.fill: "#e8f5e9"
+"Coherence\nanalysis".style.fill: "#e8f5e9"
+"Select significant\npixels".style.fill: "#fff3e0"
+"Cluster\npixels".style.fill: "#fff3e0"
+Supercluster.style.fill: "#f3e5f5"
+"Likelihood\nreconstruction".style.fill: "#f3e5f5"
+"Events and\ncluster statistics".style.fill: "#e8eaf6"

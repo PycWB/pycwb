@@ -1,0 +1,4 @@
+name: noise
+author: pycWB
+description: Native noise generation — coloured Gaussian noise from PSDs via lalsimulation.SimNoise
+dependencies: ["numpy", "lal", "lalsimulation"]

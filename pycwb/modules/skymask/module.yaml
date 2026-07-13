@@ -1,0 +1,4 @@
+name: skymask
+author: pycWB
+description: Sky mask operations — angular distance, healpy-based sky masking
+dependencies: ["numpy", "healpy"]

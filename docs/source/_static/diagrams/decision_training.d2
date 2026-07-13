@@ -1,0 +1,28 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+placeholder: "Training strategy\nplaceholder" {
+  style.fill: "#1a1a2e"
+  style.font-color: "#ffffff"
+  style.font-size: 14
+  style.border-radius: 12
+}
+
+placeholder -> "Recommendations\nunder review"
+"Recommendations\nunder review" -> "Use XGBoost and\nTraining Set docs"

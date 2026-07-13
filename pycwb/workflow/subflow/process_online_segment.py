@@ -21,7 +21,6 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import numpy as np
 import psutil
 
 from pycwb.config import Config
@@ -31,18 +30,15 @@ from pycwb.types.network_event import Event
 
 # ── Per-item functions imported from existing modules ────────────────────
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning_python import (
+from pycwb.modules.data_conditioning.data_conditioning import (
     data_conditioning_single,
 )
-from pycwb.modules.cwb_coherence.coherence import (
-    _setup_coherence_single_res,
-    coherence_single_lag,
-)
+from pycwb.modules.coherence_native.coherence import coherence_single_lag
+from pycwb.modules.coherence_native.setup import _setup_coherence_single_res
 from pycwb.utils.td_vector_batch import (
-    build_td_inputs_cache,
     _build_td_inputs_single_level,
 )
-from pycwb.modules.super_cluster.super_cluster import (
+from pycwb.modules.super_cluster_native.super_cluster import (
     setup_supercluster,
     supercluster_single_lag,
 )
@@ -59,6 +55,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────────────────
+
 
 def process_online_segment(config: Config, online_seg: OnlineSegment):
     """Process a single online segment with intra-segment parallelism.
@@ -130,8 +127,9 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
         for fut in as_completed(futures):
             resampled[futures[fut]] = fut.result()
     data = resampled
-    logger.info("Parallel resample time: %.2f s (%d IFOs)",
-                time.perf_counter() - stage_t, nIFO)
+    logger.info(
+        "Parallel resample time: %.2f s (%d IFOs)", time.perf_counter() - stage_t, nIFO
+    )
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 2 — Parallel data conditioning (per-IFO)
@@ -151,7 +149,9 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     del data, results
     release_memory()
     logger.info("Parallel conditioning time: %.2f s", time.perf_counter() - stage_t)
-    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
+    logger.info(
+        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
+    )
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 3 — Overlap three independent setup stages
@@ -161,27 +161,40 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
 
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
         f_coherence = pool.submit(
-            _parallel_coherence_setup, config, strains, wave_seg,
+            _parallel_coherence_setup,
+            config,
+            strains,
+            wave_seg,
         )
         f_td_cache = pool.submit(
-            _parallel_td_cache_build, config, strains,
+            _parallel_td_cache_build,
+            config,
+            strains,
         )
         f_super_xt = pool.submit(
-            _setup_supercluster_and_xtalk, config, gps_time,
+            _setup_supercluster_and_xtalk,
+            config,
+            gps_time,
         )
 
         coherence_setup = f_coherence.result()
         td_inputs_cache = f_td_cache.result()
         supercluster_setup, xtalk = f_super_xt.result()
 
-    logger.info("Parallel setup time (3 stages overlapped): %.2f s",
-                time.perf_counter() - stage_t)
-    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
+    logger.info(
+        "Parallel setup time (3 stages overlapped): %.2f s",
+        time.perf_counter() - stage_t,
+    )
+    logger.info(
+        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
+    )
 
     # 3d. Likelihood setup — depends on supercluster output (fast, sequential)
     stage_t = time.perf_counter()
     likelihood_setup = setup_likelihood(
-        config, strains, config.nIFO,
+        config,
+        strains,
+        config.nIFO,
         ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
         FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
         FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]),
@@ -199,14 +212,20 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
 
     # 4b. Supercluster — TD amplitudes + subnet veto
     fragment_cluster = supercluster_single_lag(
-        supercluster_setup, config, frag_clusters, lag,
-        xtalk=xtalk, td_inputs_cache=td_inputs_cache,
+        supercluster_setup,
+        config,
+        frag_clusters,
+        lag,
+        xtalk=xtalk,
+        td_inputs_cache=td_inputs_cache,
     )
 
     triggers = []
 
     if fragment_cluster is None:
-        logger.warning("No supercluster results for online segment %d", online_seg.index)
+        logger.warning(
+            "No supercluster results for online segment %d", online_seg.index
+        )
     else:
         # 4c. Likelihood — per-cluster (sequential; inner sky scan is Numba @prange)
         events_data = []
@@ -215,8 +234,13 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
                 continue
             selected_cluster.cluster_id = k + 1
             result_cluster, sky_stats = likelihood(
-                config.nIFO, selected_cluster, config,
-                cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
+                config.nIFO,
+                selected_cluster,
+                config,
+                cluster_id=k + 1,
+                nRMS=nRMS,
+                setup=likelihood_setup,
+                xtalk=xtalk,
             )
             if result_cluster is None or result_cluster.cluster_status != -1:
                 continue
@@ -228,14 +252,16 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
         # 4d. Post-process — parallel reconstruction + Q-veto
         for event, cluster_out, sky_stats in events_data:
             _parallel_postprocess(config, online_seg.ifos, event, cluster_out)
-            triggers.append(OnlineTrigger(
-                event=event,
-                cluster=cluster_out,
-                sky_stats=sky_stats,
-                segment_index=online_seg.index,
-                segment_gps=online_seg.segment_gps_start,
-                wall_time_done=time.time(),
-            ))
+            triggers.append(
+                OnlineTrigger(
+                    event=event,
+                    cluster=cluster_out,
+                    sky_stats=sky_stats,
+                    segment_index=online_seg.index,
+                    segment_gps=online_seg.segment_gps_start,
+                    wall_time_done=time.time(),
+                )
+            )
 
     logger.info("Lag 0 time: %.2f s", time.perf_counter() - lag_t)
 
@@ -251,14 +277,20 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
 
     seg_walltime = time.perf_counter() - seg_timer
     speed_factor = _seg_duration / seg_walltime if seg_walltime > 0 else float("inf")
-    logger.info("Online segment %d: %.2f s wall-time, %.2fx speed factor, %d triggers",
-                _seg_index, seg_walltime, speed_factor, len(triggers))
+    logger.info(
+        "Online segment %d: %.2f s wall-time, %.2fx speed factor, %d triggers",
+        _seg_index,
+        seg_walltime,
+        speed_factor,
+        len(triggers),
+    )
     return triggers
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # Internal helpers — parallel wrappers around existing per-item functions
 # ─────────────────────────────────────────────────────────────────────────
+
 
 def _online_seg_to_wave_seg(online_seg: OnlineSegment, config) -> WaveSegment:
     """Convert an OnlineSegment to a WaveSegment for module compatibility."""
@@ -286,7 +318,11 @@ def _parallel_coherence_setup(config, strains, wave_seg):
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(
-                _setup_coherence_single_res, i, config, normalized, up_n,
+                _setup_coherence_single_res,
+                i,
+                config,
+                normalized,
+                up_n,
                 job_seg=wave_seg,
             ): i
             for i in range(nRES)
@@ -317,13 +353,15 @@ def _build_td_inputs_single_level_parallel(config, strains):
         futures = {
             pool.submit(
                 _build_td_inputs_single_level,
-                level, config, strains_ts, upTDF,
+                level,
+                config,
+                strains_ts,
+                upTDF,
             ): level
             for level in levels
         }
         level_results = {}
         for fut in as_completed(futures):
-            level = futures[fut]
             wdm_layers, per_ifo = fut.result()
             level_results[wdm_layers] = per_ifo
 
@@ -352,18 +390,25 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
     max_threads = config.nIFO
     # 4 independent get_network_MRA_wave calls
     recon_args = [
-        ("signal", 0, True, False),   # reconstructed signal
-        ("signal", 0, True, True),    # whitened reconstructed signal
-        ("strain", 0, True, False),   # reconstructed data
-        ("strain", 0, True, True),    # whitened reconstructed data
+        ("signal", 0, True, False),  # reconstructed signal
+        ("signal", 0, True, True),  # whitened reconstructed signal
+        ("strain", 0, True, False),  # reconstructed data
+        ("strain", 0, True, True),  # whitened reconstructed data
     ]
 
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
         futures = {
             pool.submit(
                 get_network_MRA_wave,
-                config, cluster_out, config.rateANA, config.nIFO,
-                config.TDRate, a_type, mode, tof, whiten=whiten,
+                config,
+                cluster_out,
+                config.rateANA,
+                config.nIFO,
+                config.TDRate,
+                a_type,
+                mode,
+                tof,
+                whiten=whiten,
             ): idx
             for idx, (a_type, mode, tof, whiten) in enumerate(recon_args)
         }
@@ -380,9 +425,7 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
         qveto_inputs.append(("REC", i, rec_signal_w[i]))
 
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        qveto_futures = [
-            pool.submit(get_qveto, wf) for _, _, wf in qveto_inputs
-        ]
+        qveto_futures = [pool.submit(get_qveto, wf) for _, _, wf in qveto_inputs]
         qveto_results = [f.result() for f in qveto_futures]
 
     min_qveto = min(r[0] for r in qveto_results) if qveto_results else 1e23
@@ -390,5 +433,6 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
     event.Qveto = [min_qveto, min_qfactor]
     event.qveto = min_qveto
     event.qfactor = min_qfactor
-    logger.info("Qveto for event %s: %s, Qfactor: %s",
-                event.hash_id, event.qveto, event.qfactor)
+    logger.info(
+        "Qveto for event %s: %s, Qfactor: %s", event.hash_id, event.qveto, event.qfactor
+    )

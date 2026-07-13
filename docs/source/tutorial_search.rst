@@ -1,170 +1,161 @@
 .. _tutorial_search:
 
-Go deeper into pycWB.search
-==============================
+Search Workflow
+================
 
-Although you can use each module in pycWB freely, the module :py:func:`pycwb.search` provides
-a easier way to manage the job and run the search with the input from a yaml file if you just want to
-run the search with default modules.
+⭐ Beginner  ·  ~15 min  ·  Prerequisites: :ref:`start_here`
 
-We can go deeper into the search function to see how it works. The search function is composed of
-three parts: job generation and data analysis
+The main user-facing entry point is :py:func:`pycwb.workflow.run.search`.
+It reads a YAML user-parameter file, prepares the working directory, creates
+job segments, runs the configured segment processor, and writes trigger and
+progress rows to the catalog.
+
+The command-line interface calls the same function:
+
+.. code-block:: bash
+
+   pycwb run user_parameters.yaml
+
+.. code-block:: python
+
+   from pycwb.workflow.run import search
+
+   search("user_parameters.yaml", working_dir=".", n_proc=4)
 
 Job Control
------------------
+-----------
 
-The job control part is done by the functions in :py:func:`pycwb.workflow`.
-
-Initialize logger with log_file and log_level, if log_file is None, log will be printed to stdout.
+Job setup is handled by :py:func:`pycwb.workflow.subflow.prepare_job_runs.prepare_job_runs`.
+It initializes logging, loads the configuration, creates output directories,
+generates job segments, and creates the root catalog.
 
 .. code-block:: python
 
    from pycwb.modules.logger import logger_init
-   logger_init(log_file, log_level)
+   from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
 
+   logger_init(log_file=None, log_level="INFO")
+   job_segments, config, working_dir = prepare_job_runs(
+       ".",
+       "user_parameters.yaml",
+       n_proc=4,
+       overwrite=False,
+   )
 
-read user parameters from user_parameters.yaml to a :py:class:`.Config` object.
+The user-parameter YAML is loaded into :py:class:`pycwb.config.Config`.
 
 .. code-block:: python
 
    from pycwb.config import Config
-   config = Config('./user_parameters.yaml')
 
-then, it will create directories for output files.
+   config = Config()
+   config.load_from_yaml("user_parameters.yaml")
 
-.. code-block:: python
-
-    if not os.path.exists(config.outputDir):
-        os.makedirs(config.outputDir)
-    if not os.path.exists(config.logDir):
-        os.makedirs(config.logDir)
-
-generate the job segments from the config settings and create a :py:class:`.WaveSegment` object for each segment.
-If the injections are set in the config, the injections will be added to the job segments according to your injection type.
+Job segments are created from data-quality periods, explicit GPS windows,
+GWOSC/event settings, or simulation settings. If injections are configured,
+they are scheduled onto the relevant segments.
 
 .. code-block:: python
 
    from pycwb.modules.job_segment import create_job_segment_from_config
 
    job_segments = create_job_segment_from_config(config)
+   job_segment = job_segments[0]
 
-A catalog file will be created in the output folder. The catalog file is a json file containing all the events found
-in the search. The catalog file will be updated after each job segment is analyzed. A web viewer will also be created in the output folder. It is a web app that can be used to view the events in the
-output folder. The web viewer is created by copying the web_viewer folder in pycWB to the output folder.
-
-.. code-block:: python
-
-    from pycwb.modules.catalog import create_catalog, add_events_to_catalog
-    from pycwb.modules.web_viewer.create import create_web_viewer
-
-    # create catalog
-    create_catalog(f"{config.outputDir}/catalog.json", config, job_segments)
-
-    # copy all files in web_viewer to output folder
-    create_web_viewer(config.outputDir)
-
-each job segment will be analyzed with :py:func:`pycwb.search.analyze_job_segment`.
-To avoid memory leak in c code, the function is called in a subprocess.
+The segment processor is loaded from ``config.segment_processer``. The default
+processor is :py:func:`pycwb.workflow.subflow.process_job_segment_native.process_job_segment`.
 
 .. code-block:: python
 
-   from pycwb.search import analyze_job_segment
+   from pycwb.utils.module import import_function
 
-   for job_segment in job_segments:
-       process = multiprocessing.Process(target=analyze_job_segment, args=(config, job_seg))
-       process.start()
-       process.join()
+   segment_processor = import_function(config.segment_processer)
 
-For macOS users, by default, you might encounter a safety check error when running the code.
-To aviod this, you should not use subprocess to run the code. Instead, you can run the code directly in the main process.
-
-.. code-block:: python
-
-   from pycwb.search import analyze_job_segment
-
-   for job_segment in job_segments:
-       analyze_job_segment(config, job_segment)
+You normally do not need to call the processor directly. Use ``pycwb run`` or
+``search(...)`` so catalog collection and run bookkeeping are configured for
+you.
 
 Data Analysis
------------------
+-------------
 
-The data analysis part is done by :py:func:`pycwb.search.analyze_job_segment`.
-It analyzes the input job segment with config settings.
+The native segment processor analyzes one :py:class:`pycwb.types.job.WaveSegment`
+at a time. The high-level stages are:
 
+1. Read frame data or generate configured noise.
+2. Generate and inject simulated signals when the segment has injections.
+3. Resample, whiten, and compute per-detector noise RMS maps.
+4. Build lag-independent coherence, time-delay, supercluster, and likelihood
+   setup objects.
+5. For each lag, run coherence, supercluster, likelihood, waveform
+   reconstruction, optional plots, and catalog writes.
 
-First, it will read the data from the job segment with :py:func:`pycwb.modules.read_data.read_from_job_segment`
-and/or :py:func:`pycwb.modules.read_data.generate_injection` if the job segment contains injections. The data will be
-stored in a pycbc TimeSeries object.
-
-.. code-block:: python
-
-    from pycwb.modules.read_data import read_from_job_segment, generate_injection
-
-    data = None
-    if job_seg.frames:
-        data = read_from_job_segment(config, job_seg)
-    if job_seg.injections:
-        data = generate_injection(config, job_seg, data)
-
-
-Then, it will do data conditioning with :py:func:`pycwb.modules.data_conditioning.data_conditioning`.
-A list of conditioned :py:class:`.TimeFrequencySeries` objects and a list of nRMS :py:class:`.TimeFrequencySeries`
-will be returned.
+Data loading uses :py:func:`pycwb.modules.read_data.read_from_job_segment`,
+:py:func:`pycwb.modules.read_data.generate_noise_for_job_seg`, and
+:py:func:`pycwb.modules.read_data.generate_strain_from_injection`.
 
 .. code-block:: python
 
-    from pycwb.modules.data_conditioning import data_conditioning
+   from pycwb.modules.read_data import (
+       generate_noise_for_job_seg,
+       generate_strain_from_injection,
+       read_from_job_segment,
+   )
 
-    # data conditioning
-    tf_maps, nRMS_list = data_conditioning(config, data)
+   data = None
+   if job_segment.frames:
+       data = read_from_job_segment(config, job_segment)
+   if job_segment.noise:
+       data = generate_noise_for_job_seg(job_segment, config.inRate, data=data)
 
-
-Next, it will select the pixels and do the clustering with :py:func:`pycwb.modules.coherence.coherence`
-and :py:func:`pycwb.modules.super_cluster.supercluster`. The output is a list of :py:class:`.Cluster` objects.
-
-.. code-block:: python
-
-    from pycwb.modules.coherence import coherence
-    from pycwb.modules.super_cluster import supercluster
-
-    fragment_clusters = coherence(config, tf_maps, nRMS_list)
-
-    pwc_list = supercluster(config, network, fragment_clusters, tf_maps)
-
-Finally, it will do the likelihood analysis with :py:func:`pycwb.modules.likelihood.likelihood`.
-The output is a list of :py:class:`.Event` objects containing the statistics of each event from the likelihood analysis.
-and a list of :py:class:`.Cluster` objects which contains the more detailed statistics of each pixels.
-The clusters and events will be saved in the output folder. The catalog file will be updated with the new events.
+Data conditioning returns conditioned strains and per-detector nRMS maps.
 
 .. code-block:: python
 
-    from pycwb.modules.likelihood import likelihood, save_likelihood_data
-    from pycwb.modules.catalog import add_events_to_catalog
+   from pycwb.modules.data_conditioning import data_conditioning
 
-    events, clusters = likelihood(config, network, pwc_list)
+   strains, nRMS = data_conditioning(config, data)
 
-    for i, event in enumerate(events):
-        save_likelihood_data(job_id, i+1, config.outputDir, event, clusters[i])
-        # save event to catalog
-        add_events_to_catalog(f"{config.outputDir}/catalog.json", event.summary(job_id, i+1))
-
-
-The events will be marked on the spectrogram and the likelihood map and null map reconstructed from the clusters
-will also be plotted.
+The current native path builds reusable setup objects once per trial and then
+processes each lag.
 
 .. code-block:: python
 
-    from pycwb.modules.plot.cluster_statistics import plot_statistics
-    from pycwb.modules.plot import plot_event_on_spectrogram
+   from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
+   from pycwb.modules.likelihoodWP.likelihood import setup_likelihood, likelihood
+   from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
+   from pycwb.modules.xtalk.type import XTalk
+   from pycwb.utils.td_vector_batch import build_td_inputs_cache
+
+   coherence_setup = setup_coherence(config, strains, job_seg=job_segment)
+   td_inputs_cache = build_td_inputs_cache(config, strains)
+   supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
+   likelihood_setup = setup_likelihood(config, strains, config.nIFO)
+   xtalk = XTalk.load(config.MRAcatalog)
+
+   fragment_clusters = coherence_single_lag(coherence_setup, lag_idx=0)
+   selected_clusters = supercluster_single_lag(
+       supercluster_setup,
+       config,
+       fragment_clusters,
+       lag_idx=0,
+       xtalk=xtalk,
+       td_inputs_cache=td_inputs_cache,
+   )
+
+The production processor also handles lag bookkeeping, veto windows, waveform
+reconstruction, Q-veto, plots, memory cleanup, and catalog writes. For the full
+implementation, see
+:py:func:`pycwb.workflow.subflow.process_job_segment_native.process_job_segment`.
 
 
-    for i, tf_map in enumerate(tf_maps):
-        plot_event_on_spectrogram(tf_map, events, filename=f'{config.outputDir}/events_{job_id}_all_{i}.png')
+----
 
-    # plot the likelihood map
-    for i, cluster in enumerate(clusters):
-        if cluster.cluster_status != -1:
-            continue
-        plot_statistics(cluster, 'likelihood', filename=f'{config.outputDir}/likelihood_map_{job_id}_{i+1}.png')
-        plot_statistics(cluster, 'null', filename=f'{config.outputDir}/null_map_{job_id}_{i+1}.png')
+You have learned
+----------------
 
+- ✅ How pycWB structures a search with segments, jobs, and lags
+- ✅ How to use the ``search()`` function from Python and ``pycwb run`` from CLI
+- ✅ How job segments are created from the config file
+- ✅ How the segment processor orchestrates each pipeline stage
+
+**Next:** :doc:`tutorial_injection` — add simulated signals and recover them

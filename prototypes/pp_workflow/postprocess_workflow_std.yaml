@@ -1,0 +1,358 @@
+# ============================================================================
+# O4_K21 XGBoost — FULL 50% workflow
+#
+# Job-based selection with non-overlapping 50% slices:
+#   - 50% BKG (no zero-lag) for training
+#   - 50% BKG (no zero-lag) for far_rho (different jobs)
+#   - 100% SIM Training for training (small dataset)
+#   - 100% SIM STDINJs for efficiency evaluation
+#
+# Usage:
+#   cd /path/to/pycwb-patch
+#   PYTHONPATH="$PWD:$PYTHONPATH" python -c "
+#   from pycwb.post_production.workflow import run_workflow
+#   run_workflow('tests/postprod/O4_K21/train_workflow_50pct.yaml')
+#   "
+# ============================================================================
+
+global:
+  work_dir: /Users/yumengxu/Project/Physics/cwb/pycwb-patch/tests/postprod/O4_K21
+  search: blf
+  nifo: 2
+  fraction: 0.50
+
+steps:
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 1: Job selection for training (50% BKG, 100% SIM)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # 1a. Select 50% of BKG jobs (no zero-lag) for training
+  - action: postprocess.job_selector.select_jobs_by_livetime
+    args:
+      progress_file: BKG/catalog/progress.M1.parquet
+      output_file: BKG/catalog/jobs_train_50pct.txt
+      fraction: 0.50
+      exclude_zero_lag: true
+      seed: 42
+    output_alias: bkg_train_jobs
+
+  # 1b. Filter BKG catalog → training slice
+  - action: postprocess.job_selector.filter_catalog_by_jobs
+    args:
+      input_file: BKG/catalog/catalog.M1.parquet
+      job_ids_file: BKG/catalog/jobs_train_50pct.txt
+      output_file: BKG/catalog/catalog.M1.train_50pct.parquet
+    output_alias: bkg_train_filtered
+
+  # 1c. Use ALL SIM Training jobs
+  - action: postprocess.job_selector.select_jobs_by_livetime
+    args:
+      progress_file: SIM/Training_Set1/catalog/progress.M1.parquet
+      output_file: SIM/Training_Set1/catalog/jobs_train_50pct.txt
+      fraction: 1.0
+      exclude_zero_lag: false
+      seed: 43
+    output_alias: sim_train_jobs
+
+  # 1d. Filter SIM Training catalog → 100%
+  - action: postprocess.job_selector.filter_catalog_by_jobs
+    args:
+      input_file: SIM/Training_Set1/catalog/catalog.M1.parquet
+      job_ids_file: SIM/Training_Set1/catalog/jobs_train_50pct.txt
+      output_file: SIM/Training_Set1/catalog/catalog.M1.train_50pct.parquet
+    output_alias: sim_train_filtered
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 2: Train XGBoost
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - action: postprocess.train_xgboost.train_xgboost
+    args:
+      bkg_catalog: BKG/catalog/catalog.M1.train_50pct.parquet
+      sim_catalog: SIM/Training_Set1/catalog/catalog.M1.train_50pct.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      search: blf
+      nifo: 2
+      config_file: xgb_config.py
+      dump: false
+      verbose: false
+      matched_outer_file: SIM/Training_Set1/catalog/matched_outer.parquet
+    output_alias: model_result
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 3: FAR computation (different 50% BKG slice)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # 3a. Select different 50% of BKG jobs for far_rho
+  - action: postprocess.job_selector.select_jobs_by_livetime
+    args:
+      progress_file: BKG/catalog/progress.M1.parquet
+      output_file: BKG/catalog/jobs_farrho_50pct.txt
+      fraction: 0.50
+      exclude_zero_lag: true
+      seed: 99    # different seed → different jobs (may overlap slightly)
+    output_alias: bkg_farrho_jobs
+
+  # 3b. Filter BKG catalog → far_rho slice
+  - action: postprocess.job_selector.filter_catalog_by_jobs
+    args:
+      input_file: BKG/catalog/catalog.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      output_file: BKG/catalog/catalog.M1.farrho_50pct.parquet
+    output_alias: bkg_farrho_filtered
+
+  # 3c. Compute live time for far_rho slice (no output_alias → keys spread)
+  - action: postprocess.job_selector.compute_livetime
+    args:
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      exclude_zero_lag: true
+
+  # 3d. Compute FAR vs rho + save scored BKG
+  - action: postprocess.evaluate.evaluate_far_rho
+    args:
+      catalog_file: BKG/catalog/catalog.M1.farrho_50pct.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      output_file: models/far_rho_50pct.json
+      scored_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+    output_alias: far_rho_result
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 4: Efficiency on SIM STDINJs (100%)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # 4a. Use ALL SIM STDINJs jobs
+  - action: postprocess.job_selector.select_jobs_by_livetime
+    args:
+      progress_file: SIM/STDINJs_Set1/catalog/progress.M1.parquet
+      output_file: SIM/STDINJs_Set1/catalog/jobs_eval_50pct.txt
+      fraction: 1.0
+      exclude_zero_lag: false
+      seed: 44
+    output_alias: sim_stdinj_jobs
+
+  # 4b. Filter SIM STDINJs catalog → 100%
+  - action: postprocess.job_selector.filter_catalog_by_jobs
+    args:
+      input_file: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      job_ids_file: SIM/STDINJs_Set1/catalog/jobs_eval_50pct.txt
+      output_file: SIM/STDINJs_Set1/catalog/catalog.M1.eval_50pct.parquet
+    output_alias: sim_stdinj_filtered
+
+  # 4c. Evaluate efficiency
+  - action: postprocess.evaluate.evaluate_efficiency
+    args:
+      catalog_file: SIM/STDINJs_Set1/catalog/catalog.M1.eval_50pct.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      output_file: SIM/STDINJs_Set1/catalog/catalog.M1.scored_50pct.parquet
+      threshold: 0.5
+    output_alias: efficiency_result
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 5: Efficiency plots at IFAR threshold
+  # ═══════════════════════════════════════════════════════════════════════
+  # All efficiency steps now use matched_right.parquet for
+  # UNIQUE-SIMULATION counting (one injection = one trial).
+  # Set exclude_vetoed: true for veto-corrected efficiency.
+
+  # 5a. hrss at 50% efficiency (raw, all sims)
+  - action: postprocess.plot_efficiency.compute_hrss50
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.scored_50pct.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      ifar: "1mo"
+      output_file: models/efficiency_vs_hrss_50pct_1mo.png
+      matched_right_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      exclude_vetoed: false
+    output_alias: hrss50_result
+
+  # 5a2. hrss at 50% efficiency (veto-corrected) — IFAR = 1mo
+  - action: postprocess.plot_efficiency.compute_hrss50
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.scored_50pct.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      ifar: "1mo"
+      output_file: models/efficiency_vs_hrss_50pct_1mo_vetocorrected.png
+      matched_right_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      exclude_vetoed: true
+    output_alias: hrss50_result_veto
+
+  # 5b. Efficiency by waveform
+  - action: postprocess.plot_efficiency.compute_efficiency_by_waveform
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifar: "1mo"
+      output_file: models/efficiency_by_waveform_50pct_1mo.png
+      use_unique_sim: true
+    output_alias: waveform_efficiency
+
+  # 5b2. Efficiency by waveform (veto-corrected)
+  - action: postprocess.plot_efficiency.compute_efficiency_by_waveform
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifar: "1mo"
+      output_file: models/efficiency_by_waveform_50pct_1mo_vetocorrected.png
+      use_unique_sim: true
+      exclude_vetoed: true
+    output_alias: waveform_efficiency_veto
+
+  # 5c. Efficiency vs hrss by waveform — IFAR = 1 month
+  - action: postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifar: "1mo"
+      output_file: models/efficiency_vs_hrss_by_waveform_50pct_1mo.png
+    output_alias: hrss_curves_1mo
+
+  # 5d. Efficiency vs hrss by waveform — IFAR = 1 year
+  - action: postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifar: "1yr"
+      output_file: models/efficiency_vs_hrss_by_waveform_50pct_1yr.png
+    output_alias: hrss_curves_1yr
+
+  # 5e. Efficiency vs hrss by waveform — IFAR = 10 year
+  - action: postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifar: "10yr"
+      output_file: models/efficiency_vs_hrss_by_waveform_50pct_10yr.png
+    output_alias: hrss_curves_10yr
+
+  # 5f. Efficiency vs hrss — IFAR = 1 year
+  - action: postprocess.plot_efficiency.compute_hrss50
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.scored_50pct.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      ifar: "1yr"
+      output_file: models/efficiency_vs_hrss_50pct_1yr.png
+      matched_right_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      exclude_vetoed: false
+    output_alias: hrss50_1yr
+
+  # 5g. Efficiency vs hrss — IFAR = 10 year
+  - action: postprocess.plot_efficiency.compute_hrss50
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.scored_50pct.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      ifar: "10yr"
+      output_file: models/efficiency_vs_hrss_50pct_10yr.png
+      matched_right_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      exclude_vetoed: false
+    output_alias: hrss50_10yr
+
+  # 5h. Per-waveform hrss50 CSV report (all IFARs)
+  - action: postprocess.plot_efficiency.compute_hrss50_by_waveform_csv
+    args:
+      sim_catalog: SIM/STDINJs_Set1/catalog/catalog.M1.parquet
+      matched_file: SIM/STDINJs_Set1/catalog/matched_right.parquet
+      bkg_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      config_file: xgb_config.py
+      ifars: "1mo,1yr,10yr"
+      output_csv: models/hrss50_by_waveform.csv
+    output_alias: hrss50_csv_result
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 6: FAR & zero-lag reports
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # 6a. FAR vs rho plot
+  - action: postprocess.report.far_rho_plot
+    args:
+      catalog_file: BKG/catalog/catalog.M1.farrho_50pct.parquet
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      ranking_par: rho
+      exclude_zero_lag: true
+      bin_size: 0.1
+      output_dir: public
+    output_alias: far_rho
+
+  # 6b. Zero-lag report
+  - action: postprocess.report.zero_lag_report
+    args:
+      catalog_file: BKG/catalog/catalog.M1.farrho_50pct.parquet
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      ranking_par: rho
+      output_dir: public
+    output_alias: zero_lag_result
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Phase 7: MDC blind scoring
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # 7a. Select 50% BKG jobs for FAR calibration (reuse from Phase 3)
+  - action: postprocess.job_selector.select_jobs_by_livetime
+    args:
+      progress_file: BKG/catalog/progress.M1.parquet
+      output_file: BKG/catalog/jobs_farrho_50pct.txt
+      fraction: 0.50
+      exclude_zero_lag: true
+      seed: 99
+    output_alias: bkg_farrho_jobs_mdc
+
+  # 7b. Compute live time
+  - action: postprocess.job_selector.compute_livetime
+    args:
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      exclude_zero_lag: true
+
+  # 7c. Score blind MDC & output detections above IFAR 1yr
+  - action: postprocess.evaluate.score_mdc_catalog
+    args:
+      mdc_catalog: SIM/MDC_short0/catalog.M1.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      bkg_scored_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      config_file: xgb_config.py
+      ifar_threshold: "1yr"
+      output_csv: public/mdc_detections_1yr.csv
+    output_alias: mdc_result_1yr
+
+  # 7d. Score blind MDC & output detections above IFAR 10yr
+  - action: postprocess.evaluate.score_mdc_catalog
+    args:
+      mdc_catalog: SIM/MDC_short0/catalog.M1.parquet
+      model_file: models/xgb_model_blf_50pct.ubj
+      bkg_scored_catalog: BKG/catalog/catalog.M1.farrho_50pct.scored.parquet
+      progress_file: BKG/catalog/progress.M1.parquet
+      job_ids_file: BKG/catalog/jobs_farrho_50pct.txt
+      config_file: xgb_config.py
+      ifar_threshold: "10yr"
+      output_csv: public/mdc_detections_10yr.csv
+    output_alias: mdc_result_10yr

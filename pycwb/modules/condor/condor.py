@@ -68,9 +68,9 @@ class HTCondor:
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
-{ '''mkdir -p catalog job_status trigger output log
+{ '''mkdir -p catalog/fragment job_status trigger output log
 # HTCondor flattens individually-listed files to the execute root; restore expected layout.
-for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/; done''' if should_transfer_files else ''}
+for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/fragment/; done''' if should_transfer_files else ''}
 pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
             """)
 
@@ -101,10 +101,12 @@ pycwb merge --work-dir={working_dir}
 
     def generate_simulation_summary_script(self):
         """Generate simulation_summary.sh — runs pycwb simulation-summary in parallel
-        with the analysis jobs.  Uses the absolute working_dir path (no file transfer)
-        so it behaves like merge.sh."""
+        with the analysis jobs."""
         working_dir = self.working_dir
         dag_dir = self.dag_dir
+        should_transfer_files = self.should_transfer_files
+        if should_transfer_files:
+            working_dir = '.'
 
         os.makedirs(dag_dir, exist_ok=True)
 
@@ -113,6 +115,7 @@ pycwb merge --work-dir={working_dir}
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init if self.additional_init else ''}
+{ 'mkdir -p catalog log' if should_transfer_files else ''}
 pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={working_dir}
             """)
 
@@ -218,8 +221,8 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             batch_job_config['transfer_input_files'] = (
                 f"{working_dir}/job_status, {working_dir}/config, "
                 f"{working_dir}/input, {working_dir}/wdmXTalk, "
-                f"{working_dir}/catalog/catalog_$(jobs).parquet, "
-                f"{working_dir}/catalog/progress_$(jobs).parquet, "
+                f"{working_dir}/catalog/fragment/catalog_$(jobs).parquet, "
+                f"{working_dir}/catalog/fragment/progress_$(jobs).parquet, "
                 f"$(framefiles)"
             )
             batch_job_config['transfer_output_files'] = (
@@ -231,6 +234,16 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             merge_job_config['transfer_output_files'] = "catalog, log"
             merge_job_config['should_transfer_files'] = "yes"
             merge_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
+            # Simulation summary: needs config + input to read job metadata;
+            # writes catalog/simulations.parquet (the CLI default).
+            # Transfer only the specific file, not the whole catalog/ dir,
+            # to avoid conflicts with batch-job catalog transfers.
+            sim_summary_job_config['transfer_input_files'] = (
+                f"{working_dir}/config, {working_dir}/input"
+            )
+            sim_summary_job_config['transfer_output_files'] = "catalog/simulations.parquet, log"
+            sim_summary_job_config['should_transfer_files'] = "yes"
+            sim_summary_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
 
         batch_job = htcondor.Submit(batch_job_config)
         merge_job = htcondor.Submit(merge_job_config)
@@ -273,17 +286,17 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             config_obj.load_from_dict(catalog_meta['config'])
             all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
 
-            catalog_dir = os.path.join(working_dir, 'catalog')
-            os.makedirs(catalog_dir, exist_ok=True)
+            fragment_dir = os.path.join(working_dir, 'catalog', 'fragment')
+            os.makedirs(fragment_dir, exist_ok=True)
             for job in jobs:
                 job_ids = parse_id_string(job['jobs'])
                 selected = [all_segments[i - 1] for i in job_ids]
 
-                catalog_frag = os.path.join(catalog_dir, f"catalog_{job['jobs']}.parquet")
+                catalog_frag = os.path.join(fragment_dir, f"catalog_{job['jobs']}.parquet")
                 if not os.path.exists(catalog_frag):
                     Catalog.create(catalog_frag, config_obj, selected)
 
-                progress_path = os.path.join(catalog_dir, f"progress_{job['jobs']}.parquet")
+                progress_path = os.path.join(fragment_dir, f"progress_{job['jobs']}.parquet")
                 if not os.path.exists(progress_path):
                     import pyarrow as pa
                     import pyarrow.parquet as pq

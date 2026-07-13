@@ -1,0 +1,4 @@
+name: likelihoodWPGPU
+author: pycWB
+description: GPU-accelerated likelihood module using JAX (drop-in replacement for likelihoodWP)
+dependencies: ["jax", "numpy", "@pycwb.types", "@xtalk", "@likelihoodWP"]

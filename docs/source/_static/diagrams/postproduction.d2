@@ -1,0 +1,44 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+"Background triggers" -> "Split background": {style.stroke-width: 2}
+"Split background" -> "Background\ntraining set"
+"Split background" -> "Background\ntest set"
+"Split background".shape: diamond
+"Split background".style.fill: "#fff3e0"
+
+"Simulation triggers" -> "XGBoost training": {style.stroke-width: 2}
+"Background\ntraining set" -> "XGBoost training"
+"XGBoost training" -> "Trained XGBoost\nmodel"
+"XGBoost training".style.fill: "#f3e5f5"
+"Trained XGBoost\nmodel".style.fill: "#e8eaf6"
+
+"Zero-lag triggers" -> "Apply model\n(zero-lag)": {style.stroke-width: 2}
+"Background\ntest set" -> "Apply model\n(background)"
+"Trained XGBoost\nmodel" -> "Apply model\n(zero-lag)": {style.stroke-dash: 1}
+"Trained XGBoost\nmodel" -> "Apply model\n(background)": {style.stroke-dash: 1}
+
+"Apply model\n(zero-lag)" -> "Reweighted\nzero-lag triggers"
+"Apply model\n(background)" -> "Reweighted\nbackground triggers"
+
+"Reweighted\nbackground triggers" -> "Background stats\nFAR / IFAR": {style.stroke-width: 2}
+"Background stats\nFAR / IFAR" -> "Candidate\nsignificance"
+"Reweighted\nzero-lag triggers" -> "Candidate\nsignificance"
+"Background stats\nFAR / IFAR".style.fill: "#e8eaf6"
+"Candidate\nsignificance".style.fill: "#e8f5e9"

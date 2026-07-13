@@ -261,6 +261,7 @@ class InjectionParams:
 _ALREADY_CAPTURED = frozenset({
     "gps_time", "name", "hrss", "ra", "dec", "pol",
     "approximant", "trial_idx", "target_snr", "targeted_snr",
+    "job_id", "shift", "sim_idx",
     # synthetic fields that never appear in the raw injection dict
     "real_start", "real_end",
 })
@@ -418,6 +419,8 @@ def build_fixed_schema(ifo_list: list[str] | None = None) -> pa.Schema:
         pa.field("real_start",       pa.float64(),   nullable=True),
         pa.field("real_end",         pa.float64(),   nullable=True),
         pa.field("real_duration",    pa.float64(),   nullable=True),
+        pa.field("job_id",           pa.int64()),
+        pa.field("shift",            pa.list_(pa.float64()), nullable=True),
         pa.field("segment_idx",      pa.int64()),
         pa.field("vetoed_cat0",      pa.bool_(),     nullable=True),
         pa.field("vetoed_cat1",      pa.bool_(),     nullable=True),

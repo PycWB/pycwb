@@ -10,7 +10,9 @@ from pycwb.types.job import WaveSegment
 from ..superlag import generate_slags
 from ...utils.module import import_helper
 from pycwb.modules.gracedb import get_superevent_t0
-from pycwb.modules.injection.injection import generate_injection_list_from_config
+from pycwb.modules.injection.injection import (
+    generate_injection_list_from_config_for_job_segments,
+)
 from pycwb.modules.injection.par_generator import get_injection_list_from_parameters
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,47 @@ def _validate_lag_config(job_segments):
                 f"Job segment {job_seg.index}: lag_file is set but lag_size ({job_seg.lag_size}) "
                 "is non-zero. Set lag_size to 0 when providing a lag_file."
             )
+
+
+def flatten_job_segments_by_trial(job_segments):
+    """Return one job segment per unique injection trial.
+
+    Flattened job ids are reassigned contiguously from 1 so runtime trigger
+    rows and simulation-summary rows can still match on ``job_id``.
+    """
+    from dataclasses import replace
+
+    flat_job_segments = []
+    index = 1
+    for job_segment in job_segments:
+        trial_indices = {
+            int(inj.get('trial_idx', 0))
+            for inj in (job_segment.injections or [])
+        }
+        if not trial_indices:
+            flat_job_segments.append(replace(job_segment, index=index, trial_idx=0))
+            index += 1
+            continue
+        for trial_idx in sorted(trial_indices):
+            trial_injections = []
+            for inj in job_segment.injections:
+                if int(inj.get('trial_idx', 0)) != trial_idx:
+                    continue
+                flat_inj = dict(inj)
+                flat_inj['trial_idx'] = trial_idx
+                flat_inj['source_job_id'] = int(flat_inj.get('job_id', job_segment.index))
+                flat_inj['job_id'] = index
+                trial_injections.append(flat_inj)
+            flat_job_segments.append(
+                replace(
+                    job_segment,
+                    index=index,
+                    trial_idx=trial_idx,
+                    injections=trial_injections,
+                )
+            )
+            index += 1
+    return flat_job_segments
 
 
 def create_job_segment_from_config(config):
@@ -110,10 +153,10 @@ def create_job_segment_from_config(config):
                                                          config.inRate, config.segEdge)
     ## Case 2: when the DQ files and simulation both are specified, inject the parameters into the job segments
     elif config.injection and job_segments is not None:
-        start_gps_time = min([job_seg.analyze_start for job_seg in job_segments])
-        end_gps_time = max([job_seg.analyze_end for job_seg in job_segments])
-        injections, n_trials = generate_injection_list_from_config(config.injection, start_gps_time, end_gps_time)
-        add_injections_into_job_segments(job_segments, injections)
+        injections, n_trials = generate_injection_list_from_config_for_job_segments(
+            config.injection, job_segments,
+        )
+        add_scheduled_injections_into_job_segments(job_segments, injections)
         # add noise settings to the job segments if specified
         noise = config.injection.get('noise', None)
         if noise is not None:
@@ -162,27 +205,9 @@ def create_job_segment_from_config(config):
     _validate_lag_config(job_segments)
 
     ############################################
-    ## flatten job segments by injection trail index if parallel_injection_trail is enabled
+    ## flatten job segments by injection trial index if parallel_injection_trail is enabled
     if getattr(config, 'parallel_injection_trail', False):
-        from dataclasses import replace
-        flat_job_segments = []
-        index = 0
-        for job_segment in job_segments:
-            trial_indices = set(
-                inj.get('trial_idx')
-                for inj in (job_segment.injections or [])
-                if 'trial_idx' in inj
-            )
-            if not trial_indices:
-                flat_job_segments.append(replace(job_segment, index=index))
-                index += 1
-                continue
-            for trial_idx in trial_indices:
-                trial_injections = [inj for inj in job_segment.injections
-                                    if inj.get('trial_idx') == trial_idx]
-                flat_job_segments.append(replace(job_segment, index=index, injections=trial_injections))
-                index += 1
-        job_segments = flat_job_segments
+        job_segments = flatten_job_segments_by_trial(job_segments)
 
     ############################################
     ## Validate job segments
@@ -342,17 +367,44 @@ def job_segment_from_dq(dq_file_list, ifos, seg_len, seg_mls, seg_edge, seg_over
     if cat2_windows:
         for js in job_segments:
             # Clip global CAT2 windows to each segment's analysis window
-            seg_start = js.analyze_start
-            seg_end = js.analyze_end
-            clipped = []
-            for ws, we in cat2_windows:
-                lo = max(ws, seg_start)
-                hi = min(we, seg_end)
-                if hi > lo:
-                    clipped.append((lo, hi))
+            clipped = _clip_windows_to_segment(cat2_windows, js.analyze_start, js.analyze_end)
             js.veto_windows = clipped if clipped else None
 
+    # cWB applies superlag shifts to DQ lists before building the CAT2 keep mask.
+    # Keep this mask separate because ``veto_windows`` is still used by
+    # simulation/injection code as an absolute-GPS overlap.
+    cwb_cat2_cache: dict[tuple[float, ...], list[tuple[float, float]] | None] = {}
+    for js in job_segments:
+        shift_values = js.shift if js.shift is not None else [0.0 for _ in ifos]
+        shift_key = tuple(float(v) for v in shift_values)
+        if shift_key not in cwb_cat2_cache:
+            # ``WaveSegment.shift`` is stored in the same sign convention used
+            # to build shifted CAT1 job timelines. Detector physical GPS is
+            # analyze_time - shift, so DQ lists must receive +shift here.
+            shifts_by_ifo = {ifo: shift for ifo, shift in zip(ifos, shift_key)}
+            cwb_cat2_cache[shift_key] = build_cat2_veto_windows(
+                dq_file_list, ifos, periods, shifts_by_ifo=shifts_by_ifo,
+            )
+        cwb_windows = cwb_cat2_cache[shift_key]
+        if cwb_windows is not None:
+            clipped = _clip_windows_to_segment(cwb_windows, js.analyze_start, js.analyze_end)
+            js.cwb_veto_windows = clipped
+
     return job_segments
+
+
+def _clip_windows_to_segment(
+    windows: list[tuple[float, float]],
+    start: float,
+    end: float,
+) -> list[tuple[float, float]]:
+    clipped = []
+    for ws, we in windows:
+        lo = max(float(ws), float(start))
+        hi = min(float(we), float(end))
+        if hi > lo:
+            clipped.append((lo, hi))
+    return clipped
 
 
 def attach_frame_files_to_job_segments(job_segments, ifos, frame_files, seg_edge):
@@ -489,39 +541,26 @@ def create_job_segment_from_injection(ifo, simulation_mode, injection, sample_ra
     return job_segments
 
 
-def add_injections_into_job_segments(job_segments, injections):
+def add_scheduled_injections_into_job_segments(job_segments, injections):
+    """Attach injections that already carry a concrete ``job_id``.
+
+    Interval-aware scheduling assigns each injection to one analysis job.  This
+    helper preserves that ownership instead of attaching by nominal time
+    overlap, which would duplicate injections across shifted jobs.
     """
-    Associates injections with job segments based on overlapping time intervals.
-    
-    Parameters:
-    job_segments (list): A list of job segment objects with start_time, end_time, and injections list.
-    injections (list): A list of injection dictionaries with start_time and end_time.
-    
-    Returns:
-    None: The function modifies job_segments in place.
-    """
-    for injection in injections:
-        injection['start_time'] = injection['gps_time'] + injection['t_start']
-        injection['end_time'] = injection['gps_time'] + injection['t_end']
-    # Sort job segments and injections by start_time
-    job_segments.sort(key=lambda x: x.analyze_start)
-    injections.sort(key=lambda x: x["start_time"])
-    
-    injection_index = 0
-    num_injections = len(injections)
-    
+    by_job = {int(segment.index): segment for segment in job_segments}
     for segment in job_segments:
         segment.injections = []
-        # Move injection index to the first relevant injection
-        while injection_index < num_injections and injections[injection_index]["end_time"] < segment.analyze_start:
-            injection_index += 1
-        
-        # Collect all overlapping injections
-        i = injection_index
-        while i < num_injections and injections[i]["start_time"] <= segment.analyze_end:
-            if injections[i]["end_time"] >= segment.analyze_start:
-                segment.injections.append(injections[i])
-            i += 1
+
+    for injection in injections:
+        if 'job_id' not in injection:
+            raise ValueError("Scheduled injection is missing required 'job_id'")
+        job_id = int(injection['job_id'])
+        if job_id not in by_job:
+            raise ValueError(f"Scheduled injection references unknown job_id={job_id}")
+        injection['start_time'] = injection['gps_time'] + injection['t_start']
+        injection['end_time'] = injection['gps_time'] + injection['t_end']
+        by_job[job_id].injections.append(injection)
 
 
 

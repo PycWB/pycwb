@@ -4,7 +4,6 @@
 # pycwb create, pycwb run, pycwb server, etc. It is a wrapper around the pycwb package
 
 import argparse
-import pycwb.cli.server as server
 import pycwb.cli.run as run
 import pycwb.cli.flow as flow
 import pycwb.cli.batch_setup as batch_setup
@@ -17,7 +16,6 @@ import pycwb.cli.post_process as post_process
 import pycwb.cli.gwosc as gwosc
 import pycwb.cli.gwosc_data as gwosc_data
 import pycwb.cli.get_external_modules as get_external_modules
-import pycwb.cli.run_waveform_reconstruction as run_waveform_reconstruction
 import pycwb.cli.online as online
 import pycwb.cli.progress as progress
 import pycwb.cli.simulation_summary as simulation_summary
@@ -30,11 +28,6 @@ def main():
 
     # Show version
     parser.add_argument('-v', '--version', action='version', version=f'pycwb {__version__}')
-
-    # Create subcommand
-    create_parser = subparsers.add_parser('server', help='Run a simple server to show the results')
-    server.init_parser(create_parser)
-    create_parser.set_defaults(func=server.command)
 
     # Run subcommand
     run_parser = subparsers.add_parser('run', help='Run search')
@@ -72,10 +65,6 @@ def main():
     post_process_parser = subparsers.add_parser('post-process', help='Post process the results')
     post_process.init_parser(post_process_parser)
     post_process_parser.set_defaults(func=post_process.command)
-
-    waveform_reconstruction_parser = subparsers.add_parser('waveform-reconstruction', help='Run waveform reconstruction analysis')
-    run_waveform_reconstruction.init_parser(waveform_reconstruction_parser)
-    waveform_reconstruction_parser.set_defaults(func=run_waveform_reconstruction.command)
 
     # gwosc subcommand
     gwosc_parser = subparsers.add_parser('gwosc', help='Download files to run a pycwb analysis of a GW event of your choice')

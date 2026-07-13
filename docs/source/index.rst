@@ -6,143 +6,237 @@
 Welcome to pycWB's documentation!
 ===================================
 
-.. image:: https://readthedocs.org/projects/pycwb/badge/?version=latest
-   :target: https://pycwb.readthedocs.io/en/latest/
-   :alt: Documentations
+.. warning::
 
-.. image:: https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg
-   :target: https://git.ligo.org/yumeng.xu/pycwb/-/pipelines
-   :alt: Build Status
+   🚧 **This documentation is a work in progress.** 🚧
 
-.. image:: https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg
-   :target: https://git.ligo.org/yumeng.xu/pycwb/-/releases
-   :alt: Releases
+   Many sections are incomplete, under active development, or subject to
+   change. Please check back regularly for updates, and consider
+   `contributing <https://git.ligo.org/yumeng.xu/pycwb>`_ if you find gaps
+   or errors.
 
-.. image:: https://badge.fury.io/py/pycWB.svg
-   :target: https://badge.fury.io/py/pycWB
-   :alt: PyPI version
+.. raw:: html
 
-.. image:: https://img.shields.io/badge/license-GPLv3-blue
-   :target: https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE
-   :alt: License
+   <p>
+     <a href="https://pycwb.readthedocs.io/en/latest/">
+       <img src="https://readthedocs.org/projects/pycwb/badge/?version=latest" alt="Documentation">
+     </a>
+     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/pipelines">
+       <img src="https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg" alt="Build Status">
+     </a>
+     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/releases">
+       <img src="https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg" alt="Releases">
+     </a>
+     <a href="https://badge.fury.io/py/pycWB">
+       <img src="https://badge.fury.io/py/pycWB.svg" alt="PyPI version">
+     </a>
+     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE">
+       <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License">
+     </a>
+   </p>
 
 
-pycWB is a modularized Python package for gravitational wave burst search based on the core function of cWB.
+PycWB is a modular Python implementation of the coherent WaveBurst
+(cWB/cWB-2G) search algorithms for gravitational-wave burst searches.
+
+.. figure:: _static/img/pycwb_search_animation.gif
+   :alt: Animated overview of the pycWB search process
+   :align: center
+   :width: 100%
+
+   A compact animation of the pycWB search flow: detector strain scanning,
+   WDM time-frequency pixel selection, and network coherence.
+   This animation is for reference only and is not a 100% accurate
+   representation of every pycWB pipeline step.
 
 
 .. toctree::
    :hidden:
    :maxdepth: 5
 
-   install
    credit
-   pycWB <modules>
-   genindex
 
 .. toctree::
    :hidden:
    :caption: User Guides
-   :maxdepth: 1
+   :maxdepth: 2
 
-   tutorials
+   start_here
+   install
+   Learning Path <tutorials>
+   analysis_recipes
+   decision_guides
+   core_concepts
+   Migration from cWB <cwb_heritage>
+   Public GWTC References <public_gwtc_references>
+   Production Analysis <standard_analysis>
+   postproduction
    schema
+   modules_guide
+   API Reference <modules>
+   cli_reference
+   glossary
 
 .. toctree::
    :hidden:
    :caption: Developer Guides
    :maxdepth: 1
 
-   mod_cwb
+   dev_architecture
+   dev_setup
+   dev_modules
+   dev_performance
+   dev_build_test
+   dev_contributing
+   dev_cxx_core
 
 
-Getting Started
-===============
+What is pycWB?
+--------------
 
-Installation
-------------
+pycWB is a Python package for **coherent gravitational-wave burst searches**.
+It implements the same cWB/cWB-2G algorithmic chain used by the ROOT/C++ cWB
+pipeline: WDM time-frequency analysis, coherent pixel selection, clustering and
+superclustering, coherent likelihood evaluation, waveform reconstruction, and
+postproduction ranking.
 
-PycWB is available on `PyPI <https://pypi.org/project/pycWB/>`_. You can install it with pip.
-Some dependencies are required to be installed before installing pycWB with pip.
-The easiest way is to install them with conda.
+pycWB implements the cWB/cWB-2G algorithms for coherent burst searches. It
+analyzes strain data from the LIGO-Virgo-KAGRA detector network, transforms it
+into a wavelet time-frequency representation, and searches for short
+gravitational-wave transients with minimal assumptions about the signal
+waveform by identifying coherent excess-power structures across the detector
+network.
+
+Unlike template-based searches that look for specific waveforms, pycWB
+identifies **any statistically significant coherence** between detectors,
+making it sensitive to both known and unknown source types.
+
+.. image:: _static/diagrams/pipeline_overview.svg
+   :alt: pycWB pipeline overview
+
+
+Choose Your Path
+----------------
+
+.. raw:: html
+
+   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8em; margin: 1.5em 0;">
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>🆕 New to pycWB?</strong><br>
+     <a href="start_here.html">Start Here →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>🔍 Run a search</strong><br>
+     <a href="standard_analysis.html">Standard Analysis →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>📋 Solve a task</strong><br>
+     <a href="analysis_recipes.html">Analysis Recipes →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>🤔 Make a choice</strong><br>
+     <a href="decision_guides.html">Decision Guides →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>🔬 Understand algorithms</strong><br>
+     <a href="core_concepts.html">Core Concepts →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>Coming from cWB?</strong><br>
+     <a href="cwb_heritage.html">Migration from cWB →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>📊 Postproduction</strong><br>
+     <a href="postproduction.html">Background, XGBoost, Efficiency →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>📖 Look up parameters</strong><br>
+     <a href="schema.html">Schema →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>💻 Contribute code</strong><br>
+     <a href="dev_architecture.html">Developer Guides →</a>
+   </div>
+
+   </div>
+
+
+Quick Start
+-----------
 
 .. code-block:: bash
 
-   conda create -n pycwb "python>=3.9,<3.11"
-   conda activate pycwb
-   conda install -c conda-forge root=6.26.10 healpix_cxx=3.81 nds2-client python-nds2-client lalsuite setuptools_scm cmake pkg-config
-   python3 -m pip install pycwb
+   # Install
+   pip install pycwb
+
+   # Copy example
+   cp -r examples/injection my_first_search && cd my_first_search
+
+   # Run
+   pycwb run user_parameters_injection.yaml
+
+See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
+for detailed installation options.
 
 
-Run your first burst search
----------------------------
+Documentation Map
+-----------------
 
-In your first burst search, we will use a built-in noise generator and waveform generator
-to minimize the requirement for external data. What you need is just one configuration file in YAML format.
+.. list-table::
+   :header-rows: 0
+   :widths: 25 75
 
-To start with, copy the example configuration folder from the source code or download the
-``user_parameters_injection.yaml`` manually from `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/user_parameters_injection.yaml>`_.
+   * - :ref:`start_here`
+     - What pycWB does, first run in 10 minutes, common mistakes
+   * - :ref:`tutorials`
+     - Learn by example: injection, multi-injection, batch
+   * - :ref:`analysis_recipes`
+     - Copy-paste workflows: all-sky, targeted, injection campaign, debugging
+   * - :ref:`decision_guides`
+     - Flowcharts: which settings, which recipe, which split strategy
+   * - :ref:`core_concepts`
+     - Algorithms: pipeline lifecycle, job control, clustering, likelihood
+   * - :ref:`cwb_heritage`
+     - How cWB, cWB-2G, cWB-XP, and public examples relate to pycWB
+   * - :ref:`public_gwtc_references`
+     - Public GWTC cWB waveform reconstruction and CED reference links
+   * - :ref:`standard_analysis`
+     - Config templates, cluster submission (Condor & SLURM)
+   * - :ref:`postproduction`
+     - Background estimation, XGBoost ranking, detection efficiency
+   * - :ref:`schema`
+     - All parameters: defaults, ranges, descriptions, cross-references
+   * - :ref:`modules`
+     - Auto-generated API reference from docstrings
+   * - :ref:`glossary`
+     - ~60 key terms: lag, DPF, FAR, rho, supercluster, etc.
+   * - Developer Guides
+     - Architecture, setup, build/test, modules, performance, contributing
+
+
+CLI Reference
+-------------
+
+Most users only need these three commands:
 
 .. code-block:: bash
 
-    cp -r [path_to_source_code]/examples/injection my_first_search
+   pycwb run         # Run a single search
+   pycwb batch-setup # Generate Condor/SLURM submission scripts
+   pycwb post-process# Run postproduction workflow
 
-Now, you are all set! You can directly run the example in the terminal with the ``pycwb run`` command
+See the :ref:`run_on_clusters` page for full CLI details, or run
+``pycwb --help`` for all available commands.
 
-.. code-block:: bash
-
-    pycwb run user_parameters_injection.yaml
-
-Or you can open the juptyer notebook ``pycwb_injection.ipynb`` (download `here <https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/examples/injection/pycwb_injection.ipynb>`_)
-and run the search step by step
-
-Go deeper into pycWB.search
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If you want to know more about the search process, please refer to
-:ref:`tutorial_search`
-
-Step by step injection!
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If you want to know more about the injection process step by step, please refer to
-:ref:`tutorial_injection` or the juptyer notebook `pycwb_injection.ipynb`
-
-Command line interfaces (CLI)
-------------------------------
-
-It is recommended to use the command line interfaces (CLI) to run the search.
-You can get help by running the command with the ``-h`` option. Here are the current available commands:
-
-.. list-table:: Available Commands
-   :header-rows: 1
-
-   * - Command
-     - Description
-   * - ``pycwb run``
-     - Run a single search
-   * - ``pycwb batch-setup``
-     - Setup batch run
-   * - ``pycwb batch-runner``
-     - Runner for batch run, used for the job submission
-   * - ``pycwb post-process``
-     - Run the post process workflow
-   * - ``pycwb gwosc``
-     - Download data from GWOSC and setup the search
-   * - ``pycwb flow``
-     - Run search with prefect flow
-   * - ``pycwb xtalk``
-     - Convert xtalk file
-   * - ``pycwb merge-catalog``
-     - Merge catalog files
-   * - ``pycwb server``
-     - Run a simple server to show the results
-
-
-Basic Workflow
-==============
-.. image:: workflow.png
-   :width: 100%
-   :align: center
 
 Indices and tables
 ==================

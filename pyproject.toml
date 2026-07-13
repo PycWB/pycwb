@@ -46,11 +46,12 @@ dependencies = [
     "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
-    "wdm-wavelet",
+    "wdm-wavelet>=0.3.1",
     "burst-waveform",
     "pandas",
     "duckdb",
     "tqdm",
+    "iminuit"
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,8 @@ pycbc = ["pycbc"]
 # nds2-client and python-nds2-client are not on PyPI; install via conda-forge.
 # gwpy (a hard dependency) will use them automatically when present.
 nds2 = ["python-nds2-client"]
+xgboost = ["xgboost"]
+test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit", "xgboost"]
 
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
@@ -68,7 +71,12 @@ write_to = "pycwb/_version.py"
 
 [tool.setuptools]
 include-package-data = true
-script-files = ["bin/pycwb", "bin/pycwb_search", "bin/pycwb_show"]
+script-files = ["bin/pycwb"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

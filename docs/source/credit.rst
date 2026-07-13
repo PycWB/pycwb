@@ -1,59 +1,106 @@
 .. _credits:
 
-============================================
-Use of PycWB in Scientific Publications
-============================================
+Use of pycWB in Scientific Publications
+=======================================
 
-If you use PycWB in a scientific publication, then we ask that you include a citation to the paper
-describing the software, as well as a citation to the cWB paper
+If you use pycWB in a scientific publication, cite the pycWB paper and the
+underlying cWB method paper. Depending on the analysis, also cite the cWB
+software overview, the cWB-2G performance paper, and any release-specific
+software DOI or version archive that applies to the exact software you used.
+
+Please also report the pycWB version, tag, or git hash used for the analysis.
 
 
-Citing the PycWB paper
--------------------------
-
-A bibtex key for the PycWB paper is provided below:
-
-.. code-block:: bibtex
-
-    @article{pycwb,
-        title = {PycWB: A user-friendly, Modular, and python-based framework for gravitational wave unmodelled search},
-        journal = {SoftwareX},
-        volume = {26},
-        pages = {101639},
-        year = {2024},
-        issn = {2352-7110},
-        doi = {https://doi.org/10.1016/j.softx.2024.101639},
-        url = {https://www.sciencedirect.com/science/article/pii/S2352711024000104},
-        author = {Yumeng Xu and Shubhanshu Tiwari and Marco Drago},
-        keywords = {Gravitational waves, Burst search},
-        abstract = {Unmodelled searches and reconstruction is a critical aspect of gravitational wave data analysis, requiring sophisticated software tools for robust data analysis. This paper introduces PycWB, a user-friendly and modular Python-based framework developed to enhance such analyses based on the widely used unmodelled search and reconstruction algorithm Coherent Wave Burst (cWB). The main features include a transition from C++ scripts to YAML format for user-defined parameters, improved modularity, and a shift from complex class-encapsulated algorithms to compartmentalized modules. The PycWB architecture facilitates efficient dependency management, better error-checking, and the use of parallel computation for performance enhancement. Moreover, the use of Python harnesses its rich library of packages, facilitating post-production analysis and visualization. The PycWB framework is designed to improve the user experience and accelerate the development of unmodelled gravitational wave analysis.}
-    }
-
-You can also find the paper at `SoftwareX <https://www.sciencedirect.com/science/article/pii/S2352711024000104?via%3Dihub>`_.
-
-Citing the cWB paper
-~~~~~~~~~~~~~~~~~~~~~~~
-
-You should also cite cWB, since pycWB is built on top of cWB. The cWB paper is available at `Phys. Rev. D <https://journals.aps.org/prd/abstract/10.1103/PhysRevD.93.042004>`_.
-
-The bibtex key for the cWB paper is provided below:
+pycWB Paper
+-----------
 
 .. code-block:: bibtex
 
-    @article{cwb,
-        title = {Method for detection and reconstruction of gravitational wave transients with networks of advanced detectors},
-        author = {Klimenko, S. and Vedovato, G. and Drago, M. and Salemi, F. and Tiwari, V. and Prodi, G. A. and Lazzaro, C. and Ackley, K. and Tiwari, S. and Da Silva, C. F. and Mitselmakher, G.},
-        journal = {Phys. Rev. D},
-        volume = {93},
-        issue = {4},
-        pages = {042004},
-        numpages = {10},
-        year = {2016},
-        month = {Feb},
-        publisher = {American Physical Society},
-        doi = {10.1103/PhysRevD.93.042004},
-        url = {https://link.aps.org/doi/10.1103/PhysRevD.93.042004}
-    }
+   @article{pycwb,
+     title = {PycWB: A user-friendly, Modular, and python-based framework for gravitational wave unmodelled search},
+     journal = {SoftwareX},
+     volume = {26},
+     pages = {101639},
+     year = {2024},
+     issn = {2352-7110},
+     doi = {10.1016/j.softx.2024.101639},
+     url = {https://www.sciencedirect.com/science/article/pii/S2352711024000104},
+     author = {Xu, Yumeng and Tiwari, Shubhanshu and Drago, Marco},
+     keywords = {Gravitational waves, Burst search}
+   }
 
-Citing the scientific publications that describe the software
--------------------------------------------------------------
+The article is available from
+`SoftwareX <https://www.sciencedirect.com/science/article/pii/S2352711024000104>`_.
+
+
+cWB Method Paper
+----------------
+
+pycWB implements the coherent WaveBurst search method, so publications should
+also cite the core cWB method paper:
+
+.. code-block:: bibtex
+
+   @article{cwb_method,
+     title = {Method for detection and reconstruction of gravitational wave transients with networks of advanced detectors},
+     author = {Klimenko, S. and Vedovato, G. and Drago, M. and Salemi, F. and Tiwari, V. and Prodi, G. A. and Lazzaro, C. and Ackley, K. and Tiwari, S. and Da Silva, C. F. and Mitselmakher, G.},
+     journal = {Phys. Rev. D},
+     volume = {93},
+     issue = {4},
+     pages = {042004},
+     year = {2016},
+     doi = {10.1103/PhysRevD.93.042004},
+     url = {https://link.aps.org/doi/10.1103/PhysRevD.93.042004}
+   }
+
+
+cWB Software Overview
+---------------------
+
+For work that discusses the cWB software framework, public cWB releases, or
+the software lineage that pycWB builds on, cite the cWB SoftwareX overview:
+
+.. code-block:: bibtex
+
+   @article{cwb_softwarex,
+     title = {coherent WaveBurst, a pipeline for unmodeled gravitational-wave data analysis},
+     author = {Salemi, F. and others},
+     journal = {SoftwareX},
+     volume = {14},
+     pages = {100678},
+     year = {2021},
+     doi = {10.1016/j.softx.2021.100678},
+     url = {https://doi.org/10.1016/j.softx.2021.100678}
+   }
+
+
+cWB-2G Paper
+------------
+
+For analyses that rely on or compare against cWB-2G search performance,
+ranking, or production-search strategy, cite the cWB-2G paper:
+
+.. code-block:: bibtex
+
+   @article{cwb_2g,
+     title = {Optimizing searches for gravitational wave bursts using coherent WaveBurst-2G},
+     author = {Martini, A. and others},
+     journal = {Classical and Quantum Gravity},
+     volume = {43},
+     pages = {055016},
+     year = {2026},
+     doi = {10.1088/1361-6382/ae4717},
+     url = {https://doi.org/10.1088/1361-6382/ae4717}
+   }
+
+
+Software Releases and Derived Work
+----------------------------------
+
+If your result depends on a specific pycWB or cWB release, cite the
+release-specific DOI or archived software record when one is available. Avoid
+using generic "latest release" wording in papers and internal notes; record
+the exact version, tag, or git hash instead.
+
+If you develop software from pycWB or cWB, cite the relevant project URL and
+state which code version your work is derived from.

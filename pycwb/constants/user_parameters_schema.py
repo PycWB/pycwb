@@ -224,8 +224,28 @@ schema = {
         },
         "parallel_injection_trail": {
             "type": "boolean",
-            "description": "flatten job segments by injection trail index for parallel processing",
+            "description": "flatten job segments by injection trial index for parallel processing",
             "default": False,
+            "cwb": False
+        },
+        "parallel_lag_workers": {
+            "type": "integer",
+            "description": "number of background lags to compute concurrently inside one native segment worker",
+            "default": 1,
+            "minimum": 1,
+            "cwb": False
+        },
+        "parallel_lag_inner_threads": {
+            "type": ["integer", "null"],
+            "description": "Numba threads per threaded background lag worker; null derives from nproc / parallel_lag_workers",
+            "default": None,
+            "minimum": 1,
+            "cwb": False
+        },
+        "max_energy_backend": {
+            "enum": ["jax", "numba", "auto"],
+            "description": "backend used by coherence setup for time-delay max-energy maps; auto uses numba for middle WDM resolutions and JAX for endpoint resolutions",
+            "default": "jax",
             "cwb": False
         },
         "injection": {

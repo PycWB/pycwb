@@ -1,4 +1,4 @@
-name: data_conditioning_2G
+name: data_conditioning_native
 author: pycWB
-description: Data conditioning module
-dependencies: ["@multi_resolution_wdm", "@pycwb.constants", "@cwb_conversions", "numpy", "ROOT"]
+description: Native Python data conditioning module
+dependencies: ["@multi_resolution_wdm", "@pycwb.constants", "numpy", "scipy", "jax", "wdm-wavelet", "memspectrum", "scikit-learn"]

@@ -1,0 +1,54 @@
+# ============================================================================
+# Waveform Reconstruction Quality Report — Post-Production Workflow
+#
+# Reads a consolidated wave.h5 file produced during cWB analysis and
+# generates aggregate waveform reconstruction quality reports:
+#   - Time-domain: reconstructed strain, bias, overlap histogram,
+#     cumulative hrss, hrss histogram
+#   - Frequency-domain: magnitude spectrum, spectral bias,
+#     cumulative hrss vs. frequency
+#   - Null-stream: reconstruction check (if null stream data available)
+#
+# Outputs go to reports/plots/*.png and reports/results/*.npz under
+# the analysis folder.
+#
+# Usage:
+#   pycwb post-process examples/postproduction/waveform_reconstruction_workflow.yaml
+#   pycwb post-process examples/postproduction/waveform_reconstruction_workflow.yaml --diagram-only
+# ============================================================================
+
+vars:
+  # ── Paths ──────────────────────────────────────────────────────────────
+  work_dir: /path/to/analysis/output          # <-- set to your analysis folder
+  wave_file: ${work_dir}/wave.h5              # consolidated waveform HDF5
+
+  # ── IFOs to process ────────────────────────────────────────────────────
+  ifo_list: [L1, H1]                          # list of interferometer names
+
+runtime:
+  tmp_dir: ${work_dir}/tmp/waveform_report
+  cleanup_tmp: never                           # keep intermediate files
+
+steps:
+  - id: waveform_reconstruction_report
+    name: Waveform Reconstruction Quality Report
+    action: postprocess.waveform_report.generate_waveform_report
+    inputs:
+      wave_file: ${wave_file}
+    args:
+      # ── Required ─────────────────────────────────────────────────────
+      ifo: ${ifo_list}
+
+      # ── Reconstruction options ────────────────────────────────────────
+      confidence_level: 0.9        # 90% confidence bands
+      whitened: false              # set true for whitened waveforms
+      ordering: percentiles        # "percentiles" | "BCa" | "upper" | "lower"
+      plot_median: false           # overlay median waveform
+      plot_mean: false             # overlay mean waveform
+
+      # ── Waveform alignment ────────────────────────────────────────────
+      early_start: 0.0             # extra pre-signal padding (seconds)
+      scale: 0                     # wavelet scale correction (sqrt(2)^scale)
+
+      # ── Performance ───────────────────────────────────────────────────
+      max_workers: 8               # parallel workers for waveform sync

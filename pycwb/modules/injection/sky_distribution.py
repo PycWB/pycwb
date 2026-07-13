@@ -3,7 +3,10 @@ import logging
 from astropy import units as u
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, Galactic
 import astropy.time as time
-import healpy as hp  # Optional for custom maps
+try:
+    import healpy as hp  # Optional for custom maps
+except ImportError:
+    hp = None
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +92,8 @@ def generate_sky_distribution(sky_distribution_config, n_samples):
         return np.repeat(phi, n_samples), np.repeat(theta, n_samples)
     
     elif dist_type == "Custom":
+        if hp is None:
+            raise ImportError("healpy is required for Custom HEALPix sky distribution")
         logger.info(f"Sampling from a custom HEALPix map: {sky_distribution_config['custom']['healpix_map']}")
         # Example: Sample from a HEALPix map
         skymap = hp.read_map(sky_distribution_config['custom']['healpix_map'])

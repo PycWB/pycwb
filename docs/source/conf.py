@@ -5,11 +5,16 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from pycwb import __version__
 
 project = 'pycWB'
-copyright = '2023, Yumeng Xu'
-author = 'Yumeng Xu'
+copyright = '2023-2026, The PycWB team'
+author = 'The PycWB team'
 release = __version__
 
 # -- General configuration ---------------------------------------------------
@@ -17,24 +22,45 @@ release = __version__
 
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon'
+    'sphinx.ext.napoleon',
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ["pycwb/vendor/*", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "pycwb/vendor/*"]
+
+autodoc_mock_imports = [
+    "ROOT",
+    "aiofiles",
+    "dask",
+    "dask.distributed",
+    "dask_jobqueue",
+    "healpy",
+    "htcondor",
+    "iminuit",
+    "memspectrum",
+    "prefect",
+    "prefect_dask",
+    "psutil",
+    "pycbc",
+    "tensorflow",
+    "xgboost",
+]
+autosummary_mock_imports = autodoc_mock_imports
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "furo"
+html_theme = "sphinxawesome_theme"
 html_static_path = ['_static']
 
 # -- external links ----------------------------------------------------------
 
 intersphinx_mapping = {
-    'gwpy': ('https://gwpy.github.io/docs/stable/', None),
-    'numpy': ('https://docs.scipy.org/doc/numpy/', None),
+    'gwpy': ('https://gwpy.github.io/docs/3.0.0/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
 }
 
 
@@ -48,7 +74,6 @@ intersphinx_mapping = {
 # minimums = [user_parameters_schema['properties'][key]['minimum'] for key in keys]
 #
 
-import sys
 from os.path import basename
 
 try:

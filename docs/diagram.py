@@ -23,12 +23,6 @@ with Diagram("pycWB Search", direction="TB", graph_attr=graph_attr):
             description="Creates a catalog file from the configuration file.",
         )
 
-        create_web_viewer = Container(
-            name="Create Web Viewer",
-            technology="web_viewer.create_web_viewer",
-            description="Creates a web viewer from the configuration file.",
-        )
-
         job_processing_loop = Container(
             name="Job Processing Loop",
             technology="Loop for each job segment",
@@ -115,7 +109,6 @@ with Diagram("pycWB Search", direction="TB", graph_attr=graph_attr):
     config >> Relationship("Create job from config") >> job_creation
     job_creation >> Relationship("Create Catalog File") >> create_catalog_file
     job_creation >> Relationship("Job Processing Loop") >> job_processing_loop
-    job_creation >> Relationship("Create Web Viewer") >> create_web_viewer
     job_processing_loop >> Relationship("Trigger Job Analysis") >> get_input
     get_input >> Relationship("Inject") >> inject
     inject >> Relationship("Data Conditioning") >> data_conditioning

@@ -1,19 +1,16 @@
 import dataclasses
 import os
 import logging
+import time
+import warnings
 from typing import Dict, List
-import math
 import numpy as np
-import pycwb
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.plot import event
-from pycwb.modules.reconstruction.getResiduals import get_ASD
 from pycwb.types.time_frequency_series import TimeFrequencySeries
 from pycwb.config import Config
 from pycwb.modules.plot.cluster_statistics import plot_statistics
-from pycwb.modules.plot_map.world_map import plot_skymap_contour
-# from pycwb.modules.read_data import generate_strain_from_injection
-from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform, get_residuals
+# from pycwb.modules.injection import generate_strain_from_injection
+from pycwb.modules.reconstruction import get_network_MRA_wave, get_INJ_waveform
 from pycwb.types.network_cluster import Cluster
 from pycwb.types.network_event import Event
 from filelock import SoftFileLock
@@ -26,39 +23,62 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                           wave_file: str = '', save: bool = True, plot: bool = False,
                           queue=None) -> Dict[str, TimeSeries]:
 
+    flow_timer = time.perf_counter()
+    timings = {"save": 0.0, "plot": 0.0}
+
     # vREC: reconstructed signal
     logger.info(f"Reconstructing waveform for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_signals = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                'signal', 0, True, whiten=False)
+    timings["signal"] = time.perf_counter() - step_timer
     
     # whitened vREC: whitened reconstructed signal
     logger.info(f"Reconstructing whitened waveform for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_signals_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                       'signal', 0, True, whiten=True)
+    timings["signal_whiten"] = time.perf_counter() - step_timer
 
     # vDAT: reconstructed data (signal + noise)
     logger.info(f"Reconstructing strain for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_data  = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                 'strain', 0, True, whiten=False)
+    timings["strain"] = time.perf_counter() - step_timer
     
     # whitened_vDAT: whitened reconstructed data (signal+noise)
     logger.info(f"Reconstructing whitened strain for event {event.hash_id}")
+    step_timer = time.perf_counter()
     reconstructed_data_whiten = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
                                                       'strain', 0, True, whiten=True)
+    timings["strain_whiten"] = time.perf_counter() - step_timer
 
     # vNUL: reconstructed noise (vDAT - vREC)
+    step_timer = time.perf_counter()
     reconstructed_nulls = [reconstructed_data[i] - reconstructed_signals[i] for i in range(len(ifos))]
+    timings["null"] = time.perf_counter() - step_timer
 
     # whitened vNUL: whitened reconstructed noise (whitened_vDAT - whitened_vREC)
+    step_timer = time.perf_counter()
     reconstructed_nulls_whiten = [reconstructed_data_whiten[i] - reconstructed_signals_whiten[i] for i in range(len(ifos))]
+    timings["null_whiten"] = time.perf_counter() - step_timer
 
     # apply epoch
-    for w in reconstructed_signals: w.start_time += epoch
-    for w in reconstructed_signals_whiten: w.start_time += epoch
-    for w in reconstructed_data: w.start_time += epoch
-    for w in reconstructed_data_whiten: w.start_time += epoch
-    for w in reconstructed_nulls: w.start_time += epoch
-    for w in reconstructed_nulls_whiten: w.start_time += epoch
+    step_timer = time.perf_counter()
+    for w in reconstructed_signals:
+        w.start_time += epoch
+    for w in reconstructed_signals_whiten:
+        w.start_time += epoch
+    for w in reconstructed_data:
+        w.start_time += epoch
+    for w in reconstructed_data_whiten:
+        w.start_time += epoch
+    for w in reconstructed_nulls:
+        w.start_time += epoch
+    for w in reconstructed_nulls_whiten:
+        w.start_time += epoch
+    timings["epoch"] = time.perf_counter() - step_timer
 
     # reconstructed_signals_whiten_00 = get_network_MRA_wave(config, cluster, config.rateANA, config.nIFO, config.TDRate,
     #                                                      'signal', -1, True, whiten=True)
@@ -74,6 +94,7 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
     #     rescale = 1. / math.pow(math.sqrt(2), math.log2(config.inRate / ts.sample_rate))
     #     ts.data *= rescale
 
+    step_timer = time.perf_counter()
     data = {}
     for i, ifo in enumerate(ifos):
         data[f"{ifo}_wf_REC"] = reconstructed_signals[i]
@@ -82,8 +103,10 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
         data[f"{ifo}_wf_DAT_whiten"] = reconstructed_data_whiten[i]
         data[f"{ifo}_wf_NUL"] = reconstructed_nulls[i]
         data[f"{ifo}_wf_NUL_whiten"] = reconstructed_nulls_whiten[i]
+    timings["package"] = time.perf_counter() - step_timer
     
     if save:
+        step_timer = time.perf_counter()
         # rescaling factor to preserve amplitude
         rescale = 1. / np.sqrt(2) ** (np.log2(config.inRate / (config.inRate >> config.levelR)))
 
@@ -97,8 +120,10 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
                        "waves": rescaled_data, "wave_file": wave_file})
         else:
             add_wf_to_wave(config, wave_file, event.hash_id, rescaled_data)
+        timings["save"] = time.perf_counter() - step_timer
         
     if plot:
+        step_timer = time.perf_counter()
         from pycwb.modules.plot.waveform import plot
         from matplotlib import pyplot as plt
         # rescaling factor to preserve amplitude
@@ -133,16 +158,55 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
             plot(wave*rescale, ifo = ifos[j])
             plt.savefig(f'{trigger_folder}/{ifos[j]}_wf_NUL_whiten.png')
             plt.close()
+        timings["plot"] = time.perf_counter() - step_timer
+
+    timings["total"] = time.perf_counter() - flow_timer
+    logger.info(
+        "reconstruct_waveforms_flow timing for event %s: "
+        "signal=%.3f s, signal_whiten=%.3f s, "
+        "strain=%.3f s, strain_whiten=%.3f s, "
+        "null=%.3f s, null_whiten=%.3f s, epoch=%.3f s, "
+        "package=%.3f s, save=%.3f s, plot=%.3f s, total=%.3f s",
+        event.hash_id,
+        timings["signal"], timings["signal_whiten"],
+        timings["strain"], timings["strain_whiten"],
+        timings["null"], timings["null_whiten"], timings["epoch"],
+        timings["package"], timings["save"], timings["plot"], timings["total"],
+    )
 
     return data
 
-def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: list[str], event: Event,
-                                HoT_list, mdc_maps, window: float, offset: float, inRate: float,
-                                wave_file: str = None, save: bool = True, plot: bool = False,
-                                queue=None) -> Dict[str, TimeSeries]:
+def reconstruct_injection_waveforms_flow(
+    trigger_folder: str,
+    config: Config,
+    ifos: list[str],
+    event: Event,
+    unwhitened_injection_strains,
+    whitened_injection_strains,
+    window: float,
+    offset: float,
+    inRate: float,
+    wave_file: str = None,
+    save: bool = True,
+    plot: bool = False,
+    queue=None,
+) -> Dict[str, TimeSeries]:
     
     logger.info(f"Reconstructing injected waveform for event {event.hash_id}")
-    data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
+    data = [
+        get_INJ_waveform(
+            unwhitened_strain,
+            whitened_strain,
+            event.injection['gps_time'],
+            window,
+            offset,
+            inRate,
+        )
+        for unwhitened_strain, whitened_strain in zip(
+            unwhitened_injection_strains,
+            whitened_injection_strains,
+        )
+    ]
     
     if save:
         try:
@@ -193,6 +257,17 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     
     return data
 
+
+def reconstruct_INJwaveforms_flow(*args, **kwargs):
+    """Deprecated alias for :func:`reconstruct_injection_waveforms_flow`."""
+    warnings.warn(
+        "reconstruct_INJwaveforms_flow is deprecated and will be removed after "
+        "one release; use reconstruct_injection_waveforms_flow instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return reconstruct_injection_waveforms_flow(*args, **kwargs)
+
 def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -> None:
     """
     Add events to waveform file
@@ -241,43 +316,6 @@ def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -
                     grp[key] = np.asarray(value)
                 logger.info(f"Added waveform {key} for event {event_id} to {wave_file}")
 
-def load_wf_from_wave(wave_file: str, ifo: str, keys: List[str]) -> Dict[str, list]:
-    """
-    Load waveforms for a given IFO and keys from the consolidated wave HDF5 file.
-    Paired reader for add_wf_to_wave.
-
-    Parameters
-    ----------
-    wave_file : str
-        Path to the wave HDF5 file.
-    ifo : str
-        Interferometer name.
-    keys : list[str]
-        Waveform keys to load, e.g. ['wf_REC', 'wf_INJ']. Each key is prefixed
-        with ``ifo_`` when looking up in the file.
-
-    Returns
-    -------
-    dict[str, list[TimeSeries]]
-        Mapping from each key to a list of TimeSeries (one per event, sorted by event id).
-    """
-    result: Dict[str, list] = {key: [] for key in keys}
-    with h5.File(wave_file, 'r') as f:
-        for event_id in sorted(f.keys()):
-            for key in keys:
-                full_key = f'{ifo}_{key}'
-                if full_key in f[event_id]:
-                    dataset = f[event_id][full_key]
-                    if 'sample_rate' in dataset.attrs and 'start_time' in dataset.attrs:
-                        value = TimeSeries(dataset[:],
-                                          delta_t=1.0 / dataset.attrs['sample_rate'],
-                                          epoch=dataset.attrs['start_time'])
-                    else:
-                        # plain array (e.g. ASD)
-                        value = dataset[:]
-                    result[key].append(value)
-    return result
-
 def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[str], event: Event, data: list[TimeSeries], reconst_data: Dict[str, TimeSeries], tf_maps: list[TimeFrequencySeries],
                              nrms: list[TimeFrequencySeries], save: bool = True, wave_file: str = None,
                              save_gwf: bool = False, plot: bool = False, queue=None) -> Dict[str, TimeSeries]:
@@ -318,7 +356,7 @@ def reconstruct_residuals_flow(trigger_folder: str, config: Config, ifos: List[s
     
     if save_gwf: 
         
-        from pycwb.modules.read_data import save_to_gwf
+        from pycwb.modules.read_data.write_data import save_to_gwf
 
         logger.info(f"Saving residuals to GWF for event {event.hash_id}")
         strain_residuals_full = [get_residuals(tf_maps[i].data, reconst_data[f"{ifos[i]}_reconstructed_signals_whiten"], config.inRate,\
@@ -374,6 +412,8 @@ def plot_trigger_flow(trigger_folder: str,
 
 def plot_skymap_flow(trigger_folder: str,
                  event: Event, event_skymap_statistics) -> None:
+    from pycwb.modules.plot.skymap import plot_skymap_contour
+
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
         logger.info(f"Creating trigger folder: {trigger_folder}")

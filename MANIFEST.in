@@ -3,5 +3,7 @@ include cwb_wrapper/vendor/*
 include cwb-core/*
 include cwb-core/cmake
 recursive-include pycwb/vendor *
+recursive-include pycwb/modules/postprocess/templates *
+include pycwb/modules/*/module.yaml
 include README.md
 include LICENSE

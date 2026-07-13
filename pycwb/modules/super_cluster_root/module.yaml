@@ -1,0 +1,4 @@
+name: super_cluster_root
+author: pycWB
+description: ROOT-backed supercluster compatibility module
+dependencies: ["@multi_resolution_wdm", "@cwb_conversions", "@sparse_series", "ROOT", "matplotlib"]

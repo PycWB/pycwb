@@ -123,6 +123,9 @@ class Config:
     max_delay: Optional[float] = field(init=False)
     injection: Dict = field(default_factory=dict)
     parallel_injection_trail: bool = False
+    parallel_lag_workers: int = 1
+    parallel_lag_inner_threads: Optional[int] = None
+    max_energy_backend: str = "jax"
     analyze_injection_only: bool = False
     injection_padding: float = 1.0
     WDM_beta_order: Optional[int] = None

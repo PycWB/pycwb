@@ -3,21 +3,29 @@ from scipy.special import erfc
 from scipy.optimize import root_scalar
 import warnings
 
-# this function is deprecated, please consider using sigmoid_fit.py to fit the data instead
-# of reading from the fit_parameters file
-warnings.warn("This function is deprecated, please consider using sigmoid_fit.py to fit the data instead"
-              " of reading from the fit_parameters file", DeprecationWarning)
-
 
 def read_inj_type(file_name):
     """
-    Read the user-defined injection types file.
+    Read a cWB injection-type definition file.
 
-    Parameters:
-    file_name (str): Path to the list of MDC types file (ASCII).
+    Parses an ASCII file defining MDC injection waveforms. Each line specifies
+    an injection set, type code, waveform name, central frequency, and bandwidth.
+    Lines starting with ``#`` or whitespace are treated as comments.
 
-    Returns:
-    int: Number of injections read.
+    Parameters
+    ----------
+    file_name : str
+        Path to the injection list file (e.g. ``injectionList.txt``).
+
+    Returns
+    -------
+    list of dict
+        Each dict has keys ``set``, ``type``, ``name``, ``fcentral``, ``fbandwidth``.
+
+    Raises
+    ------
+    SystemExit
+        If the file cannot be opened or contains a malformed line.
     """
     try:
         with open(file_name, 'r') as file:
@@ -62,6 +70,28 @@ def read_inj_type(file_name):
 
 
 def read_fit_parameters(filepath):
+    """
+    Read a cWB ``fit_parameters_*.txt`` file.
+
+    Parses the nine-column ASCII format produced by cWB efficiency fitting.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the fit parameters file.
+
+    Returns
+    -------
+    tuple
+        ``(ecount, chi2, hrss50, err, par1, par2, par3, ewaveform)`` where
+        ``ecount`` through ``par3`` are 1D ``ndarray`` of floats and
+        ``ewaveform`` is a list of waveform name strings.
+
+    Raises
+    ------
+    SystemExit
+        If the file cannot be opened.
+    """
     ecount, chi2, hrss50, err, par1, par2, par3, ewaveform = [], [], [], [], [], [], [], []
 
     try:
@@ -88,6 +118,10 @@ def read_fit_parameters(filepath):
 
 
 def logNfit(x, par0, par1, par2, par3, par4):
+    warnings.warn(
+        "logNfit is deprecated, please use pycwb.modules.statistics.sigmoid_fit.logNfit instead",
+        DeprecationWarning
+    )
     y = (np.log10(x) - par0)
     if par4:
         y = -y
@@ -108,6 +142,32 @@ def logNfit(x, par0, par1, par2, par3, par4):
 
 
 def get_hrss_from_percentile(percentile, hrss50, par1, par2, par3, pp_factor2distance):
+    """
+    Compute the hrss value at a given efficiency percentile.
+
+    Inverts the sigmoid fit using Brent's root-finding method to find
+    the hrss corresponding to a target detection efficiency.
+
+    Parameters
+    ----------
+    percentile : float
+        Target efficiency value (e.g. 0.1, 0.5, 0.9).
+    hrss50 : float
+        hrss at 50% efficiency.
+    par1 : float
+        Sigma (width) parameter.
+    par2 : float
+        Beta-minus slope.
+    par3 : float
+        Beta-plus slope.
+    pp_factor2distance : int (0 or 1)
+        Flag controlling sigmoid orientation.
+
+    Returns
+    -------
+    float or None
+        hrss value at the target percentile, or None if root-finding fails.
+    """
     inf = -25
     sup = -18.5
 
@@ -133,6 +193,26 @@ def get_hrss_from_percentile(percentile, hrss50, par1, par2, par3, pp_factor2dis
 
 
 def read_hrss_for_mdc(run_dir, pp_factor2distance=0.):
+    """
+    Aggregate hrss percentiles (10%, 50%, 90%) for all injection sets in an MDC run.
+
+    Reads the injection list and per-set fit-parameter files, then computes
+    hrss10, hrss50, and hrss90 for every waveform.
+
+    Parameters
+    ----------
+    run_dir : str
+        Directory containing ``injectionList.txt`` and
+        ``fit_parameters_<set>.txt`` files.
+    pp_factor2distance : int, optional
+        Flag passed to ``get_hrss_from_percentile``. Default 0.
+
+    Returns
+    -------
+    tuple
+        ``(hrss10, hrss50, hrss90, hrss50_err)`` — four dicts keyed by
+        injection set name, each mapping waveform name → hrss value.
+    """
     injections = read_inj_type(run_dir + 'injectionList.txt')
     imdc_set_name = list(set([inj['set'] for inj in injections]))
 
@@ -165,6 +245,22 @@ def read_hrss_for_mdc(run_dir, pp_factor2distance=0.):
 
 
 def plot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
+    """
+    Plot hrss50 vs central frequency for one or more MDC runs.
+
+    Produces a log-log scatter plot with error bars comparing hrss50
+    sensitivity across waveform families and runs. Saves the figure as
+    ``hrss50.png``.
+
+    Parameters
+    ----------
+    run_dirs : list of str
+        Directories containing cWB efficiency results.
+    tags : list of str
+        Legend labels for each run.
+    output_dir : str, optional
+        Directory to save the plot. Default ``'.'``.
+    """
     import matplotlib.pyplot as plt
     import seaborn as sns
 
@@ -198,6 +294,21 @@ def plot_hrss_from_mdc(run_dirs, tags, output_dir='.'):
 
 
 def sort_key(s):
+    """
+    Sort key for waveform names of the form ``<prefix><N>Q<M>``.
+
+    Sorts primarily by the number after ``Q``, then by the number before ``Q``.
+
+    Parameters
+    ----------
+    s : str
+        Waveform name (e.g. ``"SG4Q9"``).
+
+    Returns
+    -------
+    tuple
+        ``(num_after_Q, num_before_Q)`` for use as a sort key.
+    """
     import re
     parts = re.match(r"([a-zA-Z]+)(\d+)Q(\d+)", s)
     num_before_q = int(parts.group(2))
@@ -205,6 +316,26 @@ def sort_key(s):
     return (num_after_q, num_before_q)
 
 def barplot_hrss_from_mdc(run_dirs, tags, output_dir='.', filename='hrss50_comparison.png', wf_names_selection=None):
+    """
+    Grouped bar chart comparing hrss50 across MDC runs.
+
+    For each run directory, reads the injection list and fit parameters,
+    then produces a grouped bar plot comparing hrss50 values across waveform
+    families. Saves the figure as a PNG file.
+
+    Parameters
+    ----------
+    run_dirs : list of str
+        Directories containing cWB efficiency results.
+    tags : list of str
+        Legend labels for each run.
+    output_dir : str, optional
+        Directory to save the plot. Default ``'.'``.
+    filename : str, optional
+        Output filename. Default ``'hrss50_comparison.png'``.
+    wf_names_selection : list of str, optional
+        Subset of waveform names to include. If None, all waveforms are shown.
+    """
     import matplotlib.pyplot as plt
     import seaborn as sns
     import numpy as np

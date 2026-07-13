@@ -1,0 +1,4 @@
+name: postprocess
+author: pycWB
+description: Post-processing pipeline — FAR, event selection, efficiency metrics, XGBoost ranking, report generation
+dependencies: ["numpy", "scipy", "matplotlib", "iminuit", "xgboost", "pyarrow", "pandas", "@pycwb.types", "@pycwb.config", "@pycwb.modules.catalog", "@pycwb.modules.statistics"]
