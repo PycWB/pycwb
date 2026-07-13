@@ -37,6 +37,7 @@ def plot_world_map(phi, theta, filename=None):
     return fig, ax
 
 
+
 def plot_skymap_contour(
     skymap_statistic,
     key="nProbability",
@@ -62,9 +63,9 @@ def plot_skymap_contour(
     values = skymap[healpix_indices]
     values = np.reshape(values, theta.shape)
 
-    theta_deg = np.rad2deg(theta)
+    phi, theta = convert_cwb_to_geo(phi, theta)
     phi_deg = np.rad2deg(phi)
-    phi_deg, theta_deg = convert_cwb_to_geo(phi_deg, theta_deg)
+    theta_deg = np.rad2deg(theta)
     values[values == 0] = np.nan
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -97,4 +98,3 @@ def plot_skymap_contour(
         logger.info("Plot %s skymap saved to %s", key, filename)
         return None
     return fig, ax
-
