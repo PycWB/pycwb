@@ -94,7 +94,7 @@ then run the ``make doc`` command.
 
 .. code-block:: bash
 
-    pip install sphinx furo
+    pip install sphinx sphinxawesome-theme
     make doc
 
 The documentation will be built in the ``docs/build/html`` directory.

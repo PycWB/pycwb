@@ -1,0 +1,2 @@
+# Dependencies used only when building the Sphinx documentation.
+sphinxawesome-theme==6.0.5
