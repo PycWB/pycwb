@@ -50,7 +50,8 @@ the configured waveform into each detector stream:
 
 .. code-block:: python
 
-   from pycwb.modules.read_data import generate_noise_for_job_seg, generate_strain_from_injection
+   from pycwb.modules.injection import generate_strain_from_injection
+   from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
 
    data = generate_noise_for_job_seg(job_segment, config.inRate, f_low=config.fLow)
 

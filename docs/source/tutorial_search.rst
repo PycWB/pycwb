@@ -90,16 +90,14 @@ at a time. The high-level stages are:
    reconstruction, optional plots, and catalog writes.
 
 Data loading uses :py:func:`pycwb.modules.read_data.read_from_job_segment`,
-:py:func:`pycwb.modules.read_data.generate_noise_for_job_seg`, and
-:py:func:`pycwb.modules.read_data.generate_strain_from_injection`.
+:py:func:`pycwb.modules.read_data.simulations.generate_noise_for_job_seg`, and
+:py:func:`pycwb.modules.injection.generate_strain_from_injection`.
 
 .. code-block:: python
 
-   from pycwb.modules.read_data import (
-       generate_noise_for_job_seg,
-       generate_strain_from_injection,
-       read_from_job_segment,
-   )
+   from pycwb.modules.injection import generate_strain_from_injection
+   from pycwb.modules.read_data import read_from_job_segment
+   from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
 
    data = None
    if job_segment.frames:
