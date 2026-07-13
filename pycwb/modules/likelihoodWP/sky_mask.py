@@ -10,10 +10,13 @@ import logging
 
 import numpy as np
 
+from pycwb.types.detector import gmst_accurate
+
+
 logger = logging.getLogger(__name__)
 
 
-def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config):
+def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config, t_ref=None):
     """
     Compute an array of valid sky indices from a sky mask configuration.
 
@@ -40,6 +43,10 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config):
         * ``Custom`` — threshold a HEALPix probability map; requires
           ``custom.healpix_map`` (path), ``custom.nside``, and optionally
           ``custom.threshold`` (default 0).
+    t_ref : float
+        Reference GPS time used to convert ICRS right ascension to geocentric
+        longitude when ``coordsys`` is set to ``"icrs"``. If ``None``, no
+        time-dependent conversion is applied.
 
     Returns
     -------
@@ -57,6 +64,7 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config):
     dist_type = sky_mask_config.get('type', 'UniformAllSky')
     logger.info("Applying sky mask of type: %s", dist_type)
 
+    coordsys = sky_mask_config.get('coordsys', 'geo')
     if dist_type == 'UniformAllSky':
         return np.arange(n_sky, dtype=np.int64)
 
@@ -70,6 +78,12 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config):
             center_phi = np.deg2rad(center_phi)
             center_theta = np.deg2rad(center_theta)
             radius = np.deg2rad(radius)
+        # Convert ICRS right ascension to geocentric longitude using GMST
+        # at the reference time of the analyzed strain data.
+        if coordsys.lower() == 'icrs':
+            if t_ref is not None:
+                gmst = gmst_accurate(t_ref)
+                center_phi = (center_phi - gmst) % (2.0 * np.pi)  # RA -> GEO phi
         # Angular separation via dot-product formula (numerically stable)
         cos_d = (np.sin(dec_arr) * np.sin(center_theta) +
                  np.cos(dec_arr) * np.cos(center_theta) * np.cos(ra_arr - center_phi))
@@ -90,6 +104,13 @@ def compute_sky_valid_indices(ra_arr, dec_arr, sky_mask_config):
         if unit == 'deg':
             phi = np.deg2rad(phi)
             theta = np.deg2rad(theta)
+
+        # Convert ICRS right ascension to geocentric longitude using GMST
+        # at the reference time of the analyzed strain data.
+        if coordsys.lower() == 'icrs':
+            if t_ref is not None:
+                gmst = gmst_accurate(t_ref)
+                phi = (phi - gmst) % (2.0 * np.pi)  # RA -> GEO phi
         cos_d = (np.sin(dec_arr) * np.sin(theta) +
                  np.cos(dec_arr) * np.cos(theta) * np.cos(ra_arr - phi))
         cos_d = np.clip(cos_d, -1.0, 1.0)

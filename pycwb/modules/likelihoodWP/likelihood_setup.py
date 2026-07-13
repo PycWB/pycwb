@@ -180,12 +180,17 @@ def prepare_likelihood_inputs(
     # Sky mask: restrict the sky scan to a user-defined region (mirrors C++ skyMask).
     # Parsed once per job segment and stored as a sorted int64 index array.
     _sky_mask_config = getattr(config, 'sky_mask', None)
-    sky_valid_indices = compute_sky_valid_indices(ra_arr, dec_arr, _sky_mask_config)
+    t_ref = float(strains[0].t0) if strains is not None else None
+    sky_valid_indices = compute_sky_valid_indices(
+        ra_arr, dec_arr, _sky_mask_config, t_ref=t_ref
+    )
 
     # Separate valid-index array for the coarse (big-cluster) sky grid
     if n_sky_big is not None:
         ra_arr_big, dec_arr_big = _build_sky_directions(n_sky_big, big_cluster_healpix_order)
-        sky_valid_indices_big = compute_sky_valid_indices(ra_arr_big, dec_arr_big, _sky_mask_config)
+        sky_valid_indices_big = compute_sky_valid_indices(
+            ra_arr_big, dec_arr_big, _sky_mask_config, t_ref=t_ref
+        )
     else:
         sky_valid_indices_big = None
 
