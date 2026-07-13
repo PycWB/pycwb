@@ -14,19 +14,24 @@ burst search in about 10 minutes.
 What is a cWB / pycWB Search?
 ------------------------------
 
-**Coherent Wave Burst (cWB)** is an algorithm that searches for
-gravitational-wave bursts—short, unmodeled signals from sources like
-supernovae, gamma-ray bursts, or unexpected phenomena. Unlike template-based
-searches (which look for specific waveforms), cWB looks for **any excess
-coherent power** across a network of detectors.
-
-**pycWB** is the Python implementation. It takes strain data from LIGO, Virgo,
-and KAGRA, transforms it into time-frequency maps, finds clusters of excess
-power, and evaluates a likelihood that each cluster is a real signal.
+**pycWB** implements the cWB/cWB-2G algorithms for coherent burst searches. It
+analyzes strain data from the LIGO-Virgo-KAGRA detector network, transforms it
+into a wavelet time-frequency representation, and searches for short
+gravitational-wave transients with minimal assumptions about the signal
+waveform by identifying coherent excess-power structures across the detector
+network.
 
 The key idea: a real gravitational wave appears **coherently** in all detectors
 (with appropriate time delays), while instrumental noise is uncorrelated.
 pycWB exploits this to separate signals from noise.
+
+.. note::
+
+   Coming from cWB documentation, GWTC reconstruction pages, or CED galleries?
+   See :ref:`cwb_heritage` for the mapping from cWB concepts to pycWB, and
+   :ref:`public_gwtc_references` for curated public GWTC links. ROOT/C++ cWB
+   commands such as ``cwb_gwosc`` are reference context; pycWB searches
+   normally run through ``pycwb run``.
 
 
 The Five Key Objects
@@ -201,6 +206,8 @@ Where to Go Next
      - :ref:`standard_analysis` → :ref:`run_on_clusters`
    * - Learn how the algorithm works
      - :ref:`core_concepts`
+   * - Understand cWB migration context
+     - :ref:`cwb_heritage` and :ref:`public_gwtc_references`
    * - Run postproduction on results
      - :ref:`postproduction`
    * - Look up a config parameter

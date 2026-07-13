@@ -3,7 +3,7 @@
 Batch Injection Runs
 --------------------
 
-|⭐| Intermediate  ·  ~15 min  ·  Prerequisites: :doc:`tutorial_customized_wf_gen`
+⭐ Intermediate  ·  ~15 min  ·  Prerequisites: :doc:`tutorial_customized_wf_gen`
 
 Batch injection runs use the same YAML configuration as a local search, but
 ``pycwb batch-setup`` writes scheduler files for HTCondor or SLURM.
@@ -46,9 +46,9 @@ For one-command project setup from a configuration repository, use
 You have learned
 ----------------
 
-|✅| How to convert a local search into a Condor or SLURM batch run
-|✅| How to use ``pycwb batch-setup`` with resource flags
-|✅| How ``pycwb config-setup`` creates a full project from a config repo
-|✅| Key batch options: memory, disk, walltime, container images, job-per-worker
+- ✅ How to convert a local search into a Condor or SLURM batch run
+- ✅ How to use ``pycwb batch-setup`` with resource flags
+- ✅ How ``pycwb config-setup`` creates a full project from a config repo
+- ✅ Key batch options: memory, disk, walltime, container images, job-per-worker
 
 **Next:** :ref:`analysis_recipes` — copy-paste workflows for production tasks

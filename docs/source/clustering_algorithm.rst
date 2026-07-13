@@ -32,23 +32,21 @@ merges nearby clusters into **superclusters**. The superclustering step is
 critical: it determines which pixel groups are treated as a single
 gravitational-wave candidate for likelihood evaluation.
 
-.. mermaid::
-
-   flowchart TD
-     A[Selected Pixels] --> B[Per-Resolution Clusters]
-     B --> C[Multi-Resolution Merge]
-     C --> D[Sub-Network Cut]
-     D --> E[Superclusters]
-     E --> F[Defragmentation]
-     F --> G[To Likelihood]
-     B -.->|TFgap| C
-     D -.->|subnet / subcut| E
-     E -.->|Tgap / Fgap| F
+.. image:: _static/diagrams/clustering.svg
+   :alt: Clustering pipeline
 
 The production clustering code lives in
 :py:mod:`pycwb.modules.super_cluster_native`. An experimental
 :py:mod:`pycwb.modules.clustering` module exists for future algorithm
 development (DBSCAN, HDBSCAN, OPTICS, etc.) but is not yet production-ready.
+
+In the cWB-2G stage names, single-resolution clustering happens during the
+``Coherence`` stage after significant pixels are selected. The
+``Supercluster`` stage then reads those per-resolution clusters, merges them
+across WDM resolutions, loads time-delay amplitudes for the surviving pixels,
+applies the sub-network cut, and defragments the result. pycWB preserves this
+division even though the data now flows through Python objects rather than ROOT
+job-file cycles.
 
 
 Pipeline: From Pixels to Fragment Clusters
@@ -69,16 +67,28 @@ The clustering pipeline proceeds through these steps:
 6. **Defragmentation** — a final cleanup pass merges any remaining close
    clusters.
 
+The output of this stage is the set of surviving multi-resolution
+superclusters. Those are the candidate structures that the likelihood stage
+will scan over sky position and reconstruct as events.
+
 The high-level wrapper is
 :py:func:`pycwb.modules.super_cluster_native.super_cluster.supercluster_wrapper`,
-which calls :py:func:`~.setup_supercluster` once at initialization and
-:py:func:`~.supercluster_single_lag` for each lag.
+which calls
+:py:func:`pycwb.modules.super_cluster_native.super_cluster.setup_supercluster`
+once at initialization and
+:py:func:`pycwb.modules.super_cluster_native.super_cluster.supercluster_single_lag`
+for each lag.
 
 
 Pixel Selection
 ---------------
 
 Pixels are selected based on their coherent energy and network correlation.
+In cWB-2G terms, the threshold is derived from the black-pixel probability
+(``bpp``) after the maximum-energy time-frequency maps are computed. The
+selected pixels are then clustered at the current WDM resolution before any
+cross-resolution merging is attempted.
+
 Key parameters controlling pixel selection:
 
 .. list-table::
@@ -159,6 +169,11 @@ astrophysical:
 - The cut is Numba-accelerated and handles cross-talk (XTalk) pixel lookups
   internally.
 
+This mirrors the cWB-2G ``network::subNetCut`` role: reject sub-threshold
+network structures before the expensive full likelihood reconstruction. When
+``subrho`` or ``subacor`` are not explicitly set, pycWB follows the same
+fallback pattern by using the main ``netRHO`` or ``Acore`` thresholds.
+
 Parameters controlling the sub-network cut:
 
 .. list-table::
@@ -200,6 +215,10 @@ Defragmentation
 After superclustering, a defragmentation pass
 (:py:func:`pycwb.modules.super_cluster_native.super_cluster.defragment`)
 merges any remaining clusters that are close in time and frequency:
+
+In the cWB-2G flow this cleanup is applied after sub-network rejection so that
+nearby surviving fragments are presented to likelihood as a single candidate
+structure.
 
 .. list-table::
    :header-rows: 1

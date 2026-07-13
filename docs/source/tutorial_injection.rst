@@ -3,7 +3,7 @@
 Step by Step Injection Search
 =============================
 
-|⭐| Beginner  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_search`
+⭐ Beginner  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_search`
 
 This tutorial shows how to run and inspect a simulated injection search. For a
 complete runnable example, start from ``examples/injection``.
@@ -137,9 +137,9 @@ output options in the YAML file.
 You have learned
 ----------------
 
-|✅| How to configure waveform injections in ``user_parameters.yaml``
-|✅| How to run an injection search with ``pycwb run``
-|✅| How to inspect the data conditioning pipeline step by step
-|✅| How likelihood evaluation and cluster acceptance work
+- ✅ How to configure waveform injections in ``user_parameters.yaml``
+- ✅ How to run an injection search with ``pycwb run``
+- ✅ How to inspect the data conditioning pipeline step by step
+- ✅ How likelihood evaluation and cluster acceptance work
 
 **Next:** :doc:`tutorial_multi_injection` — run multiple injections with different parameters

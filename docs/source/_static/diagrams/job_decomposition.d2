@@ -1,0 +1,56 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+"Frame Files" -> Segments -> "Jobs\nsegment × lag × trial" -> "Lags\ntime-shift hypotheses" -> "Trials\ninjection groups" -> "Output\ncatalog + progress"
+
+"Frame Files".style.fill: "#e3f2fd"
+Segments.style.fill: "#e8f5e9"
+"Jobs\nsegment × lag × trial".style.fill: "#fff3e0"
+"Lags\ntime-shift hypotheses".style.fill: "#fce4ec"
+"Trials\ninjection groups".style.fill: "#f3e5f5"
+"Output\ncatalog + progress".style.fill: "#e8eaf6"
+
+# Side connections
+Segments -- "CAT0/1/2 Veto": {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"DQ files"
+
+"Jobs\nsegment × lag × trial" -- "Condor / SLURM": {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"cluster"
+
+"Lags\ntime-shift hypotheses" -- "Physical Signal": {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"zero-lag"
+
+"Lags\ntime-shift hypotheses" -- Background: {
+  style.stroke-dash: 2
+  style.stroke: "#78909c"
+  style.font-size: 10
+}
+"non-zero"

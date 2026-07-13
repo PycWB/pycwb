@@ -1,0 +1,48 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 1
+  }
+}
+
+style: {
+  fill: "#ffffff"
+  stroke: "#455a64"
+  stroke-width: 2
+  border-radius: 8
+  font-color: "#263238"
+  font-size: 13
+  shadow: true
+}
+
+"pycWB\nenvironment" -> "Standard analysis\nsetup"
+"Config template" -> "Standard analysis\nsetup"
+"Standard analysis\nsetup" -> "Production runs"
+"Standard analysis\nsetup".style.fill: "#fff3e0"
+
+Production: {
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
+  Background -> Postproduction
+  "Training set" -> Postproduction
+  Simulations -> Postproduction
+  Background.style.fill: "#e3f2fd"
+  "Training set".style.fill: "#e8f5e9"
+  Simulations.style.fill: "#fce4ec"
+}
+
+Postproduction: {
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
+  "Model training" -> "Background\nstatistics"
+  "Background\nstatistics" -> "Sensitivity\nstudy"
+  "Background\nstatistics" -> "Open box /\nzero-lag review"
+  "Model training".style.fill: "#f3e5f5"
+  "Background\nstatistics".style.fill: "#e8eaf6"
+  "Sensitivity\nstudy".style.fill: "#e8f5e9"
+  "Open box /\nzero-lag review".style.fill: "#fff3e0"
+}

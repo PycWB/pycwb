@@ -3,7 +3,7 @@
 Injections with Customized Waveform Generation
 ----------------------------------------------
 
-|⭐| Intermediate  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_multi_injection`
+⭐ Intermediate  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_multi_injection`
 
 PycWB injection configurations can use waveform parameters directly, parameters
 returned by a Python function, or a custom waveform generator. The useful
@@ -48,9 +48,9 @@ into real data, fetch the required GWOSC files first:
 You have learned
 ----------------
 
-|✅| How to use built-in waveform types: burst-waveform, white-noise-burst
-|✅| How to configure custom waveform generators from Python modules
-|✅| How to fetch GWOSC data for real-data injection runs
-|✅| When to use parameter-from-Python vs. static parameter lists
+- ✅ How to use built-in waveform types: burst-waveform, white-noise-burst
+- ✅ How to configure custom waveform generators from Python modules
+- ✅ How to fetch GWOSC data for real-data injection runs
+- ✅ When to use parameter-from-Python vs. static parameter lists
 
 **Next:** :doc:`tutorial_batch_inj` — submit injection campaigns to a cluster

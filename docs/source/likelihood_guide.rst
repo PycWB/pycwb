@@ -44,6 +44,13 @@ The production code lives in :py:mod:`pycwb.modules.likelihoodWP`, with the
 sky scan in :py:mod:`~pycwb.modules.likelihoodWP.sky_scan` and statistics
 computation in :py:mod:`~pycwb.modules.likelihoodWP.sky_statistics`.
 
+In the cWB-2G stage flow, likelihood reads each surviving supercluster, loads
+time-delay amplitudes for its pixels, evaluates ``likelihood2G`` or
+``likelihoodWP``, reconstructs event parameters, and optionally produces a
+Coherent Event Display. pycWB performs the same algorithmic role but writes
+structured trigger data, reconstructed waveforms, plots, and postproduction
+inputs through the Python workflow.
+
 
 Dominant Polarization Frame (DPF)
 ---------------------------------
@@ -217,6 +224,12 @@ cluster via
 - **Multi-resolution analysis (MRA) waveform**: reconstructed strain
   :math:`h(t)` and :math:`h_{rss}` in physical units
 
+The MRA/XTalk catalog used here is not the WDM transform itself. WDM defines
+the time-frequency basis; the catalog stores sparse overlaps between pixels at
+different WDM resolutions and quadratures. The likelihood/reconstruction path
+uses those overlaps to remove duplicated support between resolutions before
+synthesizing the final detector waveforms.
+
 **Chirp Mass**: When ``Search`` is set to ``CBC``, ``BBH``, or ``IMBHB``,
 the algorithm computes the chirp mass
 
@@ -371,6 +384,17 @@ Likelihood Pipeline Flow
               │
               ▼
          Trigger output (Parquet catalog + JSON)
+
+This is the Python workflow analogue of the cWB-2G cluster loop:
+
+.. code-block:: text
+
+   read surviving supercluster
+        │
+        ├── attach time-delay amplitudes to pixels
+        ├── run coherent likelihood / sky scan
+        ├── reconstruct waveform and event statistics
+        └── write trigger and postproduction inputs
 
 
 Validation Checks

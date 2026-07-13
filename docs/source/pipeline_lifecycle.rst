@@ -7,6 +7,11 @@ This page walks through the complete pycWB analysis pipeline—from raw detector
 data to final detection efficiency. Think of it as a map: each step links to
 the detailed guide where you can learn more.
 
+The stages below are pycWB's modular Python implementation of the same
+cWB/cWB-2G search algorithms: WDM time-frequency analysis, coherent pixel
+selection, clustering and superclustering, likelihood evaluation, waveform
+reconstruction, and postproduction ranking.
+
 .. contents:: Table of Contents
    :depth: 2
    :local:
@@ -15,31 +20,50 @@ the detailed guide where you can learn more.
 Overview
 --------
 
-.. mermaid::
+.. image:: _static/diagrams/search_pipeline.svg
+   :alt: Production search pipeline
 
-   flowchart LR
-     A[WaveSegment<br/>frames, noise, injections,<br/>GPS times, IFOs] --> B[Prepare Time Series]
 
-     subgraph prep[Data preparation]
-       B1[Read frame data]
-       B2[Generate noise]
-       B3[Add injections]
-       B4[Regression / conditioning]
-       B5[Whitening]
-       B1 --> B4 --> B5
-       B2 --> B5
-       B3 --> B5
-     end
+cWB-2G Stage Correspondence
+---------------------------
 
-     prep --> B
+The ROOT/C++ cWB-2G notes describe the production algorithm as a sequence of
+named stages: data conditioning, WDM setup, coherence, supercluster, and
+likelihood. pycWB keeps that same algorithmic decomposition, but stores the
+intermediate objects in Python data structures, Parquet catalogs, and trigger
+files instead of ROOT job-file cycles.
 
-     B --> C[Time-frequency transform]
-     C --> D[Coherence analysis]
-     D --> E[Select significant pixels]
-     E --> F[Cluster pixels]
-     F --> G[Supercluster]
-     G --> H[Likelihood reconstruction]
-     H --> I[Events and cluster statistics]
+.. list-table::
+   :header-rows: 1
+   :widths: 22 42 36
+
+   * - cWB-2G stage
+     - Algorithmic role
+     - pycWB implementation
+   * - Data conditioning
+     - Read detector strain, add configured injections, remove lines, estimate
+       detector noise RMS, and whiten the data.
+     - :py:mod:`pycwb.modules.data_conditioning`
+   * - WDM and MRA setup
+     - Initialize WDM transforms for each resolution level and load the
+       cross-resolution MRA/XTalk catalog used by reconstruction.
+     - :py:mod:`pycwb.modules.coherence_native`,
+       :py:mod:`pycwb.modules.multi_resolution_wdm`,
+       :py:mod:`pycwb.modules.xtalk`
+   * - Coherence
+     - Build time-frequency maps, compute maximum coherent energy, set the
+       black-pixel threshold, select significant pixels per lag, and perform
+       single-resolution clustering.
+     - :py:mod:`pycwb.modules.coherence_native`
+   * - Supercluster
+     - Merge per-resolution clusters, compute time-delay amplitudes, apply the
+       sub-network cut, and defragment nearby structures.
+     - :py:mod:`pycwb.modules.super_cluster_native`
+   * - Likelihood
+     - Loop over surviving clusters, scan sky directions, evaluate the coherent
+       likelihood, reconstruct the waveform, and write event parameters.
+     - :py:mod:`pycwb.modules.likelihoodWP`,
+       :py:mod:`pycwb.modules.reconstruction`
 
 
 1. Data Ingestion
@@ -79,6 +103,11 @@ Within each segment, the data is prepared for wavelet analysis:
 2. **Regression** to remove slow instrumental drifts
 3. **Whitening** to flatten the noise spectrum
 
+In cWB-2G terminology, this stage produces the whitened detector strain
+(``HoT``) and detector noise estimate (``nRMS``). pycWB carries the same
+algorithmic products forward as conditioned strain series and per-detector
+nRMS maps.
+
 - Methods: wavelet whitening, MESA spectral estimation, or mixed
 - Config: ``whiteMethod``, ``whiteWindow``, ``mesaOrder``
 - Module: :py:mod:`pycwb.modules.data_conditioning`
@@ -94,6 +123,10 @@ The whitened data is transformed into the time-frequency domain using the
 levels are computed (from ``l_low`` to ``l_high``) to capture signals of
 different durations.
 
+The WDM transforms define the time-frequency basis. The MRA/XTalk catalog is a
+separate sparse cross-resolution coupling table used later to remove duplicated
+support between resolutions and reconstruct waveforms.
+
 - Config: ``l_low``, ``l_high``, ``levelR``
 - Module: :py:mod:`pycwb.modules.coherence_native`
 
@@ -108,6 +141,10 @@ is computed. The data is time-shifted for each sky direction to account for
 gravitational-wave travel time differences between detectors. Pixels with
 excess coherent power are selected.
 
+This corresponds to the cWB-2G ``maxEnergy`` → threshold → significant-pixel
+selection path. Selected pixels are clustered at each resolution before the
+multi-resolution supercluster step.
+
 - Config: ``bpp``, ``pattern``, ``BATCH``
 - Module: :py:mod:`pycwb.modules.coherence_native`
 
@@ -120,6 +157,10 @@ excess coherent power are selected.
 Selected pixels are grouped into **clusters** (per resolution level) and then
 merged into **superclusters** across resolutions. A sub-network cut removes
 clusters unlikely to be astrophysical.
+
+This is the pycWB equivalent of the cWB-2G ``netcluster::supercluster`` stage:
+merge across resolutions, attach time-delay amplitudes, apply
+``subNetCut``, and defragment surviving clusters.
 
 - Config: ``TFgap``, ``Tgap``, ``Fgap``, ``subnet``, ``subcut``
 - Module: :py:mod:`pycwb.modules.super_cluster_native`
@@ -137,6 +178,10 @@ For each supercluster, the likelihood pipeline:
 3. Computes SNR (:math:`\rho`), network correlation (:math:`cc`), :math:`\chi^2`
 4. Selects the best-fit sky position
 5. Reconstructs the waveform and computes :math:`h_{rss}`
+
+This corresponds to the cWB-2G ``likelihood2G`` / ``likelihoodWP`` stage:
+loop over superclusters, attach time-delay amplitudes to pixels, evaluate the
+coherent network likelihood, and output reconstructed event parameters.
 
 - Config: ``netRHO``, ``netCC``, ``delta``, ``cfg_gamma``, ``healpix``
 - Module: :py:mod:`pycwb.modules.likelihoodWP`

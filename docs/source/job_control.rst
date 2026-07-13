@@ -26,18 +26,8 @@ failing or your run takes too long, this is the page to read.
 Job Decomposition
 -----------------
 
-.. mermaid::
-
-   flowchart TD
-     F[Frame Files] --> S[Segments]
-     S --> J[Jobs<br/>segment x lag x trial]
-     J --> L[Lags<br/>time-shift hypotheses]
-     L --> T[Trials<br/>injection groups]
-     T --> O[Output<br/>catalog + progress]
-     S -.->|DQ files| DQ[CAT0/1/2 Veto]
-     J -.->|cluster| BS[Condor / SLURM]
-     L -.->|zero-lag| ZL[Physical Signal]
-     L -.->|non-zero| BG[Background]
+.. image:: _static/diagrams/job_decomposition.svg
+   :alt: Job decomposition
 
 
 Overview

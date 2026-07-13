@@ -3,7 +3,7 @@
 Search Workflow
 ================
 
-|⭐| Beginner  ·  ~15 min  ·  Prerequisites: :ref:`start_here`
+⭐ Beginner  ·  ~15 min  ·  Prerequisites: :ref:`start_here`
 
 The main user-facing entry point is :py:func:`pycwb.workflow.run.search`.
 It reads a YAML user-parameter file, prepares the working directory, creates
@@ -153,9 +153,9 @@ implementation, see
 You have learned
 ----------------
 
-|✅| How pycWB structures a search with segments, jobs, and lags
-|✅| How to use the ``search()`` function from Python and ``pycwb run`` from CLI
-|✅| How job segments are created from the config file
-|✅| How the segment processor orchestrates each pipeline stage
+- ✅ How pycWB structures a search with segments, jobs, and lags
+- ✅ How to use the ``search()`` function from Python and ``pycwb run`` from CLI
+- ✅ How job segments are created from the config file
+- ✅ How the segment processor orchestrates each pipeline stage
 
 **Next:** :doc:`tutorial_injection` — add simulated signals and recover them

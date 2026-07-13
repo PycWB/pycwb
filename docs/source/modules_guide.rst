@@ -40,7 +40,7 @@ Data I/O
        event metadata (GPS time, detectors, science segments) and downloads
        frame files for known GW events.
    * - :doc:`cwb_results <pycwb.modules.cwb_results>`
-     - Reads and summarizes legacy cWB ``liveTime`` ROOT files. Computes
+     - Reads and summarizes ROOT/C++ cWB ``liveTime`` ROOT files. Computes
        live-time statistics (total seconds, losses, min/max, counts per
        threshold). **(legacy — ROOT-backed)**
    * - :doc:`gracedb <pycwb.modules.gracedb>`
@@ -225,11 +225,11 @@ Infrastructure & Workflow
        and data quality diagnostic plots.
    * - :doc:`cwb_conversions <pycwb.modules.cwb_conversions>`
      - Bidirectional type conversion between native PycWB types (NumPy arrays,
-       ``TimeSeries``, ``FragmentCluster``, ``PixelArrays``) and legacy cWB
+       ``TimeSeries``, ``FragmentCluster``, ``PixelArrays``) and ROOT/C++ cWB
        ROOT types (``wavearray``, ``WSeries``, ``netcluster``, ``sseries``).
    * - :doc:`cwb_interop <pycwb.modules.cwb_interop>`
      - Creates standalone cWB working directories for direct numerical
-       comparison between PycWB and original cWB runs. Generates equivalent
+       comparison between PycWB and ROOT/C++ cWB runs. Generates equivalent
        ``user_parameters.C`` configs, frame file lists, and DQ files.
    * - :doc:`external_module_manager <pycwb.modules.external_module_manager>`
      - Manages installation and versioning of external PycWB modules from Git

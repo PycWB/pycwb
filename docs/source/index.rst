@@ -6,6 +6,15 @@
 Welcome to pycWB's documentation!
 ===================================
 
+.. warning::
+
+   🚧 **This documentation is a work in progress.** 🚧
+
+   Many sections are incomplete, under active development, or subject to
+   change. Please check back regularly for updates, and consider
+   `contributing <https://git.ligo.org/yumeng.xu/pycwb>`_ if you find gaps
+   or errors.
+
 .. raw:: html
 
    <p>
@@ -27,8 +36,18 @@ Welcome to pycWB's documentation!
    </p>
 
 
-PycWB is a modularized Python package for coherent gravitational-wave burst
-searches based on the core algorithms of cWB.
+PycWB is a modular Python implementation of the coherent WaveBurst
+(cWB/cWB-2G) search algorithms for gravitational-wave burst searches.
+
+.. figure:: _static/img/pycwb_search_animation.gif
+   :alt: Animated overview of the pycWB search process
+   :align: center
+   :width: 100%
+
+   A compact animation of the pycWB search flow: detector strain scanning,
+   WDM time-frequency pixel selection, and network coherence.
+   This animation is for reference only and is not a 100% accurate
+   representation of every pycWB pipeline step.
 
 
 .. toctree::
@@ -48,6 +67,8 @@ searches based on the core algorithms of cWB.
    analysis_recipes
    decision_guides
    core_concepts
+   Migration from cWB <cwb_heritage>
+   Public GWTC References <public_gwtc_references>
    Production Analysis <standard_analysis>
    postproduction
    schema
@@ -74,23 +95,24 @@ What is pycWB?
 --------------
 
 pycWB is a Python package for **coherent gravitational-wave burst searches**.
-It takes strain data from LIGO, Virgo, and KAGRA detectors and looks for
-short, unmodeled signals—from supernovae, gamma-ray bursts, or unexpected
-phenomena—by finding excess coherent power across the detector network.
+It implements the same cWB/cWB-2G algorithmic chain used by the ROOT/C++ cWB
+pipeline: WDM time-frequency analysis, coherent pixel selection, clustering and
+superclustering, coherent likelihood evaluation, waveform reconstruction, and
+postproduction ranking.
+
+pycWB implements the cWB/cWB-2G algorithms for coherent burst searches. It
+analyzes strain data from the LIGO-Virgo-KAGRA detector network, transforms it
+into a wavelet time-frequency representation, and searches for short
+gravitational-wave transients with minimal assumptions about the signal
+waveform by identifying coherent excess-power structures across the detector
+network.
 
 Unlike template-based searches that look for specific waveforms, pycWB
 identifies **any statistically significant coherence** between detectors,
 making it sensitive to both known and unknown source types.
 
-.. mermaid::
-
-   flowchart LR
-     A[Input data] --> B[Production search]
-     B --> C[Triggers]
-     C --> D[Postproduction]
-     D --> E[Background statistics]
-     D --> F[Detection efficiency]
-     D --> G[Candidate significance]
+.. image:: _static/diagrams/pipeline_overview.svg
+   :alt: pycWB pipeline overview
 
 
 Choose Your Path
@@ -123,6 +145,11 @@ Choose Your Path
    <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
      <strong>🔬 Understand algorithms</strong><br>
      <a href="core_concepts.html">Core Concepts →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>Coming from cWB?</strong><br>
+     <a href="cwb_heritage.html">Migration from cWB →</a>
    </div>
 
    <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
@@ -178,6 +205,10 @@ Documentation Map
      - Flowcharts: which settings, which recipe, which split strategy
    * - :ref:`core_concepts`
      - Algorithms: pipeline lifecycle, job control, clustering, likelihood
+   * - :ref:`cwb_heritage`
+     - How cWB, cWB-2G, cWB-XP, and public examples relate to pycWB
+   * - :ref:`public_gwtc_references`
+     - Public GWTC cWB waveform reconstruction and CED reference links
    * - :ref:`standard_analysis`
      - Config templates, cluster submission (Condor & SLURM)
    * - :ref:`postproduction`

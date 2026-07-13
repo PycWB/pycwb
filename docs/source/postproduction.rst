@@ -7,30 +7,8 @@ The postproduction pipeline takes the trigger catalogs produced by pycWB
 search jobs and produces final analysis products: background estimates, ranked
 candidate lists, detection efficiency curves, and HTML summary reports.
 
-.. mermaid::
-
-   flowchart TD
-     A[Background triggers] --> B{Split background}
-     B --> C[Background training set]
-     B --> D[Background test set]
-
-     E[Simulation triggers<br/>training injections] --> F[XGBoost training]
-     C --> F
-
-     F --> G[Trained XGBoost model]
-
-     H[Zero-lag triggers] --> I[Apply model]
-     D --> J[Apply model]
-
-     G --> I
-     G --> J
-
-     I --> K[Reweighted zero-lag triggers]
-     J --> L[Reweighted background triggers]
-
-     L --> M[Background statistics<br/>FAR / IFAR]
-     K --> N[Candidate significance]
-     M --> N
+.. image:: _static/diagrams/postproduction.svg
+   :alt: Postproduction ranking and significance
 
 This section covers the complete postproduction workflow and each analysis
 component.

@@ -11,18 +11,9 @@ Installation with Conda/Pip
 
 The project is available on PyPI. PycWB requires Python 3.10 or newer.
 Some dependencies are easiest to install from conda-forge before installing
-``pycwb`` with pip.
-
-.. code-block:: bash
-
-   conda create -n pycwb python=3.13
-   conda activate pycwb
-   conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
-   python3 -m pip install pycwb
-
-Currently, the ROOT-enabled build is available on ``x86_64`` platforms. If you
-do not need the ROOT-backed extension, install the pure Python path without
-ROOT and Healpix C++:
+``pycwb`` with pip. For regular use, install the pure Python path first.
+ROOT is optional and is only needed when testing ROOT-backed components or
+comparing against ROOT/C++ cWB behavior.
 
 .. code-block:: bash
 
@@ -31,8 +22,23 @@ ROOT and Healpix C++:
    conda install -c conda-forge nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
    python3 -m pip install pycwb
 
-Apple Silicon users who need the ROOT-enabled build can create an ``osx-64``
-conda environment under Rosetta:
+=============================================
+Optional ROOT-backed testing environment
+=============================================
+
+Use this only if you explicitly want to test the ROOT-backed extension or
+ROOT/C++ interoperability paths. Currently, the ROOT-enabled build is available
+on ``x86_64`` platforms.
+
+.. code-block:: bash
+
+   conda create -n pycwb python=3.13
+   conda activate pycwb
+   conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
+   python3 -m pip install pycwb
+
+Apple Silicon users who need this optional ROOT-enabled environment can create
+an ``osx-64`` conda environment under Rosetta:
 
 .. code-block:: bash
 
@@ -49,19 +55,22 @@ Installing from Source with Conda and Pip
 
 We recommend installing PycWB from source inside a conda environment because
 some dependencies are easier to resolve from conda-forge. Install the package
-with pip from the repository root:
+with pip from the repository root. This default source install does not require
+ROOT.
 
 .. code-block:: bash
 
     conda create -n pycwb python
     conda activate pycwb
-    conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
+    conda install -c conda-forge nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
     git clone git@git.ligo.org:yumeng.xu/pycwb.git
     cd pycwb
     python -m pip install .
 
-If ROOT is not available, setup skips the C++ wavelet extension and installs the
-native Python path.
+If you want to test the optional ROOT-backed extension from source, install
+``root=6`` and ``healpix_cxx=3`` in the same conda environment before running
+``python -m pip install .``. If ROOT is not available, setup skips the C++
+wavelet extension and installs the native Python path.
 
 =====================================
 Verify installation

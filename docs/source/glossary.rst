@@ -20,6 +20,25 @@ Glossary
       **Coherent Wave Burst** — the core algorithm that pycWB implements. Uses
       wavelet transforms and network coherence to detect unmodeled bursts.
 
+   cWB-2G
+      The standard second-generation coherent WaveBurst pipeline used for many
+      LVK burst analyses and public GWTC waveform reconstructions.
+
+   cWB-XP
+      A separate cWB branch described in the legacy public pages. It keeps the
+      ROOT/C++ framework but uses a WaveScan-style multi-resolution transform
+      and a cross-power statistic rather than being part of pycWB.
+
+   CBC-PE
+      Compact-binary-coalescence parameter estimation. In public GWTC
+      comparisons, cWB burst reconstructions are often compared with
+      waveform-model-based CBC parameter-estimation results.
+
+   CED
+      **Coherent Event Display** — a cWB event report page with plots,
+      reconstructed waveforms, sky information, and diagnostic views for a
+      candidate or public event.
+
    cc
       **Network correlation** — normalized cross-correlation between detectors
       measuring how well data matches the expected signal model.
@@ -69,6 +88,11 @@ Glossary
       pixelizing the sphere. ``healpix`` parameter controls sky resolution:
       :math:`N_{pix} = 12 \times 4^{healpix}`.
 
+   GWTC
+      **Gravitational-Wave Transient Catalog** — the LVK public catalog series
+      of gravitational-wave detections. Public cWB pages provide waveform
+      reconstruction and CED references for selected GWTC events.
+
    hrss
       (:math:`h_{rss}`) — root-sum-squared strain amplitude of a signal.
       Used as the amplitude measure for burst injections and efficiency.
@@ -100,6 +124,12 @@ Glossary
    lagOff
       Offset for the first lag index. ``lagOff = 0`` includes the zero-lag
       (physical coincidence). ``lagOff > 0`` skips the first N lags.
+
+   LALInference
+      A legacy LIGO/Virgo Bayesian parameter-estimation toolkit used in older
+      GWTC comparisons. Public cWB pages compare wavelet-based cWB
+      reconstructions with LALInference modeled waveform reconstructions for
+      some catalogs.
 
    likelihood
       The mathematical framework that evaluates how likely a cluster of pixels

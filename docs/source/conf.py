@@ -26,7 +26,6 @@ extensions = [
     'sphinx.ext.autosummary',
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
-    'sphinxcontrib.mermaid',
 ]
 
 templates_path = ['_templates']
