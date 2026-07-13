@@ -9,9 +9,9 @@ Pipeline overview (one job segment = one GPS time window)
   │  For each trial_idx (injection realisation):             │
   │                                                          │
   │  1. DATA LOADING    read frames / generate noise        │
-  │                     inject simulated signals (MDC)       │
+  │                     inject simulated signals             │
   │                          │                               │
-  │  2. CONDITIONING    resample → whiten data + MDC         │
+  │  2. CONDITIONING    resample → whiten data + injections  │
   │                     ──────── (one-time setup) ────────   │
   │  3. SETUP           coherence (WDM TF maps)              │
   │                     TD-input cache (float32 planes)      │
@@ -143,8 +143,8 @@ class LagOutputContext:
     catalog_file: str | None
     wave_file: str | None
     queue: object
-    HoT_list: object
-    mdc_maps: object
+    unwhitened_injection_strains: object
+    whitened_injection_strains: object
 
 
 @dataclass(frozen=True)
@@ -421,7 +421,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     # For each trial_idx (injection realisation, or 0 if no injections):
     #
     #   1. DATA LOADING     – read frames / generate noise / inject signals
-    #   2. CONDITIONING     – resample → whiten (data + MDC injections)
+    #   2. CONDITIONING     – resample → whiten data and injection strains
     #   3. ONE-TIME SETUP   – coherence, TD-input cache, supercluster, likelihood
     #                         (expensive; computed once, reused across all lags)
     #   4. PER-LAG LOOP     – for each time-slide lag:
@@ -483,14 +483,19 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                       if injection.get('trial_idx', 0) == trial_idx]
             logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
 
-            # TODO: rename all MDC and injection into simulation
-            # Allocate a zero-filled MDC (Mock data challenge) buffer for each IFO.
-            # MDC buffer must span the full padded window [padded_start, padded_end] so that
-            # whitening_mdc and get_INJ_waveform see the same time axis as the conditioned strains.
-            mdc = [TimeSeries(data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
-                              t0=sub_job_seg.padded_start,
-                              dt=1 / sub_job_seg.sample_rate)
-                   for i in range(len(sub_job_seg.ifos))]
+            # Allocate a zero-filled signal-only injection buffer for each IFO.
+            # It spans the full padded window so injection whitening and
+            # reconstruction use the same time axis as the conditioned strains.
+            injection_strains = [
+                TimeSeries(
+                    data=np.zeros(
+                        int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)
+                    ),
+                    t0=sub_job_seg.padded_start,
+                    dt=1 / sub_job_seg.sample_rate,
+                )
+                for _ in sub_job_seg.ifos
+            ]
 
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
@@ -501,9 +506,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                                for i in range(n_ifo))
                 injection['real_start'] = real_start
                 injection['real_end'] = real_end
-                # Both mdc and data are our own buffers — always inject in-place.
+                # Both injection_strains and data are owned buffers; inject in-place.
                 for i in range(n_ifo):
-                    mdc[i].inject(inj[i], copy=False)
+                    injection_strains[i].inject(inj[i], copy=False)
                 for i in range(n_ifo):
                     data[i].inject(inj[i], copy=False)
                 # Free the per-injection signal buffer immediately to reduce peak memory.
@@ -511,7 +516,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         else:
             logger.info(f"Processing trial_idx: {trial_idx} without injections")
             sub_job_seg = job_seg
-            mdc = None
+            injection_strains = None
         # add trial_idx to the sub_job_seg
         sub_job_seg.trial_idx = trial_idx
 
@@ -529,12 +534,15 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # ─────────────────────────────────────────────────────────────────────
         # STEP 2 – RESAMPLING & DATA CONDITIONING
         # ─────────────────────────────────────────────────────────────────────
-        # Resample data (and MDC simultaneously) to config.fSample.  Doing MDC
-        # here – rather than after whitening – frees the high-sample-rate buffers
-        # before the heavy coherence/supercluster allocations below.
+        # Resample data and signal-only injection strains to config.fSample.
+        # Doing this here frees the high-sample-rate buffers before the heavy
+        # coherence/supercluster allocations below.
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]
-        if mdc is not None:
-            mdc = [check_and_resample_py(mdc[i], config, i) for i in range(len(sub_job_seg.ifos))]
+        if injection_strains is not None:
+            injection_strains = [
+                check_and_resample_py(strain, config, i)
+                for i, strain in enumerate(injection_strains)
+            ]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
@@ -545,14 +553,21 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # Whiten the MDC buffers EARLY (before coherence + supercluster setup)
-        # so the resampled high-sample-rate MDC arrays can be freed sooner.
-        mdc_maps = None
-        HoT_list = None
-        if mdc is not None and hasattr(sub_job_seg, 'injections') and sub_job_seg.injections:
-            from pycwb.modules.data_conditioning.whitening_mdc import whitening_mdc
-            mdc_maps, HoT_list = zip(*[whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS)])
-            del mdc
+        # Whiten injection buffers before coherence/supercluster setup so the
+        # resampled high-sample-rate arrays can be freed sooner.
+        whitened_injection_strains = None
+        unwhitened_injection_strains = None
+        if injection_strains is not None and sub_job_seg.injections:
+            from pycwb.modules.data_conditioning.injection_whitening import (
+                whiten_injection_strain,
+            )
+            whitened_injection_strains, unwhitened_injection_strains = zip(
+                *[
+                    whiten_injection_strain(config, strain, noise_rms)
+                    for strain, noise_rms in zip(injection_strains, nRMS)
+                ]
+            )
+            del injection_strains
             release_memory()
 
         # ─────────────────────────────────────────────────────────────────────
@@ -631,8 +646,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             catalog_file=catalog_file,
             wave_file=wave_file,
             queue=queue,
-            HoT_list=HoT_list,
-            mdc_maps=mdc_maps,
+            unwhitened_injection_strains=unwhitened_injection_strains,
+            whitened_injection_strains=whitened_injection_strains,
         )
         _process_lags(
             analysis_context,

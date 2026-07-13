@@ -10,14 +10,22 @@ from pycwb.modules.coherence_root.coherence import coherence
 from pycwb.modules.injection import generate_strain_from_injection
 from pycwb.modules.read_data import read_from_job_segment, check_and_resample
 from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
-from pycwb.modules.data_conditioning_root import data_conditioning, whitening_mdc
+from pycwb.modules.data_conditioning_root import (
+    data_conditioning,
+    whiten_injection_strain,
+)
 from pycwb.modules.likelihood_root import likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
-from pycwb.workflow.subflow.postprocess_and_plots import plot_trigger_flow, reconstruct_waveforms_flow, reconstruct_INJwaveforms_flow, plot_skymap_flow
+from pycwb.workflow.subflow.postprocess_and_plots import (
+    plot_trigger_flow,
+    reconstruct_injection_waveforms_flow,
+    reconstruct_waveforms_flow,
+    plot_skymap_flow,
+)
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.types.trigger import Trigger
 
@@ -80,12 +88,22 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             sub_job_seg.injections = [injection for injection in job_seg.injections if injection.get('trial_idx', 0) == trial_idx]
             logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
             
-            mdc = [TimeSeries(data=np.zeros(int(base_data[i].duration * base_data[i].sample_rate)), t0=base_data[i].start_time, dt=1/base_data[i].sample_rate) for i in range(len(sub_job_seg.ifos))]
+            injection_strains = [
+                TimeSeries(
+                    data=np.zeros(int(strain.duration * strain.sample_rate)),
+                    t0=strain.start_time,
+                    dt=1 / strain.sample_rate,
+                )
+                for strain in base_data
+            ]
 
             for injection in sub_job_seg.injections:
                 inj = generate_strain_from_injection(injection, config, base_data[0].sample_rate, sub_job_seg.ifos) 
                 #default argument copy = True prevents original base_data to be modified due to aliasing 
-                mdc = [mdc[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))]
+                injection_strains = [
+                    injection_strains[i].inject(inj[i])
+                    for i in range(len(sub_job_seg.ifos))
+                ]
                 data = [data[i].inject(inj[i]) for i in range(len(sub_job_seg.ifos))] 
         else:
             logger.info(f"Processing trial_idx: {trial_idx} without injections")
@@ -101,12 +119,18 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         tf_maps, nRMS_list = data_conditioning(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
-        # if injection, check and resample the mdc
+        # Resample and whiten the signal-only injection strains.
         if job_seg.injections:
-            mdc = [check_and_resample(mdc[i], config, i) for i in range(len(job_seg.ifos))]
-            
-            # whitening mdc using nRMS of data
-            mdc_maps, HoT_list = zip(*[whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)]) 
+            injection_strains = [
+                check_and_resample(strain, config, i)
+                for i, strain in enumerate(injection_strains)
+            ]
+            whitened_injection_strains, unwhitened_injection_strains = zip(
+                *[
+                    whiten_injection_strain(config, strain, noise_rms)
+                    for strain, noise_rms in zip(injection_strains, nRMS_list)
+                ]
+            )
 
         # initialize network object 
         network = Network(config, tf_maps, nRMS_list)
@@ -178,8 +202,8 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 
                 # if injection, estimate injected_waveforms and calculate related statistics
                 if event.injection: 
-                    injected_data = reconstruct_INJwaveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
-                                                                HoT_list, mdc_maps, config.iwindow/2, config.segEdge, config.inRate,
+                    injected_data = reconstruct_injection_waveforms_flow(trigger_folder, config, sub_job_seg.ifos, event,
+                                                                unwhitened_injection_strains, whitened_injection_strains, config.iwindow/2, config.segEdge, config.inRate,
                                                                 wave_file=wave_file, save=config.save_injection, plot=config.plot_injection,
                                                                 queue=queue)
 

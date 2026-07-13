@@ -2,6 +2,7 @@ import dataclasses
 import os
 import logging
 import time
+import warnings
 from typing import Dict, List
 import numpy as np
 from pycwb.types.time_series import TimeSeries
@@ -175,13 +176,37 @@ def reconstruct_waveforms_flow(trigger_folder: str, config: Config, ifos: List[s
 
     return data
 
-def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: list[str], event: Event,
-                                HoT_list, mdc_maps, window: float, offset: float, inRate: float,
-                                wave_file: str = None, save: bool = True, plot: bool = False,
-                                queue=None) -> Dict[str, TimeSeries]:
+def reconstruct_injection_waveforms_flow(
+    trigger_folder: str,
+    config: Config,
+    ifos: list[str],
+    event: Event,
+    unwhitened_injection_strains,
+    whitened_injection_strains,
+    window: float,
+    offset: float,
+    inRate: float,
+    wave_file: str = None,
+    save: bool = True,
+    plot: bool = False,
+    queue=None,
+) -> Dict[str, TimeSeries]:
     
     logger.info(f"Reconstructing injected waveform for event {event.hash_id}")
-    data = [get_INJ_waveform(hot, mdc_map, event.injection['gps_time'], window, offset, inRate) for hot, mdc_map in zip(HoT_list, mdc_maps)]
+    data = [
+        get_INJ_waveform(
+            unwhitened_strain,
+            whitened_strain,
+            event.injection['gps_time'],
+            window,
+            offset,
+            inRate,
+        )
+        for unwhitened_strain, whitened_strain in zip(
+            unwhitened_injection_strains,
+            whitened_injection_strains,
+        )
+    ]
     
     if save:
         try:
@@ -231,6 +256,17 @@ def reconstruct_INJwaveforms_flow(trigger_folder: str, config: Config, ifos: lis
     data = {key: [d[key] for d in data] for key in data[0]}
     
     return data
+
+
+def reconstruct_INJwaveforms_flow(*args, **kwargs):
+    """Deprecated alias for :func:`reconstruct_injection_waveforms_flow`."""
+    warnings.warn(
+        "reconstruct_INJwaveforms_flow is deprecated and will be removed after "
+        "one release; use reconstruct_injection_waveforms_flow instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return reconstruct_injection_waveforms_flow(*args, **kwargs)
 
 def add_wf_to_wave(config: Config, wave_file: str, event_id: str, waves: dict) -> None:
     """

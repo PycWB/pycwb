@@ -15,7 +15,7 @@ from pycwb.workflow.subflow.job_segment_resources import _free_jax_buffers
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_skymap_flow,
     plot_trigger_flow,
-    reconstruct_INJwaveforms_flow,
+    reconstruct_injection_waveforms_flow,
     reconstruct_waveforms_flow,
 )
 
@@ -103,13 +103,13 @@ def _postprocess_saved_triggers(output_context, result, trigger_folders) -> tupl
 def _update_event_from_injection_reconstruction(output_context, trigger_folder, event, reconst_data) -> None:
     config = output_context.config
     sub_job_seg = output_context.sub_job_seg
-    injected_data = reconstruct_INJwaveforms_flow(
+    injected_data = reconstruct_injection_waveforms_flow(
         trigger_folder,
         config,
         sub_job_seg.ifos,
         event,
-        output_context.HoT_list,
-        output_context.mdc_maps,
+        output_context.unwhitened_injection_strains,
+        output_context.whitened_injection_strains,
         config.iwindow / 2,
         config.segEdge,
         config.inRate,

@@ -10,7 +10,7 @@ Supports parallel processing with multiprocessing.
 
 from .regression import *
 from .whitening import whitening_cwb
-from .whitening_mdc import whitening_mdc
+from .injection_whitening import whiten_injection_strain
 from .data_conditioning import *
 
 
@@ -22,5 +22,10 @@ def whitening_mesa(*args, **kwargs):
 __all__ = [
     "whitening_mesa",
     "whitening_cwb",
-    "whitening_mdc",
+    "whiten_injection_strain",
 ]
+
+# Compatibility alias for one release. Direct imports of the former module emit
+# a DeprecationWarning.
+whitening_mdc = whiten_injection_strain
+__all__.append("whitening_mdc")

@@ -8,7 +8,7 @@ NumPy time series. This is the production conditioning engine.
 
 from .regression import *
 from .whitening import whitening_python
-from .whitening_mdc import whitening_mdc
+from .injection_whitening import whiten_injection_strain
 from .PSD_correction import psd_correction_python
 from .data_conditioning import *
 
@@ -21,6 +21,11 @@ def whitening_mesa_python(*args, **kwargs):
 __all__ = [
     "whitening_mesa_python",
     "whitening_python",
-    "whitening_mdc",
+    "whiten_injection_strain",
     "psd_correction_python",
 ]
+
+# Compatibility alias for one release. Direct imports of the former module emit
+# a DeprecationWarning.
+whitening_mdc = whiten_injection_strain
+__all__.append("whitening_mdc")

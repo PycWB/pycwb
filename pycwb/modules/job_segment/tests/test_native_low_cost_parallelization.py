@@ -131,7 +131,7 @@ _stub_module(
     "pycwb.workflow.subflow.postprocess_and_plots",
     plot_trigger_flow=_not_called,
     reconstruct_waveforms_flow=_not_called,
-    reconstruct_INJwaveforms_flow=_not_called,
+    reconstruct_injection_waveforms_flow=_not_called,
     plot_skymap_flow=_not_called,
 )
 
@@ -210,8 +210,8 @@ def _output_context(queue=None):
         catalog_file=None,
         wave_file=None,
         queue=queue,
-        HoT_list=None,
-        mdc_maps=None,
+        unwhitened_injection_strains=None,
+        whitened_injection_strains=None,
     )
 
 
