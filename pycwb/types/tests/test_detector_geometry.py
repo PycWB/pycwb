@@ -79,6 +79,7 @@ class TestGeometryUtilities:
         [
             ((1.0, 0.0, 0.0), 0.0, 0.0),
             ((0.0, 1.0, 0.0), math.pi / 2, 0.0),
+            ((0.0, -1.0, 0.0), 3 * math.pi / 2, 0.0),
             ((0.0, 0.0, 2.0), 0.0, math.pi / 2),
             ((0.0, 0.0, -2.0), 0.0, -math.pi / 2),
         ],
@@ -384,6 +385,20 @@ class TestDetectorAntennaPattern:
         assert -0.1 < dt < 0.1
         assert abs(dt) < 0.02  # ~10ms max
 
+    def test_time_delay_matches_cwb_pycbc_convention(self, h1, l1):
+        """Delay is t_self-t_other, with cWB's -R.n/c sign."""
+        t_gps = 1126259162.4
+        h1_geo = h1.time_delay_from_earth_center(0.0, 0.0, t_gps)
+        l1_geo = l1.time_delay_from_earth_center(0.0, 0.0, t_gps)
+
+        # Independent reference values from PyCBC Detector and the equivalent
+        # cWB detector::getTau = -R.n/c expression.
+        assert h1_geo == pytest.approx(-0.0137897984, abs=2e-9)
+        assert l1_geo == pytest.approx(-0.0120959516, abs=2e-9)
+        assert h1.time_delay_from_detector(l1, 0.0, 0.0, t_gps) == pytest.approx(
+            h1_geo - l1_geo, abs=1e-12
+        )
+
     def test_time_delay_symmetry(self, h1, l1):
         """dt(H1←L1) ≈ -dt(L1←H1)."""
         t_gps = 1261873618.0
@@ -399,6 +414,19 @@ class TestDetectorAntennaPattern:
         hc = TimeSeries(data=np.random.randn(100), dt=1.0 / 256, t0=1261873618.0)
         strain = h1.project_wave(hp, hc, 0.5, 0.3, 0.1)
         assert len(strain.data) == 100
+
+    def test_project_wave_applies_geometric_delay(self, h1):
+        from pycwb.types.time_series import TimeSeries
+
+        t_gps = 1126259162.4
+        hp = TimeSeries(data=np.ones(16), dt=1.0 / 256, t0=t_gps - 1.0)
+        hc = TimeSeries(data=np.zeros(16), dt=1.0 / 256, t0=t_gps - 1.0)
+        strain = h1.project_wave(
+            hp, hc, 0.0, 0.0, 0.0, reference_time=t_gps
+        )
+
+        expected_delay = h1.time_delay_from_earth_center(0.0, 0.0, t_gps)
+        assert strain.t0 == pytest.approx(hp.t0 + expected_delay, abs=1e-12)
 
     def test_compute_detector_tensor(self, h1):
         D, xv, yv = h1.compute_detector_tensor()
@@ -743,6 +771,26 @@ class TestComputeSkyDelayAndPatterns:
             ["H1", "L1"], "H1", 256.0, 64, 1261873618.0, n_sky=100,
         )
         assert np.all(np.abs(ml) <= 64)
+
+    def test_delay_sign_matches_cwb_synchronization_shift(self, h1, l1):
+        sample_rate = 4096.0
+        ml, _, _ = compute_sky_delay_and_patterns(
+            [h1, l1], "H1", sample_rate, 128, 1126259162.4, n_sky=1,
+        )
+        phi_geo, latitude = _build_sky_directions(1)
+        n_hat = np.array([
+            np.cos(latitude[0]) * np.cos(phi_geo[0]),
+            np.cos(latitude[0]) * np.sin(phi_geo[0]),
+            np.sin(latitude[0]),
+        ])
+        tau_difference = -np.dot(
+            l1.vertex_vec_earth_centered - h1.vertex_vec_earth_centered,
+            n_hat,
+        ) / 299792458.0
+        synchronization_shift = -tau_difference
+
+        assert ml[0, 0] == 0
+        assert ml[1, 0] == int(np.rint(synchronization_shift * sample_rate))
 
     def test_patterns_within_unit_range(self):
         _, FP, FX = compute_sky_delay_and_patterns(

@@ -273,8 +273,11 @@ def generate_auxiliary_injection_list_from_config(injection_config, start_gps_ti
     for idx, inj in enumerate(injections):
         inj['sim_idx'] = idx
     if sky_distribution:
+        coordinate_system = sky_distribution.get('coordsys', 'icrs')
         sky_locations = generate_sky_distribution(sky_distribution, len(injections))
-        distribute_injections_on_sky(injections, sky_locations)
+        distribute_injections_on_sky(
+            injections, sky_locations, coordsys=coordinate_system
+        )
 
     if injection_config['time_distribution'] == 'rate':
         rate = eval(injection_config['rate']) if type(injection_config['rate']) == str else injection_config['rate']

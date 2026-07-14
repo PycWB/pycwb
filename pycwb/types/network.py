@@ -454,8 +454,9 @@ class Network:
                              " must be 'e'/'c' earth/celestial")
 
         if options:
+            requested_skyres = -1.0 if skyres is None else float(skyres)
             if "--" not in options:  # input parameter is the skyMask file
-                if skyres >= 0:
+                if requested_skyres >= 0:
                     return 1
                 ret = self.net.setSkyMask(options, skycoord)
                 if ret == 0:
@@ -470,17 +471,22 @@ class Network:
 
             # parse options with python for TB.getParameter(options, "--theta")
 
-            parser = argparse.ArgumentParser(description='Example with long option names')
-            parser.add_argument('--theta', default=-1000, type=float)
-            parser.add_argument('--phi', default=-1000, type=float)
-            parser.add_argument('--radius', default=-1000, type=float)
-            args = parser.parse_args(shlex.split('--theta 1 --phi 2 --radius 3'))
+            parser = argparse.ArgumentParser(add_help=False)
+            parser.add_argument('--theta', required=True, type=float)
+            parser.add_argument('--phi', required=True, type=float)
+            parser.add_argument('--radius', required=True, type=float)
+            try:
+                args = parser.parse_args(shlex.split(options))
+            except SystemExit as exc:
+                raise ValueError(
+                    "Sky-mask options must contain --theta, --phi, and --radius"
+                ) from exc
 
             theta = args.theta
             phi = args.phi
             radius = args.radius
 
-            if theta == -1000 or phi == -1000 or radius == -1000:  # input parameter are the skyMask params
+            if abs(theta) > 90 or not 0 <= phi <= 360 or radius <= 0:
                 raise ValueError("cwb::SetSkyMask - Error : wrong input skyMask params"
                                  "wrong input options : " + options +
                                  "options must be : --theta THETA --phi PHI --radius RADIUS"
@@ -489,12 +495,15 @@ class Network:
                                  "phi must be in the range [0,360]"
                                  "radius must be > 0")
             else:  # create & set SkyMask
-                if skyres < 0:
-                    skyres = config.healpix if config.healpix else config.angle
+                if requested_skyres < 0:
+                    requested_skyres = config.healpix if config.healpix else config.angle
                 if config.healpix:
-                    SkyMask = ROOT.skymap(int(skyres))
+                    SkyMask = ROOT.skymap(int(requested_skyres))
                 else:
-                    SkyMask = ROOT.skymap(skyres, config.Theta1, config.Theta2, config.Phi1, config.Phi2)
+                    SkyMask = ROOT.skymap(
+                        requested_skyres, config.Theta1, config.Theta2,
+                        config.Phi1, config.Phi2,
+                    )
                 make_sky_mask(SkyMask, theta, phi, radius, ROOT_module=ROOT)
                 self.net.setSkyMask(SkyMask, skycoord)
                 if skycoord == 'e':

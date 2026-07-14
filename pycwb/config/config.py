@@ -18,6 +18,7 @@ from ..modules.xtalk.monster import read_catalog_metadata
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
+from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,19 @@ class Config:
         # and merges/replaces the default schema before validation (see
         # yaml_helper.resolve_schema for the supported modes and format).
         params = load_yaml(file_name, schema)
+
+        # JSON Schema cannot validate Astropy quantity dimensionality or infer
+        # a coordinate frame from semantic key names.  Perform that physical
+        # cross-check before values become Config attributes.
+        validate_user_sky_config(
+            params.get("sky_mask"), context="sky_mask", default_coordsys="geo"
+        )
+        injection_config = params.get("injection") or {}
+        validate_user_sky_config(
+            injection_config.get("sky_distribution"),
+            context="injection.sky_distribution",
+            default_coordsys="icrs",
+        )
 
         for key in params:
             setattr(self, key, params[key])

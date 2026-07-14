@@ -3,7 +3,6 @@ from importlib import import_module
 import numpy as np
 from dataclasses import dataclass
 from copy import deepcopy
-from astropy.time import Time
 from astropy import constants, coordinates, units
 from astropy.coordinates.matrix_utilities import rotation_matrix
 from astropy.units.si import meter
@@ -413,6 +412,27 @@ class Detector:
                 best_dec = float(dec)
         return best_ra, best_dec
 
+    def time_delay_from_location(self, other_location, ra, dec, t_gps):
+        """Return ``t_self - t_other`` for an equatorial sky direction.
+
+        This is the cWB/PyCBC arrival-time convention.  If ``n`` points from
+        the geocentre towards the source, a plane wave reaches a detector at
+        position ``R`` at ``t_geo - R . n / c``.
+        """
+        gmst = gmst_accurate(float(t_gps))
+        gha = gmst - ra
+        n_hat = np.array([
+            np.cos(dec) * np.cos(gha),
+            np.cos(dec) * (-np.sin(gha)),
+            np.sin(dec),
+        ])
+        d_vec = np.asarray(other_location) - self.vertex_vec_earth_centered
+        return float(np.dot(d_vec, n_hat) / constants.c.value)
+
+    def time_delay_from_earth_center(self, ra, dec, t_gps):
+        """Return detector arrival time minus geocentric arrival time."""
+        return self.time_delay_from_location(np.zeros(3), ra, dec, t_gps)
+
     def time_delay_from_detector(self, other_det, ra, dec, t_gps):
         """
         Return the time delay from *other_det* to *self* for a signal
@@ -444,18 +464,11 @@ class Detector:
         float
             Time delay in seconds.
         """
-        gmst = gmst_accurate(float(t_gps))
-        # Source direction in Earth-centered coordinates
-        gha = gmst - ra
-        n_hat = np.array([
-            np.cos(dec) * np.cos(gha),
-            np.cos(dec) * (-np.sin(gha)),
-            np.sin(dec),
-        ])
-        d_vec = self.vertex_vec_earth_centered - other_det.vertex_vec_earth_centered
-        return float(np.dot(d_vec, n_hat) / constants.c.value)
+        return self.time_delay_from_location(
+            other_det.vertex_vec_earth_centered, ra, dec, t_gps
+        )
 
-    def project_wave(self, hp, hc, ra, dec, polarization):
+    def project_wave(self, hp, hc, ra, dec, polarization, reference_time=None):
         """
         Project plus/cross polarisations onto the detector response.
 
@@ -476,6 +489,10 @@ class Detector:
             Declination in radians.
         polarization : float
             Polarisation angle in radians.
+        reference_time : float, optional
+            Geocentric GPS epoch at which to evaluate the antenna response and
+            geometric delay.  By default, use the waveform midpoint, matching
+            PyCBC's constant-projection policy.
 
         Returns
         -------
@@ -487,11 +504,15 @@ class Detector:
         hp_ts = TimeSeries.from_input(hp)
         hc_ts = TimeSeries.from_input(hc)
 
-        t_gps = float(hp_ts.t0)
+        if reference_time is None:
+            t_gps = float(hp_ts.t0) + 0.5 * len(hp_ts.data) * float(hp_ts.dt)
+        else:
+            t_gps = float(reference_time)
         fplus, fcross = self.atenna_pattern(ra, dec, polarization, t_gps)
+        delay = self.time_delay_from_earth_center(ra, dec, t_gps)
 
         projected = fplus * hp_ts.data + fcross * hc_ts.data
-        return TimeSeries(data=projected, dt=hp_ts.dt, t0=hp_ts.t0)
+        return TimeSeries(data=projected, dt=hp_ts.dt, t0=hp_ts.t0 + delay)
 
     def plot_on_globe(self, fig=False,
                       distance_km=500,
@@ -1015,9 +1036,11 @@ class DetectorNetwork:
 
 
 def gmst_accurate(gps_time):
-    gmst = Time(gps_time, format='gps', scale='utc',
-                location=(0, 0)).sidereal_time('mean').rad
-    return gmst
+    # Backward-compatible detector API; the implementation is centralized so
+    # coordinate conversions and detector projection can select the same model.
+    from pycwb.utils.skymap_coord import gmst_astropy
+
+    return gmst_astropy(float(gps_time))
 
 # Copied from pycbc.detector.single_arm_frequency_response
 # Notation matches
@@ -1195,16 +1218,16 @@ def calculate_e2or_from_acore(acore: float, n_ifo: int) -> float:
 
 
 def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
-    """Build sky directions as (ra, dec) arrays in radians."""
+    """Build cWB Earth-fixed ``(phi_geo, latitude)`` arrays in radians."""
     if healpix_order is not None and int(healpix_order) > 0:
         try:
             import healpy as hp
             nside = 2 ** int(healpix_order)
             npix = hp.nside2npix(nside)
             theta, phi = hp.pix2ang(nside, np.arange(npix, dtype=np.int64), nest=False)
-            ra = np.asarray(phi, dtype=np.float64)
-            dec = (np.pi / 2.0) - np.asarray(theta, dtype=np.float64)
-            return ra, dec
+            phi_geo = np.asarray(phi, dtype=np.float64)
+            latitude = (np.pi / 2.0) - np.asarray(theta, dtype=np.float64)
+            return phi_geo, latitude
         except Exception:
             pass
 
@@ -1212,9 +1235,9 @@ def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
     idx = np.arange(n_sky, dtype=np.float64)
     z = 1.0 - 2.0 * (idx + 0.5) / float(n_sky)
     phi = (np.pi * (3.0 - np.sqrt(5.0)) * idx) % (2.0 * np.pi)
-    dec = np.arcsin(np.clip(z, -1.0, 1.0))
-    ra = phi
-    return ra.astype(np.float64), dec.astype(np.float64)
+    latitude = np.arcsin(np.clip(z, -1.0, 1.0))
+    phi_geo = phi
+    return phi_geo.astype(np.float64), latitude.astype(np.float64)
 
 
 def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time,
@@ -1240,8 +1263,10 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
         else:
             n_sky = 3072
 
-    ra, dec = _build_sky_directions(n_sky=n_sky, healpix_order=healpix_order)
-    n_sky = int(ra.size)
+    phi_geo, latitude = _build_sky_directions(
+        n_sky=n_sky, healpix_order=healpix_order
+    )
+    n_sky = int(phi_geo.size)
 
     ref_idx = 0
     for i, det in enumerate(detector_objs):
@@ -1249,11 +1274,13 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
             ref_idx = i
             break
 
-    sin_dec = np.sin(dec)
-    cos_dec = np.cos(dec)
-    cos_ra = np.cos(ra)
-    sin_ra = np.sin(ra)
-    n_hat = np.vstack((cos_dec * cos_ra, cos_dec * sin_ra, sin_dec)).T
+    sin_latitude = np.sin(latitude)
+    cos_latitude = np.cos(latitude)
+    cos_phi = np.cos(phi_geo)
+    sin_phi = np.sin(phi_geo)
+    n_hat = np.vstack(
+        (cos_latitude * cos_phi, cos_latitude * sin_phi, sin_latitude)
+    ).T
 
     c_light = float(constants.c.value)
     ref_pos = detector_objs[ref_idx].vertex_vec_earth_centered
@@ -1278,14 +1305,24 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
     # The GMST cancels: gha = GMST - (GMST + phi_geo) = -phi_geo
     # Result is independent of the actual GPS time value chosen.
     gmst_rad = gmst_accurate(float(gps_time))
-    ra_eff = ra + gmst_rad  # effective equatorial RA that gives gha = -phi_geo
+    ra_eff = phi_geo + gmst_rad  # effective equatorial RA that gives gha = -phi_geo
 
     for i, det in enumerate(detector_objs):
-        dt = np.einsum('ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos) / c_light
-        delay_idx = np.rint(dt * rate).astype(np.int32)
+        # cWB distinguishes the physical arrival delay from the delay-filter
+        # shift.  detector::getTau gives
+        #   tau_i = t_i - t_geocentre = -R_i . n / c,
+        # while network::setDelayIndex stores the shift that synchronizes
+        # detector i to the reference:
+        #   tau_ref - tau_i = (R_i - R_ref) . n / c.
+        sync_shift = np.einsum(
+            'ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos
+        ) / c_light
+        delay_idx = np.rint(sync_shift * rate).astype(np.int32)
         ml[i] = np.clip(delay_idx, -td_size, td_size)
 
-        f_plus, f_cross = det.atenna_pattern(ra_eff, dec, 0.0, float(gps_time))
+        f_plus, f_cross = det.atenna_pattern(
+            ra_eff, latitude, 0.0, float(gps_time)
+        )
         FP[i] = np.asarray(f_plus, dtype=np.float64)
         FX[i] = np.asarray(f_cross, dtype=np.float64)
 

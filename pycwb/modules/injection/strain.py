@@ -7,7 +7,10 @@ from pycwb.config import Config
 from pycwb.types.detector import Detector
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from pycwb.utils.module import import_function
-from pycwb.utils.skymap_coord import convert_to_celestial_coordinates
+from pycwb.utils.skymap_coord import (
+    convert_to_celestial_coordinates,
+    normalize_coordinate_system,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,14 @@ def project_to_detector(
     )
 
     return [
-        Detector(ifo).project_wave(hp_ts, hc_ts, ra, dec, polarization)
+        Detector(ifo).project_wave(
+            hp_ts,
+            hc_ts,
+            ra,
+            dec,
+            polarization,
+            reference_time=geocent_end_time,
+        )
         for ifo in detectors
     ]
 
@@ -157,7 +167,7 @@ def generate_strain_from_injection(
     right_ascension = injection.get("ra")
     declination = injection.get("dec")
     polarization = injection.get("pol")
-    coordinate_system = injection.get("coordsys", "icrs")
+    coordinate_system = normalize_coordinate_system(injection.get("coordsys", "icrs"))
 
     if coordinate_system != "icrs":
         logger.info(
@@ -172,7 +182,10 @@ def generate_strain_from_injection(
                 f"sky_loc: {injection.get('sky_loc')}"
             )
         right_ascension, declination = convert_to_celestial_coordinates(
-            sky_loc[0], sky_loc[1], gps_end_time, coordinate_system
+            sky_loc[0], sky_loc[1], gps_end_time, coordinate_system,
+            # Detector.atenna_pattern uses Astropy GMST.  Using the same model
+            # here preserves the Earth-fixed cWB/GEO direction exactly.
+            gmst_model="astropy",
         )
 
     if declination is None or right_ascension is None or polarization is None:

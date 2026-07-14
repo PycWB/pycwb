@@ -38,6 +38,7 @@ from pycwb.modules.likelihoodWP.detection_statistics import (
     get_chirp_mass,
     get_error_region,
 )
+from pycwb.modules.likelihoodWP.sky_mask import sky_valid_indices_for_cluster
 
 from .types import SkyStatistics, SkyMapStatistics
 from .dpf import compute_dpf, calculate_dpf_regulator
@@ -326,6 +327,12 @@ def likelihood(
     sky_valid_indices        = setup.get("sky_valid_indices")
     if sky_valid_indices is None:
         sky_valid_indices = np.arange(n_sky, dtype=np.int64)
+    active_phi_geo_arr       = setup.get("phi_geo_arr")
+    active_latitude_arr      = setup.get("latitude_arr")
+    if active_phi_geo_arr is None:
+        active_phi_geo_arr = setup["ra_arr"]
+    if active_latitude_arr is None:
+        active_latitude_arr = setup["dec_arr"]
 
     REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
     n_pix = len(cluster.pixel_arrays)
@@ -344,8 +351,19 @@ def likelihood(
         sky_valid_indices = setup.get("sky_valid_indices_big")
         if sky_valid_indices is None:
             sky_valid_indices = np.arange(n_sky, dtype=np.int64)
+        active_phi_geo_arr = setup["phi_geo_arr_big_cluster"]
+        active_latitude_arr = setup["latitude_arr_big_cluster"]
         logger.info("Cluster-id=%s is big (%d px): using coarse sky grid (%d dirs)",
                     cluster_id, n_pix, n_sky)
+
+    cluster_mask_indices = sky_valid_indices_for_cluster(
+        setup, cluster, use_big_grid=_bBB
+    )
+    if cluster_mask_indices is not None:
+        sky_valid_indices = np.asarray(cluster_mask_indices, dtype=np.int64)
+    if len(sky_valid_indices) == 0:
+        logger.info("Cluster-id=%s rejected: sky mask selects no grid directions", cluster_id)
+        return None, None
 
     # --- Prepare per-cluster inputs ---
     _t0 = time.perf_counter()
@@ -393,12 +411,10 @@ def likelihood(
 
     # --- l_max → sky coordinates ---
     _t0 = time.perf_counter()
-    _ra_arr = setup["ra_arr"]
-    _dec_arr = setup["dec_arr"]
     _l_max = int(skymap_statistics.l_max)
-    _theta_rad = float(np.pi / 2.0 - _dec_arr[_l_max])
-    _phi_rad = float(_ra_arr[_l_max])
-    _theta_deg = float(np.degrees(_theta_rad)) % 180.0
+    _theta_rad = float(np.pi / 2.0 - active_latitude_arr[_l_max])
+    _phi_rad = float(active_phi_geo_arr[_l_max])
+    _theta_deg = float(np.clip(np.degrees(_theta_rad), 0.0, 180.0))
     _phi_deg = float(np.degrees(_phi_rad)) % 360.0
     stage_timings["sky_coords"] = time.perf_counter() - _t0
 

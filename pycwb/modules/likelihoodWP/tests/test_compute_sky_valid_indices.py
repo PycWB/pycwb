@@ -1,7 +1,15 @@
 import unittest
 import numpy as np
+import pytest
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from pycwb.modules.likelihoodWP.sky_mask import compute_sky_valid_indices
+from pycwb.modules.likelihoodWP.sky_mask import (
+    _read_healpix_map,
+    compute_sky_valid_indices,
+    sky_valid_indices_for_cluster,
+)
+from pycwb.utils.skymap_coord import convert_phi_to_ra, gmst_cwb
 
 
 def _uniform_sky(n_sky=200):
@@ -215,3 +223,98 @@ class TestComputeSkyValidIndices_EmptySky(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_fixed_icrs_uses_cwb_ra_to_phi_sign():
+    gps = 1261873618.0
+    gmst = gmst_cwb(gps)
+    config = {
+        'type': 'Fixed',
+        'coordsys': 'icrs',
+        'coordinates': {'ra': f'{np.degrees(gmst)} deg', 'dec': '0 deg'},
+    }
+    result = compute_sky_valid_indices(
+        np.array([0.0, gmst]), np.array([0.0, 0.0]), config, t_ref=gps
+    )
+    np.testing.assert_array_equal(result, np.array([0], dtype=np.int64))
+
+
+def test_icrs_mask_requires_reference_time():
+    config = {
+        'type': 'Fixed',
+        'coordsys': 'icrs',
+        'coordinates': {'ra': '120 deg', 'dec': '0 deg'},
+    }
+    with pytest.raises(ValueError, match='requires a GPS reference time'):
+        compute_sky_valid_indices(np.array([0.0]), np.array([0.0]), config)
+
+
+def test_custom_icrs_indexes_phi_plus_cwb_gmst():
+    import healpy as hp
+
+    gps = 1261873618.0
+    nside = 8
+    phi_geo = np.array([0.0])
+    latitude = np.array([0.0])
+    map_ra = convert_phi_to_ra(phi_geo, gps, gmst_model='cwb')
+    correct_pixel = int(hp.ang2pix(nside, np.array([np.pi / 2.0]), map_ra)[0])
+    raw_pixel = int(hp.ang2pix(nside, np.array([np.pi / 2.0]), phi_geo)[0])
+    assert correct_pixel != raw_pixel
+
+    skymap = np.zeros(hp.nside2npix(nside))
+    skymap[correct_pixel] = 1.0
+    config = {
+        'type': 'Custom',
+        'coordsys': 'icrs',
+        'custom': {
+            'healpix_map': 'mock.fits',
+            'nside': nside,
+            'ordering': 'ring',
+            'threshold': 0.0,
+        },
+    }
+    _read_healpix_map.cache_clear()
+    with patch('healpy.read_map', return_value=skymap):
+        result = compute_sky_valid_indices(
+            phi_geo, latitude, config, t_ref=gps
+        )
+    np.testing.assert_array_equal(result, np.array([0], dtype=np.int64))
+
+
+def test_icrs_mask_is_recomputed_at_cluster_time():
+    segment_start = 1261873618.0
+    cluster_offset = 600.0
+    event_gps = segment_start + cluster_offset
+    target_ra = gmst_cwb(event_gps)
+    config = {
+        'type': 'Fixed',
+        'coordsys': 'icrs',
+        'coordinates': {'ra': f'{np.degrees(target_ra)} deg', 'dec': '0 deg'},
+    }
+    phi_at_segment_start = float(
+        (target_ra - gmst_cwb(segment_start)) % (2.0 * np.pi)
+    )
+    setup = {
+        'sky_mask_config': config,
+        'segment_start_gps': segment_start,
+        'phi_geo_arr': np.array([0.0, phi_at_segment_start]),
+        'latitude_arr': np.array([0.0, 0.0]),
+        'sky_valid_indices': np.array([1], dtype=np.int64),
+    }
+    cluster = SimpleNamespace(cluster_time=cluster_offset)
+    result = sky_valid_indices_for_cluster(setup, cluster)
+    np.testing.assert_array_equal(result, np.array([0], dtype=np.int64))
+
+
+def test_cwb_semantic_mask_converts_colatitude_to_latitude():
+    config = {
+        'type': 'Fixed',
+        'coordsys': 'cwb',
+        'coordinates': {'phi_geo': '0 deg', 'theta_cwb': '60 deg'},
+    }
+    result = compute_sky_valid_indices(
+        np.array([0.0, 0.0]),
+        np.deg2rad(np.array([30.0, -30.0])),
+        config,
+    )
+    np.testing.assert_array_equal(result, np.array([0], dtype=np.int64))

@@ -18,15 +18,30 @@ logger = logging.getLogger(__name__)
 
 
 def _angular_distance_deg(theta1, phi1, theta2, phi2):
-    """Great-circle distance between two sky positions (degrees)."""
-    t1 = math.radians(theta1)
-    p1 = math.radians(phi1)
-    t2 = math.radians(theta2)
-    p2 = math.radians(phi2)
-    cos_d = (math.sin(t1) * math.sin(t2)
-             + math.cos(t1) * math.cos(t2) * math.cos(p1 - p2))
+    """Great-circle distance for cWB co-latitude/longitude in degrees."""
+    t1 = math.radians(_scalar_angle(theta1))
+    p1 = math.radians(_scalar_angle(phi1))
+    t2 = math.radians(_scalar_angle(theta2))
+    p2 = math.radians(_scalar_angle(phi2))
+    # cWB theta is co-latitude, so z=cos(theta) and the transverse
+    # magnitude is sin(theta).  This is not the latitude formula.
+    cos_d = (math.cos(t1) * math.cos(t2)
+             + math.sin(t1) * math.sin(t2) * math.cos(p1 - p2))
     cos_d = max(-1.0, min(1.0, cos_d))
     return math.degrees(math.acos(cos_d))
+
+
+def _scalar_angle(value):
+    """Normalize legacy Event one-element arrays and Trigger scalars."""
+    if isinstance(value, (list, tuple)):
+        return float(value[0]) if value else 0.0
+    try:
+        # NumPy arrays and similar sequence values.
+        if getattr(value, "ndim", 0) > 0:
+            return float(value.flat[0]) if value.size else 0.0
+    except (AttributeError, TypeError):
+        pass
+    return float(value)
 
 
 class TriggerDeduplicator:

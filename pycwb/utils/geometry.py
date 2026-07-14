@@ -79,6 +79,7 @@ def cartesian_to_spherical(x, y, z):
         Declination in radians.
     """
     r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-    ra = np.arctan2(y, x)
+    # Right ascension follows the package-wide ICRS contract [0, 2*pi).
+    ra = np.arctan2(y, x) % (2.0 * np.pi)
     dec = np.arcsin(z / r)
     return ra, dec
