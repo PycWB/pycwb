@@ -84,13 +84,17 @@ Define fixed parameter sets directly in YAML:
          approximant: IMRPhenomPv2
          f_lower: 20
          delta_t: 1.0/16384
-         ra: 1.5
-         dec: -0.5
          inclination: 0.0
          coa_phase: 0.0
          distance: 100.0
          hrss: 1e-21
          gps_time: 1264060000
+     sky_distribution:
+       type: Fixed
+       coordsys: icrs
+       coordinates:
+         ra: "85.94 deg"
+         dec: "-28.65 deg"
 
 Special replicators are available for parameter scanning:
 
@@ -140,7 +144,9 @@ a Python function:
        return params
 
 The function receives the full injection config dict, so you can pass custom
-parameters through it.
+parameters through it. Sky coordinates returned by Python generators are
+internal numerical values in radians. For user-authored YAML, prefer the
+semantic, unit-bearing ``sky_distribution`` forms below.
 
 
 Waveform Generation
@@ -227,15 +233,16 @@ Patch (Circular Cap)
 
    sky_distribution:
      type: Patch
+     coordsys: icrs
      patch:
        center:
-         phi: 45.0       # RA in degrees (or radians if unit: rad)
-         theta: 30.0     # Dec in degrees (or radians if unit: rad)
-       radius: 5.0        # Cap radius in degrees (or radians)
-       unit: deg
+         ra: "45 deg"
+         dec: "30 deg"
+       radius: "5 deg"
 
 Samples uniformly within a circular cap of the given radius around
-``(phi, theta)``.
+the declared ICRS position. See :ref:`coordinate_systems_angles` for the
+``icrs``, ``geo``, and ``cwb`` coordinate pairs.
 
 Fixed
 ~~~~~
@@ -244,10 +251,10 @@ Fixed
 
    sky_distribution:
      type: Fixed
-     fixed:
-       phi: 45.0
-       theta: 30.0
-       unit: deg
+     coordsys: icrs
+     coordinates:
+       ra: "45 deg"
+       dec: "30 deg"
 
 All injections share the same sky position.
 
@@ -258,11 +265,18 @@ Custom (HEALPix Map)
 
    sky_distribution:
      type: Custom
+     coordsys: icrs
      custom:
-       map_path: /path/to/skymap.fits
+       healpix_map: /path/to/skymap.fits
+       ordering: ring
 
 Samples from a HEALPix probability map using ``healpy``. Requires the
 ``healpy`` package.
+
+Sky-coordinate YAML values are validated as Astropy angular quantities. Bare
+numeric coordinates and detached units are deprecated because they cannot be
+cross-checked reliably against the coordinate frame. See
+:ref:`units_conventions`.
 
 
 Time Scheduling

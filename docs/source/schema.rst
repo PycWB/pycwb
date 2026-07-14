@@ -226,7 +226,7 @@ Parameter Quick Reference
    * - ``EFEC``
      - true
      - —
-     - Earth-fixed/eclestial coordinates
+     - Earth-fixed/celestial coordinate conversion
 
 
 Auto-Derived Fields

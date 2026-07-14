@@ -42,12 +42,12 @@ injection sky distributions:
 
    sky_mask:
      type: Patch            # UniformAllSky, Patch, Fixed, or Custom
+     coordsys: icrs
      patch:
        center:
-         phi: 45.0          # Right ascension
-         theta: 30.0        # Declination
-       radius: 5.0          # Search radius
-       unit: deg
+         ra: "45 deg"
+         dec: "30 deg"
+       radius: "5 deg"
 
 When ``sky_mask`` is not specified, the full sky is scanned (equivalent to
 ``type: UniformAllSky``).
@@ -75,20 +75,21 @@ Patch (Circular Region)
 
    sky_mask:
      type: Patch
+     coordsys: icrs
      patch:
        center:
-         phi: 197.5        # RA in degrees (or radians)
-         theta: -23.4      # Dec in degrees (or radians)
-       radius: 3.0         # Search radius
-       unit: deg
+         ra: "197.5 deg"
+         dec: "-23.4 deg"
+       radius: "3 deg"
 
-Restricts the likelihood sky scan to a circular cap around ``(phi, theta)``.
+Restricts the likelihood sky scan to a circular cap around the declared
+right ascension and declination.
 The angular distance between a sky pixel center and the target is computed as:
 
 .. math::
 
-   d = \arccos\left(\sin\theta_1 \sin\theta_2 +
-   \cos\theta_1 \cos\theta_2 \cos(\phi_2 - \phi_1)\right)
+   d = \arccos\left(\sin\delta_1 \sin\delta_2 +
+   \cos\delta_1 \cos\delta_2 \cos(\alpha_2 - \alpha_1)\right)
 
 Pixels with :math:`d \leq` ``radius`` are included in the scan.
 
@@ -103,10 +104,10 @@ Fixed (Single Direction)
 
    sky_mask:
      type: Fixed
-     fixed:
-       phi: 45.0
-       theta: 30.0
-       unit: deg
+     coordsys: icrs
+     coordinates:
+       ra: "45 deg"
+       dec: "30 deg"
 
 Scans only the single HEALPix pixel nearest to the specified sky direction.
 
@@ -117,8 +118,10 @@ Custom (HEALPix Probability Map)
 
    sky_mask:
      type: Custom
+     coordsys: icrs
      custom:
-       map_path: /path/to/skymap.fits
+       healpix_map: /path/to/skymap.fits
+       ordering: ring
        threshold: 0.5        # Keep pixels above this probability threshold
 
 Uses a HEALPix probability map (e.g., from an external localization) and keeps
@@ -132,19 +135,15 @@ FITS file.
 Coordinate Systems
 ------------------
 
-pycWB uses cWB conventions internally:
+User inputs support three explicit frames: ``icrs`` uses ``ra``/``dec``,
+``geo`` uses ``longitude``/``latitude``, and ``cwb`` uses
+``phi_geo``/``theta_cwb``. The cWB ``theta_cwb`` angle is a co-latitude in the
+range 0 to 180 degrees, not a latitude. Every scalar YAML angle includes its
+own unit.
 
-- **Phi** (:math:`\phi`): longitude-like coordinate, range :math:`[0°, 360°]`
-- **Theta** (:math:`\theta`): latitude-like coordinate, range :math:`[-90°, 90°]`
-
-Coordinate conversion between cWB and astronomical (RA/Dec) conventions is
-handled by the sky mask infrastructure. The config parameter
-``sky_distribution.coordsys`` (default: ``icrs``) specifies the coordinate
-system for sky position inputs.
-
-When ``EFEC`` is enabled (default: ``true``), the sky map is computed in
-Earth-fixed/eclestial coordinates, accounting for the Earth's rotation at the
-GPS time of the analysis.
+The exact ranges, GMST sign, time convention, and conversions are defined in
+:ref:`coordinate_systems_angles`. Do not reproduce those definitions from a
+recipe or infer them from the legacy names ``phi`` and ``theta``.
 
 
 HEALPix Resolution
@@ -246,7 +245,7 @@ Related Config Parameters
      - Number of sky probability pixels in ASCII output
    * - ``EFEC``
      - true
-     - Use Earth-fixed/eclestial coordinates
+     - Use Earth-fixed/celestial coordinate conversion
    * - ``skyMaskFile``
      - ``""``
      - Legacy sky mask file path
@@ -257,6 +256,7 @@ Related Config Parameters
 
 ----
 
-**See also:** :doc:`injection_infrastructure` · :doc:`likelihood_guide` · :doc:`analysis_recipes`
+**See also:** :doc:`injection_infrastructure` ·
+:doc:`coordinate_systems` · :doc:`likelihood_guide` · :doc:`analysis_recipes`
 
 **Next:** :doc:`clustering_algorithm` — how pixels become candidate events

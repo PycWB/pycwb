@@ -92,12 +92,12 @@ Targeted External-Trigger Search
 
    sky_mask:
      type: Patch
+     coordsys: icrs
      patch:
        center:
-         phi: 197.5     # RA [deg]
-         theta: -23.4   # Dec [deg]
-       radius: 5.0      # Search radius [deg]
-       unit: deg
+         ra: "197.5 deg"
+         dec: "-23.4 deg"
+       radius: "5 deg"
 
    healpix: 8           # Higher resolution for smaller patch
 
