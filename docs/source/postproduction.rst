@@ -17,6 +17,7 @@ component.
    :maxdepth: 2
 
    postproduction_workflow
+   postproduction_actions
    postproduction_background
    postproduction_xgboost
    postproduction_trainingset
@@ -40,6 +41,10 @@ To inspect the dependency graph without running:
 
 A reference template is available at
 ``examples/postproduction/standard_analysis_10pct_workflow.yaml``.
+
+Use the :ref:`postproduction_workflow` to learn how to assemble a pipeline,
+and the :ref:`postproduction_actions` page to choose an action and look up its
+exact Python signature.
 
 
 Postproduction Architecture

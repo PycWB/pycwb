@@ -18,7 +18,7 @@ Welcome to pycWB's documentation!
 .. raw:: html
 
    <p>
-     <a href="https://pycwb.readthedocs.io/en/latest/">
+     <a href="https://docs.pycwb.org">
        <img src="https://readthedocs.org/projects/pycwb/badge/?version=latest" alt="Documentation">
      </a>
      <a href="https://git.ligo.org/yumeng.xu/pycwb/-/pipelines">

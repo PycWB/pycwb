@@ -20,6 +20,7 @@ import yaml
 
 
 _VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
+_FULL_VAR_PATTERN = re.compile(r"^\$\{([^}]+)\}$")
 
 
 def load_workflow(workflow_file: str) -> dict:
@@ -103,6 +104,20 @@ def resolve_value(value: Any, context: dict, runtime: dict | None = None, *, res
         ]
     if not isinstance(value, str):
         return value
+
+    # Preserve the original type when the entire value is one variable. This
+    # lets workflows explicitly pass structured inputs such as lists of runs
+    # without stringifying them. Embedded substitutions remain strings.
+    full_variable = _FULL_VAR_PATTERN.fullmatch(value)
+    if full_variable:
+        variable_value = get_path(context, full_variable.group(1))
+        if not isinstance(variable_value, str):
+            return resolve_value(
+                copy.deepcopy(variable_value),
+                context,
+                runtime,
+                resolve_refs=resolve_refs,
+            )
 
     text = _expand_vars(value, context)
     if text.startswith("tmp://"):
