@@ -101,7 +101,6 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     effective_pixel_count = sky_statistics.N_pix_effective
 
     event_size = 0 # defined as Mw in cwb
-    n_coherent_pixels = 0
 
     # --- First pass: set core/likelihood/null flags and per-ifo data arrays ---
     n_pixels = len(cluster.pixel_arrays)
@@ -185,9 +184,8 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     for i in likelihood_pixel_indices:
         _pa.likelihood[i] = like_out[i]
 
-    # Count statistics (sets were pre-filtered, so counts equal set sizes)
-    event_size        = int(len(null_pixel_indices))
-    n_coherent_pixels = int(len(likelihood_pixel_indices))
+    # Count statistic (the set was pre-filtered, so its size is the count).
+    event_size = int(len(null_pixel_indices))
 
     stage_timings["null_xtalk_loop"] = _kernel_time * len(null_pixel_indices) / max(len(null_pixel_indices) + len(likelihood_pixel_indices), 1)
     stage_timings["likelihood_xtalk_loop"] = _kernel_time * len(likelihood_pixel_indices) / max(len(null_pixel_indices) + len(likelihood_pixel_indices), 1)
@@ -208,13 +206,6 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     #   snr_i  = Σ_t z_data_i(t)²               (data   energy / snr)   → Ew_wf
     #   null_i = Σ_t (z_data - z_signal)_i(t)²  (null   energy)         → Nw_wf
     # To/Fo   = sSNR-weighted mean time / frequency over core pixels
-    packet_signal_phase0_arr = np.asarray(packet_signal_phase0, dtype=np.float64)
-    packet_signal_phase90_arr = np.asarray(packet_signal_phase90, dtype=np.float64)
-    packet_data_phase0_arr = np.asarray(packet_data_phase0, dtype=np.float64)
-    packet_data_phase90_arr = np.asarray(packet_data_phase90, dtype=np.float64)
-    # Core pixel indices — only core pixels contribute to getMRAwave
-    core_indices = np.where(cluster.pixel_arrays.core)[0].tolist()
-
     _t0 = time.perf_counter()
     Lw = 0.0
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
@@ -517,20 +508,68 @@ def get_likelihood_rejection_reason(
     return None  # No rejection, all conditions passed
 
 
-def compute_sky_error_region(cluster: Cluster):
-    # pwc->p_Ind[id - 1].push_back(Mo);
-    # double T = To + pwc->start;                          // trigger time
-    # std::vector<float> sArea;
-    # pwc->sArea.push_back(sArea);
-    # pwc->p_Map.push_back(sArea);
-    #
-    # double var = norm * Rc * sqrt(Mo) * (1 + fabs(1 - CH));
-    #
-    # // TODO: fix this
-    # if (iID <= 0 || ID == id) {
-    # network::getSkyArea(id, lag, T, var);       // calculate error regions
-    # }
-    pass
+def compute_sky_error_region(
+    cluster: Cluster,
+    sky_probability=None,
+    pixel_area_deg2: float | None = None,
+    searched_sky_index: int | None = None,
+):
+    """Populate the compact cWB-compatible ``erA`` sky-area summary.
+
+    Parameters
+    ----------
+    cluster
+        Cluster to update.
+    sky_probability
+        Normalized probability for the full sky grid.  Zero-probability pixels
+        are outside the evaluated support.  If omitted, this function is a
+        backward-compatible no-op and returns any existing ``cluster.sky_area``.
+    pixel_area_deg2
+        Equal-area sky-pixel area in square degrees.
+    searched_sky_index
+        Optional target or injection pixel.  When supplied, entries 0 and 10
+        are respectively sqrt(searched HPD area) and its credible level.
+
+    Returns
+    -------
+    list[float]
+        Eleven legacy values: searched location, 10--90% HPD sqrt-areas, and
+        searched credible level.  Area square roots have numerical unit degree.
+    """
+    if sky_probability is None or pixel_area_deg2 is None:
+        return list(getattr(cluster, "sky_area", []) or [])
+
+    probability = np.asarray(sky_probability, dtype=np.float64)
+    if probability.ndim != 1:
+        raise ValueError("sky_probability must be one-dimensional")
+    if not np.isfinite(pixel_area_deg2) or pixel_area_deg2 <= 0.0:
+        raise ValueError("pixel_area_deg2 must be positive and finite")
+    evaluated = np.where(np.isfinite(probability) & (probability > 0.0))[0]
+    if evaluated.size == 0:
+        raise ValueError("sky_probability has no positive finite pixels")
+
+    values = probability[evaluated]
+    values /= float(np.sum(values))
+    order = np.argsort(-values, kind="stable")
+    ranked_indices = evaluated[order]
+    ranked_probability = values[order]
+    cumulative = np.cumsum(ranked_probability, dtype=np.float64)
+
+    legacy = [0.0]
+    for level in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+        pixel_count = int(np.searchsorted(cumulative, level, side="left")) + 1
+        legacy.append(float(np.sqrt(pixel_count * pixel_area_deg2)))
+    legacy.append(0.0)
+
+    if searched_sky_index is not None:
+        positions = np.where(ranked_indices == int(searched_sky_index))[0]
+        if positions.size:
+            position = int(positions[0])
+            legacy[0] = float(np.sqrt((position + 1) * pixel_area_deg2))
+            legacy[10] = float(min(cumulative[position], 1.0))
+
+    cluster.sky_area = legacy
+    return legacy
 
 
 @njit(cache=True, parallel=True)

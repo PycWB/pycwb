@@ -1,5 +1,5 @@
 """
-Dominant Polarization Frame (DPF) construction — JAX implementation.
+Dominant Polarization Frame (DPF) construction — JAX backend kernels.
 
 The DPF rotates the antenna response vectors (F+, Fx) at each pixel into a
 basis where the plus-like axis captures maximum signal power.  This module
@@ -134,10 +134,12 @@ def _dpf_quality_single(Fp_sky, Fx_sky, rms):
 def calculate_dpf_regulator(FP: jnp.ndarray,
                             FX: jnp.ndarray,
                             rms: jnp.ndarray,
+                            n_sky: int,
+                            n_ifo: int,
                             gamma_regulator: float,
                             network_energy_threshold: float,
-                            sky_batch_size: int = 8192,
-                            sky_valid_indices=None) -> float:
+                            sky_valid_indices=None,
+                            sky_batch_size: int = 8192) -> float:
     """Compute the DPF-based energy regulator REG[1].
 
     Scans all sky directions, counts how many have DPF quality above
@@ -153,6 +155,9 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
         Cross antenna patterns for all sky directions.
     rms : jnp.ndarray, shape (n_pix, n_ifo)
         Per-pixel noise-weighted detector response.
+    n_sky, n_ifo : int
+        Expected sky and detector dimensions, shared with the Numba kernel
+        signature.
     gamma_regulator : float
         DPF quality threshold (γ²·2/3).
     network_energy_threshold : float
@@ -171,6 +176,11 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
     """
     import numpy as _np
 
+    if FP.shape != (n_sky, n_ifo) or FX.shape != (n_sky, n_ifo):
+        raise ValueError(
+            "FP and FX dimensions do not match n_sky and n_ifo: "
+            f"FP={FP.shape}, FX={FX.shape}, expected={(n_sky, n_ifo)}"
+        )
     n_sky_total = FP.shape[0]
     if sky_valid_indices is None:
         sky_valid_indices_np = _np.arange(n_sky_total, dtype=_np.int64)

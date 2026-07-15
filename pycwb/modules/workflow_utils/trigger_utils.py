@@ -45,14 +45,15 @@ def create_single_trigger_folder(working_dir: str, trigger_dir: str, job_seg: Wa
 
 def save_trigger(trigger_folder: str, trigger_data: tuple | list,
                  save_cluster: bool = True, save_sky_map: bool = True,
-                 index: bool = None):
+                 index: bool = None,
+                 save_likelihood_features: bool = False):
     if index is None:
         event, cluster, event_skymap_statistics = trigger_data
     else:
         event, cluster, event_skymap_statistics = trigger_data[index]
 
     # Save the event to the trigger folder
-    if save_cluster or save_sky_map:
+    if save_cluster or save_sky_map or save_likelihood_features:
         if not os.path.exists(trigger_folder):
             os.makedirs(trigger_folder)
 
@@ -63,6 +64,23 @@ def save_trigger(trigger_folder: str, trigger_data: tuple | list,
             save_dataclass_to_json(cluster, f"{trigger_folder}/cluster.json")
         if save_sky_map:
             save_dataclass_to_json(event_skymap_statistics, f"{trigger_folder}/skymap_statistics.json")
+        if save_likelihood_features:
+            feature_sidecar = {
+                "features": getattr(event_skymap_statistics, "likelihood_features", None),
+                "feature_status": getattr(
+                    event_skymap_statistics, "likelihood_feature_status", None
+                ),
+                "cut_metrics": getattr(
+                    event_skymap_statistics, "likelihood_cut_metrics", None
+                ),
+                "metadata": getattr(
+                    event_skymap_statistics, "likelihood_metadata", None
+                ),
+            }
+            save_dataclass_to_json(
+                feature_sidecar,
+                f"{trigger_folder}/likelihood_features.json",
+            )
 
     return trigger_folder
 

@@ -365,7 +365,7 @@ class PixelArrays:
     # ================================================================== #
 
     def populate_noise_rms(self, nRMS: list) -> None:
-        """Vectorised replacement for ``_populate_pixel_noise_rms``.
+        """Populate per-detector pixel noise RMS values from whitening maps.
 
         Updates ``self.noise_rms`` in-place from TF noise maps produced by
         the whitening step.  No per-pixel Python loop.

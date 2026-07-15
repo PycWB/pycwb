@@ -1,5 +1,5 @@
 """
-Sky scan — JAX-vectorised search over all sky directions.
+Sky scan — JAX-backend vectorised search over all sky directions.
 
 The sky scan is the computational hot path of the likelihood pipeline.
 This module fuses the per-sky-direction kernels from ``dpf`` and ``sky_stat``
@@ -16,8 +16,8 @@ import jax.numpy as jnp
 import numpy as np
 from functools import partial
 
-from .dpf import compute_dpf
-from .sky_stat import (
+from .jax_dpf import compute_dpf
+from .jax_sky_stat import (
     compute_pixel_energy,
     project_gw_packet,
     orthogonalise_polarisations,
@@ -158,8 +158,8 @@ def find_optimal_sky_localization(n_ifo: int,
                                  netCC: float,
                                  delta_regulator: float,
                                  network_energy_threshold: float,
-                                 sky_batch_size: int = 8192,
-                                 sky_valid_indices: np.ndarray | None = None):
+                                 sky_valid_indices: np.ndarray | None = None,
+                                 sky_batch_size: int = 8192):
     """Find the sky direction that maximises the cross-correlation statistic.
 
     This is the JAX equivalent of the Numba ``find_optimal_sky_localization``.

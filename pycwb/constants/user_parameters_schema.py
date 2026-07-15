@@ -95,10 +95,160 @@ schema = {
             "default": False,
             "cwb": False
         },
+        "save_likelihood_features": {
+            "type": "boolean",
+            "description": (
+                "Save only the lightweight optional likelihood feature/cut sidecar, "
+                "without requiring the full sky-map arrays."
+            ),
+            "default": False,
+            "cwb": False
+        },
+        "likelihood_backend": {
+            "enum": ["numba", "jax"],
+            "description": (
+                "Numerical backend for likelihoodWP. Both choices use the same "
+                "cuts, reconstruction, confidence features, and output flow; only "
+                "the DPF and sky-statistic kernels differ."
+            ),
+            "default": "numba",
+            "cwb": False
+        },
         "plot_sky_map": {
             "type": "boolean",
             "description": "plot sky maps",
             "default": False,
+            "cwb": False
+        },
+        "likelihood_features": {
+            "type": "array",
+            "items": {
+                "enum": [
+                    "sky_area", "sky_shape", "sky_vmf_fit", "sky_sparse_map",
+                    "target_sky_metrics"
+                ]
+            },
+            "uniqueItems": True,
+            "description": (
+                "Optional likelihood-derived outputs. Empty by default for high-volume "
+                "background production. sky_area also populates the compact legacy erA "
+                "10--90% summary; richer values live in the saved sky-map sidecar."
+            ),
+            "default": [],
+            "cwb": False
+        },
+        "likelihood_cuts": {
+            "type": "array",
+            "items": {"enum": ["target_sky_consistency"]},
+            "uniqueItems": True,
+            "description": (
+                "Optional named likelihood selection cuts. Cuts are separate from output "
+                "features and execute at fixed, documented stages."
+            ),
+            "default": [],
+            "cwb": False
+        },
+        "likelihood_feature_failure": {
+            "enum": ["warn", "error"],
+            "description": (
+                "Handling of optional feature failures. Selection-cut failures always raise."
+            ),
+            "default": "warn",
+            "cwb": False
+        },
+        "likelihood_allow_heavy_features": {
+            "type": "boolean",
+            "description": (
+                "Explicit opt-in for future features marked as heavy in the registry."
+            ),
+            "default": False,
+            "cwb": False
+        },
+        "likelihood_sky_levels": {
+            "type": "array",
+            "items": {"type": "number", "exclusiveMinimum": 0.0, "maximum": 1.0},
+            "minItems": 1,
+            "uniqueItems": True,
+            "description": "Credible levels emitted by the optional sky_area feature.",
+            "default": [0.5, 0.9],
+            "cwb": False
+        },
+        "likelihood_sky_temperature": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "description": (
+                "Temperature T in exp((sky_stat-max)/T). The default preserves native "
+                "PycWB behavior; T=4 matches the no-prior cWB rMs=2 transform, but "
+                "coverage still requires injection calibration."
+            ),
+            "default": 1.0,
+            "cwb": False
+        },
+        "likelihood_sky_sparse_level": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "description": "HPD mass requested by the optional sky_sparse_map feature.",
+            "default": 0.99,
+            "cwb": False
+        },
+        "likelihood_sky_sparse_max_pixels": {
+            "type": "integer",
+            "minimum": 1,
+            "description": (
+                "Hard storage cap for sky_sparse_map; truncation and stored mass are reported."
+            ),
+            "default": 2048,
+            "cwb": False
+        },
+        "likelihood_target_region": {
+            "type": ["object", "null"],
+            "description": (
+                "Target sky region, using the same UniformAllSky/Patch/Fixed/Custom "
+                "syntax as sky_mask. This is deliberately independent of sky_mask so a "
+                "target-consistency cut tests the reconstructed region rather than the "
+                "domain that was scanned. Use an explicit coordsys for restricted regions."
+            ),
+            "default": None,
+            "cwb": False
+        },
+        "likelihood_target_rule": {
+            "enum": ["credible_touch", "probability_mass", "delta_sky_stat", "overlap_fraction"],
+            "description": "Decision rule used by target_sky_consistency.",
+            "default": "credible_touch",
+            "cwb": False
+        },
+        "likelihood_target_level": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "description": "HPD credible level used by target-region overlap rules.",
+            "default": 0.9,
+            "cwb": False
+        },
+        "likelihood_target_min_probability": {
+            "type": ["number", "null"],
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "description": "Minimum target-region probability mass for probability_mass.",
+            "default": None,
+            "cwb": False
+        },
+        "likelihood_target_max_delta_sky_stat": {
+            "type": ["number", "null"],
+            "minimum": 0.0,
+            "description": "Maximum loss from the best sky statistic for delta_sky_stat.",
+            "default": None,
+            "cwb": False
+        },
+        "likelihood_target_min_overlap_fraction": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": (
+                "Minimum fraction of HPD pixels inside the target for overlap_fraction."
+            ),
+            "default": 0.0,
             "cwb": False
         },
         "compress_output_json": {

@@ -1,5 +1,5 @@
 """
-Sky-direction statistics kernels — JAX implementation.
+Sky-direction statistics kernels — JAX backend implementation.
 
 These functions compute the per-pixel coherent statistics at a single sky
 direction.  They are designed to be composed and ``vmap``-ped over sky

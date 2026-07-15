@@ -1,10 +1,8 @@
-"""
-pycwb.modules.likelihoodWP — Numba-accelerated coherent likelihood (CPU).
+"""Shared coherent likelihood with selectable Numba and JAX backends.
 
-Computes sky localization (full HEALPix scan), coherent SNR, null energy,
-correlation, and per-cluster detection statistics using per-pixel
-time-delay data and antenna patterns. Uses ``@njit`` + ``prange``
-for CPU-bound inner loops.
+Both backends use one orchestration for sky masks, cuts, reconstruction,
+uncertainty features, metadata, and acceptance. Select numerical kernels with
+the flat ``likelihood_backend`` configuration parameter.
 """
 
 from .likelihood import (

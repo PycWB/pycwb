@@ -636,8 +636,11 @@ class Event:
                 # Convert from TF-domain noise amplitude to strain/rtHz: divide by sqrt(inRate)
                 self.noise.append(float(mean_nrms / np.sqrt(in_rate)))
 
-            # erA: per-IFO sky error region from l_max (placeholder 11-element zeros)
-            self.erA = [list(np.zeros(11)) for _ in range(n_ifo)]
+            # erA is a compact network-level localization summary.  It is
+            # populated only when likelihood_features includes sky_area; keep
+            # the legacy per-IFO repeated layout expected by Trigger.from_event.
+            sky_area = list(cluster.sky_area) if cluster.sky_area else []
+            self.erA = [list(sky_area) for _ in range(n_ifo)] if sky_area else []
 
             # Strain = sqrt(sum(hrss^2))  [C++ takes sqrt at end of loop]
             self.strain = [float(np.sqrt(sum(h ** 2 for h in self.hrss[:n_ifo])))]

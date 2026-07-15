@@ -1,138 +1,49 @@
-"""Thin facade module — public entry points for likelihoodWP.
+"""Public likelihood entry points and flat per-cluster orchestration.
 
-Import the public API from here:
-    from pycwb.modules.likelihoodWP.likelihood import (
-        setup_likelihood, likelihood, likelihood_wrapper,
-        prepare_likelihood_inputs, evaluate_cluster_likelihood,
-        evaluate_fragment_clusters,
-    )
-
-All helper functions have been extracted to phase submodules:
-    - ``likelihood_setup.py``   — prepare_likelihood_inputs
-    - ``pixel_data.py``         — extract_pixel_time_delay_data, ...
-    - ``sky_scan.py``           — scan_sky_for_best_fit (@njit)
-    - ``sky_statistics.py``     — compute_statistics_at_sky_position
-    - ``detection_statistics.py`` — get_likelihood_rejection_reason,
-                                    populate_detection_statistics,
-                                    update_chirp_mass_statistics,
-                                    compute_sky_error_region, ...
-    - ``packet_ops.py``         — avx_noise_ps, avx_packet_ps, packet_norm_numpy, ...
+All stage outputs are ordinary local variables in
+:func:`evaluate_cluster_likelihood`.  The backend boundary is explicit, and no
+mutable pipeline-state object is passed through the scientific flow.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-from pycwb.types.network_cluster import Cluster, FragmentCluster
-from pycwb.types.time_series import TimeSeries
-from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.modules.xtalk.type import XTalk
+from pycwb.types.network_cluster import Cluster, FragmentCluster
+from pycwb.types.time_frequency_map import TimeFrequencyMap
+from pycwb.types.time_series import TimeSeries
 
-# Phase submodule imports
-from .likelihood_setup import (
-    prepare_likelihood_inputs,
-    populate_pixel_noise_from_maps,
-)
-from .pixel_data import extract_pixel_time_delay_data as _extract_pixel_time_delay_data
-from .sky_scan import scan_sky_for_best_fit as _scan_sky_for_best_fit
-from .sky_statistics import compute_statistics_at_sky_position as _compute_statistics_at_sky_position
+from .backends import LikelihoodKernels, get_likelihood_backend
+from .backends.base import SkyGrid
 from .detection_statistics import (
-    get_likelihood_rejection_reason as _get_likelihood_rejection_reason,
-    populate_detection_statistics as _populate_detection_statistics,
-    update_chirp_mass_statistics as _update_chirp_mass_statistics,
-    compute_sky_error_region as _compute_sky_error_region,
+    get_likelihood_rejection_reason,
+    populate_detection_statistics,
+    update_chirp_mass_statistics,
 )
-from .dpf import calculate_dpf as _calculate_dpf
+from .extensions import (
+    LikelihoodExtensionContext,
+    LikelihoodExtensionPlan,
+    apply_legacy_sky_area,
+    attach_extension_outputs,
+    build_sky_probability,
+    resolve_extension_plan,
+    run_likelihood_cuts,
+    run_likelihood_features,
+)
 from .sky_mask import sky_valid_indices_for_cluster
-from .typing import SkyStatistics, SkyMapStatistics
+from .likelihood_setup import prepare_likelihood_inputs
+from .pixel_data import extract_pixel_time_delay_data
+from .typing import SkyMapStatistics, SkyStatistics
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pycwb.config.config import Config
 
 logger = logging.getLogger(__name__)
-
-
-def evaluate_fragment_clusters(
-    config: Config,
-    fragment_clusters: list[FragmentCluster],
-    strains: list[TimeSeries],
-    MRAcatalog: str,
-    nRMS: list[TimeFrequencyMap] | None = None,
-    xtalk: XTalk | None = None,
-) -> list[list[tuple[Cluster, SkyMapStatistics]]]:
-    """
-    Convenience wrapper for interactive / legacy use.
-
-    Internally calls :func:`prepare_likelihood_inputs` once and then calls
-    :func:`evaluate_cluster_likelihood` for every surviving cluster across all lags, avoiding
-    repeated sky-pattern computation and runtime-parameter resolution.
-
-    Parameters
-    ----------
-    config : Config
-        Analysis configuration.
-    fragment_clusters : list[FragmentCluster]
-        One :class:`~pycwb.types.network_cluster.FragmentCluster` per lag —
-        the direct output of
-        :func:`~pycwb.modules.super_cluster_native.super_cluster.supercluster_wrapper`.
-        Clusters with ``cluster_status != 0`` are skipped automatically.
-    strains : list
-        Whitened strain time series (one per IFO); used for sky-pattern
-        computation inside :func:`prepare_likelihood_inputs`.
-    MRAcatalog : str
-        Path to the MRA catalog (cross-talk coefficients).
-    nRMS : list | None
-        Per-IFO TF noise maps from data conditioning.  When provided, each
-        pixel's ``noise_rms`` is populated so physical-unit quantities (hrss,
-        noise) are correct.
-    xtalk : XTalk | None
-        Pre-loaded cross-talk catalog.  When *None* it is loaded from
-        ``MRAcatalog``.
-
-    Returns
-    -------
-    list[list[tuple[Cluster, SkyMapStatistics]]]
-        ``results[lag]`` is a list of ``(result_cluster, sky_stats)`` tuples
-        for every cluster that passed the likelihood veto in that lag.
-        Empty inner lists indicate no accepted clusters for that lag.
-    """
-    timer_start = time.perf_counter()
-
-    strains = [TimeSeries.from_input(s) for s in strains]
-
-    if xtalk is None:
-        xtalk = XTalk.load(MRAcatalog, dump=True)
-
-    likelihood_setup = prepare_likelihood_inputs(config, strains, config.nIFO)
-
-    results = []
-    for fragment_cluster in fragment_clusters:
-        lag_results = []
-        for k, selected_cluster in enumerate(fragment_cluster.clusters):
-            if selected_cluster.cluster_status > 0:
-                continue
-            selected_cluster.cluster_id = k + 1
-            result_cluster, sky_stats = evaluate_cluster_likelihood(
-                config.nIFO, selected_cluster, config,
-                cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
-            )
-            if result_cluster is None or result_cluster.cluster_status != -1:
-                logger.info("likelihood rejected cluster %d (%d pixels)",
-                            k + 1, len(selected_cluster.pixel_arrays))
-                continue
-            logger.info("likelihood accepted cluster %d (%d pixels)",
-                        k + 1, len(result_cluster.pixel_arrays))
-            lag_results.append((result_cluster, sky_stats))
-        results.append(lag_results)
-
-    total_accepted = sum(len(r) for r in results)
-    logger.info("Likelihood wrapper done: %d accepted cluster(s) across %d lag(s)", total_accepted, len(fragment_clusters))
-    logger.info("Likelihood wrapper time: %.2f s", time.perf_counter() - timer_start)
-
-    return results
 
 
 def evaluate_cluster_likelihood(
@@ -146,334 +57,615 @@ def evaluate_cluster_likelihood(
     setup: dict | None = None,
     xtalk: XTalk | None = None,
     supercluster_setup: dict | None = None,
+    backend: str | LikelihoodKernels | None = None,
 ) -> tuple[Cluster | None, SkyMapStatistics | None]:
-    """
-    Evaluate the likelihood for a single cluster.
+    """Resolve inputs and execute one explicit, flat likelihood sequence."""
 
-    When ``setup`` and ``xtalk`` are pre-computed (the normal multi-lag workflow),
-    they are used directly.  For one-off standalone use, pass ``MRAcatalog`` and
-    ``strains`` (or ``supercluster_setup``) and they are built automatically.
-    For multi-cluster / multi-lag processing, prefer :func:`evaluate_fragment_clusters`.
-
-    Parameters
-    ----------
-    nIFO : int
-        Number of interferometers.
-    cluster : Cluster
-        Cluster with ``td_amp`` already set on every pixel
-        (guaranteed by :func:`~pycwb.modules.super_cluster_native.super_cluster.supercluster_single_lag`).
-    config : Config
-        Analysis configuration.
-    MRAcatalog : str or None, optional
-        Path to the MRA catalog; used to load ``xtalk`` when ``xtalk`` is *None*.
-    strains : list or None, optional
-        Whitened strain time series; used to build ``setup`` when ``setup`` is *None*
-        and ``supercluster_setup`` is also *None*.
-    cluster_id : int or None, optional
-        Opaque cluster identifier for logging.
-    nRMS : list or None, optional
-        Per-IFO TF noise maps from data conditioning.  When provided each pixel's
-        ``noise_rms`` is populated so that physical-unit quantities (hrss, noise) are correct.
-    setup : dict or None, optional
-        Pre-computed segment-level inputs from :func:`prepare_likelihood_inputs`.  Built
-        automatically when *None* if ``strains`` or ``supercluster_setup`` is provided.
-    xtalk : XTalk or None, optional
-        Pre-loaded cross-talk catalog.  Loaded from ``MRAcatalog`` automatically when *None*.
-    supercluster_setup : dict or None, optional
-        If provided and ``setup`` is *None*, its sky-pattern arrays are reused to avoid
-        duplicate computation.
-
-    Returns
-    -------
-    tuple[Cluster or None, SkyMapStatistics or None]
-        The updated cluster and full skymap statistics, or ``(None, None)`` if the
-        cluster is rejected.
-    """
+    if config is None:
+        raise ValueError("likelihood(): config is required")
     if xtalk is None:
         if MRAcatalog is None:
             raise ValueError(
                 "likelihood(): xtalk or MRAcatalog must be provided. "
-                "For multi-cluster / multi-lag use, call evaluate_fragment_clusters() instead."
+                "For multi-cluster use, call evaluate_fragment_clusters()."
             )
         xtalk = XTalk.load(MRAcatalog, dump=True)
     if setup is None:
-        input_sky_delay_samples = None
-        input_plus_antenna_patterns = None
-        input_cross_antenna_patterns = None
-        if supercluster_setup is not None:
-            input_sky_delay_samples = supercluster_setup.get("ml_likelihood", supercluster_setup.get("ml"))
-            input_plus_antenna_patterns = supercluster_setup.get("FP_likelihood", supercluster_setup.get("FP"))
-            input_cross_antenna_patterns = supercluster_setup.get("FX_likelihood", supercluster_setup.get("FX"))
-        if strains is None and input_sky_delay_samples is None:
-            raise ValueError(
-                "likelihood(): setup, strains, or supercluster_setup must be provided. "
-                "For multi-cluster / multi-lag use, call evaluate_fragment_clusters() instead."
-            )
-        setup = prepare_likelihood_inputs(
-            config, strains, nIFO,
-            ml=input_sky_delay_samples,
-            FP=input_plus_antenna_patterns,
-            FX=input_cross_antenna_patterns,
-            ml_big=supercluster_setup.get("ml_big_cluster") if supercluster_setup else None,
-            FP_big=supercluster_setup.get("FP_big_cluster") if supercluster_setup else None,
-            FX_big=supercluster_setup.get("FX_big_cluster") if supercluster_setup else None,
-            big_cluster_healpix_order=supercluster_setup.get("big_cluster_healpix_order") if supercluster_setup else None,
+        setup = _prepare_setup(
+            nIFO, config, strains=strains, supercluster_setup=supercluster_setup
         )
-    if config is None:
-        raise ValueError(
-            "likelihood(): config must be provided. Without it, hrss/strain are zero and "
-            "gps_time/central_freq fall back to coarser supercluster estimates."
-        )
-    timer_start = time.perf_counter()
-    stage_timings: dict[str, float] = {}
-    logger.info("-------------------------------------------------------")
-    logger.info("-> Processing cluster-id=%d|pixels=%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
-    logger.info("   ----------------------------------------------------")
 
-    # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
-    # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
-    if nRMS is not None and len(nRMS) == nIFO:
+    backend_choice = backend
+    if backend_choice is None:
+        backend_choice = setup.get(
+            "likelihood_backend",
+            getattr(config, "likelihood_backend", "numba"),
+        )
+    kernels = get_likelihood_backend(backend_choice)
+    n_ifo = nIFO
+
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
+    n_pixels = len(cluster.pixel_arrays)
+    _log_start(kernels.name, cluster_id, n_pixels)
+
+    if nRMS is not None and len(nRMS) == n_ifo:
         cluster.pixel_arrays.populate_noise_rms(nRMS)
 
-    network_energy_threshold = setup["network_energy_threshold"]
-    xgb_rho_mode             = setup["xgb_rho_mode"]
-    gamma_regulator          = setup["gamma_regulator"]
-    delta_regulator          = setup["delta_regulator"]
-    net_rho_threshold        = setup["net_rho_threshold"]
-    netEC_threshold          = setup["netEC_threshold"]
-    netCC                    = setup["netCC"]
-    sky_delay_samples        = setup["ml"]    # legacy key: (nIFO, n_sky)
-    plus_antenna_patterns    = setup["FP_t"]  # (n_sky, nIFO) float32 — already transposed
-    cross_antenna_patterns   = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
-    n_sky                    = setup["n_sky"]
-    sky_valid_indices        = setup.get("sky_valid_indices", np.arange(n_sky, dtype=np.int64))
-    active_phi_geo_arr       = setup.get("phi_geo_arr")
-    active_latitude_arr      = setup.get("latitude_arr")
-    if active_phi_geo_arr is None:
-        active_phi_geo_arr = setup["ra_arr"]
-    if active_latitude_arr is None:
-        active_latitude_arr = setup["dec_arr"]
-
-    # regularization[0] = delta * sqrt(2): amplitude regulator; regularization[1] filled below by DPF scan
-    regularization = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
-    n_pixels = len(cluster.pixel_arrays)
-
-    # --- Big-cluster sky thinning (mirrors C++ network::likelihoodWP bBB logic) ---
-    # C++: bBB = (V > wdmMRA.nRes * csize) → use coarser healpix sky grid in the sky loop.
-    # C++ does NOT truncate pixels — it keeps all pixels and reduces the sky resolution.
-    _precision = int(abs(getattr(config, 'precision', 0) or 0))
-    _csize = _precision % 65536
-    _nres  = int(getattr(config, 'nRES', 1) or 1)
-    _bBB = (_csize > 0 and n_pixels > _nres * _csize
-            and setup.get("ml_big_cluster") is not None)
-    if _bBB:
-        sky_delay_samples = setup["ml_big_cluster"]
-        plus_antenna_patterns = setup["FP_big_cluster_t"]
-        cross_antenna_patterns = setup["FX_big_cluster_t"]
-        n_sky = setup["n_sky_big_cluster"]
-        sky_valid_indices = setup.get("sky_valid_indices_big", np.arange(n_sky, dtype=np.int64))
-        active_phi_geo_arr = setup["phi_geo_arr_big_cluster"]
-        active_latitude_arr = setup["latitude_arr_big_cluster"]
-        logger.info(
-            "Cluster-id=%s is big (%d px > csize_threshold=%d): "
-            "using coarse sky grid (%d directions, healpix order=%s)",
-            cluster_id, n_pixels, _nres * _csize, n_sky,
-            setup.get("big_cluster_healpix_order"),
+    stage_started = time.perf_counter()
+    grid, grid_rejection = _select_sky_grid(
+        config, setup, cluster, cluster_id, n_pixels
+    )
+    timings["sky_grid"] = time.perf_counter() - stage_started
+    if grid_rejection:
+        return _reject(
+            grid_rejection,
+            cluster_id,
+            n_pixels,
+            kernels.name,
+            started,
+            timings,
         )
 
-    # cWB evaluates celestial masks inside the per-cluster sky loop using
-    # gT = cluster_time + segment_start.  Recompute only time-dependent ICRS
-    # masks here; Earth-fixed and all-sky masks retain the setup cache.
-    cluster_mask_indices = sky_valid_indices_for_cluster(
-        setup, cluster, use_big_grid=_bBB
-    )
-    if cluster_mask_indices is not None:
-        sky_valid_indices = np.asarray(cluster_mask_indices, dtype=np.int64)
-    if len(sky_valid_indices) == 0:
-        logger.info("Cluster-id=%s rejected: sky mask selects no grid directions", cluster_id)
-        return None, None
+    extension_plan = setup.get("likelihood_extension_plan")
+    if extension_plan is None:
+        extension_plan = resolve_extension_plan(config)
 
-    # --- Prepare per-cluster inputs ---
-    _t0 = time.perf_counter()
-    cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixel_arrays, True)
-    noise_weights, td_phase0, td_phase90, td_energy = _extract_pixel_time_delay_data(
-        None, nIFO, pixel_arrays=cluster.pixel_arrays
+    stage_started = time.perf_counter()
+    xtalk_lookup, xtalk_coefficients = xtalk.get_xtalk_pixels(
+        cluster.pixel_arrays, True
     )
-    # Reshape to (ndelay, nifo, npix) and cast to float32 for numba; FP/FX already prepared in setup
-    td_phase0 = np.transpose(td_phase0.astype(np.float32), (2, 0, 1))
-    td_phase90 = np.transpose(td_phase90.astype(np.float32), (2, 0, 1))
+    noise_weights, phase0, phase90, _ = extract_pixel_time_delay_data(
+        None, n_ifo, pixel_arrays=cluster.pixel_arrays
+    )
     noise_weights = noise_weights.T.astype(np.float32)
-    stage_timings["data_prep"] = time.perf_counter() - _t0
-
-    # regularization[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
-    _t0 = time.perf_counter()
-    regularization[1] = _calculate_dpf(
-        plus_antenna_patterns, cross_antenna_patterns, noise_weights, n_sky, nIFO,
-        gamma_regulator, network_energy_threshold, sky_valid_indices,
+    td_phase0 = np.transpose(phase0.astype(np.float32), (2, 0, 1))
+    td_phase90 = np.transpose(phase90.astype(np.float32), (2, 0, 1))
+    timings["data_prep"] = time.perf_counter() - stage_started
+    regularization = np.array(
+        [setup["delta_regulator"] * np.sqrt(2.0), 0.0, 0.0],
+        dtype=np.float32,
     )
-    stage_timings["dpf_regulator"] = time.perf_counter() - _t0
-
-    # --- Sky scan: find the optimal sky direction (l_max) ---
-    # Returns a tuple; numba cannot return dataclasses directly
-    _t0 = time.perf_counter()
-    skymap_statistics = _scan_sky_for_best_fit(
-        nIFO, n_pixels, n_sky,
-        plus_antenna_patterns, cross_antenna_patterns, noise_weights,
-        td_phase0, td_phase90, sky_delay_samples, regularization, netCC,
-        delta_regulator, network_energy_threshold, sky_valid_indices,
+    stage_started = time.perf_counter()
+    regularization[1] = kernels.calculate_dpf_regulator(
+        grid.plus_patterns,
+        grid.cross_patterns,
+        noise_weights,
+        grid.size,
+        n_ifo,
+        setup["gamma_regulator"],
+        setup["network_energy_threshold"],
+        grid.valid_indices,
     )
-    skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
-    stage_timings["sky_scan"] = time.perf_counter() - _t0
+    timings["dpf_regulator"] = time.perf_counter() - stage_started
 
+    stage_started = time.perf_counter()
+    sky_scan_result = kernels.scan_sky(
+        n_ifo,
+        n_pixels,
+        grid.size,
+        grid.plus_patterns,
+        grid.cross_patterns,
+        noise_weights,
+        td_phase0,
+        td_phase90,
+        grid.delays,
+        regularization,
+        setup["netCC"],
+        setup["delta_regulator"],
+        setup["network_energy_threshold"],
+        grid.valid_indices,
+    )
+    skymap_statistics = SkyMapStatistics.from_tuple(sky_scan_result)
+    timings["sky_scan"] = time.perf_counter() - stage_started
     if skymap_statistics.sky_stat_max <= 0.0:
-        logger.info("Cluster rejected: non-positive sky_stat_max=%.3f", skymap_statistics.sky_stat_max)
-        stage_timings["total"] = time.perf_counter() - timer_start
-        logger.info("-------------------------------------------------------")
-        logger.info("Total events: %d", 0)
-        logger.info("Total time: %.2f s", stage_timings["total"])
-        logger.info("-------------------------------------------------------")
-        return None, None
+        return _reject(
+            f"non-positive sky_stat_max={skymap_statistics.sky_stat_max:.3f}",
+            cluster_id,
+            n_pixels,
+            kernels.name,
+            started,
+            timings,
+            skymap_statistics,
+        )
 
-    # --- Compute normalised sky probability map (softmax over nSkyStat) ---
-    _t0 = time.perf_counter()
-    _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
-    _sky_stat_shifted = _sky_stat_f64 - _sky_stat_f64.max()
-    _exp_stat = np.exp(_sky_stat_shifted)
-    skymap_statistics.nProbability = (_exp_stat / _exp_stat.sum()).astype(np.float32)
-    stage_timings["sky_probability"] = time.perf_counter() - _t0
-
-    # --- Convert l_max index to (theta, phi) sky angles ---
-    _t0 = time.perf_counter()
-    _healpix_order = setup["healpix_order"]
-    _l_max = int(skymap_statistics.l_max)
-    # cWB theta: co-latitude in degrees [0, 180]; phi: longitude in degrees [0, 360)
-    _theta_rad = float(np.pi / 2.0 - active_latitude_arr[_l_max])
-    _phi_rad = float(active_phi_geo_arr[_l_max])
-    _theta_deg = float(np.clip(np.degrees(_theta_rad), 0.0, 180.0))
-    _phi_deg = float(np.degrees(_phi_rad)) % 360.0
-    stage_timings["sky_coords"] = time.perf_counter() - _t0
-
-    # calculate sky statistics for the cluster at the optimal sky location l_max,
-    # dozens of parameters will be returned in SkyStatistics dataclass
-    _t0 = time.perf_counter()
-    sky_statistics: SkyStatistics = _compute_statistics_at_sky_position(
-        skymap_statistics.l_max, nIFO, n_pixels,
-        plus_antenna_patterns, cross_antenna_patterns, noise_weights,
-        td_phase0, td_phase90, sky_delay_samples, regularization,
-        network_energy_threshold,
-        cluster_xtalk, cluster_xtalk_lookup,
-        xgb_rho_mode=xgb_rho_mode,
+    stage_started = time.perf_counter()
+    sky_statistics = kernels.statistics_at_best_fit(
+        int(skymap_statistics.l_max),
+        n_ifo,
+        n_pixels,
+        grid.plus_patterns,
+        grid.cross_patterns,
+        noise_weights,
+        td_phase0,
+        td_phase90,
+        grid.delays,
+        regularization,
+        setup["network_energy_threshold"],
+        xtalk_coefficients,
+        xtalk_lookup,
+        xgb_rho_mode=setup["xgb_rho_mode"],
     )
-    stage_timings["sky_statistics_at_lmax"] = time.perf_counter() - _t0
+    timings["sky_statistics_at_lmax"] = time.perf_counter() - stage_started
 
-    # --- Threshold cuts — reject cluster if any condition fails ---
-    _t0 = time.perf_counter()
-    selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
-    logger.info("Selected core pixels: %d / %d", selected_core_pixels, n_pixels)
-
-    rejected = _get_likelihood_rejection_reason(
+    stage_started = time.perf_counter()
+    extension_context = _build_extension_context(
+        config,
+        cluster,
+        setup,
+        skymap_statistics,
         sky_statistics,
-        network_energy_threshold,
-        netEC_threshold,
-        net_rho_threshold=net_rho_threshold,
-        xgb_rho_mode=xgb_rho_mode,
+        grid,
     )
-    stage_timings["threshold_cut"] = time.perf_counter() - _t0
-    if rejected:
-        logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
-        logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
-        logger.info("\t <- rejected    ")
-        stage_timings["total"] = time.perf_counter() - timer_start
-        logger.info("-------------------------------------------------------")
-        logger.info("Total events: %d", 0)
-        logger.info("Total time: %.2f s", stage_timings["total"])
-        logger.info("-------------------------------------------------------")
-        return None, None
+    timings["sky_probability"] = time.perf_counter() - stage_started
 
-    # --- Fill detection statistics (rho, netCC, waveform energies, per-pixel data) ---
-    _t0 = time.perf_counter()
-    # Build wdm_list once per cluster here and pass it into populate_detection_statistics
-    # to avoid _create_wdm_set_python being called again inside (~1 s saving).
-    if config is not None:
-        from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
-        _wdm_list = _create_wdm_set_python(config)
+    stage_started = time.perf_counter()
+    standard_rejection = _standard_cut(sky_statistics, n_pixels, setup)
+    timings["threshold_cut"] = time.perf_counter() - stage_started
+    if standard_rejection:
+        return _reject(
+            standard_rejection,
+            cluster_id,
+            n_pixels,
+            kernels.name,
+            started,
+            timings,
+            skymap_statistics,
+        )
+
+    stage_started = time.perf_counter()
+    post_sky = run_likelihood_cuts(
+        extension_context,
+        extension_plan,
+        stage="post_sky",
+    )
+    timings["likelihood_post_sky_cuts"] = (
+        time.perf_counter() - stage_started
+    )
+    cut_metrics = dict(post_sky.metrics)
+    if not post_sky.passed:
+        return _reject(
+            post_sky.reason or "post-sky likelihood cut",
+            cluster_id,
+            n_pixels,
+            kernels.name,
+            started,
+            timings,
+            skymap_statistics,
+        )
+
+    stage_started = time.perf_counter()
+    _reconstruct_and_postprocess(
+        config,
+        cluster,
+        n_ifo,
+        xtalk,
+        setup,
+        xtalk_coefficients,
+        xtalk_lookup,
+        sky_statistics,
+        skymap_statistics,
+    )
+    timings["reconstruction"] = time.perf_counter() - stage_started
+
+    stage_started = time.perf_counter()
+    post_reconstruction = run_likelihood_cuts(
+        extension_context,
+        extension_plan,
+        stage="post_reconstruction",
+    )
+    timings["likelihood_post_reconstruction_cuts"] = (
+        time.perf_counter() - stage_started
+    )
+    cut_metrics.update(post_reconstruction.metrics)
+    if not post_reconstruction.passed:
+        return _reject(
+            post_reconstruction.reason or "post-reconstruction likelihood cut",
+            cluster_id,
+            n_pixels,
+            kernels.name,
+            started,
+            timings,
+            skymap_statistics,
+        )
+
+    stage_started = time.perf_counter()
+    _compute_extensions(extension_context, extension_plan, cut_metrics)
+    timings["likelihood_features"] = time.perf_counter() - stage_started
+
+    stage_started = time.perf_counter()
+    _finalize_cluster(cluster, skymap_statistics, grid, n_ifo)
+    timings["finalize"] = time.perf_counter() - stage_started
+    _log_finish(
+        cluster_id,
+        n_pixels,
+        kernels.name,
+        started,
+        timings,
+        skymap_statistics,
+        detected=True,
+    )
+    return cluster, skymap_statistics
+
+
+def _select_sky_grid(
+    config,
+    setup: dict,
+    cluster: Cluster,
+    cluster_id: int | None,
+    n_pixels: int,
+) -> tuple[SkyGrid | None, str | None]:
+    precision = int(abs(getattr(config, "precision", 0) or 0))
+    cluster_size_limit = precision % 65536
+    n_resolutions = int(getattr(config, "nRES", 1) or 1)
+    use_big_grid = bool(
+        cluster_size_limit > 0
+        and n_pixels > n_resolutions * cluster_size_limit
+        and setup.get("ml_big_cluster") is not None
+    )
+
+    suffix = "_big_cluster" if use_big_grid else ""
+    delays = setup[f"ml{suffix}"]
+    plus = setup[f"FP{suffix}_t"] if suffix else setup["FP_t"]
+    cross = setup[f"FX{suffix}_t"] if suffix else setup["FX_t"]
+    n_sky = int(delays.shape[1])
+
+    if use_big_grid:
+        valid = setup.get("sky_valid_indices_big")
+        phi_geo = setup["phi_geo_arr_big_cluster"]
+        latitude = setup["latitude_arr_big_cluster"]
+        healpix_order = setup.get("big_cluster_healpix_order")
+        logger.info(
+            "Cluster-id=%s is big (%d px): using coarse sky grid (%d directions)",
+            cluster_id,
+            n_pixels,
+            n_sky,
+        )
     else:
-        _wdm_list = None
-    _populate_detection_statistics(
-        sky_statistics, skymap_statistics, cluster=cluster,
-        n_ifo=nIFO, xtalk=xtalk,
-        network_energy_threshold=network_energy_threshold,
-        xgb_rho_mode=xgb_rho_mode,
-        config=config,
-        cluster_xtalk=cluster_xtalk,
-        cluster_xtalk_lookup=cluster_xtalk_lookup,
-        wdm_list=_wdm_list,
+        valid = setup.get("sky_valid_indices")
+        phi_geo = setup.get("phi_geo_arr")
+        latitude = setup.get("latitude_arr")
+        if phi_geo is None:
+            phi_geo = setup["ra_arr"]
+        if latitude is None:
+            latitude = setup["dec_arr"]
+        healpix_order = setup.get("healpix_order")
+
+    if valid is None:
+        valid = np.arange(n_sky, dtype=np.int64)
+    cluster_valid = sky_valid_indices_for_cluster(
+        setup, cluster, use_big_grid=use_big_grid
     )
-    stage_timings["populate_detection_statistics"] = time.perf_counter() - _t0
+    if cluster_valid is not None:
+        valid = cluster_valid
+    valid = np.asarray(valid, dtype=np.int64)
+    if valid.size == 0:
+        return None, "sky mask selects no grid directions"
 
-    # --- Post-processing: chirp mass and error region ---
-    _t0 = time.perf_counter()
-    pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
-    _update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
-    stage_timings["update_chirp_mass_statistics"] = time.perf_counter() - _t0
+    grid = SkyGrid(
+        delays=np.asarray(delays),
+        plus_patterns=np.asarray(plus),
+        cross_patterns=np.asarray(cross),
+        valid_indices=valid,
+        phi_geo=np.asarray(phi_geo),
+        latitude=np.asarray(latitude),
+        healpix_order=healpix_order,
+    )
+    return grid, None
 
-    _t0 = time.perf_counter()
-    _compute_sky_error_region(cluster)
-    stage_timings["compute_sky_error_region"] = time.perf_counter() - _t0
 
-    # --- Store sky localisation metadata ---
-    _t0 = time.perf_counter()
-    cluster.cluster_meta.l_max = _l_max
-    cluster.cluster_meta.theta = _theta_deg
-    cluster.cluster_meta.phi = _phi_deg
-    # Fall back to supercluster estimates if populate_detection_statistics did not set these
+def _build_extension_context(
+    config,
+    cluster: Cluster,
+    setup: dict,
+    skymap_statistics: SkyMapStatistics,
+    sky_statistics: SkyStatistics,
+    grid: SkyGrid,
+) -> LikelihoodExtensionContext:
+    context = LikelihoodExtensionContext(
+        config=config,
+        cluster=cluster,
+        setup=setup,
+        skymap_statistics=skymap_statistics,
+        sky_statistics=sky_statistics,
+        sky_valid_indices=grid.valid_indices,
+        phi_geo_arr=grid.phi_geo,
+        latitude_arr=grid.latitude,
+        healpix_order=grid.healpix_order,
+    )
+    build_sky_probability(context)
+    return context
+
+
+def _standard_cut(
+    sky_statistics: SkyStatistics,
+    n_pixels: int,
+    setup: dict,
+) -> str | None:
+    selected = int(
+        np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0)
+    )
+    logger.info("Selected core pixels: %d / %d", selected, n_pixels)
+    return get_likelihood_rejection_reason(
+        sky_statistics,
+        setup["network_energy_threshold"],
+        setup["netEC_threshold"],
+        net_rho_threshold=setup["net_rho_threshold"],
+        xgb_rho_mode=setup["xgb_rho_mode"],
+    )
+
+
+def _reconstruct_and_postprocess(
+    config,
+    cluster: Cluster,
+    n_ifo: int,
+    xtalk: XTalk,
+    setup: dict,
+    xtalk_coefficients: np.ndarray,
+    xtalk_lookup: np.ndarray,
+    sky_statistics: SkyStatistics,
+    skymap_statistics: SkyMapStatistics,
+) -> None:
+    from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
+
+    wdm_list = _create_wdm_set_python(config)
+    populate_detection_statistics(
+        sky_statistics,
+        skymap_statistics,
+        cluster=cluster,
+        n_ifo=n_ifo,
+        xtalk=xtalk,
+        network_energy_threshold=setup["network_energy_threshold"],
+        xgb_rho_mode=setup["xgb_rho_mode"],
+        config=config,
+        cluster_xtalk=xtalk_coefficients,
+        cluster_xtalk_lookup=xtalk_lookup,
+        wdm_list=wdm_list,
+    )
+    update_chirp_mass_statistics(
+        cluster,
+        xgb_rho_mode=setup["xgb_rho_mode"],
+        pat0=getattr(config, "pattern", 10) == 0,
+    )
+
+
+def _compute_extensions(
+    context: LikelihoodExtensionContext,
+    plan: LikelihoodExtensionPlan,
+    cut_metrics: dict,
+) -> None:
+    features, feature_status = run_likelihood_features(context, plan)
+    if feature_status.get("sky_area", {}).get("ok", False):
+        apply_legacy_sky_area(context, plan)
+    attach_extension_outputs(
+        context,
+        features=features,
+        feature_status=feature_status,
+        cut_metrics=cut_metrics,
+    )
+
+
+def _finalize_cluster(
+    cluster: Cluster,
+    skymap_statistics: SkyMapStatistics,
+    grid: SkyGrid,
+    n_ifo: int,
+) -> None:
+    sky_index = int(skymap_statistics.l_max)
+    theta = np.pi / 2.0 - grid.latitude[sky_index]
+    phi = grid.phi_geo[sky_index]
+
+    cluster.cluster_meta.l_max = sky_index
+    cluster.cluster_meta.theta = float(np.clip(np.degrees(theta), 0.0, 180.0))
+    cluster.cluster_meta.phi = float(np.degrees(phi)) % 360.0
     if cluster.cluster_meta.c_time == 0.0:
         cluster.cluster_meta.c_time = cluster.cluster_time
     if cluster.cluster_meta.c_freq == 0.0:
         cluster.cluster_meta.c_freq = cluster.cluster_freq
-    # Time-of-flight delays at l_max per IFO — used by getMRAwaveform for ToF correction
-    cluster.sky_time_delay = [float(sky_delay_samples[i, _l_max]) for i in range(nIFO)]
-    stage_timings["sky_metadata"] = time.perf_counter() - _t0
-
-    # Mark accepted (mirrors C++ sCuts[id-1] = -1)
+    cluster.sky_time_delay = [
+        float(grid.delays[detector, sky_index]) for detector in range(n_ifo)
+    ]
     cluster.cluster_status = -1
 
-    detected = cluster.cluster_status == -1
-    logger.info("   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
-    if detected:
-        logger.info("\t -> SELECTED !!!")
-    else:
-        logger.info("\t <- rejected    ")
 
-    stage_timings["total"] = time.perf_counter() - timer_start
+def _log_start(
+    backend_name: str,
+    cluster_id: int | None,
+    n_pixels: int,
+) -> None:
     logger.info("-------------------------------------------------------")
-    logger.info("Total events: %d", 1 if detected else 0)
-    logger.info("Total time: %.2f s", stage_timings["total"])
-    logger.info("Stage timings (CPU):")
-    for _stage, _t in stage_timings.items():
-        if _stage != "total":
-            logger.info("  %-30s %.4f s  (%5.1f%%)", _stage, _t,
-                        100.0 * _t / stage_timings["total"] if stage_timings["total"] > 0 else 0)
+    logger.info(
+        "-> [%s] Processing cluster-id=%d|pixels=%d",
+        backend_name,
+        int(cluster_id) if cluster_id is not None else -1,
+        n_pixels,
+    )
+    logger.info("   ----------------------------------------------------")
+
+
+def _reject(
+    reason: str,
+    cluster_id: int | None,
+    n_pixels: int,
+    backend_name: str,
+    started: float,
+    timings: dict[str, float],
+    skymap_statistics: SkyMapStatistics | None = None,
+) -> tuple[None, None]:
+    logger.info("Cluster-id=%s rejected: %s", cluster_id, reason)
+    _log_finish(
+        cluster_id,
+        n_pixels,
+        backend_name,
+        started,
+        timings,
+        skymap_statistics,
+        detected=False,
+    )
+    return None, None
+
+
+def _log_finish(
+    cluster_id: int | None,
+    n_pixels: int,
+    backend_name: str,
+    started: float,
+    timings: dict[str, float],
+    skymap_statistics: SkyMapStatistics | None,
+    *,
+    detected: bool,
+) -> None:
+    timings["total"] = time.perf_counter() - started
+    logger.info(
+        "   cluster-id|pixels: %5d|%d",
+        int(cluster_id) if cluster_id is not None else -1,
+        n_pixels,
+    )
+    logger.info("\t -> SELECTED !!!" if detected else "\t <- rejected")
+    logger.info("Total events: %d", int(detected))
+    logger.info("Total time: %.2f s", timings["total"])
+    logger.info("Stage timings (%s):", backend_name)
+    for stage, elapsed in timings.items():
+        if stage != "total":
+            fraction = (
+                100.0 * elapsed / timings["total"]
+                if timings["total"] > 0
+                else 0.0
+            )
+            logger.info("  %-34s %.4f s  (%5.1f%%)", stage, elapsed, fraction)
     logger.info("-------------------------------------------------------")
 
-    # Attach stage timings to skymap_statistics for benchmark collection
-    skymap_statistics.stage_timings = stage_timings
+    if skymap_statistics is not None:
+        skymap_statistics.stage_timings = dict(timings)
+        skymap_statistics.likelihood_backend = backend_name
+        if skymap_statistics.likelihood_metadata is not None:
+            skymap_statistics.likelihood_metadata.setdefault(
+                "likelihood_backend", backend_name
+            )
 
-    return cluster, skymap_statistics
+
+def evaluate_fragment_clusters(
+    config: Config,
+    fragment_clusters: list[FragmentCluster],
+    strains: list[TimeSeries],
+    MRAcatalog: str,
+    nRMS: list[TimeFrequencyMap] | None = None,
+    xtalk: XTalk | None = None,
+    backend: str | LikelihoodKernels | None = None,
+) -> list[list[tuple[Cluster, SkyMapStatistics]]]:
+    """Evaluate all surviving clusters using one setup and one backend."""
+
+    started = time.perf_counter()
+    strains = [TimeSeries.from_input(strain) for strain in strains]
+    if xtalk is None:
+        xtalk = XTalk.load(MRAcatalog, dump=True)
+
+    setup = prepare_likelihood_inputs(config, strains, config.nIFO)
+    backend_choice = backend or setup["likelihood_backend"]
+    kernels = get_likelihood_backend(backend_choice)
+
+    results: list[list[tuple[Cluster, SkyMapStatistics]]] = []
+    for fragment_cluster in fragment_clusters:
+        lag_results: list[tuple[Cluster, SkyMapStatistics]] = []
+        for index, selected_cluster in enumerate(fragment_cluster.clusters):
+            if selected_cluster.cluster_status > 0:
+                continue
+            cluster_id = index + 1
+            selected_cluster.cluster_id = cluster_id
+            result_cluster, sky_stats = evaluate_cluster_likelihood(
+                config.nIFO,
+                selected_cluster,
+                config,
+                cluster_id=cluster_id,
+                nRMS=nRMS,
+                setup=setup,
+                xtalk=xtalk,
+                backend=kernels,
+            )
+            if result_cluster is None or result_cluster.cluster_status != -1:
+                logger.info(
+                    "likelihood rejected cluster %d (%d pixels)",
+                    cluster_id,
+                    len(selected_cluster.pixel_arrays),
+                )
+                continue
+            logger.info(
+                "likelihood accepted cluster %d (%d pixels)",
+                cluster_id,
+                len(result_cluster.pixel_arrays),
+            )
+            lag_results.append((result_cluster, sky_stats))
+        results.append(lag_results)
+
+    total_accepted = sum(len(lag) for lag in results)
+    logger.info(
+        "Likelihood wrapper (%s) done: %d accepted across %d lag(s) in %.2f s",
+        kernels.name,
+        total_accepted,
+        len(fragment_clusters),
+        time.perf_counter() - started,
+    )
+    return results
 
 
-# ---------------------------------------------------------------------------
-# Friendly aliases for researcher readability
-# ---------------------------------------------------------------------------
+def _prepare_setup(
+    n_ifo: int,
+    config: Config,
+    *,
+    strains: list[TimeSeries] | None,
+    supercluster_setup: dict | None,
+) -> dict:
+    delays = plus = cross = None
+    if supercluster_setup is not None:
+        delays = supercluster_setup.get(
+            "ml_likelihood", supercluster_setup.get("ml")
+        )
+        plus = supercluster_setup.get(
+            "FP_likelihood", supercluster_setup.get("FP")
+        )
+        cross = supercluster_setup.get(
+            "FX_likelihood", supercluster_setup.get("FX")
+        )
+    if strains is None and delays is None:
+        raise ValueError(
+            "likelihood(): setup, strains, or supercluster_setup must be provided"
+        )
+    return prepare_likelihood_inputs(
+        config,
+        strains,
+        n_ifo,
+        ml=delays,
+        FP=plus,
+        FX=cross,
+        ml_big=(
+            supercluster_setup.get("ml_big_cluster")
+            if supercluster_setup else None
+        ),
+        FP_big=(
+            supercluster_setup.get("FP_big_cluster")
+            if supercluster_setup else None
+        ),
+        FX_big=(
+            supercluster_setup.get("FX_big_cluster")
+            if supercluster_setup else None
+        ),
+        big_cluster_healpix_order=(
+            supercluster_setup.get("big_cluster_healpix_order")
+            if supercluster_setup else None
+        ),
+    )
 
+
+# Stable public aliases retained for existing callers.
 setup_likelihood = prepare_likelihood_inputs
 likelihood = evaluate_cluster_likelihood
 likelihood_wrapper = evaluate_fragment_clusters
-_populate_pixel_noise_rms = populate_pixel_noise_from_maps
 
-# Public API surface for the facade
 __all__ = [
-    "setup_likelihood", "likelihood", "likelihood_wrapper",
+    "setup_likelihood",
+    "likelihood",
+    "likelihood_wrapper",
     "prepare_likelihood_inputs",
-    "evaluate_cluster_likelihood", "evaluate_fragment_clusters",
+    "evaluate_cluster_likelihood",
+    "evaluate_fragment_clusters",
 ]

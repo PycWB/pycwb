@@ -2,80 +2,20 @@
 
 Provides :func:`prepare_likelihood_inputs` which computes all job-segment-level
 (lag/cluster-independent) inputs for the likelihood pipeline.
-Also includes :func:`populate_pixel_noise_from_maps` for per-pixel noise
-initialization.
-
-Legacy aliases ``setup_likelihood`` and ``_populate_pixel_noise_rms`` remain
-available.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 import numpy as np
 from pycwb.config.config import Config
-from pycwb.types.network_pixel import Pixel
 from pycwb.types.time_series import TimeSeries
-from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.detector import _build_sky_directions
 from .pixel_data import build_sky_delay_and_antenna_patterns
 from .sky_mask import compute_sky_valid_indices
+from .backends import normalize_likelihood_backend
 
 logger = logging.getLogger(__name__)
-
-def populate_pixel_noise_from_maps(pixels: list[Pixel], nRMS: list[TimeFrequencyMap]) -> None:
-    """
-    Populate each ``pixel.data[i].noise_rms`` from the per-IFO TF noise maps.
-
-    The nRMS maps come from the highest-resolution whitening step.  For pixels at
-    other resolutions the frequency bin is scaled proportionally to the nRMS grid.
-
-    Parameters
-    ----------
-    pixels : list[Pixel]
-        Cluster pixels.
-    nRMS : list[TimeFrequencyMap]
-        One TF noise map per IFO from whitening_python.  ``data`` shape is
-        ``(n_freq_bins, n_time_bins)`` where n_freq_bins covers [0, fNyq].
-    """
-    n_ifo = len(nRMS)
-    # Precompute nRMS data arrays once
-    nrms_data = []
-    nrms_shapes = []
-    for i in range(n_ifo):
-        arr = np.asarray(nRMS[i].data, dtype=np.float64)
-        nrms_data.append(arr)
-        nrms_shapes.append(arr.shape)  # (n_freq, n_time)
-
-    for pixel in pixels:
-        freq_bin = int(pixel.frequency)
-        n_freq_pix = int(pixel.layers)  # number of frequency bins at this resolution
-        # Derive time bin from composite pixel.time = time_idx * n_freq + freq_bin
-        if n_freq_pix > 0:
-            time_bin_pix = int(pixel.time) // n_freq_pix
-        else:
-            time_bin_pix = 0
-
-        for i in range(n_ifo):
-            try:
-                nf, nt = nrms_shapes[i]
-                # Map pixel freq_bin (at resolution n_freq_pix) to nRMS freq bin
-                if n_freq_pix > 0 and nf > 0:
-                    fb = int(round(freq_bin * nf / n_freq_pix))
-                    fb = min(max(fb, 0), nf - 1)
-                else:
-                    fb = 0
-                # Map time bin 
-                tb = min(time_bin_pix, nt - 1) if nt > 0 else 0
-                val = float(np.abs(nrms_data[i][fb, tb]))
-                if val > 0.0:
-                    pixel.data[i].noise_rms = val
-            except Exception:  # noqa: BLE001
-                logger.debug(
-                    "Failed to populate noise_rms for pixel at freq_bin=%d, ifo=%d",
-                    freq_bin, i, exc_info=True
-                )
 
 
 def prepare_likelihood_inputs(
@@ -125,11 +65,18 @@ def prepare_likelihood_inputs(
         Keys: ``network_energy_threshold``, ``gamma_regulator``,
         ``delta_regulator``, ``net_rho_threshold``, ``netEC_threshold``, ``netCC``, ``ml``, ``FP``,
         ``FX``, ``FP_t``, ``FX_t``, ``n_sky``, ``healpix_order``, ``ra_arr``,
-        ``dec_arr``.
+        ``dec_arr``, ``likelihood_backend``, and ``likelihood_extension_plan``.
     """
     n_detectors = nIFO
     if config is None:
         raise ValueError("config is required for pure-Python likelihood")
+    # Resolve names once per segment setup rather than repeating registry
+    # validation for every one of potentially millions of clusters.
+    from .extensions import resolve_extension_plan
+    likelihood_extension_plan = resolve_extension_plan(config)
+    likelihood_backend = normalize_likelihood_backend(
+        getattr(config, "likelihood_backend", "numba")
+    )
     acor = float(getattr(config, "Acore"))
     gamma = float(getattr(config, "gamma", 0.0))
     delta = float(getattr(config, "delta", 0.0))
@@ -226,6 +173,8 @@ def prepare_likelihood_inputs(
         "dec_arr": latitude_arr,
         "sky_mask_config": _sky_mask_config,
         "segment_start_gps": t_ref,
+        "likelihood_extension_plan": likelihood_extension_plan,
+        "likelihood_backend": likelihood_backend,
         "sky_valid_indices": sky_valid_indices,
         "ml_big_cluster": sky_delay_samples_big,
         "FP_big_cluster_t": plus_antenna_patterns_big_t,
@@ -239,10 +188,8 @@ def prepare_likelihood_inputs(
 
 
 
-# Legacy aliases
+# Stable public alias.
 setup_likelihood = prepare_likelihood_inputs
-_populate_pixel_noise_rms = populate_pixel_noise_from_maps
-_populate_pixel_noise_from_maps = populate_pixel_noise_from_maps
 
 __all__ = [
     "setup_likelihood",

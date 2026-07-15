@@ -5,8 +5,6 @@ These tests lock down the public API and friendly aliases so that the split
 and after the refactor.
 """
 
-import pytest
-import numpy as np
 import importlib
 import typing
 
@@ -54,6 +52,13 @@ def test_likelihood_facade_has_bounded_public_surface():
         "evaluate_cluster_likelihood", "evaluate_fragment_clusters",
     ]
     assert not hasattr(facade, "calculate_dpf")
+    assert not hasattr(facade, "run_cluster_likelihood")
+    assert not hasattr(facade, "_time_call")
+
+
+def test_retired_gpu_package_is_absent():
+    """JAX is a backend of likelihoodWP, not a second likelihood package."""
+    assert importlib.util.find_spec("pycwb.modules.likelihoodWPGPU") is None
 
 
 def test_phase_module_star_exports_exclude_private_helpers():
@@ -74,22 +79,12 @@ def test_runtime_type_hints_resolve_for_public_functions():
         pixel_data.load_data_from_pixels,
         pixel_data.load_data_from_ifo,
         likelihood_setup.setup_likelihood,
-        likelihood_setup._populate_pixel_noise_rms,
         detection_statistics.fill_detection_statistic,
         detection_statistics.threshold_cut,
     ]
 
     for fn in functions:
         assert typing.get_type_hints(fn)
-
-
-def test_legacy_utils_shim_exports_packet_ops():
-    """Old likelihoodWP.utils imports remain available during the shim period."""
-    from pycwb.modules.likelihoodWP.packet_ops import avx_packet_ps as packet_avx_packet_ps
-    from pycwb.modules.likelihoodWP.utils import avx_packet_ps, build_wavelet_packet
-
-    assert avx_packet_ps is packet_avx_packet_ps
-    assert build_wavelet_packet is avx_packet_ps
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +133,6 @@ def test_packet_alias_identity():
 
 def test_likelihood_helper_alias_identity():
     """Phase helper aliases inside likelihood.py match legacy names."""
-    from pycwb.modules.likelihoodWP.likelihood_setup import (
-        _populate_pixel_noise_rms, _populate_pixel_noise_from_maps,
-    )
     from pycwb.modules.likelihoodWP.pixel_data import (
         load_data_from_pixels, extract_pixel_time_delay_data,
         load_data_from_ifo, build_sky_delay_and_antenna_patterns,
@@ -168,7 +160,6 @@ def test_likelihood_helper_alias_identity():
     assert populate_detection_statistics is fill_detection_statistic
     assert update_chirp_mass_statistics is get_chirp_mass
     assert compute_sky_error_region is get_error_region
-    assert _populate_pixel_noise_from_maps is _populate_pixel_noise_rms
     assert _extract_pixel_array_time_delay_data is _load_data_from_pixel_arrays
     assert _count_chirp_track_overlaps_numba is _hough_count_overlaps_numba
     assert _fit_chirp_track_candidates_numba is _fine_search_numba

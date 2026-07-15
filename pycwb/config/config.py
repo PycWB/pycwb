@@ -127,6 +127,7 @@ class Config:
     parallel_lag_workers: int = 1
     parallel_lag_inner_threads: Optional[int] = None
     max_energy_backend: str = "jax"
+    likelihood_backend: str = "numba"
     analyze_injection_only: bool = False
     injection_padding: float = 1.0
     WDM_beta_order: Optional[int] = None
@@ -139,6 +140,23 @@ class Config:
     segEdge: Optional[float] = None
     segMLS: Optional[float] = None
     xgb_rho_mode: bool = False
+    save_likelihood_features: bool = False
+    # Optional likelihood extensions.  Empty defaults keep the production
+    # background path free of HPD sorting and added catalog columns.
+    likelihood_features: List[str] = field(default_factory=list)
+    likelihood_cuts: List[str] = field(default_factory=list)
+    likelihood_feature_failure: str = "warn"
+    likelihood_allow_heavy_features: bool = False
+    likelihood_sky_levels: List[float] = field(default_factory=lambda: [0.5, 0.9])
+    likelihood_sky_temperature: float = 1.0
+    likelihood_sky_sparse_level: float = 0.99
+    likelihood_sky_sparse_max_pixels: int = 2048
+    likelihood_target_region: Optional[Dict[str, Any]] = None
+    likelihood_target_rule: str = "credible_touch"
+    likelihood_target_level: float = 0.9
+    likelihood_target_min_probability: Optional[float] = None
+    likelihood_target_max_delta_sky_stat: Optional[float] = None
+    likelihood_target_min_overlap_fraction: float = 0.0
 
     def load_from_yaml(self, file_name, schema=None):
         """
@@ -191,6 +209,40 @@ class Config:
         validate_user_sky_config(
             params.get("sky_mask"), context="sky_mask", default_coordsys="geo"
         )
+        validate_user_sky_config(
+            params.get("likelihood_target_region"),
+            context="likelihood_target_region",
+            default_coordsys="geo",
+        )
+        target_consumers = set(params.get("likelihood_features") or ()) & {
+            "target_sky_metrics"
+        }
+        target_consumers.update(
+            set(params.get("likelihood_cuts") or ()) & {"target_sky_consistency"}
+        )
+        if target_consumers and not params.get("likelihood_target_region"):
+            raise ValueError(
+                "likelihood_target_region is required when enabling "
+                f"{sorted(target_consumers)}"
+            )
+        if (
+            params.get("likelihood_target_rule") == "delta_sky_stat"
+            and "target_sky_consistency" in (params.get("likelihood_cuts") or ())
+            and params.get("likelihood_target_max_delta_sky_stat") is None
+        ):
+            raise ValueError(
+                "likelihood_target_max_delta_sky_stat is required when "
+                "likelihood_target_rule is delta_sky_stat"
+            )
+        if (
+            params.get("likelihood_target_rule") == "probability_mass"
+            and "target_sky_consistency" in (params.get("likelihood_cuts") or ())
+            and params.get("likelihood_target_min_probability") is None
+        ):
+            raise ValueError(
+                "likelihood_target_min_probability is required when "
+                "likelihood_target_rule is probability_mass"
+            )
         injection_config = params.get("injection") or {}
         validate_user_sky_config(
             injection_config.get("sky_distribution"),

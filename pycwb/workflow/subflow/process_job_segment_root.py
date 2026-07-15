@@ -185,7 +185,10 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 trigger_folders.append(trigger_folder)
                 
                 save_trigger(trigger_folder=trigger_folder, trigger_data=trigger,
-                            save_cluster=config.save_cluster, save_sky_map=config.save_sky_map)
+                            save_cluster=config.save_cluster, save_sky_map=config.save_sky_map,
+                            save_likelihood_features=getattr(
+                                config, "save_likelihood_features", False
+                            ))
 
             logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 

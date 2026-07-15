@@ -1,95 +1,12 @@
 """
-Packet operations and utility kernels — JAX implementation.
+Packet operations and utility kernels — JAX backend implementation.
 
 These functions operate at a single sky direction (the best-fit l_max) to
-compute detection-level statistics: packet rotation, amplitude normalisation,
-noise correction, and xtalk-convolved energy sums.
-
-JAX equivalents of the functions in ``likelihoodWP/utils.py``.
+compute detection-level statistics: amplitude normalisation, noise correction,
+and xtalk-convolved energy sums.
 """
 
-import jax
-import jax.numpy as jnp
 import numpy as np
-from functools import partial
-
-
-# ---------------------------------------------------------------------------
-# Packet rotation and normalisation (avx_packet_ps equivalent)
-# ---------------------------------------------------------------------------
-
-@partial(jax.jit, static_argnames=())
-def compute_packet_rotation(v00: jnp.ndarray,
-                            v90: jnp.ndarray,
-                            mask: jnp.ndarray) -> dict:
-    """Rotate data into principal-axis frame and compute per-IFO amplitudes.
-
-    JAX equivalent of ``avx_packet_ps``.
-
-    Parameters
-    ----------
-    v00, v90 : shape (n_ifo, n_pix)
-    mask : shape (n_pix,) — pixel mask (>0 active)
-
-    Returns
-    -------
-    dict with keys:
-        Ep       — total packet energy / 2 (scalar)
-        v00_rot  — rotated + normalised v00, shape (n_ifo, n_pix)
-        v90_rot  — rotated + normalised v90, shape (n_ifo, n_pix)
-        energy   — per-IFO packet energy, shape (n_ifo,)
-        sin_rot  — per-IFO rotation sin, shape (n_ifo,)
-        cos_rot  — per-IFO rotation cos, shape (n_ifo,)
-        amp_a    — per-IFO first component amplitude, shape (n_ifo,)
-        amp_A    — per-IFO second component amplitude, shape (n_ifo,)
-    """
-    EPS = jnp.float32(1e-4)
-
-    mk = jnp.where(mask > 0, jnp.float32(1.0), jnp.float32(0.0))  # (n_pix,)
-    mk_2d = mk[jnp.newaxis, :]  # (1, n_pix)
-
-    # Per-IFO sums over masked pixels
-    aa = jnp.sum(mk_2d * v00 * v00, axis=1)  # (n_ifo,)
-    AA = jnp.sum(mk_2d * v90 * v90, axis=1)  # (n_ifo,)
-    aA = jnp.sum(mk_2d * v00 * v90, axis=1)  # (n_ifo,)
-
-    sin_2p = 2.0 * aA
-    cos_2p = aa - AA
-    total_e = aa + AA + EPS
-    norm_2p = jnp.sqrt(cos_2p ** 2 + sin_2p ** 2)
-
-    amp_a = jnp.sqrt((total_e + norm_2p) / 2.0)  # first component amplitude
-    amp_A = jnp.sqrt(jnp.abs((total_e - norm_2p) / 2.0))  # second component
-
-    cos_2p_n = cos_2p / (norm_2p + EPS)
-    sign = jnp.where(sin_2p > 0, jnp.float32(1.0), jnp.float32(-1.0))
-    sin_rot = jnp.sqrt((1.0 - cos_2p_n) / 2.0)
-    cos_rot = jnp.sqrt((1.0 + cos_2p_n) / 2.0) * sign
-
-    energy = (amp_a + amp_A) ** 2 / 2.0
-    Ep = jnp.sum(energy) / 2.0
-
-    # Inverse amplitudes for normalisation
-    inv_a = 1.0 / (amp_a + EPS)  # (n_ifo,)
-    inv_A = 1.0 / (amp_A + EPS)
-
-    # Rotate and normalise
-    # _a = v00·cos + v90·sin,  _A = v90·cos - v00·sin
-    v00_rot_raw = v00 * cos_rot[:, jnp.newaxis] + v90 * sin_rot[:, jnp.newaxis]
-    v90_rot_raw = v90 * cos_rot[:, jnp.newaxis] - v00 * sin_rot[:, jnp.newaxis]
-    v00_rot = mk_2d * v00_rot_raw * inv_a[:, jnp.newaxis]
-    v90_rot = mk_2d * v90_rot_raw * inv_A[:, jnp.newaxis]
-
-    return {
-        "Ep": Ep,
-        "v00_rot": v00_rot,
-        "v90_rot": v90_rot,
-        "energy": energy,
-        "sin_rot": sin_rot,
-        "cos_rot": cos_rot,
-        "amp_a": amp_a,
-        "amp_A": amp_A,
-    }
 
 
 # ---------------------------------------------------------------------------

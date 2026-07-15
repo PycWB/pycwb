@@ -231,11 +231,14 @@ class Trigger:
     """Estimated inclination angle  (legacy ``iota[0]``)."""
 
     sky_error_regions: list[float] = field(default_factory=list)
-    """Sky credible interval areas (sqrt of area in sr²): 11 entries.
+    """Compact cWB-compatible sky-localization summary: 11 entries.
 
-    * ``sky_error_regions[0]``: sqrt(area) enclosing injected position (simulation only).
-    * ``sky_error_regions[1..9]``: 10 %, 20 %, …, 90 % credible regions.
-    * ``sky_error_regions[10]``: probability at injected position (simulation only).
+    Values 0--9 are square roots of areas measured in square degrees, so their
+    numerical unit is degrees.  Entry 10 is a dimensionless credible level.
+
+    * ``sky_error_regions[0]``: sqrt(searched area) for a target/injection, when available.
+    * ``sky_error_regions[1..9]``: sqrt(area) of the 10 %, 20 %, …, 90 % HPD regions.
+    * ``sky_error_regions[10]``: target/injection credible level, when available.
 
     (legacy ``erA[0..10]``)
     """

@@ -1,4 +1,4 @@
 name: likelihoodWP
 author: pycWB
-description: Native likelihood module (thin facade + 7 phase submodules — sky scan, statistics, detection stats, packet ops, DPF)
+description: Shared coherent-likelihood flow with selectable Numba and JAX numerical backends, optional confidence features, and targeted cuts
 dependencies: ["numpy", "numba", "jax", "scipy", "@pycwb.types", "@pycwb.config", "@xtalk", "@reconstruction"]

@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 def test_gpu_dpf_regulator_uses_valid_sky_indices(monkeypatch):
     """The GPU DPF regulator should count only unmasked sky directions."""
-    from pycwb.modules.likelihoodWPGPU import dpf as gpu_dpf
+    from pycwb.modules.likelihoodWP.backends import jax_dpf as gpu_dpf
 
     def fake_dpf_quality_single(fp_sky, fx_sky, rms):
         return fp_sky[0]
@@ -28,6 +28,8 @@ def test_gpu_dpf_regulator_uses_valid_sky_indices(monkeypatch):
 
     regulator = gpu_dpf.calculate_dpf_regulator(
         fp, fx, rms,
+        n_sky=5,
+        n_ifo=1,
         gamma_regulator=2.0,
         network_energy_threshold=1.0,
         sky_batch_size=1,
@@ -39,7 +41,7 @@ def test_gpu_dpf_regulator_uses_valid_sky_indices(monkeypatch):
 
 def test_gpu_sky_scan_uses_valid_sky_indices(monkeypatch):
     """Masked sky directions must not win l_max or populate skymap stats."""
-    from pycwb.modules.likelihoodWPGPU import sky_scan
+    from pycwb.modules.likelihoodWP.backends import jax_sky_scan as sky_scan
 
     def fake_sky_direction_statistics(
         fp_sky, fx_sky, rms, v00, v90, REG, netCC,

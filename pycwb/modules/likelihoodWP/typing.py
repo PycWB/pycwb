@@ -91,7 +91,14 @@ class SkyMapStatistics:
     nPolarisation: np.array  # Mp
     sky_stat_max: float = 0 
     nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
-    stage_timings: dict = None  # per-stage wall-clock timings (GPU only)
+    stage_timings: dict = None  # per-stage wall-clock timings
+    likelihood_backend: str = None  # numerical kernel backend: numba or jax
+    # Optional extension products.  These remain empty in the default, high-volume
+    # search path and are stored only when the full sky-map object is requested.
+    likelihood_features: dict = None
+    likelihood_feature_status: dict = None
+    likelihood_cut_metrics: dict = None
+    likelihood_metadata: dict = None
 
     @classmethod
     def from_tuple(cls, t):

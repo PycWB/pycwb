@@ -15,7 +15,6 @@ from pycwb.config.config import Config
 from pycwb.types.network_pixel import Pixel
 from pycwb.types.time_series import TimeSeries
 from pycwb.types.detector import compute_sky_delay_and_patterns
-from .pixel_batch_ops import load_data_from_pixels_vectorized
 
 def extract_pixel_time_delay_data(
     pixels: list[Pixel],
@@ -32,8 +31,7 @@ def extract_pixel_time_delay_data(
 
     Fallback
     --------
-    Otherwise delegates to the vectorised implementation in
-    ``pixel_batch_ops`` which still avoids the worst of the per-pixel loops.
+    Otherwise extracts the legacy list-of-pixels representation locally.
 
     Returns
     -------
@@ -49,7 +47,37 @@ def extract_pixel_time_delay_data(
     n_detectors = nifo
     if pixel_arrays is not None and pixel_arrays.has_td_amp():
         return _extract_pixel_array_time_delay_data(pixel_arrays)
-    return load_data_from_pixels_vectorized(pixels, n_detectors)
+    return _extract_pixel_list_time_delay_data(pixels, n_detectors)
+
+
+def _extract_pixel_list_time_delay_data(
+    pixels: list[Pixel],
+    nifo: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Fallback extraction for legacy callers that do not provide PixelArrays."""
+
+    n_pixels = len(pixels)
+    time_delay_size = int(np.asarray(pixels[0].td_amp[0]).shape[0])
+    phase_size = time_delay_size // 2
+
+    inverse_noise_rms = np.empty((nifo, n_pixels), dtype=np.float64)
+    time_delay_amplitudes = np.empty(
+        (nifo, n_pixels, time_delay_size), dtype=np.float32
+    )
+    for detector in range(nifo):
+        inverse_noise_rms[detector] = [
+            1.0 / pixel.data[detector].noise_rms for pixel in pixels
+        ]
+        for pixel_index, pixel in enumerate(pixels):
+            time_delay_amplitudes[detector, pixel_index] = pixel.td_amp[detector]
+
+    pixel_rms_norm = 1.0 / np.sqrt(np.sum(inverse_noise_rms ** 2, axis=0))
+    noise_weights = (
+        inverse_noise_rms * pixel_rms_norm[np.newaxis, :]
+    ).astype(np.float32)
+    phase0 = time_delay_amplitudes[:, :, :phase_size]
+    phase90 = time_delay_amplitudes[:, :, phase_size:]
+    return noise_weights, phase0, phase90, phase0 ** 2 + phase90 ** 2
 
 
 def _extract_pixel_array_time_delay_data(

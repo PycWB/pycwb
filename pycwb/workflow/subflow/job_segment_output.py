@@ -36,6 +36,9 @@ def _create_and_save_trigger_folders(output_context, result) -> list[str | None]
                 trigger_data=trigger,
                 save_cluster=config.save_cluster,
                 save_sky_map=config.save_sky_map,
+                save_likelihood_features=getattr(
+                    config, "save_likelihood_features", False
+                ),
             )
         except Exception:
             event = trigger[0]
