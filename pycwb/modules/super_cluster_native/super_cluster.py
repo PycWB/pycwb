@@ -254,13 +254,6 @@ def defragment(
 
     superclusters = []
     for c_ids in aggregated_clusters:
-        # merged_pa = PixelArrays.concat([clusters[c_id].pixel_arrays for c_id in c_ids])
-        # sc = Cluster(
-        #     pixel_arrays=merged_pa,
-        #     cluster_status=0,
-        #     cluster_meta=ClusterMeta(),
-        # )
-        # superclusters.append(sc)
 
         sc = calculate_supercluster_data(
             [clusters[c_id] for c_id in c_ids],
