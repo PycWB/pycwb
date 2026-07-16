@@ -11,13 +11,18 @@ from pycwb.modules.likelihoodWP.detection_statistics import (
     compute_sky_error_region,
 )
 from pycwb.modules.likelihoodWP.extensions import (
-    LikelihoodExtensionContext,
-    apply_legacy_sky_area,
-    attach_extension_outputs,
+    build_legacy_sky_area,
     build_sky_probability,
+    build_target_sky_indices,
+    compute_target_sky_metrics,
+    hpd_region,
+    rank_sky_probability,
     resolve_extension_plan,
     run_likelihood_cuts,
     run_likelihood_features,
+    sky_pixel_area_deg2,
+    trigger_gps,
+    validate_sky_temperature,
 )
 from pycwb.modules.workflow_utils.trigger_utils import save_trigger
 
@@ -33,7 +38,7 @@ def _fixed_target(longitude_deg):
     }
 
 
-def _context(
+def _case(
     probability,
     *,
     valid_indices=None,
@@ -80,121 +85,219 @@ def _context(
     latitude = np.zeros(len(probability))
     if valid_indices is None:
         valid_indices = np.arange(len(probability), dtype=np.int64)
-    return LikelihoodExtensionContext(
+    return SimpleNamespace(
         config=config,
         cluster=cluster,
         setup={"segment_start_gps": 1_000_000_000.0},
-        skymap_statistics=skymap,
-        sky_statistics=None,
+        skymap=skymap,
         sky_valid_indices=valid_indices,
-        phi_geo_arr=phi,
-        latitude_arr=latitude,
+        phi=phi,
+        latitude=latitude,
         healpix_order=None,
     )
 
 
-def test_probability_excludes_masked_and_nonpositive_sky_pixels():
-    context = _context([0.6, 0.2, 0.1, 0.1], valid_indices=[0, 2])
-    probability = build_sky_probability(context)
+def _products(case, plan=None):
+    if plan is None:
+        plan = resolve_extension_plan(case.config)
+    temperature = validate_sky_temperature(
+        case.config.likelihood_sky_temperature
+    )
+    probability, evaluated = build_sky_probability(
+        case.skymap.nSkyStat,
+        case.sky_valid_indices,
+        temperature,
+    )
+    ranked = cumulative = None
+    if "sky_ranking" in plan.required_products:
+        ranked, cumulative = rank_sky_probability(probability, evaluated)
 
+    target_indices = target_metrics = None
+    needs_target_metrics = "target_metrics" in plan.required_products
+    if "target_indices" in plan.required_products and (
+        case.config.likelihood_target_region or needs_target_metrics
+    ):
+        target_indices = build_target_sky_indices(
+            case.config.likelihood_target_region,
+            case.phi,
+            case.latitude,
+            t_ref=trigger_gps(case.cluster, case.setup),
+        )
+        if needs_target_metrics:
+            target_metrics = compute_target_sky_metrics(
+                case.skymap.nSkyStat,
+                probability,
+                evaluated,
+                target_indices,
+                target_level=case.config.likelihood_target_level,
+                ranked_sky_indices=ranked,
+                ranked_cumulative_probability=cumulative,
+            )
+    return SimpleNamespace(
+        probability=probability,
+        evaluated=evaluated,
+        ranked=ranked,
+        cumulative=cumulative,
+        target_indices=target_indices,
+        target_metrics=target_metrics,
+        temperature=temperature,
+    )
+
+
+def _run_features(case):
+    plan = resolve_extension_plan(case.config)
+    products = _products(case, plan)
+    return run_likelihood_features(
+        plan,
+        config=case.config,
+        sky_probability=products.probability,
+        evaluated_sky_indices=products.evaluated,
+        phi_geo_arr=case.phi,
+        latitude_arr=case.latitude,
+        healpix_order=case.healpix_order,
+        l_max=case.skymap.l_max,
+        ranked_sky_indices=products.ranked,
+        ranked_cumulative_probability=products.cumulative,
+        target_metrics=products.target_metrics,
+    ), products
+
+
+def _run_cuts(case, *, stage):
+    plan = resolve_extension_plan(case.config)
+    products = _products(case, plan)
+    return run_likelihood_cuts(
+        plan,
+        stage=stage,
+        config=case.config,
+        target_metrics=products.target_metrics,
+    )
+
+
+def test_probability_excludes_masked_and_nonpositive_sky_pixels():
+    case = _case([0.6, 0.2, 0.1, 0.1], valid_indices=[0, 2])
+    probability, evaluated = build_sky_probability(
+        case.skymap.nSkyStat,
+        case.sky_valid_indices,
+        temperature=1.0,
+    )
+
+    np.testing.assert_array_equal(evaluated, [0, 2])
     assert probability[1] == 0.0
     assert probability[3] == 0.0
     assert float(np.sum(probability)) == pytest.approx(1.0)
     assert probability[0] > probability[2]
 
 
-def test_shared_probability_and_hpd_products_are_cached():
-    context = _context([0.6, 0.2, 0.11, 0.09])
+def test_shared_probability_and_hpd_products_are_explicit_arrays():
+    case = _case(
+        [0.6, 0.2, 0.11, 0.09],
+        features=["sky_area"],
+    )
+    products = _products(case)
 
-    assert context.sky_probability is context.sky_probability
-    assert context.ranked_sky_indices is context.ranked_sky_indices
-    assert context.hpd_region(0.9) is context.hpd_region(0.9)
-    assert len(context.hpd_region(0.5)) == 1
-    assert len(context.hpd_region(0.9)) == 3
+    assert len(hpd_region(0.5, products.ranked, products.cumulative)) == 1
+    assert len(hpd_region(0.9, products.ranked, products.cumulative)) == 3
 
 
 def test_probability_temperature_is_explicit_and_persisted_with_features():
-    context = _context([0.8, 0.1, 0.05, 0.05], features=["sky_area"])
-    native_peak = float(context.sky_probability[0])
+    case = _case([0.8, 0.1, 0.05, 0.05], features=["sky_area"])
+    native_peak = float(_products(case).probability[0])
 
-    warmer = _context([0.8, 0.1, 0.05, 0.05], features=["sky_area"])
+    warmer = _case([0.8, 0.1, 0.05, 0.05], features=["sky_area"])
     warmer.config.likelihood_sky_temperature = 4.0
-    assert float(warmer.sky_probability[0]) < native_peak
+    (values, status), products = _run_features(warmer)
 
-    values, status = run_likelihood_features(
-        warmer, resolve_extension_plan(warmer.config)
-    )
-    attach_extension_outputs(
-        warmer,
-        features=values,
-        feature_status=status,
-        cut_metrics={},
-    )
-    assert warmer.skymap_statistics.likelihood_metadata == {
+    assert float(products.probability[0]) < native_peak
+    assert values
+    assert status["sky_area"]["ok"] is True
+    metadata = {
         "sky_probability_temperature": 4.0,
         "evaluated_sky_pixel_count": 4,
+    }
+    assert metadata == {
+        "sky_probability_temperature": products.temperature,
+        "evaluated_sky_pixel_count": len(products.evaluated),
     }
 
 
 def test_sky_area_feature_is_optional_and_uses_compact_scalars():
-    context = _context(
+    case = _case(
         [0.6, 0.2, 0.11, 0.09],
         features=["sky_area"],
     )
-    plan = resolve_extension_plan(context.config)
-    values, status = run_likelihood_features(context, plan)
+    (values, status), products = _run_features(case)
 
     pixel_area = 4.0 * np.pi * (180.0 / np.pi) ** 2 / 4.0
     assert values["sky_area_50_deg2"] == pytest.approx(pixel_area)
     assert values["sky_area_90_deg2"] == pytest.approx(3.0 * pixel_area)
     assert status["sky_area"]["ok"] is True
 
-    apply_legacy_sky_area(context, plan)
-    assert len(context.cluster.sky_area) == 11
-    assert context.cluster.sky_area[5] == pytest.approx(np.sqrt(pixel_area))
-    assert context.cluster.sky_area[9] == pytest.approx(np.sqrt(3.0 * pixel_area))
+    case.cluster.sky_area = build_legacy_sky_area(
+        pixel_area_deg2=pixel_area,
+        sky_probability=products.probability,
+        evaluated_sky_indices=products.evaluated,
+        ranked_sky_indices=products.ranked,
+        ranked_cumulative_probability=products.cumulative,
+        target_sky_indices=products.target_indices,
+    )
+    assert len(case.cluster.sky_area) == 11
+    assert case.cluster.sky_area[5] == pytest.approx(np.sqrt(pixel_area))
+    assert case.cluster.sky_area[9] == pytest.approx(np.sqrt(3.0 * pixel_area))
+
+
+def test_legacy_sky_area_keeps_target_searched_location():
+    case = _case(
+        [0.6, 0.2, 0.11, 0.09],
+        features=["sky_area"],
+        target_region=_fixed_target(90),
+    )
+    (_, status), products = _run_features(case)
+    assert status["sky_area"]["ok"] is True
+
+    legacy = build_legacy_sky_area(
+        pixel_area_deg2=sky_pixel_area_deg2(4),
+        sky_probability=products.probability,
+        evaluated_sky_indices=products.evaluated,
+        ranked_sky_indices=products.ranked,
+        ranked_cumulative_probability=products.cumulative,
+        target_sky_indices=products.target_indices,
+    )
+    assert legacy[0] > 0.0
+    assert legacy[10] > 0.0
 
 
 def test_default_plan_adds_no_feature_output_or_hpd_sort():
-    context = _context([0.6, 0.2, 0.11, 0.09])
-    plan = resolve_extension_plan(context.config)
-    build_sky_probability(context)
-    values, status = run_likelihood_features(context, plan)
+    case = _case([0.6, 0.2, 0.11, 0.09])
+    plan = resolve_extension_plan(case.config)
+    (values, status), products = _run_features(case)
 
     assert values == {}
     assert status == {}
-    assert "ranked_sky_indices" not in context._cache
-    assert context.cluster.sky_area == []
+    assert plan.required_products == ()
+    assert products.ranked is None
+    assert case.cluster.sky_area == []
 
 
 def test_target_90_percent_consistency_accepts_overlap_and_rejects_no_overlap():
     probability = [0.7, 0.2, 0.08, 0.02]
 
-    overlapping = _context(
+    overlapping = _case(
         probability,
         target_region=_fixed_target(90),
         cuts=["target_sky_consistency"],
     )
-    overlap_result = run_likelihood_cuts(
-        overlapping,
-        resolve_extension_plan(overlapping.config),
-        stage="post_sky",
-    )
+    overlap_result = _run_cuts(overlapping, stage="post_sky")
     assert overlap_result.passed is True
     metrics = overlap_result.metrics["target_sky_consistency"]
     assert metrics["target_hpd_overlap"] is True
     assert metrics["target_credible_level"] == pytest.approx(0.9, abs=1e-6)
 
-    outside = _context(
+    outside = _case(
         probability,
         target_region=_fixed_target(-90),
         cuts=["target_sky_consistency"],
     )
-    outside_result = run_likelihood_cuts(
-        outside,
-        resolve_extension_plan(outside.config),
-        stage="post_sky",
-    )
+    outside_result = _run_cuts(outside, stage="post_sky")
     assert outside_result.passed is False
     metrics = outside_result.metrics["target_sky_consistency"]
     assert metrics["target_hpd_overlap"] is False
@@ -202,14 +305,12 @@ def test_target_90_percent_consistency_accepts_overlap_and_rejects_no_overlap():
 
 
 def test_target_metrics_are_an_optional_output_not_a_catalog_requirement():
-    context = _context(
+    case = _case(
         [0.7, 0.2, 0.08, 0.02],
         target_region=_fixed_target(90),
         features=["target_sky_metrics"],
     )
-    values, status = run_likelihood_features(
-        context, resolve_extension_plan(context.config)
-    )
+    (values, status), _ = _run_features(case)
 
     assert status["target_sky_metrics"]["ok"] is True
     assert values["target_probability_mass"] == pytest.approx(0.2)
@@ -217,13 +318,11 @@ def test_target_metrics_are_an_optional_output_not_a_catalog_requirement():
 
 
 def test_vmf_fit_is_fixed_size_and_reports_fit_quality():
-    context = _context(
+    case = _case(
         [0.85, 0.05, 0.05, 0.05],
         features=["sky_vmf_fit"],
     )
-    values, status = run_likelihood_features(
-        context, resolve_extension_plan(context.config)
-    )
+    (values, status), _ = _run_features(case)
 
     assert status["sky_vmf_fit"]["ok"] is True
     assert values["sky_vmf_longitude_deg"] == pytest.approx(0.0, abs=1e-6)
@@ -231,23 +330,21 @@ def test_vmf_fit_is_fixed_size_and_reports_fit_quality():
     assert values["sky_vmf_kappa"] > 0.0
     assert values["sky_vmf_kl_nats"] >= 0.0
     assert values["sky_vmf_area_90_deg2"] > values["sky_vmf_area_50_deg2"]
-    assert values["sky_vmf_area_90_deg2"] >= context.pixel_area_deg2
+    assert values["sky_vmf_area_90_deg2"] >= sky_pixel_area_deg2(4)
 
 
 def test_sparse_map_requires_heavy_opt_in_and_reports_truncation():
-    context = _context(
+    case = _case(
         [0.6, 0.2, 0.11, 0.09],
         features=["sky_sparse_map"],
     )
-    context.config.likelihood_sky_sparse_level = 0.9
-    context.config.likelihood_sky_sparse_max_pixels = 2
+    case.config.likelihood_sky_sparse_level = 0.9
+    case.config.likelihood_sky_sparse_max_pixels = 2
     with pytest.raises(ValueError, match="Heavy likelihood feature"):
-        resolve_extension_plan(context.config)
+        resolve_extension_plan(case.config)
 
-    context.config.likelihood_allow_heavy_features = True
-    values, status = run_likelihood_features(
-        context, resolve_extension_plan(context.config)
-    )
+    case.config.likelihood_allow_heavy_features = True
+    (values, status), _ = _run_features(case)
     assert status["sky_sparse_map"]["ok"] is True
     np.testing.assert_array_equal(values["sky_sparse_indices"], [0, 1])
     assert values["sky_sparse_hpd_pixel_count"] == 3
@@ -292,10 +389,10 @@ def test_legacy_error_region_helper_populates_searched_location():
 
 
 def test_unknown_extension_names_fail_during_plan_resolution():
-    context = _context([0.6, 0.2, 0.11, 0.09])
-    context.config.likelihood_features = ["unknown_feature"]
+    case = _case([0.6, 0.2, 0.11, 0.09])
+    case.config.likelihood_features = ["unknown_feature"]
     with pytest.raises(ValueError, match="Unknown likelihood feature"):
-        resolve_extension_plan(context.config)
+        resolve_extension_plan(case.config)
 
 
 def test_flat_yaml_schema_accepts_known_extensions_and_rejects_unknown_names():

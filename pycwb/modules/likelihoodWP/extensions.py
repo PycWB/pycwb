@@ -1,8 +1,8 @@
-"""Optional likelihood features and cuts built from shared cached products.
+"""Pure building blocks for optional likelihood features and cuts.
 
 The likelihood kernels deliberately remain unaware of individual derived
-statistics.  This module provides a small, explicit registry and flat runners
-called by the shared likelihood flow at fixed extension points.
+statistics.  This module provides metadata registries, explicit numerical
+products, and flat dispatchers called at fixed points in the likelihood flow.
 
 The default configuration enables no optional features or cuts.  This matters
 for production searches with millions of background triggers: the O(N log N)
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
@@ -27,12 +27,12 @@ _LEGACY_SKY_LEVELS = tuple(i / 10.0 for i in range(1, 10))
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    """Metadata and implementation for one optional output feature."""
+    """Cost, storage, and shared-product metadata for one output feature."""
 
     name: str
-    compute: Callable[["LikelihoodExtensionContext"], Mapping[str, Any]]
     cost: str
     purpose: str
+    required_products: tuple[str, ...] = ()
     destination: str = "likelihood_feature_sidecar"
     version: int = 1
     heavy: bool = False
@@ -41,12 +41,12 @@ class FeatureSpec:
 
 @dataclass(frozen=True)
 class CutSpec:
-    """Metadata and implementation for one optional cluster cut."""
+    """Stage, cost, and shared-product metadata for one optional cut."""
 
     name: str
-    evaluate: Callable[["LikelihoodExtensionContext"], "CutResult"]
     stage: str
     cost: str
+    required_products: tuple[str, ...] = ()
     version: int = 1
 
 
@@ -64,219 +64,7 @@ class LikelihoodExtensionPlan:
     post_reconstruction_cut_names: tuple[str, ...]
     feature_failure: str
     allow_heavy_features: bool
-
-
-class LikelihoodExtensionContext:
-    """Per-cluster inputs and lazily cached shared likelihood products."""
-
-    def __init__(
-        self,
-        *,
-        config,
-        cluster,
-        setup: Mapping[str, Any],
-        skymap_statistics,
-        sky_statistics,
-        sky_valid_indices: Sequence[int],
-        phi_geo_arr: Sequence[float],
-        latitude_arr: Sequence[float],
-        healpix_order: int | None = None,
-    ) -> None:
-        self.config = config
-        self.cluster = cluster
-        self.setup = setup
-        self.skymap_statistics = skymap_statistics
-        self.sky_statistics = sky_statistics
-        self.sky_valid_indices = np.asarray(sky_valid_indices, dtype=np.int64)
-        self.phi_geo_arr = np.asarray(phi_geo_arr, dtype=np.float64)
-        self.latitude_arr = np.asarray(latitude_arr, dtype=np.float64)
-        self.healpix_order = (
-            int(healpix_order) if healpix_order is not None else None
-        )
-        self._cache: dict[str, Any] = {}
-
-    @property
-    def pixel_area_deg2(self) -> float:
-        """Equal-area sky pixel size for the active full HEALPix grid."""
-        n_sky = len(np.asarray(self.skymap_statistics.nSkyStat))
-        if n_sky <= 0:
-            raise ValueError("Cannot calculate a sky area for an empty sky grid")
-        return float(_FULL_SKY_DEG2 / n_sky)
-
-    @property
-    def evaluated_sky_indices(self) -> np.ndarray:
-        """Scanned directions with a finite, positive localization statistic.
-
-        The native sky scan leaves masked and netCC-rejected directions at zero.
-        Including those zeros in a softmax assigns probability outside the
-        evaluated likelihood support, especially for targeted sky scans.
-        cWB's sky-area calculation likewise ignores non-positive map values.
-        """
-        if "evaluated_sky_indices" not in self._cache:
-            stat = np.asarray(self.skymap_statistics.nSkyStat, dtype=np.float64)
-            valid = self.sky_valid_indices
-            valid = valid[(valid >= 0) & (valid < len(stat))]
-            keep = np.isfinite(stat[valid]) & (stat[valid] > 0.0)
-            indices = np.unique(valid[keep])
-            if indices.size == 0:
-                raise ValueError("No positive finite sky statistics are available")
-            self._cache["evaluated_sky_indices"] = indices
-        return self._cache["evaluated_sky_indices"]
-
-    @property
-    def sky_temperature(self) -> float:
-        value = float(
-            getattr(self.config, "likelihood_sky_temperature", 1.0)
-        )
-        if not np.isfinite(value) or value <= 0.0:
-            raise ValueError(
-                "likelihood_sky_temperature must be positive and finite"
-            )
-        return value
-
-    @property
-    def sky_probability(self) -> np.ndarray:
-        """Normalized probability on evaluated directions, zero elsewhere."""
-        if "sky_probability" not in self._cache:
-            stat = np.asarray(self.skymap_statistics.nSkyStat, dtype=np.float64)
-            indices = self.evaluated_sky_indices
-            selected = stat[indices]
-            shifted = (selected - np.max(selected)) / self.sky_temperature
-            weights = np.exp(shifted)
-            norm = float(np.sum(weights))
-            if not np.isfinite(norm) or norm <= 0.0:
-                raise ValueError("Sky probability normalization is not finite")
-            probability = np.zeros(stat.shape, dtype=np.float32)
-            probability[indices] = (weights / norm).astype(np.float32)
-            self._cache["sky_probability"] = probability
-        return self._cache["sky_probability"]
-
-    @property
-    def ranked_sky_indices(self) -> np.ndarray:
-        """Evaluated sky directions sorted by descending probability."""
-        if "ranked_sky_indices" not in self._cache:
-            indices = self.evaluated_sky_indices
-            probability = self.sky_probability
-            order = np.argsort(-probability[indices], kind="stable")
-            self._cache["ranked_sky_indices"] = indices[order]
-        return self._cache["ranked_sky_indices"]
-
-    @property
-    def ranked_cumulative_probability(self) -> np.ndarray:
-        if "ranked_cumulative_probability" not in self._cache:
-            ranked = self.ranked_sky_indices
-            self._cache["ranked_cumulative_probability"] = np.cumsum(
-                self.sky_probability[ranked], dtype=np.float64
-            )
-        return self._cache["ranked_cumulative_probability"]
-
-    def hpd_region(self, level: float) -> np.ndarray:
-        """Return pixel indices in the smallest discrete HPD region."""
-        level = _validate_level(level, "credible level")
-        key = f"hpd_region:{level:.12g}"
-        if key not in self._cache:
-            ranked = self.ranked_sky_indices
-            cumulative = self.ranked_cumulative_probability
-            stop = int(np.searchsorted(cumulative, level, side="left")) + 1
-            self._cache[key] = ranked[: min(stop, len(ranked))]
-        return self._cache[key]
-
-    def hpd_area_deg2(self, level: float) -> float:
-        return float(len(self.hpd_region(level)) * self.pixel_area_deg2)
-
-    @property
-    def trigger_gps(self) -> float | None:
-        if "trigger_gps" not in self._cache:
-            segment_start = self.setup.get("segment_start_gps")
-            if segment_start is None:
-                value = None
-            else:
-                offset = float(getattr(self.cluster, "cluster_time", 0.0) or 0.0)
-                if offset == 0.0:
-                    meta = getattr(self.cluster, "cluster_meta", None)
-                    offset = float(getattr(meta, "c_time", 0.0) or 0.0)
-                value = float(segment_start) + offset
-            self._cache["trigger_gps"] = value
-        return self._cache["trigger_gps"]
-
-    @property
-    def target_indices(self) -> np.ndarray:
-        """Target-region pixels, independent of the likelihood scan mask."""
-        if "target_indices" not in self._cache:
-            target = getattr(self.config, "likelihood_target_region", None)
-            if not target:
-                raise ValueError(
-                    "likelihood_target_region is required by target_sky_metrics "
-                    "and target_sky_consistency"
-                )
-            t_ref = self.trigger_gps
-            if sky_mask_requires_event_time(target) and t_ref is None:
-                raise ValueError(
-                    "An ICRS likelihood_target_region requires segment_start_gps"
-                )
-            indices = compute_sky_valid_indices(
-                self.phi_geo_arr,
-                self.latitude_arr,
-                target,
-                t_ref=t_ref,
-            )
-            self._cache["target_indices"] = np.asarray(indices, dtype=np.int64)
-        return self._cache["target_indices"]
-
-    @property
-    def target_metrics(self) -> dict[str, Any]:
-        if "target_metrics" not in self._cache:
-            probability = self.sky_probability
-            statistic = np.asarray(
-                self.skymap_statistics.nSkyStat, dtype=np.float64
-            )
-            evaluated = self.evaluated_sky_indices
-            target = np.intersect1d(
-                self.target_indices, evaluated, assume_unique=False
-            )
-            if target.size == 0:
-                metrics = {
-                    "target_pixel_count": 0,
-                    "target_probability_mass": 0.0,
-                    "target_credible_level": 1.0,
-                    "target_delta_sky_stat": None,
-                }
-            else:
-                target_max_probability = float(np.max(probability[target]))
-                # Include ties at the target threshold.  This is the credible
-                # mass at which the HPD set first touches the target region.
-                credible_level = float(
-                    np.sum(probability[evaluated][
-                        probability[evaluated] >= target_max_probability
-                    ], dtype=np.float64)
-                )
-                metrics = {
-                    "target_pixel_count": int(target.size),
-                    "target_probability_mass": float(
-                        np.sum(probability[target], dtype=np.float64)
-                    ),
-                    "target_credible_level": min(credible_level, 1.0),
-                    "target_delta_sky_stat": float(
-                        np.max(statistic[evaluated]) - np.max(statistic[target])
-                    ),
-                }
-
-            level = _validate_level(
-                getattr(self.config, "likelihood_target_level", 0.9),
-                "likelihood_target_level",
-            )
-            hpd = self.hpd_region(level)
-            overlap_count = int(np.intersect1d(hpd, target).size)
-            metrics.update({
-                "target_level": level,
-                "target_hpd_overlap": bool(overlap_count > 0),
-                "target_hpd_overlap_pixels": overlap_count,
-                "target_hpd_overlap_fraction": (
-                    float(overlap_count / len(hpd)) if len(hpd) else 0.0
-                ),
-            })
-            self._cache["target_metrics"] = metrics
-        return self._cache["target_metrics"]
+    required_products: tuple[str, ...] = ()
 
 
 def _validate_level(value: float, name: str) -> float:
@@ -288,37 +76,141 @@ def _validate_level(value: float, name: str) -> float:
 
 def _configured_sky_levels(config) -> tuple[float, ...]:
     levels = getattr(config, "likelihood_sky_levels", (0.5, 0.9))
-    normalized = tuple(sorted({_validate_level(v, "likelihood_sky_levels") for v in levels}))
+    normalized = tuple(
+        sorted({_validate_level(v, "likelihood_sky_levels") for v in levels})
+    )
     if not normalized:
         raise ValueError("likelihood_sky_levels must contain at least one level")
     return normalized
 
 
-def build_sky_probability(context: LikelihoodExtensionContext) -> np.ndarray:
-    """Public helper used by both likelihood backends and unit tests."""
-    probability = context.sky_probability
-    context.skymap_statistics.nProbability = probability
-    return probability
+def validate_sky_temperature(value: float) -> float:
+    """Return a positive finite softmax temperature."""
+    value = float(value)
+    if not np.isfinite(value) or value <= 0.0:
+        raise ValueError("likelihood_sky_temperature must be positive and finite")
+    return value
 
 
-def _feature_sky_area(context: LikelihoodExtensionContext) -> Mapping[str, Any]:
+def build_sky_probability(
+    sky_statistic: Sequence[float],
+    sky_valid_indices: Sequence[int],
+    temperature: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Normalize localization probability on positive evaluated directions."""
+    statistic = np.asarray(sky_statistic, dtype=np.float64)
+    valid = np.asarray(sky_valid_indices, dtype=np.int64)
+    valid = valid[(valid >= 0) & (valid < len(statistic))]
+    keep = np.isfinite(statistic[valid]) & (statistic[valid] > 0.0)
+    evaluated = np.unique(valid[keep])
+    if evaluated.size == 0:
+        raise ValueError("No positive finite sky statistics are available")
+
+    selected = statistic[evaluated]
+    shifted = (selected - np.max(selected)) / validate_sky_temperature(temperature)
+    weights = np.exp(shifted)
+    norm = float(np.sum(weights))
+    if not np.isfinite(norm) or norm <= 0.0:
+        raise ValueError("Sky probability normalization is not finite")
+
+    probability = np.zeros(statistic.shape, dtype=np.float32)
+    probability[evaluated] = (weights / norm).astype(np.float32)
+    return probability, evaluated
+
+
+def rank_sky_probability(
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Sort evaluated directions once for all requested HPD products."""
+    probability = np.asarray(sky_probability)
+    evaluated = np.asarray(evaluated_sky_indices, dtype=np.int64)
+    order = np.argsort(-probability[evaluated], kind="stable")
+    ranked = evaluated[order]
+    cumulative = np.cumsum(probability[ranked], dtype=np.float64)
+    return ranked, cumulative
+
+
+def hpd_region(
+    level: float,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> np.ndarray:
+    """Return the smallest discrete highest-posterior-density region."""
+    level = _validate_level(level, "credible level")
+    ranked = np.asarray(ranked_sky_indices, dtype=np.int64)
+    cumulative = np.asarray(ranked_cumulative_probability, dtype=np.float64)
+    stop = int(np.searchsorted(cumulative, level, side="left")) + 1
+    return ranked[: min(stop, len(ranked))]
+
+
+def sky_pixel_area_deg2(n_sky: int) -> float:
+    """Equal-area sky pixel size for the active full HEALPix grid."""
+    if n_sky <= 0:
+        raise ValueError("Cannot calculate a sky area for an empty sky grid")
+    return float(_FULL_SKY_DEG2 / n_sky)
+
+
+def hpd_area_deg2(
+    level: float,
+    pixel_area_deg2: float,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> float:
+    return float(
+        len(hpd_region(level, ranked_sky_indices, ranked_cumulative_probability))
+        * pixel_area_deg2
+    )
+
+
+def compute_sky_area_feature(
+    config,
+    *,
+    pixel_area_deg2: float,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> Mapping[str, Any]:
     result: dict[str, Any] = {
-        "sky_pixel_area_deg2": context.pixel_area_deg2,
+        "sky_pixel_area_deg2": pixel_area_deg2,
     }
-    for level in _configured_sky_levels(context.config):
+    for level in _configured_sky_levels(config):
         percent = int(round(level * 100.0))
-        result[f"sky_area_{percent}_deg2"] = context.hpd_area_deg2(level)
+        result[f"sky_area_{percent}_deg2"] = hpd_area_deg2(
+            level,
+            pixel_area_deg2,
+            ranked_sky_indices,
+            ranked_cumulative_probability,
+        )
     return result
 
 
-def _feature_sky_shape(context: LikelihoodExtensionContext) -> Mapping[str, Any]:
-    probability = context.sky_probability[context.evaluated_sky_indices].astype(
-        np.float64
+def compute_sky_shape_feature(
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+    *,
+    pixel_area_deg2: float,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> Mapping[str, Any]:
+    probability = np.asarray(sky_probability)[
+        np.asarray(evaluated_sky_indices, dtype=np.int64)
+    ].astype(np.float64)
+    entropy = -float(
+        np.sum(probability * np.log(np.maximum(probability, 1e-300)))
     )
-    entropy = -float(np.sum(probability * np.log(np.maximum(probability, 1e-300))))
     effective_pixels = float(np.exp(entropy))
-    area_50 = context.hpd_area_deg2(0.5)
-    area_90 = context.hpd_area_deg2(0.9)
+    area_50 = hpd_area_deg2(
+        0.5,
+        pixel_area_deg2,
+        ranked_sky_indices,
+        ranked_cumulative_probability,
+    )
+    area_90 = hpd_area_deg2(
+        0.9,
+        pixel_area_deg2,
+        ranked_sky_indices,
+        ranked_cumulative_probability,
+    )
     return {
         "sky_log10_area_90_deg2": float(np.log10(max(area_90, 1e-300))),
         "sky_area_50_to_90_ratio": float(area_50 / area_90),
@@ -329,14 +221,20 @@ def _feature_sky_shape(context: LikelihoodExtensionContext) -> Mapping[str, Any]
 
 
 def _vmf_mean_direction_and_kappa(
-    context: LikelihoodExtensionContext,
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+    phi_geo_arr: Sequence[float],
+    latitude_arr: Sequence[float],
+    l_max: int,
 ) -> tuple[np.ndarray, float, float]:
     """Moment/MLE fit of one von Mises--Fisher component on S2."""
-    indices = context.evaluated_sky_indices
-    probability = context.sky_probability[indices].astype(np.float64)
+    indices = np.asarray(evaluated_sky_indices, dtype=np.int64)
+    probability = np.asarray(sky_probability)[indices].astype(np.float64)
     probability /= float(np.sum(probability))
-    longitude = context.phi_geo_arr[indices]
-    latitude = context.latitude_arr[indices]
+    longitude_arr = np.asarray(phi_geo_arr, dtype=np.float64)
+    latitude_arr = np.asarray(latitude_arr, dtype=np.float64)
+    longitude = longitude_arr[indices]
+    latitude = latitude_arr[indices]
     cos_latitude = np.cos(latitude)
     vectors = np.column_stack((
         cos_latitude * np.cos(longitude),
@@ -349,11 +247,10 @@ def _vmf_mean_direction_and_kappa(
         # An isotropic or exactly symmetric distribution has no unique mean
         # direction.  Use l_max only as a serialization convention; kappa=0
         # correctly describes the fit.
-        l_max = int(context.skymap_statistics.l_max)
         mean_direction = np.array([
-            np.cos(context.latitude_arr[l_max]) * np.cos(context.phi_geo_arr[l_max]),
-            np.cos(context.latitude_arr[l_max]) * np.sin(context.phi_geo_arr[l_max]),
-            np.sin(context.latitude_arr[l_max]),
+            np.cos(latitude_arr[l_max]) * np.cos(longitude_arr[l_max]),
+            np.cos(latitude_arr[l_max]) * np.sin(longitude_arr[l_max]),
+            np.sin(latitude_arr[l_max]),
         ])
         return mean_direction, 0.0, mean_resultant
 
@@ -416,25 +313,43 @@ def _vmf_resolution_kappa(pixel_area_deg2: float, level: float = 0.9) -> float:
     return float(low)
 
 
-def _feature_sky_vmf_fit(context: LikelihoodExtensionContext) -> Mapping[str, Any]:
+def compute_sky_vmf_feature(
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+    phi_geo_arr: Sequence[float],
+    latitude_arr: Sequence[float],
+    l_max: int,
+    *,
+    pixel_area_deg2: float,
+) -> Mapping[str, Any]:
     """Lossy one-component spherical fit with an explicit KL quality metric."""
-    mean_direction, kappa, mean_resultant = _vmf_mean_direction_and_kappa(context)
+    mean_direction, kappa, mean_resultant = _vmf_mean_direction_and_kappa(
+        sky_probability,
+        evaluated_sky_indices,
+        phi_geo_arr,
+        latitude_arr,
+        l_max,
+    )
     # Do not let a fit to a discrete map claim sub-pixel localization.  Cap the
     # concentration where the continuous 90% vMF area reaches one grid pixel.
-    resolution_kappa = _vmf_resolution_kappa(context.pixel_area_deg2)
+    resolution_kappa = _vmf_resolution_kappa(pixel_area_deg2)
     resolution_limited = bool(kappa > resolution_kappa)
     kappa = min(kappa, resolution_kappa)
-    longitude = float(np.arctan2(mean_direction[1], mean_direction[0]) % (2.0 * np.pi))
+    longitude = float(
+        np.arctan2(mean_direction[1], mean_direction[0]) % (2.0 * np.pi)
+    )
     latitude = float(np.arcsin(np.clip(mean_direction[2], -1.0, 1.0)))
 
-    indices = context.evaluated_sky_indices
-    probability = context.sky_probability[indices].astype(np.float64)
+    indices = np.asarray(evaluated_sky_indices, dtype=np.int64)
+    probability = np.asarray(sky_probability)[indices].astype(np.float64)
     probability /= float(np.sum(probability))
-    cos_latitude = np.cos(context.latitude_arr[indices])
+    longitude_arr = np.asarray(phi_geo_arr, dtype=np.float64)
+    latitude_arr = np.asarray(latitude_arr, dtype=np.float64)
+    cos_latitude = np.cos(latitude_arr[indices])
     vectors = np.column_stack((
-        cos_latitude * np.cos(context.phi_geo_arr[indices]),
-        cos_latitude * np.sin(context.phi_geo_arr[indices]),
-        np.sin(context.latitude_arr[indices]),
+        cos_latitude * np.cos(longitude_arr[indices]),
+        cos_latitude * np.sin(longitude_arr[indices]),
+        np.sin(latitude_arr[indices]),
     ))
     log_q = kappa * (vectors @ mean_direction)
     log_q -= float(np.max(log_q))
@@ -455,31 +370,43 @@ def _feature_sky_vmf_fit(context: LikelihoodExtensionContext) -> Mapping[str, An
     }
 
 
-def _feature_sky_sparse_map(context: LikelihoodExtensionContext) -> Mapping[str, Any]:
+def compute_sky_sparse_map_feature(
+    config,
+    sky_probability: Sequence[float],
+    phi_geo_arr: Sequence[float],
+    latitude_arr: Sequence[float],
+    *,
+    healpix_order: int | None,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> Mapping[str, Any]:
     """Capped ranked-pixel representation that preserves multimodality."""
     level = _validate_level(
-        getattr(context.config, "likelihood_sky_sparse_level", 0.99),
+        getattr(config, "likelihood_sky_sparse_level", 0.99),
         "likelihood_sky_sparse_level",
     )
-    max_pixels = int(
-        getattr(context.config, "likelihood_sky_sparse_max_pixels", 2048)
-    )
+    max_pixels = int(getattr(config, "likelihood_sky_sparse_max_pixels", 2048))
     if max_pixels < 1:
         raise ValueError("likelihood_sky_sparse_max_pixels must be at least 1")
-    full_region = context.hpd_region(level)
+    full_region = hpd_region(
+        level, ranked_sky_indices, ranked_cumulative_probability
+    )
     stored_indices = full_region[:max_pixels]
-    stored_probability = context.sky_probability[stored_indices]
+    probability = np.asarray(sky_probability)
+    longitude = np.asarray(phi_geo_arr)
+    latitude = np.asarray(latitude_arr)
+    stored_probability = probability[stored_indices]
     return {
         "sky_sparse_indices": stored_indices.astype(np.int32),
-        "sky_sparse_longitude_geo_deg": np.degrees(
-            context.phi_geo_arr[stored_indices]
-        ).astype(np.float32),
-        "sky_sparse_latitude_geo_deg": np.degrees(
-            context.latitude_arr[stored_indices]
-        ).astype(np.float32),
+        "sky_sparse_longitude_geo_deg": np.degrees(longitude[stored_indices]).astype(
+            np.float32
+        ),
+        "sky_sparse_latitude_geo_deg": np.degrees(latitude[stored_indices]).astype(
+            np.float32
+        ),
         "sky_sparse_probability": stored_probability.astype(np.float32),
-        "sky_sparse_grid_size": int(len(context.phi_geo_arr)),
-        "sky_sparse_healpix_order": context.healpix_order,
+        "sky_sparse_grid_size": int(len(longitude)),
+        "sky_sparse_healpix_order": healpix_order,
         "sky_sparse_ordering": "ring",
         "sky_sparse_coordinate_frame": "geo",
         "sky_sparse_requested_level": level,
@@ -492,19 +419,117 @@ def _feature_sky_sparse_map(context: LikelihoodExtensionContext) -> Mapping[str,
     }
 
 
-def _feature_target_sky_metrics(
-    context: LikelihoodExtensionContext,
-) -> Mapping[str, Any]:
-    return dict(context.target_metrics)
+def trigger_gps(cluster, setup: Mapping[str, Any]) -> float | None:
+    """Convert a cluster's segment-relative time to GPS when possible."""
+    segment_start = setup.get("segment_start_gps")
+    if segment_start is None:
+        return None
+    offset = float(getattr(cluster, "cluster_time", 0.0) or 0.0)
+    if offset == 0.0:
+        meta = getattr(cluster, "cluster_meta", None)
+        offset = float(getattr(meta, "c_time", 0.0) or 0.0)
+    return float(segment_start) + offset
 
 
-def _cut_target_sky_consistency(
-    context: LikelihoodExtensionContext,
-) -> CutResult:
-    metrics = dict(context.target_metrics)
-    rule = str(
-        getattr(context.config, "likelihood_target_rule", "credible_touch")
+def build_target_sky_indices(
+    target_region: Mapping[str, Any] | None,
+    phi_geo_arr: Sequence[float],
+    latitude_arr: Sequence[float],
+    *,
+    t_ref: float | None,
+) -> np.ndarray:
+    """Build target-region pixels independently of the likelihood scan mask."""
+    if not target_region:
+        raise ValueError(
+            "likelihood_target_region is required by target_sky_metrics "
+            "and target_sky_consistency"
+        )
+    if sky_mask_requires_event_time(target_region) and t_ref is None:
+        raise ValueError(
+            "An ICRS likelihood_target_region requires segment_start_gps"
+        )
+    return np.asarray(
+        compute_sky_valid_indices(
+            phi_geo_arr,
+            latitude_arr,
+            target_region,
+            t_ref=t_ref,
+        ),
+        dtype=np.int64,
     )
+
+
+def compute_target_sky_metrics(
+    sky_statistic: Sequence[float],
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+    target_sky_indices: Sequence[int],
+    *,
+    target_level: float,
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+) -> dict[str, Any]:
+    """Return target probability, fit loss, and HPD overlap diagnostics."""
+    probability = np.asarray(sky_probability)
+    statistic = np.asarray(sky_statistic, dtype=np.float64)
+    evaluated = np.asarray(evaluated_sky_indices, dtype=np.int64)
+    target = np.intersect1d(
+        np.asarray(target_sky_indices, dtype=np.int64),
+        evaluated,
+        assume_unique=False,
+    )
+    if target.size == 0:
+        metrics: dict[str, Any] = {
+            "target_pixel_count": 0,
+            "target_probability_mass": 0.0,
+            "target_credible_level": 1.0,
+            "target_delta_sky_stat": None,
+        }
+    else:
+        target_max_probability = float(np.max(probability[target]))
+        credible_level = float(
+            np.sum(
+                probability[evaluated][
+                    probability[evaluated] >= target_max_probability
+                ],
+                dtype=np.float64,
+            )
+        )
+        metrics = {
+            "target_pixel_count": int(target.size),
+            "target_probability_mass": float(
+                np.sum(probability[target], dtype=np.float64)
+            ),
+            "target_credible_level": min(credible_level, 1.0),
+            "target_delta_sky_stat": float(
+                np.max(statistic[evaluated]) - np.max(statistic[target])
+            ),
+        }
+
+    level = _validate_level(target_level, "likelihood_target_level")
+    hpd = hpd_region(level, ranked_sky_indices, ranked_cumulative_probability)
+    overlap_count = int(np.intersect1d(hpd, target).size)
+    metrics.update({
+        "target_level": level,
+        "target_hpd_overlap": bool(overlap_count > 0),
+        "target_hpd_overlap_pixels": overlap_count,
+        "target_hpd_overlap_fraction": (
+            float(overlap_count / len(hpd)) if len(hpd) else 0.0
+        ),
+    })
+    return metrics
+
+
+def evaluate_target_sky_consistency(
+    target_metrics: Mapping[str, Any],
+    *,
+    rule: str,
+    min_probability: float | None,
+    max_delta_sky_stat: float | None,
+    min_overlap_fraction: float,
+) -> CutResult:
+    """Apply one configured targeted-search rule to precomputed metrics."""
+    metrics = dict(target_metrics)
     if rule == "credible_touch":
         # Use the actual discrete HPD set, not a floating-point comparison of
         # cumulative probability at its boundary.
@@ -512,33 +537,25 @@ def _cut_target_sky_consistency(
         threshold = metrics["target_level"]
         observed = metrics["target_credible_level"]
     elif rule == "probability_mass":
-        configured = getattr(
-            context.config, "likelihood_target_min_probability", None
-        )
-        if configured is None:
+        if min_probability is None:
             raise ValueError(
                 "likelihood_target_min_probability is required for "
                 "likelihood_target_rule='probability_mass'"
             )
-        threshold = float(configured)
+        threshold = float(min_probability)
         passed = metrics["target_probability_mass"] >= threshold
         observed = metrics["target_probability_mass"]
     elif rule == "delta_sky_stat":
-        configured = getattr(
-            context.config, "likelihood_target_max_delta_sky_stat", None
-        )
-        if configured is None:
+        if max_delta_sky_stat is None:
             raise ValueError(
                 "likelihood_target_max_delta_sky_stat is required for "
                 "likelihood_target_rule='delta_sky_stat'"
             )
-        threshold = float(configured)
+        threshold = float(max_delta_sky_stat)
         observed = metrics["target_delta_sky_stat"]
         passed = observed is not None and observed <= threshold
     elif rule == "overlap_fraction":
-        threshold = float(
-            getattr(context.config, "likelihood_target_min_overlap_fraction", 0.0)
-        )
+        threshold = float(min_overlap_fraction)
         passed = (
             metrics["target_hpd_overlap"]
             and metrics["target_hpd_overlap_fraction"] >= threshold
@@ -559,19 +576,18 @@ def _cut_target_sky_consistency(
 FEATURE_REGISTRY: dict[str, FeatureSpec] = {
     "sky_area": FeatureSpec(
         name="sky_area",
-        compute=_feature_sky_area,
         cost="O(N log N) time, O(N) transient memory; a few persisted scalars",
         purpose="Localization validation and event follow-up; optional for classification",
+        required_products=("sky_ranking", "target_indices"),
     ),
     "sky_shape": FeatureSpec(
         name="sky_shape",
-        compute=_feature_sky_shape,
         cost="Reuses sky_area sort; five persisted scalars",
         purpose="Candidate morphology feature for offline XGBoost ablation studies",
+        required_products=("sky_ranking",),
     ),
     "sky_vmf_fit": FeatureSpec(
         name="sky_vmf_fit",
-        compute=_feature_sky_vmf_fit,
         cost="O(N) time; eight persisted scalars",
         purpose=(
             "Lossy single-component 2D compression for advanced studies; "
@@ -580,25 +596,25 @@ FEATURE_REGISTRY: dict[str, FeatureSpec] = {
     ),
     "sky_sparse_map": FeatureSpec(
         name="sky_sparse_map",
-        compute=_feature_sky_sparse_map,
         cost="O(N log N) sort; capped index/coordinate/probability arrays",
         purpose="Multimodal-safe compressed sky map for selected-event follow-up",
+        required_products=("sky_ranking",),
         heavy=True,
     ),
     "target_sky_metrics": FeatureSpec(
         name="target_sky_metrics",
-        compute=_feature_target_sky_metrics,
         cost="O(N) target mask plus shared HPD sort; small scalar output",
         purpose="Targeted-search diagnostics and selection-efficiency studies",
+        required_products=("sky_ranking", "target_indices", "target_metrics"),
     ),
 }
 
 CUT_REGISTRY: dict[str, CutSpec] = {
     "target_sky_consistency": CutSpec(
         name="target_sky_consistency",
-        evaluate=_cut_target_sky_consistency,
         stage="post_sky",
         cost="O(N) target mask plus O(N log N) HPD sort",
+        required_products=("sky_ranking", "target_indices", "target_metrics"),
     ),
 }
 
@@ -641,22 +657,34 @@ def resolve_extension_plan(config) -> LikelihoodExtensionPlan:
         name for name in cut_names
         if CUT_REGISTRY[name].stage == "post_reconstruction"
     )
+    required_products = {
+        product
+        for name in feature_names
+        for product in FEATURE_REGISTRY[name].required_products
+    }
+    required_products.update(
+        product
+        for name in cut_names
+        for product in CUT_REGISTRY[name].required_products
+    )
     return LikelihoodExtensionPlan(
         feature_names=feature_names,
         post_sky_cut_names=post_sky,
         post_reconstruction_cut_names=post_reconstruction,
         feature_failure=failure,
         allow_heavy_features=allow_heavy,
+        required_products=tuple(sorted(required_products)),
     )
 
 
 def run_likelihood_cuts(
-    context: LikelihoodExtensionContext,
     plan: LikelihoodExtensionPlan,
     *,
     stage: str,
+    config,
+    target_metrics: Mapping[str, Any] | None,
 ) -> CutResult:
-    """Run cuts for one fixed stage; cut errors always fail loudly."""
+    """Run pure cut functions selected for one fixed extension stage."""
     if stage == "post_sky":
         names = plan.post_sky_cut_names
     elif stage == "post_reconstruction":
@@ -666,24 +694,140 @@ def run_likelihood_cuts(
 
     all_metrics: dict[str, Any] = {}
     for name in names:
-        result = CUT_REGISTRY[name].evaluate(context)
+        if name == "target_sky_consistency":
+            if target_metrics is None:
+                raise ValueError(
+                    "target_sky_consistency requires target sky metrics"
+                )
+            result = evaluate_target_sky_consistency(
+                target_metrics,
+                rule=str(
+                    getattr(config, "likelihood_target_rule", "credible_touch")
+                ),
+                min_probability=getattr(
+                    config, "likelihood_target_min_probability", None
+                ),
+                max_delta_sky_stat=getattr(
+                    config, "likelihood_target_max_delta_sky_stat", None
+                ),
+                min_overlap_fraction=float(
+                    getattr(
+                        config,
+                        "likelihood_target_min_overlap_fraction",
+                        0.0,
+                    )
+                ),
+            )
+        else:  # pragma: no cover - plan validation prevents this path
+            raise ValueError(f"Unknown likelihood cut: {name!r}")
         all_metrics[name] = dict(result.metrics)
         if not result.passed:
             return CutResult(False, reason=result.reason, metrics=all_metrics)
     return CutResult(True, metrics=all_metrics)
 
 
+def compute_likelihood_feature(
+    name: str,
+    *,
+    config,
+    sky_probability: np.ndarray,
+    evaluated_sky_indices: np.ndarray,
+    phi_geo_arr: np.ndarray,
+    latitude_arr: np.ndarray,
+    healpix_order: int | None,
+    l_max: int,
+    ranked_sky_indices: np.ndarray | None,
+    ranked_cumulative_probability: np.ndarray | None,
+    target_metrics: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """Dispatch one named feature to a pure function with explicit inputs."""
+    pixel_area = sky_pixel_area_deg2(len(sky_probability))
+    if name in {"sky_area", "sky_shape", "sky_sparse_map"}:
+        if ranked_sky_indices is None or ranked_cumulative_probability is None:
+            raise ValueError(f"{name} requires ranked sky probability")
+
+    if name == "sky_area":
+        return compute_sky_area_feature(
+            config,
+            pixel_area_deg2=pixel_area,
+            ranked_sky_indices=ranked_sky_indices,
+            ranked_cumulative_probability=ranked_cumulative_probability,
+        )
+    if name == "sky_shape":
+        return compute_sky_shape_feature(
+            sky_probability,
+            evaluated_sky_indices,
+            pixel_area_deg2=pixel_area,
+            ranked_sky_indices=ranked_sky_indices,
+            ranked_cumulative_probability=ranked_cumulative_probability,
+        )
+    if name == "sky_vmf_fit":
+        return compute_sky_vmf_feature(
+            sky_probability,
+            evaluated_sky_indices,
+            phi_geo_arr,
+            latitude_arr,
+            l_max,
+            pixel_area_deg2=pixel_area,
+        )
+    if name == "sky_sparse_map":
+        return compute_sky_sparse_map_feature(
+            config,
+            sky_probability,
+            phi_geo_arr,
+            latitude_arr,
+            healpix_order=healpix_order,
+            ranked_sky_indices=ranked_sky_indices,
+            ranked_cumulative_probability=ranked_cumulative_probability,
+        )
+    if name == "target_sky_metrics":
+        if target_metrics is None:
+            raise ValueError("target_sky_metrics could not be computed")
+        return dict(target_metrics)
+    raise ValueError(f"Unknown likelihood feature: {name!r}")
+
+
 def run_likelihood_features(
-    context: LikelihoodExtensionContext,
     plan: LikelihoodExtensionPlan,
+    *,
+    config,
+    sky_probability: np.ndarray,
+    evaluated_sky_indices: np.ndarray,
+    phi_geo_arr: np.ndarray,
+    latitude_arr: np.ndarray,
+    healpix_order: int | None,
+    l_max: int,
+    ranked_sky_indices: np.ndarray | None,
+    ranked_cumulative_probability: np.ndarray | None,
+    target_metrics: Mapping[str, Any] | None,
+    preparation_errors: Mapping[str, Exception] | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Evaluate selected output features with explicit per-feature status."""
+    preparation_errors = preparation_errors or {}
     values: dict[str, Any] = {}
     status: dict[str, dict[str, Any]] = {}
     for name in plan.feature_names:
         spec = FEATURE_REGISTRY[name]
         try:
-            feature_values = dict(spec.compute(context))
+            if name in preparation_errors:
+                raise preparation_errors[name]
+            feature_values = dict(
+                compute_likelihood_feature(
+                    name,
+                    config=config,
+                    sky_probability=sky_probability,
+                    evaluated_sky_indices=evaluated_sky_indices,
+                    phi_geo_arr=phi_geo_arr,
+                    latitude_arr=latitude_arr,
+                    healpix_order=healpix_order,
+                    l_max=l_max,
+                    ranked_sky_indices=ranked_sky_indices,
+                    ranked_cumulative_probability=(
+                        ranked_cumulative_probability
+                    ),
+                    target_metrics=target_metrics,
+                )
+            )
         except Exception as exc:
             if plan.feature_failure == "error":
                 raise
@@ -706,69 +850,60 @@ def run_likelihood_features(
     return values, status
 
 
-def apply_legacy_sky_area(
-    context: LikelihoodExtensionContext,
-    plan: LikelihoodExtensionPlan,
-) -> None:
-    """Populate cWB-compatible ``erA`` values only when sky_area is enabled.
+def build_legacy_sky_area(
+    *,
+    pixel_area_deg2: float,
+    sky_probability: Sequence[float],
+    evaluated_sky_indices: Sequence[int],
+    ranked_sky_indices: Sequence[int],
+    ranked_cumulative_probability: Sequence[float],
+    target_sky_indices: Sequence[int] | None,
+) -> list[float]:
+    """Build cWB-compatible ``erA`` values for an enabled sky-area feature.
 
     cWB stores the square root of area in square degrees for the 10--90 %
     regions.  Entries 0 and 10 use the best target-region pixel when a target
     is configured; injection-only values remain unavailable at this stage.
     """
-    if "sky_area" not in plan.feature_names:
-        return
     legacy = [0.0]
     legacy.extend(
-        float(np.sqrt(context.hpd_area_deg2(level)))
+        float(
+            np.sqrt(
+                hpd_area_deg2(
+                    level,
+                    pixel_area_deg2,
+                    ranked_sky_indices,
+                    ranked_cumulative_probability,
+                )
+            )
+        )
         for level in _LEGACY_SKY_LEVELS
     )
     legacy.append(0.0)
 
-    if getattr(context.config, "likelihood_target_region", None):
+    if target_sky_indices is not None:
         target = np.intersect1d(
-            context.target_indices,
-            context.evaluated_sky_indices,
+            target_sky_indices,
+            evaluated_sky_indices,
             assume_unique=False,
         )
         if target.size:
-            probability = context.sky_probability
+            probability = np.asarray(sky_probability)
             searched = int(target[np.argmax(probability[target])])
-            positions = np.where(context.ranked_sky_indices == searched)[0]
+            positions = np.where(
+                np.asarray(ranked_sky_indices) == searched
+            )[0]
             if positions.size:
                 position = int(positions[0])
                 credible_level = float(
-                    context.ranked_cumulative_probability[position]
+                    ranked_cumulative_probability[position]
                 )
                 legacy[0] = float(
-                    np.sqrt((position + 1) * context.pixel_area_deg2)
+                    np.sqrt((position + 1) * pixel_area_deg2)
                 )
                 legacy[10] = min(credible_level, 1.0)
 
-    context.cluster.sky_area = legacy
-
-
-def attach_extension_outputs(
-    context: LikelihoodExtensionContext,
-    *,
-    features: Mapping[str, Any],
-    feature_status: Mapping[str, Any],
-    cut_metrics: Mapping[str, Any],
-) -> None:
-    """Attach optional sidecar products without changing likelihood returns."""
-    skymap = context.skymap_statistics
-    skymap.likelihood_features = dict(features) or None
-    skymap.likelihood_feature_status = dict(feature_status) or None
-    skymap.likelihood_cut_metrics = dict(cut_metrics) or None
-    skymap.likelihood_metadata = (
-        {
-            "sky_probability_temperature": context.sky_temperature,
-            "evaluated_sky_pixel_count": int(
-                len(context.evaluated_sky_indices)
-            ),
-        }
-        if features or feature_status or cut_metrics else None
-    )
+    return legacy
 
 
 __all__ = [
@@ -777,12 +912,24 @@ __all__ = [
     "FeatureSpec",
     "CutSpec",
     "CutResult",
-    "LikelihoodExtensionContext",
     "LikelihoodExtensionPlan",
     "resolve_extension_plan",
+    "validate_sky_temperature",
     "build_sky_probability",
+    "rank_sky_probability",
+    "hpd_region",
+    "sky_pixel_area_deg2",
+    "hpd_area_deg2",
+    "trigger_gps",
+    "build_target_sky_indices",
+    "compute_target_sky_metrics",
+    "evaluate_target_sky_consistency",
+    "compute_sky_area_feature",
+    "compute_sky_shape_feature",
+    "compute_sky_vmf_feature",
+    "compute_sky_sparse_map_feature",
+    "compute_likelihood_feature",
     "run_likelihood_cuts",
     "run_likelihood_features",
-    "apply_legacy_sky_area",
-    "attach_extension_outputs",
+    "build_legacy_sky_area",
 ]

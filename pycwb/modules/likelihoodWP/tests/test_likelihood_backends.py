@@ -122,6 +122,20 @@ def _patch_data_prep(monkeypatch, flow, calls):
     monkeypatch.setattr(flow, "extract_pixel_time_delay_data", extract)
 
 
+def _patch_reconstruction(monkeypatch, flow, calls):
+    monkeypatch.setattr(flow, "_create_wdm_set_python", lambda config: [])
+    monkeypatch.setattr(
+        flow,
+        "populate_detection_statistics",
+        lambda *args, **kwargs: calls.append("reconstruct"),
+    )
+    monkeypatch.setattr(
+        flow,
+        "update_chirp_mass_statistics",
+        lambda *args, **kwargs: None,
+    )
+
+
 def _setup():
     extension_plan = LikelihoodExtensionPlan(
         feature_names=(),
@@ -156,6 +170,11 @@ def _config():
         precision=0,
         nRES=1,
         pattern=10,
+        likelihood_features=[],
+        likelihood_cuts=[],
+        likelihood_feature_failure="warn",
+        likelihood_allow_heavy_features=False,
+        likelihood_sky_levels=[0.5, 0.9],
         likelihood_sky_temperature=1.0,
         likelihood_target_region=None,
     )
@@ -169,12 +188,12 @@ def test_shared_flow_calls_only_the_backend_numerical_boundary(monkeypatch):
     backend, calls = _recording_kernels()
     cluster = _cluster()
     _patch_data_prep(monkeypatch, flow, calls)
+    _patch_reconstruction(monkeypatch, flow, calls)
     monkeypatch.setattr(flow, "sky_valid_indices_for_cluster", lambda *a, **k: None)
-    monkeypatch.setattr(flow, "_standard_cut", lambda *args: None)
     monkeypatch.setattr(
         flow,
-        "_reconstruct_and_postprocess",
-        lambda *args: calls.append("reconstruct"),
+        "get_likelihood_rejection_reason",
+        lambda *args, **kwargs: None,
     )
 
     result, skymap = evaluate_cluster_likelihood(
@@ -198,6 +217,41 @@ def test_shared_flow_calls_only_the_backend_numerical_boundary(monkeypatch):
     }
 
 
+def test_shared_flow_computes_selected_feature_without_context(monkeypatch):
+    import importlib
+
+    flow = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
+    backend, calls = _recording_kernels()
+    cluster = _cluster()
+    config = _config()
+    config.likelihood_features = ["sky_area"]
+    setup = _setup()
+    setup.pop("likelihood_extension_plan")
+
+    _patch_data_prep(monkeypatch, flow, calls)
+    _patch_reconstruction(monkeypatch, flow, calls)
+    monkeypatch.setattr(flow, "sky_valid_indices_for_cluster", lambda *a, **k: None)
+    monkeypatch.setattr(
+        flow,
+        "get_likelihood_rejection_reason",
+        lambda *args, **kwargs: None,
+    )
+
+    result, skymap = evaluate_cluster_likelihood(
+        nIFO=2,
+        cluster=cluster,
+        config=config,
+        setup=setup,
+        xtalk=_XTalk(),
+        backend=backend,
+    )
+
+    assert result is cluster
+    assert len(cluster.sky_area) == 11
+    assert skymap.likelihood_features["sky_area_90_deg2"] > 0.0
+    assert skymap.likelihood_feature_status["sky_area"]["ok"] is True
+
+
 def test_post_sky_rejection_skips_shared_reconstruction(monkeypatch):
     import importlib
 
@@ -206,7 +260,11 @@ def test_post_sky_rejection_skips_shared_reconstruction(monkeypatch):
     backend, calls = _recording_kernels()
     _patch_data_prep(monkeypatch, flow, calls)
     monkeypatch.setattr(flow, "sky_valid_indices_for_cluster", lambda *a, **k: None)
-    monkeypatch.setattr(flow, "_standard_cut", lambda *args: None)
+    monkeypatch.setattr(
+        flow,
+        "get_likelihood_rejection_reason",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(
         flow,
         "run_likelihood_cuts",
@@ -216,8 +274,10 @@ def test_post_sky_rejection_skips_shared_reconstruction(monkeypatch):
     )
     monkeypatch.setattr(
         flow,
-        "_reconstruct_and_postprocess",
-        lambda *args: pytest.fail("reconstruction should have been skipped"),
+        "populate_detection_statistics",
+        lambda *args, **kwargs: pytest.fail(
+            "reconstruction should have been skipped"
+        ),
     )
 
     result = evaluate_cluster_likelihood(
@@ -278,9 +338,13 @@ def test_public_likelihood_dispatches_from_segment_setup(monkeypatch):
     monkeypatch.setattr(
         facade, "sky_valid_indices_for_cluster", lambda *a, **k: None
     )
-    monkeypatch.setattr(facade, "_standard_cut", lambda *args: None)
-    monkeypatch.setattr(facade, "_reconstruct_and_postprocess", lambda *args: None)
+    monkeypatch.setattr(
+        facade,
+        "get_likelihood_rejection_reason",
+        lambda *args, **kwargs: None,
+    )
     _patch_data_prep(monkeypatch, facade, calls)
+    _patch_reconstruction(monkeypatch, facade, calls)
 
     setup = _setup()
     setup["likelihood_backend"] = "jax"

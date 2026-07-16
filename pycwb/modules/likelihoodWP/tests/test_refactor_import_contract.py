@@ -54,6 +54,19 @@ def test_likelihood_facade_has_bounded_public_surface():
     assert not hasattr(facade, "calculate_dpf")
     assert not hasattr(facade, "run_cluster_likelihood")
     assert not hasattr(facade, "_time_call")
+    assert not hasattr(facade, "_standard_cut")
+    assert not hasattr(facade, "_build_extension_context")
+    assert not hasattr(facade, "_compute_extensions")
+    assert not hasattr(facade, "_reconstruct_and_postprocess")
+    assert not hasattr(facade, "_finalize_cluster")
+
+
+def test_extensions_use_pure_inputs_instead_of_mutable_context():
+    extensions = importlib.import_module("pycwb.modules.likelihoodWP.extensions")
+    assert not hasattr(extensions, "LikelihoodExtensionContext")
+    assert extensions.build_sky_probability is not None
+    assert extensions.compute_likelihood_feature is not None
+    assert extensions.evaluate_target_sky_consistency is not None
 
 
 def test_retired_gpu_package_is_absent():

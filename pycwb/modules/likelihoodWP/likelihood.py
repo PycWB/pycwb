@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pycwb.modules.xtalk.type import XTalk
+from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
 from pycwb.types.network_cluster import Cluster, FragmentCluster
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 from pycwb.types.time_series import TimeSeries
@@ -26,19 +27,22 @@ from .detection_statistics import (
     update_chirp_mass_statistics,
 )
 from .extensions import (
-    LikelihoodExtensionContext,
-    LikelihoodExtensionPlan,
-    apply_legacy_sky_area,
-    attach_extension_outputs,
+    build_legacy_sky_area,
     build_sky_probability,
+    build_target_sky_indices,
+    compute_target_sky_metrics,
+    rank_sky_probability,
     resolve_extension_plan,
     run_likelihood_cuts,
     run_likelihood_features,
+    sky_pixel_area_deg2,
+    trigger_gps,
+    validate_sky_temperature,
 )
 from .sky_mask import sky_valid_indices_for_cluster
 from .likelihood_setup import prepare_likelihood_inputs
 from .pixel_data import extract_pixel_time_delay_data
-from .typing import SkyMapStatistics, SkyStatistics
+from .typing import SkyMapStatistics
 
 if TYPE_CHECKING:
     from pycwb.config.config import Config
@@ -61,6 +65,9 @@ def evaluate_cluster_likelihood(
 ) -> tuple[Cluster | None, SkyMapStatistics | None]:
     """Resolve inputs and execute one explicit, flat likelihood sequence."""
 
+    # Resolve segment-level inputs here so the scientific stages below operate
+    # only on explicit local data.  Callers processing many clusters can pass
+    # precomputed setup/xtalk objects to avoid rebuilding them for every event.
     if config is None:
         raise ValueError("likelihood(): config is required")
     if xtalk is None:
@@ -84,14 +91,19 @@ def evaluate_cluster_likelihood(
     kernels = get_likelihood_backend(backend_choice)
     n_ifo = nIFO
 
+    # Keep timing and event bookkeeping beside the flat workflow; this makes
+    # the cost of each optional stage visible without wrapping the stage calls.
     started = time.perf_counter()
     timings: dict[str, float] = {}
     n_pixels = len(cluster.pixel_arrays)
     _log_start(kernels.name, cluster_id, n_pixels)
 
+    # Refresh per-pixel noise weights only when whitening maps are supplied.
     if nRMS is not None and len(nRMS) == n_ifo:
         cluster.pixel_arrays.populate_noise_rms(nRMS)
 
+    # Stage 1: select the normal or coarse sky grid, then apply static and
+    # event-dependent sky masks before any sky-dependent calculation.
     stage_started = time.perf_counter()
     grid, grid_rejection = _select_sky_grid(
         config, setup, cluster, cluster_id, n_pixels
@@ -107,10 +119,15 @@ def evaluate_cluster_likelihood(
             timings,
         )
 
+    # Resolve optional features and cuts once.  An empty plan is the inexpensive
+    # default for high-volume background production.
     extension_plan = setup.get("likelihood_extension_plan")
     if extension_plan is None:
         extension_plan = resolve_extension_plan(config)
 
+    # Stage 2: convert sparse pixel/xtalk data to the dense layouts expected by
+    # both numerical backends.  Noise is (pixel, detector); delayed quadratures
+    # are (delay, detector, pixel).
     stage_started = time.perf_counter()
     xtalk_lookup, xtalk_coefficients = xtalk.get_xtalk_pixels(
         cluster.pixel_arrays, True
@@ -122,6 +139,9 @@ def evaluate_cluster_likelihood(
     td_phase0 = np.transpose(phase0.astype(np.float32), (2, 0, 1))
     td_phase90 = np.transpose(phase90.astype(np.float32), (2, 0, 1))
     timings["data_prep"] = time.perf_counter() - stage_started
+
+    # Stage 3: construct the dominant-polarization-frame regulators.  The
+    # second term depends on the active sky grid and is computed by the backend.
     regularization = np.array(
         [setup["delta_regulator"] * np.sqrt(2.0), 0.0, 0.0],
         dtype=np.float32,
@@ -139,6 +159,8 @@ def evaluate_cluster_likelihood(
     )
     timings["dpf_regulator"] = time.perf_counter() - stage_started
 
+    # Stage 4: evaluate the coherent statistic over all valid sky directions.
+    # The scan returns compact sky maps and the maximizing direction l_max.
     stage_started = time.perf_counter()
     sky_scan_result = kernels.scan_sky(
         n_ifo,
@@ -158,6 +180,7 @@ def evaluate_cluster_likelihood(
     )
     skymap_statistics = SkyMapStatistics.from_tuple(sky_scan_result)
     timings["sky_scan"] = time.perf_counter() - stage_started
+    # A non-positive maximum means that no viable coherent sky solution exists.
     if skymap_statistics.sky_stat_max <= 0.0:
         return _reject(
             f"non-positive sky_stat_max={skymap_statistics.sky_stat_max:.3f}",
@@ -169,6 +192,8 @@ def evaluate_cluster_likelihood(
             skymap_statistics,
         )
 
+    # Stage 5: recompute detailed coherent and per-pixel statistics only at the
+    # best-fit direction instead of retaining them for the full sky grid.
     stage_started = time.perf_counter()
     sky_statistics = kernels.statistics_at_best_fit(
         int(skymap_statistics.l_max),
@@ -188,19 +213,80 @@ def evaluate_cluster_likelihood(
     )
     timings["sky_statistics_at_lmax"] = time.perf_counter() - stage_started
 
+    # Stage 6: normalize sky probability for every survivor.  The O(N log N)
+    # ranking and target-region products are built only when the plan requires
+    # them, then passed explicitly to features and cuts that share them.
     stage_started = time.perf_counter()
-    extension_context = _build_extension_context(
-        config,
-        cluster,
-        setup,
-        skymap_statistics,
-        sky_statistics,
-        grid,
+    sky_temperature = validate_sky_temperature(
+        getattr(config, "likelihood_sky_temperature", 1.0)
     )
+    sky_probability, evaluated_sky_indices = build_sky_probability(
+        skymap_statistics.nSkyStat,
+        grid.valid_indices,
+        sky_temperature,
+    )
+    skymap_statistics.nProbability = sky_probability
+
+    ranked_sky_indices = None
+    ranked_cumulative_probability = None
+    if "sky_ranking" in extension_plan.required_products:
+        ranked_sky_indices, ranked_cumulative_probability = (
+            rank_sky_probability(sky_probability, evaluated_sky_indices)
+        )
+
+    target_sky_indices = None
+    target_metrics = None
+    target_preparation_error: Exception | None = None
+    target_region = getattr(config, "likelihood_target_region", None)
+    needs_target_metrics = "target_metrics" in extension_plan.required_products
+    if "target_indices" in extension_plan.required_products and (
+        target_region or needs_target_metrics
+    ):
+        try:
+            target_sky_indices = build_target_sky_indices(
+                target_region,
+                grid.phi_geo,
+                grid.latitude,
+                t_ref=trigger_gps(cluster, setup),
+            )
+            if needs_target_metrics:
+                target_metrics = compute_target_sky_metrics(
+                    skymap_statistics.nSkyStat,
+                    sky_probability,
+                    evaluated_sky_indices,
+                    target_sky_indices,
+                    target_level=getattr(
+                        config, "likelihood_target_level", 0.9
+                    ),
+                    ranked_sky_indices=ranked_sky_indices,
+                    ranked_cumulative_probability=(
+                        ranked_cumulative_probability
+                    ),
+                )
+        except Exception as exc:
+            if (
+                "target_sky_consistency"
+                in extension_plan.post_sky_cut_names
+                or extension_plan.feature_failure == "error"
+            ):
+                raise
+            target_preparation_error = exc
     timings["sky_probability"] = time.perf_counter() - stage_started
 
+    # Stage 7: apply the standard production thresholds before waveform
+    # reconstruction and optional feature extraction.
     stage_started = time.perf_counter()
-    standard_rejection = _standard_cut(sky_statistics, n_pixels, setup)
+    selected_pixels = int(
+        np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0)
+    )
+    logger.info("Selected core pixels: %d / %d", selected_pixels, n_pixels)
+    standard_rejection = get_likelihood_rejection_reason(
+        sky_statistics,
+        setup["network_energy_threshold"],
+        setup["netEC_threshold"],
+        net_rho_threshold=setup["net_rho_threshold"],
+        xgb_rho_mode=setup["xgb_rho_mode"],
+    )
     timings["threshold_cut"] = time.perf_counter() - stage_started
     if standard_rejection:
         return _reject(
@@ -213,11 +299,14 @@ def evaluate_cluster_likelihood(
             skymap_statistics,
         )
 
+    # Stage 8: run optional sky-only cuts early.  A targeted search can, for
+    # example, reject a cluster whose 90% HPD region misses the target region.
     stage_started = time.perf_counter()
     post_sky = run_likelihood_cuts(
-        extension_context,
         extension_plan,
         stage="post_sky",
+        config=config,
+        target_metrics=target_metrics,
     )
     timings["likelihood_post_sky_cuts"] = (
         time.perf_counter() - stage_started
@@ -234,25 +323,37 @@ def evaluate_cluster_likelihood(
             skymap_statistics,
         )
 
+    # Stage 9: populate event statistics and reconstructed waveforms only for
+    # clusters that survived all inexpensive sky-level cuts.
     stage_started = time.perf_counter()
-    _reconstruct_and_postprocess(
-        config,
-        cluster,
-        n_ifo,
-        xtalk,
-        setup,
-        xtalk_coefficients,
-        xtalk_lookup,
+    wdm_list = _create_wdm_set_python(config)
+    populate_detection_statistics(
         sky_statistics,
         skymap_statistics,
+        cluster=cluster,
+        n_ifo=n_ifo,
+        xtalk=xtalk,
+        network_energy_threshold=setup["network_energy_threshold"],
+        xgb_rho_mode=setup["xgb_rho_mode"],
+        config=config,
+        cluster_xtalk=xtalk_coefficients,
+        cluster_xtalk_lookup=xtalk_lookup,
+        wdm_list=wdm_list,
+    )
+    update_chirp_mass_statistics(
+        cluster,
+        xgb_rho_mode=setup["xgb_rho_mode"],
+        pat0=getattr(config, "pattern", 10) == 0,
     )
     timings["reconstruction"] = time.perf_counter() - stage_started
 
+    # Stage 10: reserve a clear hook for cuts that require reconstructed data.
     stage_started = time.perf_counter()
     post_reconstruction = run_likelihood_cuts(
-        extension_context,
         extension_plan,
         stage="post_reconstruction",
+        config=config,
+        target_metrics=target_metrics,
     )
     timings["likelihood_post_reconstruction_cuts"] = (
         time.perf_counter() - stage_started
@@ -269,12 +370,65 @@ def evaluate_cluster_likelihood(
             skymap_statistics,
         )
 
+    # Stage 11: compute only selected optional outputs from explicit inputs.
     stage_started = time.perf_counter()
-    _compute_extensions(extension_context, extension_plan, cut_metrics)
+    preparation_errors = (
+        {"target_sky_metrics": target_preparation_error}
+        if target_preparation_error is not None
+        else None
+    )
+    features, feature_status = run_likelihood_features(
+        extension_plan,
+        config=config,
+        sky_probability=sky_probability,
+        evaluated_sky_indices=evaluated_sky_indices,
+        phi_geo_arr=grid.phi_geo,
+        latitude_arr=grid.latitude,
+        healpix_order=grid.healpix_order,
+        l_max=int(skymap_statistics.l_max),
+        ranked_sky_indices=ranked_sky_indices,
+        ranked_cumulative_probability=ranked_cumulative_probability,
+        target_metrics=target_metrics,
+        preparation_errors=preparation_errors,
+    )
+    if feature_status.get("sky_area", {}).get("ok", False):
+        cluster.sky_area = build_legacy_sky_area(
+            pixel_area_deg2=sky_pixel_area_deg2(len(sky_probability)),
+            sky_probability=sky_probability,
+            evaluated_sky_indices=evaluated_sky_indices,
+            ranked_sky_indices=ranked_sky_indices,
+            ranked_cumulative_probability=ranked_cumulative_probability,
+            target_sky_indices=target_sky_indices,
+        )
+    skymap_statistics.likelihood_features = dict(features) or None
+    skymap_statistics.likelihood_feature_status = dict(feature_status) or None
+    skymap_statistics.likelihood_cut_metrics = dict(cut_metrics) or None
+    skymap_statistics.likelihood_metadata = (
+        {
+            "sky_probability_temperature": sky_temperature,
+            "evaluated_sky_pixel_count": int(len(evaluated_sky_indices)),
+        }
+        if features or feature_status or cut_metrics
+        else None
+    )
     timings["likelihood_features"] = time.perf_counter() - stage_started
 
+    # Stage 12: persist the best sky position/time delays and mark acceptance.
     stage_started = time.perf_counter()
-    _finalize_cluster(cluster, skymap_statistics, grid, n_ifo)
+    sky_index = int(skymap_statistics.l_max)
+    theta = np.pi / 2.0 - grid.latitude[sky_index]
+    phi = grid.phi_geo[sky_index]
+    cluster.cluster_meta.l_max = sky_index
+    cluster.cluster_meta.theta = float(np.clip(np.degrees(theta), 0.0, 180.0))
+    cluster.cluster_meta.phi = float(np.degrees(phi)) % 360.0
+    if cluster.cluster_meta.c_time == 0.0:
+        cluster.cluster_meta.c_time = cluster.cluster_time
+    if cluster.cluster_meta.c_freq == 0.0:
+        cluster.cluster_meta.c_freq = cluster.cluster_freq
+    cluster.sky_time_delay = [
+        float(grid.delays[detector, sky_index]) for detector in range(n_ifo)
+    ]
+    cluster.cluster_status = -1
     timings["finalize"] = time.perf_counter() - stage_started
     _log_finish(
         cluster_id,
@@ -295,6 +449,8 @@ def _select_sky_grid(
     cluster_id: int | None,
     n_pixels: int,
 ) -> tuple[SkyGrid | None, str | None]:
+    # The low 16 bits of precision retain the cWB large-cluster size rule.
+    # Large clusters use a coarser grid when one was prepared, limiting scan cost.
     precision = int(abs(getattr(config, "precision", 0) or 0))
     cluster_size_limit = precision % 65536
     n_resolutions = int(getattr(config, "nRES", 1) or 1)
@@ -304,6 +460,7 @@ def _select_sky_grid(
         and setup.get("ml_big_cluster") is not None
     )
 
+    # Keep delays, antenna patterns, and coordinates on the same selected grid.
     suffix = "_big_cluster" if use_big_grid else ""
     delays = setup[f"ml{suffix}"]
     plus = setup[f"FP{suffix}_t"] if suffix else setup["FP_t"]
@@ -331,6 +488,8 @@ def _select_sky_grid(
             latitude = setup["dec_arr"]
         healpix_order = setup.get("healpix_order")
 
+    # The cluster-specific mask may update a time-dependent ICRS mask; when it
+    # does, it replaces the setup-level list of valid directions.
     if valid is None:
         valid = np.arange(n_sky, dtype=np.int64)
     cluster_valid = sky_valid_indices_for_cluster(
@@ -352,120 +511,6 @@ def _select_sky_grid(
         healpix_order=healpix_order,
     )
     return grid, None
-
-
-def _build_extension_context(
-    config,
-    cluster: Cluster,
-    setup: dict,
-    skymap_statistics: SkyMapStatistics,
-    sky_statistics: SkyStatistics,
-    grid: SkyGrid,
-) -> LikelihoodExtensionContext:
-    context = LikelihoodExtensionContext(
-        config=config,
-        cluster=cluster,
-        setup=setup,
-        skymap_statistics=skymap_statistics,
-        sky_statistics=sky_statistics,
-        sky_valid_indices=grid.valid_indices,
-        phi_geo_arr=grid.phi_geo,
-        latitude_arr=grid.latitude,
-        healpix_order=grid.healpix_order,
-    )
-    build_sky_probability(context)
-    return context
-
-
-def _standard_cut(
-    sky_statistics: SkyStatistics,
-    n_pixels: int,
-    setup: dict,
-) -> str | None:
-    selected = int(
-        np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0)
-    )
-    logger.info("Selected core pixels: %d / %d", selected, n_pixels)
-    return get_likelihood_rejection_reason(
-        sky_statistics,
-        setup["network_energy_threshold"],
-        setup["netEC_threshold"],
-        net_rho_threshold=setup["net_rho_threshold"],
-        xgb_rho_mode=setup["xgb_rho_mode"],
-    )
-
-
-def _reconstruct_and_postprocess(
-    config,
-    cluster: Cluster,
-    n_ifo: int,
-    xtalk: XTalk,
-    setup: dict,
-    xtalk_coefficients: np.ndarray,
-    xtalk_lookup: np.ndarray,
-    sky_statistics: SkyStatistics,
-    skymap_statistics: SkyMapStatistics,
-) -> None:
-    from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
-
-    wdm_list = _create_wdm_set_python(config)
-    populate_detection_statistics(
-        sky_statistics,
-        skymap_statistics,
-        cluster=cluster,
-        n_ifo=n_ifo,
-        xtalk=xtalk,
-        network_energy_threshold=setup["network_energy_threshold"],
-        xgb_rho_mode=setup["xgb_rho_mode"],
-        config=config,
-        cluster_xtalk=xtalk_coefficients,
-        cluster_xtalk_lookup=xtalk_lookup,
-        wdm_list=wdm_list,
-    )
-    update_chirp_mass_statistics(
-        cluster,
-        xgb_rho_mode=setup["xgb_rho_mode"],
-        pat0=getattr(config, "pattern", 10) == 0,
-    )
-
-
-def _compute_extensions(
-    context: LikelihoodExtensionContext,
-    plan: LikelihoodExtensionPlan,
-    cut_metrics: dict,
-) -> None:
-    features, feature_status = run_likelihood_features(context, plan)
-    if feature_status.get("sky_area", {}).get("ok", False):
-        apply_legacy_sky_area(context, plan)
-    attach_extension_outputs(
-        context,
-        features=features,
-        feature_status=feature_status,
-        cut_metrics=cut_metrics,
-    )
-
-
-def _finalize_cluster(
-    cluster: Cluster,
-    skymap_statistics: SkyMapStatistics,
-    grid: SkyGrid,
-    n_ifo: int,
-) -> None:
-    sky_index = int(skymap_statistics.l_max)
-    theta = np.pi / 2.0 - grid.latitude[sky_index]
-    phi = grid.phi_geo[sky_index]
-
-    cluster.cluster_meta.l_max = sky_index
-    cluster.cluster_meta.theta = float(np.clip(np.degrees(theta), 0.0, 180.0))
-    cluster.cluster_meta.phi = float(np.degrees(phi)) % 360.0
-    if cluster.cluster_meta.c_time == 0.0:
-        cluster.cluster_meta.c_time = cluster.cluster_time
-    if cluster.cluster_meta.c_freq == 0.0:
-        cluster.cluster_meta.c_freq = cluster.cluster_freq
-    cluster.sky_time_delay = [
-        float(grid.delays[detector, sky_index]) for detector in range(n_ifo)
-    ]
-    cluster.cluster_status = -1
 
 
 def _log_start(
@@ -560,6 +605,8 @@ def evaluate_fragment_clusters(
     if xtalk is None:
         xtalk = XTalk.load(MRAcatalog, dump=True)
 
+    # Setup arrays, xtalk data, and backend kernels are segment-level resources;
+    # resolve them once and pass them directly into every per-cluster call.
     setup = prepare_likelihood_inputs(config, strains, config.nIFO)
     backend_choice = backend or setup["likelihood_backend"]
     kernels = get_likelihood_backend(backend_choice)
@@ -615,6 +662,8 @@ def _prepare_setup(
     strains: list[TimeSeries] | None,
     supercluster_setup: dict | None,
 ) -> dict:
+    # Reuse antenna/delay arrays already produced by superclustering when they
+    # are available; otherwise prepare them from the strain segment.
     delays = plus = cross = None
     if supercluster_setup is not None:
         delays = supercluster_setup.get(
