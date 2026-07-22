@@ -289,6 +289,7 @@ def _build_training_section(
         "bkg_intervals": _interval_summary(ctx.resolve(training.get("bkg_intervals_file"))),
         "workflow_steps": workflow_steps,
         "config_text": config_text,
+        "plots": [_plot_card(ctx, entry) for entry in training.get("plots", []) or []],
         "placeholders": [
             "Training curves will appear here once train_xgboost persists evaluation history.",
             "Feature importance will appear here once the model diagnostic artifact is available.",

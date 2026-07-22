@@ -495,7 +495,13 @@
     <div class="panel plot-card">
       <div class="plot-title">{{ plot.label }}</div>
       {% if plot.exists %}
+        {% if plot.href.endswith('.html') or plot.href.endswith('.htm') %}
+      <iframe src="{{ plot.href }}" title="{{ plot.label }}" height="620" loading="lazy"
+              sandbox="allow-scripts allow-same-origin"
+              style="width:100%;border:1px solid var(--border);border-radius:6px;background:var(--surface-soft);"></iframe>
+        {% else %}
       <a href="{{ plot.href }}"><img src="{{ plot.href }}" alt="{{ plot.label }}"></a>
+        {% endif %}
       {% else %}
       <div class="placeholder">Missing artifact: {{ plot.path }}</div>
       {% endif %}
@@ -773,6 +779,14 @@
         <div id="fig-{{ fig.id }}" class="plotly-panel"></div>
       </div>
       {% endfor %}
+    </div>
+
+    {% if report.training.plots %}
+    <h3>XGB Feature Correlation</h3>
+    {{ render_plot_grid(report.training.plots) }}
+    {% endif %}
+
+    <div class="grid wide" style="margin-top:14px;">
       {% for item in report.training.placeholders %}
       <div class="panel"><div class="placeholder">{{ item }}</div></div>
       {% endfor %}

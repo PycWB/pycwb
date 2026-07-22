@@ -25,6 +25,7 @@ from .plot_efficiency import compute_hrss50
 from .multi_run import read_catalog_runs
 from .angle_comparison import plot_angle_error_comparison
 from .generic_report import generic_web_report
+from .xgb_heatmap import plot_xgb_heatmap
 
 __all__ = [
     "trigger_selection",
@@ -54,4 +55,5 @@ __all__ = [
     "read_catalog_runs",
     "plot_angle_error_comparison",
     "generic_web_report",
+    "plot_xgb_heatmap",
 ]
