@@ -395,7 +395,7 @@ def _make_html(
                 borderpad=2,
             )
 
-    # Axis labels
+    # Axis labels (bottom row / left column only)
     for i in range(n):
         fig.update_xaxes(title_text=feature_names[i],
                         row=n, col=i + 1,
@@ -403,6 +403,12 @@ def _make_html(
         fig.update_yaxes(title_text=feature_names[i],
                         row=i + 1, col=1,
                         title_font=dict(size=10))
+
+    # Hide upper-triangle subplots — they have no data and waste space
+    for i in range(n):
+        for j in range(i + 1, n):
+            fig.update_xaxes(visible=False, row=i + 1, col=j + 1)
+            fig.update_yaxes(visible=False, row=i + 1, col=j + 1)
 
     fig.update_layout(
         title=dict(
