@@ -22,6 +22,9 @@ from .ranking_metrics import cumulative_event_rate
 from .lag_filters import unshifted_job_ids_from_catalog, zero_lag_mask, nonzero_lag_mask
 from .random_filter import random_filter_parquet
 from .plot_efficiency import compute_hrss50
+from .multi_run import read_catalog_runs
+from .angle_comparison import plot_angle_error_comparison
+from .generic_report import generic_web_report
 
 __all__ = [
     "trigger_selection",
@@ -48,4 +51,7 @@ __all__ = [
     "nonzero_lag_mask",
     "random_filter_parquet",
     "compute_hrss50",
+    "read_catalog_runs",
+    "plot_angle_error_comparison",
+    "generic_web_report",
 ]

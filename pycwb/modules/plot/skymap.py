@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 
 import healpy as hp
 import matplotlib.pyplot as plt
@@ -37,6 +38,7 @@ def plot_world_map(phi, theta, filename=None):
     return fig, ax
 
 
+
 def plot_skymap_contour(
     skymap_statistic,
     key="nProbability",
@@ -44,8 +46,30 @@ def plot_skymap_contour(
     detector_loc=None,
     filename=None,
     resolution=2,
+    *,
+    detection_loc=None,
+    injected_loc=None,
 ):
-    """Plot a HEALPix skymap statistic as an RA/Dec histogram."""
+    """Plot a cWB HEALPix statistic in Earth-fixed lon/lat coordinates.
+
+    ``reconstructed_loc``, ``detection_loc``, and ``injected_loc`` are
+    ``(phi_geo, theta_cwb)`` pairs in degrees. The first two match the
+    corresponding ``Event.phi/theta`` slots. ``detector_loc`` is a deprecated
+    compatibility name for ``detection_loc``.
+    """
+    if detector_loc is not None:
+        if detection_loc is not None:
+            raise ValueError(
+                "Use only detection_loc; detector_loc is its deprecated alias"
+            )
+        warnings.warn(
+            "detector_loc is deprecated; use detection_loc for the cWB "
+            "detection position",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        detection_loc = detector_loc
+
     mplstyle.use("fast")
 
     skymap = np.array(skymap_statistic[key])
@@ -55,16 +79,20 @@ def plot_skymap_contour(
     flatten_theta = theta.flatten()
     flatten_phi = phi.flatten()
 
-    healpix_indices = hp.ang2pix(2 ** 7, flatten_theta, flatten_phi)
-    if len(skymap) < len(healpix_indices):
-        raise ValueError("The length of the skymap is smaller than the length of the healpix indices")
+    try:
+        nside = hp.npix2nside(len(skymap))
+    except ValueError as exc:
+        raise ValueError(
+            f"Skymap length {len(skymap)} is not a valid HEALPix map size"
+        ) from exc
+    healpix_indices = hp.ang2pix(nside, flatten_theta, flatten_phi)
 
     values = skymap[healpix_indices]
     values = np.reshape(values, theta.shape)
 
-    theta_deg = np.rad2deg(theta)
+    phi, theta = convert_cwb_to_geo(phi, theta)
     phi_deg = np.rad2deg(phi)
-    phi_deg, theta_deg = convert_cwb_to_geo(phi_deg, theta_deg)
+    theta_deg = np.rad2deg(theta)
     values[values == 0] = np.nan
 
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -75,21 +103,41 @@ def plot_skymap_contour(
         bins=(360 * resolution, 180 * resolution),
     )
 
-    if reconstructed_loc:
-        rec_x, rec_y = convert_cwb_to_geo(reconstructed_loc[0], reconstructed_loc[1])
-        ax.scatter(rec_x, rec_y, marker="*", color="red", label="reconstructed position")
+    if reconstructed_loc is not None:
+        rec_phi, rec_theta = np.deg2rad(np.asarray(reconstructed_loc, dtype=float))
+        rec_x, rec_y = convert_cwb_to_geo(rec_phi, rec_theta)
+        rec_x, rec_y = np.rad2deg([rec_x, rec_y])
+        ax.scatter(
+            rec_x, rec_y, marker="*", color="red", s=120, zorder=5,
+            label="reconstructed position",
+        )
 
-    if detector_loc:
-        det_x, det_y = convert_cwb_to_geo(detector_loc[0], detector_loc[1])
-        ax.scatter(det_x, det_y, marker=".", color="blue", label="detector position")
+    if detection_loc is not None:
+        det_phi, det_theta = np.deg2rad(np.asarray(detection_loc, dtype=float))
+        det_x, det_y = convert_cwb_to_geo(det_phi, det_theta)
+        det_x, det_y = np.rad2deg([det_x, det_y])
+        ax.scatter(
+            det_x, det_y, marker="o", facecolors="none", edgecolors="blue",
+            s=100, linewidths=1.5, zorder=4, label="detection position",
+        )
+
+    if injected_loc is not None:
+        inj_phi, inj_theta = np.deg2rad(np.asarray(injected_loc, dtype=float))
+        inj_x, inj_y = convert_cwb_to_geo(inj_phi, inj_theta)
+        inj_x, inj_y = np.rad2deg([inj_x, inj_y])
+        ax.scatter(
+            inj_x, inj_y, marker="x", color="limegreen", s=100,
+            linewidths=2.0, zorder=6, label="injected position",
+        )
 
     ax.set_xticks([-180, -90, 0, 90, 180])
     ax.set_yticks([-90, -45, 0, 45, 90])
     fig.colorbar(hist[3], ax=ax)
-    ax.set_xlabel("RA (deg)")
-    ax.set_ylabel("Dec (deg)")
+    ax.set_xlabel("Earth-fixed longitude (deg)")
+    ax.set_ylabel("Earth-fixed latitude (deg)")
     ax.set_title(f"{key} skymap")
-    ax.legend(loc=1)
+    if any(loc is not None for loc in (reconstructed_loc, detection_loc, injected_loc)):
+        ax.legend(loc=1)
 
     if filename:
         fig.savefig(filename)
@@ -97,4 +145,3 @@ def plot_skymap_contour(
         logger.info("Plot %s skymap saved to %s", key, filename)
         return None
     return fig, ax
-

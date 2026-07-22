@@ -175,18 +175,33 @@ def prepare_likelihood_inputs(
         n_sky_big  = None
 
     healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
-    ra_arr, dec_arr = _build_sky_directions(n_sky, healpix_order)
+    # _build_sky_directions returns the cWB Earth-fixed grid.  Keep legacy
+    # ra_arr/dec_arr aliases below, but use frame-explicit names internally.
+    phi_geo_arr, latitude_arr = _build_sky_directions(n_sky, healpix_order)
 
     # Sky mask: restrict the sky scan to a user-defined region (mirrors C++ skyMask).
     # Parsed once per job segment and stored as a sorted int64 index array.
     _sky_mask_config = getattr(config, 'sky_mask', None)
-    sky_valid_indices = compute_sky_valid_indices(ra_arr, dec_arr, _sky_mask_config)
+    t_ref = (
+        float(strains[0].t0)
+        if strains is not None and len(strains) > 0
+        else None
+    )
+    sky_valid_indices = compute_sky_valid_indices(
+        phi_geo_arr, latitude_arr, _sky_mask_config, t_ref=t_ref
+    )
 
     # Separate valid-index array for the coarse (big-cluster) sky grid
     if n_sky_big is not None:
-        ra_arr_big, dec_arr_big = _build_sky_directions(n_sky_big, big_cluster_healpix_order)
-        sky_valid_indices_big = compute_sky_valid_indices(ra_arr_big, dec_arr_big, _sky_mask_config)
+        phi_geo_arr_big, latitude_arr_big = _build_sky_directions(
+            n_sky_big, big_cluster_healpix_order
+        )
+        sky_valid_indices_big = compute_sky_valid_indices(
+            phi_geo_arr_big, latitude_arr_big, _sky_mask_config, t_ref=t_ref
+        )
     else:
+        phi_geo_arr_big = None
+        latitude_arr_big = None
         sky_valid_indices_big = None
 
     return {
@@ -204,14 +219,21 @@ def prepare_likelihood_inputs(
         "FX_t": cross_antenna_patterns_t,
         "n_sky": n_sky,
         "healpix_order": healpix_order,
-        "ra_arr": ra_arr,
-        "dec_arr": dec_arr,
+        "phi_geo_arr": phi_geo_arr,
+        "latitude_arr": latitude_arr,
+        # Deprecated internal aliases retained for callers outside this module.
+        "ra_arr": phi_geo_arr,
+        "dec_arr": latitude_arr,
+        "sky_mask_config": _sky_mask_config,
+        "segment_start_gps": t_ref,
         "sky_valid_indices": sky_valid_indices,
         "ml_big_cluster": sky_delay_samples_big,
         "FP_big_cluster_t": plus_antenna_patterns_big_t,
         "FX_big_cluster_t": cross_antenna_patterns_big_t,
         "n_sky_big_cluster": n_sky_big,
         "big_cluster_healpix_order": big_cluster_healpix_order,
+        "phi_geo_arr_big_cluster": phi_geo_arr_big,
+        "latitude_arr_big_cluster": latitude_arr_big,
         "sky_valid_indices_big": sky_valid_indices_big,
     }
 

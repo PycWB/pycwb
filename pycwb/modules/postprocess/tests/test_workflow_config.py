@@ -82,6 +82,29 @@ def test_resolve_value_expands_variables_recursively():
     assert resolved == "/analysis/public/O4_K21_run1/models/bkg_k20_k22_k21_10pct_xgb_model_blf.ubj"
 
 
+def test_full_variable_preserves_structured_input_type():
+    runs = [
+        {"label": "far", "catalog_file": "far/catalog.parquet"},
+        {"label": "near", "catalog_file": "near/catalog.parquet"},
+    ]
+    context = {"work_dir": "/analysis", "runs": runs, "threshold": 5.0}
+    runtime = {"tmp_dir": "/analysis/tmp"}
+    step = {
+        "inputs": {
+            "runs": "${runs}",
+            "threshold": "${threshold}",
+            "label": "rho-${threshold}",
+        }
+    }
+
+    args = prepare_step_args(step, context, runtime)
+
+    assert args["runs"] == runs
+    assert args["runs"] is not runs
+    assert args["threshold"] == 5.0
+    assert args["label"] == "rho-5.0"
+
+
 def test_relative_runtime_tmp_dir_is_normalized_to_absolute_path():
     workflow = {
         "vars": {"work_dir": "tests/postprod/O4_K21"},

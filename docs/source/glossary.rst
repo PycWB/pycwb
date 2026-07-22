@@ -58,6 +58,11 @@ Glossary
       time-of-flight delays. Real GW signals are coherent; instrumental noise
       generally is not.
 
+   co-latitude
+      Polar angle measured from the north pole. In the cWB Earth-fixed frame,
+      ``theta_cwb`` is a co-latitude in the range 0 to 180 degrees. See
+      :ref:`coordinate_systems_angles`.
+
    config
       Short for ``user_parameters.yaml`` — the single YAML file controlling
       all aspects of a pycWB search.
@@ -72,6 +77,10 @@ Glossary
       **Data Quality** — flags indicating whether detector data is suitable
       for science analysis. CAT0 = science mode, CAT1 = bad data (vetoed),
       CAT2 = marginal data (applied as veto windows).
+
+   declination
+      Celestial latitude in the ICRS frame, written ``dec`` and ranging from
+      -90 to +90 degrees. See :ref:`coordinate_systems_angles`.
 
    event
       A candidate gravitational-wave trigger produced by the likelihood
@@ -92,6 +101,11 @@ Glossary
       **Gravitational-Wave Transient Catalog** — the LVK public catalog series
       of gravitational-wave detections. Public cWB pages provide waveform
       reconstruction and CED references for selected GWTC events.
+
+   GMST
+      Greenwich Mean Sidereal Time, the Earth-rotation angle used to relate
+      Earth-fixed longitude to celestial right ascension at a specified GPS
+      time. See :ref:`coordinate_systems_angles` for the sign and model choices.
 
    hrss
       (:math:`h_{rss}`) — root-sum-squared strain amplitude of a signal.
@@ -165,6 +179,10 @@ Glossary
       The final score assigned to each event, combining multiple features
       (SNR, :math:`\chi^2`, correlation, etc.) via XGBoost. Used for FAR
       assignment and sensitivity.
+
+   right ascension
+      Celestial longitude in the ICRS frame, written ``ra`` and increasing
+      eastward over 0 to 360 degrees. See :ref:`coordinate_systems_angles`.
 
    rho
       (:math:`\rho`) — coherent network SNR. :math:`\rho = \sqrt{E_c - N_n}`

@@ -413,6 +413,12 @@ def plot_trigger_flow(trigger_folder: str,
 def plot_skymap_flow(trigger_folder: str,
                  event: Event, event_skymap_statistics) -> None:
     from pycwb.modules.plot.skymap import plot_skymap_contour
+    from pycwb.utils.skymap_coord import (
+        convert_dec_to_theta,
+        convert_geo_to_cwb,
+        convert_ra_to_phi,
+        normalize_coordinate_system,
+    )
 
     if not os.path.exists(trigger_folder):
         os.makedirs(trigger_folder)
@@ -422,6 +428,40 @@ def plot_skymap_flow(trigger_folder: str,
 
     raw = dataclasses.asdict(event_skymap_statistics)
 
+    injected_loc = None
+    if event.injection:
+        injection = event.injection
+        if isinstance(injection, dict):
+            get_value = injection.get
+        else:
+            get_value = lambda key, default=None: getattr(injection, key, default)
+
+        coordsys = normalize_coordinate_system(get_value("coordsys", "icrs"))
+        gps_time = get_value("gps_time")
+        if coordsys == "icrs":
+            ra = get_value("ra")
+            dec = get_value("dec")
+            if ra is not None and dec is not None and gps_time is not None:
+                phi_geo = convert_ra_to_phi(
+                    float(ra), float(gps_time), gmst_model="astropy"
+                )
+                theta_cwb = convert_dec_to_theta(float(dec))
+                injected_loc = tuple(np.rad2deg([phi_geo, theta_cwb]))
+        else:
+            sky_loc = get_value("sky_loc")
+            if sky_loc is not None and len(sky_loc) == 2:
+                if coordsys == "geo":
+                    phi_geo, theta_cwb = convert_geo_to_cwb(*sky_loc)
+                else:
+                    phi_geo, theta_cwb = sky_loc
+                injected_loc = tuple(np.rad2deg([phi_geo, theta_cwb]))
+
+        if injected_loc is None:
+            logger.warning(
+                "Could not determine injected sky position for event %s",
+                event.hash_id,
+            )
+
     # Keep only array-like fields that are not None (skip scalars such as
     # l_max and non-sky dicts such as stage_timings).
     stats_dict = {k: v for k, v in raw.items() if isinstance(v, (list, np.ndarray)) and v is not None}
@@ -430,6 +470,7 @@ def plot_skymap_flow(trigger_folder: str,
         plot_skymap_contour(stats_dict,
                             key=key,
                             reconstructed_loc=(event.phi[0], event.theta[0]),
-                            detector_loc=(event.phi[3], event.theta[3]),
+                            detection_loc=(event.phi[3], event.theta[3]),
+                            injected_loc=injected_loc,
                             resolution=1,
                             filename=f'{trigger_folder}/{key}.png')

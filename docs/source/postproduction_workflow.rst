@@ -27,6 +27,16 @@ The user-facing template
 starting point for a complete background, simulation, FAR, efficiency, and
 HTML-report workflow.
 
+For a compact multi-run study, see
+``examples/postproduction/angle_error_comparison_workflow.yaml``. It shows a
+generic three-action pattern: combine and reindex an array of catalogs, pass
+the combined data to interactive plot actions, then assemble every returned
+HTML plot in one generic report page. Each input needs only a generic ``name``
+and ``catalog_file``. The reader adds ``run_index`` and ``run_name`` columns
+and also reads scheduled injections from catalog job metadata, so an injection
+missed by the search is not lost from the denominator. Optional extra fields
+are retained as metadata, without prescribing which factor the study varies.
+
 
 What The Workflow Consumes
 --------------------------
@@ -143,6 +153,25 @@ Use ``${...}`` to expand values from ``vars``.  Dotted paths are supported:
      paths:
        output_dir: public/${run.output_name}
        model_file: ${paths.output_dir}/models/${run.analysis_slug}_xgb_model_blf.ubj
+
+When an entire value is one variable reference, its YAML type is preserved.
+Use this to make structured action inputs explicit and reviewable rather than
+relying on values inherited implicitly from the workflow context:
+
+.. code-block:: yaml
+
+   vars:
+     runs:
+       - name: reference
+         catalog_file: first/catalog.parquet
+       - name: comparison
+         catalog_file: second/catalog.parquet
+
+   steps:
+     - id: read_runs
+       action: postprocess.multi_run.read_catalog_runs
+       inputs:
+         runs: ${runs}  # remains a list, not a string
 
 Use ``@step.path`` to read values returned by earlier steps:
 
@@ -504,8 +533,12 @@ If you change the training fraction, update all three values together:
    train_fraction_label: 30pct
 
 
-Action Reference
-----------------
+Common Actions
+--------------
+
+The actions below are the main building blocks used by the standard workflow.
+See :ref:`postproduction_actions` for the complete registered-action catalog,
+exact signatures, and guidance on composing actions safely.
 
 ``postprocess.selection.trigger_selection``
    Selects or splits trigger catalogs by jobs or intervals.  Use it for BKG

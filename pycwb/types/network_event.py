@@ -425,9 +425,10 @@ class Event:
         dec_deg = 90.0 - theta_deg   # declination (equatorial; same Z-axis)
         # Convert geographic longitude to equatorial RA using GMST at event time.
         # mirrors CWB skymap::phi2RA = fmod(phi_geo + GMST, 360)
-        from pycwb.types.detector import gmst_accurate as _gmst_accurate
+        from pycwb.utils.skymap_coord import gmst_cwb as _gmst_cwb
         _t_event_gps = float(meta.c_time if meta.c_time != 0.0 else cluster.cluster_time) + float(self.gps[0])
-        _gmst_deg = np.degrees(_gmst_accurate(_t_event_gps)) % 360.0
+        # Match cwb-core/skymap.hh::phi2RA exactly for legacy Event output.
+        _gmst_deg = np.degrees(_gmst_cwb(_t_event_gps)) % 360.0
         ra_deg = (phi_deg + _gmst_deg) % 360.0
         # [skymap_value, 0, equatorial, detector_frame]  — matches CWB output() layout:
         #   phi[0] = geographic phi;  phi[2] = equatorial RA
@@ -453,14 +454,13 @@ class Event:
         pa = cluster.pixel_arrays
         core_mask = pa.core
 
-        # Sky-time delays: ml[i, l_max] are integer lag indices
+        # Sky synchronization shifts: ml[i, l_max] are integer delay-filter
+        # indices.  They are tau_ref - tau_i, not physical arrival delays.
         sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
         td_rate = float(config.TDRate) if config is not None else 1.0
-        # C++ lag correction: tau_i(theta,phi) - tau_0(theta,phi) in seconds
-        # For IFO 0: no correction; for IFO i>0: (sky_td[i] - sky_td[0]) / TDRate
-        tau_ref = float(sky_td[0]) / td_rate if sky_td else 0.0
-        tau_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
-                   for i in range(n_ifo)]
+        sync_ref = float(sky_td[0]) / td_rate if sky_td else 0.0
+        sync_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
+                    for i in range(n_ifo)]
         # C++ lag: [pwc->shift]*n_ifo + [pd->lagShift.data[LAG]]*n_ifo
         # lagShift = data stream lag (0 for zero-lag); ToF delays only go into self.time.
         self.lag = [0.0] * (2 * n_ifo)
@@ -468,7 +468,8 @@ class Event:
         # Time per IFO (mirrors C++ netevent.cc):
         #   time[0] = pcd->cTime + gps[0]                          (no delay for ref)
         #   time[i] = pcd->cTime + gps[i] + tau_i - tau_0          (ToF correction)
-        self.time = [c_time + float(self.gps[i]) + (tau_ifo[i] - tau_ref if i > 0 else 0.0)
+        # Since sync_i - sync_ref = tau_ref - tau_i, negate it here.
+        self.time = [c_time + float(self.gps[i]) - (sync_ifo[i] - sync_ref if i > 0 else 0.0)
                      for i in range(n_ifo)]
 
         # Duration per IFO: min/max of per-IFO pixel time bins using p.data[i].index

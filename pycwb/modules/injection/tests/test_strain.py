@@ -2,12 +2,32 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock
 from pycwb.types.time_series import TimeSeries
-from pycwb.modules.injection.strain import generate_strain_from_injection
+from pycwb.modules.injection.strain import (
+    generate_strain_from_injection,
+    project_to_detector,
+)
 
 
 def _make_ts():
     """Create a minimal TimeSeries for testing."""
     return TimeSeries(data=np.zeros(100), t0=0.0, dt=1.0 / 4096)
+
+
+def test_project_to_detector_applies_physical_arrival_delays():
+    gps_time = 1126259162.4
+    hp = TimeSeries(data=np.ones(32), t0=-1.0, dt=1.0 / 4096)
+    hc = TimeSeries(data=np.zeros(32), t0=-1.0, dt=1.0 / 4096)
+
+    l1, h1 = project_to_detector(
+        hp, hc, 0.0, 0.0, 0.0, ["L1", "H1"], gps_time
+    )
+
+    # t_H1 - t_L1 for this source, independently cross-checked against
+    # PyCBC and cWB detector::getTau.
+    # These are absolute GPS epochs near 1.1e9 s; their float64 subtraction
+    # resolves at roughly 0.1 microsecond.  The detector helper itself is
+    # checked at nanosecond precision in test_detector_geometry.py.
+    assert h1.t0 - l1.t0 == pytest.approx(-0.0016938468, abs=2e-7)
 
 
 def test_generator_in_injection(mocker):

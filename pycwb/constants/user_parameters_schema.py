@@ -250,7 +250,12 @@ schema = {
         },
         "injection": {
             "type": "object",
-            "description": "injection parameters",
+            "description": (
+                "Injection parameters. Sky angles use unit-bearing Astropy quantity "
+                "strings. sky_distribution coordinate keys must match coordsys: "
+                "icrs uses ra/dec, geo uses longitude/latitude, and cwb uses "
+                "phi_geo/theta_cwb. Legacy numeric phi/theta plus unit is deprecated."
+            ),
             "default": {},
             "cwb": False
         },
@@ -258,12 +263,15 @@ schema = {
             "type": "object",
             "description": (
                 "Restrict the likelihood sky scan to a sub-region of the sky. "
-                "Uses the same format as the injection sky_distribution config. "
+                "Angles must be unit-bearing Astropy quantity strings. Coordinate "
+                "keys must match explicit coordsys: icrs uses ra/dec, geo uses "
+                "longitude/latitude, and cwb uses phi_geo/theta_cwb. "
                 "Supported types: UniformAllSky (no restriction), Patch (circular cap — "
-                "requires patch.center.phi, patch.center.theta, patch.radius, patch.unit), "
-                "Fixed (nearest single direction — requires coordinates.sky_loc.phi/theta, "
-                "coordinates.unit), Custom (HEALPix map threshold — requires "
-                "custom.healpix_map, custom.nside, optional custom.threshold). "
+                "requires semantic patch.center keys and patch.radius), Fixed (nearest "
+                "single direction — requires semantic keys under coordinates), Custom "
+                "(HEALPix map threshold — requires custom.healpix_map and optional "
+                "custom.nside/custom.threshold/custom.ordering). "
+                "Legacy numeric phi/theta plus unit is deprecated. "
                 "If omitted, all sky directions are evaluated."
             ),
             "default": None,

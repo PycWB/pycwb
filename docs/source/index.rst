@@ -18,7 +18,7 @@ Welcome to pycWB's documentation!
 .. raw:: html
 
    <p>
-     <a href="https://pycwb.readthedocs.io/en/latest/">
+     <a href="https://docs.pycwb.org">
        <img src="https://readthedocs.org/projects/pycwb/badge/?version=latest" alt="Documentation">
      </a>
      <a href="https://git.ligo.org/yumeng.xu/pycwb/-/pipelines">
@@ -71,11 +71,25 @@ PycWB is a modular Python implementation of the coherent WaveBurst
    Public GWTC References <public_gwtc_references>
    Production Analysis <standard_analysis>
    postproduction
-   schema
    modules_guide
-   API Reference <modules>
-   cli_reference
+
+.. toctree::
+   :hidden:
+   :caption: Technical Reference
+   :maxdepth: 2
+
+   User Parameters <schema>
+   Coordinate Systems <coordinate_systems>
+   Units and Conventions <units_conventions>
    glossary
+
+.. toctree::
+   :hidden:
+   :caption: API Reference
+   :maxdepth: 2
+
+   Python API <modules>
+   CLI Reference <cli_reference>
 
 .. toctree::
    :hidden:
@@ -163,6 +177,11 @@ Choose Your Path
    </div>
 
    <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
+     <strong>📐 Check conventions</strong><br>
+     <a href="coordinate_systems.html">Coordinates, units, definitions →</a>
+   </div>
+
+   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
      <strong>💻 Contribute code</strong><br>
      <a href="dev_architecture.html">Developer Guides →</a>
    </div>
@@ -213,12 +232,14 @@ Documentation Map
      - Config templates, cluster submission (Condor & SLURM)
    * - :ref:`postproduction`
      - Background estimation, XGBoost ranking, detection efficiency
+   * - Technical Reference
+     - :ref:`coordinate_systems_angles`, units, and configuration conventions
    * - :ref:`schema`
      - All parameters: defaults, ranges, descriptions, cross-references
-   * - :ref:`modules`
+   * - :doc:`modules`
      - Auto-generated API reference from docstrings
    * - :ref:`glossary`
-     - ~60 key terms: lag, DPF, FAR, rho, supercluster, etc.
+     - Short definitions with links to the canonical technical reference
    * - Developer Guides
      - Architecture, setup, build/test, modules, performance, contributing
 

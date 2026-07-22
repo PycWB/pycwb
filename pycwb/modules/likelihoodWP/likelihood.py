@@ -45,6 +45,7 @@ from .detection_statistics import (
     compute_sky_error_region as _compute_sky_error_region,
 )
 from .dpf import calculate_dpf as _calculate_dpf
+from .sky_mask import sky_valid_indices_for_cluster
 from .typing import SkyStatistics, SkyMapStatistics
 
 from typing import TYPE_CHECKING
@@ -246,6 +247,12 @@ def evaluate_cluster_likelihood(
     cross_antenna_patterns   = setup["FX_t"]  # (n_sky, nIFO) float32 — already transposed
     n_sky                    = setup["n_sky"]
     sky_valid_indices        = setup.get("sky_valid_indices", np.arange(n_sky, dtype=np.int64))
+    active_phi_geo_arr       = setup.get("phi_geo_arr")
+    active_latitude_arr      = setup.get("latitude_arr")
+    if active_phi_geo_arr is None:
+        active_phi_geo_arr = setup["ra_arr"]
+    if active_latitude_arr is None:
+        active_latitude_arr = setup["dec_arr"]
 
     # regularization[0] = delta * sqrt(2): amplitude regulator; regularization[1] filled below by DPF scan
     regularization = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
@@ -265,12 +272,26 @@ def evaluate_cluster_likelihood(
         cross_antenna_patterns = setup["FX_big_cluster_t"]
         n_sky = setup["n_sky_big_cluster"]
         sky_valid_indices = setup.get("sky_valid_indices_big", np.arange(n_sky, dtype=np.int64))
+        active_phi_geo_arr = setup["phi_geo_arr_big_cluster"]
+        active_latitude_arr = setup["latitude_arr_big_cluster"]
         logger.info(
             "Cluster-id=%s is big (%d px > csize_threshold=%d): "
             "using coarse sky grid (%d directions, healpix order=%s)",
             cluster_id, n_pixels, _nres * _csize, n_sky,
             setup.get("big_cluster_healpix_order"),
         )
+
+    # cWB evaluates celestial masks inside the per-cluster sky loop using
+    # gT = cluster_time + segment_start.  Recompute only time-dependent ICRS
+    # masks here; Earth-fixed and all-sky masks retain the setup cache.
+    cluster_mask_indices = sky_valid_indices_for_cluster(
+        setup, cluster, use_big_grid=_bBB
+    )
+    if cluster_mask_indices is not None:
+        sky_valid_indices = np.asarray(cluster_mask_indices, dtype=np.int64)
+    if len(sky_valid_indices) == 0:
+        logger.info("Cluster-id=%s rejected: sky mask selects no grid directions", cluster_id)
+        return None, None
 
     # --- Prepare per-cluster inputs ---
     _t0 = time.perf_counter()
@@ -324,13 +345,11 @@ def evaluate_cluster_likelihood(
     # --- Convert l_max index to (theta, phi) sky angles ---
     _t0 = time.perf_counter()
     _healpix_order = setup["healpix_order"]
-    _ra_arr        = setup["ra_arr"]
-    _dec_arr       = setup["dec_arr"]
     _l_max = int(skymap_statistics.l_max)
     # cWB theta: co-latitude in degrees [0, 180]; phi: longitude in degrees [0, 360)
-    _theta_rad = float(np.pi / 2.0 - _dec_arr[_l_max])  # co-latitude from declination
-    _phi_rad = float(_ra_arr[_l_max])
-    _theta_deg = float(np.degrees(_theta_rad)) % 180.0
+    _theta_rad = float(np.pi / 2.0 - active_latitude_arr[_l_max])
+    _phi_rad = float(active_phi_geo_arr[_l_max])
+    _theta_deg = float(np.clip(np.degrees(_theta_rad), 0.0, 180.0))
     _phi_deg = float(np.degrees(_phi_rad)) % 360.0
     stage_timings["sky_coords"] = time.perf_counter() - _t0
 
