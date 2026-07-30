@@ -70,7 +70,8 @@ def test_prepare_statistics_map_uses_cwb_zoom_and_ignores_halo_pixels():
     # expanded over eight 16 Hz display bins (a 128 Hz WDM pixel).
     nonzero_frequency_bins = np.flatnonzero(np.any(result.values > 0, axis=0))
     assert set(range(100, 108)).issubset(nonzero_frequency_bins)
-    assert np.max(result.values) == pytest.approx(15.0)
+    assert np.max(result.values) == pytest.approx(15.0 / 8.0)
+    assert np.sum(result.values) == pytest.approx(result.total)
 
 
 def test_prepare_statistics_map_preserves_cwb_half_bin_truncation():
@@ -79,7 +80,10 @@ def test_prepare_statistics_map_preserves_cwb_half_bin_truncation():
         "likelihood",
     )
 
-    assert np.max(result.values) == pytest.approx(26.0)
+    # The coarse contribution is 12 / (2 * 2) and the fine contribution is
+    # 14 / (1 * 4), giving 6.5 in their shared finest-grid cell.
+    assert np.max(result.values) == pytest.approx(6.5)
+    assert np.sum(result.values) == pytest.approx(result.total)
 
 
 def test_null_statistics_are_clipped_at_zero_like_cwb():
@@ -87,7 +91,8 @@ def test_null_statistics_are_clipped_at_zero_like_cwb():
 
     assert result.total == pytest.approx(7.0)
     assert result.npix == 1
-    assert np.max(result.values) == pytest.approx(7.0)
+    assert np.max(result.values) == pytest.approx(7.0 / 8.0)
+    assert np.sum(result.values) == pytest.approx(result.total)
 
 
 def test_plot_statistics_writes_cwb_shaped_image(tmp_path):

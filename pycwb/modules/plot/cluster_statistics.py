@@ -121,7 +121,13 @@ def _prepare_statistics_map(cluster, key: str) -> _StatisticsMap:
         frequency_slice = slice(
             frequency_start, frequency_start + frequency_scale
         )
-        values[time_slice, frequency_slice] += statistic
+        # Current cWB distributes a pixel statistic uniformly over the
+        # finest-grid cells in its time-frequency footprint.  This preserves
+        # the event total when a multiresolution map is rasterized instead of
+        # replicating the full statistic into every covered cell.
+        values[time_slice, frequency_slice] += statistic / (
+            time_scale * frequency_scale
+        )
 
     time_edges = initial_min_time + np.arange(n_time + 1) / max_rate
     frequency_edges = np.arange(n_frequency + 1) * display_df
