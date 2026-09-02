@@ -71,7 +71,7 @@ class HTCondor:
 { '''mkdir -p catalog/fragment job_status trigger output log
 # HTCondor flattens individually-listed files to the execute root; restore expected layout.
 for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/fragment/; done''' if should_transfer_files else ''}
-pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-proc={self.n_proc}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-workers={self.n_proc}
             """)
 
         # add execute permission to run.sh
