@@ -65,15 +65,10 @@ class TestHTCondorInit:
         assert ht.conda_init == ""
 
     def test_custom_conda_init(self):
-        """Custom conda_init value: the constructor only sets ``self.conda_init``
-        inside the ``if not conda_init:`` guard, so a truthy custom value is
-        accepted but not stored as an instance attribute.  This test documents
-        actual source behaviour.
-        """
+        """A truthy custom conda_init value is stored as an instance attribute."""
         ht = HTCondor(accounting_group="test",
                       conda_init="source /my/conda.sh")
-        # The attribute may not be set if the guard skips it.
-        assert getattr(ht, "conda_init", None) is None
+        assert ht.conda_init == "source /my/conda.sh"
 
     def test_should_transfer_files_false_by_default(self):
         """should_transfer_files should be False when no container."""

@@ -29,11 +29,8 @@ class HTCondor:
         self.accounting_group = accounting_group
         self.job_per_worker = job_per_worker
         if not conda_init:
-            if not container_image:
-                self.conda_init = 'source /cvmfs/software.igwn.org/conda/etc/profile.d/conda.sh'
-            else:
-                self.conda_init = ''
-        
+            conda_init = 'source /cvmfs/software.igwn.org/conda/etc/profile.d/conda.sh' if not container_image else ''
+        self.conda_init = conda_init
 
     def create(self, job_segments, submit=False):
         if os.path.exists(self.dag_dir):
