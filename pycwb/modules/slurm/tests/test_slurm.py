@@ -50,6 +50,30 @@ class TestSlurmInit:
         s = Slurm(conda_env="pycwb")
         assert s.conda_env == "pycwb"
 
+    def test_conda_init_default(self):
+        """Default conda_init should source conda.sh from cvmfs."""
+        s = Slurm()
+        assert "conda.sh" in s.conda_init
+        assert "cvmfs" in s.conda_init
+
+    def test_custom_conda_init(self):
+        """Custom conda_init value should be stored."""
+        s = Slurm(conda_init="source /my/conda.sh")
+        assert s.conda_init == "source /my/conda.sh"
+
+    def test_none_values_are_normalized(self):
+        """None values must not leak as 'None' strings into generated scripts."""
+        s = Slurm(conda_env=None, additional_init=None, n_proc=None, memory=None,
+                  disk=None, n_retries=None, job_per_worker=None, conda_init=None)
+        assert s.conda_env is None
+        assert s.additional_init == ""
+        assert s.n_proc == 1
+        assert s.memory == "6GB"
+        assert s.disk == "4GB"
+        assert s.n_retries == 5
+        assert s.job_per_worker == 10
+        assert "None" not in s.conda_init
+
     def test_custom_job_per_worker(self):
         """job_per_worker should be customizable."""
         s = Slurm(job_per_worker=5)

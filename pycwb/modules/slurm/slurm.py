@@ -8,22 +8,25 @@ import shutil
 class Slurm:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", job_per_worker=10,
                  n_proc=1, memory="6GB", disk="4GB",
-                 time="72:00:00", constraint=None, partition=None, n_retries=5):
+                 time="72:00:00", constraint=None, partition=None, n_retries=5, conda_init=None):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
-        self.additional_init = additional_init
-        self.n_proc = n_proc
-        self.memory = memory
-        self.disk = disk
+        if not conda_init:
+            conda_init = 'source /cvmfs/software.igwn.org/conda/etc/profile.d/conda.sh'
+        self.conda_init = conda_init
+        self.additional_init = additional_init or ""
+        self.n_proc = n_proc if n_proc is not None else 1
+        self.memory = memory if memory is not None else "6GB"
+        self.disk = disk if disk is not None else "4GB"
         self.time = time or "72:00:00"
         self.constraint = constraint
         self.partition = partition
-        self.n_retries = n_retries
+        self.n_retries = n_retries if n_retries is not None else 5
         self.slurm_dir = os.path.join(self.working_dir, 'slurm')
         self.slurm_script = None
         self.merge_script = None
         self.simulation_summary_script = None
-        self.job_per_worker = job_per_worker
+        self.job_per_worker = job_per_worker if job_per_worker is not None else 10
 
     def create(self, job_segments, submit=False):
         if os.path.exists(self.slurm_dir):
@@ -88,7 +91,8 @@ fi
 
 echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
 
-conda activate {conda_env}
+{self.conda_init}
+{f'conda activate {conda_env}' if conda_env else ''}
 {self.additional_init}
 
 MAX_RETRIES={self.n_retries}
@@ -132,7 +136,8 @@ fi
 #SBATCH --time=04:00:00
 #SBATCH --mem={self.memory}{optional_sbatch}
 
-conda activate {self.conda_env}
+{self.conda_init}
+{f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init}
 pycwb merge --work-dir={working_dir}
 """)
@@ -167,7 +172,8 @@ pycwb merge --work-dir={working_dir}
 #SBATCH --time=02:00:00
 #SBATCH --mem={self.memory}{optional_sbatch}
 
-conda activate {self.conda_env}
+{self.conda_init}
+{f'conda activate {self.conda_env}' if self.conda_env else ''}
 {self.additional_init}
 pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={working_dir}
 """)

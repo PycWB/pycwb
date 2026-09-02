@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def batch_setup(file_name, working_dir='.',
                 overwrite=False, log_file=None, log_level="INFO",
-                compress_json=True, cluster=None, conda_env=None, additional_init="",
+                compress_json=True, cluster=None, conda_env=None, conda_init=None, additional_init="",
                 accounting_group=None, job_per_worker=None, n_proc=None, memory=None, disk=None,
                 container_image=None, should_transfer_files=False,
                 walltime=None, slurm_constraint=None, slurm_partition=None, n_retries=5,
@@ -41,6 +41,8 @@ def batch_setup(file_name, working_dir='.',
         cluster = config.cluster
     if not conda_env:
         conda_env = config.conda_env
+    if not conda_init:
+        conda_init = getattr(config, 'conda_init', None)
     if not additional_init:
         additional_init = config.additional_init
     if not accounting_group:
@@ -69,6 +71,7 @@ def batch_setup(file_name, working_dir='.',
     logger.info("Job submission info:")
     logger.info(f"  Cluster type: {cluster}")
     logger.info(f"  Conda environment: {conda_env}")
+    logger.info(f"  Conda init: {conda_init}")
     logger.info(f"  Additional init script: {additional_init}")
     logger.info(f"  Accounting group: {accounting_group}")
     logger.info(f"  Jobs per worker: {job_per_worker}")
@@ -81,13 +84,13 @@ def batch_setup(file_name, working_dir='.',
     if cluster == "condor":
         condor = HTCondor(working_dir, conda_env, additional_init, accounting_group, job_per_worker,
                           container_image, should_transfer_files,
-                          n_proc, memory, disk, n_retries=n_retries)
+                          n_proc, memory, disk, conda_init=conda_init, n_retries=n_retries)
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
         slurm = Slurm(working_dir, conda_env, additional_init, job_per_worker,
                       n_proc, memory, disk,
                       time=walltime, constraint=slurm_constraint,
-                      partition=slurm_partition, n_retries=n_retries)
+                      partition=slurm_partition, n_retries=n_retries, conda_init=conda_init)
         slurm.create(job_segments, submit=submit)
     else:
         raise ValueError(f"Unsupported cluster type: {cluster}, only support condor and slurm")

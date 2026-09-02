@@ -139,6 +139,13 @@ schema = {
             "cwb": False,
             "category": "job_submission"
         },
+        "conda_init": {
+            "type": "string",
+            "description": "conda init command to source before conda activate in batch job scripts",
+            "default": "",
+            "cwb": False,
+            "category": "job_submission"
+        },
         "additional_init": {
             "type": "string",
             "description": "additional initialization commands for batch jobs",

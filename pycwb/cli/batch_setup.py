@@ -56,6 +56,13 @@ def init_parser(parser):
                         type=str,
                         help='the conda environment')
 
+    # conda init command
+    parser.add_argument('--conda-init',
+                        metavar='conda_init',
+                        type=str,
+                        help='the conda init command to source before conda activate '
+                             '(defaults to the cvmfs conda.sh for condor without a container image)')
+
     # additional init
     parser.add_argument('--additional-init',
                         '-a',
@@ -184,6 +191,7 @@ def command(args):
                 compress_json=args.compress_json,
                 cluster=args.cluster,
                 conda_env=args.conda_env,
+                conda_init=args.conda_init,
                 additional_init=args.additional_init,
                 n_proc=args.n_proc,
                 memory=args.memory,
