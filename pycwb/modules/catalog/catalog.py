@@ -3,15 +3,17 @@ Arrow/Parquet-based catalog for pycWB.
 
 Storage layout
 --------------
-A single Parquet file per run (or per batch job).  The file has two parts:
+A run catalog has three components:
 
-1. **Schema key-value metadata** – JSON-encoded fields stored under the keys:
-   ``b"pycwb_version"``, ``b"config"``, ``b"jobs"``.
-   These hold the run configuration and the list of
-   :class:`~pycwb.types.job.WaveSegment` job descriptors, keeping the file
-   self-contained.
+1. **Schema key-value metadata** – JSON-encoded fields stored under the keys
+   ``b"pycwb_version"`` and ``b"config"``.  Small batch fragments also retain
+   ``b"jobs"`` inline for compatibility with existing HTCondor worker images.
 
-2. **Row data** – one row per reconstructed trigger, using the schema defined by
+2. **Run-level job manifest** – master catalogs store their complete job list
+   in the immutable sibling file ``jobs.parquet``, avoiding an oversized
+   Parquet footer for large injection campaigns.
+
+3. **Row data** – one row per reconstructed trigger, using the schema defined by
    :meth:`~pycwb.types.trigger.Trigger.arrow_schema`.  Per-IFO quantities are
    stored as ``list<float>`` columns; injection parameters live in a nullable
    ``struct`` column.
@@ -43,6 +45,8 @@ import math
 import os
 import tempfile
 import time
+import uuid
+from numbers import Integral
 from typing import Optional, Union
 
 import numpy as np
@@ -57,6 +61,10 @@ from pycwb.config import Config
 from pycwb.types.base_catalog import BaseCatalog
 from pycwb.types.job import WaveSegment
 from pycwb.types.trigger import Trigger
+
+from .provenance import (
+    MANIFEST_ID_KEY, MANIFEST_KEY, manifest_reference, resolve_job_manifest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +81,18 @@ PROGRESS_SCHEMA = pa.schema([
     ("timestamp",  pa.float64()),
     ("status",     pa.string()),
 ])
+
+# Immutable run-level provenance for master catalogs.  Batch fragments retain
+# their small selected job lists inline and therefore never create this file.
+JOB_MANIFEST_FILENAME = "jobs.parquet"
+JOB_MANIFEST_VERSION = b"1"
+JOB_MANIFEST_SCHEMA = pa.schema([
+    pa.field("job_index", pa.int64()),
+    pa.field("job_json", pa.string()),
+], metadata={
+    b"pycwb_job_manifest_version": JOB_MANIFEST_VERSION,
+    b"pycwb_version": pycwb.__version__.encode(),
+})
 
 
 # ---------------------------------------------------------------------------
@@ -91,12 +111,96 @@ def _jobs_to_serialisable(jobs: list) -> list:
     return result
 
 
-def _build_schema_metadata(config: Config, jobs: list) -> dict:
-    return {
+def _build_schema_metadata(config: Config, jobs: list | None = None,
+                           *, jobs_in_metadata: bool = False) -> dict:
+    metadata = {
         b"pycwb_version": pycwb.__version__.encode(),
         b"config": orjson.dumps(config.__dict__, option=orjson.OPT_SERIALIZE_NUMPY),
-        b"jobs": orjson.dumps(_jobs_to_serialisable(jobs), option=orjson.OPT_SERIALIZE_NUMPY),
     }
+    if jobs_in_metadata:
+        metadata[b"jobs"] = orjson.dumps(
+            _jobs_to_serialisable(jobs or []), option=orjson.OPT_SERIALIZE_NUMPY
+        )
+    return metadata
+
+
+def _jobs_manifest_path(catalog_filename: str) -> str:
+    """Return the immutable run-level job manifest path."""
+    return os.path.join(os.path.dirname(os.path.abspath(catalog_filename)),
+                        JOB_MANIFEST_FILENAME)
+
+
+def _serialise_jobs_for_manifest(jobs: list) -> tuple[list[int], list[str]]:
+    """Return ordered ``(job_index, job_json)`` values for *jobs*."""
+    indices: list[int] = []
+    payloads: list[str] = []
+    seen: set[int] = set()
+    for ordinal, job in enumerate(_jobs_to_serialisable(jobs)):
+        if not isinstance(job, dict) or "index" not in job:
+            raise ValueError(
+                f"Job manifest entry {ordinal} must be a mapping with an 'index' field"
+            )
+        if isinstance(job["index"], (bool, np.bool_)) or not isinstance(job["index"], Integral):
+            raise ValueError(f"Job manifest entry {ordinal} must have an integer index")
+        index = int(job["index"])
+        if index in seen:
+            raise ValueError(f"Job manifest contains duplicate job index {index}")
+        seen.add(index)
+        indices.append(index)
+        payloads.append(orjson.dumps(
+            job, option=orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_SORT_KEYS
+        ).decode("utf-8"))
+    return indices, payloads
+
+
+def _job_manifest_table(indices: list[int], payloads: list[str], manifest_id: str) -> pa.Table:
+    return pa.Table.from_arrays([
+        pa.array(indices, type=pa.int64()),
+        pa.array(payloads, type=pa.string()),
+    ], schema=JOB_MANIFEST_SCHEMA.with_metadata({
+        **JOB_MANIFEST_SCHEMA.metadata, MANIFEST_ID_KEY: manifest_id.encode(),
+    }))
+
+
+def _read_job_manifest(path: str, expected_id: str | None = None) -> list[dict]:
+    """Read and validate a job manifest, preserving its row order."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Job metadata is not embedded in this catalog and the required "
+            f"job manifest is missing: {path}"
+        )
+    if os.path.getsize(path) == 0:
+        raise ValueError(f"Job manifest is empty (0 bytes): {path}")
+
+    table = pq.read_table(path)
+    metadata = table.schema.metadata or {}
+    if metadata.get(b"pycwb_job_manifest_version") != JOB_MANIFEST_VERSION:
+        raise ValueError(f"Unsupported or missing pycWB job manifest version in {path}")
+    if not table.schema.equals(JOB_MANIFEST_SCHEMA, check_metadata=False):
+        raise ValueError(f"Unexpected job manifest schema in {path}: {table.schema}")
+    manifest_id = metadata.get(MANIFEST_ID_KEY, b"").decode()
+    if not manifest_id or (expected_id is not None and manifest_id != expected_id):
+        raise ValueError(f"Missing or mismatched job manifest identity in {path}")
+
+    jobs: list[dict] = []
+    seen: set[int] = set()
+    for ordinal, row in enumerate(table.to_pylist()):
+        index, payload = row["job_index"], row["job_json"]
+        if index is None or payload is None:
+            raise ValueError(f"Job manifest entry {ordinal} is incomplete in {path}")
+        index = int(index)
+        if index in seen:
+            raise ValueError(f"Job manifest contains duplicate job index {index}: {path}")
+        seen.add(index)
+        try:
+            job = orjson.loads(payload)
+        except orjson.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in job manifest entry {ordinal}: {path}") from exc
+        if (not isinstance(job, dict) or type(job.get("index")) is not int
+                or job["index"] != index):
+            raise ValueError(f"Invalid job manifest entry {ordinal}: {path}")
+        jobs.append(job)
+    return jobs
 
 
 def _empty_table(schema: pa.Schema) -> pa.Table:
@@ -143,17 +247,41 @@ def _write_table_atomic(table: pa.Table, filename: str, compression: str = "snap
             os.remove(tmp_path)
 
 
+def _write_or_validate_job_manifest(catalog_filename: str, jobs: list) -> bytes:
+    """Create the immutable manifest or verify it matches *jobs* exactly."""
+    manifest_path = _jobs_manifest_path(catalog_filename)
+    expected_indices, expected_payloads = _serialise_jobs_for_manifest(jobs)
+
+    with SoftFileLock(manifest_path + ".lock", timeout=10):
+        if os.path.exists(manifest_path):
+            existing = _read_job_manifest(manifest_path)
+            existing_indices, existing_payloads = _serialise_jobs_for_manifest(existing)
+            if (existing_indices, existing_payloads) != (expected_indices, expected_payloads):
+                raise ValueError(
+                    f"Existing job manifest conflicts with requested jobs: {manifest_path}"
+                )
+            manifest_id = pq.read_schema(manifest_path).metadata[MANIFEST_ID_KEY].decode()
+        else:
+            manifest_id = str(uuid.uuid4())
+            table = _job_manifest_table(expected_indices, expected_payloads, manifest_id)
+            _write_table_atomic(table, manifest_path, compression="snappy")
+    return manifest_reference(catalog_filename, manifest_path, manifest_id)
+
+
 # ---------------------------------------------------------------------------
 # Catalog class
 # ---------------------------------------------------------------------------
 
 class Catalog(BaseCatalog):
-    """Self-contained Arrow/Parquet catalog for a pycWB run.
+    """Arrow/Parquet catalog for a pycWB run.
 
     A :class:`Catalog` wraps a single ``.parquet`` file.  It stores:
 
-    * **Run metadata** (config, job list, pycwb version) in the Parquet schema's
-      key-value metadata so the file is fully self-describing.
+    * **Run metadata** (config and pycwb version) in the Parquet schema's
+      key-value metadata.
+    * **Job descriptors** in immutable ``jobs.parquet`` for master catalogs;
+      small batch fragments retain inline job metadata for file-transfer
+      compatibility.
     * **Trigger rows** using :meth:`~pycwb.types.trigger.Trigger.arrow_schema`.
 
     Instantiation
@@ -178,8 +306,10 @@ class Catalog(BaseCatalog):
 
     def __init__(self, filename: str) -> None:
         self.filename = os.path.abspath(filename)
-        # Lazy-loaded cache; invalidated after every write
+        # Schema metadata is cheap to read; the job manifest may be very large
+        # and is loaded only when ``jobs`` is requested.
         self._meta_cache: Optional[dict] = None
+        self._jobs_cache: Optional[list] = None
 
     # ------------------------------------------------------------------
     # Construction
@@ -187,7 +317,7 @@ class Catalog(BaseCatalog):
 
     @classmethod
     def create(cls, filename: str, config: Config,
-               jobs: list[WaveSegment]) -> "Catalog":
+               jobs: list[WaveSegment], *, jobs_in_metadata: bool = False) -> "Catalog":
         """Create an empty Parquet catalog and return a :class:`Catalog` for it.
 
         Parameters
@@ -198,12 +328,21 @@ class Catalog(BaseCatalog):
             Pipeline configuration.
         jobs : list[WaveSegment]
             All job segments for this run.
+        jobs_in_metadata : bool
+            Store jobs in Parquet metadata.  This is reserved for small batch
+            fragments; master catalogs use the run-level ``jobs.parquet`` file.
         """
         ifo_list = getattr(config, "ifo", [])
         schema = Trigger.arrow_schema(ifo_list=ifo_list).with_metadata(
-            _build_schema_metadata(config, jobs)
+            _build_schema_metadata(config, jobs, jobs_in_metadata=jobs_in_metadata)
         )
         table = _empty_table(schema)
+        if not jobs_in_metadata:
+            # Write provenance before publishing the master catalog.  A failed
+            # catalog write can leave an unreferenced manifest, but never a
+            # visible catalog without its required jobs.
+            reference = _write_or_validate_job_manifest(filename, jobs)
+            table = table.replace_schema_metadata({**schema.metadata, MANIFEST_KEY: reference})
         with SoftFileLock(filename + ".lock", timeout=10):
             _write_table_atomic(table, filename, compression="snappy")
         logger.info("Created Arrow catalog: %s", filename)
@@ -226,7 +365,8 @@ class Catalog(BaseCatalog):
             self._meta_cache = {
                 "version": raw.get(b"pycwb_version", b"").decode(),
                 "config": orjson.loads(raw[b"config"]) if b"config" in raw else {},
-                "jobs":   orjson.loads(raw[b"jobs"])   if b"jobs"   in raw else [],
+                "_inline_jobs": raw.get(b"jobs"),
+                "_job_manifest": raw.get(MANIFEST_KEY),
             }
         return self._meta_cache
 
@@ -242,8 +382,22 @@ class Catalog(BaseCatalog):
 
     @property
     def jobs(self) -> list:
-        """List of job-segment dicts stored in the catalog."""
-        return self._load_meta()["jobs"]
+        """Return run jobs, or an empty list for metadata-free Parquet inputs.
+
+        An explicit manifest reference is required to load external jobs;
+        missing or mismatched referenced manifests are errors.
+        """
+        if self._jobs_cache is None:
+            metadata = self._load_meta()
+            if metadata["_inline_jobs"] is not None:
+                self._jobs_cache = orjson.loads(metadata["_inline_jobs"])
+            elif metadata["_job_manifest"] is not None:
+                path, manifest_id = resolve_job_manifest(self.filename, metadata["_job_manifest"])
+                self._jobs_cache = _read_job_manifest(path, expected_id=manifest_id)
+            else:
+                # Plain Parquet tables are valid postproduction inputs.
+                self._jobs_cache = []
+        return self._jobs_cache
 
     @property
     def ifo_list(self) -> list:
@@ -285,6 +439,7 @@ class Catalog(BaseCatalog):
             _write_table_atomic(combined, self.filename, compression="snappy")
 
         self._meta_cache = None  # invalidate after write
+        self._jobs_cache = None
 
     def add_events(self, events: object) -> None:
         """Convert legacy :class:`~pycwb.types.network_event.Event` objects and append.

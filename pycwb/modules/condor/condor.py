@@ -291,7 +291,9 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
 
                 catalog_frag = os.path.join(fragment_dir, f"catalog_{job['jobs']}.parquet")
                 if not os.path.exists(catalog_frag):
-                    Catalog.create(catalog_frag, config_obj, selected)
+                    # Fragments are transferred independently to workers and
+                    # must remain readable by existing container images.
+                    Catalog.create(catalog_frag, config_obj, selected, jobs_in_metadata=True)
 
                 progress_path = os.path.join(fragment_dir, f"progress_{job['jobs']}.parquet")
                 if not os.path.exists(progress_path):

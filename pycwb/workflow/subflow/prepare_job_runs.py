@@ -184,7 +184,9 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     catalog_file = f"{working_dir}/{config.catalog_dir}/fragment/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}"
 
     if not os.path.exists(catalog_file):
-        Catalog.create(catalog_file, config, selected_job_segments)
+        # Fragments are transferred to execute nodes without the run-level
+        # manifest, so keep their small selected job list inline.
+        Catalog.create(catalog_file, config, selected_job_segments, jobs_in_metadata=True)
 
     return selected_job_segments, config, working_dir, catalog_file
 
