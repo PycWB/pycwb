@@ -11,6 +11,7 @@ import pytest
 from pycwb.config import Config
 from pycwb.modules.catalog.catalog import Catalog, JOB_MANIFEST_FILENAME
 from pycwb.types.job import WaveSegment
+from pycwb.workflow.merge import merge_catalog
 
 
 def _job(index: int, *, sim_idx: int | None = None) -> WaveSegment:
@@ -111,6 +112,32 @@ def test_manifest_is_immutable_and_can_be_reused(tmp_path):
         )
 
 
+def test_standard_merge_preserves_master_manifest(tmp_path):
+    catalog_dir = tmp_path / "catalog"
+    fragment_dir = catalog_dir / "fragment"
+    fragment_dir.mkdir(parents=True)
+    jobs = [_job(1, sim_idx=51), _job(2, sim_idx=52)]
+
+    Catalog.create(str(catalog_dir / "catalog.parquet"), Config(), jobs)
+    Catalog.create(
+        str(fragment_dir / "catalog_1-1.parquet"),
+        Config(),
+        [jobs[0]],
+        jobs_in_metadata=True,
+    )
+    Catalog.create(
+        str(fragment_dir / "catalog_2-2.parquet"),
+        Config(),
+        [jobs[1]],
+        jobs_in_metadata=True,
+    )
+    manifest_path = catalog_dir / JOB_MANIFEST_FILENAME
+    before = manifest_path.read_bytes()
+
+    merge_catalog(working_dir=str(tmp_path))
+
+    assert manifest_path.read_bytes() == before
+    assert Catalog.open(str(catalog_dir / "catalog.parquet")).jobs == _expected(jobs)
 
 
 @pytest.mark.parametrize("index", [True, 1.5, "1", None])
@@ -152,10 +179,56 @@ def test_manifest_rejects_wrong_column_types(tmp_path):
         _ = Catalog.open(str(path)).jobs
 
 
+@pytest.mark.parametrize("keep_master", [False, True])
+def test_partial_labeled_merge_reuses_full_run_manifest(tmp_path, keep_master):
+    directory = tmp_path / "custom_catalog"
+    fragments = directory / "fragment"
+    fragments.mkdir(parents=True)
+    jobs = [_job(1), _job(2)]
+    Catalog.create(str(directory / "catalog.parquet"), Config(), jobs)
+    Catalog.create(
+        str(fragments / "catalog_1.parquet"), Config(), jobs[:1], jobs_in_metadata=True
+    )
+    before = (directory / JOB_MANIFEST_FILENAME).read_bytes()
+    if not keep_master:
+        (directory / "catalog.parquet").unlink()
+    merge_catalog(str(tmp_path), catalog_dir="custom_catalog", merge_label="partial")
+    assert Catalog.open(str(directory / "catalog.partial.parquet")).jobs == _expected(
+        jobs
+    )
+    assert (directory / JOB_MANIFEST_FILENAME).read_bytes() == before
 
 
+def test_conflicting_merge_preserves_existing_output(tmp_path, monkeypatch):
+    directory = tmp_path / "catalog"
+    fragments = directory / "fragment"
+    fragments.mkdir(parents=True)
+    Catalog.create(str(directory / "catalog.parquet"), Config(), [_job(1)])
+    output = directory / "catalog.partial.parquet"
+    Catalog.create(str(output), Config(), [_job(1)])
+    before = output.read_bytes()
+    Catalog.create(
+        str(fragments / "catalog_1.parquet"),
+        Config(),
+        [_job(1, sim_idx=99)],
+        jobs_in_metadata=True,
+    )
+    monkeypatch.setattr("pycwb.workflow.merge.click.confirm", lambda *a, **k: True)
+    with pytest.raises(ValueError, match="conflicts"):
+        merge_catalog(str(tmp_path), merge_label="partial")
+    assert output.read_bytes() == before
 
 
+def test_merge_without_master_deduplicates_identical_fragment_jobs(tmp_path):
+    directory = tmp_path / "catalog"
+    fragments = directory / "fragment"
+    fragments.mkdir(parents=True)
+    for name in ["catalog_1.parquet", "catalog_1_retry.parquet"]:
+        Catalog.create(
+            str(fragments / name), Config(), [_job(1)], jobs_in_metadata=True
+        )
+    merge_catalog(str(tmp_path))
+    assert Catalog.open(str(directory / "catalog.parquet")).jobs == _expected([_job(1)])
 
 
 @pytest.mark.parametrize(
@@ -173,3 +246,14 @@ def test_invalid_manifest_reference_is_not_treated_as_plain_parquet(tmp_path, pa
         _ = Catalog.open(str(path)).jobs
 
 
+def test_conflicting_fragment_duplicates_are_rejected(tmp_path):
+    fragments = tmp_path / "catalog/fragment"
+    fragments.mkdir(parents=True)
+    for name, job in [
+        ("catalog_1.parquet", _job(1)),
+        ("catalog_1_retry.parquet", _job(1, sim_idx=7)),
+    ]:
+        Catalog.create(str(fragments / name), Config(), [job], jobs_in_metadata=True)
+    with pytest.raises(ValueError, match="Conflicting fragment"):
+        merge_catalog(str(tmp_path))
+    assert not (tmp_path / "catalog/catalog.parquet").exists()

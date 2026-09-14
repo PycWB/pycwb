@@ -7,12 +7,16 @@ import click
 import h5py as h5
 import itertools
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
-from dacite import from_dict, Config as DaciteConfig
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pycwb.config import Config
-from pycwb.types.job import WaveSegment
 from pycwb.modules.catalog import Catalog
+from pycwb.modules.catalog.catalog import (
+    JOB_MANIFEST_FILENAME, _read_job_manifest, _write_table_atomic,
+)
+from pycwb.modules.catalog.provenance import (
+    MANIFEST_ID_KEY, MANIFEST_KEY, catalog_provenance, manifest_reference,
+)
 import time
 
 logger = logging.getLogger(__name__)
@@ -38,14 +42,16 @@ def _read_wave_file(wave_file: str) -> tuple:
     return wave_file, events
 
 
-def _collect_jobs_from_fragments(catalog_files: list) -> list:
-    """Collect and sort all WaveSegment jobs across fragment catalog files."""
-    jobs = []
-    for f in catalog_files:
-        for job in Catalog.open(f).jobs:
-            jobs.append(from_dict(WaveSegment, job, config=DaciteConfig(cast=[tuple])))
-    jobs.sort(key=lambda j: j.index)
-    return jobs
+def _collect_jobs_from_fragments(catalog_files: list) -> list[dict]:
+    """Collect unique jobs, rejecting conflicting descriptions across fragments."""
+    jobs = {}
+    for filename in catalog_files:
+        for job in Catalog.open(filename).jobs:
+            index = job["index"]
+            if index in jobs and jobs[index] != job:
+                raise ValueError(f"Conflicting fragment descriptions for job {index}")
+            jobs[index] = job
+    return [jobs[index] for index in sorted(jobs)]
 
 
 def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_label: str = None):
@@ -66,7 +72,7 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
         logger.warning("No catalog files found")
         return
 
-    default_catalog_file = os.path.abspath(f"{working_dir}/catalog/{Catalog.DEFAULT_FILENAME}")
+    default_catalog_file = os.path.abspath(f"{working_dir}/{catalog_dir}/{Catalog.DEFAULT_FILENAME}")
 
     # Determine output path
     merged_catalog_file = (
@@ -94,14 +100,34 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
         else:
             if not click.confirm(f"Merged catalog file {merged_catalog_file} already exists. Overwrite?", default=False):
                 return
-            os.remove(merged_catalog_file)
 
-    # Create catalog structure from fragments if not present
-    if not os.path.exists(merged_catalog_file):
-        logger.info("Creating catalog from fragments: %s", merged_catalog_file)
-        config = Config()
-        config.load_from_dict(Catalog.open(catalog_files[0]).config)
-        Catalog.create(merged_catalog_file, config, _collect_jobs_from_fragments(catalog_files))
+    # A labeled catalog may contain only the available fragments, while its
+    # provenance still describes the complete run. Validate that subset before
+    # touching the output, including when replacing an existing labeled file.
+    fragment_jobs = _collect_jobs_from_fragments(catalog_files)
+    provenance_source = next(
+        (path for path in (default_catalog_file, merged_catalog_file) if os.path.exists(path)),
+        None,
+    )
+    manifest_path = os.path.join(os.path.dirname(default_catalog_file), JOB_MANIFEST_FILENAME)
+    metadata = None
+    run_jobs = None
+    if provenance_source is not None:
+        run_jobs = Catalog.open(provenance_source).jobs
+        metadata = catalog_provenance(provenance_source, merged_catalog_file)
+    elif os.path.exists(manifest_path):
+        # Recover a catalog whose run manifest survived, without shrinking the
+        # original run provenance to the currently available fragment subset.
+        run_jobs = _read_job_manifest(manifest_path)
+        manifest_id = pq.read_schema(manifest_path).metadata[MANIFEST_ID_KEY].decode()
+        metadata = catalog_provenance(catalog_files[0], merged_catalog_file)
+        metadata.pop(b"jobs", None)
+        metadata[MANIFEST_KEY] = manifest_reference(merged_catalog_file, manifest_path, manifest_id)
+    if run_jobs is not None:
+        jobs_by_index = {job["index"]: job for job in run_jobs}
+        for job in fragment_jobs:
+            if jobs_by_index.get(job["index"]) != job:
+                raise ValueError(f"Fragment job {job['index']} conflicts with run provenance")
 
     # Concatenate trigger rows from all fragments into the target catalog
     tables = []
@@ -114,8 +140,12 @@ def merge_catalog(working_dir: str = '.', catalog_dir: str = 'catalog', merge_la
     logger.info(f"Total number of events: {len(merged_table)}")
 
     logger.info(f"Save {merged_catalog_file}")
-    meta = pq.read_schema(merged_catalog_file).metadata
-    pq.write_table(merged_table.replace_schema_metadata(meta), merged_catalog_file, compression="snappy")
+    if metadata is None:
+        config = Config()
+        config.load_from_dict(Catalog.open(catalog_files[0]).config)
+        Catalog.create(merged_catalog_file, config, fragment_jobs)
+        metadata = pq.read_schema(merged_catalog_file).metadata
+    _write_table_atomic(merged_table.replace_schema_metadata(metadata), merged_catalog_file)
 
 def merge_wave(working_dir: str = '.', output_dir: str = 'output', merge_label: str = None, n_proc: int = None):
     """
