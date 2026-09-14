@@ -36,7 +36,7 @@ Notes
 -----
 - Input is read with ``pandas.read_parquet()`` — works with both pycWB
   Catalog parquet files and plain pandas parquet files.
-- Output is written as a plain pandas parquet (NOT a Catalog).
+- Output preserves source catalog provenance when present.
 - Zero-lag detection requires zero regular lag and zero segment/superlag
   shift where those columns are available.
 """
@@ -45,7 +45,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 import pandas as pd
 
@@ -126,7 +125,8 @@ def random_filter_parquet(
 
     # ── write output ──────────────────────────────────────────────────────
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df.to_parquet(output_path, index=False)
+    from pycwb.modules.catalog.provenance import write_catalog_dataframe
+    write_catalog_dataframe(df, output_path, input_path)
     n_after = len(df)
     logger.info("Wrote %d rows → %s", n_after, output_path)
 

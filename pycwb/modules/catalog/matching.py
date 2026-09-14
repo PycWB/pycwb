@@ -464,6 +464,8 @@ def match_simulations_parquet(
         result = _pa.concat_tables(parts)
 
     if output_parquet is not None:
+        from .provenance import with_catalog_provenance
+        result = with_catalog_provenance(result, catalog_parquet, output_parquet)
         import os
         os.makedirs(os.path.dirname(os.path.abspath(output_parquet)) or ".", exist_ok=True)
         _pq.write_table(result, output_parquet, compression="snappy")

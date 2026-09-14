@@ -20,6 +20,9 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+from pycwb.modules.catalog.provenance import (
+    with_catalog_provenance, write_catalog_dataframe,
+)
 from pycwb.post_production.action_spec import action_spec
 from pycwb.modules.postprocess.lag_filters import nonzero_lag_mask
 
@@ -154,6 +157,7 @@ def trigger_selection(
                     interval_lt=interval_lt,
                     progress=partition_progress[name],
                     catalog=catalog,
+                    catalog_file=catalog_file,
                     outputs=part_outputs,
                     returns=returns,
                     exclude_zero_lag=split_exclude_zero_lag,
@@ -195,6 +199,7 @@ def trigger_selection(
                 job_ids=job_ids,
                 job_lt=job_lt,
                 catalog=catalog,
+                catalog_file=catalog_file,
                 outputs=part_outputs,
                 returns=returns,
                 exclude_zero_lag=split_exclude_zero_lag,
@@ -231,6 +236,7 @@ def trigger_selection(
         job_ids=sel_job_ids,
         job_lt=job_lt,
         catalog=catalog,
+        catalog_file=catalog_file,
         outputs=outputs,
         returns=returns,
         exclude_zero_lag=bool(selection.get("exclude_zero_lag", exclude_zero_lag)),
@@ -323,7 +329,8 @@ def filter_real_simulation(
         raise ValueError("output_schema must be 'matched' or 'raw'")
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    clean.to_parquet(out_path, index=False)
+    provenance_source = _resolve(work_dir, sim_catalog) if sim_catalog else matched_path
+    write_catalog_dataframe(clean, out_path, provenance_source)
     logger.info(
         "Filtered real SIM: %d -> %d rows written to %s",
         n_before, len(clean), out_path,
@@ -516,14 +523,14 @@ def _stream_catalog_job_partitions(
                 if part.num_rows == 0:
                     continue
                 writers[name] = _write_partition_table(
-                    work_dir, output_files[name], part, writers.get(name),
+                    work_dir, output_files[name], part, writers.get(name), source_path=path,
                 )
                 counts[name] += int(part.num_rows)
     finally:
         for writer in writers.values():
             writer.close()
 
-    _write_empty_partition_files(work_dir, output_files, schema, counts)
+    _write_empty_partition_files(work_dir, output_files, schema, counts, source_path=path)
     return counts
 
 
@@ -586,25 +593,26 @@ def _stream_catalog_interval_partitions(
                 if part.num_rows == 0:
                     continue
                 writers[name] = _write_partition_table(
-                    work_dir, output_files[name], part, writers.get(name),
+                    work_dir, output_files[name], part, writers.get(name), source_path=path,
                 )
                 counts[name] += int(part.num_rows)
     finally:
         for writer in writers.values():
             writer.close()
 
-    _write_empty_partition_files(work_dir, output_files, schema, counts)
+    _write_empty_partition_files(work_dir, output_files, schema, counts, source_path=path)
     return counts
 
 
-def _write_partition_table(work_dir: str, output_file: str, table, writer):
+def _write_partition_table(work_dir: str, output_file: str, table, writer, *, source_path: str):
     import pyarrow.parquet as pq
 
     output_path = _resolve(work_dir, output_file)
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     if writer is None:
+        table = with_catalog_provenance(table, source_path, output_path)
         writer = pq.ParquetWriter(output_path, table.schema)
-    writer.write_table(table)
+    writer.write_table(table.replace_schema_metadata(writer.schema.metadata))
     return writer
 
 
@@ -613,6 +621,7 @@ def _write_empty_partition_files(
     output_files: dict[str, str],
     schema,
     counts: dict[str, int],
+    *, source_path: str,
 ) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -623,7 +632,7 @@ def _write_empty_partition_files(
             continue
         output_path = _resolve(work_dir, output_file)
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        pq.write_table(empty, output_path)
+        pq.write_table(with_catalog_provenance(empty, source_path, output_path), output_path)
 
 
 def _apply_trigger_filter_table(table, trigger_filter: Optional[dict[str, Any]]):
@@ -825,6 +834,7 @@ def _materialize_partition(
     returns: list[str],
     exclude_zero_lag: bool,
     unshifted_job_ids: Optional[set[int]],
+    catalog_file: str,
 ) -> dict:
     result: dict[str, Any] = {}
     n_triggers: Optional[int] = None
@@ -849,7 +859,7 @@ def _materialize_partition(
         if triggers_file:
             triggers_path = _resolve(work_dir, triggers_file)
             os.makedirs(os.path.dirname(triggers_path) or ".", exist_ok=True)
-            triggers.to_parquet(triggers_path, index=False)
+            write_catalog_dataframe(triggers, triggers_path, _resolve(work_dir, catalog_file))
             result["triggers_file"] = triggers_file
         elif "triggers" in returns:
             result["triggers"] = triggers
@@ -876,6 +886,7 @@ def _materialize_interval_partition(
     returns: list[str],
     exclude_zero_lag: bool,
     unshifted_job_ids: Optional[set[int]],
+    catalog_file: str,
 ) -> dict:
     result: dict[str, Any] = {}
     interval_set = set(interval_keys)
@@ -928,7 +939,7 @@ def _materialize_interval_partition(
         if triggers_file:
             triggers_path = _resolve(work_dir, triggers_file)
             os.makedirs(os.path.dirname(triggers_path) or ".", exist_ok=True)
-            triggers.to_parquet(triggers_path, index=False)
+            write_catalog_dataframe(triggers, triggers_path, _resolve(work_dir, catalog_file))
             result["triggers_file"] = triggers_file
         elif "triggers" in returns:
             result["triggers"] = triggers

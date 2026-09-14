@@ -32,6 +32,9 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from pycwb.modules.catalog.provenance import (
+    with_catalog_provenance, write_catalog_dataframe,
+)
 from pycwb.post_production.action_spec import action_spec
 from pycwb.modules.postprocess.lag_filters import (
     nonzero_lag_mask,
@@ -257,7 +260,7 @@ def evaluate_efficiency(
     if output_file:
         out_path = _resolve_path(work_dir, output_file)
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        scored_df.to_parquet(out_path, index=False)
+        write_catalog_dataframe(scored_df, out_path, cat_path)
         logger.info("Scored catalog → %s", out_path)
 
     return {
@@ -334,15 +337,17 @@ def score_catalog(
             )
             table = pa.Table.from_pandas(scored, preserve_index=False)
             if writer is None:
+                table = with_catalog_provenance(table, cat_path, out_path)
                 writer = pq.ParquetWriter(out_path, table.schema)
-            writer.write_table(table)
+            writer.write_table(table.replace_schema_metadata(writer.schema.metadata))
             n_scored += len(scored)
     finally:
         if writer is not None:
             writer.close()
 
     if writer is None:
-        pd.DataFrame().to_parquet(out_path, index=False)
+        empty = pa.Table.from_batches([], schema=parquet_file.schema_arrow)
+        pq.write_table(with_catalog_provenance(empty, cat_path, out_path), out_path)
 
     logger.info("Scored %d / %d catalog rows → %s", n_scored, n_input, out_path)
     return {
@@ -520,7 +525,7 @@ def evaluate_far_rho(
     if scored_file:
         scored_path = _resolve_path(work_dir, scored_file)
         os.makedirs(os.path.dirname(scored_path) or ".", exist_ok=True)
-        df.to_parquet(scored_path, index=False)
+        write_catalog_dataframe(df, scored_path, cat_path)
         logger.info("Scored BKG catalog → %s", scored_path)
 
     result = {"far_rho": far_rho_data}
@@ -594,7 +599,6 @@ def score_mdc_catalog(
         ``n_total``, ``n_detections``, ``prob_threshold``, ``ifar_sec``,
         ``livetime``, ``output_csv``.
     """
-    import json
 
     mdc_path = _resolve_path(work_dir, mdc_catalog)
     model_path = _resolve_path(work_dir, model_file)

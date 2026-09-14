@@ -100,7 +100,9 @@ def _select_bkg_livetime(
 def _read_catalog_metadata(path: Optional[str]) -> dict[str, Any]:
     if not path or not os.path.exists(path):
         return {"version": "", "config": {}, "jobs": []}
+    metadata = {}
     try:
+        metadata = pq.read_schema(path).metadata or {}
         catalog = Catalog.open(path)
         return {
             "version": catalog.version,
@@ -108,6 +110,10 @@ def _read_catalog_metadata(path: Optional[str]) -> dict[str, Any]:
             "jobs": catalog.jobs,
         }
     except Exception as exc:
+        from pycwb.modules.catalog.provenance import MANIFEST_KEY
+        if MANIFEST_KEY in metadata and b"jobs" not in metadata:
+            # A declared but broken dependency must not become empty provenance.
+            raise
         logger.warning("Catalog metadata read via Catalog.open failed for %s: %s", path, exc)
 
     try:
