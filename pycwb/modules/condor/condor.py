@@ -1,5 +1,7 @@
 import os
+import re
 import shutil
+import socket
 import click
 
 
@@ -189,12 +191,13 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
         }
 
         if self.conda_env:
-            batch_job_config["MY.flock_local"] = True
-            batch_job_config["MY.DESIRED_Sites"] = "none"
-            merge_job_config["MY.flock_local"] = True
-            merge_job_config["MY.DESIRED_Sites"] = "none"
-            sim_summary_job_config["MY.flock_local"] = True
-            sim_summary_job_config["MY.DESIRED_Sites"] = "none"
+            # These scheduling options are specific to the LIGO cluster.
+            hostname = socket.gethostname().split(".", 1)[0].lower()
+            if re.fullmatch(r"(?:citlogin[0-9]+|ldas-grid|ldas-pcdev[0-9]+)", hostname):
+                for job_config in (batch_job_config, merge_job_config, sim_summary_job_config):
+                    job_config["MY.flock_local"] = True
+                    job_config["MY.DESIRED_Sites"] = "none"
+                    job_config["requirements"] = "(TARGET.EPNFS =?= True)"
 
         if container_image:
             batch_job_config['universe'] = 'container'
