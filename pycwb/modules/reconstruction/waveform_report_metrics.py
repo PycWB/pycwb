@@ -1,6 +1,16 @@
+import math
+import warnings
+from collections.abc import Mapping, Sequence
+from typing import Literal
+
 import numpy as np  # type: ignore
 
+from pycwb.types.time_series import TimeSeries
 from pycwb.types.waveform import Waveform
+
+# Heuristic warning only: twelve orders below unit noise amplitude in cWB's
+# whitening convention. This is not a physical lower bound on signal strength.
+_WHITENED_AMPLITUDE_WARNING_THRESHOLD = 1e-12
 
 
 def compute_confidence_intervals(
@@ -140,6 +150,279 @@ def compute_overlap(reconstructed, reference_waveform):
         return overlaps.item()
 
     return overlaps
+
+
+def _sample_coordinate(time: float, origin: float, dt: float) -> float:
+    """Convert seconds to samples, snapping only within floating-point roundoff.
+
+    Each input float and arithmetic operation contributes at most half an ULP
+    (the spacing between adjacent representable floats). Propagate those errors
+    through (time - origin) / dt so GPS epochs receive an appropriate tolerance.
+    This is numerical boundary handling, not a physical time-alignment tolerance.
+    """
+    delta = time - origin
+    coordinate = delta / dt
+    if not math.isfinite(coordinate):
+        raise ValueError("time offset cannot be represented in sample coordinates")
+    roundoff_seconds = 0.5 * (
+        math.ulp(time)
+        + math.ulp(origin)
+        + math.ulp(delta)
+        + abs(coordinate) * math.ulp(dt)
+    )
+    tolerance = roundoff_seconds / dt + 0.5 * math.ulp(coordinate)
+    if tolerance >= 0.5:
+        raise ValueError(
+            "timestamp precision is insufficient to resolve the sample grid"
+        )
+    nearest = round(coordinate)
+    return float(nearest) if abs(coordinate - nearest) <= tolerance else coordinate
+
+
+def _validated_fitting_factor_series(value: object, label: str, ifo: str) -> TimeSeries:
+    """Convert a supported input and validate samples and timing before alignment."""
+    try:
+        series = TimeSeries.from_input(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{label}[{ifo!r}] must be a pycWB, PyCBC-compatible, "
+            "or GWPy-compatible time series"
+        ) from exc
+
+    if series.data.ndim != 1 or series.data.size == 0:
+        raise ValueError(
+            f"{label} time series for IFO {ifo!r} must be non-empty and one-dimensional"
+        )
+    if not np.all(np.isfinite(series.data)):
+        raise ValueError(f"non-finite samples found in {label} for IFO {ifo!r}")
+    if not (np.isfinite(series.t0) and np.isfinite(series.dt)) or series.dt <= 0.0:
+        raise ValueError(f"invalid timing metadata in {label} for IFO {ifo!r}")
+    return series
+
+
+def _select_fitting_factor_samples(
+    injected: TimeSeries,
+    reconstructed: TimeSeries,
+    start: float | None,
+    end: float | None,
+    ifo: str,
+    missing: Literal["raise", "zero"],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Select full energy windows and their shared samples for the cross term.
+
+    Indices are on the injected grid. Missing samples contribute zero only
+    when explicitly requested; no padded arrays are allocated, even for large
+    gaps. Inputs have already been checked for finite timing and equal spacing.
+    Returns the injected and reconstructed energy windows, followed by their
+    paired overlap samples for the numerator.
+    """
+    coordinate = _sample_coordinate(reconstructed.t0, injected.t0, injected.dt)
+    if not coordinate.is_integer():
+        raise ValueError(f"time grids are not sample-aligned for IFO {ifo!r}")
+    offset = int(coordinate)
+    inj_stop = len(injected.data)
+    rec_stop = offset + len(reconstructed.data)
+
+    first, stop = min(0, offset), max(inj_stop, rec_stop)
+    if start is not None:
+        lower = _sample_coordinate(start, injected.t0, injected.dt)
+        first = max(first, math.floor(lower) + 1)
+    if end is not None:
+        upper = _sample_coordinate(end, injected.t0, injected.dt)
+        stop = min(stop, math.floor(upper) + 1)
+    if first >= stop:
+        raise ValueError(f"no samples selected for IFO {ifo!r}")
+
+    if missing == "raise" and (
+        first < max(0, offset) or stop > min(inj_stop, rec_stop)
+    ):
+        raise ValueError(
+            f"incomplete waveform coverage for IFO {ifo!r}; provide a fully "
+            "covered evaluation window, or use missing='zero' only when "
+            "the waveforms are known to be zero outside their stored support"
+        )
+
+    def slice_on_grid(
+        data: np.ndarray, origin: int, lower: int, upper: int
+    ) -> np.ndarray:
+        # Clamp both endpoints to avoid negative Python indices for disjoint data.
+        begin = max(0, min(len(data), lower - origin))
+        finish = max(begin, min(len(data), upper - origin))
+        return data[begin:finish]
+
+    inj_window = slice_on_grid(injected.data, 0, first, stop)
+    rec_window = slice_on_grid(reconstructed.data, offset, first, stop)
+    overlap_first = max(first, 0, offset)
+    overlap_stop = max(overlap_first, min(stop, inj_stop, rec_stop))
+    return (
+        inj_window,
+        rec_window,
+        slice_on_grid(injected.data, 0, overlap_first, overlap_stop),
+        slice_on_grid(reconstructed.data, offset, overlap_first, overlap_stop),
+    )
+
+
+def compute_fitting_factor(
+    ifos: Sequence[str],
+    injected: Mapping[str, object],
+    reconstructed: Mapping[str, object],
+    start: float | None = None,
+    end: float | None = None,
+    *,
+    missing: Literal["raise", "zero"] = "raise",
+) -> float:
+    r"""Compute the network fitting factor for already-whitened waveforms.
+
+    Both inputs must be whitened using the same detector-specific noise PSD
+    and whitening normalization for each IFO, with consistent normalization
+    across the network. This function does not whiten raw strain. The plain
+    dot products below represent a noise-weighted match only for such whitened
+    inputs. In pycWB, use ``whitened_injected_waveform`` and reconstruct with
+    ``whiten=True``.
+
+    The normalization is the same as ``CWB::mdc::GetMatchFactor("ff", ...)``;
+    the window and missing-coverage policies below are explicit extensions:
+
+    .. math::
+
+        \mathrm{FF} = \frac{\sum_{I,t} r_{I,t}s_{I,t}}
+                          {\sqrt{\left(\sum_{I,t}r_{I,t}^2\right)
+                                 \left(\sum_{I,t}s_{I,t}^2\right)}}.
+
+    Each input series is converted with :meth:`TimeSeries.from_input` before
+    the calculation.  Therefore, inputs must be a pycWB, PyCBC-compatible, or
+    GWPy-compatible time series.  The series may have different start times or
+    lengths, extending cWB's equal-start/equal-length interface. All series
+    must have identical sampling intervals. Paired samples must lie on the same
+    grid; no interpolation or time/phase maximization is performed.
+
+    Bounds and epoch offsets within propagated floating-point roundoff of an
+    integer sample are treated as that sample. Genuine fractional-sample offsets
+    are rejected, as are timestamps too imprecise to resolve the sample grid.
+
+    Parameters
+    ----------
+    ifos:
+        IFO names and the order in which they are checked.  The result is a
+        network FF, not an average of per-IFO FFs.
+    injected:
+        Mapping from IFO name to the whitened injected (reference) time series.
+    reconstructed:
+        Mapping from IFO name to the whitened reconstructed time series.
+    start, end:
+        Optional common time bounds in seconds, in the same frame as each
+        series' ``t0``. Samples follow cWB's convention ``start < t <= end``.
+        Omitted bounds include all stored samples in each IFO's union of
+        injection and reconstruction support, including the first sample.
+        Explicit bounds restrict this union; they do not discard unmatched
+        samples within the selected window.
+    missing:
+        ``"raise"`` (default) requires both waveforms to cover the selected
+        window for each IFO. ``"zero"`` treats samples outside stored support
+        as zero, retaining unmatched energy in the normalization. Use it only
+        for known-zero support, never to hide unknown or truncated data.
+
+    Returns
+    -------
+    float
+        Signed network fitting factor.
+
+    Raises
+    ------
+    ValueError
+        If inputs are incomplete, sampling grids are incompatible, the
+        selected interval contains no samples, coverage is incomplete under
+        ``missing="raise"``, or either network norm is zero.
+
+    Warns
+    -----
+    UserWarning
+        If a selected nonzero waveform has peak absolute amplitude below
+        ``1e-12``. This heuristic flags possible raw-strain inputs, twelve
+        orders below unit noise amplitude in cWB's whitening convention.
+        Amplitude alone cannot verify whitening; exceptionally weak whitened
+        signals can also trigger it. No amplitude correction is applied.
+
+    Notes
+    -----
+    Whitened signals need not have unit RMS or equal amplitudes. FF is invariant
+    under independent positive overall scaling of either network waveform and
+    therefore cannot measure absolute amplitude recovery. Relative detector
+    amplitudes still contribute to the network match. Internally, each network
+    is divided by its own maximum absolute selected amplitude before taking
+    dot products, avoiding overflow/underflow from the overall amplitude scale.
+    No individual detector is normalized separately and inputs are not modified.
+    """
+    if missing not in ("raise", "zero"):
+        raise ValueError("missing must be 'raise' or 'zero'")
+    if not ifos:
+        raise ValueError("ifos must contain at least one IFO")
+    if any(bound is not None and not np.isfinite(bound) for bound in (start, end)):
+        raise ValueError("start and end must be finite when provided")
+    if start is not None and end is not None and start >= end:
+        raise ValueError("start must be smaller than end")
+
+    if len(set(ifos)) != len(ifos):
+        raise ValueError("ifos must not contain duplicate detector names")
+    selected_windows: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    injected_peak = 0.0
+    reconstructed_peak = 0.0
+
+    reference_dt = None
+    for ifo in ifos:
+        if ifo not in injected:
+            raise ValueError(f"missing injected time series for IFO {ifo!r}")
+        if ifo not in reconstructed:
+            raise ValueError(f"missing reconstructed time series for IFO {ifo!r}")
+        inj = _validated_fitting_factor_series(injected[ifo], "injected", ifo)
+        rec = _validated_fitting_factor_series(reconstructed[ifo], "reconstructed", ifo)
+
+        if inj.dt != rec.dt:
+            raise ValueError(f"sampling intervals differ for IFO {ifo!r}")
+        if reference_dt is None:
+            reference_dt = inj.dt
+        elif inj.dt != reference_dt:
+            raise ValueError("sampling intervals must be identical across IFOs")
+
+        windows = _select_fitting_factor_samples(inj, rec, start, end, ifo, missing)
+        inj_slice, rec_slice, _, _ = windows
+        selected_windows.append(windows)
+        inj_peak = float(np.max(np.abs(inj_slice), initial=0.0))
+        rec_peak = float(np.max(np.abs(rec_slice), initial=0.0))
+        injected_peak = max(injected_peak, inj_peak)
+        reconstructed_peak = max(reconstructed_peak, rec_peak)
+
+        for label, peak in (("injected", inj_peak), ("reconstructed", rec_peak)):
+            if 0.0 < peak < _WHITENED_AMPLITUDE_WARNING_THRESHOLD:
+                warnings.warn(
+                    f"{label} waveform for IFO {ifo!r} has selected peak amplitude "
+                    f"{peak:.3g}, below {_WHITENED_AMPLITUDE_WARNING_THRESHOLD:g}; "
+                    "verify that this is whitened data, not raw strain. "
+                    "Amplitude alone cannot establish whitening.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+    if injected_peak == 0.0 or reconstructed_peak == 0.0:
+        raise ValueError("selected waveforms must both have non-zero network energy")
+
+    # A common scale for every IFO preserves network weighting. Multiplying
+    # unscaled energies would overflow even when their individual norms fit.
+    injected_energies, reconstructed_energies, cross_energies = [], [], []
+    for inj_window, rec_window, inj_overlap, rec_overlap in selected_windows:
+        scaled_inj = inj_window / injected_peak
+        scaled_rec = rec_window / reconstructed_peak
+        injected_energies.append(float(np.dot(scaled_inj, scaled_inj)))
+        reconstructed_energies.append(float(np.dot(scaled_rec, scaled_rec)))
+        cross_energies.append(
+            float(np.dot(inj_overlap / injected_peak, rec_overlap / reconstructed_peak))
+        )
+
+    return (
+        math.fsum(cross_energies)
+        / math.sqrt(math.fsum(injected_energies))
+        / math.sqrt(math.fsum(reconstructed_energies))
+    )
 
 
 def compute_cumulative_hrss(waveform, delta_t, axis=1):

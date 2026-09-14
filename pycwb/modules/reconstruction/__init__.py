@@ -19,6 +19,10 @@ _EXPORTS = {
         "get_INJ_waveform",
     ),
     "estimate_snr": ("pycwb.modules.reconstruction.getINJwaveform", "estimate_snr"),
+    "compute_fitting_factor": (
+        "pycwb.modules.reconstruction.waveform_report_metrics",
+        "compute_fitting_factor",
+    ),
     "get_residuals": ("pycwb.modules.reconstruction.getResiduals", "get_residuals"),
     "get_ASD": ("pycwb.modules.reconstruction.getResiduals", "get_ASD"),
 }
