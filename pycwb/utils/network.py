@@ -10,7 +10,7 @@ __all__ = [
 ]
 
 
-def max_delay(ifos):
+def max_delay(ifos, *, geometry_model="lal"):
     """Maximum light-travel time between any detector pair (seconds).
 
     Uses the simple geometric baseline: ``|r_i - r_j| / c``, consistent
@@ -23,8 +23,8 @@ def max_delay(ifos):
     max_d = 0.0
     for i in range(len(ifos)):
         for j in range(i + 1, len(ifos)):
-            d1 = Detector(ifos[i])
-            d2 = Detector(ifos[j])
+            d1 = Detector(ifos[i], geometry_model=geometry_model)
+            d2 = Detector(ifos[j], geometry_model=geometry_model)
             baseline = np.linalg.norm(
                 d1.vertex_vec_earth_centered - d2.vertex_vec_earth_centered
             )

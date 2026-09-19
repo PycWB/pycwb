@@ -429,6 +429,12 @@ schema = {
             "description": "number of interferometers",
             "default": NIFO_MAX
         },
+        "detector_geometry": {
+            "type": "string",
+            "enum": ["lal", "cwb_6.4.6.9"],
+            "description": "Detector geometry inputs; release model currently supports H1/L1 only",
+            "default": "lal"
+        },
         "refIFO": {
             "type": "string",
             "description": "reference IFO",

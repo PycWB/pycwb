@@ -26,6 +26,8 @@ def project_to_detector(
     detectors,
     geocent_end_time,
     ref_ifo="H1",
+    *,
+    geometry_model="lal",
 ):
     """Project plus/cross polarizations onto a list of detectors.
 
@@ -43,6 +45,8 @@ def project_to_detector(
         Geocentric end time added to the epoch of ``hp`` and ``hc``.
     ref_ifo : str, optional
         Unused compatibility argument.
+    geometry_model : str, optional
+        Physical detector constants; defaults to LAL.
 
     Returns
     -------
@@ -59,7 +63,7 @@ def project_to_detector(
     )
 
     return [
-        Detector(ifo).project_wave(
+        Detector(ifo, geometry_model=geometry_model).project_wave(
             hp_ts,
             hc_ts,
             ra,
@@ -203,4 +207,5 @@ def generate_strain_from_injection(
         polarization,
         ifos,
         gps_end_time,
+        geometry_model=getattr(config, "detector_geometry", "lal"),
     )

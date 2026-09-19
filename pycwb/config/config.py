@@ -134,6 +134,7 @@ class Config:
     WDM_level: List[int] = field(default_factory=list)
     cfg_search: Optional[Any] = None
     ifo: List[str] = field(default_factory=list)
+    detector_geometry: str = "lal"
     DQF: List[List[Any]] = field(default_factory=list)
     upTDF: Optional[int] = None
     segEdge: Optional[float] = None
@@ -303,7 +304,7 @@ class Config:
         for dqf in self.DQF:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
 
-        self.max_delay = max_delay(self.ifo)
+        self.max_delay = max_delay(self.ifo, geometry_model=self.detector_geometry)
 
         self.WDM_level = [int(self.l_high + self.l_low - i) for i in range(self.l_low, self.l_high + 1)]
 

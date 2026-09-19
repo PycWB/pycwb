@@ -39,13 +39,18 @@ class Detector:
     x_response: np.ndarray = None
     y_response: np.ndarray = None
     response: np.ndarray = None
+    geometry_model: str = "lal"
     def __init__(self, name, full_name=None, latitude=None, longitude=None, altitude=None,
                  x_azimuth=None, x_altitude=None, x_midpoint=None,
-                 y_azimuth=None, y_altitude=None, y_midpoint=None):
+                 y_azimuth=None, y_altitude=None, y_midpoint=None, *, geometry_model="lal"):
         """
         Initialize the Detector object with either a name or specific parameters.
         If a name is provided, it will look up the detector information from the DETECTORS dictionary.
         If specific parameters are provided, they will be used to initialize the detector.
+
+        geometry_model selects physical input constants: "lal" (default), or
+        "cwb_6.4.6.9" for the validated H1/L1 fixed-vector release geometry.
+        No CWB or ROOT runtime is required.
         """
         if name in DETECTORS:
             self.name = name
@@ -88,6 +93,10 @@ class Detector:
         self.x_response = ifo_vecs['x_response']
         self.y_response = ifo_vecs['y_response']
         self.response = ifo_vecs['response']
+        self.geometry_model = geometry_model
+        if geometry_model != 'lal':
+            from pycwb.constants.release_detector_geometry import apply_release_geometry
+            apply_release_geometry(self, geometry_model)
         
     @property
     def x_length(self):
@@ -117,6 +126,8 @@ class Detector:
         Returns:
             list: A list containing the Cartesian components [X, Y, Z] of the X arm.
         """
+        if self.geometry_model != 'lal':
+            return self.x_vec_earth_centered.copy()
         return self.get_cartesian_components(self.x_altitude, self.x_azimuth, self.latitude, self.longitude)
     
     @property
@@ -127,6 +138,8 @@ class Detector:
         Returns:
             list: A list containing the Cartesian components [X, Y, Z] of the Y arm.
         """
+        if self.geometry_model != 'lal':
+            return self.y_vec_earth_centered.copy()
         return self.get_cartesian_components(self.y_altitude, self.y_azimuth, self.latitude, self.longitude)
     
     @property
@@ -1241,7 +1254,7 @@ def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
 
 
 def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time,
-                                   healpix_order=None, n_sky=None):
+                                   healpix_order=None, n_sky=None, geometry_model="lal"):
     """
     Compute pure-Python sky delay indices and antenna patterns.
 
@@ -1250,7 +1263,7 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
       - `FP`: float64 plus pattern, shape `(nIFO, nSky)`
       - `FX`: float64 cross pattern, shape `(nIFO, nSky)`
     """
-    detector_objs = [Detector(ifo) if isinstance(ifo, str) else ifo for ifo in ifos]
+    detector_objs = [Detector(ifo, geometry_model=geometry_model) if isinstance(ifo, str) else ifo for ifo in ifos]
     if len(detector_objs) == 0:
         raise ValueError("No detectors provided")
 
