@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
+import os
 
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-from .kernels import _align_threshold_map_numba, _select_candidates_numba
+from .kernels import _align_threshold_map_numba, _align_threshold_map_preindexed_numba, _select_candidates_numba
 from .veto_threshold import _get_tf_energy_array
+_PREINDEX_SHIFTS = os.environ.get("PYCWB_PREINDEX_SHIFTS") == "1"
 
 
 def _shift_bins_from_lag_shifts(
@@ -194,7 +196,8 @@ def select_network_pixels(
     )
 
     # Build the clipped support map, then emit sparse selected pixels directly.
-    combined, live_mask = _align_threshold_map_numba(
+    align = _align_threshold_map_preindexed_numba if _PREINDEX_SHIFTS else _align_threshold_map_numba
+    combined, live_mask = align(
         arrays_stack,
         shift_bins_arr,
         int(valid_start),

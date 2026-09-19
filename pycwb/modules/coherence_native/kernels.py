@@ -302,6 +302,85 @@ def _align_threshold_map_numba(
 
 
 @njit(cache=True)
+def _align_threshold_map_preindexed_numba(
+    arrays_stack: np.ndarray,
+    shift_bins: np.ndarray,
+    valid_start: int,
+    nn_valid: int,
+    veto: np.ndarray,
+    has_veto: bool,
+    edge_bins: int,
+    ib: int,
+    ie: int,
+    eo: float,
+    em: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Equivalent support-map kernel with circular indices computed once per call.
+
+    Parameters
+    ----------
+    arrays_stack : float64[n_ifo, n_freq, n_time]
+    shift_bins   : int64[n_ifo]
+    valid_start  : int
+    nn_valid     : int
+    veto         : int16[n_time] or empty  — 0 = reject, 1 = keep
+    has_veto     : bool
+    edge_bins    : int
+    ib, ie       : int  — inclusive first / exclusive last valid freq indices
+    eo, em       : float  — energy threshold, hard cap (2*eo)
+
+    Returns
+    -------
+    combined  : float64[n_freq, n_time]  — clipped support map
+    live_mask : bool[n_time]             — shifted-veto live output bins
+    """
+    n_ifo = arrays_stack.shape[0]
+    n_freq = arrays_stack.shape[1]
+    n_time = arrays_stack.shape[2]
+
+    combined = np.zeros((n_freq, n_time), dtype=np.float64)
+    live_mask = np.zeros(n_time, dtype=np.bool_)
+
+    source_indices = np.empty((n_ifo, nn_valid), dtype=np.int64)
+    for d in range(n_ifo):
+        for u in range(nn_valid):
+            source_indices[d, u] = valid_start + (u + shift_bins[d]) % nn_valid
+
+    for t in range(valid_start, valid_start + nn_valid):
+        u = t - valid_start
+        live = True
+        if has_veto:
+            for d in range(n_ifo):
+                src_t = source_indices[d, u]
+                if veto[src_t] == 0:
+                    live = False
+                    break
+        live_mask[t] = live
+
+    valid_stop = valid_start + nn_valid
+    for fi in range(n_freq):
+        if fi < ib:
+            continue
+        for t in range(valid_start, valid_stop):
+            if has_veto and not live_mask[t]:
+                continue
+            u = t - valid_start
+            v = 0.0
+            for d in range(n_ifo):
+                src_t = source_indices[d, u]
+                v += arrays_stack[d, fi, src_t]
+
+            if v < eo:
+                continue
+            elif v > em:
+                combined[fi, t] = em + 0.1
+            else:
+                combined[fi, t] = v
+
+    return combined, live_mask
+
+
+@njit(cache=True)
 def _select_candidates_numba(
     combined: np.ndarray,
     arrays_stack: np.ndarray,

@@ -15,6 +15,7 @@ vmap over the leading detector dimension compiles once and runs in parallel.
 """
 
 import logging
+import os
 from functools import partial
 
 import jax
@@ -22,6 +23,8 @@ import jax.numpy as jnp
 import numpy as np
 
 logger = logging.getLogger(__name__)
+_COMPACT_COHERENCE = os.environ.get("PYCWB_COMPACT_COHERENCE") == "1"
+_TILED_WDM = os.environ.get("PYCWB_TILED_WDM") == "1"
 
 try:
     from wdm_wavelet.core.t2w import _t2w_jax_impl as _LOW_LEVEL_T2W_JAX_IMPL
@@ -108,6 +111,32 @@ else:
         raise RuntimeError("JAX WDM transform fallback is unavailable")
 
 
+def _tiled_t2w_detectors(strains, M, m_H, filter_taps, sample_budget=262144):
+    """Bound FFT/filter temporaries, retaining global padding and time parity.
+
+    Each tile starts at an even time bin, so the unmodified WDM kernel's
+    local parity equals global parity. Halo samples are sliced from the full
+    mirrored signal; internal tile boundaries are never mirror-padded.
+    """
+    # CPU XLA can change rounding for short/unaligned time dimensions.
+    # Keep every kernel invocation on the tested 32-bin alignment.
+    tile_bins = max(32, (sample_budget // M) // 32 * 32)
+    padded = [_build_extended_signal(strain.data, m_H, M) for strain in strains]
+    n_time = padded[0][1] // M
+    outputs = [np.empty((n_time, M + 1), dtype=np.complex128) for _ in strains]
+    for start in range(0, n_time, tile_bins):
+        count = min(tile_bins, n_time - start)
+        window = jnp.asarray(np.stack([
+            ext[start * M:(start + count) * M + 2 * m_H] for ext, _ in padded
+        ]))
+        block = _batch_t2w_impl(window, filter_taps, M, m_H, M, True, count)
+        host = np.asarray(jax.block_until_ready(block))
+        for i, output in enumerate(outputs):
+            output[start:start + count] = host[i, 0] + 1j * host[i, 1]
+        del host, block, window
+    return [output.T for output in outputs]
+
+
 def batch_t2w_detectors(strains, wdm_wavelet):
     """
     Compute TimeFrequencyMap data for all detectors in one batched JAX call.
@@ -143,6 +172,10 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
     n_time_bins = aligned_length // mm_eff
 
+    if (_TILED_WDM and _LOW_LEVEL_T2W_JAX_IMPL is not None
+            and n_time_bins % 32 == 0 and jax.default_backend() == 'cpu'):
+        return _tiled_t2w_detectors(strains, M, m_H, filter_taps), (dt, df)
+
     if _LOW_LEVEL_T2W_JAX_IMPL is None:
         # Fallback: call high-level t2w_jax per detector
         signals_np = np.stack([np.asarray(s.data, dtype=np.float64) for s in strains])
@@ -150,12 +183,14 @@ def batch_t2w_detectors(strains, wdm_wavelet):
 
         batched = _batch_t2w_fallback(signals_jax, filter_taps, M, m_H)  # (n_det, 2, n_time, M+1)
         batched = jax.block_until_ready(batched)
+        if _COMPACT_COHERENCE:
+            signals_np = signals_jax = None
 
         result = []
         for i in range(len(strains)):
             # Convert to pycwb TimeFrequencyMap data format: complex128, shape (M+1, n_time)
             data = (np.asarray(batched[i, 0]) + 1j * np.asarray(batched[i, 1])).T
-            result.append(data.astype(np.complex128))
+            result.append(data.astype(np.complex128, copy=not _COMPACT_COHERENCE))
         return result, (dt, df)
 
     # Pre-compute extended signals for all detectors (mirror-padded, on CPU)
@@ -169,6 +204,8 @@ def batch_t2w_detectors(strains, wdm_wavelet):
             mm_eff,
         )
         all_extended[i] = ext
+    if _COMPACT_COHERENCE:
+        ext = None
 
     extended_jax = jnp.asarray(all_extended)  # (n_det, ext_len)
 
@@ -182,10 +219,12 @@ def batch_t2w_detectors(strains, wdm_wavelet):
         n_time_bins,
     )   # (n_det, 2, n_time, M+1)
     batched = jax.block_until_ready(batched)
+    if _COMPACT_COHERENCE:
+        extended_jax = all_extended = None
 
     result = []
     for i in range(len(strains)):
         data = (np.asarray(batched[i, 0]) + 1j * np.asarray(batched[i, 1])).T
-        result.append(data.astype(np.complex128))
+        result.append(data.astype(np.complex128, copy=not _COMPACT_COHERENCE))
 
     return result, (dt, df)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 import numpy as np
@@ -16,8 +17,10 @@ from .clustering import cluster_pixels
 from .selection import select_network_pixels
 from .setup import setup_coherence
 from .veto_threshold import build_veto_mask
+from pycwb.types.noise_rms import lookup_pixel_noise_rms
 
 logger = logging.getLogger(__name__)
+_EARLY_CUTS = os.environ.get("PYCWB_COHERENCE_EARLY_CUTS") == "1"
 
 
 def coherence(
@@ -25,6 +28,7 @@ def coherence(
     strains: list[TimeSeries],
     return_rejected: bool = False,
     job_seg: WaveSegment | None = None,
+    nRMS: list | None = None,
 ) -> list[list[FragmentCluster]]:
     """
     Select the significant pixels for all resolution levels and all lags.
@@ -45,6 +49,9 @@ def coherence(
     job_seg : WaveSegment, optional
         Job segment supplying lag count and per-lag time shifts.
         When *None* a single zero-lag pass is performed.
+    nRMS : list[NoiseRMSMap] or None, optional
+        Noise anchors returned by native conditioning. Supply these for
+        detector-weighted subnet cuts; omission retains legacy unit weights.
 
     Returns
     -------
@@ -63,7 +70,7 @@ def coherence(
             lag_shifts=[np.zeros(n_ifo)],
         )
 
-    setups = setup_coherence(config, strains, job_seg=job_seg)
+    setups = setup_coherence(config, strains, job_seg=job_seg, nRMS=nRMS)
     n_lag = job_seg.n_lag
     n_res = len(setups)
 
@@ -135,6 +142,11 @@ def coherence_single_lag(
             edge=setup["segEdge"],
             selection_cache=setup.get("selection_cache"),
         )
+        if setup.get("nRMS") is not None:
+            candidates["noise_rms"] = lookup_pixel_noise_rms(
+                candidates["frequency"], candidates["pix_det_index"],
+                candidates["layers"], candidates["rate"], setup["nRMS"],
+            )
         t_select = time.perf_counter() - t0_select
         n_candidates = (
             int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
@@ -145,7 +157,11 @@ def coherence_single_lag(
         t0_cluster = time.perf_counter()
         if pattern != 0:
             # Multi-pixel clusters for network patterns (kt=2 time bins, kf=3 freq bins)
-            c = cluster_pixels(candidates, kt=2, kf=3)
+            early_thresholds = (
+                {"select_subrho": setup["select_subrho"], "select_subnet": setup["select_subnet"]}
+                if _EARLY_CUTS and not return_rejected else {}
+            )
+            c = cluster_pixels(candidates, kt=2, kf=3, **early_thresholds)
             c.select("subrho", setup["select_subrho"])
             c.select("subnet", setup["select_subnet"])
         else:

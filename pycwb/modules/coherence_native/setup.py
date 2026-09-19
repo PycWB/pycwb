@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import numpy as np
 
 from wdm_wavelet.wdm import WDM as WDMWavelet
 
@@ -19,6 +20,21 @@ from .tf_batch_generation import batch_t2w_detectors
 from .veto_threshold import compute_threshold
 
 logger = logging.getLogger(__name__)
+_COMPACT_COHERENCE = os.environ.get("PYCWB_COMPACT_COHERENCE") == "1"
+
+
+def _share_prepared_energy_storage(tf_maps, selection_cache):
+    """Share immutable prepared float64 energies with the contiguous lag cache.
+
+    Only real float64 maps qualify. Complex maps retain their quadratures.
+    Prepared maps/cache must be treated as read-only after setup; changing one
+    independently is unsupported with compact storage enabled.
+    """
+    stack = selection_cache["arrays_stack"]
+    for n, tf_map in enumerate(tf_maps):
+        data = tf_map.data
+        if isinstance(data, np.ndarray) and data.dtype == np.dtype(np.float64):
+            tf_map.data = stack[n]
 
 
 def _coherence_timing_enabled(config: Config) -> bool:
@@ -30,7 +46,8 @@ def _coherence_timing_enabled(config: Config) -> bool:
 
 
 def setup_coherence(
-    config: Config, strains: list[TimeSeries], job_seg: WaveSegment | None = None
+    config: Config, strains: list[TimeSeries], job_seg: WaveSegment | None = None,
+    nRMS: list | None = None,
 ) -> list[dict]:
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
@@ -47,6 +64,9 @@ def setup_coherence(
         Whitened strain time series.
     job_seg : WaveSegment or None, optional
         Job segment (provides lag count via ``job_seg.n_lag``).
+    nRMS : list[NoiseRMSMap] or None, optional
+        Whitening-noise anchors shared across resolutions. Native workflows
+        supply these for cWB-compatible subnet statistics.
 
     Returns
     -------
@@ -73,6 +93,11 @@ def setup_coherence(
         for i in range(config.nRES)
     ]
 
+    if nRMS is not None:
+        if len(nRMS) != len(strains):
+            raise ValueError("One whitening-noise map is required per detector")
+        for setup in setups:
+            setup["nRMS"] = nRMS
     return setups
 
 
@@ -133,6 +158,12 @@ def _setup_coherence_single_res(
                 edge=getattr(config, "segEdge", None),
                 wavelet=wdm_wavelet,
                 len_timeseries=len(strains[n].data),
+                # cWB maxEnergy consumes conditioned strain directly. Keep
+                # this separately selectable while validating the numerical
+                # difference from the historical transform/inverse round trip.
+                ts_data=(np.asarray(strains[n].data, dtype=np.float64)
+                         if os.environ.get("PYCWB_DIRECT_MAX_ENERGY_INPUT") == "1"
+                         else None),
             )
             for n in range(len(strains))
         ]
@@ -158,6 +189,11 @@ def _setup_coherence_single_res(
             for strain in strains
         ]
         t_tf_maps = time.perf_counter() - t_stage
+
+    if _COMPACT_COHERENCE:
+        # TF-map objects own the raw transforms now. Do not keep a second
+        # reference to every raw map while replacing them with energy maps.
+        batch_data_list = None
 
     logger.info(
         "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
@@ -198,6 +234,9 @@ def _setup_coherence_single_res(
             )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
+    if _COMPACT_COHERENCE:
+        # enumerate leaves the last raw detector map in this loop variable.
+        tf_map = None
     alp = alp / config.nIFO
 
     # Compute pixel energy threshold based on black-pixel probability
@@ -218,6 +257,8 @@ def _setup_coherence_single_res(
         lag_shifts_by_lag=getattr(job_seg, "lag_shifts", None),
     )
     t_selection_cache = time.perf_counter() - t_stage
+    if _COMPACT_COHERENCE:
+        _share_prepared_energy_storage(tf_maps, selection_cache)
 
     # Extract lag count from job segment for setup dictionary
     n_lag = job_seg.n_lag

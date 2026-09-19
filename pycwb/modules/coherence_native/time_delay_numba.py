@@ -199,6 +199,7 @@ if _HAS_NUMBA:
         mean,
         p,
         pattern,
+        t2w_kernel,
     ):
         """Fully JIT-compiled time-delay max-energy loop (parallel over delays).
 
@@ -213,7 +214,7 @@ if _HAS_NUMBA:
         (jb >= 4*M time bins, while k << 4*M for any realistic max_delay),so
         the two formulations produce identical active-pixel results.
         """
-        _, tf0 = _wdm_t2w_numba_core(
+        _, tf0 = t2w_kernel(
             ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature
         )
         current_max = _wdm_packet_energy_nb(
@@ -238,7 +239,7 @@ if _HAS_NUMBA:
                 # cpf_left: copy ts_data[k_i:] into xx[0:size-k_i]; tail stays = ts_data tail
                 xx_l = ts_data.copy()
                 xx_l[: size - k_i] = ts_data[k_i:]
-                _, tf_l = _wdm_t2w_numba_core(
+                _, tf_l = t2w_kernel(
                     xx_l, filt, n_filter_taps, MM_eff, M_int, return_quadrature
                 )
                 all_en[2 * i] = _wdm_packet_energy_nb(
@@ -258,7 +259,7 @@ if _HAS_NUMBA:
                 # cpf_right: copy ts_data[0:size-k_i] into xx[k_i:]; head stays = ts_data head
                 xx_r = ts_data.copy()
                 xx_r[k_i:] = ts_data[: size - k_i]
-                _, tf_r = _wdm_t2w_numba_core(
+                _, tf_r = t2w_kernel(
                     xx_r, filt, n_filter_taps, MM_eff, M_int, return_quadrature
                 )
                 all_en[2 * i + 1] = _wdm_packet_energy_nb(
@@ -278,6 +279,103 @@ if _HAS_NUMBA:
             # Sequential reduction (trivially fast — dominates nothing)
             for i in range(n_iters * 2):
                 current_max = np.maximum(current_max, all_en[i])
+
+        # C++ zeros layer 0 only
+        current_max[0, :] = 0.0
+        if pattern in (5, 6, 9) and current_max.shape[0] > 2:
+            current_max[1, :] = 0.0
+
+        return current_max
+
+    @numba.njit(cache=True, fastmath=True)
+    def _time_delay_max_energy_pattern_loop_streaming_nb(
+        ts_data,
+        filt,
+        n_filter_taps,
+        MM_eff,
+        M_int,
+        return_quadrature,
+        max_delay,
+        downsample,
+        M_val,
+        T_val,
+        J,
+        jb,
+        je,
+        mL,
+        mH,
+        mean,
+        p,
+        pattern,
+        t2w_kernel,
+    ):
+        """Reduce each delay immediately, retaining the reference reduction order.
+
+        The single-thread path avoids retaining all delay energy maps. Left
+        and right shifts keep the original boundary samples and arithmetic.
+        """
+        _, tf0 = t2w_kernel(
+            ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature
+        )
+        current_max = _wdm_packet_energy_nb(
+            tf0[0].ravel(), tf0[1].ravel(), M_val, T_val, J, jb, je, mL, mH, mean, p
+        )
+
+        # Preserve the same set and order of delay steps.
+        size = len(ts_data)
+        n_iters = 0
+        k = downsample
+        while k <= max_delay and k < size:
+            n_iters += 1
+            k += downsample
+
+        if n_iters > 0:
+            for i in range(n_iters):
+                k_i = (i + 1) * downsample
+
+                # cpf_left: copy ts_data[k_i:] into xx[0:size-k_i]; tail stays = ts_data tail
+                xx_l = ts_data.copy()
+                xx_l[: size - k_i] = ts_data[k_i:]
+                _, tf_l = t2w_kernel(
+                    xx_l, filt, n_filter_taps, MM_eff, M_int, return_quadrature
+                )
+                candidate = _wdm_packet_energy_nb(
+                    tf_l[0].ravel(),
+                    tf_l[1].ravel(),
+                    M_val,
+                    T_val,
+                    J,
+                    jb,
+                    je,
+                    mL,
+                    mH,
+                    mean,
+                    p,
+                )
+
+                current_max = np.maximum(current_max, candidate)
+
+                # cpf_right: copy ts_data[0:size-k_i] into xx[k_i:]; head stays = ts_data head
+                xx_r = ts_data.copy()
+                xx_r[k_i:] = ts_data[: size - k_i]
+                _, tf_r = t2w_kernel(
+                    xx_r, filt, n_filter_taps, MM_eff, M_int, return_quadrature
+                )
+                candidate = _wdm_packet_energy_nb(
+                    tf_r[0].ravel(),
+                    tf_r[1].ravel(),
+                    M_val,
+                    T_val,
+                    J,
+                    jb,
+                    je,
+                    mL,
+                    mH,
+                    mean,
+                    p,
+                )
+
+                current_max = np.maximum(current_max, candidate)
 
         # C++ zeros layer 0 only
         current_max[0, :] = 0.0
@@ -306,9 +404,10 @@ if _HAS_NUMBA:
         mean,
         p,
         pattern,
+        t2w_kernel,
     ):
         """Delay-parallel loop using time-major packet-energy buffers."""
-        _, tf0 = _wdm_t2w_numba_core(
+        _, tf0 = t2w_kernel(
             ts_data, filt, n_filter_taps, MM_eff, M_int, return_quadrature
         )
         current_max = _wdm_packet_energy_tm_nb(
@@ -330,7 +429,7 @@ if _HAS_NUMBA:
 
                 xx_l = ts_data.copy()
                 xx_l[: size - k_i] = ts_data[k_i:]
-                _, tf_l = _wdm_t2w_numba_core(
+                _, tf_l = t2w_kernel(
                     xx_l, filt, n_filter_taps, MM_eff, M_int, return_quadrature
                 )
                 all_en[2 * i] = _wdm_packet_energy_tm_nb(
@@ -349,7 +448,7 @@ if _HAS_NUMBA:
 
                 xx_r = ts_data.copy()
                 xx_r[k_i:] = ts_data[: size - k_i]
-                _, tf_r = _wdm_t2w_numba_core(
+                _, tf_r = t2w_kernel(
                     xx_r, filt, n_filter_taps, MM_eff, M_int, return_quadrature
                 )
                 all_en[2 * i + 1] = _wdm_packet_energy_tm_nb(
@@ -378,6 +477,7 @@ if _HAS_NUMBA:
     def _normalize_numba_max_energy_mode(mode):
         mode = str(mode or "parallel").strip().lower()
         aliases = {
+            "streaming": "streaming",
             "parallel": "parallel",
             "prange": "parallel",
             "default": "parallel",
@@ -390,7 +490,7 @@ if _HAS_NUMBA:
         if mode not in aliases:
             raise ValueError(
                 "PYCWB_NUMBA_MAX_ENERGY_MODE must be one of "
-                "{'parallel', 'time-major'} "
+                "{'parallel', 'time-major', 'streaming'} "
                 f"(got {mode!r})"
             )
         return aliases[mode]
@@ -445,6 +545,13 @@ if _HAS_NUMBA:
 
         # ---- fully-JIT path (t2w_numba_core is njit-compiled, i.e. rocket-fft present) ----
         if _HAS_T2W_NUMBA_CORE:
+            t2w_kernel = _wdm_t2w_numba_core
+            if os.environ.get("WDM_BOUNDED_NUMBA") == "1":
+                # An explicit dispatcher argument creates a distinct Numba
+                # specialization; an environment-dependent global alias would
+                # risk reusing cached code for the wrong kernel.
+                from wdm_wavelet.core.t2w import t2w_numba_core_bounded
+                t2w_kernel = t2w_numba_core_bounded
             mode = _normalize_numba_max_energy_mode(mode)
             if mode == "time-major":
                 return _time_delay_max_energy_pattern_loop_tm_nb(
@@ -466,8 +573,11 @@ if _HAS_NUMBA:
                     mean,
                     p,
                     pattern_abs,
+                    t2w_kernel,
                 )
-            return _time_delay_max_energy_pattern_loop_nb(
+            loop = (_time_delay_max_energy_pattern_loop_streaming_nb
+                    if mode == "streaming" else _time_delay_max_energy_pattern_loop_nb)
+            return loop(
                 ts_data,
                 filt,
                 n_filter_taps,
@@ -486,6 +596,7 @@ if _HAS_NUMBA:
                 mean,
                 p,
                 pattern_abs,
+                t2w_kernel,
             )
         else:
             print(
@@ -597,7 +708,7 @@ def time_delay_max_energy_numba(
     :type pattern: int
     :param hist: optional list-like container to collect transformed samples
     :type hist: list | None
-    :param mode: numba loop strategy, ``"parallel"`` or ``"time-major"``.
+    :param mode: numba loop strategy, ``"parallel"``, ``"time-major"`` or ``"streaming"``.
         Defaults to ``PYCWB_NUMBA_MAX_ENERGY_MODE`` or ``"parallel"``.
     :type mode: str | None
     :return: ``(new_tf_map, alp)``
