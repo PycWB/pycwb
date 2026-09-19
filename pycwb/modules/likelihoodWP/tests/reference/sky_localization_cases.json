@@ -1,0 +1,26 @@
+[
+  {
+    "name": "flat_prior",
+    "prior": false,
+    "rms": 2.0,
+    "n_sky": 0
+  },
+  {
+    "name": "antenna_prior",
+    "prior": true,
+    "rms": 3.0,
+    "n_sky": 0
+  },
+  {
+    "name": "top_17",
+    "prior": true,
+    "rms": 1.5,
+    "n_sky": 17
+  },
+  {
+    "name": "threshold",
+    "prior": true,
+    "rms": 2.0,
+    "n_sky": -95
+  }
+]

@@ -404,7 +404,9 @@ def avx_stat_ps(v00, v90, s, S, si, co, mask):
         RN += rn[i]  # residual noise in TF domain
         NN += mm  # number of pixel in TF domain with Ec>0
 
-    corr_coeff = float32(2.0) * Lr / (LL + _o)  # network correlation coefficient
+    # watavx.hh keeps this 0.001 energy offset even with its division bugfix
+    # enabled. It is distinct from the 1e-9 per-pixel division epsilon.
+    corr_coeff = float32(2.0) * float32(Lr / (LL + 0.001))
     total_noise = (GN + RN) / float32(2.0)
 
     return corr_coeff, EC, NN, total_noise, ec, gn, rn

@@ -12,6 +12,7 @@ from math import sqrt
 import numpy as np
 from numba import njit, prange, float32
 from .dpf import dpf_np_loops_vec
+# The shared reduced-correlation kernel retains the release LL + 0.001 offset.
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 
 @njit(cache=True, parallel=True)

@@ -593,8 +593,6 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     n_ifo = len(p)
     n_pix = len(p[0])
 
-    new_p = np.empty((n_ifo, n_pix), dtype=np.float32)
-    new_q = np.empty((n_ifo, n_pix), dtype=np.float32)
 
     _o = float(1.e-9)
 
@@ -632,25 +630,19 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     R = np.sqrt(RPOL).astype(np.float32)
     A = np.arctan2(SPOL, CPOL).astype(np.float32)
 
-    # PnP & DSP sections below preserve the original (last-pixel-only) behaviour
-    # to avoid changing any existing output semantics — i is the last pixel index.
-    i = n_pix - 1
-    cpol_s = cpol[i] / (sqrt_fp[i])    # scalar for last pixel
-    spol_s = spol[i] / (sqrt_fx[i])
-    CPOL_s = CPOL[i] / (sqrt_fp[i])
-    SPOL_s = SPOL[i] / (sqrt_fx[i])
-
-    for j in range(n_ifo):
-        new_p[j][i] = f_arr[i][j] * cpol_s + F_arr[i][j] * spol_s
-        new_q[j][i] = f_arr[i][j] * CPOL_s + F_arr[i][j] * SPOL_s
-
-    Nval = np.sqrt(cpol_s * cpol_s + CPOL_s * CPOL_s)
-    cpol_s /= (Nval + _o)
-    CPOL_s /= (Nval + _o)
-
-    for j in range(n_ifo):
-        new_p[j][i] = new_p[j][i] * cpol_s + new_q[j][i] * CPOL_s
-        new_q[j][i] = new_q[j][i] * cpol_s - new_p[j][i] * CPOL_s
+    # Project every pixel onto the network plane. Keep separate inputs for both
+    # DSP outputs: overwriting p before calculating q changes the rotation.
+    c = cpol / sqrt_fp
+    s = spol / sqrt_fx
+    C = CPOL / sqrt_fp
+    S = SPOL / sqrt_fx
+    projected_p = (f_arr.T * c + F_arr.T * s).astype(np.float32)
+    projected_q = (f_arr.T * C + F_arr.T * S).astype(np.float32)
+    magnitude = np.sqrt(c * c + C * C)
+    cosine = c / (magnitude + _o)
+    sine = C / (magnitude + _o)
+    new_p = (projected_p * cosine + projected_q * sine).astype(np.float32)
+    new_q = (projected_q * cosine - projected_p * sine).astype(np.float32)
 
     return new_p, new_q, (r, a), (R, A)
 
@@ -812,7 +804,13 @@ def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
 
 @njit(cache=True)
 def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
-    """Compute the norm of a packet of pixels.
+    """Compute packet norms with cWB 6.4.6.9 float32 arithmetic.
+
+    Accumulation and reduction order follow network::_avx_norm_ps(I>0).
+    Float64 promotion changes the ratio >= 1 decision for near-unit pixels,
+    which can change waveform amplitudes and event acceptance. Keep explicit
+    float32 rounding and do not enable fastmath/reassociation. Inputs are not
+    modified; all four output arrays use float32.
 
     Parameters
     ----------
@@ -827,7 +825,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     mk : np.ndarray
         Mask indicating valid pixels. mk[pixel]
     q_E : np.ndarray
-        Energy threshold for the q component. q_E[ifo]
+        Packet energy for the q component. q_E[ifo]
 
     Returns
     -------
@@ -841,63 +839,46 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         - q_norm : np.ndarray
             The 90 degree component norms for each interferometer. Was I + i in cWB
     """
-    n_pixels = len(p[0])
-    n_ifos = len(p)
-    _o = np.float64(1.e-12)
-
-    q_norm = np.zeros((n_ifos, n_pixels))
-    norm = np.zeros(n_ifos)
-    rn = np.zeros(n_pixels)
-    for i in range(n_pixels):
-        if mk[i] <= 0.:
+    p = p.astype(np.float32)
+    q = q.astype(np.float32)
+    xtalks = xtalks.astype(np.float32)
+    q_E = q_E.astype(np.float32)
+    n_ifos, n_pixels = p.shape
+    norm = np.zeros(n_ifos, dtype=np.float32)
+    q_norm = np.zeros((n_ifos, n_pixels), dtype=np.float32)
+    rn = np.zeros(n_pixels, dtype=np.float32)
+    for pixel in range(n_pixels):
+        if mk[pixel] <= 0:
             continue
-        xtalk_range = xtalks_lookup[i]
-        xtalk = xtalks[xtalk_range[0]:xtalk_range[1]]
-        xtalk_indexes = xtalk[:,0].astype(np.int32)
-        xtalk_cc = np.vstack((xtalk[:,4], xtalk[:,5], xtalk[:,6], xtalk[:,7])).astype(np.float64)  # 4xM matrix
-        # Select elements from p and q based on xtalk_indexes
-        p_vec = p[:, xtalk_indexes].astype(np.float64)  # N*M matrix
-        q_vec = q[:, xtalk_indexes].astype(np.float64)  # N*M matrix
-        # Compute the sums using a vectorized approach
-        # x = np.sum(xtalk_cc * np.array([q_vec, p_vec, q_vec, p_vec]), axis=1)  # 4-d vector
-
-        # h = x * np.array([q[:, i], p[:, i], q[:, i], p[:, i]])
-        x = np.vstack((np.dot(p_vec, xtalk_cc[0].T),
-                      np.dot(p_vec, xtalk_cc[1].T),
-                      np.dot(q_vec, xtalk_cc[2].T),
-                      np.dot(q_vec, xtalk_cc[3].T)))  # 4xN matrix
-
-        # Summing all components together
-        pi = p[:, i].astype(np.float64)
-        qi = q[:, i].astype(np.float64)
-        t = (x[0] * pi) + (x[1] * qi) + (x[2] * pi) + (x[3] * qi)
-
-        # if i == 0:
-        #     print('xtalk_cc: ', xtalk_cc)
-        #     print('xtalk: ', xtalk[0], xtalk[4], xtalk[5], xtalk[6], xtalk[7])
-        #     print('x: ', x)
-        #     print('t: ', t)
-        #     print('p[0, i]: ', p[0, i])
-        #     print('q[0, i]: ', q[0, i])
-
-
-        # set t to 0 if t < 0 (same as C++ _avx_norm_ps: t=t>0?t:0)
-        t_clamped = np.where(t < 0, 0, t)
-        norm += t_clamped
-
-        e = (pi * pi + qi * qi) / (t_clamped + _o)  # 1-d vector
-
-        q_norm[:, i] = np.where(e >= 1, 0, e)
-
-        u = x[0] + x[2]
-        v = x[1] + x[3]
-        rn[i] = np.sum(u * u + v * v)
-
-    # print('q: ', norm)
-    e = q_E.astype(np.float64) * 2.0   # TF-Domain SNR
-    norm = np.where(norm < 2.0, 2.0, norm)  # set norm to 2 if norm < 2
-    detector_snr = e / norm  # detector {0:NIFO} SNR
-
+        for ifo in range(n_ifos):
+            x = np.zeros(4, dtype=np.float32)
+            for neighbor in range(xtalks_lookup[pixel, 0], xtalks_lookup[pixel, 1]):
+                index = int(xtalks[neighbor, 0])
+                x[0] = np.float32(x[0] + np.float32(xtalks[neighbor, 4] * p[ifo, index]))
+                x[1] = np.float32(x[1] + np.float32(xtalks[neighbor, 5] * p[ifo, index]))
+                x[2] = np.float32(x[2] + np.float32(xtalks[neighbor, 6] * q[ifo, index]))
+                x[3] = np.float32(x[3] + np.float32(xtalks[neighbor, 7] * q[ifo, index]))
+            u = np.float32(p[ifo, pixel])
+            v = np.float32(q[ifo, pixel])
+            h0 = np.float32(x[0] * u)
+            h1 = np.float32(x[1] * v)
+            h2 = np.float32(x[2] * u)
+            h3 = np.float32(x[3] * v)
+            t = np.float32(np.float32(np.float32(h0 + h1) + h2) + h3)
+            if t < 0:
+                t = np.float32(0)
+            norm[ifo] = np.float32(norm[ifo] + t)
+            numerator = np.float32(np.float32(u * u) + np.float32(v * v))
+            e = np.float32(numerator / np.float32(t + np.float32(1e-12)))
+            q_norm[ifo, pixel] = np.float32(0) if e >= np.float32(1) else e
+            u = np.float32(x[0] + x[2])
+            v = np.float32(x[1] + x[3])
+            rn[pixel] = np.float32(rn[pixel] + np.float32(np.float32(u * u) + np.float32(v * v)))
+    detector_snr = np.zeros(n_ifos, dtype=np.float32)
+    for ifo in range(n_ifos):
+        if norm[ifo] < 2:
+            norm[ifo] = np.float32(2)
+        detector_snr[ifo] = np.float32(np.float32(q_E[ifo] * np.float32(2)) / norm[ifo])
     return detector_snr, norm, rn, q_norm
 
 

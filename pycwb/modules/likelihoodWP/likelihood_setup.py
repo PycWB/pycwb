@@ -25,57 +25,20 @@ from .sky_mask import compute_sky_valid_indices
 logger = logging.getLogger(__name__)
 
 def populate_pixel_noise_from_maps(pixels: list[Pixel], nRMS: list[TimeFrequencyMap]) -> None:
+    """Populate legacy pixel objects using the shared detector-aware RMS lookup.
+
+    Detector indices select the lagged noise anchors. Mixed-resolution pixels
+    use the same harmonic frequency-band averaging as the native SoA pipeline.
     """
-    Populate each ``pixel.data[i].noise_rms`` from the per-IFO TF noise maps.
+    if not pixels or not nRMS:
+        return
+    from pycwb.types.pixel_arrays import PixelArrays
 
-    The nRMS maps come from the highest-resolution whitening step.  For pixels at
-    other resolutions the frequency bin is scaled proportionally to the nRMS grid.
-
-    Parameters
-    ----------
-    pixels : list[Pixel]
-        Cluster pixels.
-    nRMS : list[TimeFrequencyMap]
-        One TF noise map per IFO from whitening_python.  ``data`` shape is
-        ``(n_freq_bins, n_time_bins)`` where n_freq_bins covers [0, fNyq].
-    """
-    n_ifo = len(nRMS)
-    # Precompute nRMS data arrays once
-    nrms_data = []
-    nrms_shapes = []
-    for i in range(n_ifo):
-        arr = np.asarray(nRMS[i].data, dtype=np.float64)
-        nrms_data.append(arr)
-        nrms_shapes.append(arr.shape)  # (n_freq, n_time)
-
-    for pixel in pixels:
-        freq_bin = int(pixel.frequency)
-        n_freq_pix = int(pixel.layers)  # number of frequency bins at this resolution
-        # Derive time bin from composite pixel.time = time_idx * n_freq + freq_bin
-        if n_freq_pix > 0:
-            time_bin_pix = int(pixel.time) // n_freq_pix
-        else:
-            time_bin_pix = 0
-
-        for i in range(n_ifo):
-            try:
-                nf, nt = nrms_shapes[i]
-                # Map pixel freq_bin (at resolution n_freq_pix) to nRMS freq bin
-                if n_freq_pix > 0 and nf > 0:
-                    fb = int(round(freq_bin * nf / n_freq_pix))
-                    fb = min(max(fb, 0), nf - 1)
-                else:
-                    fb = 0
-                # Map time bin 
-                tb = min(time_bin_pix, nt - 1) if nt > 0 else 0
-                val = float(np.abs(nrms_data[i][fb, tb]))
-                if val > 0.0:
-                    pixel.data[i].noise_rms = val
-            except Exception:  # noqa: BLE001
-                logger.debug(
-                    "Failed to populate noise_rms for pixel at freq_bin=%d, ifo=%d",
-                    freq_bin, i, exc_info=True
-                )
+    arrays = PixelArrays.from_pixels(pixels, n_ifo=len(nRMS))
+    arrays.populate_noise_rms(nRMS)
+    for pixel_index, pixel in enumerate(pixels):
+        for detector_index, detector_data in enumerate(pixel.data):
+            detector_data.noise_rms = float(arrays.noise_rms[detector_index, pixel_index])
 
 
 def prepare_likelihood_inputs(

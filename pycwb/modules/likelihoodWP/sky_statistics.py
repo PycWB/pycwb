@@ -18,6 +18,7 @@ from .packet_ops import (
     avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps,
     avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps, xtalk_energy_sum_numpy,
 )
+# The shared reduced-correlation kernel retains the release LL + 0.001 offset.
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from pycwb.modules.xtalk.type import XTalk
 

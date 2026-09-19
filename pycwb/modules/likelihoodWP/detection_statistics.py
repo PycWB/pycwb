@@ -13,6 +13,7 @@ Legacy aliases ``threshold_cut``, ``fill_detection_statistic``,
 from __future__ import annotations
 
 import logging
+import os
 from math import sqrt
 import time
 import numpy as np
@@ -136,7 +137,12 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     # core flags from pixel_arrays — no Python iteration
     _core = _pa.core
     null_pixel_indices = np.where(_core & (np.asarray(gaussian_noise_correction) > 0))[0].astype(np.int64)
-    likelihood_pixel_indices = np.where(_core & (np.asarray(coherent_energy) > 0))[0].astype(np.int64)
+    # cWB skips satellites before likelihood writeback. Their negative energy
+    # markers must survive, even when their coherent energy is positive.
+    likelihood_pixel_indices = np.where(
+        _core & (np.asarray(gaussian_noise_correction) > 0)
+        & (np.asarray(coherent_energy) > 0)
+    )[0].astype(np.int64)
     stage_timings["set_waveform_data"] = time.perf_counter() - _t0
 
     # --- Second pass: compute null and likelihood using the parallel numba kernel ---
@@ -159,13 +165,12 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     gn_arr = np.asarray(gaussian_noise_correction, dtype=np.float64)
     ec_arr = np.asarray(coherent_energy, dtype=np.float64)
 
-    # Boolean membership masks — mirror the original inner-loop scope:
-    #   original null loop:       for k in null_k_set  (core & gn > 0)
-    #   original likelihood loop: for k in like_k_set  (core & ec > 0)
+    # Cross-talk neighbors have a broader likelihood gate than writeback:
+    # cWB requires core & ec > 0 for neighbors, without the outer gn > 0 cut.
     null_mask = np.zeros(n_pixels, dtype=np.bool_)
     null_mask[null_pixel_indices] = True
     like_mask = np.zeros(n_pixels, dtype=np.bool_)
-    like_mask[likelihood_pixel_indices] = True
+    like_mask[:] = _core & (np.asarray(coherent_energy) > 0)
 
     _t0 = time.perf_counter()
     _compute_null_likelihood_numba(
@@ -216,6 +221,11 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     core_indices = np.where(cluster.pixel_arrays.core)[0].tolist()
 
     _t0 = time.perf_counter()
+    release_waveform_stats = os.getenv("PYCWB_RELEASE_WAVEFORM_STATS", "0") == "1"
+    from .waveform_statistics import waveform_rms, waveform_time, waveform_frequency, network_centroids, final_statistics
+    wf_times = np.zeros(n_ifo)
+    wf_frequencies = np.zeros(n_ifo)
+    cross_rms = np.zeros(n_ifo)
     Lw = 0.0
     sSNR_ifo  = np.zeros(n_ifo, dtype=np.float64)
     snr_ifo   = np.zeros(n_ifo, dtype=np.float64)
@@ -258,6 +268,12 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
         sSNR_ifo[ifo_i] = np.sum(z_sig ** 2)
         snr_ifo[ifo_i]  = np.sum(z_dat ** 2)
         null_ifo[ifo_i] = np.sum((z_dat - z_sig) ** 2)
+        if release_waveform_stats:
+            rs,rd,rn = waveform_rms(z_sig),waveform_rms(z_dat),waveform_rms(z_dat-z_sig)
+            sSNR_ifo[ifo_i] = np.float32(rs*rs*len(z_sig))
+            snr_ifo[ifo_i] = np.float32(rd*rd*len(z_dat))
+            null_ifo[ifo_i] = np.float32(rn*rn*len(z_dat))
+            cross_rms[ifo_i] = np.float32(rd*rs*len(z_dat))
         if z_sig_physical is not None:
             z_sig_phys = np.asarray(z_sig_physical.data, dtype=np.float64)
             signal_energy_physical[ifo_i] = np.sum(z_sig_phys ** 2)
@@ -270,14 +286,18 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
         E_sig = float(np.sum(e_sig))
         if E_sig > 0.0:
             t_start = float(z_sig_ts.start_time)
-            wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
-            Z_fft = np.fft.rfft(z_sig)
-            power = Z_fft.real ** 2 + Z_fft.imag ** 2
-            E_fft = float(np.sum(power))
-            if E_fft > 0.0:
-                wf_freq_ifo = float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
+            if release_waveform_stats:
+                wf_time_ifo = waveform_time(z_sig,t_start,rate_wf)
+                wf_freq_ifo = waveform_frequency(z_sig,rate_wf)
+                wf_times[ifo_i] = wf_time_ifo
+                wf_frequencies[ifo_i] = wf_freq_ifo
             else:
-                wf_freq_ifo = 0.0
+                wf_time_ifo = t_start + float(np.dot(e_sig, np.arange(n_fft))) / (E_sig * rate_wf)
+                Z_fft = np.fft.rfft(z_sig)
+                power = Z_fft.real ** 2 + Z_fft.imag ** 2
+                E_fft = float(np.sum(power))
+                wf_freq_ifo = (float(np.dot(power, np.arange(len(power)))) * rate_wf / n_fft / E_fft
+                               if E_fft > 0.0 else 0.0)
             To += sSNR_ifo[ifo_i] * wf_time_ifo
             Fo += sSNR_ifo[ifo_i] * wf_freq_ifo
 
@@ -287,6 +307,11 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     if Lw > 0.0:
         To /= Lw
         Fo /= Lw
+
+    if release_waveform_stats:
+        Lw,To,Fo = map(float,network_centroids(sSNR_ifo,wf_times,wf_frequencies))
+        Ew_wf = float(np.add.accumulate(snr_ifo.astype(np.float32))[-1]) if n_ifo else 0.
+        Nw_wf = float(np.add.accumulate(null_ifo.astype(np.float32))[-1]) if n_ifo else 0.
 
     # else:
     #     # Fallback: xtalk-catalog double-sum (used when config is not available).
@@ -333,7 +358,7 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
 
     # xSNR per IFO: geometric mean  C++ get_XS() = sqrt(get_XX() * get_SS())
     _t0 = time.perf_counter()
-    xSNR_ifo = np.sqrt(np.maximum(snr_ifo * sSNR_ifo, 0.0))
+    xSNR_ifo = cross_rms if release_waveform_stats else np.sqrt(np.maximum(snr_ifo * sSNR_ifo, 0.0))
 
     # --- Detection statistics: netCC, norm, rho (mirrors network.cc likelihoodWP) ---
     # Energy notation:
@@ -346,7 +371,7 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     #   ch_wf = (Nw_wf + Gn) / (N * nIFO)
     #   Cp = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)       - N*(nIFO-1))   # netCC[0]
     #   Cr = Ec*Rc / (Ec*Rc + (Dc+Nw_wf+Gn)*cc_Cr - N*(nIFO-1))   # netCC[1]
-    #   norm = (Eo-Eh) / Ew_wf  clamped to ≥ 1, stored as norm*2
+    #   norm = (Eo-Eh) / Ew_wf, stored as norm*2 (no final floor)
     Dc = float(sky_statistics.Dc)
     Ec = float(sky_statistics.Ec)
     Rc_val = float(sky_statistics.Rc)
@@ -365,8 +390,7 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
     Cp_td = (Ec * Rc_val / denom_p) if denom_p > 0 else 0.0
 
     norm_td = (Eo - Eh) / Ew_wf if Ew_wf > 0 else 1.0
-    if norm_td < 1.0:
-        norm_td = 1.0
+    # The earlier sky-loop floor does not apply to final waveform normalization.
 
     # rho is divided by sqrt(cc) using Nw-based chi2 (time-domain null, matches C++ line 939)
     cc_rho_td = ch_td if ch_td > 1.0 else 1.0
@@ -402,6 +426,15 @@ def populate_detection_statistics(sky_statistics: SkyStatistics, skymap_statisti
         cluster.cluster_meta.net_rho = float(sky_statistics.rho)
         # rho[1] = netrho = xrho/sqrt(cc)  (original 2G rho with cc — C++ netevent.cc line 980)
         cluster.cluster_meta.net_rho2 = float(sky_statistics.xrho) / sqrt(cc_rho_td)
+
+    if release_waveform_stats:
+        final = final_statistics(Eo,Eh,Ew_wf,Nw_wf,Gn_val,Dc,Ec,Rc_val,N_eff,n_ifo,
+                                 sky_statistics.rho,sky_statistics.xrho)
+        meta = cluster.cluster_meta
+        meta.net_null=final['null'];meta.net_ed=final['residual'];meta.norm=final['norm']
+        meta.net_cc=final['cp'];meta.sky_cc=final['cr'];meta.norm_cor=final['norm_cor']
+        meta.net_rho2=final['xrho_reduced'] if xgb_rho_mode else float(np.float32(sky_statistics.rho))
+        if not xgb_rho_mode:meta.net_rho=final['rho_reduced']
 
     cluster.cluster_meta.g_net = skymap_statistics.nAntennaPrior[skymap_statistics.l_max]
     cluster.cluster_meta.a_net = skymap_statistics.nAlignment[skymap_statistics.l_max]
@@ -517,20 +550,37 @@ def get_likelihood_rejection_reason(
     return None  # No rejection, all conditions passed
 
 
-def compute_sky_error_region(cluster: Cluster):
-    # pwc->p_Ind[id - 1].push_back(Mo);
-    # double T = To + pwc->start;                          // trigger time
-    # std::vector<float> sArea;
-    # pwc->sArea.push_back(sArea);
-    # pwc->p_Map.push_back(sArea);
-    #
-    # double var = norm * Rc * sqrt(Mo) * (1 + fabs(1 - CH));
-    #
-    # // TODO: fix this
-    # if (iID <= 0 || ID == id) {
-    # network::getSkyArea(id, lag, T, var);       // calculate error regions
-    # }
-    pass
+def compute_sky_error_region(cluster: Cluster, skymap_statistics=None,
+                             sky_statistics=None, config=None):
+    """Populate background sky probabilities and area deciles after reconstruction."""
+    if skymap_statistics is None or sky_statistics is None:
+        return None
+    from .sky_localization import localize_sky
+    detection_index = int(skymap_statistics.l_max)
+    statistic = (skymap_statistics.nLikelihood
+                 if getattr(config, 'delta', .5) < 0
+                 else skymap_statistics.nSkyStat)
+    # Mo is the count returned by the GW projection, not Mw/sky_size (which
+    # counts pixels surviving later waveform writeback gates).
+    mo = int(np.count_nonzero(sky_statistics.pixel_mask > 0))
+    chi2 = float(skymap_statistics.nDisbalance[detection_index])
+    scale = (float(cluster.cluster_meta.norm) / 2. * float(sky_statistics.Rc)
+             * np.sqrt(mo) * (1. + abs(1. - chi2)))
+    if os.getenv("PYCWB_RELEASE_WAVEFORM_STATS", "0") == "1":
+        from .waveform_statistics import sky_scale
+        scale = sky_scale(cluster.cluster_meta.norm/2.,sky_statistics.Rc,mo,chi2)
+    result = localize_sky(
+        statistic, skymap_statistics.nAntennaPrior, scale,
+        use_prior=getattr(config, 'gamma', getattr(config, 'cfg_gamma', 0.)) < 0,
+        n_sky=getattr(config, 'nSky', 0))
+    if result is None:
+        skymap_statistics.nProbability = None
+        return None
+    cluster.sky_area = result.error_regions.tolist()
+    cluster.sky_pixel_index = result.indices.tolist()
+    cluster.sky_pixel_map = result.selected_probability.tolist()
+    skymap_statistics.nProbability = result.probability
+    return result
 
 
 @njit(cache=True, parallel=True)
