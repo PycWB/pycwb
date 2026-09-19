@@ -66,8 +66,9 @@ class TDBatchInputs:
         indices = np.asarray(pixel_indices, dtype=np.int32)
         if self.frequency_offset or self.padded00.shape[1] != self.M + 1:
             bands = indices % (self.M + 1)
-            if (np.any(np.maximum(bands - 1, 0) < self.frequency_offset)
-                    or np.any(np.minimum(bands + 1, self.M) >= self.frequency_offset + self.padded00.shape[1])):
+            if np.any(np.maximum(bands - 1, 0) < self.frequency_offset) or np.any(
+                np.minimum(bands + 1, self.M) >= self.frequency_offset + self.padded00.shape[1]
+            ):
                 raise ValueError("Requested pixel support lies outside the cached frequency band")
         return batch_get_td_vecs(
             indices,

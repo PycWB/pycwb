@@ -184,15 +184,27 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
                 # Odd pixel shift: quadratures swap with sign from (n+m) parity,
                 # identical to CWB getTDamp() odd-wdmShift branch.
                 if (n + m) % 2 != 0:
-                    a00 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset)
-                    a90 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset)
+                    a00 = -_get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                    )
+                    a90 = _get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                    )
                 else:
-                    a00 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset)
-                    a90 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset)
+                    a00 = _get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                    )
+                    a90 = -_get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                    )
             else:
                 # Even pixel shift (including 0): standard per-quadrature paths.
-                a00 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset)
-                a90 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset)
+                a00 = _get_pixel_amplitude_nb(
+                    n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                )
+                a90 = _get_pixel_amplitude_nb(
+                    n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                )
 
             out[p, ki] = a00
             out[p, half + ki] = a90

@@ -30,7 +30,7 @@ def _avx_loadata_ps(p, q, En):
         energy_total[i] *= mask[i]
         EE += energy_total[i]
 
-    return EE / float32(2.), NN, energy_total, mask
+    return EE / float32(2.0), NN, energy_total, mask
 
 
 @njit(cache=True)
@@ -86,7 +86,7 @@ def load_data_from_td(v00, v90, network_energy_threshold):
         energy_total[i] *= mask[i]
         EE += energy_total[i]
 
-    return EE / float32(2.), NN, energy_total, mask
+    return EE / float32(2.0), NN, energy_total, mask
 
 
 @njit(cache=True)
@@ -162,7 +162,7 @@ def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
             _XX += v90[j][i] * F[i][j]
 
         _f = sqrt(ni[i] * (_xp * _xp + _XP * _XP) / (et[i] + _o)) * _rr - fp[i]
-        _f = _f if _f > float32(0.) else float32(0.0)
+        _f = _f if _f > float32(0.0) else float32(0.0)
         _f = mask[i] / (fp[i] + _f + _o)
 
         _h = _xp * _f
@@ -172,7 +172,7 @@ def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
         _F = sqrt(_H / (_h + _o))
         _R = float32(0.1) + _RR / (et[i] + _o)  # dynamic x-regulator
         _F = _F * _R - fx[i]
-        _F = _F if _F > float32(0.) else float32(0.0)
+        _F = _F if _F > float32(0.0) else float32(0.0)
         _F = mask[i] / (fx[i] + _F + _o)
 
         au[i] = _xp * _f
@@ -272,19 +272,19 @@ def avx_ort_ps(v00, v90, mask):
             aA += v00[j][i] * v90[j][i]
 
         # Orthogonalization sin and cos calculations
-        si[i] = aA * float32(2.)  # rotation 2*sin*cos*norm
+        si[i] = aA * float32(2.0)  # rotation 2*sin*cos*norm
         co[i] = aa - AA  # rotation (cos^2-sin^2)*norm
         et = aa + AA + _o  # total energy
         cc = co[i] * co[i]  # cos^2
         ss = si[i] * si[i]  # sin^2
         nn = np.sqrt(cc + ss)  # co/si norm
-        ee[i] = (et + nn) / float32(2.)  # first component energy
-        EE[i] = (et - nn) / float32(2.)  # second component energy
+        ee[i] = (et + nn) / float32(2.0)  # first component energy
+        EE[i] = (et - nn) / float32(2.0)  # second component energy
         cc = co[i] / (nn + _o)  # cos(2p)
         nn = 1 if si[i] > _0 else 0  # 1 if sin(2p)>0. or 0 if sin(2p)<0.
         ss = 2 * nn - 1  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
-        si[i] = np.sqrt((float32(1.) - cc) / float32(2.))  # |sin(p)|
-        co[i] = np.sqrt((float32(1.) + cc) / float32(2.))  # |cos(p)|
+        si[i] = np.sqrt((float32(1.0) - cc) / float32(2.0))  # |sin(p)|
+        co[i] = np.sqrt((float32(1.0) + cc) / float32(2.0))  # |cos(p)|
         co[i] *= ss  # cos(p)
 
         mk = 1 if mask[i] > _0 else 0  # event mask
@@ -337,7 +337,7 @@ def avx_stat_ps(v00, v90, s, S, si, co, mask):
     n_ifo = len(v00)  # Number of interferometers
     n_pix = len(v00[0])  # Number of pixels
 
-    _o = np.float32(1.e-9)
+    _o = np.float32(1.0e-9)
     _0 = np.float32(0)
     _1 = np.float32(1)
     _2 = np.float32(2)
@@ -386,13 +386,13 @@ def avx_stat_ps(v00, v90, s, S, si, co, mask):
         c = c / (xs * xs + _o)  # first component incoherent energy
         C = C / (XS * XS + _o)  # second component incoherent energy
         ll = mk * (ss + SS)  # signal energy
-        ss = ss * (float(1.) - c)  # 00 coherent energy
-        SS = SS * (float(1.) - C)  # 90 coherent energy
+        ss = ss * (float(1.0) - c)  # 00 coherent energy
+        SS = SS * (float(1.0) - C)  # 90 coherent energy
         ec[i] = mk * (ss + SS)  # coherent energy
-        gn[i] = mk * float(2.) * mask[i]  # G-noise correction
+        gn[i] = mk * float(2.0) * mask[i]  # G-noise correction
         rn[i] = mk * (rr + RR)  # residual noise in TF domain
 
-        a = float(2.) * abs(ec[i])  # 2*|ec|
+        a = float(2.0) * abs(ec[i])  # 2*|ec|
         A = rn[i] + gn[i] + _o  # NULL
         cc = ec[i] / (a + A)  # correlation coefficient
         Lr += ll * cc  # reduced likelihood

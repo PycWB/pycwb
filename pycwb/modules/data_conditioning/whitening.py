@@ -31,7 +31,7 @@ def whitening_python(config, h):
     else:
         h_ts = h
 
-    layers = 2 ** config.l_white if getattr(config, "l_white", 0) > 0 else 2 ** config.l_high
+    layers = 2**config.l_white if getattr(config, "l_white", 0) > 0 else 2**config.l_high
     beta_order = getattr(config, "WDM_beta_order", 6)
     precision = getattr(config, "WDM_precision", 10)
 
@@ -103,8 +103,7 @@ def whitening_python(config, h):
     #   output = (00_inv + 90_inv) / 2
     ts_00 = wdm.w2t(tf_map)
     ts_90 = wdm.w2tQ(tf_map)
-    whitened_data = 0.5 * (np.array(ts_00.value, dtype=np.float64)
-                           + np.array(ts_90.value, dtype=np.float64))
+    whitened_data = 0.5 * (np.array(ts_00.value, dtype=np.float64) + np.array(ts_90.value, dtype=np.float64))
     conditioned_strain = TimeSeries(
         data=whitened_data,
         dt=h_ts.dt,
@@ -212,13 +211,12 @@ def _estimate_nrms_cwb_mode0(tf_map, window_length=60.0, stride=60.0, edge_lengt
     # Middle: jL < j < jL + K*k → reversed interpolation between anchors
     mid_mask = (j_arr > jL) & (j_arr < jL + K * k)
     j_mid = j_arr[mid_mask]
-    seg_k = (j_mid - jL - 1) // k + 1       # 1-based segment index (matching C++ k after increment)
-    T_idx = jL + seg_k * k                   # right boundary index
-    d_left = j_mid - (T_idx - k)             # distance from left anchor
-    d_right = T_idx - j_mid                  # distance from right anchor
+    seg_k = (j_mid - jL - 1) // k + 1  # 1-based segment index (matching C++ k after increment)
+    T_idx = jL + seg_k * k  # right boundary index
+    d_left = j_mid - (T_idx - k)  # distance from left anchor
+    d_right = T_idx - j_mid  # distance from right anchor
     nrms_interp[:, mid_mask] = (
-        nrms_anchor[:, seg_k - 1] * d_left[np.newaxis, :]
-        + nrms_anchor[:, seg_k] * d_right[np.newaxis, :]
+        nrms_anchor[:, seg_k - 1] * d_left[np.newaxis, :] + nrms_anchor[:, seg_k] * d_right[np.newaxis, :]
     ) / k
 
     # Tail: j >= jL + K*k → anchor[K]  (C++: t >= To+K*dT)
@@ -262,9 +260,9 @@ def _bandpass_rms_frequency(nrms_map, f_low, f_high, sample_rate, df=None):
     high_idx = int(in_band[-1])
 
     if low_idx > 0:
-        out[:low_idx, :] = out[low_idx:low_idx + 1, :]
+        out[:low_idx, :] = out[low_idx : low_idx + 1, :]
     if high_idx < n_freq - 1:
-        out[high_idx + 1:, :] = out[high_idx:high_idx + 1, :]
+        out[high_idx + 1 :, :] = out[high_idx : high_idx + 1, :]
 
     return np.maximum(out, 0.0)
 
@@ -299,14 +297,14 @@ def _apply_cwb_bandpass_constant(nrms_map, f1, f2, a, df, f_low_map, f_high_map)
     indices = np.arange(n_freq)
 
     keep = np.zeros(n_freq, dtype=bool)
-    if (f1 >= 0 and f2 >= 0):
+    if f1 >= 0 and f2 >= 0:
         keep = (indices > n) & (indices <= m)
-    elif (f1 < 0 and f2 < 0):
+    elif f1 < 0 and f2 < 0:
         keep = (indices < n) | (indices > m)
-    elif (f1 < 0 and f2 >= 0):
-        keep = (indices < n)
-    elif (f1 >= 0 and f2 < 0):
-        keep = (indices >= m)
+    elif f1 < 0 and f2 >= 0:
+        keep = indices < n
+    elif f1 >= 0 and f2 < 0:
+        keep = indices >= m
 
     out[~keep, :] = float(a)
     return out
@@ -325,7 +323,9 @@ def _estimate_noise_rms(tf_map, edge_length=1.0, block_size=4096):
     return nrms_interp
 
 
-def _estimate_noise_rms_cwb(tf_coeff, original_length, window_length=60.0, stride=60.0, edge_length=10.0, sample_rate=2048.0):
+def _estimate_noise_rms_cwb(
+    tf_coeff, original_length, window_length=60.0, stride=60.0, edge_length=10.0, sample_rate=2048.0
+):
     del original_length, sample_rate
     nrms = _estimate_nrms_cwb_mode0(
         tf_coeff,
@@ -333,7 +333,7 @@ def _estimate_noise_rms_cwb(tf_coeff, original_length, window_length=60.0, strid
         stride=stride,
         edge_length=edge_length,
     )
-    median_like = np.maximum((nrms ** 2) / 0.7191, 0.0)
+    median_like = np.maximum((nrms**2) / 0.7191, 0.0)
     norm50_like = np.array(nrms, copy=True)
     return median_like, norm50_like
 

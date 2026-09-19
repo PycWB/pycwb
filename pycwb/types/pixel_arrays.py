@@ -74,28 +74,28 @@ class PixelArrays:
     # ------------------------------------------------------------------ #
     # per-pixel scalars  (n_pix,)
     # ------------------------------------------------------------------ #
-    time:       np.ndarray  # int32
-    frequency:  np.ndarray  # int32
-    layers:     np.ndarray  # int32
-    rate:       np.ndarray  # float32
-    core:       np.ndarray  # bool
+    time: np.ndarray  # int32
+    frequency: np.ndarray  # int32
+    layers: np.ndarray  # int32
+    rate: np.ndarray  # float32
+    core: np.ndarray  # bool
     likelihood: np.ndarray  # float32
-    null:       np.ndarray  # float32
+    null: np.ndarray  # float32
 
     # ------------------------------------------------------------------ #
     # per-IFO scalars  (n_ifo, n_pix)
     # ------------------------------------------------------------------ #
-    noise_rms:   np.ndarray  # float32
-    wave:        np.ndarray  # float32
-    w_90:        np.ndarray  # float32
-    asnr:        np.ndarray  # float32
-    a_90:        np.ndarray  # float32
+    noise_rms: np.ndarray  # float32
+    wave: np.ndarray  # float32
+    w_90: np.ndarray  # float32
+    asnr: np.ndarray  # float32
+    a_90: np.ndarray  # float32
     pixel_index: np.ndarray  # int32
 
     # ------------------------------------------------------------------ #
     # TD-amplitude: flat CSR layout
     # ------------------------------------------------------------------ #
-    td_amp_flat:    np.ndarray  # (total_elements,) float32
+    td_amp_flat: np.ndarray  # (total_elements,) float32
     td_amp_offsets: np.ndarray  # (n_pix * n_ifo + 1,) int32
 
     # ------------------------------------------------------------------ #
@@ -116,20 +116,20 @@ class PixelArrays:
         """
         n_pix = len(pixels)
 
-        time       = np.array([p.time       for p in pixels], dtype=np.int32)
-        frequency  = np.array([p.frequency  for p in pixels], dtype=np.int32)
-        layers     = np.array([p.layers     for p in pixels], dtype=np.int32)
-        rate       = np.array([p.rate       for p in pixels], dtype=np.float32)
-        core       = np.array([p.core       for p in pixels], dtype=bool)
+        time = np.array([p.time for p in pixels], dtype=np.int32)
+        frequency = np.array([p.frequency for p in pixels], dtype=np.int32)
+        layers = np.array([p.layers for p in pixels], dtype=np.int32)
+        rate = np.array([p.rate for p in pixels], dtype=np.float32)
+        core = np.array([p.core for p in pixels], dtype=bool)
         likelihood = np.array([p.likelihood for p in pixels], dtype=np.float32)
-        null       = np.array([p.null       for p in pixels], dtype=np.float32)
+        null = np.array([p.null for p in pixels], dtype=np.float32)
 
-        noise_rms   = np.array([[p.data[j].noise_rms for p in pixels] for j in range(n_ifo)], dtype=np.float32)
-        wave        = np.array([[p.data[j].wave       for p in pixels] for j in range(n_ifo)], dtype=np.float32)
-        w_90        = np.array([[p.data[j].w_90       for p in pixels] for j in range(n_ifo)], dtype=np.float32)
-        asnr        = np.array([[p.data[j].asnr       for p in pixels] for j in range(n_ifo)], dtype=np.float32)
-        a_90        = np.array([[p.data[j].a_90       for p in pixels] for j in range(n_ifo)], dtype=np.float32)
-        pixel_index = np.array([[p.data[j].index      for p in pixels] for j in range(n_ifo)], dtype=np.int32)
+        noise_rms = np.array([[p.data[j].noise_rms for p in pixels] for j in range(n_ifo)], dtype=np.float32)
+        wave = np.array([[p.data[j].wave for p in pixels] for j in range(n_ifo)], dtype=np.float32)
+        w_90 = np.array([[p.data[j].w_90 for p in pixels] for j in range(n_ifo)], dtype=np.float32)
+        asnr = np.array([[p.data[j].asnr for p in pixels] for j in range(n_ifo)], dtype=np.float32)
+        a_90 = np.array([[p.data[j].a_90 for p in pixels] for j in range(n_ifo)], dtype=np.float32)
+        pixel_index = np.array([[p.data[j].index for p in pixels] for j in range(n_ifo)], dtype=np.int32)
 
         # Build CSR td_amp from per-pixel lists
         segments: list[np.ndarray] = []
@@ -147,11 +147,21 @@ class PixelArrays:
         td_amp_flat = np.concatenate(segments) if segments else np.zeros(0, dtype=np.float32)
 
         return cls(
-            time=time, frequency=frequency, layers=layers, rate=rate,
-            core=core, likelihood=likelihood, null=null,
-            noise_rms=noise_rms, wave=wave, w_90=w_90, asnr=asnr, a_90=a_90,
+            time=time,
+            frequency=frequency,
+            layers=layers,
+            rate=rate,
+            core=core,
+            likelihood=likelihood,
+            null=null,
+            noise_rms=noise_rms,
+            wave=wave,
+            w_90=w_90,
+            asnr=asnr,
+            a_90=a_90,
             pixel_index=pixel_index,
-            td_amp_flat=td_amp_flat, td_amp_offsets=offsets,
+            td_amp_flat=td_amp_flat,
+            td_amp_offsets=offsets,
             _n_ifo=n_ifo,
         )
 
@@ -193,26 +203,26 @@ class PixelArrays:
         if td_amp_dense is not None:
             flat, offsets = _dense_to_csr(td_amp_dense)
         else:
-            flat    = np.zeros(0, dtype=np.float32)
+            flat = np.zeros(0, dtype=np.float32)
             offsets = np.zeros(n_pix * n_ifo + 1, dtype=np.int32)
 
         return cls(
-            time        = np.asarray(time,        dtype=np.int32),
-            frequency   = np.asarray(frequency,   dtype=np.int32),
-            layers      = np.asarray(layers,       dtype=np.int32),
-            rate        = np.asarray(rate,         dtype=np.float32),
-            core        = np.asarray(core,         dtype=bool) if core is not None else np.zeros(n_pix, dtype=bool),
-            likelihood  = np.asarray(likelihood,   dtype=np.float32) if likelihood is not None else _zeros_pix(),
-            null        = np.asarray(null,         dtype=np.float32) if null        is not None else _zeros_pix(),
-            noise_rms   = np.asarray(noise_rms,    dtype=np.float32),
-            wave        = np.asarray(wave,         dtype=np.float32) if wave  is not None else _zeros_ifo(),
-            w_90        = np.asarray(w_90,         dtype=np.float32) if w_90  is not None else _zeros_ifo(),
-            asnr        = np.asarray(asnr,         dtype=np.float32) if asnr  is not None else _zeros_ifo(),
-            a_90        = np.asarray(a_90,         dtype=np.float32) if a_90  is not None else _zeros_ifo(),
-            pixel_index = np.asarray(pixel_index,  dtype=np.int32),
-            td_amp_flat    = flat,
-            td_amp_offsets = offsets,
-            _n_ifo = n_ifo,
+            time=np.asarray(time, dtype=np.int32),
+            frequency=np.asarray(frequency, dtype=np.int32),
+            layers=np.asarray(layers, dtype=np.int32),
+            rate=np.asarray(rate, dtype=np.float32),
+            core=np.asarray(core, dtype=bool) if core is not None else np.zeros(n_pix, dtype=bool),
+            likelihood=np.asarray(likelihood, dtype=np.float32) if likelihood is not None else _zeros_pix(),
+            null=np.asarray(null, dtype=np.float32) if null is not None else _zeros_pix(),
+            noise_rms=np.asarray(noise_rms, dtype=np.float32),
+            wave=np.asarray(wave, dtype=np.float32) if wave is not None else _zeros_ifo(),
+            w_90=np.asarray(w_90, dtype=np.float32) if w_90 is not None else _zeros_ifo(),
+            asnr=np.asarray(asnr, dtype=np.float32) if asnr is not None else _zeros_ifo(),
+            a_90=np.asarray(a_90, dtype=np.float32) if a_90 is not None else _zeros_ifo(),
+            pixel_index=np.asarray(pixel_index, dtype=np.int32),
+            td_amp_flat=flat,
+            td_amp_offsets=offsets,
+            _n_ifo=n_ifo,
         )
 
     # ================================================================== #
@@ -222,7 +232,7 @@ class PixelArrays:
     def get_td_amp(self, pix_idx: int, ifo_idx: int) -> np.ndarray:
         """Return the td-amp vector for pixel ``pix_idx``, IFO ``ifo_idx``."""
         row = pix_idx * self._n_ifo + ifo_idx
-        return self.td_amp_flat[self.td_amp_offsets[row]: self.td_amp_offsets[row + 1]]
+        return self.td_amp_flat[self.td_amp_offsets[row] : self.td_amp_offsets[row + 1]]
 
     def td_amp_dense(self) -> np.ndarray:
         """Return td-amp as a dense ``(n_pix, n_ifo, tsize)`` float32 array.
@@ -235,7 +245,7 @@ class PixelArrays:
         n_rows = n_pix * n_ifo
         if n_rows == 0 or len(self.td_amp_flat) == 0:
             return np.zeros((n_pix, n_ifo, 0), dtype=np.float32)
-        sizes = self.td_amp_offsets[1: n_rows + 1] - self.td_amp_offsets[:n_rows]
+        sizes = self.td_amp_offsets[1 : n_rows + 1] - self.td_amp_offsets[:n_rows]
         tsize = int(sizes[0])
         if not np.all(sizes == tsize):
             raise ValueError(
@@ -263,13 +273,13 @@ class PixelArrays:
 
     def set_waveform_data(
         self,
-        wave: np.ndarray,   # (n_ifo, n_pix)
-        w_90: np.ndarray,   # (n_ifo, n_pix)
-        asnr: np.ndarray,   # (n_ifo, n_pix)
-        a_90: np.ndarray,   # (n_ifo, n_pix)
-        core_mask: np.ndarray,              # (n_pix,) bool/int
-        energy_plus: np.ndarray,            # (n_pix,) float32
-        energy_cross: np.ndarray,           # (n_pix,) float32
+        wave: np.ndarray,  # (n_ifo, n_pix)
+        w_90: np.ndarray,  # (n_ifo, n_pix)
+        asnr: np.ndarray,  # (n_ifo, n_pix)
+        a_90: np.ndarray,  # (n_ifo, n_pix)
+        core_mask: np.ndarray,  # (n_pix,) bool/int
+        energy_plus: np.ndarray,  # (n_pix,) float32
+        energy_cross: np.ndarray,  # (n_pix,) float32
     ) -> None:
         """Vectorised replacement for the per-pixel write-back loop in
         ``_set_pixel_waveform_data`` (likelihood.py lines 977-990).
@@ -280,7 +290,7 @@ class PixelArrays:
         self.w_90[:] = np.asarray(w_90, dtype=np.float32)
         self.asnr[:] = np.asarray(asnr, dtype=np.float32)
         self.a_90[:] = np.asarray(a_90, dtype=np.float32)
-        self.core[:] = (core_mask > 0)
+        self.core[:] = core_mask > 0
         self.likelihood[:] = np.where(
             core_mask > 0,
             -(np.asarray(energy_plus, dtype=np.float32) + np.asarray(energy_cross, dtype=np.float32)) / 2.0,
@@ -305,20 +315,20 @@ class PixelArrays:
         if isinstance(idx, (int, np.integer)):
             n_ifo = self._n_ifo
             return {
-                "time":        int(self.time[idx]),
-                "frequency":   int(self.frequency[idx]),
-                "layers":      int(self.layers[idx]),
-                "rate":        float(self.rate[idx]),
-                "core":        bool(self.core[idx]),
-                "likelihood":  float(self.likelihood[idx]),
-                "null":        float(self.null[idx]),
-                "noise_rms":   self.noise_rms[:, idx].copy(),
-                "wave":        self.wave[:, idx].copy(),
-                "w_90":        self.w_90[:, idx].copy(),
-                "asnr":        self.asnr[:, idx].copy(),
-                "a_90":        self.a_90[:, idx].copy(),
+                "time": int(self.time[idx]),
+                "frequency": int(self.frequency[idx]),
+                "layers": int(self.layers[idx]),
+                "rate": float(self.rate[idx]),
+                "core": bool(self.core[idx]),
+                "likelihood": float(self.likelihood[idx]),
+                "null": float(self.null[idx]),
+                "noise_rms": self.noise_rms[:, idx].copy(),
+                "wave": self.wave[:, idx].copy(),
+                "w_90": self.w_90[:, idx].copy(),
+                "asnr": self.asnr[:, idx].copy(),
+                "a_90": self.a_90[:, idx].copy(),
                 "pixel_index": self.pixel_index[:, idx].copy(),
-                "td_amp":      [self.get_td_amp(int(idx), j) for j in range(n_ifo)],
+                "td_amp": [self.get_td_amp(int(idx), j) for j in range(n_ifo)],
             }
         return self._subset(idx)
 
@@ -338,26 +348,26 @@ class PixelArrays:
                 parts.append(chunk)
                 new_offsets.append(np.int32(new_offsets[-1] + len(chunk)))
 
-        new_flat    = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+        new_flat = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
         new_offsets_arr = np.array(new_offsets, dtype=np.int32)
 
         return PixelArrays(
-            time        = self.time[idx],
-            frequency   = self.frequency[idx],
-            layers      = self.layers[idx],
-            rate        = self.rate[idx],
-            core        = self.core[idx],
-            likelihood  = self.likelihood[idx],
-            null        = self.null[idx],
-            noise_rms   = self.noise_rms[:, idx],
-            wave        = self.wave[:, idx],
-            w_90        = self.w_90[:, idx],
-            asnr        = self.asnr[:, idx],
-            a_90        = self.a_90[:, idx],
-            pixel_index = self.pixel_index[:, idx],
-            td_amp_flat    = new_flat,
-            td_amp_offsets = new_offsets_arr,
-            _n_ifo = n_ifo,
+            time=self.time[idx],
+            frequency=self.frequency[idx],
+            layers=self.layers[idx],
+            rate=self.rate[idx],
+            core=self.core[idx],
+            likelihood=self.likelihood[idx],
+            null=self.null[idx],
+            noise_rms=self.noise_rms[:, idx],
+            wave=self.wave[:, idx],
+            w_90=self.w_90[:, idx],
+            asnr=self.asnr[:, idx],
+            a_90=self.a_90[:, idx],
+            pixel_index=self.pixel_index[:, idx],
+            td_amp_flat=new_flat,
+            td_amp_offsets=new_offsets_arr,
+            _n_ifo=n_ifo,
         )
 
     # ================================================================== #
@@ -382,16 +392,20 @@ class PixelArrays:
             if len(nRMS) != self._n_ifo:
                 raise ValueError("One whitening-noise map is required per detector")
             self.noise_rms[:] = lookup_pixel_noise_rms(
-                self.frequency, self.pixel_index.T, self.layers, self.rate, nRMS,
+                self.frequency,
+                self.pixel_index.T,
+                self.layers,
+                self.rate,
+                nRMS,
             ).T
             return
 
         # Compatibility for historical serialized maps lacking anchor metadata.
         # Newly conditioned native data always uses the exact lookup above.
         n_ifo = self._n_ifo
-        freq_bins  = self.frequency.astype(np.int64)    # (n_pix,)
-        layers_arr = self.layers.astype(np.int64)       # (n_pix,)
-        time_bins  = np.where(
+        freq_bins = self.frequency.astype(np.int64)  # (n_pix,)
+        layers_arr = self.layers.astype(np.int64)  # (n_pix,)
+        time_bins = np.where(
             layers_arr > 0,
             self.time.astype(np.int64) // layers_arr,
             0,
@@ -426,37 +440,47 @@ class PixelArrays:
             raise ValueError("Cannot concatenate an empty list")
         n_ifo = arrays[0]._n_ifo
 
-        time        = np.concatenate([a.time       for a in arrays])
-        frequency   = np.concatenate([a.frequency  for a in arrays])
-        layers      = np.concatenate([a.layers     for a in arrays])
-        rate        = np.concatenate([a.rate       for a in arrays])
-        core        = np.concatenate([a.core       for a in arrays])
-        likelihood  = np.concatenate([a.likelihood for a in arrays])
-        null        = np.concatenate([a.null       for a in arrays])
-        noise_rms   = np.concatenate([a.noise_rms   for a in arrays], axis=1)
-        wave        = np.concatenate([a.wave        for a in arrays], axis=1)
-        w_90        = np.concatenate([a.w_90        for a in arrays], axis=1)
-        asnr        = np.concatenate([a.asnr        for a in arrays], axis=1)
-        a_90        = np.concatenate([a.a_90        for a in arrays], axis=1)
+        time = np.concatenate([a.time for a in arrays])
+        frequency = np.concatenate([a.frequency for a in arrays])
+        layers = np.concatenate([a.layers for a in arrays])
+        rate = np.concatenate([a.rate for a in arrays])
+        core = np.concatenate([a.core for a in arrays])
+        likelihood = np.concatenate([a.likelihood for a in arrays])
+        null = np.concatenate([a.null for a in arrays])
+        noise_rms = np.concatenate([a.noise_rms for a in arrays], axis=1)
+        wave = np.concatenate([a.wave for a in arrays], axis=1)
+        w_90 = np.concatenate([a.w_90 for a in arrays], axis=1)
+        asnr = np.concatenate([a.asnr for a in arrays], axis=1)
+        a_90 = np.concatenate([a.a_90 for a in arrays], axis=1)
         pixel_index = np.concatenate([a.pixel_index for a in arrays], axis=1)
 
         all_empty = not any(a.has_td_amp() for a in arrays)
         if all_empty:
             n_rows = len(time) * n_ifo
-            td_flat    = np.zeros(0, dtype=np.float32)
+            td_flat = np.zeros(0, dtype=np.float32)
             td_offsets = np.zeros(n_rows + 1, dtype=np.int32)
         else:
             # All filled with uniform stride: concatenate dense, then pack CSR
             all_dense = [a.td_amp_dense() for a in arrays]  # each (n_pix_i, n_ifo, tsize)
-            combined  = np.concatenate(all_dense, axis=0)
+            combined = np.concatenate(all_dense, axis=0)
             td_flat, td_offsets = _dense_to_csr(combined)
 
         return cls(
-            time=time, frequency=frequency, layers=layers, rate=rate,
-            core=core, likelihood=likelihood, null=null,
-            noise_rms=noise_rms, wave=wave, w_90=w_90, asnr=asnr, a_90=a_90,
+            time=time,
+            frequency=frequency,
+            layers=layers,
+            rate=rate,
+            core=core,
+            likelihood=likelihood,
+            null=null,
+            noise_rms=noise_rms,
+            wave=wave,
+            w_90=w_90,
+            asnr=asnr,
+            a_90=a_90,
             pixel_index=pixel_index,
-            td_amp_flat=td_flat, td_amp_offsets=td_offsets,
+            td_amp_flat=td_flat,
+            td_amp_offsets=td_offsets,
             _n_ifo=n_ifo,
         )
 
@@ -477,31 +501,31 @@ class PixelArrays:
         for i in range(n_pix):
             data = [
                 PixelData(
-                    noise_rms = float(self.noise_rms[j, i]),
-                    wave      = float(self.wave[j, i]),
-                    w_90      = float(self.w_90[j, i]),
-                    asnr      = float(self.asnr[j, i]),
-                    a_90      = float(self.a_90[j, i]),
-                    rank      = 0.0,
-                    index     = int(self.pixel_index[j, i]),
+                    noise_rms=float(self.noise_rms[j, i]),
+                    wave=float(self.wave[j, i]),
+                    w_90=float(self.w_90[j, i]),
+                    asnr=float(self.asnr[j, i]),
+                    a_90=float(self.a_90[j, i]),
+                    rank=0.0,
+                    index=int(self.pixel_index[j, i]),
                 )
                 for j in range(n_ifo)
             ]
             pix = Pixel(
-                time         = int(self.time[i]),
-                frequency    = int(self.frequency[i]),
-                layers       = int(self.layers[i]),
-                rate         = float(self.rate[i]),
-                likelihood   = float(self.likelihood[i]),
-                null         = float(self.null[i]),
-                theta        = 0.0,
-                phi          = 0.0,
-                ellipticity  = 0.0,
-                polarisation = 0.0,
-                core         = bool(self.core[i]),
-                data         = data,
-                td_amp       = [self.get_td_amp(i, j) for j in range(n_ifo)],
-                neighbors    = [],
+                time=int(self.time[i]),
+                frequency=int(self.frequency[i]),
+                layers=int(self.layers[i]),
+                rate=float(self.rate[i]),
+                likelihood=float(self.likelihood[i]),
+                null=float(self.null[i]),
+                theta=0.0,
+                phi=0.0,
+                ellipticity=0.0,
+                polarisation=0.0,
+                core=bool(self.core[i]),
+                data=data,
+                td_amp=[self.get_td_amp(i, j) for j in range(n_ifo)],
+                neighbors=[],
             )
             pixels.append(pix)
         return pixels
@@ -510,6 +534,7 @@ class PixelArrays:
 # ====================================================================== #
 # Internal helper
 # ====================================================================== #
+
 
 def _dense_to_csr(dense: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Pack a dense ``(n_pix, n_ifo, tsize)`` array into CSR layout.
@@ -535,16 +560,17 @@ def _dense_to_csr(dense: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 # Empty helper
 # ====================================================================== #
 
+
 def empty_pixel_arrays(n_ifo: int = 0) -> PixelArrays:
     """Return an empty ``PixelArrays`` with zero pixels."""
     return PixelArrays.from_arrays(
-        time        = np.zeros(0, dtype=np.int32),
-        frequency   = np.zeros(0, dtype=np.int32),
-        layers      = np.zeros(0, dtype=np.int32),
-        rate        = np.zeros(0, dtype=np.float32),
-        noise_rms   = np.zeros((n_ifo, 0), dtype=np.float32),
-        pixel_index = np.zeros((n_ifo, 0), dtype=np.int32),
-        n_ifo       = n_ifo,
+        time=np.zeros(0, dtype=np.int32),
+        frequency=np.zeros(0, dtype=np.int32),
+        layers=np.zeros(0, dtype=np.int32),
+        rate=np.zeros(0, dtype=np.float32),
+        noise_rms=np.zeros((n_ifo, 0), dtype=np.float32),
+        pixel_index=np.zeros((n_ifo, 0), dtype=np.int32),
+        n_ifo=n_ifo,
     )
 
 
@@ -552,38 +578,65 @@ def empty_pixel_arrays(n_ifo: int = 0) -> PixelArrays:
 # JAX pytree registration
 # ====================================================================== #
 
+
 def _pa_flatten(pa: PixelArrays):
     leaves = [
-        pa.time, pa.frequency, pa.layers, pa.rate, pa.core,
-        pa.likelihood, pa.null,
-        pa.noise_rms, pa.wave, pa.w_90, pa.asnr, pa.a_90, pa.pixel_index,
-        pa.td_amp_flat, pa.td_amp_offsets,
+        pa.time,
+        pa.frequency,
+        pa.layers,
+        pa.rate,
+        pa.core,
+        pa.likelihood,
+        pa.null,
+        pa.noise_rms,
+        pa.wave,
+        pa.w_90,
+        pa.asnr,
+        pa.a_90,
+        pa.pixel_index,
+        pa.td_amp_flat,
+        pa.td_amp_offsets,
     ]
     aux = pa._n_ifo  # static — not traced by JAX
     return leaves, aux
 
+
 def _pa_unflatten(aux: int, leaves: list) -> PixelArrays:
-    (time, frequency, layers, rate, core,
-        likelihood, null,
-        noise_rms, wave, w_90, asnr, a_90, pixel_index,
-        td_amp_flat, td_amp_offsets) = leaves
+    (
+        time,
+        frequency,
+        layers,
+        rate,
+        core,
+        likelihood,
+        null,
+        noise_rms,
+        wave,
+        w_90,
+        asnr,
+        a_90,
+        pixel_index,
+        td_amp_flat,
+        td_amp_offsets,
+    ) = leaves
     pa = object.__new__(PixelArrays)
-    pa.time           = time
-    pa.frequency      = frequency
-    pa.layers         = layers
-    pa.rate           = rate
-    pa.core           = core
-    pa.likelihood     = likelihood
-    pa.null           = null
-    pa.noise_rms      = noise_rms
-    pa.wave           = wave
-    pa.w_90           = w_90
-    pa.asnr           = asnr
-    pa.a_90           = a_90
-    pa.pixel_index    = pixel_index
-    pa.td_amp_flat    = td_amp_flat
+    pa.time = time
+    pa.frequency = frequency
+    pa.layers = layers
+    pa.rate = rate
+    pa.core = core
+    pa.likelihood = likelihood
+    pa.null = null
+    pa.noise_rms = noise_rms
+    pa.wave = wave
+    pa.w_90 = w_90
+    pa.asnr = asnr
+    pa.a_90 = a_90
+    pa.pixel_index = pixel_index
+    pa.td_amp_flat = td_amp_flat
     pa.td_amp_offsets = td_amp_offsets
-    pa._n_ifo         = aux
+    pa._n_ifo = aux
     return pa
+
 
 jax.tree_util.register_pytree_node(PixelArrays, _pa_flatten, _pa_unflatten)

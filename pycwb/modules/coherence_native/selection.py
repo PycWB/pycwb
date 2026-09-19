@@ -9,12 +9,11 @@ from pycwb.types.time_frequency_map import TimeFrequencyMap
 
 from .kernels import _align_threshold_map_numba, _align_threshold_map_preindexed_numba, _select_candidates_numba
 from .veto_threshold import _get_tf_energy_array
+
 _PREINDEX_SHIFTS = os.environ.get("PYCWB_PREINDEX_SHIFTS") == "1"
 
 
-def _shift_bins_from_lag_shifts(
-    lag_shifts: np.ndarray | list | None, n_ifo: int, rate: float
-) -> np.ndarray:
+def _shift_bins_from_lag_shifts(lag_shifts: np.ndarray | list | None, n_ifo: int, rate: float) -> np.ndarray:
     """Convert per-detector lag shifts in seconds to circular TF-bin shifts."""
     if lag_shifts is None:
         shifts_sec = np.zeros(n_ifo, dtype=float)
@@ -23,9 +22,7 @@ def _shift_bins_from_lag_shifts(
         if shifts_sec.size != n_ifo:
             raise ValueError("lag_shifts size mismatch with number of detectors")
     ref = float(np.min(shifts_sec)) if shifts_sec.size else 0.0
-    return np.asarray(
-        [int((float(s) - ref) * rate + 0.001) for s in shifts_sec], dtype=np.int64
-    )
+    return np.asarray([int((float(s) - ref) * rate + 0.001) for s in shifts_sec], dtype=np.int64)
 
 
 def _build_selection_cache(
@@ -58,11 +55,7 @@ def _build_selection_cache(
 
     f_low = float(getattr(tf_maps[0], "f_low", 0.0) or 0.0)
     f_high_attr = getattr(tf_maps[0], "f_high", None)
-    f_high = (
-        float(f_high_attr)
-        if f_high_attr is not None
-        else float((n_freq - 1) * tf_maps[0].df)
-    )
+    f_high = float(f_high_attr) if f_high_attr is not None else float((n_freq - 1) * tf_maps[0].df)
     df = float(getattr(tf_maps[0], "df", 0.0) or 0.0)
 
     ib = 1
@@ -82,10 +75,7 @@ def _build_selection_cache(
         lag_shift_rows = list(lag_shifts_by_lag)
         shift_bins_by_lag = (
             np.vstack(
-                [
-                    _shift_bins_from_lag_shifts(lag_shifts, len(arrays), rate)
-                    for lag_shifts in lag_shift_rows
-                ]
+                [_shift_bins_from_lag_shifts(lag_shifts, len(arrays), rate) for lag_shifts in lag_shift_rows]
             ).astype(np.int64, copy=False)
             if lag_shift_rows
             else np.empty((0, len(arrays)), dtype=np.int64)
@@ -93,9 +83,7 @@ def _build_selection_cache(
 
     tf0 = tf_maps[0]
     return {
-        "arrays_stack": np.ascontiguousarray(
-            np.stack(arrays, axis=0), dtype=np.float64
-        ),
+        "arrays_stack": np.ascontiguousarray(np.stack(arrays, axis=0), dtype=np.float64),
         "n_ifo": len(arrays),
         "n_freq": n_freq,
         "n_time": n_time,
@@ -190,9 +178,7 @@ def select_network_pixels(
     eh = em * em
 
     veto_arr = (
-        veto.astype(np.int16, copy=False)
-        if (veto is not None and len(veto) == n_time)
-        else np.zeros(0, dtype=np.int16)
+        veto.astype(np.int16, copy=False) if (veto is not None and len(veto) == n_time) else np.zeros(0, dtype=np.int16)
     )
 
     # Build the clipped support map, then emit sparse selected pixels directly.
@@ -210,22 +196,20 @@ def select_network_pixels(
         eo,
         em,
     )
-    selected, freq_idx, time_idx, values, pix_det_energy, pix_det_index = (
-        _select_candidates_numba(
-            combined,
-            arrays_stack,
-            shift_bins_arr,
-            int(valid_start),
-            int(valid_stop),
-            int(nn_valid),
-            int(n_freq),
-            int(edge_bins),
-            int(ib),
-            int(ie),
-            eo,
-            em,
-            eh,
-        )
+    selected, freq_idx, time_idx, values, pix_det_energy, pix_det_index = _select_candidates_numba(
+        combined,
+        arrays_stack,
+        shift_bins_arr,
+        int(valid_start),
+        int(valid_stop),
+        int(nn_valid),
+        int(n_freq),
+        int(edge_bins),
+        int(ib),
+        int(ie),
+        eo,
+        em,
+        eh,
     )
 
     return {

@@ -46,7 +46,9 @@ def _coherence_timing_enabled(config: Config) -> bool:
 
 
 def setup_coherence(
-    config: Config, strains: list[TimeSeries], job_seg: WaveSegment | None = None,
+    config: Config,
+    strains: list[TimeSeries],
+    job_seg: WaveSegment | None = None,
     nRMS: list | None = None,
 ) -> list[dict]:
     """
@@ -87,10 +89,7 @@ def setup_coherence(
     # (expensive WDM transforms, TF maps, and thresholds are computed once here,
     #  then reused across all lags in coherence_single_lag)
     setups = [
-        _setup_coherence_single_res(
-            i, config, normalized_strains, up_n, job_seg=job_seg
-        )
-        for i in range(config.nRES)
+        _setup_coherence_single_res(i, config, normalized_strains, up_n, job_seg=job_seg) for i in range(config.nRES)
     ]
 
     if nRMS is not None:
@@ -161,21 +160,19 @@ def _setup_coherence_single_res(
                 # cWB maxEnergy consumes conditioned strain directly. Keep
                 # this separately selectable while validating the numerical
                 # difference from the historical transform/inverse round trip.
-                ts_data=(np.asarray(strains[n].data, dtype=np.float64)
-                         if os.environ.get("PYCWB_DIRECT_MAX_ENERGY_INPUT") == "1"
-                         else None),
+                ts_data=(
+                    np.asarray(strains[n].data, dtype=np.float64)
+                    if os.environ.get("PYCWB_DIRECT_MAX_ENERGY_INPUT") == "1"
+                    else None
+                ),
             )
             for n in range(len(strains))
         ]
         t_tf_maps = time.perf_counter() - t_stage
-    except (
-        Exception
-    ) as exc:  # broad catch intentional: batch_t2w_detectors may raise any of
+    except Exception as exc:  # broad catch intentional: batch_t2w_detectors may raise any of
         # TypeError / ValueError / AttributeError / RuntimeError / numpy internals depending on
         # the WDM implementation version; we always want the serial fallback to succeed.
-        logger.warning(
-            "Batch t2w failed (%s); falling back to serial from_timeseries", exc
-        )
+        logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
         t_stage = time.perf_counter()
         tf_maps = [
             TimeFrequencyMap.from_timeseries(

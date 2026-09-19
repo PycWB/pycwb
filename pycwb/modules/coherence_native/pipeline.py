@@ -75,9 +75,7 @@ def coherence(
     n_res = len(setups)
 
     # Run per-lag coherence using the pre-built setup
-    per_lag = [
-        coherence_single_lag(setups, lag, return_rejected) for lag in range(n_lag)
-    ]
+    per_lag = [coherence_single_lag(setups, lag, return_rejected) for lag in range(n_lag)]
 
     # Transpose from [lag][res] → [res][lag] (legacy output format)
     result = [[per_lag[lag][res] for lag in range(n_lag)] for res in range(n_res)]
@@ -144,13 +142,14 @@ def coherence_single_lag(
         )
         if setup.get("nRMS") is not None:
             candidates["noise_rms"] = lookup_pixel_noise_rms(
-                candidates["frequency"], candidates["pix_det_index"],
-                candidates["layers"], candidates["rate"], setup["nRMS"],
+                candidates["frequency"],
+                candidates["pix_det_index"],
+                candidates["layers"],
+                candidates["rate"],
+                setup["nRMS"],
             )
         t_select = time.perf_counter() - t0_select
-        n_candidates = (
-            int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
-        )
+        n_candidates = int(len(candidates["frequency"])) if isinstance(candidates, dict) else -1
 
         # Cluster selected pixels and apply statistical selection criteria
         # (min/max cluster sizes depend on wave pattern)
@@ -159,7 +158,8 @@ def coherence_single_lag(
             # Multi-pixel clusters for network patterns (kt=2 time bins, kf=3 freq bins)
             early_thresholds = (
                 {"select_subrho": setup["select_subrho"], "select_subnet": setup["select_subnet"]}
-                if _EARLY_CUTS and not return_rejected else {}
+                if _EARLY_CUTS and not return_rejected
+                else {}
             )
             c = cluster_pixels(candidates, kt=2, kf=3, **early_thresholds)
             c.select("subrho", setup["select_subrho"])

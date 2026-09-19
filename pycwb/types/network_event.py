@@ -11,6 +11,7 @@ class Event:
     """
     This class is used to store the results of an event.
     """
+
     id: str = ""  # event ID
     nevent: int = 0  # number of events
     ndim: int = field(default_factory=int)  # number of dimensions
@@ -25,14 +26,14 @@ class Event:
     norm: float = field(default_factory=float)  # norm Factor or ellipticity
     ECOR: float = field(default_factory=float)  # effective correlated energy
     penalty: float = field(default_factory=float)  # penalty factor
-    likelihood: float = field(default_factory=float) # network likelihood
+    likelihood: float = field(default_factory=float)  # network likelihood
     factor: float = field(default_factory=float)  # Multiplicative amplitude factor - simulation only
-    range: list[int] = field(default_factory=list) # range to source: [0/1]-rec/inj
-    chirp: list[float] = field(default_factory=list) # chirp array: 0-injmass,1-recmass,2-merr,3-tmrgr,4-terr,5-chi2
+    range: list[int] = field(default_factory=list)  # range to source: [0/1]-rec/inj
+    chirp: list[float] = field(default_factory=list)  # chirp array: 0-injmass,1-recmass,2-merr,3-tmrgr,4-terr,5-chi2
     eBBH: list[float] = field(default_factory=list)  # eBBH array
     usize: float = 0.0  # size of the universe
     ifo_list: list[str] = field(default_factory=list)  # list of ifos
-    eventID: list[int] = field(default_factory=list) # event ID
+    eventID: list[int] = field(default_factory=list)  # event ID
     type: list[int] = field(default_factory=list)  # event type
     name: list[str] = field(default_factory=list)  # event name
     log: list[str] = field(default_factory=list)
@@ -79,7 +80,6 @@ class Event:
     job_id: int = None
     trial_idx: int = None
     lag_idx: int = None
-
 
     # def __init__(self):
     #     self.nevent = 0  # number of events
@@ -165,7 +165,6 @@ class Event:
         self.type = [0, 0, 0]
         self.slag = shifts if shifts is not None else [0, 0, 0]
 
-
         pwc = net.getwc(LAG)
         inRate = net.getifo(0).rate
         pat0 = True if net.pattern == 0 else False
@@ -173,17 +172,17 @@ class Event:
         n_ifo = int(net.ifoListSize())
         # read cluster parameters
 
-        rate_net = pwc.get("rate", 0, 'R', 0)
-        vol0_net = pwc.get("volume", 0, 'R', 0)  # stored in volume[0]
-        vol1_net = pwc.get("VOLUME", 0, 'R', 0)  # stored in volume[1]
-        size_net = pwc.get("size", 0, 'R', 0)  # stored in size[0]
-        low_net = pwc.get("low", 0, 'R', 0)
-        high_net = pwc.get("high", 0, 'R', 0)
-        cFreq_net = pwc.get("freq", 0, 'L', 0, False)
-        duration_net = pwc.get("duration", 0, 'L', 0, False)
-        bandwidth_net = pwc.get("bandwidth", 0, 'L', 0, False)
+        rate_net = pwc.get("rate", 0, "R", 0)
+        vol0_net = pwc.get("volume", 0, "R", 0)  # stored in volume[0]
+        vol1_net = pwc.get("VOLUME", 0, "R", 0)  # stored in volume[1]
+        size_net = pwc.get("size", 0, "R", 0)  # stored in size[0]
+        low_net = pwc.get("low", 0, "R", 0)
+        high_net = pwc.get("high", 0, "R", 0)
+        cFreq_net = pwc.get("freq", 0, "L", 0, False)
+        duration_net = pwc.get("duration", 0, "L", 0, False)
+        bandwidth_net = pwc.get("bandwidth", 0, "L", 0, False)
 
-        cluster_ids = [int(i) for i in list(pwc.get("ID", 0, 'S', 0))]
+        cluster_ids = [int(i) for i in list(pwc.get("ID", 0, "S", 0))]
         if ID not in cluster_ids:
             return
 
@@ -194,10 +193,10 @@ class Event:
         noise_net = []
         NOISE_net = []
         for i in range(n_ifo):
-            start_net.append(list(pwc.get("start", i+1, 'L', 0)))
-            stop_net.append(list(pwc.get("stop", i+1, 'L', 0)))
-            noise_net.append(list(pwc.get("noise", i+1, 'S', 0)))
-            NOISE_net.append(list(pwc.get("NOISE", i+1, 'S', 0)))
+            start_net.append(list(pwc.get("start", i + 1, "L", 0)))
+            stop_net.append(list(pwc.get("stop", i + 1, "L", 0)))
+            noise_net.append(list(pwc.get("noise", i + 1, "S", 0)))
+            NOISE_net.append(list(pwc.get("NOISE", i + 1, "S", 0)))
 
         # print('duration ', np.array(start_net) - np.array(stop_net))
 
@@ -233,7 +232,7 @@ class Event:
         self.penalty = 0
         self.neted = [0, 0, 0, 0, 0]
         self.lag = [pwc.shift] * n_ifo
-        net.getMRAwave(ID, LAG, 's', net.optim)
+        net.getMRAwave(ID, LAG, "s", net.optim)
         for i in range(n_ifo):
             pd = net.getifo(i)
             Aa = pd.antenna(self.theta[0], self.phi[0], self.psi[0])
@@ -272,7 +271,7 @@ class Event:
             self.bandwidth.append(high_net.data[kid] - low_net.data[kid])
 
             self.hrss.append(np.sqrt(pd.get_SS() / inRate))
-            self.noise.append(np.power(10., noise_net[i][kid]) / np.sqrt(inRate))
+            self.noise.append(np.power(10.0, noise_net[i][kid]) / np.sqrt(inRate))
             self.bp.append(Aa.real())
             self.bx.append(Aa.imag())
             self.strain[0] += self.hrss[i] * self.hrss[i]
@@ -285,11 +284,10 @@ class Event:
             self.bandwidth[0] = bandwidth_net.data[kid]
             self.frequency[0] = pcd.cFreq
 
-
             #    this->ECOR     = pcd->normcor;                         // normalized coherent energy
-            #    this->netcc[0] = pcd->netcc;                           // MRA or SRA cc statistic 
+            #    this->netcc[0] = pcd->netcc;                           // MRA or SRA cc statistic
             #    this->netcc[1] = pcd->skycc;                           // all-resolution cc statistic
-            #    this->netcc[2] = pcd->subnet;                          // MRA or SRA sub-network statistic 
+            #    this->netcc[2] = pcd->subnet;                          // MRA or SRA sub-network statistic
             #    this->netcc[3] = pcd->SUBNET;                          // all-resolution sub-network statistic
 
             #    this->neted[0] = pcd->netED;                           // network ED
@@ -298,10 +296,9 @@ class Event:
             #    this->neted[3] = pcd->likesky;                         // total likelihood at all resolutions
             #    this->neted[4] = pcd->enrgsky;                         // total energy at all resolutions
 
-            
             # for i in range(11):
             self.erA.append(np.array(pwc.sArea[ID - 1]))
-            # ind = pwc.sArea[ID - 1].size(); 
+            # ind = pwc.sArea[ID - 1].size();
             # for i in range(11):
             #     if i < ind:
             #         self.erA.append(pwc.sArea[ID - 1][i])
@@ -313,23 +310,24 @@ class Event:
                 pcd.netcc,  # MRA or SRA cc statistic
                 pcd.skycc,  # all-resolution cc statistic
                 pcd.subnet,  # MRA or SRA sub-network statistic
-                pcd.SUBNET  # all-resolution sub-network statistic
+                pcd.SUBNET,  # all-resolution sub-network statistic
             ]
             self.neted = [
                 pcd.netED,  # network ED
                 pcd.netnull,  # total null energy with Gaussian bias correction
                 pcd.energy,  # total event energy
                 pcd.likesky,  # total likelihood at all resolutions
-                pcd.enrgsky  # total energy at all resolutions
+                pcd.enrgsky,  # total energy at all resolutions
             ]
 
             self.penalty = pcd.netnull / n_ifo
-            self.penalty /= self.size[0] if pat0 else pcd.nDoF # cluster chi2/nDoF
+            self.penalty /= self.size[0] if pat0 else pcd.nDoF  # cluster chi2/nDoF
         chrho = self.chirp[3] * np.sqrt(self.chirp[5])  # reduction factor for chirp events
         if pcd.netRHO >= 0:  # original 2G
             self.rho[0] = pcd.netRHO  # reduced coherent SNR per detector
-            self.rho[
-                1] = pcd.netrho if pat0 else pcd.netRHO * chrho  # reduced coherent SNR per detector for chirp events
+            self.rho[1] = (
+                pcd.netrho if pat0 else pcd.netRHO * chrho
+            )  # reduced coherent SNR per detector for chirp events
         else:  # (XGB.rho0)
             self.rho[0] = -pcd.netRHO  # reduced coherent SNR per detector
             self.rho[1] = pcd.netrho  # reduced coherent SNR per detector # GV original 2G rho, only for tests
@@ -338,6 +336,7 @@ class Event:
         self.strain[0] = np.sqrt(self.strain[0])
 
         self.id = self.long_id
+
     # def json(self):
     #     """
     #     Return a JSON representation of the event
@@ -387,28 +386,36 @@ class Event:
         # --- Network-level coherence statistics ---
         self.ecor = meta.net_ecor
         self.ECOR = meta.norm_cor
-        self.likelihood = meta.like_net       # waveform likelihood (Lw = sum sSNR)
-        self.norm = meta.norm                 # packet norm (= (Eo-Eh)/Ew * 2)
+        self.likelihood = meta.like_net  # waveform likelihood (Lw = sum sSNR)
+        self.norm = meta.norm  # packet norm (= (Eo-Eh)/Ew * 2)
         self.netcc = [meta.net_cc, meta.sky_cc, meta.sub_net, meta.sub_net2]
         # rho[1]: netrho (raw rho) for pat0 mode; netRHO * chirp_factor for non-pat0 (mirrors output() logic)
         # rho[1] = netrho (raw rho before cc reduction); same as pat0 branch in output().
         # For chirp events: rho[1] = netRHO * chrho, but chirp not yet computed so use net_rho2.
-        pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
+        pat0 = (getattr(config, "pattern", 10) == 0) if config is not None else False
         self.rho = [meta.net_rho, meta.net_rho2]  # rho[0]=netRHO=rho/sqrt(cc), rho[1]=netrho=raw rho
         self.anet = meta.a_net
         self.gnet = meta.g_net
         self.inet = meta.i_net
         self.ndim = n_ifo
         self.size = [cluster.get_core_size(), meta.sky_size]
-        self.volume = [cluster.get_size(), int(np.count_nonzero(
-            cluster.pixel_arrays.core & (cluster.pixel_arrays.likelihood > 0)))]
+        self.volume = [
+            cluster.get_size(),
+            int(np.count_nonzero(cluster.pixel_arrays.core & (cluster.pixel_arrays.likelihood > 0))),
+        ]
         self.neted = [meta.net_ed, meta.net_null, meta.energy, meta.like_sky, meta.energy_sky]
         self.iota = [meta.iota]
         self.psi = [meta.psi]
         self.type = [1]
         self.range = [0]
-        self.chirp = [0., meta.mchirp, meta.mchirp_error, meta.chirp_ellipticity,
-                      meta.chirp_symmetry, meta.chirp_energy_fraction]
+        self.chirp = [
+            0.0,
+            meta.mchirp,
+            meta.mchirp_error,
+            meta.chirp_ellipticity,
+            meta.chirp_symmetry,
+            meta.chirp_energy_fraction,
+        ]
         self.gap = [0] * n_ifo
         n_ifo_val = config.nIFO if config is not None else n_ifo
         ndof_val = max(meta.ndof, 1e-10)
@@ -422,14 +429,13 @@ class Event:
         # matching CWB's convention: phi_geo = geographic longitude,
         # theta_geo = geographic co-latitude (0 = N pole, 180 = S pole).
         # Equatorial RA = phi_geo + GMST(t_event), dec = 90 - theta_geo.
-        theta_deg = (meta.reconstructed_theta if meta.reconstructed_theta is not None
-                     else meta.theta)
-        phi_deg = (meta.reconstructed_phi if meta.reconstructed_phi is not None
-                   else meta.phi)
-        dec_deg = 90.0 - theta_deg   # declination (equatorial; same Z-axis)
+        theta_deg = meta.reconstructed_theta if meta.reconstructed_theta is not None else meta.theta
+        phi_deg = meta.reconstructed_phi if meta.reconstructed_phi is not None else meta.phi
+        dec_deg = 90.0 - theta_deg  # declination (equatorial; same Z-axis)
         # Convert geographic longitude to equatorial RA using GMST at event time.
         # mirrors CWB skymap::phi2RA = fmod(phi_geo + GMST, 360)
         from pycwb.utils.skymap_coord import gmst_cwb as _gmst_cwb
+
         _t_event_gps = float(meta.c_time if meta.c_time != 0.0 else cluster.cluster_time) + float(self.gps[0])
         # Match cwb-core/skymap.hh::phi2RA exactly for legacy Event output.
         _gmst_deg = np.degrees(_gmst_cwb(_t_event_gps)) % 360.0
@@ -444,10 +450,10 @@ class Event:
         self.job_id = job_segment.index
         self.ifo_list = list(job_segment.ifos)
         # eventID[0]: sequential cluster ID within job; eventID[1]: 0 placeholder
-        self.eventID = [getattr(cluster, 'cluster_id', 1), 0]
+        self.eventID = [getattr(cluster, "cluster_id", 1), 0]
 
         # --- Super-lag shifts ---
-        superlag_shifts = getattr(job_segment, 'shift', None)
+        superlag_shifts = getattr(job_segment, "shift", None)
         self.slag = list(superlag_shifts) if superlag_shifts is not None else [0.0] * n_ifo
 
         # --- Timing and frequency per IFO (network-level in slot [0]) ---
@@ -459,19 +465,20 @@ class Event:
         pa = cluster.pixel_arrays
         core_mask = pa.core
         from pycwb.types.event_pixel_statistics import aligned_pixel_bounds, noise_amplitude
-        pixel_bounds = aligned_pixel_bounds(pa, n_ifo, job_segment.seg_edge,
-                                            job_segment.padded_duration-2*job_segment.seg_edge,
-                                            lag_shifts)
+
+        pixel_bounds = aligned_pixel_bounds(
+            pa, n_ifo, job_segment.seg_edge, job_segment.padded_duration - 2 * job_segment.seg_edge, lag_shifts
+        )
         if pixel_bounds is not None:
             starts, stops = pixel_bounds
             self.left = starts
-            self.right = [job_segment.padded_duration-t for t in stops]
-            self.start = [t+float(gps) for t,gps in zip(starts,self.gps)]
-            self.stop = [t+float(gps) for t,gps in zip(stops,self.gps)]
+            self.right = [job_segment.padded_duration - t for t in stops]
+            self.start = [t + float(gps) for t, gps in zip(starts, self.gps)]
+            self.stop = [t + float(gps) for t, gps in zip(stops, self.gps)]
         if np.any(core_mask):
             core_rate = pa.rate[core_mask].astype(np.float64)
-            band_step = core_rate / 2.
-            band_start = band_step * (pa.frequency[core_mask] - .5)
+            band_step = core_rate / 2.0
+            band_start = band_step * (pa.frequency[core_mask] - 0.5)
             self.low = [float(np.min(band_start))] * n_ifo
             self.high = [float(np.max(band_start + band_step))] * n_ifo
             net_bw = self.high[0] - self.low[0]
@@ -481,8 +488,7 @@ class Event:
         sky_td = list(cluster.sky_time_delay) if cluster.sky_time_delay else []
         td_rate = float(config.TDRate) if config is not None else 1.0
         sync_ref = float(sky_td[0]) / td_rate if sky_td else 0.0
-        sync_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0
-                    for i in range(n_ifo)]
+        sync_ifo = [float(sky_td[i]) / td_rate if i < len(sky_td) else 0.0 for i in range(n_ifo)]
         # C++ lag: [pwc->shift]*n_ifo + [pd->lagShift.data[LAG]]*n_ifo
         # lagShift = data stream lag (0 for zero-lag); ToF delays only go into self.time.
         self.lag = [0.0] * (2 * n_ifo)
@@ -491,26 +497,29 @@ class Event:
         #   time[0] = pcd->cTime + gps[0]                          (no delay for ref)
         #   time[i] = pcd->cTime + gps[i] + tau_i - tau_0          (ToF correction)
         # Since sync_i - sync_ref = tau_ref - tau_i, negate it here.
-        self.time = [c_time + float(self.gps[i]) - (sync_ifo[i] - sync_ref if i > 0 else 0.0)
-                     for i in range(n_ifo)]
+        self.time = [c_time + float(self.gps[i]) - (sync_ifo[i] - sync_ref if i > 0 else 0.0) for i in range(n_ifo)]
         if meta.reconstructed_theta is not None and meta.reconstructed_phi is not None:
             from pycwb.types.detector import Detector
+
             theta_geo, phi_geo = np.radians([theta_deg, phi_deg])
-            direction = np.array([np.sin(theta_geo)*np.cos(phi_geo),
-                                  np.sin(theta_geo)*np.sin(phi_geo), np.cos(theta_geo)])
-            positions = [Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal")).vertex_vec_earth_centered for ifo in job_segment.ifos]
+            direction = np.array(
+                [np.sin(theta_geo) * np.cos(phi_geo), np.sin(theta_geo) * np.sin(phi_geo), np.cos(theta_geo)]
+            )
+            positions = [
+                Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal")).vertex_vec_earth_centered
+                for ifo in job_segment.ifos
+            ]
             # cWB detector::getTau is -R.n/c. Preserve the reference detector time.
-            arrival = [-float(np.dot(position, direction))/299792458. for position in positions]
-            self.time = [c_time + float(self.gps[i]) + (arrival[i] - arrival[0] if i else 0.)
-                         for i in range(n_ifo)]
+            arrival = [-float(np.dot(position, direction)) / 299792458.0 for position in positions]
+            self.time = [c_time + float(self.gps[i]) + (arrival[i] - arrival[0] if i else 0.0) for i in range(n_ifo)]
 
         # Duration per IFO: min/max of per-IFO pixel time bins using p.data[i].index
         # (mirrors C++ pwc->get("start",i,'L',0) / pwc->get("stop",i,'L',0))
         # start = min of (1/rate * floor(data[i].index / layers))
         # stop  = max of (1/rate * (floor(data[i].index / layers) + 1))
-        core_rate_v   = pa.rate[core_mask].astype(np.float64)
+        core_rate_v = pa.rate[core_mask].astype(np.float64)
         core_layers_v = pa.layers[core_mask].astype(np.int64)
-        core_pidx_v   = pa.pixel_index[:, core_mask]  # (n_ifo, n_core)
+        core_pidx_v = pa.pixel_index[:, core_mask]  # (n_ifo, n_core)
         per_ifo_duration = []
         for ifo_idx in range(n_ifo):
             valid = (core_rate_v > 0) & (core_layers_v > 0)
@@ -533,15 +542,20 @@ class Event:
         # Duration: per-IFO from pixel index ranges; [0] overwritten below with energy-weighted value
         self.duration = per_ifo_duration[:]
         if pixel_bounds is not None:
-            self.duration = [b-a for a,b in zip(*pixel_bounds)]
+            self.duration = [b - a for a, b in zip(*pixel_bounds)]
 
         # cWB exports these with core=false: halo pixels define the sub-bin
         # resolution even when their likelihood weight is zero.
         if len(pa.rate):
             from pycwb.types.event_pixel_statistics import pixel_moments
-            analysis_rate = float(getattr(config, 'rateANA', job_segment.sample_rate))
+
+            analysis_rate = float(getattr(config, "rateANA", job_segment.sample_rate))
             lh_freq_net, dur0, bw0 = pixel_moments(
-                pa.time, pa.frequency, pa.layers, pa.rate, pa.likelihood,
+                pa.time,
+                pa.frequency,
+                pa.layers,
+                pa.rate,
+                pa.likelihood,
                 analysis_rate,
             )
             if dur0 >= 0:
@@ -563,29 +577,29 @@ class Event:
             # Prefer xtalk-corrected per-IFO energies from fill_detection_statistic
             # (mirrors C++ getMRAwave 'W'/'S' + get_XX()/get_SS()/get_XS()).
             # Fall back to diagonal pixel sums when not set (backwards compatibility).
-            have_xtalk_snr = (len(meta.wave_snr) == n_ifo
-                              and len(meta.signal_snr) == n_ifo
-                              and len(meta.cross_snr) == n_ifo)
+            have_xtalk_snr = (
+                len(meta.wave_snr) == n_ifo and len(meta.signal_snr) == n_ifo and len(meta.cross_snr) == n_ifo
+            )
 
             for i in range(n_ifo):
                 if have_xtalk_snr:
                     # Xtalk-corrected energies: mirrors C++ d->enrg, d->sSNR, d->xSNR
-                    wave_sq_xt  = float(meta.wave_snr[i])    # C++ d->enrg = get_XX()
-                    asnr_sq_xt  = float(meta.signal_snr[i])  # C++ d->sSNR = get_SS()
-                    xsnr_sq_xt  = float(meta.cross_snr[i])   # C++ d->xSNR = get_XS()
+                    wave_sq_xt = float(meta.wave_snr[i])  # C++ d->enrg = get_XX()
+                    asnr_sq_xt = float(meta.signal_snr[i])  # C++ d->sSNR = get_SS()
+                    xsnr_sq_xt = float(meta.cross_snr[i])  # C++ d->xSNR = get_XS()
                     self.snr.append(wave_sq_xt)
                     self.sSNR.append(asnr_sq_xt)
                     self.xSNR.append(xsnr_sq_xt)
                     self.nill.append(float(xsnr_sq_xt - asnr_sq_xt))  # C++ pd.xSNR - pd.sSNR
                     # Use per-IFO null from cluster metadata (C++ pd.null)
-                    if hasattr(meta, 'null_energy') and len(meta.null_energy) > i:
+                    if hasattr(meta, "null_energy") and len(meta.null_energy) > i:
                         null_val = float(meta.null_energy[i])
                     else:
                         # Fallback: split total null evenly (backwards compatibility)
                         null_val = float(np.sum(pa.null)) / n_ifo
                     self.null.append(null_val)
                     # hrss from physical strain energy (not whitened)
-                    if hasattr(meta, 'signal_energy_physical') and len(meta.signal_energy_physical) > i:
+                    if hasattr(meta, "signal_energy_physical") and len(meta.signal_energy_physical) > i:
                         hrss_sq_physical = float(meta.signal_energy_physical[i])
                     else:
                         # Fallback: whitened energy (will be wrong units but backwards compatible)
@@ -604,8 +618,7 @@ class Event:
                     null_val = float(np.sum(pa.null)) / n_ifo
                     self.null.append(null_val)
                     # hrss from pixel-based signal energy (whitened amplitudes * noise_rms)
-                    hrss_sq = float(np.sum((pa.asnr[i] * pa.noise_rms[i]) ** 2
-                                           + (pa.a_90[i] * pa.noise_rms[i]) ** 2))
+                    hrss_sq = float(np.sum((pa.asnr[i] * pa.noise_rms[i]) ** 2 + (pa.a_90[i] * pa.noise_rms[i]) ** 2))
                     self.hrss.append(float(np.sqrt(hrss_sq / in_rate)))
 
                 # Noise floor: RMS of noiserms across core pixels for this IFO, scaled to strain/rtHz
@@ -618,11 +631,11 @@ class Event:
 
             # Ordinary background has zero target/injection slots 0 and 10.
             # Missing localization is unavailable, not zero uncertainty.
-            area = cluster.sky_area if cluster.sky_area else [float('nan')] * 11
+            area = cluster.sky_area if cluster.sky_area else [float("nan")] * 11
             self.erA = [list(area) for _ in range(n_ifo)]
 
             # Strain = sqrt(sum(hrss^2))  [C++ takes sqrt at end of loop]
-            self.strain = [float(np.sqrt(sum(h ** 2 for h in self.hrss[:n_ifo])))]
+            self.strain = [float(np.sqrt(sum(h**2 for h in self.hrss[:n_ifo])))]
 
             # Antenna patterns at best-fit sky location
             # C++ uses detector::antenna(theta, phi, psi) in GEOGRAPHIC coordinates:
@@ -634,8 +647,9 @@ class Event:
             #   fp/2 = -(a·D_py·a - b·D_py·b), fx/2 = 2*(a·D_py·b)
             try:
                 from pycwb.types.detector import Detector
-                angles = np.array([theta_deg, phi_deg, getattr(meta, 'psi', 0.)], dtype=np.float64)
-                if getattr(config, 'detector_geometry', 'lal') == 'cwb_6.4.6.9':
+
+                angles = np.array([theta_deg, phi_deg, getattr(meta, "psi", 0.0)], dtype=np.float64)
+                if getattr(config, "detector_geometry", "lal") == "cwb_6.4.6.9":
                     # netevent stores Float_t angles before calling antenna().
                     # Convert those stored values back to double for radians.
                     angles = angles.astype(np.float32).astype(np.float64)
@@ -646,14 +660,14 @@ class Event:
                 sP = np.sin(phi_geo)
                 # Polarization basis vectors in geographic Cartesian frame
                 e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
-                e_ph = np.array([-sP, cP, 0.0])            # e_phi   (C++ b)
+                e_ph = np.array([-sP, cP, 0.0])  # e_phi   (C++ b)
                 for ifo in job_segment.ifos:
                     det = Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal"))
                     D = det.response  # 0.5*(x⊗x - y⊗y), respects the C++ /2 factor
                     Da = D @ e_th
                     Db = D @ e_ph
-                    f_plus  = np.dot(e_th, Da) - np.dot(e_ph, Db)   # a·D·a - b·D·b (= fp_C++/2)
-                    f_cross = 2.0 * np.dot(e_th, Db)                 # 2*(a·D·b)      (= fx_C++/2)
+                    f_plus = np.dot(e_th, Da) - np.dot(e_ph, Db)  # a·D·a - b·D·b (= fp_C++/2)
+                    f_cross = 2.0 * np.dot(e_th, Db)  # 2*(a·D·b)      (= fx_C++/2)
                     # C++ convention: fp = -fp (LIGO-T010110), before psi rotation
                     fp = -f_plus
                     fx = f_cross
@@ -671,6 +685,7 @@ class Event:
             core_rates = pa.rate[core_mask].tolist()
             if core_rates:
                 from statistics import mode as stat_mode
+
                 try:
                     modal_rate = float(stat_mode(core_rates))
                 except Exception:
@@ -679,10 +694,9 @@ class Event:
                 modal_rate = 0.0
             # cWB exports zero when optim=False; this is an output convention,
             # not the analysis sampling rate.
-            self.rate = [modal_rate if getattr(config, 'optim', False) else 0.] * n_ifo
+            self.rate = [modal_rate if getattr(config, "optim", False) else 0.0] * n_ifo
 
         self.id = self.long_id
-
 
     def summary(self):
         """

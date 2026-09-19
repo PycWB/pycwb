@@ -22,6 +22,7 @@ class Detector:
     name : str
         detector name
     """
+
     name: str
     full_name: str
     latitude: float
@@ -40,9 +41,23 @@ class Detector:
     y_response: np.ndarray = None
     response: np.ndarray = None
     geometry_model: str = "lal"
-    def __init__(self, name, full_name=None, latitude=None, longitude=None, altitude=None,
-                 x_azimuth=None, x_altitude=None, x_midpoint=None,
-                 y_azimuth=None, y_altitude=None, y_midpoint=None, *, geometry_model="lal"):
+
+    def __init__(
+        self,
+        name,
+        full_name=None,
+        latitude=None,
+        longitude=None,
+        altitude=None,
+        x_azimuth=None,
+        x_altitude=None,
+        x_midpoint=None,
+        y_azimuth=None,
+        y_altitude=None,
+        y_midpoint=None,
+        *,
+        geometry_model="lal",
+    ):
         """
         Initialize the Detector object with either a name or specific parameters.
         If a name is provided, it will look up the detector information from the DETECTORS dictionary.
@@ -65,9 +80,22 @@ class Detector:
             self.x_midpoint = DETECTORS[name]["x"]["midpoint"]
             self.y_midpoint = DETECTORS[name]["y"]["midpoint"]
 
-        elif all(param is not None for param in [name, full_name, latitude, longitude, altitude,
-                                                  x_azimuth, x_altitude, x_midpoint,
-                                                  y_azimuth, y_altitude, y_midpoint]):
+        elif all(
+            param is not None
+            for param in [
+                name,
+                full_name,
+                latitude,
+                longitude,
+                altitude,
+                x_azimuth,
+                x_altitude,
+                x_midpoint,
+                y_azimuth,
+                y_altitude,
+                y_midpoint,
+            ]
+        ):
             self.name = name
             self.full_name = full_name
             self.latitude = latitude
@@ -81,38 +109,42 @@ class Detector:
             self.y_midpoint = y_midpoint
 
         ifo_vecs = earth_centered_vectors(
-            self.longitude, self.latitude,
-            yangle=self.y_azimuth, xangle=self.x_azimuth,
+            self.longitude,
+            self.latitude,
+            yangle=self.y_azimuth,
+            xangle=self.x_azimuth,
             height=self.altitude,
-            xaltitude=self.x_altitude, yaltitude=self.y_altitude
+            xaltitude=self.x_altitude,
+            yaltitude=self.y_altitude,
         )
 
-        self.vertex_vec_earth_centered = ifo_vecs['loc_vec']
-        self.x_vec_earth_centered = ifo_vecs['x_vec']
-        self.y_vec_earth_centered = ifo_vecs['y_vec']
-        self.x_response = ifo_vecs['x_response']
-        self.y_response = ifo_vecs['y_response']
-        self.response = ifo_vecs['response']
+        self.vertex_vec_earth_centered = ifo_vecs["loc_vec"]
+        self.x_vec_earth_centered = ifo_vecs["x_vec"]
+        self.y_vec_earth_centered = ifo_vecs["y_vec"]
+        self.x_response = ifo_vecs["x_response"]
+        self.y_response = ifo_vecs["y_response"]
+        self.response = ifo_vecs["response"]
         self.geometry_model = geometry_model
-        if geometry_model != 'lal':
+        if geometry_model != "lal":
             from pycwb.constants.release_detector_geometry import apply_release_geometry
+
             apply_release_geometry(self, geometry_model)
-        
+
     @property
     def x_length(self):
         """
         Get the length of the X arm of the detector.
-        
+
         Returns:
             float: The length of the X arm in meters.
         """
         return self.x_midpoint * 2
-    
+
     @property
     def y_length(self):
         """
         Get the length of the Y arm of the detector.
-        
+
         Returns:
             float: The length of the Y arm in meters.
         """
@@ -122,31 +154,31 @@ class Detector:
     def x_vec(self):
         """
         Get the Cartesian components of the X arm of the detector.
-        
+
         Returns:
             list: A list containing the Cartesian components [X, Y, Z] of the X arm.
         """
-        if self.geometry_model != 'lal':
+        if self.geometry_model != "lal":
             return self.x_vec_earth_centered.copy()
         return self.get_cartesian_components(self.x_altitude, self.x_azimuth, self.latitude, self.longitude)
-    
+
     @property
     def y_vec(self):
         """
         Get the Cartesian components of the Y arm of the detector.
-        
+
         Returns:
             list: A list containing the Cartesian components [X, Y, Z] of the Y arm.
         """
-        if self.geometry_model != 'lal':
+        if self.geometry_model != "lal":
             return self.y_vec_earth_centered.copy()
         return self.get_cartesian_components(self.y_altitude, self.y_azimuth, self.latitude, self.longitude)
-    
+
     @property
     def vertex_vec(self):
         """
         Get the Cartesian components of the detector's vertex.
-        
+
         Returns:
             tuple: A tuple containing the Cartesian coordinates (X, Y, Z) of the detector's vertex.
         """
@@ -178,9 +210,7 @@ class Detector:
         uRho = -sinLat * uNorth + cosLat * sinAlt
         # uLambda == uEast
 
-        u = [cosLon * uRho - sinLon * uEast,
-             sinLon * uRho + cosLon * uEast,
-             cosLat * uNorth + sinLat * sinAlt]
+        u = [cosLon * uRho - sinLon * uEast, sinLon * uRho + cosLon * uEast, cosLat * uNorth + sinLat * sinAlt]
 
         return np.array(u, dtype=np.float64)
 
@@ -251,14 +281,14 @@ class Detector:
         azimuth = self.x_azimuth
 
         # Compute destination point
-        lat2 = np.arcsin(np.sin(lat1) * np.cos(delta) +
-                        np.cos(lat1) * np.sin(delta) * np.cos(azimuth))
-        
-        lon2 = lon1 + np.arctan2(np.sin(azimuth) * np.sin(delta) * np.cos(lat1),
-                                np.cos(delta) - np.sin(lat1) * np.sin(lat2))
+        lat2 = np.arcsin(np.sin(lat1) * np.cos(delta) + np.cos(lat1) * np.sin(delta) * np.cos(azimuth))
+
+        lon2 = lon1 + np.arctan2(
+            np.sin(azimuth) * np.sin(delta) * np.cos(lat1), np.cos(delta) - np.sin(lat1) * np.sin(lat2)
+        )
 
         return np.array([lon2, lat2], dtype=np.float64)
-    
+
     def get_y_arm_endpoint_in_geo(self, distance_km=100):
         """
         Get the Y arm direction in longitude and latitude coordinates.
@@ -273,18 +303,18 @@ class Detector:
         azimuth = self.y_azimuth
 
         # Compute destination point
-        lat2 = np.arcsin(np.sin(lat1) * np.cos(delta) +
-                        np.cos(lat1) * np.sin(delta) * np.cos(azimuth))
-        
-        lon2 = lon1 + np.arctan2(np.sin(azimuth) * np.sin(delta) * np.cos(lat1),
-                                np.cos(delta) - np.sin(lat1) * np.sin(lat2))
+        lat2 = np.arcsin(np.sin(lat1) * np.cos(delta) + np.cos(lat1) * np.sin(delta) * np.cos(azimuth))
+
+        lon2 = lon1 + np.arctan2(
+            np.sin(azimuth) * np.sin(delta) * np.cos(lat1), np.cos(delta) - np.sin(lat1) * np.sin(lat2)
+        )
 
         return np.array([lon2, lat2], dtype=np.float64)
-    
+
     # TODO: to check
-    def atenna_pattern(self, right_ascension, declination, polarization, t_gps,
-                      frequency=0,
-                      polarization_type='tensor'):
+    def atenna_pattern(
+        self, right_ascension, declination, polarization, t_gps, frequency=0, polarization_type="tensor"
+    ):
         """
         Return the detector response.
 
@@ -330,10 +360,8 @@ class Detector:
             nx = nhat.dot(self.x_vec_earth_centered)
             ny = nhat.dot(self.y_vec_earth_centered)
 
-            rx = single_arm_frequency_response(frequency, nx,
-                                               self.x_length)
-            ry = single_arm_frequency_response(frequency, ny,
-                                               self.y_length)
+            rx = single_arm_frequency_response(frequency, nx, self.x_length)
+            ry = single_arm_frequency_response(frequency, ny, self.y_length)
             resp = ry * self.y_response - rx * self.x_response
             ttype = np.complex128
         else:
@@ -342,27 +370,27 @@ class Detector:
 
         x0 = -cospsi * singha - sinpsi * cosgha * sindec
         x1 = -cospsi * cosgha + sinpsi * singha * sindec
-        x2 =  sinpsi * cosdec
+        x2 = sinpsi * cosdec
 
         x = np.array([x0, x1, x2], dtype=object)
         dx = resp.dot(x)
 
-        y0 =  sinpsi * singha - cospsi * cosgha * sindec
-        y1 =  sinpsi * cosgha + cospsi * singha * sindec
-        y2 =  cospsi * cosdec
+        y0 = sinpsi * singha - cospsi * cosgha * sindec
+        y1 = sinpsi * cosgha + cospsi * singha * sindec
+        y2 = cospsi * cosdec
 
         y = np.array([y0, y1, y2], dtype=object)
         dy = resp.dot(y)
 
-        if polarization_type != 'tensor':
+        if polarization_type != "tensor":
             z0 = -cosdec * cosgha
             z1 = cosdec * singha
             z2 = -sindec
             z = np.array([z0, z1, z2], dtype=object)
             dz = resp.dot(z)
 
-        if polarization_type == 'tensor':
-            if hasattr(dx, 'shape'):
+        if polarization_type == "tensor":
+            if hasattr(dx, "shape"):
                 fplus = (x * dx - y * dy).sum(axis=0).astype(ttype)
                 fcross = (x * dy + y * dx).sum(axis=0).astype(ttype)
             else:
@@ -370,8 +398,8 @@ class Detector:
                 fcross = (x * dy + y * dx).sum()
             return fplus, fcross
 
-        elif polarization_type == 'vector':
-            if hasattr(dx, 'shape'):
+        elif polarization_type == "vector":
+            if hasattr(dx, "shape"):
                 fx = (z * dx + x * dz).sum(axis=0).astype(ttype)
                 fy = (z * dy + y * dz).sum(axis=0).astype(ttype)
             else:
@@ -380,8 +408,8 @@ class Detector:
 
             return fx, fy
 
-        elif polarization_type == 'scalar':
-            if hasattr(dx, 'shape'):
+        elif polarization_type == "scalar":
+            if hasattr(dx, "shape"):
                 fb = (x * dx + y * dy).sum(axis=0).astype(ttype)
                 fl = (z * dz).sum(axis=0)
             else:
@@ -434,11 +462,13 @@ class Detector:
         """
         gmst = gmst_accurate(float(t_gps))
         gha = gmst - ra
-        n_hat = np.array([
-            np.cos(dec) * np.cos(gha),
-            np.cos(dec) * (-np.sin(gha)),
-            np.sin(dec),
-        ])
+        n_hat = np.array(
+            [
+                np.cos(dec) * np.cos(gha),
+                np.cos(dec) * (-np.sin(gha)),
+                np.sin(dec),
+            ]
+        )
         d_vec = np.asarray(other_location) - self.vertex_vec_earth_centered
         return float(np.dot(d_vec, n_hat) / constants.c.value)
 
@@ -477,9 +507,7 @@ class Detector:
         float
             Time delay in seconds.
         """
-        return self.time_delay_from_location(
-            other_det.vertex_vec_earth_centered, ra, dec, t_gps
-        )
+        return self.time_delay_from_location(other_det.vertex_vec_earth_centered, ra, dec, t_gps)
 
     def project_wave(self, hp, hc, ra, dec, polarization, reference_time=None):
         """
@@ -527,10 +555,9 @@ class Detector:
         projected = fplus * hp_ts.data + fcross * hc_ts.data
         return TimeSeries(data=projected, dt=hp_ts.dt, t0=hp_ts.t0 + delay)
 
-    def plot_on_globe(self, fig=False,
-                      distance_km=500,
-                      projection_type='orthographic',
-                      width=800, height=800, color='red'):
+    def plot_on_globe(
+        self, fig=False, distance_km=500, projection_type="orthographic", width=800, height=800, color="red"
+    ):
         """
         Plot the detector's X and Y arms on a globe using Plotly.
 
@@ -558,24 +585,27 @@ class Detector:
             go.Figure: A Plotly figure with the detector arms plotted on a globe.
         """
         import warnings
-        plot_detector_on_globe = import_module(
-            "pycwb.modules.plot.detector_globe"
-        ).plot_detector_on_globe
+
+        plot_detector_on_globe = import_module("pycwb.modules.plot.detector_globe").plot_detector_on_globe
         warnings.warn(
-            "Detector.plot_on_globe() is deprecated. "
-            "Use pycwb.modules.plot.plot_detector_on_globe() instead.",
-            DeprecationWarning, stacklevel=2,
+            "Detector.plot_on_globe() is deprecated. Use pycwb.modules.plot.plot_detector_on_globe() instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
         return plot_detector_on_globe(
-            self, fig=fig, distance_km=distance_km,
+            self,
+            fig=fig,
+            distance_km=distance_km,
             projection_type=projection_type,
-            width=width, height=height, color=color,
+            width=width,
+            height=height,
+            color=color,
         )
 
     def compute_detector_tensor(self):
         """
         Compute the detector response tensor in Earth-centered coordinates.
-        
+
         Returns
         -------
         D : np.ndarray
@@ -587,20 +617,20 @@ class Detector:
         """
         lat_det = self.latitude
         lon_det = self.longitude
-        
+
         x_az, x_alt = self.x_azimuth, self.x_altitude
         y_az, y_alt = self.y_azimuth, self.y_altitude
-        
+
         # Local horizon frame components for x-arm
         x_east = np.sin(x_az)
         x_north = np.cos(x_az)
         x_up = np.sin(x_alt)
-        
+
         # Local horizon frame components for y-arm
         y_east = np.sin(y_az)
         y_north = np.cos(y_az)
         y_up = np.sin(y_alt)
-        
+
         # Normalize
         x_norm = np.sqrt(x_east**2 + x_north**2 + x_up**2)
         y_norm = np.sqrt(y_east**2 + y_north**2 + y_up**2)
@@ -610,27 +640,27 @@ class Detector:
         y_east /= y_norm
         y_north /= y_norm
         y_up /= y_norm
-        
+
         # Convert to Earth-centered coordinates
         x_vec = local_to_earth_centered(lat_det, lon_det, x_east, x_north, x_up)
         y_vec = local_to_earth_centered(lat_det, lon_det, y_east, y_north, y_up)
-        
+
         # Detector tensor: D = 0.5 * (x ⊗ x - y ⊗ y)
         D = 0.5 * (np.outer(x_vec, x_vec) - np.outer(y_vec, y_vec))
-        
+
         return D, x_vec, y_vec
-    
+
     def compute_antenna_pattern_for_grid(self, theta_grid, phi_grid):
         """
         Compute F+ and Fx antenna patterns for this detector on a sky grid.
-        
+
         Parameters
         ----------
         theta_grid : np.ndarray
             2D array of sky position theta (polar angle, 0 to pi)
         phi_grid : np.ndarray
             2D array of sky position phi (azimuthal angle, 0 to 2*pi)
-            
+
         Returns
         -------
         F_plus : np.ndarray
@@ -639,68 +669,76 @@ class Detector:
             Cross polarization antenna pattern
         """
         n_lat, n_lon = theta_grid.shape
-        
+
         sin_theta, cos_theta = np.sin(theta_grid), np.cos(theta_grid)
         sin_phi, cos_phi = np.sin(phi_grid), np.cos(phi_grid)
-        
+
         # Wave direction unit vector
         n_x = sin_theta * cos_phi
         n_y = sin_theta * sin_phi
         n_z = cos_theta
-        
+
         # Polarization basis vectors
         e_theta_x = cos_theta * cos_phi
         e_theta_y = cos_theta * sin_phi
         e_theta_z = -sin_theta
-        
+
         e_phi_x = -sin_phi
         e_phi_y = cos_phi
         e_phi_z = 0.0
-        
+
         # Normalize
         e_theta_norm = np.sqrt(e_theta_x**2 + e_theta_y**2 + e_theta_z**2)
         e_theta_x /= e_theta_norm
         e_theta_y /= e_theta_norm
         e_theta_z /= e_theta_norm
-        
+
         e_phi_norm = np.sqrt(e_phi_x**2 + e_phi_y**2 + e_phi_z**2)
         e_phi_x /= e_phi_norm
         e_phi_y /= e_phi_norm
         e_phi_z /= e_phi_norm
-        
+
         # Get detector tensor
         D, _, _ = self.compute_detector_tensor()
-        
+
         # Compute D:e_theta⊗e_theta
         D_e_theta_e_theta = (
-            e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z) +
-            e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z) +
-            e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
+            e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z)
+            + e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z)
+            + e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
         )
-        
+
         # Compute D:e_phi⊗e_phi
         D_e_phi_e_phi = (
-            e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
-            e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
-            e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+            e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z)
+            + e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z)
+            + e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
         )
-        
+
         # Compute D:e_theta⊗e_phi
         D_e_theta_e_phi = (
-            e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
-            e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
-            e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+            e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z)
+            + e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z)
+            + e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
         )
-        
+
         F_plus = D_e_theta_e_theta - D_e_phi_e_phi
         F_cross = 2.0 * D_e_theta_e_phi
-        
+
         return F_plus, F_cross
-    
-    def draw_antenna_pattern(self, polarization=3, palette='turbo',
-                           resolution=2, projection='rectilinear',
-                           display_world_map=True, add_title=True,
-                           ax=None, vmin=0.0, vmax=None):
+
+    def draw_antenna_pattern(
+        self,
+        polarization=3,
+        palette="turbo",
+        resolution=2,
+        projection="rectilinear",
+        display_world_map=True,
+        add_title=True,
+        ax=None,
+        vmin=0.0,
+        vmax=None,
+    ):
         """
         Draw antenna pattern for this detector.
 
@@ -739,19 +777,27 @@ class Detector:
         ax : matplotlib.axes.Axes
         """
         import warnings
+
         plot_detector_antenna_pattern = import_module(
             "pycwb.modules.plot.detector_antenna"
         ).plot_detector_antenna_pattern
         warnings.warn(
             "Detector.draw_antenna_pattern() is deprecated. "
             "Use pycwb.modules.plot.plot_detector_antenna_pattern() instead.",
-            DeprecationWarning, stacklevel=2,
+            DeprecationWarning,
+            stacklevel=2,
         )
         return plot_detector_antenna_pattern(
-            self, polarization=polarization, palette=palette,
-            resolution=resolution, projection=projection,
-            display_world_map=display_world_map, add_title=add_title,
-            ax=ax, vmin=vmin, vmax=vmax,
+            self,
+            polarization=polarization,
+            palette=palette,
+            resolution=resolution,
+            projection=projection,
+            display_world_map=display_world_map,
+            add_title=add_title,
+            ax=ax,
+            vmin=vmin,
+            vmax=vmax,
         )
 
 
@@ -794,10 +840,23 @@ class DetectorNetwork:
     @staticmethod
     def _parse_detector_codes(network_str):
         code_mapping = {
-            'H1': 'H1', 'L1': 'L1', 'G1': 'G1', 'V1': 'V1',
-            'T1': 'T1', 'H2': 'H2', 'A1': 'A1', 'O1': 'O1',
-            'N1': 'N1', 'E1': 'E1', 'A2': 'A2', 'J1': 'J1',
-            'I1': 'I1', 'K1': 'K1', 'E2': 'E2', 'E3': 'E3', 'E0': 'E0'
+            "H1": "H1",
+            "L1": "L1",
+            "G1": "G1",
+            "V1": "V1",
+            "T1": "T1",
+            "H2": "H2",
+            "A1": "A1",
+            "O1": "O1",
+            "N1": "N1",
+            "E1": "E1",
+            "A2": "A2",
+            "J1": "J1",
+            "I1": "I1",
+            "K1": "K1",
+            "E2": "E2",
+            "E3": "E3",
+            "E0": "E0",
         }
         detector_codes = [code for code in code_mapping if code in network_str]
         if not detector_codes:
@@ -810,16 +869,18 @@ class DetectorNetwork:
             det_info = DETECTORS.get(det.name)
             if not det_info:
                 continue
-            detectors.append({
-                'code': det.name,
-                'name': det.full_name,
-                'lat': det_info['lat'],
-                'lon': det_info['lon'],
-                'x_alt': det_info['x']['alt'],
-                'x_az': det_info['x']['az'],
-                'y_alt': det_info['y']['alt'],
-                'y_az': det_info['y']['az']
-            })
+            detectors.append(
+                {
+                    "code": det.name,
+                    "name": det.full_name,
+                    "lat": det_info["lat"],
+                    "lon": det_info["lon"],
+                    "x_alt": det_info["x"]["alt"],
+                    "x_az": det_info["x"]["az"],
+                    "y_alt": det_info["y"]["alt"],
+                    "y_az": det_info["y"]["az"],
+                }
+            )
         return detectors
 
     @staticmethod
@@ -833,10 +894,10 @@ class DetectorNetwork:
 
     @classmethod
     def _compute_detector_tensor(cls, detector):
-        lat_det = detector['lat']
-        lon_det = detector['lon']
-        x_az, x_alt = detector['x_az'], detector['x_alt']
-        y_az, y_alt = detector['y_az'], detector['y_alt']
+        lat_det = detector["lat"]
+        lon_det = detector["lon"]
+        x_az, x_alt = detector["x_az"], detector["x_alt"]
+        y_az, y_alt = detector["y_az"], detector["y_alt"]
         x_east = np.sin(x_az)
         x_north = np.cos(x_az)
         x_up = np.sin(x_alt)
@@ -881,19 +942,19 @@ class DetectorNetwork:
         for i, detector in enumerate(detectors):
             D, _, _ = cls._compute_detector_tensor(detector)
             D_e_theta_e_theta = (
-                e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z) +
-                e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z) +
-                e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
+                e_theta_x * (D[0, 0] * e_theta_x + D[0, 1] * e_theta_y + D[0, 2] * e_theta_z)
+                + e_theta_y * (D[1, 0] * e_theta_x + D[1, 1] * e_theta_y + D[1, 2] * e_theta_z)
+                + e_theta_z * (D[2, 0] * e_theta_x + D[2, 1] * e_theta_y + D[2, 2] * e_theta_z)
             )
             D_e_phi_e_phi = (
-                e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
-                e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
-                e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+                e_phi_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z)
+                + e_phi_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z)
+                + e_phi_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
             )
             D_e_theta_e_phi = (
-                e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z) +
-                e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z) +
-                e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
+                e_theta_x * (D[0, 0] * e_phi_x + D[0, 1] * e_phi_y + D[0, 2] * e_phi_z)
+                + e_theta_y * (D[1, 0] * e_phi_x + D[1, 1] * e_phi_y + D[1, 2] * e_phi_z)
+                + e_theta_z * (D[2, 0] * e_phi_x + D[2, 1] * e_phi_y + D[2, 2] * e_phi_z)
             )
             F_plus[:, :, i] = D_e_theta_e_theta - D_e_phi_e_phi
             F_cross[:, :, i] = 2.0 * D_e_theta_e_phi
@@ -952,17 +1013,19 @@ class DetectorNetwork:
             gc = np.sqrt(gR**2 + gI**2)
             pattern_values = np.sqrt(gr + gc)
         else:
-            pattern_values = np.array([
-                cls._compute_polarization_quantity(gp_i, gx_i, gI_i, polarization, n_detectors)
-                for gp_i, gx_i, gI_i in zip(gp, gx, gI)
-            ])
+            pattern_values = np.array(
+                [
+                    cls._compute_polarization_quantity(gp_i, gx_i, gI_i, polarization, n_detectors)
+                    for gp_i, gx_i, gI_i in zip(gp, gx, gI)
+                ]
+            )
         pattern = pattern_values.reshape(n_lat, n_lon)
         pattern_max = np.max(pattern)
         return pattern, pattern_max
 
     @classmethod
     def _compute_arm_endpoints(cls, detector, arm_length_factor=8.0):
-        lat, lon = detector['lat'], detector['lon']
+        lat, lon = detector["lat"], detector["lon"]
         _, x_vec, y_vec = cls._compute_detector_tensor(detector)
         sin_lat, cos_lat = np.sin(lat), np.cos(lat)
         sin_lon, cos_lon = np.sin(lon), np.cos(lon)
@@ -991,8 +1054,7 @@ class DetectorNetwork:
                 axis /= axis_norm
                 cos_a = np.cos(angle)
                 sin_a = np.sin(angle)
-                return (cos_a * center + sin_a * np.cross(axis, center) +
-                        (1 - cos_a) * np.dot(axis, center) * axis)
+                return cos_a * center + sin_a * np.cross(axis, center) + (1 - cos_a) * np.dot(axis, center) * axis
             return center
 
         x_end_cart = point_on_sphere(normal, x_tangent, arm_length)
@@ -1020,10 +1082,18 @@ class DetectorNetwork:
             y_lon_deg += 360
         return (x_lon_deg, x_lat_deg), (y_lon_deg, y_lat_deg)
 
-    def draw_antenna_pattern(self, polarization=3, palette='turbo',
-                             resolution=2, projection='rectilinear',
-                             display_world_map=True, add_title=True,
-                             uniform_colorbar=True, ax=None, detector_scales=None):
+    def draw_antenna_pattern(
+        self,
+        polarization=3,
+        palette="turbo",
+        resolution=2,
+        projection="rectilinear",
+        display_world_map=True,
+        add_title=True,
+        uniform_colorbar=True,
+        ax=None,
+        detector_scales=None,
+    ):
         """
         Draw antenna pattern for the detector network.
 
@@ -1031,19 +1101,24 @@ class DetectorNetwork:
             Use :func:`pycwb.modules.plot.plot_network_antenna_pattern` instead.
         """
         import warnings
-        plot_network_antenna_pattern = import_module(
-            "pycwb.modules.plot.detector_antenna"
-        ).plot_network_antenna_pattern
+
+        plot_network_antenna_pattern = import_module("pycwb.modules.plot.detector_antenna").plot_network_antenna_pattern
         warnings.warn(
             "DetectorNetwork.draw_antenna_pattern() is deprecated. "
             "Use pycwb.modules.plot.plot_network_antenna_pattern() instead.",
-            DeprecationWarning, stacklevel=2,
+            DeprecationWarning,
+            stacklevel=2,
         )
         return plot_network_antenna_pattern(
-            self, polarization=polarization, palette=palette,
-            resolution=resolution, projection=projection,
-            display_world_map=display_world_map, add_title=add_title,
-            uniform_colorbar=uniform_colorbar, ax=ax,
+            self,
+            polarization=polarization,
+            palette=palette,
+            resolution=resolution,
+            projection=projection,
+            display_world_map=display_world_map,
+            add_title=add_title,
+            uniform_colorbar=uniform_colorbar,
+            ax=ax,
             detector_scales=detector_scales,
         )
 
@@ -1055,11 +1130,12 @@ def gmst_accurate(gps_time):
 
     return gmst_astropy(float(gps_time))
 
+
 # Copied from pycbc.detector.single_arm_frequency_response
 # Notation matches
 # Eq 4 of https://link.aps.org/accepted/10.1103/PhysRevD.96.084004
 def single_arm_frequency_response(f, n, arm_length):
-    """ The relative amplitude factor of the arm response due to
+    """The relative amplitude factor of the arm response due to
     signal delay. This is relevant where the long-wavelength
     approximation no longer applies)
     """
@@ -1070,11 +1146,10 @@ def single_arm_frequency_response(f, n, arm_length):
     c = np.exp(-2.0 * phase) * (1 - np.exp(phase * (1 + n))) / (1 + n)
     return a * (b - c) * 2.0  # We'll make this relative to the static resp
 
+
 # Adapted from pycbc.detector.add_detector_on_earth
-def earth_centered_vectors(longitude, latitude,
-                        yangle=0, xangle=None, height=0,
-                        xaltitude=0, yaltitude=0):
-    """ Add a new detector on the earth
+def earth_centered_vectors(longitude, latitude, yangle=0, xangle=None, height=0, xaltitude=0, yaltitude=0):
+    """Add a new detector on the earth
 
     Parameters
     ----------
@@ -1104,35 +1179,35 @@ def earth_centered_vectors(longitude, latitude,
 
     # baseline response of a single arm pointed in the -X direction
     resp = np.array([[-1, 0, 0], [0, 0, 0], [0, 0, 0]])
-    rm2 = rotation_matrix(-longitude * units.rad, 'z')
-    rm1 = rotation_matrix(-1.0 * (np.pi / 2.0 - latitude) * units.rad, 'y')
-    
+    rm2 = rotation_matrix(-longitude * units.rad, "z")
+    rm1 = rotation_matrix(-1.0 * (np.pi / 2.0 - latitude) * units.rad, "y")
+
     # Calculate response in earth centered coordinates
     # by rotation of response in coordinates aligned
     # with the detector arms
     resps = []
     vecs = []
     for angle, azi in [(yangle, yaltitude), (xangle, xaltitude)]:
-        rm0 = rotation_matrix(angle * units.rad, 'z')
-        rmN = rotation_matrix(-azi *  units.rad, 'y')
+        rm0 = rotation_matrix(angle * units.rad, "z")
+        rmN = rotation_matrix(-azi * units.rad, "y")
         rm = rm2 @ rm1 @ rm0 @ rmN
         # apply rotation
         resps.append(rm @ resp @ rm.T / 2.0)
         vecs.append(rm @ np.array([-1, 0, 0]))
 
-    full_resp = (resps[0] - resps[1])
-    loc = coordinates.EarthLocation.from_geodetic(longitude * units.rad,
-                                                latitude * units.rad,
-                                                height=height*units.meter)
+    full_resp = resps[0] - resps[1]
+    loc = coordinates.EarthLocation.from_geodetic(
+        longitude * units.rad, latitude * units.rad, height=height * units.meter
+    )
     loc = np.array([loc.x.value, loc.y.value, loc.z.value])
-    
+
     return {
-        'loc_vec': loc,
-        'x_vec': vecs[1],
-        'y_vec': vecs[0],
-        'x_response': resps[1],
-        'y_response': resps[0],
-        'response': full_resp,
+        "loc_vec": loc,
+        "x_vec": vecs[1],
+        "y_vec": vecs[0],
+        "x_response": resps[1],
+        "y_response": resps[0],
+        "response": full_resp,
     }
 
 
@@ -1235,6 +1310,7 @@ def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
     if healpix_order is not None and int(healpix_order) > 0:
         try:
             import healpy as hp
+
             nside = 2 ** int(healpix_order)
             npix = hp.nside2npix(nside)
             theta, phi = hp.pix2ang(nside, np.arange(npix, dtype=np.int64), nest=False)
@@ -1253,8 +1329,9 @@ def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
     return phi_geo.astype(np.float64), latitude.astype(np.float64)
 
 
-def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time,
-                                   healpix_order=None, n_sky=None, geometry_model="lal"):
+def compute_sky_delay_and_patterns(
+    ifos, ref_ifo, sample_rate, td_size, gps_time, healpix_order=None, n_sky=None, geometry_model="lal"
+):
     """
     Compute pure-Python sky delay indices and antenna patterns.
 
@@ -1276,9 +1353,7 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
         else:
             n_sky = 3072
 
-    phi_geo, latitude = _build_sky_directions(
-        n_sky=n_sky, healpix_order=healpix_order
-    )
+    phi_geo, latitude = _build_sky_directions(n_sky=n_sky, healpix_order=healpix_order)
     n_sky = int(phi_geo.size)
 
     ref_idx = 0
@@ -1291,9 +1366,7 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
     cos_latitude = np.cos(latitude)
     cos_phi = np.cos(phi_geo)
     sin_phi = np.sin(phi_geo)
-    n_hat = np.vstack(
-        (cos_latitude * cos_phi, cos_latitude * sin_phi, sin_latitude)
-    ).T
+    n_hat = np.vstack((cos_latitude * cos_phi, cos_latitude * sin_phi, sin_latitude)).T
 
     c_light = float(constants.c.value)
     ref_pos = detector_objs[ref_idx].vertex_vec_earth_centered
@@ -1327,15 +1400,11 @@ def compute_sky_delay_and_patterns(ifos, ref_ifo, sample_rate, td_size, gps_time
         # while network::setDelayIndex stores the shift that synchronizes
         # detector i to the reference:
         #   tau_ref - tau_i = (R_i - R_ref) . n / c.
-        sync_shift = np.einsum(
-            'ij,j->i', n_hat, det.vertex_vec_earth_centered - ref_pos
-        ) / c_light
+        sync_shift = np.einsum("ij,j->i", n_hat, det.vertex_vec_earth_centered - ref_pos) / c_light
         delay_idx = np.rint(sync_shift * rate).astype(np.int32)
         ml[i] = np.clip(delay_idx, -td_size, td_size)
 
-        f_plus, f_cross = det.atenna_pattern(
-            ra_eff, latitude, 0.0, float(gps_time)
-        )
+        f_plus, f_cross = det.atenna_pattern(ra_eff, latitude, 0.0, float(gps_time))
         FP[i] = np.asarray(f_plus, dtype=np.float64)
         FX[i] = np.asarray(f_cross, dtype=np.float64)
 

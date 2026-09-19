@@ -4,11 +4,12 @@ Arithmetic and return contracts follow dpf.py and sky_stat.py. Every output
 is overwritten before use; DPF accumulation arrays are explicitly reset.
 Buffers belong to one delay-group worker and must not alias inputs.
 """
+
 from math import sqrt
 import numpy as np
 from numba import njit, float32, uint32
-from .dpf import (mul_vec, sub_vec, add_vec, norm_vec, div_vec, avg_vec,
-                  sin_from_cc, cos_from_cc, pos_sign_vec)
+from .dpf import mul_vec, sub_vec, add_vec, norm_vec, div_vec, avg_vec, sin_from_cc, cos_from_cc, pos_sign_vec
+
 
 @njit(cache=True)
 def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
@@ -51,7 +52,6 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
     # variables for return
     f, F, si, co, fp, fx, ni = scratch
 
-
     fx.fill(0)
     ni.fill(0)
 
@@ -69,9 +69,9 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
 
     # Compute ff, FF, and fF
     for i in range(NPIX):
-        _ff = float32(0.)
-        _FF = float32(0.)
-        _fF = float32(0.)
+        _ff = float32(0.0)
+        _FF = float32(0.0)
+        _fF = float32(0.0)
 
         for j in range(NIFO):
             _ff += f[i, j] * f[i, j]
@@ -79,14 +79,14 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
             _fF += F[i, j] * f[i, j]
 
         # Compute si, co, AP, nn, fp, and cc
-        _si = mul_vec(float32(2.), _fF)  # rotation 2*sin*cos*norm
-        _co = sub_vec(_ff, _FF)          # rotation (cos^2-sin^2)*norm
-        _AP = add_vec(_ff, _FF)          # total antenna norm
-        _nn = norm_vec(_co, _si)         # co/si norm    np.sqrt(_co * _co + _si * _si)
-        _cc = div_vec(_co, _nn)          # cos(2p)       _co / (_nn + 1e-9)
-        fp[i] = avg_vec(_AP, _nn)        # |f+|^2        (_AP + _nn) / 2.
-        si[i] = sin_from_cc(_cc)         # |sin(p)|      sqrt((1. - _cc) / 2.)
-        co[i] = cos_from_cc(_cc, _si)    # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
+        _si = mul_vec(float32(2.0), _fF)  # rotation 2*sin*cos*norm
+        _co = sub_vec(_ff, _FF)  # rotation (cos^2-sin^2)*norm
+        _AP = add_vec(_ff, _FF)  # total antenna norm
+        _nn = norm_vec(_co, _si)  # co/si norm    np.sqrt(_co * _co + _si * _si)
+        _cc = div_vec(_co, _nn)  # cos(2p)       _co / (_nn + 1e-9)
+        fp[i] = avg_vec(_AP, _nn)  # |f+|^2        (_AP + _nn) / 2.
+        si[i] = sin_from_cc(_cc)  # |sin(p)|      sqrt((1. - _cc) / 2.)
+        co[i] = cos_from_cc(_cc, _si)  # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
 
     # Compute f_new, F_new, fF_new, F_new, fx, ni
     for i in range(NPIX):
@@ -95,7 +95,7 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
             # f[i, j] = rotate_fp_vec(f[i, j], F[i, j], si[i], co[i])
             # F[i, j] = rotate_fx_vec(f[i, j], F[i, j], si[i], co[i])
 
-        fF_new = float32(0.)
+        fF_new = float32(0.0)
         for j in range(NIFO):
             fF_new += f[i, j] * F[i, j]
         # fF_new /= (fp[i] + _o)
@@ -114,9 +114,9 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
         # ni[i] /= (fp[i] * fp[i] + _o)
         ni[i] = div_vec(ni[i], mul_vec(fp[i], fp[i]))
         # NI += fx[i] / (ni[i] + _o)
-        NI += div_vec(fx[i], ni[i])     # sum of |fx|^2/2/ni
+        NI += div_vec(fx[i], ni[i])  # sum of |fx|^2/2/ni
         # if fp[i] > float32(0.0):
-        NN += pos_sign_vec(fp[i])       # pixel count
+        NN += pos_sign_vec(fp[i])  # pixel count
         # NN += 1 if fp[i] > 0.0 else 0
 
     return sqrt(NI / (NN + 0.01)), f, F, fp, fx, si, co, ni
@@ -175,7 +175,6 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
 
     au, AU, av, AV, mask_updated, p_updated, q_updated = scratch
 
-
     _o = np.float32(1e-9)
     _rr = np.float32(reg[0])
     _RR = np.float32(reg[1])
@@ -190,7 +189,7 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
             _XX += v90[j][i] * F[i][j]
 
         _f = sqrt(ni[i] * (_xp * _xp + _XP * _XP) / (et[i] + _o)) * _rr - fp[i]
-        _f = _f if _f > float32(0.) else float32(0.0)
+        _f = _f if _f > float32(0.0) else float32(0.0)
         _f = mask[i] / (fp[i] + _f + _o)
 
         _h = _xp * _f
@@ -200,7 +199,7 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
         _F = sqrt(_H / (_h + _o))
         _R = float32(0.1) + _RR / (et[i] + _o)  # dynamic x-regulator
         _F = _F * _R - fx[i]
-        _F = _F if _F > float32(0.) else float32(0.0)
+        _F = _F if _F > float32(0.0) else float32(0.0)
         _F = mask[i] / (fx[i] + _F + _o)
 
         au[i] = _xp * _f
@@ -283,7 +282,6 @@ def avx_ort_ps_into(v00, v90, mask, scratch):
 
     si, co, ee, EE = scratch
 
-
     e = np.float32(0)
     E = np.float32(0)
 
@@ -298,19 +296,19 @@ def avx_ort_ps_into(v00, v90, mask, scratch):
             aA += v00[j][i] * v90[j][i]
 
         # Orthogonalization sin and cos calculations
-        si[i] = aA * float32(2.)  # rotation 2*sin*cos*norm
+        si[i] = aA * float32(2.0)  # rotation 2*sin*cos*norm
         co[i] = aa - AA  # rotation (cos^2-sin^2)*norm
         et = aa + AA + _o  # total energy
         cc = co[i] * co[i]  # cos^2
         ss = si[i] * si[i]  # sin^2
         nn = np.sqrt(cc + ss)  # co/si norm
-        ee[i] = (et + nn) / float32(2.)  # first component energy
-        EE[i] = (et - nn) / float32(2.)  # second component energy
+        ee[i] = (et + nn) / float32(2.0)  # first component energy
+        EE[i] = (et - nn) / float32(2.0)  # second component energy
         cc = co[i] / (nn + _o)  # cos(2p)
         nn = 1 if si[i] > _0 else 0  # 1 if sin(2p)>0. or 0 if sin(2p)<0.
         ss = 2 * nn - 1  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
-        si[i] = np.sqrt((float32(1.) - cc) / float32(2.))  # |sin(p)|
-        co[i] = np.sqrt((float32(1.) + cc) / float32(2.))  # |cos(p)|
+        si[i] = np.sqrt((float32(1.0) - cc) / float32(2.0))  # |sin(p)|
+        co[i] = np.sqrt((float32(1.0) + cc) / float32(2.0))  # |cos(p)|
         co[i] *= ss  # cos(p)
 
         mk = 1 if mask[i] > _0 else 0  # event mask
@@ -363,14 +361,13 @@ def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
     n_ifo = len(v00)  # Number of interferometers
     n_pix = len(v00[0])  # Number of pixels
 
-    _o = np.float32(1.e-9)
+    _o = np.float32(1.0e-9)
     _0 = np.float32(0)
     _1 = np.float32(1)
     _2 = np.float32(2)
     # _k = 2 * (1 - k)
 
     ec, gn, rn = scratch
-
 
     LL = np.float32(0)
     Lr = np.float32(0)
@@ -411,13 +408,13 @@ def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
         c = c / (xs * xs + _o)  # first component incoherent energy
         C = C / (XS * XS + _o)  # second component incoherent energy
         ll = mk * (ss + SS)  # signal energy
-        ss = ss * (float(1.) - c)  # 00 coherent energy
-        SS = SS * (float(1.) - C)  # 90 coherent energy
+        ss = ss * (float(1.0) - c)  # 00 coherent energy
+        SS = SS * (float(1.0) - C)  # 90 coherent energy
         ec[i] = mk * (ss + SS)  # coherent energy
-        gn[i] = mk * float(2.) * mask[i]  # G-noise correction
+        gn[i] = mk * float(2.0) * mask[i]  # G-noise correction
         rn[i] = mk * (rr + RR)  # residual noise in TF domain
 
-        a = float(2.) * abs(ec[i])  # 2*|ec|
+        a = float(2.0) * abs(ec[i])  # 2*|ec|
         A = rn[i] + gn[i] + _o  # NULL
         cc = ec[i] / (a + A)  # correlation coefficient
         Lr += ll * cc  # reduced likelihood

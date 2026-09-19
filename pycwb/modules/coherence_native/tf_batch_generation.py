@@ -48,26 +48,30 @@ def _build_extended_signal(ts_data, n_filter_taps, mm_eff):
 
     left_mirror_max = min(n_filter_taps, n_input - 1)
     if left_mirror_max >= 0:
-        extended[n_filter_taps - left_mirror_max:n_filter_taps + 1] = (
-            ts_data[:left_mirror_max + 1][::-1]
-        )
+        extended[n_filter_taps - left_mirror_max : n_filter_taps + 1] = ts_data[: left_mirror_max + 1][::-1]
 
-    extended[n_filter_taps:n_filter_taps + n_input] = ts_data
+    extended[n_filter_taps : n_filter_taps + n_input] = ts_data
 
     n_right = ext_len - n_filter_taps - n_input
     if n_right > 0:
         idx = n_input - np.arange(n_right) - 1
-        extended[n_filter_taps + n_input:n_filter_taps + n_input + n_right] = (
-            ts_data[idx]
-        )
+        extended[n_filter_taps + n_input : n_filter_taps + n_input + n_right] = ts_data[idx]
 
     return extended, aligned_length
 
 
 if _LOW_LEVEL_T2W_JAX_IMPL is not None:
-    @partial(jax.jit, static_argnames=(
-        "M", "n_filter_taps", "mm_eff", "return_quadrature", "n_time_bins",
-    ))
+
+    @partial(
+        jax.jit,
+        static_argnames=(
+            "M",
+            "n_filter_taps",
+            "mm_eff",
+            "return_quadrature",
+            "n_time_bins",
+        ),
+    )
     def _batch_t2w_impl(
         extended_signals,
         filter_taps,
@@ -92,11 +96,13 @@ if _LOW_LEVEL_T2W_JAX_IMPL is not None:
 
         return jax.vmap(_single_t2w_impl)(extended_signals)
 else:
+
     def _batch_t2w_impl(*args, **kwargs):
         raise RuntimeError("low-level JAX WDM transform is unavailable")
 
 
 if _T2W_JAX is not None:
+
     @partial(jax.jit, static_argnames=("M", "m_H"))
     def _batch_t2w_fallback(signals, filter_taps, M, m_H):
         """Stable batched JIT wrapper for the high-level fallback transform."""
@@ -107,6 +113,7 @@ if _T2W_JAX is not None:
 
         return jax.vmap(_single_t2w)(signals)
 else:
+
     def _batch_t2w_fallback(*args, **kwargs):
         raise RuntimeError("JAX WDM transform fallback is unavailable")
 
@@ -126,13 +133,11 @@ def _tiled_t2w_detectors(strains, M, m_H, filter_taps, sample_budget=262144):
     outputs = [np.empty((n_time, M + 1), dtype=np.complex128) for _ in strains]
     for start in range(0, n_time, tile_bins):
         count = min(tile_bins, n_time - start)
-        window = jnp.asarray(np.stack([
-            ext[start * M:(start + count) * M + 2 * m_H] for ext, _ in padded
-        ]))
+        window = jnp.asarray(np.stack([ext[start * M : (start + count) * M + 2 * m_H] for ext, _ in padded]))
         block = _batch_t2w_impl(window, filter_taps, M, m_H, M, True, count)
         host = np.asarray(jax.block_until_ready(block))
         for i, output in enumerate(outputs):
-            output[start:start + count] = host[i, 0] + 1j * host[i, 1]
+            output[start : start + count] = host[i, 0] + 1j * host[i, 1]
         del host, block, window
     return [output.T for output in outputs]
 
@@ -160,7 +165,7 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     M = int(wdm_wavelet.M)
     m_H = int(wdm_wavelet.m_H)
     filter_taps = jnp.asarray(np.asarray(wdm_wavelet.filter)[:m_H], dtype=jnp.float64)
-    mm_eff = M   # MM=-1 → stride = M (full quadrature)
+    mm_eff = M  # MM=-1 → stride = M (full quadrature)
     return_quadrature = True
 
     sample_rate = float(strains[0].sample_rate)
@@ -172,8 +177,7 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
     n_time_bins = aligned_length // mm_eff
 
-    if (_TILED_WDM and _LOW_LEVEL_T2W_JAX_IMPL is not None
-            and n_time_bins % 32 == 0 and jax.default_backend() == 'cpu'):
+    if _TILED_WDM and _LOW_LEVEL_T2W_JAX_IMPL is not None and n_time_bins % 32 == 0 and jax.default_backend() == "cpu":
         return _tiled_t2w_detectors(strains, M, m_H, filter_taps), (dt, df)
 
     if _LOW_LEVEL_T2W_JAX_IMPL is None:
@@ -217,7 +221,7 @@ def batch_t2w_detectors(strains, wdm_wavelet):
         mm_eff,
         return_quadrature,
         n_time_bins,
-    )   # (n_det, 2, n_time, M+1)
+    )  # (n_det, 2, n_time, M+1)
     batched = jax.block_until_ready(batched)
     if _COMPACT_COHERENCE:
         extended_jax = all_extended = None

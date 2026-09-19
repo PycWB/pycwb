@@ -31,7 +31,10 @@ def _create_and_save_trigger_folders(output_context, result) -> list[str | None]
     for trigger in result.events_data:
         try:
             trigger_folder = create_single_trigger_folder(
-                output_context.working_dir, config.trigger_dir, output_context.sub_job_seg, trigger,
+                output_context.working_dir,
+                config.trigger_dir,
+                output_context.sub_job_seg,
+                trigger,
             )
             trigger_folders.append(trigger_folder)
             save_trigger(
@@ -85,7 +88,10 @@ def _postprocess_saved_triggers(output_context, result, trigger_folders) -> tupl
 
         if event.injection:
             _update_event_from_injection_reconstruction(
-                output_context, trigger_folder, event, reconst_data,
+                output_context,
+                trigger_folder,
+                event,
+                reconst_data,
             )
 
         qveto_elapsed += _compute_event_qveto(sub_job_seg.ifos, event, reconst_data)
@@ -132,8 +138,7 @@ def _update_event_from_injection_reconstruction(output_context, trigger_folder, 
     rec_waveforms = [reconst_data[f"{ifo}_wf_REC_whiten"] for ifo in sub_job_seg.ifos]
     event.oSNR = [estimate_snr(rec) for rec in rec_waveforms]
     event.ioSNR = [
-        estimate_snr(inj, rec)
-        if (inj is not None) and (rec is not None) else None
+        estimate_snr(inj, rec) if (inj is not None) and (rec is not None) else None
         for inj, rec in zip(inj_waveforms, rec_waveforms)
     ]
     del injected_data, inj_waveforms, rec_waveforms
@@ -275,18 +280,20 @@ def _cleanup_lag_output_state() -> None:
     128 MiB RSS growth; device backends remain alive for the next lag/job.
     """
     global _cleanup_count, _last_full_collection_rss
-    interval = int(os.environ.get('PYCWB_GC_FULL_INTERVAL', '1'))
+    interval = int(os.environ.get("PYCWB_GC_FULL_INTERVAL", "1"))
     if interval <= 1:
         gc.collect()
         _free_jax_buffers()
         return
     _cleanup_count += 1
     rss = psutil.Process().memory_info().rss
-    full = (_last_full_collection_rss is None
-            or _cleanup_count % interval == 0
-            or rss > _last_full_collection_rss + 128*1024**2)
+    full = (
+        _last_full_collection_rss is None
+        or _cleanup_count % interval == 0
+        or rss > _last_full_collection_rss + 128 * 1024**2
+    )
     collected = gc.collect(2 if full else 0)
     if full:
         _last_full_collection_rss = psutil.Process().memory_info().rss
-    if os.environ.get('PYCWB_PERF_DIAGNOSTICS') == '1':
-        logger.info('PERF gc full=%d collected=%d rss=%d', full, collected, rss)
+    if os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1":
+        logger.info("PERF gc full=%d collected=%d rss=%d", full, collected, rss)

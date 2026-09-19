@@ -20,9 +20,13 @@ _PERF_DIAGNOSTICS = os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1"
 _RUN_CONNECTIVITY = os.environ.get("PYCWB_CLUSTER_RUNS") == "1"
 
 
-def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
-                   select_subrho: float | None = None,
-                   select_subnet: float | None = None) -> FragmentCluster:
+def cluster_pixels(
+    pixel_candidates: dict,
+    kt: int = 1,
+    kf: int = 1,
+    select_subrho: float | None = None,
+    select_subnet: float | None = None,
+) -> FragmentCluster:
     """
     Cluster selected pixels using connected-component analysis.
 
@@ -63,18 +67,13 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
     )
     energy_arr = np.asarray(pixel_candidates.get("energy", []), dtype=np.float64)
     supplied_rms = pixel_candidates.get("noise_rms")
-    pix_noise_rms = (np.ones_like(pix_det_energy) if supplied_rms is None
-                     else np.asarray(supplied_rms, dtype=np.float64))
+    pix_noise_rms = np.ones_like(pix_det_energy) if supplied_rms is None else np.asarray(supplied_rms, dtype=np.float64)
     if pix_noise_rms.shape != pix_det_energy.shape:
         raise ValueError("Candidate noise RMS must match detector energies")
     layers = int(pixel_candidates.get("layers", 1))
     rate = float(pixel_candidates.get("rate", 0.0))
     dt = 1.0 / rate if rate > 0.0 else 1.0
-    n_ifo = (
-        int(pix_det_energy.shape[1])
-        if pix_det_energy.ndim == 2 and pix_det_energy.shape[1] > 0
-        else 0
-    )
+    n_ifo = int(pix_det_energy.shape[1]) if pix_det_energy.ndim == 2 and pix_det_energy.shape[1] > 0 else 0
     n_pix = len(f_idx_arr)
     label_elapsed = group_elapsed = stats_elapsed = objects_elapsed = 0.0
 
@@ -85,9 +84,7 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
         # Two pixels are directly connected if |Δfreq| ≤ kf AND |Δtime| ≤ kt.
         timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
         label = label_components_runs if _RUN_CONNECTIVITY else _label_components_grid
-        raw_labels = label(
-            f_idx_arr, t_idx_arr, mask.shape[0], mask.shape[1], kf, kt
-        )
+        raw_labels = label(f_idx_arr, t_idx_arr, mask.shape[0], mask.shape[1], kf, kt)
         if _PERF_DIAGNOSTICS:
             label_elapsed = time.perf_counter() - timer
             timer = time.perf_counter()
@@ -102,24 +99,16 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
             timer = time.perf_counter()
 
         # Batch subnet/subrho: one Numba call across all clusters instead of ~n_clusters calls.
-        pix_asnr = (
-            np.sqrt(pix_det_energy)
-            if n_ifo > 0
-            else np.empty((n_pix, 0), dtype=np.float64)
-        )
+        pix_asnr = np.sqrt(pix_det_energy) if n_ifo > 0 else np.empty((n_pix, 0), dtype=np.float64)
         if n_groups > 0 and n_ifo > 1:
             n_sub_c = 2.0 * _igamma_inv_upper(float(n_ifo - 1), 0.314)
-            all_pix_idx = np.array(
-                [pid for g in group_list for pid in g], dtype=np.int64
-            )
+            all_pix_idx = np.array([pid for g in group_list for pid in g], dtype=np.int64)
             asnr_all = pix_asnr[all_pix_idx]  # (n_flat, n_ifo)
             noise_rms_all = pix_noise_rms[all_pix_idx]
             sizes = np.array([len(g) for g in group_list], dtype=np.int64)
             offsets_arr = np.zeros(n_groups + 1, dtype=np.int64)
             offsets_arr[1:] = np.cumsum(sizes)
-            subnet_arr, subrho_arr = _subnet_subrho_batch_numba(
-                asnr_all, noise_rms_all, offsets_arr, n_sub_c
-            )
+            subnet_arr, subrho_arr = _subnet_subrho_batch_numba(asnr_all, noise_rms_all, offsets_arr, n_sub_c)
         else:
             subnet_arr = np.zeros(n_groups, dtype=np.float64)
             subrho_arr = np.zeros(n_groups, dtype=np.float64)
@@ -148,12 +137,8 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
                 likelihood=energy_arr[idx_arr],
                 null=np.zeros(n_group, dtype=np.float32),
                 noise_rms=pix_noise_rms[idx_arr].T,
-                pixel_index=pix_det_index[idx_arr].T
-                if n_ifo > 0
-                else np.zeros((0, n_group), dtype=np.int32),
-                asnr=pix_asnr[idx_arr].T
-                if n_ifo > 0
-                else np.zeros((0, n_group), dtype=np.float32),
+                pixel_index=pix_det_index[idx_arr].T if n_ifo > 0 else np.zeros((0, n_group), dtype=np.int32),
+                asnr=pix_asnr[idx_arr].T if n_ifo > 0 else np.zeros((0, n_group), dtype=np.float32),
                 n_ifo=n_ifo,
             )
             energy = float(energy_arr[idx_arr].sum())
@@ -167,9 +152,7 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
                 c_time=c_time,
                 c_freq=c_freq,
             )
-            clusters.append(
-                Cluster(pixel_arrays=pixel_arrays, cluster_meta=cluster_meta)
-            )
+            clusters.append(Cluster(pixel_arrays=pixel_arrays, cluster_meta=cluster_meta))
         if _PERF_DIAGNOSTICS:
             objects_elapsed = time.perf_counter() - timer
 
@@ -179,9 +162,17 @@ def cluster_pixels(pixel_candidates: dict, kt: int = 1, kf: int = 1,
             "PERF clustering layers=%d grid_freq=%d grid_time=%d candidates=%d "
             "components=%d max_component=%d singleton_components=%d "
             "label=%.6f group=%.6f statistics=%.6f objects=%.6f",
-            layers, mask.shape[0], mask.shape[1], n_pix, len(clusters),
-            max(cluster_sizes, default=0), sum(n == 1 for n in cluster_sizes),
-            label_elapsed, group_elapsed, stats_elapsed, objects_elapsed,
+            layers,
+            mask.shape[0],
+            mask.shape[1],
+            n_pix,
+            len(clusters),
+            max(cluster_sizes, default=0),
+            sum(n == 1 for n in cluster_sizes),
+            label_elapsed,
+            group_elapsed,
+            stats_elapsed,
+            objects_elapsed,
         )
 
     n_pix_final = int(sum(len(c.pixel_arrays) for c in clusters))

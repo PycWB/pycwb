@@ -97,10 +97,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
                 None,
             )
             if matched is None:
-                raise ValueError(
-                    f"No channel for IFO {ifo!r} in data_payload keys "
-                    f"{list(payload.keys())}"
-                )
+                raise ValueError(f"No channel for IFO {ifo!r} in data_payload keys {list(payload.keys())}")
             data_list.append(matched)
         data = data_list
     else:
@@ -119,27 +116,19 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        futures = {
-            pool.submit(check_and_resample_py, data[i], config, i): i
-            for i in range(nIFO)
-        }
+        futures = {pool.submit(check_and_resample_py, data[i], config, i): i for i in range(nIFO)}
         resampled = [None] * nIFO
         for fut in as_completed(futures):
             resampled[futures[fut]] = fut.result()
     data = resampled
-    logger.info(
-        "Parallel resample time: %.2f s (%d IFOs)", time.perf_counter() - stage_t, nIFO
-    )
+    logger.info("Parallel resample time: %.2f s (%d IFOs)", time.perf_counter() - stage_t, nIFO)
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 2 — Parallel data conditioning (per-IFO)
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        futures = {
-            pool.submit(data_conditioning_single, config, data[i]): i
-            for i in range(nIFO)
-        }
+        futures = {pool.submit(data_conditioning_single, config, data[i]): i for i in range(nIFO)}
         results = [None] * nIFO
         for fut in as_completed(futures):
             results[futures[fut]] = fut.result()
@@ -149,9 +138,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     del data, results
     release_memory()
     logger.info("Parallel conditioning time: %.2f s", time.perf_counter() - stage_t)
-    logger.info(
-        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
-    )
+    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 3 — Overlap three independent setup stages
@@ -186,9 +173,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
         "Parallel setup time (3 stages overlapped): %.2f s",
         time.perf_counter() - stage_t,
     )
-    logger.info(
-        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
-    )
+    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # 3d. Likelihood setup — depends on supercluster output (fast, sequential)
     stage_t = time.perf_counter()
@@ -224,9 +209,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     triggers = []
 
     if fragment_cluster is None:
-        logger.warning(
-            "No supercluster results for online segment %d", online_seg.index
-        )
+        logger.warning("No supercluster results for online segment %d", online_seg.index)
     else:
         # 4c. Likelihood — per-cluster (sequential; inner sky scan is Numba @prange)
         events_data = []
@@ -439,6 +422,4 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
     event.Qveto = [min_qveto, min_qfactor]
     event.qveto = min_qveto
     event.qfactor = min_qfactor
-    logger.info(
-        "Qveto for event %s: %s, Qfactor: %s", event.hash_id, event.qveto, event.qfactor
-    )
+    logger.info("Qveto for event %s: %s, Qfactor: %s", event.hash_id, event.qveto, event.qfactor)

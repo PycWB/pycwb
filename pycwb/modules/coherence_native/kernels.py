@@ -129,18 +129,11 @@ def _candidate_passes_support_numba(
     if fi >= 2:
         hb += combined[fi - 2, t - 2] + combined[fi - 2, t - 1]
 
-    return not (
-        (ct + cb) * e_val < eh
-        and (ct + ht) * e_val < eh
-        and (cb + hb) * e_val < eh
-        and e_val < em
-    )
+    return not ((ct + cb) * e_val < eh and (ct + ht) * e_val < eh and (cb + hb) * e_val < eh and e_val < em)
 
 
 @njit(cache=True)
-def _subnet_subrho_numba(
-    asnr_arr: np.ndarray, noise_rms_arr: np.ndarray, n_sub: float
-) -> tuple[float, float]:
+def _subnet_subrho_numba(asnr_arr: np.ndarray, noise_rms_arr: np.ndarray, n_sub: float) -> tuple[float, float]:
     """Compute subnet and subrho statistics for one cluster.
 
     Parameters
@@ -221,9 +214,7 @@ def _subnet_subrho_batch_numba(
     for c in range(n_clusters):
         s = offsets[c]
         e = offsets[c + 1]
-        subnet_arr[c], subrho_arr[c] = _subnet_subrho_numba(
-            asnr_all[s:e], noise_rms_all[s:e], n_sub
-        )
+        subnet_arr[c], subrho_arr[c] = _subnet_subrho_numba(asnr_all[s:e], noise_rms_all[s:e], n_sub)
     return subnet_arr, subrho_arr
 
 

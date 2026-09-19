@@ -29,7 +29,7 @@ def make_noise_rms_map(tf_map, anchors, edge_length):
     if intervals < 1:
         raise ValueError("Pixel RMS requires at least two whitening-noise anchors")
     tf_rate = 1.0 / float(tf_map.dt)
-    offset = int(float(edge_length) * tf_rate + .5)
+    offset = int(float(edge_length) * tf_rate + 0.5)
     offset -= offset & 1
     step = (n_time - 2 * offset) // intervals
     step -= step & 1
@@ -37,17 +37,20 @@ def make_noise_rms_map(tf_map, anchors, edge_length):
         raise ValueError("Segment is too short for the whitening-noise anchor lattice")
     first = (n_time - step * intervals) // 2
     return NoiseRMSMap(
-        data=data, df=float(tf_map.df), dt=float(tf_map.dt),
-        t0=float(tf_map.t0), len_timeseries=int(tf_map.len_timeseries),
+        data=data,
+        df=float(tf_map.df),
+        dt=float(tf_map.dt),
+        t0=float(tf_map.t0),
+        len_timeseries=int(tf_map.len_timeseries),
         wdm_params=dict(tf_map.wdm_params),
         noise_start=float(tf_map.t0) + first / tf_rate,
-        noise_rate=tf_rate / step, segment_start=float(tf_map.t0),
+        noise_rate=tf_rate / step,
+        segment_start=float(tf_map.t0),
     )
 
 
 @njit(cache=True)
-def _pixel_noise_rms(frequencies, indices, layers, rates, start,
-                     noise, noise_start, noise_rate, df):
+def _pixel_noise_rms(frequencies, indices, layers, rates, start, noise, noise_start, noise_rate, df):
     """Port of detector::setrms for WDM pixels without an nVAR map."""
     result = np.empty(len(frequencies), dtype=np.float64)
     nf, nt = noise.shape
@@ -55,8 +58,8 @@ def _pixel_noise_rms(frequencies, indices, layers, rates, start,
         rate = rates[i]
         if rate <= 0 or layers[i] <= 1 or frequencies[i] <= 0:
             raise ValueError("Invalid WDM pixel for noise lookup")
-        low = int((frequencies[i] - .5) * rate / 2 / df + .6)
-        high = min(int((frequencies[i] + .5) * rate / 2 / df + .6), nf)
+        low = int((frequencies[i] - 0.5) * rate / 2 / df + 0.6)
+        high = min(int((frequencies[i] + 0.5) * rate / 2 / df + 0.6), nf)
         # Keep the C++ order of operations, including GPS addition and truncation.
         t = indices[i] / rate / layers[i] + start
         k = int((t - noise_start) * noise_rate)
@@ -64,12 +67,12 @@ def _pixel_noise_rms(frequencies, indices, layers, rates, start,
             k -= 1
         if k < 0 or k >= nt or low < 0 or low >= high:
             raise ValueError("Pixel lies outside the whitening-noise anchor map")
-        inv_variance = 0.
+        inv_variance = 0.0
         for j in range(low, high):
             value = noise[j, k]
             if value <= 0 or not np.isfinite(value):
                 raise ValueError("Whitening-noise RMS must be finite and positive")
-            inv_variance += 1. / value / value
+            inv_variance += 1.0 / value / value
         result[i] = np.sqrt((high - low) / inv_variance)
     return result
 
@@ -89,8 +92,14 @@ def lookup_pixel_noise_rms(frequencies, detector_indices, layers, rates, noise_m
         if noise.noise_rate <= 0 or noise.df <= 0:
             raise ValueError("Noise anchor rate and frequency spacing must be positive")
         result[:, d] = _pixel_noise_rms(
-            frequencies, indices[:, d], layers, rates, noise.segment_start,
-            np.asarray(noise.data, dtype=np.float64), noise.noise_start,
-            noise.noise_rate, noise.df,
+            frequencies,
+            indices[:, d],
+            layers,
+            rates,
+            noise.segment_start,
+            np.asarray(noise.data, dtype=np.float64),
+            noise.noise_start,
+            noise.noise_rate,
+            noise.df,
         )
     return result

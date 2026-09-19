@@ -25,8 +25,6 @@ def max_delay(ifos, *, geometry_model="lal"):
         for j in range(i + 1, len(ifos)):
             d1 = Detector(ifos[i], geometry_model=geometry_model)
             d2 = Detector(ifos[j], geometry_model=geometry_model)
-            baseline = np.linalg.norm(
-                d1.vertex_vec_earth_centered - d2.vertex_vec_earth_centered
-            )
+            baseline = np.linalg.norm(d1.vertex_vec_earth_centered - d2.vertex_vec_earth_centered)
             max_d = max(max_d, baseline / c)
     return max_d

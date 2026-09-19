@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # TD-inputs cache builder
 # ---------------------------------------------------------------------------
 
+
 def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
     """Build WDM context and extract TD inputs for one resolution level.
 
@@ -62,7 +63,7 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
     from wdm_wavelet.wdm import WDM as WDMWavelet
     from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-    layers_at_level = 2 ** level if level > 0 else 0
+    layers_at_level = 2**level if level > 0 else 0
     wdm_layers = max(1, int(layers_at_level))
     wdm = WDMWavelet(
         M=wdm_layers,
@@ -99,8 +100,10 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
             if os.environ.get("PYCWB_BAND_TD_CACHE") == "1":
                 # Selection stays within fLow/fHigh. Retain its neighboring
                 # frequency bands for the cross-band TD filter terms.
-                low = max(0, int(np.floor(float(getattr(config, "fLow", 0.)) / wdm_tf.df)))
-                high = min(wdm_layers + 1, int(np.floor(float(getattr(config, "fHigh", sample_rate / 2.)) / wdm_tf.df)) + 2)
+                low = max(0, int(np.floor(float(getattr(config, "fLow", 0.0)) / wdm_tf.df)))
+                high = min(
+                    wdm_layers + 1, int(np.floor(float(getattr(config, "fHigh", sample_rate / 2.0)) / wdm_tf.df)) + 2
+                )
                 if low < high:
                     bounds = (low, high)
             per_ifo.append(tf_map.prepare_td_inputs(wdm.td_filters, frequency_bounds=bounds))
@@ -110,10 +113,7 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
             detector_tf_maps.append(tf_map)
 
     if not compact_cache:
-        per_ifo = [
-            detector_tf_maps[n].prepare_td_inputs(wdm.td_filters)
-            for n in range(config.nIFO)
-        ]
+        per_ifo = [detector_tf_maps[n].prepare_td_inputs(wdm.td_filters) for n in range(config.nIFO)]
     return wdm_layers, per_ifo
 
 
@@ -145,14 +145,17 @@ def build_td_inputs_cache(config, strains):
     from pycwb.types.time_series import TimeSeries
 
     strains_ts = [TimeSeries.from_input(strain) for strain in strains]
-    upTDF = int(getattr(config, 'upTDF', 1))
+    upTDF = int(getattr(config, "upTDF", 1))
 
     # Build per-level results sequentially (online workflow parallelises
     # this by calling _build_td_inputs_single_level directly).
     td_inputs_cache = {}
     for level in config.WDM_level:
         wdm_layers, per_ifo = _build_td_inputs_single_level(
-            level, config, strains_ts, upTDF,
+            level,
+            config,
+            strains_ts,
+            upTDF,
         )
         td_inputs_cache[int(wdm_layers)] = per_ifo
         td_inputs_cache[int(wdm_layers) + 1] = per_ifo

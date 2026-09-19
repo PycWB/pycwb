@@ -60,6 +60,7 @@ Reference
 ---------
 See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
 """
+
 import logging
 import os
 import time
@@ -165,19 +166,18 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
     sub_job_seg = context.sub_job_seg
     lag_timer = time.perf_counter()
     time_lag, segment_lag, lag_shifts = _lag_metadata(sub_job_seg, lag)
-    lag_shift_str = ", ".join(
-        f"{ifo}={shift:.3f}s"
-        for ifo, shift in zip(sub_job_seg.ifos, lag_shifts)
-    )
+    lag_shift_str = ", ".join(f"{ifo}={shift:.3f}s" for ifo, shift in zip(sub_job_seg.ifos, lag_shifts))
     logger.info("Processing lag %d / %d  [%s]", lag, sub_job_seg.n_lag - 1, lag_shift_str)
 
-    seg_thr = getattr(config, 'segTHR', 0.0) or 0.0
+    seg_thr = getattr(config, "segTHR", 0.0) or 0.0
     if seg_thr > 0 and context.veto_windows is not None:
         lag_livetime = _lag_livetime(context, lag)
         if lag_livetime < seg_thr:
             logger.warning(
                 "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
-                lag, lag_livetime, seg_thr,
+                lag,
+                lag_livetime,
+                seg_thr,
             )
             return LagResult(
                 lag=lag,
@@ -186,40 +186,55 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 segment_lag=segment_lag,
                 events_data=[],
                 progress_record=_lag_progress_record(
-                    context, lag, n_triggers=0,
-                    livetime=0.0, status="skipped_segTHR",
+                    context,
+                    lag,
+                    n_triggers=0,
+                    livetime=0.0,
+                    status="skipped_segTHR",
                 ),
             )
         logger.info(
             "Processing lag %d: post-CAT2 livetime %.2f s >= segTHR %.2f s, lost %.2f s",
-            lag, lag_livetime, seg_thr, sub_job_seg.duration - lag_livetime,
+            lag,
+            lag_livetime,
+            seg_thr,
+            sub_job_seg.duration - lag_livetime,
         )
 
     # Build injection-aware veto windows AFTER the segTHR check so that
     # small injection windows cannot cause the analysis to be skipped.
     effective_veto = _injection_aware_veto_windows(
-        config, sub_job_seg, context.veto_windows,
+        config,
+        sub_job_seg,
+        context.veto_windows,
     )
 
     with _temporary_numba_threads(context.numba_threads):
         timer_coherence = time.perf_counter()
         frag_clusters_this_lag = coherence_single_lag(
-            context.coherence_setup, lag,
+            context.coherence_setup,
+            lag,
             veto_windows=effective_veto,
         )
         logger.info("Coherence time for lag %d: %.2f s", lag, time.perf_counter() - timer_coherence)
 
         timer_supercluster = time.perf_counter()
         fragment_cluster = supercluster_single_lag(
-            context.supercluster_setup, config, frag_clusters_this_lag, lag,
-            xtalk=context.xtalk, td_inputs_cache=context.td_inputs_cache,
+            context.supercluster_setup,
+            config,
+            frag_clusters_this_lag,
+            lag,
+            xtalk=context.xtalk,
+            td_inputs_cache=context.td_inputs_cache,
         )
         logger.info("Supercluster time for lag %d: %.2f s", lag, time.perf_counter() - timer_supercluster)
 
         if fragment_cluster is None:
             logger.warning(
                 "No supercluster results for lag %d (job segment %s trial_idx=%s)",
-                lag, context.job_seg.index, context.trial_idx,
+                lag,
+                context.job_seg.index,
+                context.trial_idx,
             )
             return LagResult(
                 lag=lag,
@@ -228,8 +243,11 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 segment_lag=segment_lag,
                 events_data=[],
                 progress_record=_lag_progress_record(
-                    context, lag, n_triggers=0,
-                    livetime=_lag_livetime(context, lag), status="completed",
+                    context,
+                    lag,
+                    n_triggers=0,
+                    livetime=_lag_livetime(context, lag),
+                    status="completed",
                 ),
             )
 
@@ -245,15 +263,21 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             # skipping the cluster would mask the root cause.
             likelihood_call_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
             result_cluster, sky_stats = likelihood(
-                config.nIFO, selected_cluster, config,
-                cluster_id=k + 1, nRMS=context.nRMS,
-                setup=context.likelihood_setup, xtalk=context.xtalk,
+                config.nIFO,
+                selected_cluster,
+                config,
+                cluster_id=k + 1,
+                nRMS=context.nRMS,
+                setup=context.likelihood_setup,
+                xtalk=context.xtalk,
                 chirp_seed=sub_job_seg.index,
             )
             if _PERF_DIAGNOSTICS:
                 logger.info(
                     "PERF likelihood lag=%d cluster=%d pixels=%d elapsed=%.6f accepted=%d",
-                    lag, k + 1, len(selected_cluster.pixel_arrays),
+                    lag,
+                    k + 1,
+                    len(selected_cluster.pixel_arrays),
                     time.perf_counter() - likelihood_call_timer,
                     int(result_cluster is not None and result_cluster.cluster_status == -1),
                 )
@@ -262,9 +286,13 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 continue
             logger.info(
                 "likelihood accepted cluster %d in lag %d (%d pixels, from %.2f - %.2f s with freq %.2f - %.2f Hz)",
-                result_cluster.cluster_id, lag, len(result_cluster.pixel_arrays),
-                result_cluster.start_time, result_cluster.stop_time,
-                result_cluster.low_frequency, result_cluster.high_frequency,
+                result_cluster.cluster_id,
+                lag,
+                len(result_cluster.pixel_arrays),
+                result_cluster.start_time,
+                result_cluster.stop_time,
+                result_cluster.low_frequency,
+                result_cluster.high_frequency,
             )
 
             event = Event()
@@ -276,7 +304,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
             if sub_job_seg.injections:
                 for injection in sub_job_seg.injections:
-                    if event.start[0] - 0.1 < injection['gps_time'] < event.stop[0] + 0.1:
+                    if event.start[0] - 0.1 < injection["gps_time"] < event.stop[0] + 0.1:
                         event.injection = injection
 
             events_data.append((event, result_cluster, sky_stats))
@@ -289,8 +317,11 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
         segment_lag=segment_lag,
         events_data=events_data,
         progress_record=_lag_progress_record(
-            context, lag, n_triggers=len(events_data),
-            livetime=_lag_livetime(context, lag), status="completed",
+            context,
+            lag,
+            n_triggers=len(events_data),
+            livetime=_lag_livetime(context, lag),
+            status="completed",
         ),
     )
 
@@ -302,12 +333,15 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
 
     # Phase B: per-event post-processing: waveforms, injections, Q-veto, plots.
     reconstruct_elapsed, qveto_elapsed, plot_elapsed = _postprocess_saved_triggers(
-        output_context, result, trigger_folders,
+        output_context,
+        result,
+        trigger_folders,
     )
 
     # Phase C: convert events to Trigger objects and persist them.
     trigger_convert_elapsed, trigger_write_elapsed = _write_trigger_records(
-        output_context, result,
+        output_context,
+        result,
     )
 
     progress_elapsed = _record_output_progress(output_context, result)
@@ -328,8 +362,10 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     if _PERF_DIAGNOSTICS:
         logger.info(
             "PERF output lag=%d elapsed=%.6f cleanup=%.6f lag_total=%.6f",
-            result.lag, time.perf_counter() - output_timer,
-            time.perf_counter() - cleanup_timer, time.perf_counter() - result.lag_timer,
+            result.lag,
+            time.perf_counter() - output_timer,
+            time.perf_counter() - cleanup_timer,
+            time.perf_counter() - result.lag_timer,
         )
 
 
@@ -350,14 +386,17 @@ def _process_lags(
     output_context: LagOutputContext,
     skip_lags: dict[int, set[int]] | None,
 ) -> None:
-    lag_workers = max(1, int(getattr(context.config, 'parallel_lag_workers', 1) or 1))
+    lag_workers = max(1, int(getattr(context.config, "parallel_lag_workers", 1) or 1))
     has_injections = bool(context.sub_job_seg.injections)
     use_threaded_lags = lag_workers > 1 and not has_injections and context.n_lag > 1
     pending_lags = _iter_pending_lags(context, skip_lags)
 
     if use_threaded_lags:
         _process_background_lags_threaded(
-            context, output_context, pending_lags, lag_workers,
+            context,
+            output_context,
+            pending_lags,
+            lag_workers,
         )
         return
 
@@ -380,7 +419,9 @@ def _process_background_lags_threaded(
 
     logger.info(
         "Threaded background lag mode: workers=%d max_inflight=%d numba_threads_per_lag=%d",
-        lag_workers, max_inflight, inner_threads,
+        lag_workers,
+        max_inflight,
+        inner_threads,
     )
 
     def submit_until_full(executor) -> None:
@@ -407,9 +448,16 @@ def _process_background_lags_threaded(
             submit_until_full(executor)
 
 
-def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, compress_json: bool = True,
-                        catalog_file: str = None, queue=None, production_mode: bool = False,
-                        skip_lags: dict[int, set[int]] | None = None):
+def process_job_segment(
+    working_dir: str,
+    config: Config,
+    job_seg: WaveSegment,
+    compress_json: bool = True,
+    catalog_file: str = None,
+    queue=None,
+    production_mode: bool = False,
+    skip_lags: dict[int, set[int]] | None = None,
+):
     """
     The core workflow to process single job segment with trials or lags.
 
@@ -431,7 +479,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
     skip_lags : list
         The options to skip certain lags. It is used for resuming the processing after a crash
-    
+
     """
     # ─────────────────────────────────────────────────────────────────────────
     # HIGH-LEVEL WORKFLOW OVERVIEW
@@ -466,12 +514,12 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
     # get all the trial_idx from the injections, if there is no injections, use 0
     trial_idxs = {0}
     if job_seg.injections:
-        trial_idxs = set([inj.get('trial_idx', 0) for inj in job_seg.injections])
+        trial_idxs = set([inj.get("trial_idx", 0) for inj in job_seg.injections])
 
     if catalog_file is not None:
         base = os.path.basename(catalog_file)
         stem, _ = os.path.splitext(base)
-        wave_file = stem.replace('catalog', 'wave') + '.h5'
+        wave_file = stem.replace("catalog", "wave") + ".h5"
     else:
         wave_file = None
 
@@ -497,18 +545,19 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         if job_seg.injections:
             # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions.
             sub_job_seg = copy(job_seg)
-            sub_job_seg.injections = [injection for injection in job_seg.injections
-                                      if injection.get('trial_idx', 0) == trial_idx]
-            logger.info(f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}")
+            sub_job_seg.injections = [
+                injection for injection in job_seg.injections if injection.get("trial_idx", 0) == trial_idx
+            ]
+            logger.info(
+                f"Processing trial_idx: {trial_idx} with {len(sub_job_seg.injections)} injections: {sub_job_seg.injections}"
+            )
 
             # Allocate a zero-filled signal-only injection buffer for each IFO.
             # It spans the full padded window so injection whitening and
             # reconstruction use the same time axis as the conditioned strains.
             injection_strains = [
                 TimeSeries(
-                    data=np.zeros(
-                        int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)
-                    ),
+                    data=np.zeros(int(sub_job_seg.padded_duration * sub_job_seg.sample_rate)),
                     t0=sub_job_seg.padded_start,
                     dt=1 / sub_job_seg.sample_rate,
                 )
@@ -520,10 +569,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
                 # Track signal timing envelope across all IFOs.
                 n_ifo = len(sub_job_seg.ifos)
                 real_start = min(float(inj[i].t0) for i in range(n_ifo))
-                real_end = max(float(inj[i].t0) + len(inj[i].data) * float(inj[i].dt)
-                               for i in range(n_ifo))
-                injection['real_start'] = real_start
-                injection['real_end'] = real_end
+                real_end = max(float(inj[i].t0) + len(inj[i].data) * float(inj[i].dt) for i in range(n_ifo))
+                injection["real_start"] = real_start
+                injection["real_end"] = real_end
                 # Both injection_strains and data are owned buffers; inject in-place.
                 for i in range(n_ifo):
                     injection_strains[i].inject(inj[i], copy=False)
@@ -544,10 +592,9 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # Dumps raw (injected) data and a matching user_parameters.C so the
         # same segment can be replayed by native cWB for side-by-side checks.
         # Must run BEFORE resampling so the data is still at config.inRate.
-        if getattr(config, 'cwb_compare', False):
-            _cwb_compare_dir = getattr(config, 'cwb_compare_dir', '') or None
-            create_cwb_workdir(working_dir, config, sub_job_seg, data,
-                               cwb_compare_dir=_cwb_compare_dir)
+        if getattr(config, "cwb_compare", False):
+            _cwb_compare_dir = getattr(config, "cwb_compare_dir", "") or None
+            create_cwb_workdir(working_dir, config, sub_job_seg, data, cwb_compare_dir=_cwb_compare_dir)
 
         # ─────────────────────────────────────────────────────────────────────
         # STEP 2 – RESAMPLING & DATA CONDITIONING
@@ -557,10 +604,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # coherence/supercluster allocations below.
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]
         if injection_strains is not None:
-            injection_strains = [
-                check_and_resample_py(strain, config, i)
-                for i, strain in enumerate(injection_strains)
-            ]
+            injection_strains = [check_and_resample_py(strain, config, i) for i, strain in enumerate(injection_strains)]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
@@ -579,6 +623,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             from pycwb.modules.data_conditioning.injection_whitening import (
                 whiten_injection_strain,
             )
+
             whitened_injection_strains, unwhitened_injection_strains = zip(
                 *[
                     whiten_injection_strain(config, strain, noise_rms)
@@ -625,10 +670,14 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         # 3d. Likelihood setup: reuse full-resolution sky arrays from supercluster
         #     so the sky scan runs at config.healpix resolution without rebuilding them.
         stage_timer = time.perf_counter()
-        likelihood_setup = setup_likelihood(config, strains, config.nIFO,
-                                    ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
-                                    FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
-                                    FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]))
+        likelihood_setup = setup_likelihood(
+            config,
+            strains,
+            config.nIFO,
+            ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
+            FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
+            FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]),
+        )
         logger.info("Likelihood setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -678,15 +727,18 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         if len(trial_idxs) > 1:
             trial_walltime = time.perf_counter() - trial_timer
             logger.info("--------------------------------------------")
-            logger.info("Trial %d / %d processing time: %.2f s",
-                        trial_number, len(trial_idxs), trial_walltime)
+            logger.info("Trial %d / %d processing time: %.2f s", trial_number, len(trial_idxs), trial_walltime)
             logger.info("--------------------------------------------")
 
     job_walltime = time.perf_counter() - job_timer
-    speed_factor = job_seg.duration / job_walltime if job_walltime > 0 else float('inf')
+    speed_factor = job_seg.duration / job_walltime if job_walltime > 0 else float("inf")
     logger.info("============================================")
     logger.info("Job segment %s total time: %.2f s", job_seg.index, job_walltime)
-    logger.info("Effective data length:     %.2f s  (padded %.2f s - 2 x segEdge %.2f s)",
-                job_seg.duration, job_seg.padded_duration, job_seg.seg_edge)
+    logger.info(
+        "Effective data length:     %.2f s  (padded %.2f s - 2 x segEdge %.2f s)",
+        job_seg.duration,
+        job_seg.padded_duration,
+        job_seg.seg_edge,
+    )
     logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
     logger.info("============================================")

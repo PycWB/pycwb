@@ -15,14 +15,22 @@ import numpy as np
 from .typing import SkyStatistics
 from .dpf import dpf_np_loops_vec
 from .packet_ops import (
-    avx_packet_ps, packet_norm_numpy, gw_norm_numpy, avx_noise_ps,
-    avx_setAMP_ps, avx_pol_ps, avx_loadNULL_ps, xtalk_energy_sum_numpy,
+    avx_packet_ps,
+    packet_norm_numpy,
+    gw_norm_numpy,
+    avx_noise_ps,
+    avx_setAMP_ps,
+    avx_pol_ps,
+    avx_loadNULL_ps,
+    xtalk_energy_sum_numpy,
 )
+
 # The shared reduced-correlation kernel retains the release LL + 0.001 offset.
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
 from pycwb.modules.xtalk.type import XTalk
 
 logger = logging.getLogger(__name__)
+
 
 def compute_statistics_at_sky_position(
     sky_idx: int,
@@ -107,24 +115,38 @@ def compute_statistics_at_sky_position(
 
     # --- Compute total energy, pixel activity mask ---
     total_data_energy, _, energy_total, mask = load_data_from_td(
-        data_phase0, data_phase90, network_energy_threshold,
+        data_phase0,
+        data_phase90,
+        network_energy_threshold,
     )
 
     # --- Dominant polarisation frame: f+/fx projections and norms ---
-    _, dominant_plus, dominant_cross, plus_norm, cross_norm, rotation_sin, rotation_cos, network_index = dpf_np_loops_vec(
-        plus_antenna_patterns[sky_idx], cross_antenna_patterns[sky_idx], noise_weights,
+    _, dominant_plus, dominant_cross, plus_norm, cross_norm, rotation_sin, rotation_cos, network_index = (
+        dpf_np_loops_vec(
+            plus_antenna_patterns[sky_idx],
+            cross_antenna_patterns[sky_idx],
+            noise_weights,
+        )
     )
 
     # --- Project onto GW strain packet; select pixels above threshold ---
     active_pixel_count, signal_phase0, signal_phase90, mask, _, _, _, _ = avx_GW_ps(
-        data_phase0, data_phase90,
-        dominant_plus, dominant_cross,
-        plus_norm, cross_norm, network_index,
-        energy_total, mask, regularization,
+        data_phase0,
+        data_phase90,
+        dominant_plus,
+        dominant_cross,
+        plus_norm,
+        cross_norm,
+        network_index,
+        energy_total,
+        mask,
+        regularization,
     )
 
     # --- Orthogonalise signal amplitudes (+ and x polarisations) ---
-    signal_packet_energy, rotation_sin, rotation_cos, energy_array_plus, energy_array_cross = avx_ort_ps(signal_phase0, signal_phase90, mask)
+    signal_packet_energy, rotation_sin, rotation_cos, energy_array_plus, energy_array_cross = avx_ort_ps(
+        signal_phase0, signal_phase90, mask
+    )
 
     # --- Coherent network statistics ---
     _, _, _, _, coherent_energy, gaussian_noise_per_pixel, residual_noise_per_pixel = avx_stat_ps(
@@ -132,8 +154,26 @@ def compute_statistics_at_sky_position(
     )
 
     # --- Build data and signal packets; compute xtalk-corrected SNRs ---
-    total_data_energy, packet_data_phase0, packet_data_phase90, data_packet_energy, data_rotation_sin, data_rotation_cos, data_amplitude0, data_amplitude90 = avx_packet_ps(data_phase0, data_phase90, mask)
-    total_signal_packet_energy, packet_signal_phase0, packet_signal_phase90, signal_packet_energy_by_detector, signal_rotation_sin, signal_rotation_cos, signal_amplitude0, signal_amplitude90 = avx_packet_ps(signal_phase0, signal_phase90, mask)
+    (
+        total_data_energy,
+        packet_data_phase0,
+        packet_data_phase90,
+        data_packet_energy,
+        data_rotation_sin,
+        data_rotation_cos,
+        data_amplitude0,
+        data_amplitude90,
+    ) = avx_packet_ps(data_phase0, data_phase90, mask)
+    (
+        total_signal_packet_energy,
+        packet_signal_phase0,
+        packet_signal_phase90,
+        signal_packet_energy_by_detector,
+        signal_rotation_sin,
+        signal_rotation_cos,
+        signal_amplitude0,
+        signal_amplitude90,
+    ) = avx_packet_ps(signal_phase0, signal_phase90, mask)
 
     detector_snr, data_packet_energy, residual_noise_per_pixel, data_packet_norm = packet_norm_numpy(
         packet_data_phase0, packet_data_phase90, cluster_xtalk, cluster_xtalk_lookup_table, mask, data_packet_energy
@@ -144,38 +184,81 @@ def compute_statistics_at_sky_position(
     )
     if DEBUG:
         print(total_signal_snr, signal_snr_by_detector)
-        print("Eo = ", total_data_energy, ", Lo = ", total_signal_packet_energy, ", Ep = ", total_detector_snr, ", Lp = ", total_signal_snr)
+        print(
+            "Eo = ",
+            total_data_energy,
+            ", Lo = ",
+            total_signal_packet_energy,
+            ", Ep = ",
+            total_detector_snr,
+            ", Lp = ",
+            total_signal_snr,
+        )
 
     # --- Gaussian-noise correction and coherent energy decomposition ---
     # Returns: Gn (Gaussian noise), Ec (core coherent energy), Dc (signal-core coherent energy),
     #          Rc (EC normalisation), Eh (satellite/halo energy), Es, NC, NS
     # TODO: one more pixel selected, need to be fixed
-    gaussian_noise, core_coherent_energy, signal_core_coherent_energy, network_correlation, halo_energy, signal_energy, network_count, signal_count = avx_noise_ps(
-        signal_packet_norm, data_packet_norm, energy_total, mask,
-        coherent_energy, gaussian_noise_per_pixel, residual_noise_per_pixel,
+    (
+        gaussian_noise,
+        core_coherent_energy,
+        signal_core_coherent_energy,
+        network_correlation,
+        halo_energy,
+        signal_energy,
+        network_count,
+        signal_count,
+    ) = avx_noise_ps(
+        signal_packet_norm,
+        data_packet_norm,
+        energy_total,
+        mask,
+        coherent_energy,
+        gaussian_noise_per_pixel,
+        residual_noise_per_pixel,
     )
 
     if DEBUG:
         print(
-            "Gn = ", gaussian_noise,
-            ", Ec = ", core_coherent_energy,
-            ", Dc = ", signal_core_coherent_energy,
-            ", Rc = ", network_correlation,
-            ", Eh = ", halo_energy,
-            ", Es = ", signal_energy,
-            ", NC = ", network_count,
-            ", NS = ", signal_count,
+            "Gn = ",
+            gaussian_noise,
+            ", Ec = ",
+            core_coherent_energy,
+            ", Dc = ",
+            signal_core_coherent_energy,
+            ", Rc = ",
+            network_correlation,
+            ", Eh = ",
+            halo_energy,
+            ", Es = ",
+            signal_energy,
+            ", NC = ",
+            network_count,
+            ", NS = ",
+            signal_count,
         )
 
     # --- Set packet amplitudes and compute time-domain null / energy ---
     effective_pixel_count, packet_data_phase0, packet_data_phase90 = avx_setAMP_ps(
-        packet_data_phase0, packet_data_phase90, data_packet_norm,
-        data_rotation_sin, data_rotation_cos, data_amplitude0, data_amplitude90, mask,
+        packet_data_phase0,
+        packet_data_phase90,
+        data_packet_norm,
+        data_rotation_sin,
+        data_rotation_cos,
+        data_amplitude0,
+        data_amplitude90,
+        mask,
     )
     effective_pixel_count = effective_pixel_count - 1
     _, packet_signal_phase0, packet_signal_phase90 = avx_setAMP_ps(
-        packet_signal_phase0, packet_signal_phase90, signal_packet_norm,
-        signal_rotation_sin, signal_rotation_cos, signal_amplitude0, signal_amplitude90, mask,
+        packet_signal_phase0,
+        packet_signal_phase90,
+        signal_packet_norm,
+        signal_rotation_sin,
+        signal_rotation_cos,
+        signal_amplitude0,
+        signal_amplitude90,
+        mask,
     )
     null_phase0, null_phase90 = avx_loadNULL_ps(
         packet_data_phase0, packet_data_phase90, packet_signal_phase0, packet_signal_phase90
@@ -186,14 +269,22 @@ def compute_statistics_at_sky_position(
         packet_data_phase0, packet_data_phase90, cluster_xtalk, cluster_xtalk_lookup_table, mask, data_packet_energy
     )
     xtalk_data_energy = xtalk_energy_sum_numpy(
-        packet_data_phase0, packet_data_phase90, cluster_xtalk, cluster_xtalk_lookup_table, mask,
+        packet_data_phase0,
+        packet_data_phase90,
+        cluster_xtalk,
+        cluster_xtalk_lookup_table,
+        mask,
     )
     xtalk_null_energy = xtalk_energy_sum_numpy(
-        null_phase0, null_phase90, cluster_xtalk, cluster_xtalk_lookup_table, mask,
+        null_phase0,
+        null_phase90,
+        cluster_xtalk,
+        cluster_xtalk_lookup_table,
+        mask,
     )
     total_detector_snr = xtalk_data_energy  # legacy Ep equivalent
     time_domain_signal_energy = xtalk_data_energy - xtalk_null_energy - gaussian_noise
-    energy_normalization = (total_data_energy - halo_energy) / xtalk_data_energy if xtalk_data_energy > 0 else 1.e9
+    energy_normalization = (total_data_energy - halo_energy) / xtalk_data_energy if xtalk_data_energy > 0 else 1.0e9
     if energy_normalization < 1:
         energy_normalization = 1
     core_coherent_energy /= energy_normalization  # core coherent energy normalised to time domain
@@ -201,46 +292,57 @@ def compute_statistics_at_sky_position(
     chi_square_noise = (xtalk_null_energy + gaussian_noise) / (effective_pixel_count * n_ifo)
     if DEBUG:
         print(
-            "Np = ", xtalk_null_energy,
-            ", Em = ", xtalk_data_energy,
-            ", Lm = ", time_domain_signal_energy,
-            ", norm = ", energy_normalization,
-            ", Ec = ", core_coherent_energy,
-            ", Dc = ", signal_core_coherent_energy,
-            ", ch = ", chi_square_noise,
+            "Np = ",
+            xtalk_null_energy,
+            ", Em = ",
+            xtalk_data_energy,
+            ", Lm = ",
+            time_domain_signal_energy,
+            ", norm = ",
+            energy_normalization,
+            ", Ec = ",
+            core_coherent_energy,
+            ", Dc = ",
+            signal_core_coherent_energy,
+            ", ch = ",
+            chi_square_noise,
         )
 
     # --- Detection statistic rho (mode-dependent) ---
-    reference_rho = 0.
-    xgb_penalty = 0.
-    xgb_coherent_energy = 0.
+    reference_rho = 0.0
+    xgb_penalty = 0.0
+    xgb_coherent_energy = 0.0
     if not xgb_rho_mode:  # original 2G
         noise_correction_factor = chi_square_noise if chi_square_noise > 1 else 1
-        detection_rho = np.sqrt(core_coherent_energy * network_correlation / 2.) if core_coherent_energy > 0 else 0
+        detection_rho = np.sqrt(core_coherent_energy * network_correlation / 2.0) if core_coherent_energy > 0 else 0
         if DEBUG:
             print("cc = ", noise_correction_factor, ", rho = ", detection_rho)
     else:  # XGB.rho0
         xgb_penalty = chi_square_noise
         xgb_coherent_energy = core_coherent_energy
-        # TODO: The ecor can be negative for certain cases, which causes rho to be NaN. 
-        # And in Python NaN < netRHO is always False, which means the cluster will never be rejected by the rho threshold cut. 
+        # TODO: The ecor can be negative for certain cases, which causes rho to be NaN.
+        # And in Python NaN < netRHO is always False, which means the cluster will never be rejected by the rho threshold cut.
         # This is fixed in cWB 6.9.6.9. The investigation of the root cause of negative ecor is leave to the future,
         # for now we clamp it to zero to avoid NaN issues and ensure proper thresholding.
         detection_rho = (
             np.sqrt(xgb_coherent_energy / (1 + xgb_penalty * (max(float(1), xgb_penalty) - 1)))
-            if xgb_coherent_energy > 0 else 0
+            if xgb_coherent_energy > 0
+            else 0
         )
         noise_correction_factor = chi_square_noise if chi_square_noise > 1 else 1
-        reference_rho = (
-            np.sqrt(core_coherent_energy * network_correlation / 2.) if core_coherent_energy > 0 else 0
-        )
+        reference_rho = np.sqrt(core_coherent_energy * network_correlation / 2.0) if core_coherent_energy > 0 else 0
         if DEBUG:
             print(
-                "cc = ", noise_correction_factor,
-                ", rho = ", detection_rho,
-                ", ecor = ", xgb_coherent_energy,
-                ", penalty = ", xgb_penalty,
-                ", xrho = ", reference_rho,
+                "cc = ",
+                noise_correction_factor,
+                ", rho = ",
+                detection_rho,
+                ", ecor = ",
+                xgb_coherent_energy,
+                ", penalty = ",
+                xgb_penalty,
+                ", xrho = ",
+                reference_rho,
             )
 
     # --- Project residuals onto network polarisation plane (Dual Stream Transform) ---
@@ -289,7 +391,6 @@ def compute_statistics_at_sky_position(
         f=dominant_plus,
         F=dominant_cross,
     )
-
 
 
 # Legacy alias

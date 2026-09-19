@@ -4,6 +4,7 @@ Posterior ties can represent widely separated sky directions. Matching only
 sorted values is insufficient: the release's pointer permutation determines
 which tied direction is exported as the reconstructed location.
 """
+
 import numpy as np
 from numba import njit
 
@@ -59,7 +60,10 @@ def wave_sort_indices(values, initial_order=None):
     permutation, rather than restarting from sky-index order.
     """
     values = np.asarray(values)
-    order = (np.arange(len(values), dtype=np.int64) if initial_order is None
-             else np.array(initial_order, dtype=np.int64, copy=True))
+    order = (
+        np.arange(len(values), dtype=np.int64)
+        if initial_order is None
+        else np.array(initial_order, dtype=np.int64, copy=True)
+    )
     _wave_sort(values, order, 0, len(order) - 1)
     return order

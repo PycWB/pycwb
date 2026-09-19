@@ -17,6 +17,7 @@ from wdm_wavelet.wdm import WDM
 
 try:
     from numba import njit, prange
+
     _NUMBA_AVAILABLE = True
 except Exception:
     _NUMBA_AVAILABLE = False
@@ -61,6 +62,7 @@ def _jax_apply_filters(wq, wQ, filt00, filt90):
     valq_core = wq @ filt90 + wQ @ filt00
     return val_core, valq_core
 
+
 def _jax_percentile_mean(arr, fraction, edge_samples):
     """
     JAX equivalent of cWB percentile mean used in matrix/vector statistics.
@@ -80,7 +82,7 @@ def _jax_percentile_mean(arr, fraction, edge_samples):
     if nn == 0 or 2 * nn >= n - 2:
         core = arr
     else:
-        core = arr[nn:n - nn]
+        core = arr[nn : n - nn]
 
     core_count = core.shape[0]
     mean_all = jnp.mean(arr)
@@ -156,35 +158,35 @@ def _jax_build_matrix(acf, ccf, K, K2, fltr):
     return jnp.concatenate([top, bottom], axis=0)
 
 
-
 @partial(jax.jit, static_argnames=("fraction",))
 def _cap_witness_jax(real, imag, fraction=1.0):
     """cWB 6.4.6.9 regression::_apply_ amplitude cap, including edge bins."""
     if fraction >= 1.0:
         return real, imag
-    energy = real*real + imag*imag
-    kth = int(fraction*real.size-1)
+    energy = real * real + imag * imag
+    kth = int(fraction * real.size - 1)
     if not 0 <= kth < real.size:
         raise ValueError("Regression cap fraction has no valid order statistic")
-    threshold = 5.0*jnp.partition(energy, kth)[kth]
-    scale = jnp.where(energy > threshold,
-                      jnp.sqrt(threshold/jnp.where(energy > 0, energy, 1.0)), 1.0)
-    return real*scale, imag*scale
+    threshold = 5.0 * jnp.partition(energy, kth)[kth]
+    scale = jnp.where(energy > threshold, jnp.sqrt(threshold / jnp.where(energy > 0, energy, 1.0)), 1.0)
+    return real * scale, imag * scale
+
 
 if _NUMBA_AVAILABLE:
+
     @njit(cache=True)
     def _cap_witness_numba(real, imag, fraction=1.0):
         """Cap normalized witness samples in place; retain both phase ratios."""
         if fraction >= 1.0:
             return
-        energy = real*real + imag*imag
-        kth = int(fraction*len(real)-1)
+        energy = real * real + imag * imag
+        kth = int(fraction * len(real) - 1)
         if not 0 <= kth < len(real):
             raise ValueError("Regression cap fraction has no valid order statistic")
-        threshold = 5.0*np.partition(energy, kth)[kth]
+        threshold = 5.0 * np.partition(energy, kth)[kth]
         for i in range(len(real)):
             if energy[i] > threshold:
-                scale = np.sqrt(threshold/energy[i])
+                scale = np.sqrt(threshold / energy[i])
                 real[i] *= scale
                 imag[i] *= scale
 
@@ -211,7 +213,7 @@ if _NUMBA_AVAILABLE:
         if nn == 0 or 2 * nn >= n - 2:
             core = arr2
         else:
-            core = arr2[nn:n - nn]
+            core = arr2[nn : n - nn]
 
         core_count = core.shape[0]
         mean_all = np.mean(arr2)
@@ -240,7 +242,6 @@ if _NUMBA_AVAILABLE:
         if select_count > 0:
             return select_sum / select_count
         return mean_all
-
 
     @njit(cache=True)
     def _numba_rotated_products(real, imag, lag, boundary):
@@ -275,7 +276,6 @@ if _NUMBA_AVAILABLE:
 
         return ww, WW
 
-
     @njit(cache=True)
     def _numba_build_matrix(acf, ccf, K, K2, fltr):
         size = 2 * (2 * K + 1)
@@ -300,11 +300,26 @@ if _NUMBA_AVAILABLE:
 
         return matrix
 
-
     @njit(cache=True)
-    def _numba_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
-                                 eigen_threshold, eigen_num, regulator_code,
-                                 apply_threshold, rate_tf, edge_seconds, stride, apply_fraction=1.0):
+    def _numba_process_one_layer(
+        real,
+        imag,
+        K,
+        K2,
+        K4,
+        half,
+        fm,
+        edge_samples,
+        fltr,
+        eigen_threshold,
+        eigen_num,
+        regulator_code,
+        apply_threshold,
+        rate_tf,
+        edge_seconds,
+        stride,
+        apply_fraction=1.0,
+    ):
         n_time = real.shape[0]
 
         power = real * real + imag * imag
@@ -385,8 +400,8 @@ if _NUMBA_AVAILABLE:
 
         vv = np.dot(evecs.T, v_cross) * lam
         aa = np.dot(evecs, vv)
-        filt00 = aa[:2 * K + 1]
-        filt90 = aa[half:half + 2 * K + 1]
+        filt00 = aa[: 2 * K + 1]
+        filt90 = aa[half : half + 2 * K + 1]
 
         qq = real / safe_norm
         QQ = imag / safe_norm
@@ -450,11 +465,26 @@ if _NUMBA_AVAILABLE:
 
         return noise, included
 
-
     @njit(cache=True, parallel=True)
-    def _numba_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samples, fltr,
-                              eigen_threshold, eigen_num, regulator_code,
-                              apply_threshold, rate_tf, edge_seconds, stride, apply_fraction=1.0):
+    def _numba_process_layers(
+        real_layers,
+        imag_layers,
+        K,
+        K2,
+        K4,
+        half,
+        fm,
+        edge_samples,
+        fltr,
+        eigen_threshold,
+        eigen_num,
+        regulator_code,
+        apply_threshold,
+        rate_tf,
+        edge_seconds,
+        stride,
+        apply_fraction=1.0,
+    ):
         n_layers = real_layers.shape[0]
         n_time = real_layers.shape[1]
         noise_layers = np.zeros((n_layers, n_time), dtype=np.complex128)
@@ -462,17 +492,29 @@ if _NUMBA_AVAILABLE:
 
         for i in prange(n_layers):
             noise, included = _numba_process_one_layer(
-                real_layers[i], imag_layers[i],
-                K, K2, K4, half,
-                fm, edge_samples, fltr,
-                eigen_threshold, eigen_num, regulator_code,
-                apply_threshold, rate_tf, edge_seconds,
-                stride, apply_fraction,
+                real_layers[i],
+                imag_layers[i],
+                K,
+                K2,
+                K4,
+                half,
+                fm,
+                edge_samples,
+                fltr,
+                eigen_threshold,
+                eigen_num,
+                regulator_code,
+                apply_threshold,
+                rate_tf,
+                edge_seconds,
+                stride,
+                apply_fraction,
             )
             noise_layers[i, :] = noise
             include_mask[i] = included
 
         return noise_layers, include_mask
+
 
 @partial(jax.jit, static_argnames=("K", "K2", "K4", "half", "fm", "edge_samples", "fltr"))
 def _jax_layer_build_stats(real, imag, K, K2, K4, half, fm, edge_samples, fltr):
@@ -538,10 +580,8 @@ def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples):
     )
 
 
-
 @partial(jax.jit, static_argnames=("K", "K2", "K4", "half", "fltr", "eigen_threshold", "eigen_num", "regulator_code"))
-def _jax_layer_solve_filters(v_cross, acf, ccf, K, K2, K4, half, fltr,
-                             eigen_threshold, eigen_num, regulator_code):
+def _jax_layer_solve_filters(v_cross, acf, ccf, K, K2, K4, half, fltr, eigen_threshold, eigen_num, regulator_code):
     """Solve regularized LPE system and return filter taps."""
     matrix = _jax_build_matrix(acf, ccf, K, K2, fltr)
     evals, evecs = _jax_eigh(matrix)
@@ -565,8 +605,8 @@ def _jax_layer_solve_filters(v_cross, acf, ccf, K, K2, K4, half, fltr,
 
     vv = (evecs.T @ v_cross) * lam
     aa = evecs @ vv
-    filt00 = aa[:2 * K + 1]
-    filt90 = aa[half:half + 2 * K + 1]
+    filt00 = aa[: 2 * K + 1]
+    filt90 = aa[half : half + 2 * K + 1]
     return filt00, filt90
 
 
@@ -588,8 +628,8 @@ def _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K, apply_fra
     wq, wQ = jax.vmap(_window_at)(centers)
     val_core, VAL_core = _jax_apply_filters(wq, wQ, filt00, filt90)
 
-    nn = jnp.zeros((n_time,), dtype=jnp.float64).at[K:n_time - K].set(val_core)
-    NN = jnp.zeros((n_time,), dtype=jnp.float64).at[K:n_time - K].set(VAL_core)
+    nn = jnp.zeros((n_time,), dtype=jnp.float64).at[K : n_time - K].set(val_core)
+    NN = jnp.zeros((n_time,), dtype=jnp.float64).at[K : n_time - K].set(VAL_core)
     return nn, NN
 
 
@@ -623,15 +663,40 @@ def _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_se
 @partial(
     jax.jit,
     static_argnames=(
-        "K", "K2", "K4", "half",
-        "fm", "edge_samples", "fltr",
-        "eigen_threshold", "eigen_num", "regulator_code",
-        "apply_threshold", "rate_tf", "edge_seconds", "apply_fraction",
+        "K",
+        "K2",
+        "K4",
+        "half",
+        "fm",
+        "edge_samples",
+        "fltr",
+        "eigen_threshold",
+        "eigen_num",
+        "regulator_code",
+        "apply_threshold",
+        "rate_tf",
+        "edge_seconds",
+        "apply_fraction",
     ),
 )
-def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
-                           eigen_threshold, eigen_num, regulator_code,
-                           apply_threshold, rate_tf, edge_seconds, apply_fraction=1.0):
+def _jax_process_one_layer(
+    real,
+    imag,
+    K,
+    K2,
+    K4,
+    half,
+    fm,
+    edge_samples,
+    fltr,
+    eigen_threshold,
+    eigen_num,
+    regulator_code,
+    apply_threshold,
+    rate_tf,
+    edge_seconds,
+    apply_fraction=1.0,
+):
     """
     Process one TF layer end-to-end in JAX.
 
@@ -642,8 +707,17 @@ def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
         real, imag, K, K2, K4, half, fm, edge_samples, fltr
     )
     filt00, filt90 = _jax_layer_solve_filters(
-        v_cross, acf, ccf, K, K2, K4, half, fltr,
-        eigen_threshold, eigen_num, regulator_code,
+        v_cross,
+        acf,
+        ccf,
+        K,
+        K2,
+        K4,
+        half,
+        fltr,
+        eigen_threshold,
+        eigen_num,
+        regulator_code,
     )
     nn, NN = _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K, apply_fraction)
     return _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_seconds, K)
@@ -652,15 +726,40 @@ def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
 @partial(
     jax.jit,
     static_argnames=(
-        "K", "K2", "K4", "half",
-        "fm", "edge_samples", "fltr",
-        "eigen_threshold", "eigen_num", "regulator_code",
-        "apply_threshold", "rate_tf", "edge_seconds", "apply_fraction",
+        "K",
+        "K2",
+        "K4",
+        "half",
+        "fm",
+        "edge_samples",
+        "fltr",
+        "eigen_threshold",
+        "eigen_num",
+        "regulator_code",
+        "apply_threshold",
+        "rate_tf",
+        "edge_seconds",
+        "apply_fraction",
     ),
 )
-def _jax_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samples, fltr,
-                        eigen_threshold, eigen_num, regulator_code,
-                        apply_threshold, rate_tf, edge_seconds, apply_fraction=1.0):
+def _jax_process_layers(
+    real_layers,
+    imag_layers,
+    K,
+    K2,
+    K4,
+    half,
+    fm,
+    edge_samples,
+    fltr,
+    eigen_threshold,
+    eigen_num,
+    regulator_code,
+    apply_threshold,
+    rate_tf,
+    edge_seconds,
+    apply_fraction=1.0,
+):
     """Vectorized JAX execution of `_jax_process_one_layer` across layers."""
     return jax.vmap(
         _jax_process_one_layer,
@@ -692,7 +791,7 @@ def _regression_apply_fraction(config, fraction):
         return 1.0
     options = shlex.split(str(getattr(config, "Search", "")))
     for i, option in enumerate(options):
-        if option == "--regression" and i+1 < len(options) and options[i+1] == "OLD":
+        if option == "--regression" and i + 1 < len(options) and options[i + 1] == "OLD":
             return 1.0
     if not 0 < fraction <= 1.0:
         raise ValueError("Regression cap fraction must be in (0, 1]")
@@ -735,11 +834,11 @@ def regression_python(config, h):
         return h_ts
 
     layers = int(config.rateANA / 8)
-    beta_order = getattr(config, 'WDM_beta_order', 6)
-    precision = getattr(config, 'WDM_precision', 10)
+    beta_order = getattr(config, "WDM_beta_order", 6)
+    precision = getattr(config, "WDM_precision", 10)
     f_high = float(config.fHigh)
     sample_rate = float(h_ts.sample_rate)
-    edge_seconds = float(getattr(config, 'segEdge', 0.0))
+    edge_seconds = float(getattr(config, "segEdge", 0.0))
 
     wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
 
@@ -758,18 +857,15 @@ def regression_python(config, h):
     if n_freq < 3 or n_time <= 2 * filter_length + 2:
         return h_ts
 
-    df = float(getattr(tf_map, 'df', sample_rate / max(1.0, 2.0 * (n_freq - 1))))
-    dt_tf = float(getattr(tf_map, 'dt', 1.0))
+    df = float(getattr(tf_map, "df", sample_rate / max(1.0, 2.0 * (n_freq - 1))))
+    dt_tf = float(getattr(tf_map, "dt", 1.0))
     rate_tf = 1.0 / dt_tf if dt_tf > 0 else 1.0
 
     # In cWB wrapper, constructor uses flow=1 and fhigh=config.fHigh for target.
     # setFilter then loops layer indices 1..maxLayer-1.
     flow_target = 1.0
     layer_freq = np.arange(n_freq, dtype=np.float64) * df
-    selected_layers = [
-        i for i in range(1, n_freq - 1)
-        if flow_target <= layer_freq[i] <= f_high
-    ]
+    selected_layers = [i for i in range(1, n_freq - 1) if flow_target <= layer_freq[i] <= f_high]
     if not selected_layers:
         return h_ts
 
@@ -784,7 +880,7 @@ def regression_python(config, h):
     fltr = 0.0
 
     noise_coeff = np.zeros_like(coeff, dtype=np.complex128)
-    regulator_code = 1 if regulator == 's' else (2 if regulator == 'm' else 0)
+    regulator_code = 1 if regulator == "s" else (2 if regulator == "m" else 0)
 
     # Pack selected layers and run batched JAX processing in one call.
     selected_layers_arr = np.asarray(selected_layers, dtype=np.int32)

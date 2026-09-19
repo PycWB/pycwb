@@ -17,6 +17,7 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.types.detector import compute_sky_delay_and_patterns
 from .pixel_batch_ops import load_data_from_pixels_vectorized
 
+
 def extract_pixel_time_delay_data(
     pixels: list[Pixel],
     nifo: int,
@@ -58,7 +59,7 @@ def _extract_pixel_array_time_delay_data(
     """Fast path: extract noise weights and quadratures from ``PixelArrays``."""
     # noise_rms: (n_ifo, n_pix) float32
     inverse_noise_rms = 1.0 / pixel_arrays.noise_rms.astype(np.float64)
-    pixel_rms_norm = 1.0 / np.sqrt(np.sum(inverse_noise_rms ** 2, axis=0))
+    pixel_rms_norm = 1.0 / np.sqrt(np.sum(inverse_noise_rms**2, axis=0))
     noise_weights = (inverse_noise_rms * pixel_rms_norm[np.newaxis, :]).astype(np.float32)
 
     # td_amp_dense: (n_pix, n_ifo, tsize) → split into 00/90 halves
@@ -66,7 +67,7 @@ def _extract_pixel_array_time_delay_data(
     phase_size = time_delay_amplitudes.shape[2] // 2
     td_phase0 = time_delay_amplitudes[:, :, :phase_size].transpose(1, 0, 2)
     td_phase90 = time_delay_amplitudes[:, :, phase_size:].transpose(1, 0, 2)
-    td_energy = td_phase0 ** 2 + td_phase90 ** 2
+    td_energy = td_phase0**2 + td_phase90**2
 
     return noise_weights, td_phase0, td_phase90, td_energy
 
@@ -114,14 +115,15 @@ def build_sky_delay_and_antenna_patterns(
 
     strains = [TimeSeries.from_input(s) for s in strains]
     gps_time = float(strains[0].t0)
-    _upTDF_lh = int(getattr(config, 'upTDF', 1))
-    _TDRate_lh = int(getattr(config, 'TDRate', int(getattr(config, 'rateANA')) * _upTDF_lh))
+    _upTDF_lh = int(getattr(config, "upTDF", 1))
+    _TDRate_lh = int(getattr(config, "TDRate", int(getattr(config, "rateANA")) * _upTDF_lh))
     sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = compute_sky_delay_and_patterns(
         ifos=getattr(config, "ifo"),
         ref_ifo=getattr(config, "refIFO"),
         sample_rate=float(_TDRate_lh),
-        td_size=max(int(getattr(config, "TDSize")) * _upTDF_lh,
-                    int(getattr(config, "max_delay", 0.0) * float(_TDRate_lh)) + 1),
+        td_size=max(
+            int(getattr(config, "TDSize")) * _upTDF_lh, int(getattr(config, "max_delay", 0.0) * float(_TDRate_lh)) + 1
+        ),
         gps_time=gps_time,
         healpix_order=int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None,
         n_sky=None,
@@ -136,7 +138,8 @@ _load_data_from_pixel_arrays = _extract_pixel_array_time_delay_data
 load_data_from_ifo = build_sky_delay_and_antenna_patterns
 
 __all__ = [
-    "load_data_from_pixels", "load_data_from_ifo",
+    "load_data_from_pixels",
+    "load_data_from_ifo",
     "extract_pixel_time_delay_data",
     "build_sky_delay_and_antenna_patterns",
 ]

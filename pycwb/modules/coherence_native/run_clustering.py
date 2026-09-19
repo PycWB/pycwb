@@ -1,4 +1,5 @@
 """Sparse row-run connectivity with every original pixel retained."""
+
 import numpy as np
 from numba import njit
 

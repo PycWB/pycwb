@@ -24,6 +24,7 @@ from .sky_mask import compute_sky_valid_indices
 
 logger = logging.getLogger(__name__)
 
+
 def populate_pixel_noise_from_maps(pixels: list[Pixel], nRMS: list[TimeFrequencyMap]) -> None:
     """Populate legacy pixel objects using the shared detector-aware RMS lookup.
 
@@ -113,11 +114,13 @@ def prepare_likelihood_inputs(
         # Reuse pre-computed arrays from setup_supercluster to avoid a duplicate
         # compute_sky_delay_and_patterns call (~same GPS time, same config).
         sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = (
-            np.asarray(ml), np.asarray(FP), np.asarray(FX)
+            np.asarray(ml),
+            np.asarray(FP),
+            np.asarray(FX),
         )
     else:
-        sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = (
-            build_sky_delay_and_antenna_patterns(n_detectors, strains, config)
+        sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = build_sky_delay_and_antenna_patterns(
+            n_detectors, strains, config
         )
     n_sky = int(sky_delay_samples.shape[1])
 
@@ -130,35 +133,27 @@ def prepare_likelihood_inputs(
         sky_delay_samples_big = np.asarray(ml_big)
         plus_antenna_patterns_big_t = np.asarray(FP_big).T.astype(np.float32)
         cross_antenna_patterns_big_t = np.asarray(FX_big).T.astype(np.float32)
-        n_sky_big  = int(sky_delay_samples_big.shape[1])
+        n_sky_big = int(sky_delay_samples_big.shape[1])
     else:
         sky_delay_samples_big = None
         plus_antenna_patterns_big_t = None
         cross_antenna_patterns_big_t = None
-        n_sky_big  = None
+        n_sky_big = None
 
-    healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
+    healpix_order = int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None
     # _build_sky_directions returns the cWB Earth-fixed grid.  Keep legacy
     # ra_arr/dec_arr aliases below, but use frame-explicit names internally.
     phi_geo_arr, latitude_arr = _build_sky_directions(n_sky, healpix_order)
 
     # Sky mask: restrict the sky scan to a user-defined region (mirrors C++ skyMask).
     # Parsed once per job segment and stored as a sorted int64 index array.
-    _sky_mask_config = getattr(config, 'sky_mask', None)
-    t_ref = (
-        float(strains[0].t0)
-        if strains is not None and len(strains) > 0
-        else None
-    )
-    sky_valid_indices = compute_sky_valid_indices(
-        phi_geo_arr, latitude_arr, _sky_mask_config, t_ref=t_ref
-    )
+    _sky_mask_config = getattr(config, "sky_mask", None)
+    t_ref = float(strains[0].t0) if strains is not None and len(strains) > 0 else None
+    sky_valid_indices = compute_sky_valid_indices(phi_geo_arr, latitude_arr, _sky_mask_config, t_ref=t_ref)
 
     # Separate valid-index array for the coarse (big-cluster) sky grid
     if n_sky_big is not None:
-        phi_geo_arr_big, latitude_arr_big = _build_sky_directions(
-            n_sky_big, big_cluster_healpix_order
-        )
+        phi_geo_arr_big, latitude_arr_big = _build_sky_directions(n_sky_big, big_cluster_healpix_order)
         sky_valid_indices_big = compute_sky_valid_indices(
             phi_geo_arr_big, latitude_arr_big, _sky_mask_config, t_ref=t_ref
         )
@@ -175,9 +170,9 @@ def prepare_likelihood_inputs(
         "net_rho_threshold": net_rho_threshold,
         "netEC_threshold": netEC_threshold,
         "netCC": netCC,
-        "ml": sky_delay_samples,      # legacy key: (nIFO, n_sky)
+        "ml": sky_delay_samples,  # legacy key: (nIFO, n_sky)
         "FP": plus_antenna_patterns,  # legacy key: (nIFO, n_sky)
-        "FX": cross_antenna_patterns, # legacy key: (nIFO, n_sky)
+        "FX": cross_antenna_patterns,  # legacy key: (nIFO, n_sky)
         "FP_t": plus_antenna_patterns_t,
         "FX_t": cross_antenna_patterns_t,
         "n_sky": n_sky,
@@ -199,7 +194,6 @@ def prepare_likelihood_inputs(
         "latitude_arr_big_cluster": latitude_arr_big,
         "sky_valid_indices_big": sky_valid_indices_big,
     }
-
 
 
 # Legacy aliases

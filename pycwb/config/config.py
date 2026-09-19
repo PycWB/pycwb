@@ -7,6 +7,7 @@ file may include an optional ``pycwb_schema`` block to extend or replace that
 default schema – see :class:`Config` and :func:`pycwb.utils.yaml_helper.resolve_schema`
 for details.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 import os.path
@@ -22,6 +23,7 @@ from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Config:
@@ -96,8 +98,9 @@ class Config:
     * ``WDM_level`` – list of WDM resolution levels
     * ``dq_files`` – ``DQF`` rows converted to :class:`~pycwb.types.data_quality_file.DQFile` objects
     """
+
     dq_files: List[DQFile] = field(default_factory=list)
-    
+
     # Loadable/expected parameters from YAML
     outputDir: Optional[str] = None
     logDir: Optional[str] = None
@@ -189,9 +192,7 @@ class Config:
         # JSON Schema cannot validate Astropy quantity dimensionality or infer
         # a coordinate frame from semantic key names.  Perform that physical
         # cross-check before values become Config attributes.
-        validate_user_sky_config(
-            params.get("sky_mask"), context="sky_mask", default_coordsys="geo"
-        )
+        validate_user_sky_config(params.get("sky_mask"), context="sky_mask", default_coordsys="geo")
         injection_config = params.get("injection") or {}
         validate_user_sky_config(
             injection_config.get("sky_distribution"),
@@ -236,11 +237,11 @@ class Config:
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
         if self.filter_dir and not os.path.exists(self.filter_dir):
-            home_wat = os.environ.get('HOME_WAT_FILTERS')
+            home_wat = os.environ.get("HOME_WAT_FILTERS")
             if home_wat and os.path.exists(home_wat):
                 self.filter_dir = home_wat
             else:
-                self.filter_dir = os.path.abspath('.')
+                self.filter_dir = os.path.abspath(".")
             if self.wdmXTalk:
                 self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
@@ -282,10 +283,10 @@ class Config:
 
         # load WAT filter directory and set MRAcatalog
         if not self.filter_dir:
-            if os.environ.get('HOME_WAT_FILTERS') is None:
+            if os.environ.get("HOME_WAT_FILTERS") is None:
                 self.filter_dir = os.path.abspath(".")
             else:
-                self.filter_dir = os.environ['HOME_WAT_FILTERS']
+                self.filter_dir = os.environ["HOME_WAT_FILTERS"]
 
         self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
@@ -314,6 +315,7 @@ class Config:
         net_rho = float(getattr(self, "netRHO", 4.0))
         if net_rho < 0 and not self.xgb_rho_mode:
             import warnings
+
             warnings.warn(
                 "Setting netRHO < 0 to activate XGBoost statistics mode is deprecated. "
                 "Please use 'xgb_rho_mode: true' in your config instead. "
@@ -336,10 +338,10 @@ class Config:
         if self.lagMode == "r":
             with open(self.lagFile, "r") as f:
                 self.lagBuffer = f.read()
-            self.lagMode = 's'
+            self.lagMode = "s"
         else:
             self.lagBuffer = self.lagFile
-            self.lagMode = 'w'
+            self.lagMode = "w"
 
     @staticmethod
     def check_file(file_name):
@@ -403,25 +405,29 @@ class Config:
             ``segEdge``, or ``segMLS`` fail the parity check.
         """
         rate_min = self.rateANA >> self.l_high
-        dt_max = 1. / rate_min
+        dt_max = 1.0 / rate_min
         if rate_min % 1:
             logger.error("rate min=%s (Hz) is not integer", rate_min)
             raise ValueError("rate min=%s (Hz) is not integer", rate_min)
         if int(self.lagStep * rate_min + 0.001) & 1:
-            logger.error("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
-                         2 * dt_max)
-            raise ValueError("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
-                             2 * dt_max)
+            logger.error(
+                "lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep, 2 * dt_max
+            )
+            raise ValueError(
+                "lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep, 2 * dt_max
+            )
         if int(self.segEdge * rate_min + 0.001) & 1:
-            logger.error("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
-                         2 * dt_max)
-            raise ValueError("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
-                             2 * dt_max)
+            logger.error(
+                "segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge, 2 * dt_max
+            )
+            raise ValueError(
+                "segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge, 2 * dt_max
+            )
         if int(self.segMLS * rate_min + 0.001) & 1:
-            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
-                         2 * dt_max)
-            raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
-                             2 * dt_max)
+            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS, 2 * dt_max)
+            raise ValueError(
+                "segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS, 2 * dt_max
+            )
 
     def check_analyze_injection_only(self) -> None:
         """
@@ -436,14 +442,11 @@ class Config:
             If ``analyze_injection_only`` is True but no injections are
             configured, or ``lag_size > 1``.
         """
-        if not getattr(self, 'analyze_injection_only', False):
+        if not getattr(self, "analyze_injection_only", False):
             return
         if not self.injection:
-            raise ValueError(
-                "analyze_injection_only requires injections to be configured "
-                "in the 'injection' block"
-            )
-        lag_size = getattr(self, 'lagSize', None) or getattr(self, 'lag_size', 1)
+            raise ValueError("analyze_injection_only requires injections to be configured in the 'injection' block")
+        lag_size = getattr(self, "lagSize", None) or getattr(self, "lag_size", 1)
         if lag_size > 1:
             raise ValueError(
                 f"analyze_injection_only is incompatible with lag_size={lag_size}. "
@@ -473,13 +476,17 @@ class Config:
         """
         logger.info("Checking MRA catalog")
         metadata = read_catalog_metadata(self.MRAcatalog)
-        layers = metadata['layers'].tolist() if hasattr(metadata['layers'], 'tolist') else [int(x) for x in metadata['layers']]
-        n_res = int(metadata['nRes'])
+        layers = (
+            metadata["layers"].tolist()
+            if hasattr(metadata["layers"], "tolist")
+            else [int(x) for x in metadata["layers"]]
+        )
+        n_res = int(metadata["nRes"])
 
         check_layers = 0
         for i in range(self.l_low, self.l_high + 1):
             level = self.l_high + self.l_low - i
-            expected_layers = 2 ** level if level > 0 else 0
+            expected_layers = 2**level if level > 0 else 0
             for j in range(n_res):
                 if expected_layers == int(layers[j]):
                     check_layers += 1
@@ -496,13 +503,13 @@ class Config:
                 logger.error("layers : %s", int(layers[i]))
             raise ValueError("analysis layers do not match the MRA catalog")
 
-        if float(metadata.get('tag', 0.0)) != 0.0:
+        if float(metadata.get("tag", 0.0)) != 0.0:
             logger.info(
                 "MRA catalog has tag %s, updating beta order and precision from MRA catalog",
-                metadata.get('tag', 0.0),
+                metadata.get("tag", 0.0),
             )
-            self.WDM_beta_order = int(metadata.get('beta_order', self.WDM_beta_order or 0))
-            self.WDM_precision = int(metadata.get('precision', self.WDM_precision or 0))
+            self.WDM_beta_order = int(metadata.get("beta_order", self.WDM_beta_order or 0))
+            self.WDM_precision = int(metadata.get("precision", self.WDM_precision or 0))
 
     @staticmethod
     def get_precision(cluster_size_threshold, healpix_order):
@@ -522,4 +529,4 @@ class Config:
         int
             Combined precision value: ``cluster_size_threshold + 65536 * healpix_order``.
         """
-        return cluster_size_threshold+65536*healpix_order
+        return cluster_size_threshold + 65536 * healpix_order
