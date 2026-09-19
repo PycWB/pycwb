@@ -63,6 +63,71 @@ _DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE") == "1"
 _SCRATCH_REUSE = os.environ.get("PYCWB_SKY_SCRATCH_REUSE") == "1"
 
 
+def _update_cluster_chirp_statistics(
+    cluster: Cluster,
+    config: Config | None,
+    *,
+    xgb_rho_mode: bool,
+    chirp_seed: int,
+    use_native_chirp: bool,
+) -> None:
+    """Update chirp metadata using the selected estimator and search rules.
+
+    Parameters
+    ----------
+    cluster : Cluster
+        Accepted cluster whose metadata is updated in place.
+    config : Config or None
+        Search configuration; missing configuration disables native estimation.
+    xgb_rho_mode : bool
+        Whether the negative-netRHO likelihood convention is active.
+    chirp_seed : int
+        Explicit run seed passed unchanged to the native bootstrap estimator.
+    use_native_chirp : bool
+        Call-time profile selection. The legacy path remains the fallback
+        unless both this option and ``xgb_rho_mode`` are enabled.
+
+    Notes
+    -----
+    Native mode resets all chirp fields before testing search eligibility,
+    preventing stale values when a search skips estimation. Legacy mode keeps
+    its existing reset and pattern-zero behavior. No numerical work is changed.
+    """
+    pat0 = (getattr(config, "pattern", 10) == 0) if config is not None else False
+    if use_native_chirp and xgb_rho_mode:
+        for field in (
+            "mchirp",
+            "mchirp_error",
+            "chirp_merger_time",
+            "chirp_merger_time_error",
+            "chirp_ellipticity",
+            "chirp_energy_fraction",
+            "chirp_symmetry",
+        ):
+            setattr(cluster.cluster_meta, field, 0.0)
+        # The release's XGB branch only estimates chirp morphology for these
+        # search families, with the job's run ID as bootstrap seed.
+        enabled = (
+            not getattr(config, "optim", False)
+            and getattr(config, "cfg_search", "") in tuple("iecrpblsg")
+            and getattr(config, "Search", "") in ("CBC", "BBH", "IMBHB")
+        )
+        if enabled:
+            from .chirp_micropixel import estimate_chirp
+
+            estimate = estimate_chirp(cluster.pixel_arrays, config.rateANA, chirp_seed)
+            meta = cluster.cluster_meta
+            meta.mchirp = estimate.mass
+            meta.mchirp_error = estimate.mass_error
+            meta.chirp_merger_time = estimate.merger_time
+            meta.chirp_merger_time_error = estimate.merger_time_error
+            meta.chirp_ellipticity = estimate.ellipticity
+            meta.chirp_energy_fraction = estimate.energy_fraction
+            meta.chirp_symmetry = estimate.symmetry
+    else:
+        _update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
+
+
 def evaluate_fragment_clusters(
     config: Config,
     fragment_clusters: list[FragmentCluster],
@@ -465,39 +530,13 @@ def evaluate_cluster_likelihood(
 
     # --- Post-processing: chirp mass and error region ---
     _t0 = time.perf_counter()
-    pat0 = (getattr(config, "pattern", 10) == 0) if config is not None else False
-    if os.environ.get("PYCWB_NATIVE_CHIRP") == "1" and xgb_rho_mode:
-        for field in (
-            "mchirp",
-            "mchirp_error",
-            "chirp_merger_time",
-            "chirp_merger_time_error",
-            "chirp_ellipticity",
-            "chirp_energy_fraction",
-            "chirp_symmetry",
-        ):
-            setattr(cluster.cluster_meta, field, 0.0)
-        # The release's XGB branch only estimates chirp morphology for these
-        # search families, with the job's run ID as bootstrap seed.
-        enabled = (
-            not getattr(config, "optim", False)
-            and getattr(config, "cfg_search", "") in tuple("iecrpblsg")
-            and getattr(config, "Search", "") in ("CBC", "BBH", "IMBHB")
-        )
-        if enabled:
-            from .chirp_micropixel import estimate_chirp
-
-            estimate = estimate_chirp(cluster.pixel_arrays, config.rateANA, chirp_seed)
-            meta = cluster.cluster_meta
-            meta.mchirp = estimate.mass
-            meta.mchirp_error = estimate.mass_error
-            meta.chirp_merger_time = estimate.merger_time
-            meta.chirp_merger_time_error = estimate.merger_time_error
-            meta.chirp_ellipticity = estimate.ellipticity
-            meta.chirp_energy_fraction = estimate.energy_fraction
-            meta.chirp_symmetry = estimate.symmetry
-    else:
-        _update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
+    _update_cluster_chirp_statistics(
+        cluster,
+        config,
+        xgb_rho_mode=xgb_rho_mode,
+        chirp_seed=chirp_seed,
+        use_native_chirp=os.environ.get("PYCWB_NATIVE_CHIRP") == "1",
+    )
     stage_timings["update_chirp_mass_statistics"] = time.perf_counter() - _t0
 
     _t0 = time.perf_counter()
