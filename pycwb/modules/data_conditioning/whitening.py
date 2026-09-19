@@ -5,8 +5,6 @@ Pure-Python whitening without ROOT dependencies.
 import logging
 
 import numpy as np
-from scipy import signal as scipy_signal
-from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 from wdm_wavelet.wdm import WDM
 from pycwb.types.noise_rms import make_noise_rms_map
 
@@ -41,8 +39,6 @@ def whitening_python(config, h):
         else 60.0
     )
     edge_length = getattr(config, "segEdge", 10.0)
-    f_low = float(config.fLow)
-    f_high = float(config.fHigh)
 
     signal_data = np.array(h_ts.data, dtype=np.float64)
     sample_rate = float(h_ts.sample_rate)

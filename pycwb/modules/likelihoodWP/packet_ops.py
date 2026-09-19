@@ -594,8 +594,6 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     -------
     None
     """
-    n_ifo = len(p)
-    n_pix = len(p[0])
 
     _o = float(1.0e-9)
 

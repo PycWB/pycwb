@@ -38,10 +38,8 @@ is therefore not traced.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
 
@@ -197,8 +195,12 @@ class PixelArrays:
             uniform stride (zero-copy reshape).
         """
         n_pix = len(time)
-        _zeros_pix = lambda: np.zeros(n_pix, dtype=np.float32)
-        _zeros_ifo = lambda: np.zeros((n_ifo, n_pix), dtype=np.float32)
+
+        def _zeros_pix():
+            return np.zeros(n_pix, dtype=np.float32)
+
+        def _zeros_ifo():
+            return np.zeros((n_ifo, n_pix), dtype=np.float32)
 
         if td_amp_dense is not None:
             flat, offsets = _dense_to_csr(td_amp_dense)

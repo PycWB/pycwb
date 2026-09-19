@@ -1,7 +1,7 @@
 from math import sqrt
 
 import numpy as np
-from numba import njit, prange, float32, int32
+from numba import njit, float32, int32
 
 
 @njit(cache=True)

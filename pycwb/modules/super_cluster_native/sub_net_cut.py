@@ -391,11 +391,9 @@ def optimze_sky_loc(
     Es = float32(2 * e2or)
     network_energy_threshold = float32(network_energy_threshold)
     offset = int(td00.shape[0] / 2)
-    # print("offset: ", offset, td00.shape, ml.shape, td_energy.shape)
 
     rNRG = np.zeros(n_pix, dtype=float32)  # _rE
     pNRG = np.zeros(n_pix, dtype=float32)  # _pE
-    # print("En = ", network_energy_threshold, ', Es = ', Es, ", n_pix = ", n_pix, ", n_sky = ", n_sky)
     l_max = 0
     stat = float32(0.0)
     Em = float32(0.0)
@@ -409,7 +407,7 @@ def optimze_sky_loc(
     reduced_v00 = np.empty((n_pix, n_ifo), dtype=float32)
     reduced_v90 = np.empty((n_pix, n_ifo), dtype=float32)
 
-    for l in range(n_sky):
+    for sky_index in range(n_sky):
         m = float32(0)  # pixels above threshold
         Eo = float32(0)  # total network energy
         Ls = float32(0)  # subnetwork energy
@@ -417,14 +415,14 @@ def optimze_sky_loc(
         for j in range(n_pix):
             _rE = float32(0.0)
             for i in range(n_ifo):  # get pixel energy
-                _rE += td_energy[ml[i, l] + offset, i, j]
+                _rE += td_energy[ml[i, sky_index] + offset, i, j]
             rNRG[j] = _rE  # store pixel energy
             _msk = float32(1.0) if rNRG[j] > network_energy_threshold else float32(0.0)  # E>En  0/1 mask
             m += _msk  # count pixels above threshold
             pNRG[j] = rNRG[j] * _msk  # zero sub-threshold pixels
             Eo += pNRG[j]
             for i in range(n_ifo):
-                pNRG[j] = min(rNRG[j] - td_energy[ml[i, l] + offset, i, j], pNRG[j])  # subnetwork energy
+                pNRG[j] = min(rNRG[j] - td_energy[ml[i, sky_index] + offset, i, j], pNRG[j])  # subnetwork energy
             Ls += pNRG[j]  # subnetwork energy
             _msk = float32(1.0) if pNRG[j] > Es else float32(0.0)  # subnet energy > Es 0/1 mask
             Ln += rNRG[j] * _msk  # network energy
@@ -432,7 +430,6 @@ def optimze_sky_loc(
         Eo = Eo + float32(0.01)
         m = int(2 * m + 0.01)
         aa = float32(Ls * Ln / (Eo - Ls))
-        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("l = ", l); print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", m = ", m)
         if subcut >= 0 and (aa - m) / (aa + m + float32(1e-16)) < subcut:
             continue
 
@@ -441,8 +438,8 @@ def optimze_sky_loc(
         for j in range(n_pix):
             ee = float32(0.0)
             for i in range(n_ifo):
-                v00_ij = td00[ml[i, l] + offset, i, j]
-                v90_ij = td90[ml[i, l] + offset, i, j]
+                v00_ij = td00[ml[i, sky_index] + offset, i, j]
+                v90_ij = td90[ml[i, sky_index] + offset, i, j]
                 ee += v00_ij * v00_ij + v90_ij * v90_ij
             if ee < network_energy_threshold:
                 continue
@@ -450,8 +447,8 @@ def optimze_sky_loc(
             em = float32(0.0)
             for i in range(n_ifo):
                 reduced_rms[m, i] = rms[j, i]
-                v00_ij = td00[ml[i, l] + offset, i, j]
-                v90_ij = td90[ml[i, l] + offset, i, j]
+                v00_ij = td00[ml[i, sky_index] + offset, i, j]
+                v90_ij = td90[ml[i, sky_index] + offset, i, j]
                 reduced_v00[m, i] = v00_ij
                 reduced_v90[m, i] = v90_ij
                 _em = v00_ij * v00_ij + v90_ij * v90_ij
@@ -470,23 +467,21 @@ def optimze_sky_loc(
         Lo = float32(0.0)
         # calculate dpf
         # TODO: check if the dpf is the same as the one in the likelihood module
-        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l], FX[l], reduced_rms[:m, :])
+        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[sky_index], FX[sky_index], reduced_rms[:m, :])
 
         for j in range(m):
             # calculate likelihood
             Lo += sse_like_ps(f[j], F[j], reduced_v00[j], reduced_v90[j])
-        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", Lo = ", Lo, ", m = ", m)
 
         # cWB stores AA as float before comparing sky scores; preserve its ties.
         AA = float32(aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo))  # subnet stat with threshold
-        # if l in [0, 22, 1000, 1860, 1967, 2000]: print("AA = ", AA, ", aa = ", aa, ", l = ", l)
         ee = Ls * Eo / (Eo - Ls)
         em = abs(Eo - Lo) + 2 * m  # suball NULL
         ee = ee / (ee + em)  # subnet stat without threshold
         aa = (aa - m) / (aa + m)
         if AA > AA_max:
             AA_max = AA
-            l_max = l
+            l_max = sky_index
             stat = AA
             Em = Eo
             Am = aa
@@ -524,7 +519,7 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
     dpf_co = np.empty(n_pix, dtype=float32)
     dpf_fp = np.empty(n_pix, dtype=float32)
 
-    for l in range(n_sky):
+    for sky_index in range(n_sky):
         m_gt = float32(0)
         Eo_gt = float32(0)
         Ls_gt = float32(0)
@@ -536,7 +531,7 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
             _rE = float32(0.0)
             _em = float32(0.0)
             for i in range(n_ifo):
-                delay_idx = ml[i, l] + offset
+                delay_idx = ml[i, sky_index] + offset
                 v00_ij = td00[delay_idx, i, j]
                 v90_ij = td90[delay_idx, i, j]
                 detector_energy = v00_ij * v00_ij + v90_ij * v90_ij
@@ -573,7 +568,7 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
 
             for i in range(n_ifo):
                 reduced_rms[m, i] = rms[j, i]
-                delay_idx = ml[i, l] + offset
+                delay_idx = ml[i, sky_index] + offset
                 reduced_v00[m, i] = td00[delay_idx, i, j]
                 reduced_v90[m, i] = td90[delay_idx, i, j]
             m += 1
@@ -587,8 +582,8 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
 
         Lo = float32(0.0)
         _dpf_np_loops_vec_into(
-            FP[l],
-            FX[l],
+            FP[sky_index],
+            FX[sky_index],
             reduced_rms,
             m,
             n_ifo,
@@ -610,7 +605,7 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
         aa = (aa - m) / (aa + m)
         if AA > AA_max:
             AA_max = AA
-            l_max = l
+            l_max = sky_index
             stat = AA
             Em = Eo
             Am = aa
@@ -689,7 +684,6 @@ def mra_statistics(
     Es = float32(2 * e2or)
     network_energy_threshold = float32(network_energy_threshold)
     offset = int(td00.shape[0] / 2)
-    # print("offset: ", offset, td00.shape, ml.shape, td_energy.shape)
 
     rNRG = np.zeros(n_pix, dtype=float32)  # _rE
     # pNRG = np.zeros(n_pix, dtype=float32)  # _pE
@@ -758,9 +752,7 @@ def mra_statistics(
     # calculate likelihood
     for j in range(m):
         Lo += sse_like_ps(f[j], F[j], reduced_v00[j], reduced_v90[j])
-    # print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", Lo = ", Lo, ", m = ", m)
     # AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)  # subnet stat with threshold
-    # print("AA = ", AA, ", aa = ", aa, ", l = ", l_max)
     # ee = Ls * Eo / (Eo - Ls)
     # em = abs(Eo - Lo) + 2 * m  # suball NULL
     # ee = ee / (ee + em)  # subnet stat without threshold

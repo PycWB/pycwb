@@ -110,7 +110,6 @@ def populate_detection_statistics(
     effective_pixel_count = sky_statistics.N_pix_effective
 
     event_size = 0  # defined as Mw in cwb
-    n_coherent_pixels = 0
 
     # --- First pass: set core/likelihood/null flags and per-ifo data arrays ---
     n_pixels = len(cluster.pixel_arrays)
@@ -216,7 +215,6 @@ def populate_detection_statistics(
 
     # Count statistics (sets were pre-filtered, so counts equal set sizes)
     event_size = int(len(null_pixel_indices))
-    n_coherent_pixels = int(len(likelihood_pixel_indices))
 
     stage_timings["null_xtalk_loop"] = (
         _kernel_time * len(null_pixel_indices) / max(len(null_pixel_indices) + len(likelihood_pixel_indices), 1)
@@ -241,12 +239,6 @@ def populate_detection_statistics(
     #   snr_i  = Σ_t z_data_i(t)²               (data   energy / snr)   → Ew_wf
     #   null_i = Σ_t (z_data - z_signal)_i(t)²  (null   energy)         → Nw_wf
     # To/Fo   = sSNR-weighted mean time / frequency over core pixels
-    packet_signal_phase0_arr = np.asarray(packet_signal_phase0, dtype=np.float64)
-    packet_signal_phase90_arr = np.asarray(packet_signal_phase90, dtype=np.float64)
-    packet_data_phase0_arr = np.asarray(packet_data_phase0, dtype=np.float64)
-    packet_data_phase90_arr = np.asarray(packet_data_phase90, dtype=np.float64)
-    # Core pixel indices — only core pixels contribute to getMRAwave
-    core_indices = np.where(cluster.pixel_arrays.core)[0].tolist()
 
     _t0 = time.perf_counter()
     release_waveform_stats = os.getenv("PYCWB_RELEASE_WAVEFORM_STATS", "0") == "1"

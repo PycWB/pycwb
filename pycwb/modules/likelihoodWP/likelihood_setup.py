@@ -12,7 +12,6 @@ available.
 from __future__ import annotations
 
 import logging
-import time
 import numpy as np
 from pycwb.config.config import Config
 from pycwb.types.network_pixel import Pixel

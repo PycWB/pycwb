@@ -1,6 +1,5 @@
 """Cropping must preserve TD vector bits, global phase and whole-bin shifts."""
 
-from types import SimpleNamespace
 import numpy as np
 import pytest
 from wdm_wavelet.wdm import WDM

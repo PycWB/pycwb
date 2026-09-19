@@ -13,7 +13,6 @@ from memspectrum import MESA
 from scipy import signal
 from scipy.special import expit
 from sklearn.ensemble import IsolationForest
-from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 from wdm_wavelet.wdm import WDM
 
 logger = logging.getLogger(__name__)

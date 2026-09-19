@@ -24,7 +24,7 @@ import logging
 import os
 
 import numpy as np
-from pycwb.utils.td_vector_kernels import batch_get_td_vecs
+from pycwb.utils.td_vector_kernels import batch_get_td_vecs as batch_get_td_vecs
 
 logger = logging.getLogger(__name__)
 

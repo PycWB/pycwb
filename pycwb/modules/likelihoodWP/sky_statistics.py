@@ -10,7 +10,6 @@ Legacy alias ``calculate_sky_statistics`` remains available.
 from __future__ import annotations
 
 import logging
-from math import sqrt
 import numpy as np
 from .typing import SkyStatistics
 from .dpf import dpf_np_loops_vec
@@ -27,7 +26,6 @@ from .packet_ops import (
 
 # The shared reduced-correlation kernel retains the release LL + 0.001 offset.
 from .sky_stat import avx_GW_ps, avx_ort_ps, avx_stat_ps, load_data_from_td
-from pycwb.modules.xtalk.type import XTalk
 
 logger = logging.getLogger(__name__)
 

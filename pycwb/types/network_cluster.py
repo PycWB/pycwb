@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 import numpy as np
 from scipy.sparse import coo_array

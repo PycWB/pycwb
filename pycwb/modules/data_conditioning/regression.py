@@ -12,7 +12,6 @@ from functools import partial
 import numpy as np
 import jax
 import jax.numpy as jnp
-from jax import config as jax_config
 from wdm_wavelet.wdm import WDM
 
 try:

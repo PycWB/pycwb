@@ -11,7 +11,6 @@ from pycwb.types.pixel_arrays import PixelArrays
 
 
 def test_all_observed_release_antenna_exports():
-    root = Path(__file__).resolve().parents[2]
     job = WaveSegment(
         index=1,
         ifos=["L1", "H1"],

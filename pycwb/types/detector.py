@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from copy import deepcopy
 from astropy import constants, coordinates, units
 from astropy.coordinates.matrix_utilities import rotation_matrix
-from astropy.units.si import meter
 from pycwb.constants.physics_constants import LAL_EARTHFLAT, LAL_REARTH_SI
 from pycwb.constants.detectors import DETECTORS
 from pycwb.utils.geometry import local_to_earth_centered
@@ -672,11 +671,6 @@ class Detector:
 
         sin_theta, cos_theta = np.sin(theta_grid), np.cos(theta_grid)
         sin_phi, cos_phi = np.sin(phi_grid), np.cos(phi_grid)
-
-        # Wave direction unit vector
-        n_x = sin_theta * cos_phi
-        n_y = sin_theta * sin_phi
-        n_z = cos_theta
 
         # Polarization basis vectors
         e_theta_x = cos_theta * cos_phi
