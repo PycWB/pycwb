@@ -22,6 +22,7 @@ All helper functions have been extracted to phase submodules:
 from __future__ import annotations
 
 import logging
+import os
 import time
 import numpy as np
 
@@ -37,6 +38,8 @@ from .likelihood_setup import (
 )
 from .pixel_data import extract_pixel_time_delay_data as _extract_pixel_time_delay_data
 from .sky_scan import scan_sky_for_best_fit as _scan_sky_for_best_fit
+from .sky_scan_delay import delay_groups_for_grid, scan_sky_grouped_delays as _scan_sky_grouped_delays
+from .sky_scan_scratch import scan_sky_scratch as _scan_sky_scratch
 from .sky_statistics import compute_statistics_at_sky_position as _compute_statistics_at_sky_position
 from .detection_statistics import (
     get_likelihood_rejection_reason as _get_likelihood_rejection_reason,
@@ -45,6 +48,7 @@ from .detection_statistics import (
     compute_sky_error_region as _compute_sky_error_region,
 )
 from .dpf import calculate_dpf as _calculate_dpf
+from .dpf_regulator import calculate_dpf_scalar as _calculate_dpf_scalar
 from .sky_mask import sky_valid_indices_for_cluster
 from .typing import SkyStatistics, SkyMapStatistics
 
@@ -53,6 +57,9 @@ if TYPE_CHECKING:
     from pycwb.config.config import Config
 
 logger = logging.getLogger(__name__)
+_SCALAR_DPF = os.environ.get("PYCWB_SCALAR_DPF") == "1"
+_DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE") == "1"
+_SCRATCH_REUSE = os.environ.get("PYCWB_SKY_SCRATCH_REUSE") == "1"
 
 
 def evaluate_fragment_clusters(
@@ -146,6 +153,7 @@ def evaluate_cluster_likelihood(
     setup: dict | None = None,
     xtalk: XTalk | None = None,
     supercluster_setup: dict | None = None,
+    chirp_seed: int = 1,
 ) -> tuple[Cluster | None, SkyMapStatistics | None]:
     """
     Evaluate the likelihood for a single cluster.
@@ -307,7 +315,8 @@ def evaluate_cluster_likelihood(
 
     # regularization[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     _t0 = time.perf_counter()
-    regularization[1] = _calculate_dpf(
+    dpf_regulator = _calculate_dpf_scalar if _SCALAR_DPF else _calculate_dpf
+    regularization[1] = dpf_regulator(
         plus_antenna_patterns, cross_antenna_patterns, noise_weights, n_sky, nIFO,
         gamma_regulator, network_energy_threshold, sky_valid_indices,
     )
@@ -316,11 +325,17 @@ def evaluate_cluster_likelihood(
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
     _t0 = time.perf_counter()
-    skymap_statistics = _scan_sky_for_best_fit(
+    scan = _scan_sky_for_best_fit
+    group_args = ()
+    if _DELAY_REUSE or _SCRATCH_REUSE:
+        # Geometry is fixed per setup/grid; celestial masks are still per cluster.
+        group_args = delay_groups_for_grid(setup, sky_delay_samples, _bBB)
+        scan = _scan_sky_scratch if _SCRATCH_REUSE else _scan_sky_grouped_delays
+    skymap_statistics = scan(
         nIFO, n_pixels, n_sky,
         plus_antenna_patterns, cross_antenna_patterns, noise_weights,
         td_phase0, td_phase90, sky_delay_samples, regularization, netCC,
-        delta_regulator, network_energy_threshold, sky_valid_indices,
+        delta_regulator, network_energy_threshold, sky_valid_indices, *group_args,
     )
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0
@@ -333,14 +348,6 @@ def evaluate_cluster_likelihood(
         logger.info("Total time: %.2f s", stage_timings["total"])
         logger.info("-------------------------------------------------------")
         return None, None
-
-    # --- Compute normalised sky probability map (softmax over nSkyStat) ---
-    _t0 = time.perf_counter()
-    _sky_stat_f64 = skymap_statistics.nSkyStat.astype(np.float64)
-    _sky_stat_shifted = _sky_stat_f64 - _sky_stat_f64.max()
-    _exp_stat = np.exp(_sky_stat_shifted)
-    skymap_statistics.nProbability = (_exp_stat / _exp_stat.sum()).astype(np.float32)
-    stage_timings["sky_probability"] = time.perf_counter() - _t0
 
     # --- Convert l_max index to (theta, phi) sky angles ---
     _t0 = time.perf_counter()
@@ -414,11 +421,33 @@ def evaluate_cluster_likelihood(
     # --- Post-processing: chirp mass and error region ---
     _t0 = time.perf_counter()
     pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
-    _update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
+    if os.environ.get('PYCWB_NATIVE_CHIRP') == '1' and xgb_rho_mode:
+        for field in ('mchirp', 'mchirp_error', 'chirp_merger_time',
+                      'chirp_merger_time_error', 'chirp_ellipticity',
+                      'chirp_energy_fraction', 'chirp_symmetry'):
+            setattr(cluster.cluster_meta, field, 0.)
+        # The release's XGB branch only estimates chirp morphology for these
+        # search families, with the job's run ID as bootstrap seed.
+        enabled = (not getattr(config, 'optim', False)
+                   and getattr(config, 'cfg_search', '') in tuple('iecrpblsg')
+                   and getattr(config, 'Search', '') in ('CBC', 'BBH', 'IMBHB'))
+        if enabled:
+            from .chirp_micropixel import estimate_chirp
+            estimate = estimate_chirp(cluster.pixel_arrays, config.rateANA, chirp_seed)
+            meta = cluster.cluster_meta
+            meta.mchirp = estimate.mass
+            meta.mchirp_error = estimate.mass_error
+            meta.chirp_merger_time = estimate.merger_time
+            meta.chirp_merger_time_error = estimate.merger_time_error
+            meta.chirp_ellipticity = estimate.ellipticity
+            meta.chirp_energy_fraction = estimate.energy_fraction
+            meta.chirp_symmetry = estimate.symmetry
+    else:
+        _update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
     stage_timings["update_chirp_mass_statistics"] = time.perf_counter() - _t0
 
     _t0 = time.perf_counter()
-    _compute_sky_error_region(cluster)
+    _compute_sky_error_region(cluster, skymap_statistics, sky_statistics, config)
     stage_timings["compute_sky_error_region"] = time.perf_counter() - _t0
 
     # --- Store sky localisation metadata ---
@@ -426,6 +455,12 @@ def evaluate_cluster_likelihood(
     cluster.cluster_meta.l_max = _l_max
     cluster.cluster_meta.theta = _theta_deg
     cluster.cluster_meta.phi = _phi_deg
+    if cluster.sky_pixel_index:
+        reconstructed_index = int(cluster.sky_pixel_index[0])
+        cluster.cluster_meta.reconstructed_theta = float(np.degrees(
+            np.pi / 2. - active_latitude_arr[reconstructed_index]))
+        cluster.cluster_meta.reconstructed_phi = float(
+            np.degrees(active_phi_geo_arr[reconstructed_index]) % 360.)
     # Fall back to supercluster estimates if populate_detection_statistics did not set these
     if cluster.cluster_meta.c_time == 0.0:
         cluster.cluster_meta.c_time = cluster.cluster_time
