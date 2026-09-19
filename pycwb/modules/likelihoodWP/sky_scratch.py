@@ -13,8 +13,7 @@ from .dpf import mul_vec, sub_vec, add_vec, norm_vec, div_vec, avg_vec, sin_from
 
 @njit(cache=True)
 def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
-    """
-    Compute the dominant polarization frame (DPF)
+    """Compute the dominant polarization frame into caller-owned arrays.
 
     Parameters
     ----------
@@ -24,6 +23,13 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
         The Fx0 vector for the current sky location.
     rms : np.ndarray
         The rms values for the pixels, shape (NPIX, NIFO).
+
+    scratch : tuple of numpy.ndarray
+        Writable float32 buffers: (f, F, si, co, fp, fx, ni): f/F have shape (n_pix, n_ifo);
+        the remaining arrays have shape (n_pix,). fx/ni are reset before accumulation.
+        Every buffer is overwritten before use and must not alias any input
+        or another scratch buffer. Returned arrays borrow these buffers and
+        remain valid only until the next call with the same scratch tuple.
 
     Returns
     -------
@@ -57,10 +63,6 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
 
     _o = float32(1e-9)
 
-    # Prepare constants
-    # NI = np.float32(0.0)
-    # NN = np.uint32(0)
-
     # Compute f and F
     for j in range(NIFO):
         for i in range(NPIX):
@@ -92,30 +94,23 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
     for i in range(NPIX):
         for j in range(NIFO):
             f[i, j], F[i, j] = f[i, j] * co[i] + F[i, j] * si[i], F[i, j] * co[i] - f[i, j] * si[i]
-            # f[i, j] = rotate_fp_vec(f[i, j], F[i, j], si[i], co[i])
-            # F[i, j] = rotate_fx_vec(f[i, j], F[i, j], si[i], co[i])
 
         fF_new = float32(0.0)
         for j in range(NIFO):
             fF_new += f[i, j] * F[i, j]
-        # fF_new /= (fp[i] + _o)
         fF_new = div_vec(fF_new, fp[i])
 
         for j in range(NIFO):
             F[i, j] -= f[i, j] * fF_new
             fx[i] += F[i, j] * F[i, j]
             ni[i] += f[i, j] ** 4
-            # ni[i] += quad_vec(f[i, j])
 
     NI, NN = float32(0.0), uint32(0)
 
     # Compute NI and NN
     for i in range(NPIX):
-        # ni[i] /= (fp[i] * fp[i] + _o)
         ni[i] = div_vec(ni[i], mul_vec(fp[i], fp[i]))
-        # NI += fx[i] / (ni[i] + _o)
         NI += div_vec(fx[i], ni[i])  # sum of |fx|^2/2/ni
-        # if fp[i] > float32(0.0):
         NN += pos_sign_vec(fp[i])  # pixel count
         # NN += 1 if fp[i] > 0.0 else 0
 
@@ -124,8 +119,7 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
 
 @njit(cache=True)
 def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
-    """
-    GW strain packet
+    """Project a GW strain packet into caller-owned arrays.
 
     Parameters
     ----------
@@ -142,13 +136,20 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
     fx : np.ndarray
         The cross polarization component in the DPF, normalized. |fx|^2. fx[pixel][ifo]
     ni : np.ndarray
-        The noise index for each pixel. ni[pixel][ifo]
+        The noise index for each pixel, shape (n_pix,).
     et : np.ndarray
-        The total energy for each pixel. et[pixel][ifo]
+        The total energy for each pixel, shape (n_pix,).
     mask : np.ndarray
         The mask indicating active pixels. mask[pixel]
     reg : tuple
         The regularization parameters.
+
+    scratch : tuple of numpy.ndarray
+        Writable float32 buffers: (au, AU, av, AV, mask_updated, p_updated, q_updated): the first
+        five arrays have shape (n_pix,); the final two have shape (n_ifo, n_pix).
+        Every buffer is overwritten before use and must not alias any input
+        or another scratch buffer. Returned arrays borrow these buffers and
+        remain valid only until the next call with the same scratch tuple.
 
     Returns
     -------
@@ -207,7 +208,7 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
         av[i] = _xx * _F
         AV[i] = _XX * _F
 
-        _a = _f * fp[i] + _F * fx[i]  # Gaussin noise correction
+        _a = _f * fp[i] + _F * fx[i]  # Gaussian noise correction
         NN += mask[i]  # number of pixels
         mask_updated[i] = _a + mask[i] - float32(1.0)  # -1 - rejected, >=0 accepted
 
@@ -215,41 +216,12 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
             p_updated[j][i] = f[i][j] * au[i] + F[i][j] * av[i]
             q_updated[j][i] = f[i][j] * AU[i] + F[i][j] * AV[i]
 
-    # su, sv, uu, UU, vv, VV = float32(0), float32(0), float32(0), float32(0), float32(0), float32(0)
-    # for i in range(n_pix):
-    #     su += au[i] * AU[i]
-    #     sv += av[i] * AV[i]
-    #     uu += au[i] * au[i]
-    #     UU += AU[i] * AU[i]
-    #     vv += av[i] * av[i]
-    #     VV += AV[i] * AV[i]
-
-    # nn = sqrt((uu - UU) * (uu - UU) + 4 * su * su) + float32(0.0001)  # co/si norm
-    # cu = (uu - UU) / nn
-    # et = uu + UU  # rotation cos(2p) and sin(2p)
-    # uu = sqrt((et + nn) / float32(2.0))
-    # UU = 0 if et > nn else sqrt((et - nn) / float32(2.0))  # amplitude of first/second component
-    # nn = float32(1.0) if su > float32(0.0) else float32(-1.0)  # norm^2 of 2*cos^2 and 2*sin*cos
-    # su = sqrt((float32(1.0) - cu) / float32(2.0))
-    # cu = nn * sqrt((float32(1.0) + cu) / float32(2.0))  # normalized rotation sin/cos
-
-    # second packet
-    # nn = sqrt((vv - VV) * (vv - VV) + float32(4.0) * sv * sv) + float32(0.0001)  # co/si norm
-    # cv = (vv - VV) / nn
-    # ET = vv + VV  # rotation cos(2p) and sin(2p)
-    # vv = sqrt((ET + nn) / float32(2.0))
-    # VV = float32(0.) if ET > nn else sqrt((ET - nn) / float32(2.0))  # first/second component energy
-    # nn = float32(1.0) if sv > float32(0.0) else float32(-1.0)  # norm^2 of 2*cos^2 and 2*sin*cos
-    # sv = sqrt((float32(1.0) - cv) / float32(2.0))
-    # cv = nn * sqrt((float32(1.0) + cv) / float32(2.0))  # normalized rotation sin/cos// first packet
-
     return NN, p_updated, q_updated, mask_updated, au, AU, av, AV
 
 
 @njit(cache=True)
 def avx_ort_ps_into(v00, v90, mask, scratch):
-    """
-    orthogonalize data vectors v00 and v90, calculate norms of orthogonal vectors and rotation sin & cos
+    """Orthogonalize quadratures into caller-owned rotation and energy arrays.
 
     Parameters
     ----------
@@ -259,6 +231,12 @@ def avx_ort_ps_into(v00, v90, mask, scratch):
         The 90 polarization component of the packet. v90[ifo][pixel]
     mask : np.ndarray
         The mask indicating active pixels. mask[pixel]
+
+    scratch : tuple of numpy.ndarray
+        Writable float32 buffers: (si, co, ee, EE), each with shape (n_pix,).
+        Every buffer is overwritten before use and must not alias any input
+        or another scratch buffer. Returned arrays borrow these buffers and
+        remain valid only until the next call with the same scratch tuple.
 
     Returns
     -------
@@ -320,8 +298,7 @@ def avx_ort_ps_into(v00, v90, mask, scratch):
 
 @njit(cache=True)
 def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
-    """
-    returns coherent statistics in the format {cc,ec,ed,gn}
+    """Compute coherent statistics into caller-owned per-pixel arrays.
 
     Parameters
     ----------
@@ -339,6 +316,12 @@ def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
         The cos of the rotation angle for each pixel. co[pixel]
     mask : np.ndarray
         The mask indicating active pixels. mask[pixel]
+
+    scratch : tuple of numpy.ndarray
+        Writable float32 buffers: (ec, gn, rn), each with shape (n_pix,).
+        Every buffer is overwritten before use and must not alias any input
+        or another scratch buffer. Returned arrays borrow these buffers and
+        remain valid only until the next call with the same scratch tuple.
 
     Returns
     -------
@@ -365,7 +348,6 @@ def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
     _0 = np.float32(0)
     _1 = np.float32(1)
     _2 = np.float32(2)
-    # _k = 2 * (1 - k)
 
     ec, gn, rn = scratch
 

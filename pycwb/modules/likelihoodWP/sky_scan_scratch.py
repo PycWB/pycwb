@@ -34,6 +34,50 @@ def scan_sky_scratch(
 ):
     # Keep legacy parameter names for keyword compatibility, but use readable
     # local names inside the scan.
+    """Compute direction statistics while reusing equal-delay input data.
+
+    Parameters
+    ----------
+    n_ifo, n_pix, n_sky : int
+        Detector, cluster-pixel and sky-grid sizes.
+    FP, FX : numpy.ndarray
+        Float32 plus/cross antenna patterns, shape (n_sky, n_ifo).
+    rms : numpy.ndarray
+        Float32 pixel noise weights, shape (n_pix, n_ifo).
+    td00, td90 : numpy.ndarray
+        Float32 delayed quadratures, shape (n_delay, n_ifo, n_pix).
+    ml : numpy.ndarray
+        Integer delay offsets, shape (n_ifo, n_sky); zero addresses n_delay // 2.
+    REG : numpy.ndarray
+        Regularization parameters, narrowed to float32 locally.
+    netCC : float
+        Minimum reduced-correlation statistic for retaining a direction.
+    delta_regulator : float
+        Sign selects the probability statistic convention.
+    network_energy_threshold : float
+        Pixel energy threshold passed to the delayed-data loader.
+    sky_valid_indices : numpy.ndarray
+        Nonempty int64 sky indices. Their original order determines tie-breaking.
+    group_order, group_offsets : numpy.ndarray
+        Complete delay-group permutation and boundaries from make_delay_groups.
+
+    Returns
+    -------
+    tuple
+        Best sky index; float32 maps for antenna prior, alignment, likelihood,
+        null energy, coherent energy, correlation, sky statistic, disbalance,
+        network index, ellipticity and polarization; and the best sky statistic.
+
+    Notes
+    -----
+    Per-direction DPF and statistics are recomputed. Only delay-dependent input
+    loads, initial energy and masks are reused. Public parameter spellings match
+    the original kernel for keyword compatibility. Keep numerical updates aligned
+    with the ordinary scan and the other grouped implementation.
+
+    Scratch belongs to one group worker. Returned maps own separate storage;
+    no scratch array may escape or be shared with a concurrent group.
+    """
     plus_antenna_patterns = FP
     cross_antenna_patterns = FX
     noise_weights = rms

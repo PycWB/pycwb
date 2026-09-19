@@ -14,6 +14,18 @@ def dpf_index_only(Fp0, Fx0, rms):
 
     The regulator discards the per-pixel output arrays. Two detector-sized
     work arrays suffice here; the sky scan still computes its full DPF.
+
+    Parameters
+    ----------
+    Fp0, Fx0 : numpy.ndarray
+        Float32 plus/cross antenna patterns for one direction, shape (n_ifo,).
+    rms : numpy.ndarray
+        Float32 pixel noise weights, shape (n_pix, n_ifo).
+
+    Returns
+    -------
+    float
+        Scalar network index, matching element zero of dpf_np_loops_vec.
     """
     n_pix, n_ifo = rms.shape
     f = np.empty(n_ifo, dtype=np.float32)
@@ -55,6 +67,28 @@ def dpf_index_only(Fp0, Fx0, rms):
 
 @njit(parallel=True, cache=True)
 def calculate_dpf_scalar(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold, sky_valid_indices):
+    """Compute the regulator without retaining per-pixel DPF output arrays.
+
+    Parameters
+    ----------
+    FP, FX : numpy.ndarray
+        Antenna patterns, shape (n_sky, n_ifo); narrowed to float32.
+    rms : numpy.ndarray
+        Pixel noise weights, shape (n_pix, n_ifo); narrowed to float32.
+    n_sky, n_ifo : int
+        Sky-grid and detector dimensions used to validate inputs.
+    gamma_regulator : float
+        Threshold for counting valid directions by scalar DPF index.
+    network_energy_threshold : float
+        Multiplier applied to the final regulator.
+    sky_valid_indices : numpy.ndarray
+        Int64 indices of sky directions to evaluate.
+
+    Returns
+    -------
+    float
+        Regulator using the original float64 count reduction and offset.
+    """
     FP = FP.astype(np.float32)
     FX = FX.astype(np.float32)
     rms = rms.astype(np.float32)

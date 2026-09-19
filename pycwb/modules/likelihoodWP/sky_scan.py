@@ -48,13 +48,13 @@ def scan_sky_for_best_fit(
     n_pix : int
         Number of pixels.
     n_sky : int
-        Total number of sky locations (length of FP/FX/ml first axis).
+        Total number of sky locations (FP/FX axis 0 and ml axis 1).
     FP : np.ndarray
         f+ polarization data, shape (n_sky, nIFO), float32.
     FX : np.ndarray
         fx polarization data, shape (n_sky, nIFO), float32.
     rms : np.ndarray
-        Per-IFO per-pixel RMS values, shape (nIFO, n_pix), float32.
+        Per-pixel detector noise weights, shape (n_pix, nIFO), float32.
     td00 : np.ndarray
         Time-delayed in-phase amplitudes, shape (ndelay, nIFO, n_pix), float32.
     td90 : np.ndarray
@@ -77,7 +77,7 @@ def scan_sky_for_best_fit(
     -------
     tuple
         ``(l_max, nAntenaPrior, nAlignment, nLikelihood, nNullEnergy, nCorrEnergy,
-        nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation)``
+        nCorrelation, nSkyStat, nDisbalance, nNetIndex, nEllipticity, nPolarisation, sky_stat_max)``
         where ``l_max`` is the index of the sky location with maximum cross-correlation
         statistic and all ``n*`` arrays are float32 of length n_sky.
     """
