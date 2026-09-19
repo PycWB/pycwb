@@ -1,0 +1,19 @@
+{
+  "reference_version": "6.4.6.9",
+  "reference_commit": "e03cf7f02fa4d4666c5619ffcf9730e988328e3c",
+  "search": "BurstLF",
+  "chunk": "16a",
+  "job": 1,
+  "lag": 209,
+  "reference_cluster": 28,
+  "native_cluster": 14,
+  "native_event_id": "1_0_209_1387221894.75_4b1105a4f8",
+  "capture_directory": "runs/lag400_audit/extra",
+  "conversion_script": "runs/lag400_audit/extra_probe.py",
+  "pixel_order": "cWB high-to-low resolution supercluster reconstruction",
+  "fixture_sha256": "88aa4f147f7d9e049c1e1dc413aedbdae386a52193e4d7067555511439ff801c",
+  "expected_reference_sky_index": 37,
+  "subrho_threshold": 4.5,
+  "python_mra_on_reference_inputs": 4.495407036547879,
+  "scope": "TD/RMS capture converted to native arrays; delay/antenna and cross-talk arrays are native tables checked by the probe. Tests cover both sky-scanner paths. Full pipeline results were not regenerated after the score cast."
+}

@@ -58,8 +58,8 @@ def _reference_defrag_links(pixels, t_gap, f_gap, n_ifo):
             r = 1.0 / p[2] + 1.0 / q[2]
             t = p[2] + q[2]
             d_t = max(abs(p[5 + k] - q[5 + k]) for k in range(n_ifo)) - 0.5 * t
-            d_f = abs(p[1] - q[1]) - 0.5 * r
-            if d_t < t_gap and d_f < f_gap:
+            d_f = abs(p[1] / 2 - q[1] / 2) - 0.25 * r
+            if d_t <= t_gap and d_f <= f_gap:
                 link = (int(min(p[4], q[4])), int(max(p[4], q[4])))
                 if link not in links:
                     links.append(link)

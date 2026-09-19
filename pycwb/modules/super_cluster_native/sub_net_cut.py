@@ -197,7 +197,9 @@ def _sub_net_cut_prepared_arrays(
                                                       network_energy_threshold, e2or, subcut,
                                                       cluster_xtalk, cluster_xtalk_lookup, l_max)
     subnet_pass = min(suball, submra) > subnet
-    subrho_pass = rHo > subrho
+    # cWB 6.4.6.9 uses the magnitude here; a negative netRHO selects
+    # a likelihood convention, not an automatically passing subnet cut.
+    subrho_pass = rHo > abs(subrho)
     subthr_pass = Em > subnorm * Eo
 
     return _format_subnet_result(subnet_pass, subrho_pass, subthr_pass, suball, submra, rHo, Em, subnet, subrho, subnorm, Eo)
@@ -257,7 +259,7 @@ def _sub_net_cut_prepared_packets(
     _add_timing(timing, "mra", time.perf_counter() - t_stage)
 
     subnet_pass = min(suball, submra) > subnet
-    subrho_pass = rHo > subrho
+    subrho_pass = rHo > abs(subrho)
     subthr_pass = Em > subnorm * Eo
 
     return _format_subnet_result(
@@ -284,7 +286,7 @@ def _format_subnet_result(
         'subrho_passed': subrho_pass,
         'subthr_passed': subthr_pass,
         'subnet_condition': f"min(suball = {suball:.4f}, submra = {submra:.4f}) > subnet = {subnet:.4f}",
-        'subrho_condition': f"rho = {rHo:.4f} > subrho = {subrho:.4f}",
+        'subrho_condition': f"rho = {rHo:.4f} > abs(subrho) = {abs(subrho):.4f}",
         'subthr_condition': f"Em = {Em:.4f} > (subnorm = {subnorm:.4f} * Eo = {Eo:.4f})"
     }
 
@@ -381,7 +383,8 @@ def optimze_sky_loc(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, td_energy, ml,
             Lo += sse_like_ps(f[j], F[j], reduced_v00[j], reduced_v90[j])
         # if l in [0, 22, 1000, 1860, 1967, 2000]: print("Ln = ", Ln, ", Eo = ", Eo, ", Ls = ", Ls, ", Lo = ", Lo, ", m = ", m)
 
-        AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)  # subnet stat with threshold
+        # cWB stores AA as float before comparing sky scores; preserve its ties.
+        AA = float32(aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo))  # subnet stat with threshold
         # if l in [0, 22, 1000, 1860, 1967, 2000]: print("AA = ", AA, ", aa = ", aa, ", l = ", l)
         ee = Ls * Eo / (Eo - Ls)
         em = abs(Eo - Lo) + 2 * m  # suball NULL
@@ -498,7 +501,8 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
         for j in range(m):
             Lo += sse_like_ps(dpf_f[j], dpf_F[j], reduced_v00[j], reduced_v90[j])
 
-        AA = aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo)
+        # cWB stores AA as float before comparing sky scores; preserve its ties.
+        AA = float32(aa / (abs(aa) + abs(Eo - Lo) + 2 * m * (Eo - Ln) / Eo))
         ee = Ls * Eo / (Eo - Ls)
         em = abs(Eo - Lo) + 2 * m
         ee = ee / (ee + em)

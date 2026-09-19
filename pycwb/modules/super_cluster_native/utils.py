@@ -168,7 +168,7 @@ def get_cluster_links(
     Find (i, j) links between clusters whose pixels are close enough to merge.
 
     Pixels are represented as rows in *pixels* where columns are:
-    ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+    ``[time_s, 2*freq_hz, 1/rate, rate/2, cluster_id, td_time_ifo0, …]``.
 
     Parameters
     ----------
@@ -263,7 +263,7 @@ def get_defragment_link(
     Parameters
     ----------
     pixels : np.ndarray of shape (N, 5+n_ifo)
-        Per-pixel feature array: ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+        Per-pixel feature array: ``[time_s, 2*freq_hz, 1/rate, rate/2, cluster_id, td_time_ifo0, …]``.
     t_gap : float
         Maximum allowed time separation in seconds.
     f_gap : float
@@ -277,6 +277,8 @@ def get_defragment_link(
         Unique cluster-index pairs satisfying the defragmentation condition,
         or an empty ``(0, 2)`` array when no links exist.
     """
+    if len(pixels) == 0 or (t_gap <= 0 and f_gap <= 0):
+        return np.empty((0, 2), dtype=np.int32)
     pixels = pixels[pixels[:, 0].argsort()]
 
     Tgap = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
@@ -314,10 +316,11 @@ def get_defragment_link(
                     dT = abs(aa)
             dT -= 0.5 * T
 
-            # Calculate dF using half the rate difference.
-            dF = abs(p[1] - q[1]) - 0.5 * R
+            # The shared link matrix stores twice the frequency in Hz.
+            # cWB compares the band-edge distance in Hz with f_gap.
+            dF = 0.5 * abs(p[1] - q[1]) - 0.25 * R
 
-            if dT < t_gap and dF < f_gap:
+            if dT <= t_gap and dF <= f_gap:
                 if p[4] < q[4]:
                     a = int(p[4])
                     b = int(q[4])
