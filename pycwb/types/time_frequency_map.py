@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from dataclasses import dataclass
 
@@ -479,7 +480,7 @@ class TimeFrequencyMap:
 
 		return shape
 
-	def prepare_td_inputs(self, td_filters):
+	def prepare_td_inputs(self, td_filters, *, frequency_bounds=None):
 		"""
 		Build padded quadrature planes and filter tables for batch TD extraction.
 
@@ -496,16 +497,33 @@ class TimeFrequencyMap:
 		TDBatchInputs
 		"""
 		data = np.asarray(self.data, dtype=np.complex128)  # (M+1, n_time)
-		tf00 = np.ascontiguousarray(data.real.T, dtype=np.float64)  # (n_time, M+1)
-		tf90 = np.ascontiguousarray(data.imag.T, dtype=np.float64)
+		frequency_offset = 0
+		if frequency_bounds is not None:
+			start, stop = map(int, frequency_bounds)
+			if not 0 <= start < stop <= data.shape[0]:
+				raise ValueError("Invalid TD cache frequency bounds")
+			frequency_offset = start
+			data = data[start:stop]
 
 		n_coeffs = int(td_filters.n_coeffs)
 		M = int(td_filters.M)
 		J = int(td_filters.max_delay)
 
-		pad = [(n_coeffs, n_coeffs), (0, 0)]
-		padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
-		padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
+		if os.environ.get("PYCWB_COMPACT_TD_CACHE") == "1":
+			# Cast each quadrature directly into its final padded allocation.
+			# The conversion is the same float64 -> float32 cast as below.
+			n_time = data.shape[1]
+			shape = (n_time + 2 * n_coeffs, data.shape[0])
+			padded00 = np.zeros(shape, dtype=np.float32)
+			padded90 = np.zeros(shape, dtype=np.float32)
+			padded00[n_coeffs:n_coeffs + n_time] = data.real.T
+			padded90[n_coeffs:n_coeffs + n_time] = data.imag.T
+		else:
+			tf00 = np.ascontiguousarray(data.real.T, dtype=np.float64)
+			tf90 = np.ascontiguousarray(data.imag.T, dtype=np.float64)
+			pad = [(n_coeffs, n_coeffs), (0, 0)]
+			padded00 = np.ascontiguousarray(np.pad(tf00, pad), dtype=np.float32)
+			padded90 = np.ascontiguousarray(np.pad(tf90, pad), dtype=np.float32)
 
 		T0 = np.ascontiguousarray(td_filters.T0, dtype=np.float64)
 		Tx = np.ascontiguousarray(td_filters.Tx, dtype=np.float64)
@@ -518,6 +536,7 @@ class TimeFrequencyMap:
 			M=M,
 			n_coeffs=n_coeffs,
 			J=J,
+			frequency_offset=frequency_offset,
 		)
 
 

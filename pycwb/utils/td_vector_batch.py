@@ -21,6 +21,7 @@ Notes
 """
 
 import logging
+import os
 
 import numpy as np
 from pycwb.utils.td_vector_kernels import batch_get_td_vecs
@@ -71,33 +72,48 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
     )
     wdm.set_td_filter(int(config.TDSize), upTDF)
 
+    compact_cache = os.environ.get("PYCWB_COMPACT_TD_CACHE") == "1"
     detector_tf_maps = []
+    per_ifo = []
     for n in range(config.nIFO):
         strain_ts = strains_ts[n]
         ts_data = np.asarray(strain_ts.data, dtype=np.float64)
         sample_rate = float(strain_ts.sample_rate)
         t0 = float(strain_ts.t0)
         wdm_tf = wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1)
-        detector_tf_maps.append(
-            TimeFrequencyMap(
-                data=wdm_tf.data,
-                is_whitened=True,
-                dt=wdm_tf.dt,
-                df=wdm_tf.df,
-                start=wdm_tf.start_time,
-                stop=wdm_tf.end_time,
-                f_low=wdm_tf.start_freq,
-                f_high=wdm_tf.end_freq,
-                edge=None,
-                wavelet=wdm,
-                len_timeseries=wdm_tf.len_timeseries,
-            )
+        tf_map = TimeFrequencyMap(
+            data=wdm_tf.data,
+            is_whitened=True,
+            dt=wdm_tf.dt,
+            df=wdm_tf.df,
+            start=wdm_tf.start_time,
+            stop=wdm_tf.end_time,
+            f_low=wdm_tf.start_freq,
+            f_high=wdm_tf.end_freq,
+            edge=None,
+            wavelet=wdm,
+            len_timeseries=wdm_tf.len_timeseries,
         )
+        if compact_cache:
+            bounds = None
+            if os.environ.get("PYCWB_BAND_TD_CACHE") == "1":
+                # Selection stays within fLow/fHigh. Retain its neighboring
+                # frequency bands for the cross-band TD filter terms.
+                low = max(0, int(np.floor(float(getattr(config, "fLow", 0.)) / wdm_tf.df)))
+                high = min(wdm_layers + 1, int(np.floor(float(getattr(config, "fHigh", sample_rate / 2.)) / wdm_tf.df)) + 2)
+                if low < high:
+                    bounds = (low, high)
+            per_ifo.append(tf_map.prepare_td_inputs(wdm.td_filters, frequency_bounds=bounds))
+            # No previous detector's complex map remains live during t2w.
+            del tf_map, wdm_tf
+        else:
+            detector_tf_maps.append(tf_map)
 
-    per_ifo = [
-        detector_tf_maps[n].prepare_td_inputs(wdm.td_filters)
-        for n in range(config.nIFO)
-    ]
+    if not compact_cache:
+        per_ifo = [
+            detector_tf_maps[n].prepare_td_inputs(wdm.td_filters)
+            for n in range(config.nIFO)
+        ]
     return wdm_layers, per_ifo
 
 

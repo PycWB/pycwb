@@ -110,12 +110,21 @@ class ClusterMeta:
     sky_size: int = 0
     sky_index: int = 0
     l_max: int = 0
+    reconstructed_theta: Optional[float] = None
+    reconstructed_phi: Optional[float] = None
     # Per-IFO xtalk-corrected waveform energies (getMRAwave equivalents, set by fill_detection_statistic)
     wave_snr: list = field(default_factory=list)    # data energy per IFO (C++ d->enrg = get_XX())
     signal_snr: list = field(default_factory=list)  # signal energy per IFO (C++ d->sSNR = get_SS())
     cross_snr: list = field(default_factory=list)   # xSNR per IFO (C++ d->xSNR = get_XS())
     signal_energy_physical: list = field(default_factory=list)  # physical strain energy per IFO for hrss
     null_energy: list = field(default_factory=list)  # null energy per IFO (C++ d->null)
+    mchirp: float = 0.
+    mchirp_error: float = 0.
+    chirp_merger_time: float = 0.
+    chirp_merger_time_error: float = 0.
+    chirp_ellipticity: float = 0.
+    chirp_energy_fraction: float = 0.
+    chirp_symmetry: float = 0.
 
 
 @dataclass(init=False)
@@ -513,4 +522,3 @@ class ClusterChirp:
         # # TODO: pythonize these
         # self.chirp = c_data.chirp
         # self.mchpdf = c_data.mchpdf
-

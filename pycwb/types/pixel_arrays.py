@@ -367,14 +367,27 @@ class PixelArrays:
     def populate_noise_rms(self, nRMS: list) -> None:
         """Vectorised replacement for ``_populate_pixel_noise_rms``.
 
-        Updates ``self.noise_rms`` in-place from TF noise maps produced by
-        the whitening step.  No per-pixel Python loop.
+        Updates ``self.noise_rms`` in-place from whitening noise anchors.
+        Native NoiseRMSMap inputs use each detector's lagged pixel index,
+        explicit anchor timing, and harmonic frequency-band averaging.
 
         Parameters
         ----------
         nRMS : list[TimeFrequencyMap]
             One noise map per IFO.  ``data`` shape is ``(n_freq, n_time)``.
         """
+        from .noise_rms import NoiseRMSMap, lookup_pixel_noise_rms
+
+        if any(isinstance(m, NoiseRMSMap) for m in nRMS):
+            if len(nRMS) != self._n_ifo:
+                raise ValueError("One whitening-noise map is required per detector")
+            self.noise_rms[:] = lookup_pixel_noise_rms(
+                self.frequency, self.pixel_index.T, self.layers, self.rate, nRMS,
+            ).T
+            return
+
+        # Compatibility for historical serialized maps lacking anchor metadata.
+        # Newly conditioned native data always uses the exact lookup above.
         n_ifo = self._n_ifo
         freq_bins  = self.frequency.astype(np.int64)    # (n_pix,)
         layers_arr = self.layers.astype(np.int64)       # (n_pix,)
