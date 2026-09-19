@@ -1,0 +1,80 @@
+[
+  {
+    "case": "rising",
+    "seed": 1,
+    "min_dt": 0.00390625,
+    "returned": 8.235223116330781,
+    "mchirp": 8.235222816467285,
+    "mchirperr": -1.0,
+    "tmrgr": 12.593927383422852,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9877114295959473,
+    "chirpEfrac": 0.5626254677772522,
+    "chirpPfrac": 0.9069604873657227
+  },
+  {
+    "case": "rising",
+    "seed": 2,
+    "min_dt": 0.00390625,
+    "returned": 8.149408148143415,
+    "mchirp": 8.149408340454102,
+    "mchirperr": -1.0,
+    "tmrgr": 12.61779499053955,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9877114295959473,
+    "chirpEfrac": 0.5614145398139954,
+    "chirpPfrac": 0.922132134437561
+  },
+  {
+    "case": "falling",
+    "seed": 1,
+    "min_dt": 0.00390625,
+    "returned": -10.622022328788972,
+    "mchirp": -10.62202262878418,
+    "mchirperr": -1.0,
+    "tmrgr": 9.603362083435059,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9887503981590271,
+    "chirpEfrac": 0.47945281863212585,
+    "chirpPfrac": 0.6943802237510681
+  },
+  {
+    "case": "falling",
+    "seed": 2,
+    "min_dt": 0.00390625,
+    "returned": -10.087159181228728,
+    "mchirp": -10.087159156799316,
+    "mchirperr": -1.0,
+    "tmrgr": 9.552003860473633,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9887503981590271,
+    "chirpEfrac": 0.4950442612171173,
+    "chirpPfrac": 0.6552436947822571
+  },
+  {
+    "case": "mixed",
+    "seed": 1,
+    "min_dt": 0.00390625,
+    "returned": 1.3523776014444986,
+    "mchirp": 1.3523776531219482,
+    "mchirperr": -1.0,
+    "tmrgr": 34.003299713134766,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9820151329040527,
+    "chirpEfrac": 0.13930289447307587,
+    "chirpPfrac": 0.9103577733039856
+  },
+  {
+    "case": "mixed",
+    "seed": 2,
+    "min_dt": 0.00390625,
+    "returned": -1.4590888858031104,
+    "mchirp": -1.459088921546936,
+    "mchirperr": -1.0,
+    "tmrgr": -9.491676330566406,
+    "tmrgrerr": -1.0,
+    "chirpEllip": 0.9820151329040527,
+    "chirpEfrac": 0.08914854377508163,
+    "chirpPfrac": 0.949219286441803
+  }
+]
