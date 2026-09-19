@@ -272,18 +272,21 @@ def _log_lag_completion(result) -> None:
     logger.info("-------------------------------------------")
 
 
-def _cleanup_lag_output_state() -> None:
+def _cleanup_lag_output_state(*, release_jax: bool = True) -> None:
     """Collect short-lived cycles, periodically scanning the full object graph.
 
     Completed outputs are serialized by one thread per job worker. Keep normal
     Python automatic collection enabled. A full collection also runs after
     128 MiB RSS growth; device backends remain alive for the next lag/job.
+    Analysis-only process workers disable JAX cleanup to avoid initializing a
+    device runtime merely to collect their Python heap.
     """
     global _cleanup_count, _last_full_collection_rss
     interval = int(os.environ.get("PYCWB_GC_FULL_INTERVAL", "1"))
     if interval <= 1:
         gc.collect()
-        _free_jax_buffers()
+        if release_jax:
+            _free_jax_buffers()
         return
     _cleanup_count += 1
     rss = psutil.Process().memory_info().rss

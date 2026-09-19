@@ -33,6 +33,7 @@ dependencies = [
     "lalsuite>=7.23",
     "healpy>=1.17",
     "scikit-learn>=1.4.2",
+    "joblib>=1.3",
     "pyarrow>=17",
     "pillow>=9.0.0",
     "click",

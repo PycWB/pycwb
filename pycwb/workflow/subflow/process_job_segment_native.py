@@ -457,6 +457,8 @@ def process_job_segment(
     queue=None,
     production_mode: bool = False,
     skip_lags: dict[int, set[int]] | None = None,
+    *,
+    lag_processor=None,
 ):
     """
     The core workflow to process single job segment with trials or lags.
@@ -479,6 +481,9 @@ def process_job_segment(
         Whether to run in production mode, if True, the triggers will be sent to the queue instead of saving them in this function
     skip_lags : list
         The options to skip certain lags. It is used for resuming the processing after a crash
+    lag_processor : callable, optional
+        Alternate lag executor receiving analysis context, output context and
+        skip_lags. The default retains the native lag-processing behavior.
 
     """
     # ─────────────────────────────────────────────────────────────────────────
@@ -716,7 +721,7 @@ def process_job_segment(
             unwhitened_injection_strains=unwhitened_injection_strains,
             whitened_injection_strains=whitened_injection_strains,
         )
-        _process_lags(
+        (lag_processor or _process_lags)(
             analysis_context,
             output_context,
             skip_lags=skip_lags,
