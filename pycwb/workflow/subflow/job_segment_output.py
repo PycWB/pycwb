@@ -2,6 +2,7 @@
 
 import gc
 import logging
+import os
 import time
 
 import psutil
@@ -20,6 +21,8 @@ from pycwb.workflow.subflow.postprocess_and_plots import (
 )
 
 logger = logging.getLogger(__name__)
+_cleanup_count = 0
+_last_full_collection_rss = None
 
 
 def _create_and_save_trigger_folders(output_context, result) -> list[str | None]:
@@ -265,5 +268,25 @@ def _log_lag_completion(result) -> None:
 
 
 def _cleanup_lag_output_state() -> None:
-    gc.collect()
-    _free_jax_buffers()
+    """Collect short-lived cycles, periodically scanning the full object graph.
+
+    Completed outputs are serialized by one thread per job worker. Keep normal
+    Python automatic collection enabled. A full collection also runs after
+    128 MiB RSS growth; device backends remain alive for the next lag/job.
+    """
+    global _cleanup_count, _last_full_collection_rss
+    interval = int(os.environ.get('PYCWB_GC_FULL_INTERVAL', '1'))
+    if interval <= 1:
+        gc.collect()
+        _free_jax_buffers()
+        return
+    _cleanup_count += 1
+    rss = psutil.Process().memory_info().rss
+    full = (_last_full_collection_rss is None
+            or _cleanup_count % interval == 0
+            or rss > _last_full_collection_rss + 128*1024**2)
+    collected = gc.collect(2 if full else 0)
+    if full:
+        _last_full_collection_rss = psutil.Process().memory_info().rss
+    if os.environ.get('PYCWB_PERF_DIAGNOSTICS') == '1':
+        logger.info('PERF gc full=%d collected=%d rss=%d', full, collected, rss)

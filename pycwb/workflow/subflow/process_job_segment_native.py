@@ -112,6 +112,7 @@ from pycwb.workflow.subflow.job_segment_veto import (
 )
 
 logger = logging.getLogger(__name__)
+_PERF_DIAGNOSTICS = os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1"
 
 
 @dataclass(frozen=True)
@@ -242,11 +243,20 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             # A failure indicates a systemic issue (e.g. corrupt sky arrays,
             # OOM, NaN propagation) that requires investigation — silently
             # skipping the cluster would mask the root cause.
+            likelihood_call_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
             result_cluster, sky_stats = likelihood(
                 config.nIFO, selected_cluster, config,
                 cluster_id=k + 1, nRMS=context.nRMS,
                 setup=context.likelihood_setup, xtalk=context.xtalk,
+                chirp_seed=sub_job_seg.index,
             )
+            if _PERF_DIAGNOSTICS:
+                logger.info(
+                    "PERF likelihood lag=%d cluster=%d pixels=%d elapsed=%.6f accepted=%d",
+                    lag, k + 1, len(selected_cluster.pixel_arrays),
+                    time.perf_counter() - likelihood_call_timer,
+                    int(result_cluster is not None and result_cluster.cluster_status == -1),
+                )
 
             if result_cluster is None or result_cluster.cluster_status != -1:
                 continue
@@ -258,7 +268,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             )
 
             event = Event()
-            event.output_py(sub_job_seg, result_cluster, config)
+            event.output_py(sub_job_seg, result_cluster, config, lag_shifts=lag_shifts)
             event.job_id = sub_job_seg.index
             event.trial_idx = context.trial_idx
             event.lag_idx = lag
@@ -286,6 +296,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
 
 def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> None:
+    output_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
     # Phase A: create trigger folders and persist raw cluster/skymap data.
     trigger_folders = _create_and_save_trigger_folders(output_context, result)
 
@@ -312,7 +323,14 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     _log_lag_completion(result)
 
     del trigger_folders
+    cleanup_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
     _cleanup_lag_output_state()
+    if _PERF_DIAGNOSTICS:
+        logger.info(
+            "PERF output lag=%d elapsed=%.6f cleanup=%.6f lag_total=%.6f",
+            result.lag, time.perf_counter() - output_timer,
+            time.perf_counter() - cleanup_timer, time.perf_counter() - result.lag_timer,
+        )
 
 
 def _iter_pending_lags(
@@ -580,7 +598,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         # 3a. Coherence setup: WDM decomposition + TF maps for all IFOs.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg)
+        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg, nRMS=nRMS)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 

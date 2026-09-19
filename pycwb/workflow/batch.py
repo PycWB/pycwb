@@ -244,13 +244,27 @@ def processor_wrapper(main_func, queue, working_dir, config, job_seg, compress_j
     logger_init(log_file=f"{working_dir}/log/job_{job_seg.index}.log", log_level="INFO")
     logger.info(f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}")
     try:
+        if os.environ.get('PYCWB_REQUIRE_GPU') == '1':
+            import jax
+            devices = jax.devices()
+            if not devices or devices[0].platform != 'gpu':
+                raise RuntimeError('CUDA execution required; refusing CPU fallback')
+            logger.info('GPU validation devices: %s', devices)
         main_func(working_dir, config, job_seg,
                   compress_json=compress_json, catalog_file=catalog_file, queue=queue,
                   skip_lags=skip_lags)
     except Exception as e:
         logger.error(f"Error processing job segment: {job_seg}")
-        logger.error(e)
+        logger.exception("Job segment %s failed", job_seg.index)
         return e
+    finally:
+        if os.environ.get('PYCWB_REQUIRE_GPU') == '1':
+            import json
+            from pathlib import Path
+            import jax
+            stats = [{'device': str(device), 'platform': device.platform,
+                      'memory': device.memory_stats()} for device in jax.devices()]
+            (Path(working_dir)/f'gpu_job_{job_seg.index}.json').write_text(json.dumps(stats, indent=2))
 
 
 def batch_run(config_file, working_dir='.', log_file=None, log_level="INFO",

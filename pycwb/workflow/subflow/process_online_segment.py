@@ -165,6 +165,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
             config,
             strains,
             wave_seg,
+            nRMS,
         )
         f_td_cache = pool.submit(
             _parallel_td_cache_build,
@@ -308,7 +309,7 @@ def _online_seg_to_wave_seg(online_seg: OnlineSegment, config) -> WaveSegment:
     )
 
 
-def _parallel_coherence_setup(config, strains, wave_seg):
+def _parallel_coherence_setup(config, strains, wave_seg, nRMS=None):
     """Run per-resolution coherence setup in parallel threads."""
     up_n = max(1, int(config.rateANA / 1024))
     normalized = [PyCWBTimeSeries.from_input(s) for s in strains]
@@ -330,6 +331,11 @@ def _parallel_coherence_setup(config, strains, wave_seg):
         setups = [None] * nRES
         for fut in as_completed(futures):
             setups[futures[fut]] = fut.result()
+    if nRMS is not None:
+        if len(nRMS) != len(strains):
+            raise ValueError("One whitening-noise map is required per detector")
+        for setup in setups:
+            setup["nRMS"] = nRMS
     return setups
 
 
