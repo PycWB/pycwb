@@ -254,7 +254,12 @@ class Trigger:
     """Chirp ellipticity / amplitude factor  (legacy ``chirp[3]``)."""
 
     chirp_pfrac: float = 0.0
-    """Fraction of pixels consistent with chirp morphology  (legacy ``chirp[4]``)."""
+    """Chirp morphology statistic (legacy ``chirp[4]``).
+
+    The negative-netRHO CBC/BBH/IMBHB micropixel estimator stores energy
+    symmetry about the chirp track here, despite the legacy name. The
+    original chirp estimator uses a pixel fraction.
+    """
 
     chirp_efrac: float = 0.0
     """Fraction of energy consistent with chirp morphology / chi² of fit
