@@ -491,7 +491,28 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
 
 
 def _populate_td_vectors(all_clusters, n_ifo, K, td_inputs_cache, delay_stride=1):
-    """Extract and assign vectors; release the merged temporary on return."""
+    """Extract and assign vectors; release the merged temporary on return.
+
+    Parameters
+    ----------
+    all_clusters : list of Cluster
+        Clusters whose pixel-array TD amplitudes are replaced in place.
+    n_ifo : int
+        Number of detectors represented by each input cache entry.
+    K : int
+        Half-range of the output delay grid. Each quadrature has 2 * K + 1 values.
+    td_inputs_cache : dict
+        Per-layer, per-detector prepared extraction inputs. Existing neighboring
+        layer fallback is retained; a missing layer logs a warning and leaves zeros.
+    delay_stride : int, optional
+        Spacing in fine filter-bank samples, not a pixel-time or frequency stride.
+
+    Notes
+    -----
+    Staged subnet screening uses coarse vectors only until survivor selection;
+    the caller must repopulate surviving clusters with fine vectors before
+    likelihood evaluation. The merged allocation stays local to this call.
+    """
     if not all_clusters:
         return
     # Gather per-cluster sizes and a merged view for layers/pixel_index

@@ -42,8 +42,7 @@ class TDBatchInputs:
     frequency_offset: int = 0
 
     def extract_td_vecs(self, pixel_indices, K, delay_stride=1):
-        """
-        Batch TD vector extraction for the given pixel indices.
+        """Batch TD vector extraction for the given pixel indices.
 
         Parameters
         ----------
@@ -58,6 +57,13 @@ class TDBatchInputs:
         Returns
         -------
         np.ndarray, shape (n_pixels, 4*K+2), dtype float32
+
+        Notes
+        -----
+        Pixel indices keep the global M + 1 frequency stride even for a band-limited
+        cache. frequency_offset translates storage columns only; it must not alter
+        phase parity. Interpolation requires the adjacent frequency bands. This
+        method validates support before entering the compiled extraction kernel.
         """
         from pycwb.utils.td_vector_kernels import batch_get_td_vecs
 
