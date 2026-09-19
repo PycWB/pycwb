@@ -127,22 +127,38 @@ def load_catalog(fn, dump=True):
 
     max_layers = max(layers)
     lookup_table = np.zeros((nRes, nRes, max_layers + 1, 2, 2), dtype=np.int32)
-    xtalk_coeff = []
+    # Record block boundaries first, then allocate the final table once.
+    # A Python list containing one ndarray per coefficient dominates the
+    # first-load memory peak for large LD catalogs.
+    blocks = []
+    entry_dtype = np.dtype([('index', 'i'), ('CC', '4f')])
     entry_index = 0
     for i in range(nRes):
         for j in range(i + 1):
             for k in range(layers[i] + 1):
                 for l in range(2):
                     oa_size = int(unpack('f')[0])
-                    oa_data = np.frombuffer(data, dtype=np.dtype([('index', 'i'), ('CC', '4f')]), count=oa_size,
-                                            offset=offset).tolist()
-                    offset += oa_size * struct.calcsize('i4f')
+                    end = offset + oa_size * entry_dtype.itemsize
+                    if oa_size < 0 or end > len(data):
+                        raise ValueError('Invalid or truncated cross-talk coefficient block')
+                    blocks.append((offset, oa_size))
+                    offset = end
                     lookup_table[i, j, k, l, 0] = entry_index
-                    for entry in oa_data:
-                        xtalk_coeff.append(
-                            np.array([entry[0], entry[1][0], entry[1][1], entry[1][2], entry[1][3]], dtype=np.float32))
-                        entry_index += 1
+                    entry_index += oa_size
                     lookup_table[i, j, k, l, 1] = entry_index
+
+    # Preserve the legacy empty-table representation as well as row order,
+    # float32 index conversion and coefficient bits for nonempty catalogs.
+    xtalk_coeff = (np.empty((entry_index, 5), dtype=np.float32)
+                   if entry_index else np.empty(0))
+    entry_index = 0
+    for offset, size in blocks:
+        entries = np.frombuffer(data, dtype=entry_dtype, count=size, offset=offset)
+        target = xtalk_coeff[entry_index:entry_index + size]
+        if size:
+            target[:, 0] = entries['index']
+            target[:, 1:] = entries['CC']
+        entry_index += size
 
     if dump:
         # dump to current working directory
@@ -150,7 +166,7 @@ def load_catalog(fn, dump=True):
         filename = pathlib.Path(fn).with_suffix(".npz")
         np.savez(filename, xtalk_coeff=xtalk_coeff, xtalk_lookup_table=lookup_table, layers=layers,
                  nRes=nRes, tag=tag, beta_order=BetaOrder, precision=precision, kwdm=KWDM)
-    return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes
+    return xtalk_coeff, lookup_table, np.array(layers), nRes
 
 
 @njit(cache=True)

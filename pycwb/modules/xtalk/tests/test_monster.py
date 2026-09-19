@@ -132,3 +132,58 @@ class TestReadCatalogMetadata:
             assert meta['kwdm'] == 4.0
         finally:
             os.unlink(npz_path)
+
+
+@pytest.mark.parametrize('extended', [False, True])
+def test_coefficient_blocks_preserve_order_and_cached_values(tmp_path, extended):
+    from pycwb.modules.xtalk.monster import load_catalog
+    layers = [1, 2]
+    header = struct.pack('f', -2. if extended else 2.)
+    if extended:
+        header += struct.pack('4f', 1., 6., 10., 0.)
+    header += struct.pack('2f', *layers)
+    expected = []
+    lookup = np.zeros((2, 2, 3, 2, 2), dtype=np.int32)
+    content = bytearray(header)
+    for i in range(2):
+        for j in range(i + 1):
+            for k in range(layers[i] + 1):
+                for parity in range(2):
+                    entries = [] if (k + parity) % 2 else [
+                        (16777217, .125, -.25, 1e-9, -0.),
+                        (-3, 1., 2., 3., 4.),
+                    ]
+                    lookup[i, j, k, parity, 0] = len(expected)
+                    content += struct.pack('f', len(entries))
+                    for row in entries:
+                        content += struct.pack('i4f', *row)
+                        expected.append(np.asarray(row, dtype=np.float32))
+                    lookup[i, j, k, parity, 1] = len(expected)
+    path = tmp_path / 'catalog.xbin'
+    path.write_bytes(content)
+    result = load_catalog(path)
+    assert result[0].tobytes() == np.asarray(expected).tobytes()
+    np.testing.assert_array_equal(result[1], lookup)
+    np.testing.assert_array_equal(result[2], layers)
+    assert result[3] == 2
+    cached = load_catalog(path)
+    for a, b in zip(result, cached):
+        np.testing.assert_array_equal(a, b)
+
+
+def test_empty_coefficient_blocks(tmp_path):
+    from pycwb.modules.xtalk.monster import load_catalog
+    path = tmp_path / 'empty.bin'
+    path.write_bytes(struct.pack('6f', 1., 1., 0., 0., 0., 0.))
+    coeff, lookup, layers, nres = load_catalog(path, dump=False)
+    assert coeff.shape == (0,) and coeff.dtype == np.float64
+    assert not lookup.any()
+    assert not path.with_suffix('.npz').exists()
+
+
+def test_truncated_coefficient_block(tmp_path):
+    from pycwb.modules.xtalk.monster import load_catalog
+    path = tmp_path / 'truncated.bin'
+    path.write_bytes(struct.pack('3f', 1., 1., 2.))
+    with pytest.raises(ValueError, match='truncated'):
+        load_catalog(path, dump=False)
