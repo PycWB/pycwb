@@ -8,6 +8,7 @@ import numpy as np
 from scipy import signal as scipy_signal
 from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 from wdm_wavelet.wdm import WDM
+from pycwb.types.noise_rms import make_noise_rms_map
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +95,7 @@ def whitening_python(config, h):
 
     tf_map.data = whitened
 
-    nrms_tf = TimeFrequencyMap(
-        data=nRMS_anchor,
-        dt=float(tf_map.dt),
-        df=float(tf_map.df),
-        t0=float(tf_map.t0),
-        len_timeseries=int(tf_map.len_timeseries),
-        wdm_params=dict(tf_map.wdm_params),
-    )
+    nrms_tf = make_noise_rms_map(tf_map, nRMS_anchor, edge_length)
 
     # C++ inverts BOTH 00° and 90° phases and averages:
     #   tf_map.Inverse()      → time series from 00° phase

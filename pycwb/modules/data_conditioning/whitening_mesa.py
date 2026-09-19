@@ -190,14 +190,8 @@ def whitening_mesa_python(config, h):
         f_high_map=float(config.fHigh),
     )
 
-    nrms_tf = TimeFrequencyMap(
-        data=np.asarray(nrms_anchor, dtype=np.float64),
-        dt=float(tf_white.dt),
-        df=float(tf_white.df),
-        t0=float(tf_white.t0),
-        len_timeseries=int(tf_white.len_timeseries),
-        wdm_params=dict(tf_white.wdm_params),
-    )
+    from pycwb.types.noise_rms import make_noise_rms_map
+    nrms_tf = make_noise_rms_map(tf_white, nrms_anchor, config.segEdge)
     conditioned_strain = TimeSeries(data=whitened, dt=h_ts.dt, t0=h_ts.t0) 
     logger.info("Conditioned strain length: %d", len(conditioned_strain))
     logger.info("nRMS TF map shape: %s", nrms_tf.data.shape)

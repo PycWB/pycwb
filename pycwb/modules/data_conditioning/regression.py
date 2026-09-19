@@ -6,6 +6,7 @@ using TimeFrequencyMap methods and NumPy operations.
 """
 
 import os
+import shlex
 from functools import partial
 
 import numpy as np
@@ -155,7 +156,38 @@ def _jax_build_matrix(acf, ccf, K, K2, fltr):
     return jnp.concatenate([top, bottom], axis=0)
 
 
+
+@partial(jax.jit, static_argnames=("fraction",))
+def _cap_witness_jax(real, imag, fraction=1.0):
+    """cWB 6.4.6.9 regression::_apply_ amplitude cap, including edge bins."""
+    if fraction >= 1.0:
+        return real, imag
+    energy = real*real + imag*imag
+    kth = int(fraction*real.size-1)
+    if not 0 <= kth < real.size:
+        raise ValueError("Regression cap fraction has no valid order statistic")
+    threshold = 5.0*jnp.partition(energy, kth)[kth]
+    scale = jnp.where(energy > threshold,
+                      jnp.sqrt(threshold/jnp.where(energy > 0, energy, 1.0)), 1.0)
+    return real*scale, imag*scale
+
 if _NUMBA_AVAILABLE:
+    @njit(cache=True)
+    def _cap_witness_numba(real, imag, fraction=1.0):
+        """Cap normalized witness samples in place; retain both phase ratios."""
+        if fraction >= 1.0:
+            return
+        energy = real*real + imag*imag
+        kth = int(fraction*len(real)-1)
+        if not 0 <= kth < len(real):
+            raise ValueError("Regression cap fraction has no valid order statistic")
+        threshold = 5.0*np.partition(energy, kth)[kth]
+        for i in range(len(real)):
+            if energy[i] > threshold:
+                scale = np.sqrt(threshold/energy[i])
+                real[i] *= scale
+                imag[i] *= scale
+
     @njit(cache=True)
     def _numba_percentile_mean(arr, fraction, edge_samples, stride):
         ff = abs(fraction)
@@ -272,7 +304,7 @@ if _NUMBA_AVAILABLE:
     @njit(cache=True)
     def _numba_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
                                  eigen_threshold, eigen_num, regulator_code,
-                                 apply_threshold, rate_tf, edge_seconds, stride):
+                                 apply_threshold, rate_tf, edge_seconds, stride, apply_fraction=1.0):
         n_time = real.shape[0]
 
         power = real * real + imag * imag
@@ -358,6 +390,7 @@ if _NUMBA_AVAILABLE:
 
         qq = real / safe_norm
         QQ = imag / safe_norm
+        _cap_witness_numba(qq, QQ, apply_fraction)
         nn = np.zeros((n_time,), dtype=np.float64)
         NN = np.zeros((n_time,), dtype=np.float64)
 
@@ -421,7 +454,7 @@ if _NUMBA_AVAILABLE:
     @njit(cache=True, parallel=True)
     def _numba_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samples, fltr,
                               eigen_threshold, eigen_num, regulator_code,
-                              apply_threshold, rate_tf, edge_seconds, stride):
+                              apply_threshold, rate_tf, edge_seconds, stride, apply_fraction=1.0):
         n_layers = real_layers.shape[0]
         n_time = real_layers.shape[1]
         noise_layers = np.zeros((n_layers, n_time), dtype=np.complex128)
@@ -434,7 +467,7 @@ if _NUMBA_AVAILABLE:
                 fm, edge_samples, fltr,
                 eigen_threshold, eigen_num, regulator_code,
                 apply_threshold, rate_tf, edge_seconds,
-                stride,
+                stride, apply_fraction,
             )
             noise_layers[i, :] = noise
             include_mask[i] = included
@@ -537,12 +570,13 @@ def _jax_layer_solve_filters(v_cross, acf, ccf, K, K2, K4, half, fltr,
     return filt00, filt90
 
 
-@partial(jax.jit, static_argnames=("K",))
-def _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K):
+@partial(jax.jit, static_argnames=("K", "apply_fraction"))
+def _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K, apply_fraction=1.0):
     """Apply solved filters over one normalized TF layer."""
     n_time = real.shape[0]
     qq = real / safe_norm
     QQ = imag / safe_norm
+    qq, QQ = _cap_witness_jax(qq, QQ, apply_fraction)
     centers = jnp.arange(K, n_time - K)
 
     def _window_at(center):
@@ -592,12 +626,12 @@ def _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_se
         "K", "K2", "K4", "half",
         "fm", "edge_samples", "fltr",
         "eigen_threshold", "eigen_num", "regulator_code",
-        "apply_threshold", "rate_tf", "edge_seconds",
+        "apply_threshold", "rate_tf", "edge_seconds", "apply_fraction",
     ),
 )
 def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
                            eigen_threshold, eigen_num, regulator_code,
-                           apply_threshold, rate_tf, edge_seconds):
+                           apply_threshold, rate_tf, edge_seconds, apply_fraction=1.0):
     """
     Process one TF layer end-to-end in JAX.
 
@@ -611,7 +645,7 @@ def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
         v_cross, acf, ccf, K, K2, K4, half, fltr,
         eigen_threshold, eigen_num, regulator_code,
     )
-    nn, NN = _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K)
+    nn, NN = _jax_layer_apply_filters(real, imag, safe_norm, filt00, filt90, K, apply_fraction)
     return _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_seconds, K)
 
 
@@ -621,16 +655,16 @@ def _jax_process_one_layer(real, imag, K, K2, K4, half, fm, edge_samples, fltr,
         "K", "K2", "K4", "half",
         "fm", "edge_samples", "fltr",
         "eigen_threshold", "eigen_num", "regulator_code",
-        "apply_threshold", "rate_tf", "edge_seconds",
+        "apply_threshold", "rate_tf", "edge_seconds", "apply_fraction",
     ),
 )
 def _jax_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samples, fltr,
                         eigen_threshold, eigen_num, regulator_code,
-                        apply_threshold, rate_tf, edge_seconds):
+                        apply_threshold, rate_tf, edge_seconds, apply_fraction=1.0):
     """Vectorized JAX execution of `_jax_process_one_layer` across layers."""
     return jax.vmap(
         _jax_process_one_layer,
-        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
         out_axes=(0, 0),
     )(
         real_layers,
@@ -648,19 +682,33 @@ def _jax_process_layers(real_layers, imag_layers, K, K2, K4, half, fm, edge_samp
         apply_threshold,
         rate_tf,
         edge_seconds,
+        apply_fraction,
     )
+
+
+def _regression_apply_fraction(config, fraction):
+    """Select release amplitude capping, honoring the explicit OLD search option."""
+    if os.getenv("PYCWB_REGRESSION_CAP", "0") != "1":
+        return 1.0
+    options = shlex.split(str(getattr(config, "Search", "")))
+    for i, option in enumerate(options):
+        if option == "--regression" and i+1 < len(options) and options[i+1] == "OLD":
+            return 1.0
+    if not 0 < fraction <= 1.0:
+        raise ValueError("Regression cap fraction must be in (0, 1]")
+    return fraction
 
 
 def regression_python(config, h):
     """
-        Clean data with regression method (JAX-accelerated implementation).
+        Clean data with native regression using the selected Numba or JAX backend.
 
     This follows the cWB LPE regression path used in `regression.py`:
         target TF map + self-witness ("target"), then setFilter/setMatrix/solve/apply.
 
         Notes
         -----
-        - JAX is required and used for the heavy per-layer computation path.
+        - Numba is the default per-layer backend; JAX is separately selectable.
         - Legacy NumPy helper functions are kept below for compatibility with
             callers that import helper functions through the data_conditioning package.
     """
@@ -743,6 +791,7 @@ def regression_python(config, h):
     real_layers_np = np.asarray(coeff[selected_layers_arr].real, dtype=np.float64)
     imag_layers_np = np.asarray(coeff[selected_layers_arr].imag, dtype=np.float64)
 
+    apply_fraction = _regression_apply_fraction(config, fm)
     use_numba = backend == "numba" and _NUMBA_AVAILABLE
     if use_numba:
         noise_layers, include_mask = _numba_process_layers(
@@ -762,6 +811,7 @@ def regression_python(config, h):
             float(rate_tf),
             float(edge_seconds),
             int(_PERCENTILE_STRIDE),
+            apply_fraction,
         )
     else:
         real_layers = jnp.asarray(real_layers_np)
@@ -782,6 +832,7 @@ def regression_python(config, h):
             float(apply_threshold),
             float(rate_tf),
             float(edge_seconds),
+            apply_fraction,
         )
         noise_layers_jax = jax.block_until_ready(noise_layers_jax)
         include_mask_jax = jax.block_until_ready(include_mask_jax)
