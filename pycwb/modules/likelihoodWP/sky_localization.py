@@ -12,6 +12,8 @@ from .sky_order import wave_sort_indices
 
 @dataclass
 class SkyLocalization:
+    """Store the full posterior, selected sky indices/probabilities and area deciles."""
+
     probability: np.ndarray
     indices: np.ndarray
     selected_probability: np.ndarray
@@ -25,6 +27,23 @@ def localize_sky(statistic, antenna_prior, rms, *, use_prior=False, n_sky=0):
     grids below the release's minimum size return None rather than fabricated
     zero uncertainties. Regions 0 and 10 require an injection/target location;
     they remain zero for ordinary background events, as in the reference.
+
+    Parameters
+    ----------
+    statistic, antenna_prior : array-like
+        Aligned one-dimensional sky-statistic and antenna-sensitivity maps.
+    rms : float
+        Posterior scale; its absolute value is used.
+    use_prior : bool, optional
+        Multiply probabilities by the normalized fourth-power antenna prior.
+    n_sky : int, optional
+        Release output selection control: positive values cap the pixel count,
+        zero uses the release default, and negative values encode a probability cut.
+
+    Returns
+    -------
+    SkyLocalization or None
+        Posterior and square-root area deciles in degrees, or None for invalid maps.
     """
     stat = np.asarray(statistic, dtype=np.float64)
     antenna = np.asarray(antenna_prior, dtype=np.float64)

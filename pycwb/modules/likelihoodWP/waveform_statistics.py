@@ -7,7 +7,18 @@ from numba import njit
 
 @njit(cache=True)
 def waveform_rms(data):
-    """cWB grouped double reduction and mean-subtracted RMS."""
+    """Compute mean-subtracted RMS in the release grouped reduction order.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        One-dimensional float64 waveform samples.
+
+    Returns
+    -------
+    float
+        RMS amplitude, or zero for an empty waveform.
+    """
     n = len(data)
     if not n:
         return 0.0
@@ -26,6 +37,22 @@ def waveform_rms(data):
 
 @njit(cache=True)
 def waveform_time(data, start, rate):
+    """Compute the energy-weighted waveform time.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        One-dimensional waveform samples.
+    start : float
+        Time of the first sample in seconds.
+    rate : float
+        Sampling rate in Hz.
+
+    Returns
+    -------
+    float
+        Energy centroid in seconds, or zero for zero energy.
+    """
     energy = weighted = 0.0
     for i in range(len(data)):
         value = data[i] * data[i]
@@ -36,6 +63,7 @@ def waveform_time(data, start, rate):
 
 @njit(cache=True)
 def _packed_frequency(real, imag, rate, n):
+    """Reduce packed FFT energy with the release Nyquist-at-DC convention."""
     energy = weighted = 0.0
     for i in range(n // 2):
         x = real[i] / n
@@ -52,6 +80,18 @@ def waveform_frequency(data, rate):
     Native WDM synthesis returns an even number of samples. The release
     method accesses beyond its storage for odd lengths; reject that unsupported
     case explicitly instead of reproducing an invalid read.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        One-dimensional waveform of even length.
+    rate : float
+        Sampling rate in Hz.
+
+    Returns
+    -------
+    float
+        Energy-weighted frequency in Hz, or zero for an empty/zero-energy waveform.
     """
     n = len(data)
     if not n:
@@ -64,6 +104,22 @@ def waveform_frequency(data, rate):
 
 @njit(cache=True)
 def network_centroids(signal_energy, times, frequencies):
+    """Combine detector centroids with release float32 stores.
+
+    Parameters
+    ----------
+    signal_energy : numpy.ndarray
+        Per-detector energies.
+    times : numpy.ndarray
+        Per-detector time centroids in seconds.
+    frequencies : numpy.ndarray
+        Per-detector frequency centroids in Hz.
+
+    Returns
+    -------
+    tuple
+        Float32 total energy, network time and network frequency.
+    """
     total = np.float32(0.0)
     time = np.float32(0.0)
     frequency = np.float32(0.0)
@@ -80,6 +136,24 @@ def network_centroids(signal_energy, times, frequencies):
 
 
 def sky_scale(norm, rc, pixel_count, disbalance):
+    """Compute the release sky-posterior scale with float32 arithmetic.
+
+    Parameters
+    ----------
+    norm : float
+        Waveform normalization.
+    rc : float
+        Correlation coefficient.
+    pixel_count : float
+        Effective selected pixel count.
+    disbalance : float
+        Network energy disbalance.
+
+    Returns
+    -------
+    float
+        Scale used by sky-localization postprocessing.
+    """
     f = np.float32
     return float(f(norm) * f(rc) * np.sqrt(f(pixel_count)) * (f(1) + np.abs(f(1) - f(disbalance))))
 

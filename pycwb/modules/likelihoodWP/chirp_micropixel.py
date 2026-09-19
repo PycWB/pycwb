@@ -13,6 +13,13 @@ from numba import njit
 
 @dataclass(frozen=True)
 class ChirpResult:
+    """Store release chirp outputs after float32 narrowing.
+
+    Mass is in solar masses; merger time uses the pixel time origin in seconds.
+    Inactive fits use zero values. The estimator uses -1 for unavailable mass
+    and merger-time errors where required by the release convention.
+    """
+
     mass: float = 0.0
     mass_error: float = 0.0
     merger_time: float = 0.0
@@ -28,6 +35,20 @@ def micropixels(pixels, analysis_rate):
     Use only the occupied frequency extent, retaining ROOT's underflow row
     and excluding its overflow row. Each overlapping contribution is rounded
     to float32 in original pixel order, as in TH2F::SetBinContent.
+
+    Parameters
+    ----------
+    pixels : PixelArrays
+        Core flags, pixel coordinates, rates, layers and likelihood weights.
+    analysis_rate : float
+        Analysis sampling rate in Hz.
+
+    Returns
+    -------
+    cells : numpy.ndarray
+        Occupied (time in seconds, frequency in Hz, likelihood) rows.
+    minimum_step : float
+        Smallest histogram time step in seconds.
     """
     selected = np.flatnonzero(pixels.core)
     if not len(selected):
@@ -73,6 +94,18 @@ def root_uniforms(seed, count):
 
     Seed zero means time-dependent seeding in ROOT and is intentionally
     unsupported here. Random state is local, including under lag concurrency.
+
+    Parameters
+    ----------
+    seed : int
+        Nonzero uint32 seed matching the run identifier.
+    count : int
+        Number of nonzero uniform samples to return.
+
+    Returns
+    -------
+    numpy.ndarray
+        Float64 samples in (0, 1), in release generator order.
     """
     if not 0 < int(seed) < 2**32:
         raise ValueError("Chirp bootstrap requires a nonzero uint32 run seed")
@@ -87,6 +120,7 @@ def root_uniforms(seed, count):
 
 @njit(cache=True)
 def _bootstrap(x, f, energy, mindt, uniforms):
+    """Run the fixed-order release bootstrap using an explicit uniform stream."""
     n = len(x)
     y = np.empty(n)
     weights = np.empty(n)
@@ -205,6 +239,32 @@ def _bootstrap(x, f, energy, mindt, uniforms):
 
 
 def estimate_chirp(pixels, analysis_rate, seed):
+    """Estimate release micropixel chirp morphology with a reproducible bootstrap.
+
+    Parameters
+    ----------
+    pixels : PixelArrays
+        Accepted cluster pixels; the histogram selects core pixels.
+    analysis_rate : float
+        Analysis sampling rate in Hz.
+    seed : int
+        Nonzero uint32 run seed for the local uniform stream.
+
+    Returns
+    -------
+    ChirpResult
+        Narrowed release outputs, or the release sentinel values for small clusters.
+
+    Raises
+    ------
+    ValueError
+        If the input seed, pixel geometry or bootstrap sampling is invalid.
+
+    Notes
+    -----
+    Growing the random stream restarts from the same seed, preserving the prefix
+    and reference sampling order. Do not replace this with a global RNG.
+    """
     cells, mindt = micropixels(pixels, analysis_rate)
     if len(cells) < 5:
         return ChirpResult()

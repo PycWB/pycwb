@@ -11,6 +11,7 @@ from numba import njit
 
 @njit(cache=True)
 def _sort_three(values, order, left, middle, right):
+    """Order three pivot candidates with the release strict comparisons."""
     if values[order[left]] > values[order[middle]]:
         order[left], order[middle] = order[middle], order[left]
     if values[order[left]] > values[order[right]]:
@@ -21,6 +22,7 @@ def _sort_three(values, order, left, middle, right):
 
 @njit(cache=True)
 def _wave_sort(values, order, left, right):
+    """Apply the release partition and tie permutation in place."""
     if left >= right:
         return
     middle = (left + right) // 2
@@ -58,6 +60,18 @@ def wave_sort_indices(values, initial_order=None):
 
     The posterior's second sort starts from the first statistic sort's
     permutation, rather than restarting from sky-index order.
+
+    Parameters
+    ----------
+    values : array-like
+        One-dimensional sky values to order.
+    initial_order : array-like or None, optional
+        Starting permutation. Copied before sorting; the caller's array is unchanged.
+
+    Returns
+    -------
+    numpy.ndarray
+        Int64 indices in the release sort order, including its nonstable ties.
     """
     values = np.asarray(values)
     order = (
