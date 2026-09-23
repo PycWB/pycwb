@@ -102,6 +102,11 @@ def generate_injection_list_from_config_for_job_segments(injection_config, job_s
     rate = eval(rate_raw) if isinstance(rate_raw, str) else rate_raw
     if dist_type == 'rate':
         jitter = time_distribution.get('jitter', 0)
+        alignment = time_distribution.get('alignment', 'livetime')
+        if alignment == 'gps':
+            return distribute_inj_on_gps_grid(injections, rate, jitter, intervals)
+        if alignment != 'livetime':
+            raise ValueError("Rate alignment must be 'livetime' or 'gps'")
         return distribute_inj_in_job_intervals_by_rate(
             injections, rate, jitter, intervals, shuffle=False,
         )
@@ -227,6 +232,55 @@ def distribute_inj_in_job_intervals_by_rate(injections, rate, jitter, intervals,
         _assign_to_interval(inj, interval_info, gps_time, trial_idx)
 
     return injections, n_data_repeat
+
+
+def distribute_inj_on_gps_grid(injections, rate, jitter, intervals):
+    """Schedule a cWB-style absolute GPS grid with independent uniform jitter.
+
+    Keep only points inside a usable analysis interval. In particular, do not
+    stretch spacing to fill an interval or clip jitter onto interval endpoints.
+    Repeat the available intervals as trials until the finite input list is used.
+    """
+    if not np.isfinite(rate) or rate <= 0:
+        raise ValueError('Injection rate must be positive and finite')
+    spacing = 1.0 / rate
+    if not np.isfinite(jitter) or jitter < 0 or jitter > spacing / 2:
+        raise ValueError('Jitter must lie between zero and half the spacing')
+    if not injections:
+        return injections, 0
+    by_job = {}
+    for item in intervals:
+        by_job.setdefault(item['job_id'], []).append(item)
+    grids = []
+    for keep in by_job.values():
+        lo = int(np.ceil((min(item['start'] for item in keep) - jitter) / spacing))
+        hi = int(np.floor((max(item['end'] for item in keep) + jitter) / spacing))
+        grid = np.arange(lo, hi + 1, dtype=np.int64) * spacing
+        possible = np.zeros(len(grid), dtype=bool)
+        for item in keep:
+            left = grid+jitter > item['start'] if jitter else grid >= item['start']
+            possible |= left & (grid-jitter < item['end'])
+        grids.append((keep, grid[possible]))
+    if not any(len(grid) for _, grid in grids):
+        raise ValueError('No GPS-grid injection slots fit in the job intervals')
+    assigned = trial = empty_trials = 0
+    while assigned < len(injections):
+        before = assigned
+        for keep, grid in grids:
+            # One jitter draw per anchor per job, even when CAT2 splits the job.
+            times = grid + np.random.uniform(-jitter, jitter, len(grid))
+            for gps in times:
+                item = next((i for i in keep if i['start'] <= gps < i['end']), None)
+                if item is not None:
+                    _assign_to_interval(injections[assigned], item, float(gps), trial)
+                    assigned += 1
+                    if assigned == len(injections):
+                        return injections, trial + 1
+        empty_trials = empty_trials + 1 if assigned == before else 0
+        if empty_trials >= 1000:
+            raise ValueError('GPS grid produced no usable slots in 1000 trials')
+        trial += 1
+    return injections, trial
 
 
 def distribute_inj_in_job_intervals_by_poisson(injections, rate, intervals, max_trail=None, shuffle=True):

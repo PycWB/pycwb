@@ -210,8 +210,8 @@ class TimeSeries:
 
         The two time series are aligned by their start times (*t0*) and the
         overlapping region of *other* is added sample-by-sample into this
-        series.  This replicates the behaviour of
-        ``pycbc.types.TimeSeries.inject``.
+        series.  Noninteger sample offsets use a zero-padded Fourier shift so that
+        fractional detector delays are preserved.
 
         Parameters
         ----------
@@ -226,24 +226,33 @@ class TimeSeries:
         TimeSeries
             The time series with the injected signal.
         """
+        if not np.isclose(float(self.dt), float(other.dt), rtol=1e-12, atol=0):
+            raise ValueError("Injection and destination sample rates must match")
         result = self.copy() if copy else self
-
-        other_start = float(other.t0)
-        other_end = other_start + len(other.data) * float(other.dt)
-        self_start = float(result.t0)
-        self_end = self_start + len(result.data) * float(result.dt)
-
-        overlap_start = max(self_start, other_start)
-        overlap_end = min(self_end, other_end)
-        if overlap_start >= overlap_end:
+        if not len(other.data) or not len(result.data):
             return result
-
-        s_idx = int(round((overlap_start - self_start) / float(result.dt)))
-        o_idx = int(round((overlap_start - other_start) / float(other.dt)))
-        n = int(round((overlap_end - overlap_start) / float(result.dt)))
-
-        result.data[s_idx:s_idx + n] += np.asarray(other.data[o_idx:o_idx + n],
-                                                    dtype=result.data.dtype)
+        offset = (float(other.t0) - float(result.t0)) / float(result.dt)
+        start = int(round(offset))
+        fraction = offset - start
+        values = np.asarray(other.data, dtype=result.data.dtype)
+        if start >= len(result.data) or start + len(values) <= 0:
+            return result
+        if abs(fraction) > 1e-10:
+            # Preserve the detector's sub-sample delay. Zero padding prevents
+            # the FFT shift from wrapping either end into the signal body.
+            from scipy.fft import next_fast_len, rfft, irfft, rfftfreq
+            length = next_fast_len(2 * len(values) + 64)
+            padding = (length - len(values)) // 2
+            padded = np.zeros(length, dtype=np.float64)
+            padded[padding:padding + len(values)] = values
+            spectrum = rfft(padded)
+            spectrum *= np.exp(-2j * np.pi * rfftfreq(length) * fraction)
+            values = irfft(spectrum, n=length)
+            start -= padding
+        lo = max(0, start)
+        hi = min(len(result.data), start + len(values))
+        if hi > lo:
+            result.data[lo:hi] += values[lo - start:hi - start]
         return result
 
     def save(self, path: str):
