@@ -11,35 +11,38 @@ optimal sky location (l_max) is selected.
 Mathematical reference: docs/likelihood/likelihoodWP.md
 """
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-from functools import partial
 
 from .dpf import compute_dpf
 from .sky_stat import (
-    compute_pixel_energy,
-    project_gw_packet,
-    orthogonalise_polarisations,
     compute_coherent_statistics,
+    compute_pixel_energy,
+    orthogonalise_polarisations,
+    project_gw_packet,
 )
-
 
 # ---------------------------------------------------------------------------
 # Per-sky-direction kernel (to be vmap-ped)
 # ---------------------------------------------------------------------------
 
+
 @partial(jax.jit, static_argnames=())
-def _sky_direction_statistics(Fp_sky: jnp.ndarray,
-                              Fx_sky: jnp.ndarray,
-                              rms: jnp.ndarray,
-                              v00: jnp.ndarray,
-                              v90: jnp.ndarray,
-                              REG: jnp.ndarray,
-                              netCC: jnp.ndarray,
-                              delta_regulator: jnp.ndarray,
-                              energy_threshold: jnp.ndarray,
-                              n_ifo: jnp.ndarray) -> dict:
+def _sky_direction_statistics(
+    Fp_sky: jnp.ndarray,
+    Fx_sky: jnp.ndarray,
+    rms: jnp.ndarray,
+    v00: jnp.ndarray,
+    v90: jnp.ndarray,
+    REG: jnp.ndarray,
+    netCC: jnp.ndarray,
+    delta_regulator: jnp.ndarray,
+    energy_threshold: jnp.ndarray,
+    n_ifo: jnp.ndarray,
+) -> dict:
     """Compute all statistics for a single sky direction.
 
     Parameters
@@ -70,9 +73,16 @@ def _sky_direction_statistics(Fp_sky: jnp.ndarray,
 
     # 3. GW packet projection
     gw = project_gw_packet(
-        v00, v90,
-        dpf["f"], dpf["F"], dpf["fp"], dpf["fx"],
-        dpf["network_index"], total_energy, mask, REG,
+        v00,
+        v90,
+        dpf["f"],
+        dpf["F"],
+        dpf["fp"],
+        dpf["fx"],
+        dpf["network_index"],
+        total_energy,
+        mask,
+        REG,
     )
 
     # 4. Orthogonalisation
@@ -80,8 +90,13 @@ def _sky_direction_statistics(Fp_sky: jnp.ndarray,
 
     # 5. Coherent statistics
     stats = compute_coherent_statistics(
-        v00, v90, gw["signal_00"], gw["signal_90"],
-        ort["psi_sin"], ort["psi_cos"], gw["mask"],
+        v00,
+        v90,
+        gw["signal_00"],
+        gw["signal_90"],
+        ort["psi_sin"],
+        ort["psi_cos"],
+        gw["mask"],
     )
 
     Cr = stats["correlation"]
@@ -112,21 +127,21 @@ def _sky_direction_statistics(Fp_sky: jnp.ndarray,
     alignment = jnp.where(ff_norm > 0, jnp.sqrt(FF_norm / ff_norm), jnp.float32(0.0))
 
     # Gate: zero ALL stats for directions below netCC threshold (mirrors CPU `continue`)
-    passed = (Cr >= netCC)
-    AA           = jnp.where(passed, aa * Co,         jnp.float32(0.0))
-    antenna_prior = jnp.where(passed, antenna_prior,  jnp.float32(0.0))
-    alignment     = jnp.where(passed, alignment,      jnp.float32(0.0))
-    likelihood_s  = jnp.where(passed, Eo - No,        jnp.float32(0.0))
-    null_energy_s = jnp.where(passed, No,             jnp.float32(0.0))
-    coh_energy_s  = jnp.where(passed, Ec,             jnp.float32(0.0))
-    correlation_s = jnp.where(passed, Co,             jnp.float32(0.0))
-    disbalance_s  = jnp.where(passed, CH,             jnp.float32(0.0))
-    net_index_s   = jnp.where(passed, cc_factor,      jnp.float32(0.0))
-    ellipticity_s = jnp.where(passed, Cr,             jnp.float32(0.0))
-    polarisation_s = jnp.where(passed, Mp,            jnp.float32(0.0))
+    passed = Cr >= netCC
+    AA = jnp.where(passed, aa * Co, jnp.float32(0.0))
+    antenna_prior = jnp.where(passed, antenna_prior, jnp.float32(0.0))
+    alignment = jnp.where(passed, alignment, jnp.float32(0.0))
+    likelihood_s = jnp.where(passed, Eo - No, jnp.float32(0.0))
+    null_energy_s = jnp.where(passed, No, jnp.float32(0.0))
+    coh_energy_s = jnp.where(passed, Ec, jnp.float32(0.0))
+    correlation_s = jnp.where(passed, Co, jnp.float32(0.0))
+    disbalance_s = jnp.where(passed, CH, jnp.float32(0.0))
+    net_index_s = jnp.where(passed, cc_factor, jnp.float32(0.0))
+    ellipticity_s = jnp.where(passed, Cr, jnp.float32(0.0))
+    polarisation_s = jnp.where(passed, Mp, jnp.float32(0.0))
 
     return {
-        "AA": AA,                    # cross-correlation skystat (used for l_max selection)
+        "AA": AA,  # cross-correlation skystat (used for l_max selection)
         "antenna_prior": antenna_prior,
         "alignment": alignment,
         "likelihood": likelihood_s,
@@ -145,21 +160,24 @@ def _sky_direction_statistics(Fp_sky: jnp.ndarray,
 # Full sky scan
 # ---------------------------------------------------------------------------
 
-def find_optimal_sky_localization(n_ifo: int,
-                                 n_pix: int,
-                                 n_sky: int,
-                                 FP: np.ndarray,
-                                 FX: np.ndarray,
-                                 rms: np.ndarray,
-                                 td00: np.ndarray,
-                                 td90: np.ndarray,
-                                 ml: np.ndarray,
-                                 REG: np.ndarray,
-                                 netCC: float,
-                                 delta_regulator: float,
-                                 network_energy_threshold: float,
-                                 sky_batch_size: int = 8192,
-                                 sky_valid_indices: np.ndarray | None = None):
+
+def find_optimal_sky_localization(
+    n_ifo: int,
+    n_pix: int,
+    n_sky: int,
+    FP: np.ndarray,
+    FX: np.ndarray,
+    rms: np.ndarray,
+    td00: np.ndarray,
+    td90: np.ndarray,
+    ml: np.ndarray,
+    REG: np.ndarray,
+    netCC: float,
+    delta_regulator: float,
+    network_energy_threshold: float,
+    sky_batch_size: int = 8192,
+    sky_valid_indices: np.ndarray | None = None,
+):
     """Find the sky direction that maximises the cross-correlation statistic.
 
     This is the JAX equivalent of the Numba ``scan_sky_kernel``.
@@ -239,9 +257,18 @@ def find_optimal_sky_localization(n_ifo: int,
     # Process sky_batch_size directions at a time to bound peak VRAM usage.
     # For each batch: gather delayed data, compute sky statistics, transfer to numpy.
     result_keys = [
-        "AA", "antenna_prior", "alignment", "likelihood", "null_energy",
-        "coherent_energy", "correlation", "sky_stat", "disbalance",
-        "net_index", "ellipticity", "polarisation",
+        "AA",
+        "antenna_prior",
+        "alignment",
+        "likelihood",
+        "null_energy",
+        "coherent_energy",
+        "correlation",
+        "sky_stat",
+        "disbalance",
+        "net_index",
+        "ellipticity",
+        "polarisation",
     ]
     result_parts = {k: [] for k in result_keys}
     n_valid = len(sky_valid_indices_np)
@@ -257,9 +284,18 @@ def find_optimal_sky_localization(n_ifo: int,
         _chunk = jax.vmap(
             _sky_direction_statistics,
             in_axes=(0, 0, None, 0, 0, None, None, None, None, None),
-        )(FP_j[_batch_indices], FX_j[_batch_indices], rms_j,
-          _all_v00, _all_v90,
-          REG_j, netCC_j, delta_j, ethr_j, nifo_j)
+        )(
+            FP_j[_batch_indices],
+            FX_j[_batch_indices],
+            rms_j,
+            _all_v00,
+            _all_v90,
+            REG_j,
+            netCC_j,
+            delta_j,
+            ethr_j,
+            nifo_j,
+        )
 
         # Transfer batch results to CPU numpy to free device memory
         for k in result_keys:
@@ -270,9 +306,7 @@ def find_optimal_sky_localization(n_ifo: int,
     sky_results_np = {k: np.zeros(n_sky, dtype=np.float32) for k in result_keys}
     if n_valid > 0:
         for k in result_keys:
-            sky_results_np[k][sky_valid_indices_np] = (
-                np.concatenate(result_parts[k]).astype(np.float32)
-            )
+            sky_results_np[k][sky_valid_indices_np] = np.concatenate(result_parts[k]).astype(np.float32)
 
     # --- Find l_max: last index with maximum AA (mirrors C++ tie-breaking) ---
     AA_np = sky_results_np["AA"]
@@ -285,17 +319,29 @@ def find_optimal_sky_localization(n_ifo: int,
 
     # --- Collect per-sky arrays ---
     nAntennaPrior = sky_results_np["antenna_prior"].astype(np.float32)
-    nAlignment    = sky_results_np["alignment"].astype(np.float32)
-    nLikelihood   = sky_results_np["likelihood"].astype(np.float32)
-    nNullEnergy   = sky_results_np["null_energy"].astype(np.float32)
-    nCorrEnergy   = sky_results_np["coherent_energy"].astype(np.float32)
-    nCorrelation  = sky_results_np["correlation"].astype(np.float32)
-    nSkyStat      = sky_results_np["sky_stat"].astype(np.float32)
-    nDisbalance   = sky_results_np["disbalance"].astype(np.float32)
-    nNetIndex     = sky_results_np["net_index"].astype(np.float32)
-    nEllipticity  = sky_results_np["ellipticity"].astype(np.float32)
+    nAlignment = sky_results_np["alignment"].astype(np.float32)
+    nLikelihood = sky_results_np["likelihood"].astype(np.float32)
+    nNullEnergy = sky_results_np["null_energy"].astype(np.float32)
+    nCorrEnergy = sky_results_np["coherent_energy"].astype(np.float32)
+    nCorrelation = sky_results_np["correlation"].astype(np.float32)
+    nSkyStat = sky_results_np["sky_stat"].astype(np.float32)
+    nDisbalance = sky_results_np["disbalance"].astype(np.float32)
+    nNetIndex = sky_results_np["net_index"].astype(np.float32)
+    nEllipticity = sky_results_np["ellipticity"].astype(np.float32)
     nPolarisation = sky_results_np["polarisation"].astype(np.float32)
 
-    return (l_max, nAntennaPrior, nAlignment, nLikelihood, nNullEnergy,
-            nCorrEnergy, nCorrelation, nSkyStat, nDisbalance, nNetIndex,
-            nEllipticity, nPolarisation, float(STAT))
+    return (
+        l_max,
+        nAntennaPrior,
+        nAlignment,
+        nLikelihood,
+        nNullEnergy,
+        nCorrEnergy,
+        nCorrelation,
+        nSkyStat,
+        nDisbalance,
+        nNetIndex,
+        nEllipticity,
+        nPolarisation,
+        float(STAT),
+    )

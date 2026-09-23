@@ -8,20 +8,19 @@ noise correction, and xtalk-convolved energy sums.
 JAX equivalents of the functions in ``likelihoodWP/utils.py``.
 """
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-from functools import partial
-
 
 # ---------------------------------------------------------------------------
 # Packet rotation and normalisation (avx_packet_ps equivalent)
 # ---------------------------------------------------------------------------
 
+
 @partial(jax.jit, static_argnames=())
-def compute_packet_rotation(v00: jnp.ndarray,
-                            v90: jnp.ndarray,
-                            mask: jnp.ndarray) -> dict:
+def compute_packet_rotation(v00: jnp.ndarray, v90: jnp.ndarray, mask: jnp.ndarray) -> dict:
     """Rotate data into principal-axis frame and compute per-IFO amplitudes.
 
     JAX equivalent of ``avx_packet_ps``.
@@ -56,7 +55,7 @@ def compute_packet_rotation(v00: jnp.ndarray,
     sin_2p = 2.0 * aA
     cos_2p = aa - AA
     total_e = aa + AA + EPS
-    norm_2p = jnp.sqrt(cos_2p ** 2 + sin_2p ** 2)
+    norm_2p = jnp.sqrt(cos_2p**2 + sin_2p**2)
 
     amp_a = jnp.sqrt((total_e + norm_2p) / 2.0)  # first component amplitude
     amp_A = jnp.sqrt(jnp.abs((total_e - norm_2p) / 2.0))  # second component
@@ -96,13 +95,16 @@ def compute_packet_rotation(v00: jnp.ndarray,
 # Gaussian noise correction (avx_noise_ps equivalent)
 # ---------------------------------------------------------------------------
 
-def compute_noise_correction(signal_norm: np.ndarray,
-                             data_norm: np.ndarray,
-                             total_energy: np.ndarray,
-                             mask: np.ndarray,
-                             coherent_energy: np.ndarray,
-                             gn: np.ndarray,
-                             rn: np.ndarray) -> tuple:
+
+def compute_noise_correction(
+    signal_norm: np.ndarray,
+    data_norm: np.ndarray,
+    total_energy: np.ndarray,
+    mask: np.ndarray,
+    coherent_energy: np.ndarray,
+    gn: np.ndarray,
+    rn: np.ndarray,
+) -> tuple:
     """Compute Gaussian noise correction and energy decomposition.
 
     Numpy implementation (called once at best sky only, not in hot path).
@@ -161,14 +163,17 @@ def compute_noise_correction(signal_norm: np.ndarray,
 # Set packet amplitudes (avx_setAMP_ps equivalent)
 # ---------------------------------------------------------------------------
 
-def set_packet_amplitudes(p: np.ndarray,
-                          q: np.ndarray,
-                          q_norm: np.ndarray,
-                          q_sin: np.ndarray,
-                          q_cos: np.ndarray,
-                          q_a: np.ndarray,
-                          q_A: np.ndarray,
-                          mask: np.ndarray) -> tuple:
+
+def set_packet_amplitudes(
+    p: np.ndarray,
+    q: np.ndarray,
+    q_norm: np.ndarray,
+    q_sin: np.ndarray,
+    q_cos: np.ndarray,
+    q_a: np.ndarray,
+    q_A: np.ndarray,
+    mask: np.ndarray,
+) -> tuple:
     """Set packet amplitudes for waveform reconstruction.
 
     Returns (N_eff, new_p, new_q) where N_eff is the effective pixel count.
@@ -183,10 +188,8 @@ def set_packet_amplitudes(p: np.ndarray,
 
     n_arr = aA[:, np.newaxis] * mk[np.newaxis, :] * qn_arr
 
-    new_p = n_arr * (p_arr * np.asarray(q_cos)[:, np.newaxis] -
-                     q_arr * np.asarray(q_sin)[:, np.newaxis])
-    new_q = n_arr * (q_arr * np.asarray(q_cos)[:, np.newaxis] +
-                     p_arr * np.asarray(q_sin)[:, np.newaxis])
+    new_p = n_arr * (p_arr * np.asarray(q_cos)[:, np.newaxis] - q_arr * np.asarray(q_sin)[:, np.newaxis])
+    new_q = n_arr * (q_arr * np.asarray(q_cos)[:, np.newaxis] + p_arr * np.asarray(q_sin)[:, np.newaxis])
 
     N_eff = float(np.sum(qn_arr.sum(axis=0) * mk)) * 4.0 / n_ifo
     return N_eff, new_p, new_q
@@ -196,29 +199,28 @@ def set_packet_amplitudes(p: np.ndarray,
 # Null packet (avx_loadNULL_ps equivalent)
 # ---------------------------------------------------------------------------
 
-def compute_null_packet(data_00: np.ndarray,
-                        data_90: np.ndarray,
-                        signal_00: np.ndarray,
-                        signal_90: np.ndarray) -> tuple:
+
+def compute_null_packet(
+    data_00: np.ndarray, data_90: np.ndarray, signal_00: np.ndarray, signal_90: np.ndarray
+) -> tuple:
     """Compute null = data − signal per detector and pixel.
 
     Returns (null_00, null_90) each shape (n_ifo, n_pix).
     """
-    return (np.asarray(data_00, dtype=np.float32) - np.asarray(signal_00, dtype=np.float32),
-            np.asarray(data_90, dtype=np.float32) - np.asarray(signal_90, dtype=np.float32))
+    return (
+        np.asarray(data_00, dtype=np.float32) - np.asarray(signal_00, dtype=np.float32),
+        np.asarray(data_90, dtype=np.float32) - np.asarray(signal_90, dtype=np.float32),
+    )
 
 
 # ---------------------------------------------------------------------------
 # Polarisation projection (avx_pol_ps equivalent)
 # ---------------------------------------------------------------------------
 
-def project_polarisation(p: np.ndarray,
-                         q: np.ndarray,
-                         mask: np.ndarray,
-                         fp: np.ndarray,
-                         fx: np.ndarray,
-                         f: np.ndarray,
-                         F: np.ndarray) -> tuple:
+
+def project_polarisation(
+    p: np.ndarray, q: np.ndarray, mask: np.ndarray, fp: np.ndarray, fx: np.ndarray, f: np.ndarray, F: np.ndarray
+) -> tuple:
     """Project data onto the network polarisation plane (PnP + DSP).
 
     Returns (new_p, new_q, (radius_00, angle_00), (radius_90, angle_90)).
@@ -273,9 +275,9 @@ def project_polarisation(p: np.ndarray,
         new_p[j][i] = f_arr[i][j] * cpol_s + F_arr[i][j] * spol_s
         new_q[j][i] = f_arr[i][j] * CPOL_s + F_arr[i][j] * SPOL_s
 
-    Nval = np.sqrt(cpol_s ** 2 + CPOL_s ** 2)
-    cpol_s /= (Nval + EPS)
-    CPOL_s /= (Nval + EPS)
+    Nval = np.sqrt(cpol_s**2 + CPOL_s**2)
+    cpol_s /= Nval + EPS
+    CPOL_s /= Nval + EPS
 
     for j in range(n_ifo):
         new_p[j][i] = new_p[j][i] * cpol_s + new_q[j][i] * CPOL_s
@@ -288,11 +290,10 @@ def project_polarisation(p: np.ndarray,
 # XTalk energy sums (xtalk_energy_sum_numpy equivalent)
 # ---------------------------------------------------------------------------
 
-def xtalk_energy_sum(p: np.ndarray,
-                     q: np.ndarray,
-                     xtalks: np.ndarray,
-                     xtalks_lookup: np.ndarray,
-                     mask: np.ndarray) -> float:
+
+def xtalk_energy_sum(
+    p: np.ndarray, q: np.ndarray, xtalks: np.ndarray, xtalks_lookup: np.ndarray, mask: np.ndarray
+) -> float:
     """Compute raw xtalk-convolved energy sum.
 
     This is the I<0 branch of C++ _avx_norm_ps — no clamping, no SNR ratio.
@@ -316,10 +317,7 @@ def xtalk_energy_sum(p: np.ndarray,
         p_nbr = p_arr[:, idx]
         q_nbr = q_arr[:, idx]
 
-        x = np.vstack((p_nbr @ cc[0],
-                        p_nbr @ cc[1],
-                        q_nbr @ cc[2],
-                        q_nbr @ cc[3]))
+        x = np.vstack((p_nbr @ cc[0], p_nbr @ cc[1], q_nbr @ cc[2], q_nbr @ cc[3]))
 
         pi = p_arr[:, i]
         qi = q_arr[:, i]

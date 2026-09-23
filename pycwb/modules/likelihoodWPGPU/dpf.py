@@ -20,19 +20,18 @@ Variable naming conventions (matching the math doc):
     network_index   — per-pixel network index, shape (n_pix,)
 """
 
-import jax
-import jax.numpy as jnp
 from functools import partial
 
+import jax
+import jax.numpy as jnp
 
 # ---------------------------------------------------------------------------
 # Core DPF for a single sky direction
 # ---------------------------------------------------------------------------
 
+
 @partial(jax.jit, static_argnames=())
-def compute_dpf(Fp_sky: jnp.ndarray,
-                Fx_sky: jnp.ndarray,
-                rms: jnp.ndarray) -> dict:
+def compute_dpf(Fp_sky: jnp.ndarray, Fx_sky: jnp.ndarray, rms: jnp.ndarray) -> dict:
     """Compute the Dominant Polarization Frame for one sky direction.
 
     Parameters
@@ -64,15 +63,15 @@ def compute_dpf(Fp_sky: jnp.ndarray,
     F0 = rms * Fx_sky[jnp.newaxis, :]
 
     # --- Inner products per pixel (sum over ifo axis) ---
-    ff = jnp.sum(f0 * f0, axis=1)     # (n_pix,)
-    FF = jnp.sum(F0 * F0, axis=1)     # (n_pix,)
-    fF = jnp.sum(f0 * F0, axis=1)     # (n_pix,)
+    ff = jnp.sum(f0 * f0, axis=1)  # (n_pix,)
+    FF = jnp.sum(F0 * F0, axis=1)  # (n_pix,)
+    fF = jnp.sum(f0 * F0, axis=1)  # (n_pix,)
 
     # --- Rotation angle ---
-    sin_2psi = 2.0 * fF               # rotation 2·sin·cos·norm
-    cos_2psi = ff - FF                 # rotation (cos²-sin²)·norm
-    total_antenna = ff + FF            # total antenna power
-    norm_2psi = jnp.sqrt(cos_2psi ** 2 + sin_2psi ** 2)
+    sin_2psi = 2.0 * fF  # rotation 2·sin·cos·norm
+    cos_2psi = ff - FF  # rotation (cos²-sin²)·norm
+    total_antenna = ff + FF  # total antenna power
+    norm_2psi = jnp.sqrt(cos_2psi**2 + sin_2psi**2)
 
     # Dominant polarisation energy
     fp = (total_antenna + norm_2psi) / 2.0
@@ -101,8 +100,8 @@ def compute_dpf(Fp_sky: jnp.ndarray,
     fx = jnp.sum(F_orth * F_orth, axis=1)  # (n_pix,)
 
     # --- Network index ---
-    f4_sum = jnp.sum(f_rot ** 4, axis=1)   # Σ_i f_i⁴
-    network_index = f4_sum / (fp ** 2 + EPS)
+    f4_sum = jnp.sum(f_rot**4, axis=1)  # Σ_i f_i⁴
+    network_index = f4_sum / (fp**2 + EPS)
 
     # --- DPF quality statistic ---
     N_plus = jnp.sum(jnp.where(fp > 0, jnp.float32(1.0), jnp.float32(0.0)))
@@ -125,19 +124,22 @@ def compute_dpf(Fp_sky: jnp.ndarray,
 # Sky-averaged DPF energy regulator
 # ---------------------------------------------------------------------------
 
+
 @partial(jax.jit, static_argnames=())
 def _dpf_quality_single(Fp_sky, Fx_sky, rms):
     """Return the scalar DPF quality for one sky direction."""
     return compute_dpf(Fp_sky, Fx_sky, rms)["dpf_quality"]
 
 
-def calculate_dpf_regulator(FP: jnp.ndarray,
-                            FX: jnp.ndarray,
-                            rms: jnp.ndarray,
-                            gamma_regulator: float,
-                            network_energy_threshold: float,
-                            sky_batch_size: int = 8192,
-                            sky_valid_indices=None) -> float:
+def calculate_dpf_regulator(
+    FP: jnp.ndarray,
+    FX: jnp.ndarray,
+    rms: jnp.ndarray,
+    gamma_regulator: float,
+    network_energy_threshold: float,
+    sky_batch_size: int = 8192,
+    sky_valid_indices=None,
+) -> float:
     """Compute the DPF-based energy regulator REG[1].
 
     Scans all sky directions, counts how many have DPF quality above
@@ -190,9 +192,9 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
     for start in range(0, n_sky_valid, sky_batch_size):
         end = min(start + sky_batch_size, n_sky_valid)
         batch_indices = sky_indices_j[start:end]
-        batch_qualities = jax.vmap(
-            _dpf_quality_single, in_axes=(0, 0, None)
-        )(FP_j[batch_indices], FX_j[batch_indices], rms_j)
+        batch_qualities = jax.vmap(_dpf_quality_single, in_axes=(0, 0, None))(
+            FP_j[batch_indices], FX_j[batch_indices], rms_j
+        )
         quality_parts.append(_np.asarray(batch_qualities))
 
     dpf_qualities = _np.concatenate(quality_parts)
@@ -200,5 +202,5 @@ def calculate_dpf_regulator(FP: jnp.ndarray,
     n_sky = float(n_sky_valid)
     n_gamma = float(_np.sum(dpf_qualities > gamma_regulator))
 
-    reg = (n_sky ** 2 / (n_gamma ** 2 + 1e-9) - 1.0) * network_energy_threshold
+    reg = (n_sky**2 / (n_gamma**2 + 1e-9) - 1.0) * network_energy_threshold
     return float(reg)

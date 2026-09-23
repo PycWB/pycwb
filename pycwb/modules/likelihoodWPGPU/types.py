@@ -8,4 +8,4 @@ agnostic (plain numpy arrays and scalars).
 
 from pycwb.modules.likelihoodWP.results import SkyStatistics, SkyMapStatistics
 
-__all__ = ["SkyStatistics", "SkyMapStatistics"]
+__all__ = ["SkyMapStatistics", "SkyStatistics"]
