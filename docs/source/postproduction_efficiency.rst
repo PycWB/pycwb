@@ -244,3 +244,27 @@ positive durations with ``s``, ``day``, ``wk``, ``mo``, and ``yr`` suffixes,
 such as ``100yr``. Existing presets retain their exact historical values;
 ``1mo`` is 30 days, whereas the historical ``6mo`` is half a Julian year.
 Unknown or nonpositive values fail explicitly, including in MDC scoring.
+
+Choosing a simulation association rule
+-------------------------------------
+
+Native ``match_simulations`` associates waveform/trigger interval overlaps
+within the same trial and scheduled job, then chooses unique pairs. This is
+the practical default for mixed waveform families and extended signals:
+requested injection GPS time can denote a waveform endpoint, while trigger
+GPS time is a reconstructed detector arrival. A blanket 0.1-second cut on
+these two scalar columns does not reproduce cWB's detector-time cut.
+
+Use ``ranking_par: rho_alt`` (or ``pycwb match-simulations --ranking-par
+rho_alt``) when choosing unique events with the cWB ``pp_irho=1`` statistic.
+The default ``rho`` remains available for native analyses. Rank selection
+alone does not make the association algorithm cWB-equivalent.
+
+For exact cWB postproduction comparison, use ``import_cwb_simulation`` on
+ROOT/MDC truth: it uses cWB's recorded injection association and applies
+``time_window: 0.1`` after unique selection. Failed winners stay missed;
+a quieter candidate is not substituted. For native detector-time recovery
+cuts, first establish compatible injected/reconstructed detector timing
+and injection identity. Do not silently substitute a geocentric GPS cut.
+Dense overlapping injections remain potentially ambiguous under interval
+association; controlled populations with adequate separation are preferable.

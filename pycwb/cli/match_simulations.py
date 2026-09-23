@@ -63,6 +63,9 @@ def init_parser(parser):
         help='time buffer (seconds) added symmetrically to each trigger window (default: 0)',
     )
 
+    parser.add_argument("--ranking-par", default="rho",
+                        help="Unique recovery ranking (rho_alt for cWB pp_irho=1)")
+
     parser.add_argument(
         '--extra-sim-columns',
         metavar='COL',
@@ -91,6 +94,7 @@ def command(args):
         window_buffer=args.buffer,
         extra_sim_columns=args.extra_sim_columns,
         how=args.how,
+        ranking_par=args.ranking_par,
         output_parquet=output,
     )
 

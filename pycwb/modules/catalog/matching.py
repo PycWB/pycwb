@@ -439,7 +439,7 @@ def match_simulations_parquet(
                         col_name,
                         _pa.array([None] * len(unmatched_t), type=out_type),
                     )
-            unmatched_t = unmatched_t.select(out_schema.names)
+            unmatched_t = unmatched_t.select(out_schema.names).cast(out_schema)
             parts.append(unmatched_t)
             logger.debug("match_simulations_parquet: %d unmatched triggers", len(unmatched_t))
 
@@ -464,7 +464,7 @@ def match_simulations_parquet(
                         field.name,
                         _pa.array([None] * len(unmatched_s), type=out_type),
                     )
-            unmatched_s = unmatched_s.select(out_schema.names)
+            unmatched_s = unmatched_s.select(out_schema.names).cast(out_schema)
             parts.append(unmatched_s)
             logger.debug("match_simulations_parquet: %d unmatched sims", len(unmatched_s))
 
