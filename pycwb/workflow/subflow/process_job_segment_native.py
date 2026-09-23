@@ -66,28 +66,31 @@ from pycwb.constants.execution_profile import execution_profile
 import logging
 import os
 import time
-import psutil
-import numpy as np
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from copy import copy
 from dataclasses import dataclass, replace
+
+import numpy as np
+import psutil
+
 from pycwb.config import Config
-from pycwb.types.time_series import TimeSeries
-from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
-from pycwb.utils.td_vector_batch import build_td_inputs_cache
-from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-from pycwb.modules.injection import generate_strain_from_injection
-from pycwb.modules.read_data import read_from_job_segment
-from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
-from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning import condition_strains
+from pycwb.modules.coherence_native.coherence import coherence_single_lag, setup_coherence
 from pycwb.modules.cwb_interop import create_cwb_workdir
+from pycwb.modules.data_conditioning.data_conditioning import condition_strains
+from pycwb.modules.injection import generate_strain_from_injection
+from pycwb.modules.injection.resampling import uses_cwb_snr_resampling, resample_snr_injection
 from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
+from pycwb.modules.read_data import read_from_job_segment
+from pycwb.modules.read_data.data_check import check_and_resample_py
+from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
+from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
+from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
+from pycwb.modules.xtalk.type import XTalk
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
-from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
+from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
+from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.workflow.subflow.job_segment_output import (
     _cleanup_lag_output_state,
     _create_and_save_trigger_folders,
@@ -99,12 +102,18 @@ from pycwb.workflow.subflow.job_segment_output import (
 )
 from pycwb.workflow.subflow.job_segment_progress import (
     _catalog_path as _catalog_path,
+)
+from pycwb.workflow.subflow.job_segment_progress import (
     _lag_metadata,
     _lag_progress_record,
+)
+from pycwb.workflow.subflow.job_segment_progress import (
     _record_lag_progress as _record_lag_progress,
 )
 from pycwb.workflow.subflow.job_segment_resources import (
     _free_jax_buffers as _free_jax_buffers,
+)
+from pycwb.workflow.subflow.job_segment_resources import (
     _parallel_inner_threads,
     _temporary_numba_threads,
 )
@@ -305,9 +314,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             event.id = event.long_id
 
             if sub_job_seg.injections:
-                from pycwb.modules.injection.snr_population import target_snr_scales
-            snr_scales = target_snr_scales(config, sub_job_seg, data)
-            for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
+                for injection in sub_job_seg.injections:
                     if event.start[0] - 0.1 < injection["gps_time"] < event.stop[0] + 0.1:
                         event.injection = injection
 
@@ -458,7 +465,7 @@ def process_job_segment(
     config: Config,
     job_seg: WaveSegment,
     compress_json: bool = True,
-    catalog_file: str = None,
+    catalog_file: str | None = None,
     queue=None,
     production_mode: bool = False,
     skip_lags: dict[int, set[int]] | None = None,
@@ -525,7 +532,7 @@ def process_job_segment(
     # get all the trial_idx from the injections, if there is no injections, use 0
     trial_idxs = {0}
     if job_seg.injections:
-        trial_idxs = set([inj.get("trial_idx", 0) for inj in job_seg.injections])
+        trial_idxs = {inj.get("trial_idx", 0) for inj in job_seg.injections}
 
     if catalog_file is not None:
         base = os.path.basename(catalog_file)
@@ -553,6 +560,7 @@ def process_job_segment(
             data = base_data
             base_data = None
 
+        separate_injection_resampling = False
         if job_seg.injections:
             # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions.
             sub_job_seg = copy(job_seg)
@@ -575,6 +583,7 @@ def process_job_segment(
                 for _ in sub_job_seg.ifos
             ]
 
+            separate_injection_resampling = uses_cwb_snr_resampling(config, sub_job_seg.injections)
             from pycwb.modules.injection.snr_population import target_snr_scales
             snr_scales = target_snr_scales(config, sub_job_seg, data)
             for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
@@ -590,8 +599,9 @@ def process_job_segment(
                 # Both injection_strains and data are owned buffers; inject in-place.
                 for i in range(n_ifo):
                     injection_strains[i].inject(inj[i], copy=False)
-                for i in range(n_ifo):
-                    data[i].inject(inj[i], copy=False)
+                if not separate_injection_resampling:
+                    for i in range(n_ifo):
+                        data[i].inject(inj[i], copy=False)
                 # Free the per-injection signal buffer immediately to reduce peak memory.
                 del inj
         else:
@@ -609,7 +619,9 @@ def process_job_segment(
         # Must run BEFORE resampling so the data is still at config.inRate.
         if getattr(config, "cwb_compare", False):
             _cwb_compare_dir = getattr(config, "cwb_compare_dir", "") or None
-            create_cwb_workdir(working_dir, config, sub_job_seg, data, cwb_compare_dir=_cwb_compare_dir)
+            compare_data = [d.inject(signal, copy=True) for d, signal in zip(data, injection_strains)] if separate_injection_resampling else data
+            create_cwb_workdir(working_dir, config, sub_job_seg, compare_data, cwb_compare_dir=_cwb_compare_dir)
+            del compare_data
 
         # ─────────────────────────────────────────────────────────────────────
         # STEP 2 – RESAMPLING & DATA CONDITIONING
@@ -619,7 +631,12 @@ def process_job_segment(
         # coherence/supercluster allocations below.
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]
         if injection_strains is not None:
-            injection_strains = [check_and_resample_py(strain, config, i) for i, strain in enumerate(injection_strains)]
+            if separate_injection_resampling:
+                injection_strains = [resample_snr_injection(strain, config) for strain in injection_strains]
+                for noise, signal in zip(data, injection_strains):
+                    noise.data += signal.data
+            else:
+                injection_strains = [check_and_resample_py(strain, config, i) for i, strain in enumerate(injection_strains)]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.

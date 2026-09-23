@@ -128,6 +128,28 @@ Finally, calculate likelihood statistics for accepted clusters:
        if result_cluster is not None and result_cluster.cluster_status == -1:
            accepted.append((result_cluster, sky_stats))
 
+Matching cWB target-SNR resampling
+---------------------------------
+
+With the native segment processor, set the following top-level option when
+matching cWB simulation modes 2 or 5:
+
+.. code-block:: yaml
+
+   injection_resampling: cwb
+
+The target-SNR multiplier is estimated with FFT resampling. In this mode,
+the estimator uses the unmodified noise RMS before the conditioning bandpass,
+then reproduces ``detector::setsim``: two energy-centroid iterations, a
+99.9-percent energy crop, and the reference packed-FFT frequency cut.
+This convention matters even when the generated waveform is identical. The final scaled
+injection is then downsampled with Meyer(1024), separately from the noise,
+before conditioning. Fixed-hrss trials retain FFT resampling. A trial containing
+both target-SNR and fixed-hrss sources is rejected with this option; schedule
+them as separate trials. The default ``fft`` preserves the existing behavior.
+This option does not select the SNR population: source parameters must still
+provide ``target_snr`` (or ``targeted_snr``).
+
 The complete ``pycwb run`` path also saves triggers, reconstructed waveforms,
 injection products, Q-veto values, plots, and catalog rows according to the
 output options in the YAML file.
