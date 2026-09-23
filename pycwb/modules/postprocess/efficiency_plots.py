@@ -121,13 +121,13 @@ def _plot_efficiency_by_waveform_panels(
         return
 
     # Group by Q
-    q_groups = {3: [], 9: [], 100: []}
+    q_groups = {q: [] for q in sorted({c["Q"] for c in curves})}
     for c in curves:
         q = c["Q"]
         if q in q_groups:
             q_groups[q].append(c)
 
-    existing_qs = [q for q in [3, 9, 100] if q_groups[q]]
+    existing_qs = [q for q in q_groups if q_groups[q]]
     n_panels = len(existing_qs)
     if n_panels == 0:
         return
@@ -172,7 +172,7 @@ def _plot_efficiency_by_waveform_panels(
         ax.axhline(50, color="gray", linestyle="--", alpha=0.4)
         ax.set_xlabel("hrss")
         ax.set_ylabel("Efficiency [%]")
-        ax.set_title(f"Q = {q_val}")
+        ax.set_title(f"Q = {q_val:g}")
         ax.set_ylim(-5, 105)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=7, loc="lower right")

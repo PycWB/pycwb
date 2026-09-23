@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Optional
 
 import numpy as np
@@ -34,32 +35,19 @@ _IFAR_PRESETS = {
 }
 
 
+def _parse_ifar_seconds(label):
+    value = _IFAR_PRESETS[label] if label in _IFAR_PRESETS else float(label)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("IFAR must be a known preset or finite positive seconds")
+    return float(value)
+
+
 def _interpolate_hrss50(eff_curve: list[dict]) -> Optional[float]:
-    """Find hrss where efficiency crosses 50% by linear interpolation."""
-    hrs = np.array([d["hrss"] for d in eff_curve])
-    effs = np.array([d["efficiency"] for d in eff_curve])
-
-    # Check if 50% is within range
-    if effs.min() > 0.5:
-        logger.warning("Min efficiency %.3f > 0.5 — hrss50 is below data range", effs.min())
-        return float(hrs[0])  # return lowest hrss as lower bound
-    if effs.max() < 0.5:
-        logger.warning("Max efficiency %.3f < 0.5 — hrss50 is above data range", effs.max())
-        return float(hrs[-1])
-
-    # Find crossing point
-    for i in range(len(effs) - 1):
-        if (effs[i] >= 0.5 and effs[i + 1] <= 0.5) or (effs[i] <= 0.5 and effs[i + 1] >= 0.5):
-            # Linear interpolation in log space
-            log_h1, log_h2 = np.log10(hrs[i]), np.log10(hrs[i + 1])
-            e1, e2 = effs[i], effs[i + 1]
-            if abs(e2 - e1) < 1e-12:
-                log_h50 = log_h1
-            else:
-                log_h50 = log_h1 + (0.5 - e1) / (e2 - e1) * (log_h2 - log_h1)
-            return float(10 ** log_h50)
-
-    return None
+    """Return a measured crossing; an unbracketed crossing is not an estimate."""
+    return _interpolate_hrss50_curve(
+        np.array([d["hrss"] for d in eff_curve], dtype=float),
+        np.array([d["efficiency"] for d in eff_curve], dtype=float),
+    )
 
 
 def _fit_efficiency_curve(name, eff_data, fit_func, estimate_func, logn_func) -> dict:
@@ -68,6 +56,10 @@ def _fit_efficiency_curve(name, eff_data, fit_func, estimate_func, logn_func) ->
     valid = np.isfinite(hrs) & np.isfinite(effs) & (hrs > 0)
     hrs = hrs[valid]
     effs = effs[valid]
+    if len(hrs) and effs.max() < .5:
+        return {"status": "above_sampled_range", "hrss50": None, "bound": float(hrs.max())}
+    if len(hrs) and effs.min() > .5:
+        return {"status": "below_sampled_range", "hrss50": None, "bound": float(hrs.min())}
     if len(hrs) < 3:
         return {"status": "skipped", "reason": "fewer than 3 hrss points"}
 
@@ -100,29 +92,79 @@ def _fit_efficiency_curve(name, eff_data, fit_func, estimate_func, logn_func) ->
         return {"status": "failed", "reason": str(exc)}
 
 
-def _parse_waveform_q_frequency(name: str) -> tuple[int, int]:
-    q_match = pd.Series([name]).str.extract(r"_Q(\d+)_", expand=False).iloc[0]
-    f_match = pd.Series([name]).str.extract(r"_(\d+)Hz", expand=False).iloc[0]
-    q_val = int(q_match) if q_match else 0
-    f_val = int(f_match) if f_match else 0
-    return q_val, f_val
+def _validate_fixed_hrss_population(frame: pd.DataFrame) -> None:
+    """Reject seed amplitudes from target-SNR populations in amplitude reports."""
+    for column in ("sim_target_snr", "sim_targeted_snr"):
+        if column in frame and pd.to_numeric(frame[column], errors="coerce").fillna(0).ne(0).any():
+            raise ValueError(
+                "Target-SNR populations are not supported by hrss efficiency reports: "
+                "sim_hrss is the unscaled input amplitude. Use a fixed-hrss population."
+            )
+    if "sim_snr_scale" in frame:
+        scale = pd.to_numeric(frame["sim_snr_scale"], errors="coerce")
+        if (scale.notna() & scale.ne(1)).any():
+            raise ValueError("SNR-scaled injections require a fixed-hrss population for hrss efficiency reports")
+
+
+def _parse_waveform_q_frequency(name: str) -> tuple[float, int]:
+    # Both native descriptive names and the original cWB SG/SGE names.
+    compact = re.fullmatch(r"SGE?(\d+)Q(\d+(?:[d.]\d+)?)", name)
+    if compact:
+        return float(compact[2].replace("d", ".")), int(compact[1])
+    q = re.search(r"_Q(\d+(?:[d.]\d+)?)(?:_|$)", name)
+    f = re.search(r"_(\d+)Hz", name)
+    return float(q[1].replace("d", ".")) if q else 0, int(f[1]) if f else 0
 
 
 def _interpolate_hrss50_curve(hrs: np.ndarray, effs: np.ndarray) -> Optional[float]:
-    """Interpolate hrss at 50% efficiency from per-waveform data."""
-    if effs.min() > 0.5:
-        return float(hrs[0])
-    if effs.max() < 0.5:
-        return float(hrs[-1])
-    for i in range(len(effs) - 1):
-        if (effs[i] >= 0.5 and effs[i + 1] <= 0.5) or (effs[i] <= 0.5 and effs[i + 1] >= 0.5):
-            log_h1, log_h2 = np.log10(hrs[i]), np.log10(hrs[i + 1])
-            e1, e2 = effs[i], effs[i + 1]
-            if abs(e2 - e1) < 1e-12:
-                return float(10 ** log_h1)
-            log_h50 = log_h1 + (0.5 - e1) / (e2 - e1) * (log_h2 - log_h1)
-            return float(10 ** log_h50)
+    """Interpolate a bracketed crossing in log amplitude; never return a bound as a point."""
+    hrs, effs = np.asarray(hrs, dtype=float), np.asarray(effs, dtype=float)
+    valid = np.isfinite(hrs) & (hrs > 0) & np.isfinite(effs)
+    hrs, effs = hrs[valid], effs[valid]
+    if not len(hrs):
+        return None
+    order = np.argsort(hrs)
+    hrs, effs = hrs[order], effs[order]
+    if effs.min() > .5 or effs.max() < .5:
+        return None
+    for i in range(len(effs)):
+        if effs[i] == .5:
+            return float(hrs[i])
+        if i + 1 < len(effs) and (effs[i] - .5) * (effs[i + 1] - .5) < 0:
+            fraction = (.5 - effs[i]) / (effs[i + 1] - effs[i])
+            return float(np.exp(np.log(hrs[i]) + fraction * np.log(hrs[i + 1] / hrs[i])))
     return None
+
+
+def _validate_unique_simulations(matched: pd.DataFrame) -> None:
+    """Require the right-joined, unique-selected catalog; never silently double count."""
+    ids = matched["sim_sim_idx"]
+    if ids.isna().any() or ids.duplicated().any():
+        raise ValueError("Efficiency requires one unique row per sim_sim_idx; "
+                         "apply unique simulation matching and use its right join first")
+
+
+def _empirical_probability_detection(scores, background, livetime, ifar_sec):
+    """Use inclusive empirical tail counts, including ties and gaps between ranks.
+
+    Zero background exceedances have empirical FAR zero (as in score_mdc_catalog),
+    not a measured infinite exposure. A finite-background upper limit is a separate
+    inference. The returned threshold is only a display representation of this cut.
+    """
+    if not np.isfinite(livetime) or livetime <= 0 or not np.isfinite(ifar_sec) or ifar_sec <= 0:
+        raise ValueError("livetime and ifar_sec must be finite and positive")
+    background = np.asarray(background, dtype=float)
+    background = np.sort(background[np.isfinite(background)])
+    if not len(background):
+        raise ValueError("No finite background scores available for IFAR calibration")
+    scores = np.asarray(scores, dtype=float)
+    counts = len(background) - np.searchsorted(background, scores, side="left")
+    detected = np.isfinite(scores) & (counts / livetime <= 1. / ifar_sec)
+    # At the highest disallowed observed score the inclusive tail is too large.
+    tail = len(background) - np.searchsorted(background, background, side="left")
+    disallowed = background[tail / livetime > 1. / ifar_sec]
+    threshold = np.nextafter(disallowed[-1], np.inf) if len(disallowed) else -np.inf
+    return detected, float(threshold)
 
 
 def _compute_efficiency_vs_hrss_by_waveform_matched(
@@ -146,12 +188,11 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
     def _resolve(p: str) -> str:
         return p if os.path.isabs(p) else os.path.join(work_dir, p)
 
-    ifar_sec = _IFAR_PRESETS.get(
-        ifar_label,
-        float(ifar_label) if ifar_label.replace(".", "").isdigit() else 31557600,
-    )
+    ifar_sec = _parse_ifar_seconds(ifar_label)
 
     mr = pd.read_parquet(_resolve(matched_file))
+    _validate_unique_simulations(mr)
+    _validate_fixed_hrss_population(mr)
     if exclude_vetoed:
         veto_mask = (
             mr["sim_vetoed_cat0"].fillna(False).astype(bool)
@@ -174,12 +215,10 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
         mr.loc[recovered.index, "xgb_prob"] = recovered["xgb_prob"]
 
     bkg_df = pd.read_parquet(_resolve(bkg_catalog))
-    bkg_probs = np.sort(bkg_df["xgb_prob"].values)[::-1]
-    far_values = np.arange(1, len(bkg_probs) + 1) / max(livetime, 1.0)
-    target_far = 1.0 / ifar_sec
-    idx = np.searchsorted(far_values, target_far)
-    prob_threshold = bkg_probs[idx] if idx < len(bkg_probs) else 1.0
-    mr["detected"] = mr["id"].notna() & (mr["xgb_prob"] >= prob_threshold)
+    detected, prob_threshold = _empirical_probability_detection(
+        mr["xgb_prob"], bkg_df["xgb_prob"], livetime, ifar_sec,
+    )
+    mr["detected"] = mr["id"].notna() & detected
 
     curves = []
     fit_rows = []
@@ -275,6 +314,8 @@ def _compute_efficiency_by_waveform_matched(
 
     # ── Load matched_right ───────────────────────────────────────────────
     mr = pd.read_parquet(mr_path)
+    _validate_unique_simulations(mr)
+    _validate_fixed_hrss_population(mr)
     n_total_sims = mr["sim_sim_idx"].nunique()
     n_recovered_cwb = mr["id"].notna().sum()
     logger.info(
@@ -299,15 +340,13 @@ def _compute_efficiency_by_waveform_matched(
 
     # ── Compute prob threshold from BKG ──────────────────────────────────
     bkg_df = pd.read_parquet(bkg_path)
-    bkg_probs = np.sort(bkg_df["xgb_prob"].values)[::-1]
-    far_values = np.arange(1, len(bkg_probs) + 1) / max(livetime, 1.0)
-    target_far = 1.0 / ifar_sec
-    idx = np.searchsorted(far_values, target_far)
-    prob_threshold = bkg_probs[idx] if idx < len(bkg_probs) else 1.0
+    detected, prob_threshold = _empirical_probability_detection(
+        mr["xgb_prob"], bkg_df["xgb_prob"], livetime, ifar_sec,
+    )
     logger.info("IFAR=%s: prob >= %.6f", ifar_label, prob_threshold)
 
     # ── Detection: cWB-recovered AND XGBoost above threshold ─────────────
-    mr["detected"] = mr["id"].notna() & (mr["xgb_prob"] >= prob_threshold)
+    mr["detected"] = mr["id"].notna() & detected
 
     # ── Veto filter for denominator (optional) ───────────────────────────
     if exclude_vetoed:

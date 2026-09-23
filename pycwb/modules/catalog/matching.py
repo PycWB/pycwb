@@ -239,6 +239,7 @@ def match_simulations_parquet(
     sim_parquet: str,
     *,
     window_buffer: float = 0.0,
+    ranking_par: str = "rho",
     extra_sim_columns: list[str] | None = None,
     how: str = "inner",
     output_parquet: str | None = None,
@@ -272,6 +273,9 @@ def match_simulations_parquet(
     window_buffer:
         Optional time buffer (seconds) added symmetrically to the trigger
         window before comparing.
+    ranking_par:
+        Column used to choose the unique recovery. Use ``rho_alt`` to match
+        cWB setUniqueEvents with pp_irho=1; ``rho`` preserves the generic default.
     extra_sim_columns:
         Deprecated — all simulation columns are now included automatically
         with a ``sim_`` prefix.  This argument is silently ignored.
@@ -321,6 +325,9 @@ def match_simulations_parquet(
     # Read schemas to build SELECT lists and typed NULL columns later.
     trig_schema = _pq.read_schema(catalog_parquet)
     sim_schema  = _pq.read_schema(sim_parquet)
+    if ranking_par not in trig_schema.names:
+        raise ValueError(f"Missing unique-selection ranking column: {ranking_par}")
+    ranking_sql = '"' + ranking_par.replace('"', '""') + '"'
 
     sim_cols   = [f"s.{c} AS sim_{c}" for c in sim_schema.names]
     sim_select = ", ".join(sim_cols)
@@ -367,7 +374,7 @@ def match_simulations_parquet(
             QUALIFY
                 ROW_NUMBER() OVER (
                     PARTITION BY sim_sim_idx
-                    ORDER BY rho DESC NULLS LAST, _gps_dist, id
+                    ORDER BY {ranking_sql} DESC NULLS LAST, _gps_dist, id
                 ) = 1
         ),
         step2 AS (
