@@ -637,6 +637,30 @@ schema = {
             "description": "if not 0 use healpix sky map (number of sky pixels = 12*pow(4,healpix))",
             "default": 7,
         },
+        "conditioning": {
+            "type": "object", "default": {}, "additionalProperties": False, "cwb": False,
+            "properties": {"post_whitening": {
+                "type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["module"], "properties": {
+                        "module": {"type": "string", "minLength": 1},
+                        "options": {"type": "object", "default": {}}
+                    }
+                }
+            }}
+        },
+        "selection": {
+            "type": "object", "default": {}, "additionalProperties": False, "cwb": False,
+            "properties": {"time_vetoes": {
+                "type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["module"], "properties": {
+                        "module": {"type": "string", "minLength": 1},
+                        "options": {"type": "object", "default": {}}
+                    }
+                }
+            }}
+        },
         "plugin": {"type": "string", "c_type": "TMacro", "default": ""},
         "configPlugin": {"type": "string", "c_type": "TMacro", "default": ""},
         "filter_dir": {
