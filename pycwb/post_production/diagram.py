@@ -1003,6 +1003,8 @@ def render_diagram(
         'dot': None, 'd2': None, 'html': None,
     }
 
+    os.makedirs(os.path.dirname(os.path.abspath(output_prefix)), exist_ok=True)
+
     # --- Mermaid (.mmd) — always generated ---
     mmd_path = f'{output_prefix}.mmd'
     mermaid_text = render_mermaid(dag, title)

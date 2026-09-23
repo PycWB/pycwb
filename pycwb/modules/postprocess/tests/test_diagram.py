@@ -339,7 +339,7 @@ class TestFullWorkflow(unittest.TestCase):
             self.skipTest(f"Workflow file not found: {self.workflow_path}")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            prefix = os.path.join(tmpdir, 'test_diagram')
+            prefix = os.path.join(tmpdir, 'new_report', 'test_diagram')
             result = generate_workflow_diagram(
                 self.workflow_path,
                 output_prefix=prefix,
