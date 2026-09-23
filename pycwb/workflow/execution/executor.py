@@ -224,6 +224,7 @@ class ScalableExecutor:
         )
         process_context = multiprocessing.get_context("spawn")
         active: dict[Connection, tuple[BaseProcess, int, FrameProvider, int]] = {}
+        retiring: set[Connection] = set()
         completed = []
         started = time.monotonic()
 
@@ -317,7 +318,10 @@ class ScalableExecutor:
                     active_ids.add(job.index)
                     order.popleft()
                 ready = (
-                    cast(list[Connection], wait(list(active), timeout=0.2))
+                    cast(
+                        list[Connection],
+                        wait([c for c in active if c not in retiring], timeout=0.2),
+                    )
                     if active
                     else []
                 )
@@ -344,17 +348,27 @@ class ScalableExecutor:
                     elif kind == "done":
                         input_metrics.update(item)
                         writer.flush()
-                        process.join(timeout=5)
-                        if process.exitcode != 0:
-                            raise RuntimeError(
-                                f"Job {context.jobs[task].index} did not exit cleanly"
-                            )
-                        cache.release(provider)
-                        connection.close()
-                        del active[connection]
-                        completed.append(task)
+                        # Native runtimes can take longer than five seconds to
+                        # shut down. Keep their reservations until they exit,
+                        # while continuing to service other workers' output.
+                        retiring.add(connection)
                     else:
                         raise ValueError(f"Invalid worker message: {kind!r}")
+                for connection in list(retiring):
+                    process, task, provider, _ = active[connection]
+                    if process.is_alive():
+                        continue
+                    process.join()
+                    if process.exitcode != 0:
+                        raise RuntimeError(
+                            f"Job {context.jobs[task].index} did not exit cleanly "
+                            f"(exit code {process.exitcode})"
+                        )
+                    cache.release(provider)
+                    connection.close()
+                    del active[connection]
+                    retiring.remove(connection)
+                    completed.append(task)
                 if monitor.exceeded:
                     cache.evict_idle()
                     raise MemoryError(

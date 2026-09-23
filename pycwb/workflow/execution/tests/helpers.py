@@ -36,6 +36,19 @@ def crash(working_dir, config, job, **kwargs):
     os._exit(17)
 
 
+def slow_shutdown(working_dir, config, job, **kwargs):
+    import time
+    from multiprocessing.util import Finalize
+
+    Finalize(None, time.sleep, args=(6,), exitpriority=0)
+
+
+def failed_shutdown(working_dir, config, job, **kwargs):
+    from multiprocessing.util import Finalize
+
+    Finalize(None, os._exit, args=(17,), exitpriority=0)
+
+
 def bad_output(working_dir, config, job, *, queue, **kwargs):
     queue.put({"type": "invalid"})
 

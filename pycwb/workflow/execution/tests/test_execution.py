@@ -273,6 +273,25 @@ def test_worker_and_writer_failure_cleanup(tmp_path, processor, message):
     assert Catalog.open(context.catalog_file).get_completed_lags(1) == {}
 
 
+def test_successful_worker_can_take_more_than_five_seconds_to_exit(tmp_path):
+    from pycwb.workflow.execution.tests.helpers import slow_shutdown
+
+    jobs = [WaveSegment(1, ["H1"], 100, 104, 128, 0)]
+    context = make_context(tmp_path / "run", jobs, config(), slow_shutdown)
+    result = execute_jobs(context)
+    assert result["status"] == "complete"
+    assert result["completed_tasks"] == [0]
+
+
+def test_worker_shutdown_failure_is_not_accepted_as_success(tmp_path):
+    from pycwb.workflow.execution.tests.helpers import failed_shutdown
+
+    jobs = [WaveSegment(1, ["H1"], 100, 104, 128, 0)]
+    context = make_context(tmp_path / "run", jobs, config(), failed_shutdown)
+    with pytest.raises(RuntimeError, match="exit code 17"):
+        execute_jobs(context)
+
+
 def test_writer_does_not_commit_progress_after_failed_flush(monkeypatch):
     from pycwb.modules.catalog.catalog import Catalog
 
