@@ -3,12 +3,13 @@ import re
 import subprocess
 import click
 import shutil
+from pycwb.workflow.execution.settings import byte_size
 
 
 class Slurm:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", job_per_worker=10,
                  n_proc=1, memory="6GB", disk="4GB",
-                 time="72:00:00", constraint=None, partition=None, n_retries=5, conda_init=None):
+                 time="72:00:00", constraint=None, partition=None, n_retries=5, conda_init=None, job_groups=None):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         if not conda_init:
@@ -27,6 +28,7 @@ class Slurm:
         self.merge_script = None
         self.simulation_summary_script = None
         self.job_per_worker = job_per_worker if job_per_worker is not None else 10
+        self.job_groups = job_groups
 
     def create(self, job_segments, submit=False):
         if os.path.exists(self.slurm_dir):
@@ -53,6 +55,8 @@ class Slurm:
         conda_env = self.conda_env
 
         n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
+        if self.job_groups is not None:
+            n_workers = len(self.job_groups)
         os.makedirs(slurm_dir, exist_ok=True)
 
         optional_lines = []
@@ -62,6 +66,24 @@ class Slurm:
             optional_lines.append(f"#SBATCH --partition={self.partition}")
         optional_sbatch = ('\n' + '\n'.join(optional_lines)) if optional_lines else ''
 
+        selection = """start=$((task_id * jobs_per_worker + 1))
+end=$(((task_id + 1) * jobs_per_worker))
+if [ $end -gt $total ]; then
+    end=$total
+fi
+jobs=$start-$end"""
+        if self.job_groups is not None:
+            selectors = [",".join(str(segment.index) for segment in group) for group in self.job_groups]
+            # Numeric IDs are safe shell literals. Embed the immutable mapping so
+            # retries do not depend on a mutable external scheduling file.
+            selection = ("job_groups=(" + " ".join(selectors) + ")\njobs=${job_groups[$task_id]}\n"
+                         "printf -v batch_id 'b%06d' \"$task_id\"")
+
+        allocation_env = ""
+        if self.job_groups is not None:
+            allocation_env = (f"export PYCWB_ALLOCATED_CORES={self.n_proc}\n"
+                              f"export PYCWB_MEMORY_LIMIT_BYTES={byte_size(self.memory)}")
+        job_argument = "--batch-id=$batch_id" if self.job_groups is not None else "--jobs=$jobs"
         # create run.sh
         with open(f"{slurm_dir}/run.sh", 'w') as f:
             f.write(f"""#!/bin/bash
@@ -81,15 +103,9 @@ n_proc={n_proc}                  # Number of processes per worker
 
 # Compute the start and end indices for this task
 task_id=${{SLURM_ARRAY_TASK_ID}}
-start=$((task_id * jobs_per_worker + 1))
-end=$(((task_id + 1) * jobs_per_worker))
+{selection}
 
-# Cap the end index to not exceed the total
-if [ $end -gt $total ]; then
-    end=$total
-fi
-
-echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
+echo "Task ID: $task_id processing jobs $jobs using $n_proc processes."
 
 {self.conda_init}
 {f'conda activate {conda_env}' if conda_env else ''}
@@ -98,13 +114,14 @@ echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
 MAX_RETRIES={self.n_retries}
 attempt=0
 while [ $attempt -lt $MAX_RETRIES ]; do
-    pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc} && break
+    {allocation_env}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} --n-proc=1 --n-workers={self.n_proc} && break
     attempt=$((attempt + 1))
     echo "Attempt $attempt failed, retrying in 30s..."
     sleep 30
 done
 if [ $attempt -eq $MAX_RETRIES ]; then
-    echo "All $MAX_RETRIES attempts failed for jobs $start-$end"
+    echo "All $MAX_RETRIES attempts failed for jobs $jobs"
     exit 1
 fi
 """)
