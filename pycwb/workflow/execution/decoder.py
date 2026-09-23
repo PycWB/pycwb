@@ -104,6 +104,11 @@ def decode_to_file(
                     "Frame decoding reached the execution memory safety margin"
                 )
             if not process.is_alive():
+                # The child can send its result and exit while we inspect the
+                # process tree. Drain the pipe before treating its exit as a
+                # failure; the poll at the top of this iteration is now stale.
+                if parent.poll():
+                    break
                 raise RuntimeError(f"Frame decoder exited with code {process.exitcode}")
         try:
             size, error = parent.recv()
