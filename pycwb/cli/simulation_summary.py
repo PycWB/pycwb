@@ -12,8 +12,8 @@ def init_parser(parser):
         'user_parameter_file',
         metavar='config.yaml',
         nargs='?',
-        default='config/user_parameters.yaml',
-        help='path to the pycwb YAML configuration file (default: config/user_parameters.yaml)',
+        default=None,
+        help='config path relative to the caller (default: <work-dir>/config/user_parameters.yaml)',
     )
 
     parser.add_argument(
@@ -69,36 +69,43 @@ def command(args):
     from pycwb.modules.job_segment import create_job_segment_from_config
     from pycwb.workflow.subflow.simulation_summary import build_simulation_summary
 
-    # ── Load configuration ────────────────────────────────────────────────
-    # config_vars are applied as Jinja2 template substitutions before YAML
-    # parsing — the same approach used by prepare_job_runs.py.
-    config_file = args.user_parameter_file
-    if args.config_vars:
-        from pycwb.workflow.subflow.prepare_job_runs import generate_config
-        config_file = generate_config(config_file, args.config_vars)
+    # Explicit CLI paths are relative to the caller; paths inside the config
+    # are relative to the production directory, as in batch-setup/batch-runner.
+    working_dir = os.path.abspath(args.work_dir)
+    config_file = (os.path.abspath(args.user_parameter_file) if args.user_parameter_file
+                   else os.path.join(working_dir, 'config', 'user_parameters.yaml'))
+    output_file = (os.path.abspath(args.output) if args.output else
+                   os.path.join(working_dir, 'catalog', 'simulations.parquet'))
+    previous_dir = os.getcwd()
+    try:
+        os.chdir(working_dir)
+        # ── Load configuration ────────────────────────────────────────────────
+        # config_vars are applied as Jinja2 template substitutions before YAML
+        # parsing — the same approach used by prepare_job_runs.py.
+        if args.config_vars:
+            from pycwb.workflow.subflow.prepare_job_runs import generate_config
+            config_file = generate_config(config_file, args.config_vars)
 
-    config = Config()
-    config.load_from_yaml(config_file)
+        config = Config()
+        config.load_from_yaml(config_file)
 
-    if not config.injection:
-        logger.error(
-            "No 'injection' block found in %s — nothing to summarise.",
-            args.user_parameter_file,
-        )
-        raise SystemExit(1)
+        if not config.injection:
+            logger.error(
+                "No 'injection' block found in %s — nothing to summarise.",
+                config_file,
+            )
+            raise SystemExit(1)
 
-    # ── Build job segments ────────────────────────────────────────────────
-    logger.info("Building job segments from config …")
-    job_segments = create_job_segment_from_config(config)
-    logger.info("%d job segment(s) created.", len(job_segments))
+        # ── Build job segments ────────────────────────────────────────────────
+        logger.info("Building job segments from config …")
+        job_segments = create_job_segment_from_config(config)
+        logger.info("%d job segment(s) created.", len(job_segments))
 
-    # ── Resolve output path ───────────────────────────────────────────────
-    output_file = args.output
-    if output_file is None:
-        output_file = os.path.join(args.work_dir, 'catalog', 'simulations.parquet')
+        # ── Run summary ───────────────────────────────────────────────────────
+        df = build_simulation_summary(config, job_segments, output_file=output_file)
 
-    # ── Run summary ───────────────────────────────────────────────────────
-    df = build_simulation_summary(config, job_segments, output_file=output_file)
+    finally:
+        os.chdir(previous_dir)
 
     logger.info(
         "Simulation summary complete: %d row(s) written to %s",

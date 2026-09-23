@@ -225,3 +225,13 @@ After computing efficiency, verify:
 **See also:** :doc:`postproduction_xgboost` · :doc:`postproduction_background` · :doc:`injection_infrastructure`
 
 **Next:** :doc:`analysis_recipes` — copy-paste workflows for production tasks
+
+Manual simulation summary paths
+-------------------------------
+
+``pycwb simulation-summary --work-dir /production`` defaults to
+``/production/config/user_parameters.yaml`` and writes
+``/production/catalog/simulations.parquet``. An explicitly supplied config
+or ``--output`` path is relative to the caller's directory. Relative paths
+*inside* the config (DQ, frames, waveform inputs) are resolved from the
+production directory, consistently with batch setup and execution.
