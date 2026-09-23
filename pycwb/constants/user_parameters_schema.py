@@ -171,6 +171,11 @@ schema = {
             "cwb": False,
             "category": "job_submission",
         },
+        "slurm_account": {"type": "string", "default": "", "description": "SLURM account", "cwb": False, "category": "job_submission"},
+        "slurm_qos": {"type": "string", "default": "", "description": "SLURM QOS", "cwb": False, "category": "job_submission"},
+        "slurm_merge_memory": {"type": "string", "default": "", "description": "SLURM merge-job memory; empty inherits analysis memory", "cwb": False, "category": "job_submission"},
+        "slurm_summary_memory": {"type": "string", "default": "", "description": "SLURM simulation-summary memory; empty inherits analysis memory", "cwb": False, "category": "job_submission"},
+        "slurm_array_max_parallel": {"type": ["integer", "null"], "minimum": 1, "default": None, "description": "Maximum simultaneous tasks in this SLURM array", "cwb": False, "category": "job_submission"},
         "n_retries": {
             "type": "integer",
             "description": "number of application-level retries per job (SLURM) or DAG retries (HTCondor)",

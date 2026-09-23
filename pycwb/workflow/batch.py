@@ -159,6 +159,11 @@ def batch_setup(
             n_retries=n_retries,
             conda_init=conda_init,
             job_groups=job_groups,
+            account=getattr(config, "slurm_account", None),
+            qos=getattr(config, "slurm_qos", None),
+            array_max_parallel=getattr(config, "slurm_array_max_parallel", None),
+            merge_memory=getattr(config, "slurm_merge_memory", None),
+            summary_memory=getattr(config, "slurm_summary_memory", None),
         )
         slurm.create(job_segments, submit=submit)
     else:
