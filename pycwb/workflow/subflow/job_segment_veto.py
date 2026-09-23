@@ -44,8 +44,13 @@ def _injection_aware_veto_windows(
     return inj_windows
 
 
-def _lag_livetime(context, lag: int) -> float:
+def _lag_livetime(context, lag: int, *, before_selection: bool = False) -> float:
     sub_job_seg = context.sub_job_seg
+    windows = context.veto_windows
+    if before_selection and getattr(context, "selection_exclusions_applied", False):
+        # cWB's coherence gate reduces pixel-selection livetime; it does not
+        # reapply the job-duration cut after adding its exclusions.
+        windows = context.pre_selection_veto_windows
     if hasattr(sub_job_seg, "circular_livetime"):
-        return sub_job_seg.circular_livetime(lag, context.veto_windows)
+        return sub_job_seg.circular_livetime(lag, windows)
     return sub_job_seg.livetime(lag)

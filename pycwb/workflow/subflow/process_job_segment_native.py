@@ -143,6 +143,8 @@ class LagAnalysisContext:
     nRMS: object
     veto_windows: object
     numba_threads: int | None = None
+    pre_selection_veto_windows: object = None
+    selection_exclusions_applied: bool = False
 
 
 @dataclass(frozen=True)
@@ -182,7 +184,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
     seg_thr = getattr(config, "segTHR", 0.0) or 0.0
     if seg_thr > 0 and context.veto_windows is not None:
-        lag_livetime = _lag_livetime(context, lag)
+        lag_livetime = _lag_livetime(context, lag, before_selection=True)
         if lag_livetime < seg_thr:
             logger.warning(
                 "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
@@ -642,6 +644,17 @@ def process_job_segment(
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
         stage_timer = time.perf_counter()
         strains, nRMS = condition_strains(config, data)
+        from pycwb.modules.conditioning_plugins.api import (
+            run_hooks, save_diagnostics, subtract_intervals,
+        )
+
+        conditioning_result = run_hooks(config, sub_job_seg, strains, nRMS)
+        strains, nRMS = conditioning_result.strains, conditioning_result.noise_rms
+        if conditioning_result.diagnostics:
+            save_diagnostics(
+                conditioning_result,
+                os.path.join(working_dir, "conditioning", f"job_{job_seg.index}", f"trial_{trial_idx}"),
+            )
         data = None  # raw data no longer needed; drop reference to free memory
         release_memory()
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
@@ -724,6 +737,12 @@ def process_job_segment(
         # and then saves the accepted triggers before releasing lag-local memory.
         likelihood_timer = time.perf_counter()
         veto_windows = _effective_veto_windows(config, sub_job_seg)
+        pre_selection_veto_windows = veto_windows
+        if conditioning_result.excluded_intervals:
+            veto_windows = subtract_intervals(
+                veto_windows, conditioning_result.excluded_intervals,
+                sub_job_seg.analyze_start, sub_job_seg.analyze_end,
+            )
         analysis_context = LagAnalysisContext(
             config=config,
             job_seg=job_seg,
@@ -737,6 +756,8 @@ def process_job_segment(
             likelihood_setup=likelihood_setup,
             nRMS=nRMS,
             veto_windows=veto_windows,
+            pre_selection_veto_windows=pre_selection_veto_windows,
+            selection_exclusions_applied=bool(conditioning_result.excluded_intervals),
         )
         output_context = LagOutputContext(
             working_dir=working_dir,
