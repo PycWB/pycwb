@@ -350,3 +350,90 @@ Reports and specialized studies
 .. autofunction:: pycwb.modules.postprocess.angle_comparison.plot_angle_error_comparison
 
 .. autofunction:: pycwb.modules.postprocess.waveform_report.generate_waveform_report
+
+Controlled simulation comparisons
+---------------------------------
+
+For a cWB comparison using ``pp_irho=1``, set ``ranking_par: rho_alt`` on
+``postprocess.matching.match_simulations``. The default ``rho`` corresponds
+to cWB ``rho[0]`` and is intentionally retained for existing workflows.
+Unique recovery selection and the reconstructed/injected time cut are separate
+steps; selecting a different event after a time cut changes the reference rule.
+
+Efficiency entry points now use ``use_unique_sim=True`` by default and reject
+``False``: reconstructed triggers cannot supply an injection denominator.
+``compute_hrss50`` requires ``matched_right_file`` and either a model or scores
+in that matched table; it no longer silently falls back to trigger counts.
+The unique-simulation path requires a right-joined matched catalog
+with exactly one non-null ``sim_sim_idx`` per row. Missed injections must remain
+in that catalog. Duplicate simulation rows now raise an error, preventing a
+numerator counted in triggers from being divided by a denominator counted in
+injections. Independently prepared catalogs must have globally distinct
+simulation IDs before concatenation.
+
+Probability-based efficiency uses the inclusive empirical background tail
+``N(background xgb_prob >= signal xgb_prob) / livetime``. This handles equal
+scores and scores between background ranks. Zero exceedances mean empirical
+FAR zero, not an independently measured infinite background exposure; a
+finite-exposure confidence bound is a separate inference. These probability
+curves must not be confused with a comparison calibrated on the user-defined
+``rhor`` statistic.
+
+An unbracketed 50-percent efficiency crossing is not a measured ``hrss50``.
+Interpolation returns no estimate and the matched sigmoid path reports
+``above_sampled_range`` or ``below_sampled_range`` with the relevant bound.
+
+With ``injection_resampling: cwb``, stored injection times follow cWB's
+network energy-squared weighting and geometric detector offsets. Individual
+whitened energy centroids remain in injection parameters as
+``detector_energy_centroids``. This changes truth metadata used by the recovery
+time cut, not the injected strain or reconstruction.
+
+XGBoost feature heatmap
+----------------------
+
+.. autofunction:: pycwb.modules.postprocess.xgb_heatmap.plot_xgb_heatmap
+
+Common background processing
+----------------------------
+
+.. autofunction:: pycwb.modules.postprocess.background.process_background
+
+cWB ROOT catalog import
+-----------------------
+
+.. autofunction:: pycwb.modules.postprocess.root_adapter.import_cwb_root
+
+
+Standard cWB comparison and report diagnostics
+---------------------------------------------
+
+These actions adapt cWB simulation truth, compare standard cWB command outputs,
+and add explicit training/efficiency diagnostics. See :ref:`postproduction_root`.
+
+.. autofunction:: pycwb.modules.postprocess.root_simulation.import_cwb_simulation
+
+.. autofunction:: pycwb.modules.postprocess.model_io.import_cwb_model
+
+.. autofunction:: pycwb.modules.postprocess.simulation_report.simulation_efficiency
+
+.. autofunction:: pycwb.modules.postprocess.training_report.training_diagnostics
+
+.. autofunction:: pycwb.modules.postprocess.cwb_report.compare_cwb_report
+
+.. autofunction:: pycwb.modules.postprocess.cwb_report.compare_cwb_scores
+
+.. autofunction:: pycwb.modules.postprocess.cwb_report.attach_cwb_ifar
+
+.. autofunction:: pycwb.modules.postprocess.cwb_report.collect_comparisons
+
+Amplitude-efficiency input contract
+----------------------------------
+
+The hrss efficiency actions and ``simulation_efficiency`` require fixed-hrss
+injection populations. For target-SNR populations, ``hrss`` is the initial
+waveform normalization, before the runtime ``snr_scale`` multiplier. These
+reports reject matched catalogs carrying a nonzero ``sim_target_snr`` or
+``sim_targeted_snr``, or a non-unit ``sim_snr_scale``, instead of treating the
+initial normalization as the injected amplitude. Retain this metadata when
+exporting or matching target-SNR catalogs.

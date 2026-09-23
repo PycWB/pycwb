@@ -585,6 +585,9 @@
   <button class="tab-button active" type="button" data-tab="summary">Summary</button>
   <button class="tab-button" type="button" data-tab="bkg">BKG</button>
   <button class="tab-button" type="button" data-tab="training">Training</button>
+  {% if report.validation %}
+  <button class="tab-button" type="button" data-tab="validation">Consistency checks</button>
+  {% endif %}
   {% for run in report.simulation_runs %}
   <button class="tab-button" type="button" data-tab="sim-{{ run.id }}">{{ run.label }}</button>
   {% endfor %}
@@ -845,7 +848,18 @@
     </div>
 
     <h3>HRSS And Efficiency Plots</h3>
+    {% if run.efficiency_summary %}
+    <p>{{ run.efficiency_summary.n_detected }} detected out of {{ run.efficiency_summary.n_injected }} injections.
+       Selection: {{ run.efficiency_summary.ranking_par }} {{ run.efficiency_summary.comparison }} {{ run.efficiency_summary.threshold }}.
+       Error bars are 95% Wilson intervals.</p>
+    {{ render_table({"columns": ["waveform", "n_injected", "n_detected", "hrss50", "status", "bound"], "rows": run.efficiency_summary.waveforms}) }}
+    <p>{{ run.efficiency_summary.hrss50_method }}. Bounds are not fitted sensitivity estimates.</p>
+    {% endif %}
     {{ render_plot_grid(run.plots) }}
+    {% if run.efficiency_table.rows %}
+    <h3>Injection Counts By Amplitude</h3>
+    {{ render_table(run.efficiency_table) }}
+    {% endif %}
 
     <h3>Fit Parameter Tables</h3>
     {% if run.fit_tables %}
@@ -861,6 +875,15 @@
   </section>
   {% endfor %}
 
+  {% if report.validation %}
+  <section id="tab-validation" class="tab-panel">
+    <h2>Consistency checks</h2>
+    <p>{{ report.validation.description }}</p>
+    {{ render_table({"columns": ["check", "status", "details"], "rows": report.validation.checks}) }}
+    {% for note in report.validation.notes or [] %}<p>{{ note }}</p>{% endfor %}
+    <a href="{{ report.validation.artifact.href }}">Download numerical comparison</a>
+  </section>
+  {% endif %}
   <section id="tab-workflow" class="tab-panel">
     <h2>Workflow / YAML</h2>
     <div class="grid">

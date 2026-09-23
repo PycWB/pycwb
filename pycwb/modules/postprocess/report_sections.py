@@ -10,6 +10,7 @@ helpers shape config and workflow values into compact, review-friendly strings.
 from __future__ import annotations
 
 import getpass
+import json
 import logging
 import os
 import re
@@ -140,7 +141,7 @@ def _build_bkg_section(
         far_json=bkg.get("far_json"),
         max_plot_points=max_plot_points,
     )
-    progress_summary = _progress_summary(ctx.resolve(bkg.get("progress_file")))
+    progress_summary = _progress_summary(ctx.resolve(bkg.get("progress_file")), ctx.resolve(production_catalog_file))
     interval_summary = _interval_summary(ctx.resolve(bkg.get("intervals_file")))
     zero_lag_livetime = _zero_lag_livetime_summary(
         progress_path=ctx.resolve(zero_lag_progress_file),
@@ -290,7 +291,7 @@ def _build_training_section(
         "workflow_steps": workflow_steps,
         "config_text": config_text,
         "plots": [_plot_card(ctx, entry) for entry in training.get("plots", []) or []],
-        "placeholders": [
+        "placeholders": [] if training.get("plots") else [
             "Training curves will appear here once train_xgboost persists evaluation history.",
             "Feature importance will appear here once the model diagnostic artifact is available.",
         ],
@@ -316,6 +317,15 @@ def _build_simulation_sections(
             kind="parquet",
         )
         plot_cards = [_plot_card(ctx, entry) for entry in run.get("plots", []) or []]
+        efficiency_summary = None
+        efficiency_artifact = ctx.register_artifact(
+            run.get("efficiency_summary_file"), label=f"{label} efficiency summary", kind="json"
+        )
+        if efficiency_artifact and efficiency_artifact["exists"]:
+            with open(ctx.resolve(run["efficiency_summary_file"])) as stream:
+                efficiency_summary = json.load(stream)
+        efficiency_table = _read_csv_table(ctx.resolve(run.get("efficiency_file")), table_limit=table_limit)
+        ctx.register_artifact(run.get("efficiency_file"), label=f"{label} efficiency counts", kind="csv")
         fit_tables = []
         for fit_file in run.get("fit_parameter_files", []) or []:
             artifact = ctx.register_artifact(
@@ -330,6 +340,8 @@ def _build_simulation_sections(
         sections.append({
             "id": _safe_id(label),
             "label": label,
+            "efficiency_summary": efficiency_summary,
+            "efficiency_table": efficiency_table,
             "artifacts": [
                 item for item in [scored_artifact, matched_artifact] if item
             ],
@@ -723,7 +735,7 @@ def _build_summary(
         {"label": "BKG live time", "value": bkg_livetime.get("bkg_compact_label", "unknown")},
         {"label": "Zero-lag live time", "value": zero_lag_livetime.get("zero_lag_compact_label", "unknown")},
         {"label": "Training BKG / SIM", "value": f"{_format_int(train_bkg_rows)} / {_format_int(train_sim_rows)}"},
-        {"label": "SIM evaluated", "value": _format_int(sim_rows)},
+        {"label": "SIM rows across report views", "value": _format_int(sim_rows)},
     ]
     return {
         "items": compact_items,
@@ -735,7 +747,7 @@ def _build_summary(
             {"label": "Zero-lag live time", "value": zero_lag_livetime.get("days_label", "unknown")},
             {"label": "Training BKG", "value": _format_int(train_bkg_rows)},
             {"label": "Training SIM", "value": _format_int(train_sim_rows)},
-            {"label": "SIM evaluated", "value": _format_int(sim_rows)},
+            {"label": "SIM rows across report views", "value": _format_int(sim_rows)},
             {"label": "Creator", "value": metadata.get("creator") or ""},
         ],
     }
