@@ -414,6 +414,8 @@ simulation, including missed injections.
        config_file: ${paths.config_file}
      args:
        livetime: "@k21_bkg_split.far.livetime.seconds"
+       ranking_par: rhor
+       scored_file: ${paths.sim_eval_scored}
        ifar: 100yr
        use_unique_sim: true
        exclude_vetoed: false

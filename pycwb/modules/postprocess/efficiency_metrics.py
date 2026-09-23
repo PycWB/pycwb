@@ -171,6 +171,44 @@ def _empirical_probability_detection(scores, background, livetime, ifar_sec):
     return detected, float(threshold)
 
 
+def _matched_ranking_scores(matched, work_dir, ranking_par="xgb_prob", scored_file=None,
+                            model_file=None, nifo=2, search="blf", config_file=None):
+    """Align scores by event ID; prediction-cut failures and misses remain NaN.
+
+    Reusing a scored catalog keeps ranking hooks and prediction cuts identical
+    to the background workflow. Extra (non-unique) trigger IDs are harmless.
+    """
+    def resolve(path):
+        return path if os.path.isabs(path) else os.path.join(work_dir, path)
+    if scored_file:
+        scores = pd.read_parquet(resolve(scored_file), columns=["id", ranking_par])
+    elif model_file:
+        import xgboost as xgb
+        from .evaluate import _score_catalog_dataframe
+        recovered = matched[matched["id"].notna()].copy()
+        if recovered.empty:
+            return pd.Series(np.nan, index=matched.index)
+        clf = xgb.XGBClassifier()
+        clf.load_model(resolve(model_file))
+        scores = _score_catalog_dataframe(recovered, nifo, search, config_file, work_dir, clf)
+    else:
+        if ranking_par not in matched:
+            raise ValueError(f"Provide scored_file, model_file, or matched column {ranking_par}")
+        return pd.to_numeric(matched[ranking_par], errors="coerce").where(matched.id.notna())
+    if ranking_par not in scores:
+        raise ValueError(f"Missing ranking column {ranking_par}")
+    if scores.id.isna().any() or scores.id.duplicated().any():
+        raise ValueError("Scored events must have unique, nonnull IDs")
+    values = pd.to_numeric(scores.set_index("id")[ranking_par], errors="coerce")
+    return matched["id"].map(values).where(matched.id.notna())
+
+
+def _ranking_metadata(ranking_par, threshold):
+    return {"ranking_par": ranking_par, "ranking_threshold": float(threshold),
+            "prob_threshold": float(threshold) if ranking_par == "xgb_prob" else None,
+            "ifar_convention": "inclusive_empirical_tail"}
+
+
 def _compute_efficiency_vs_hrss_by_waveform_matched(
     work_dir: str,
     matched_file: str,
@@ -184,9 +222,10 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
     output_file: Optional[str],
     exclude_vetoed: bool = False,
     fit_parameters_file: Optional[str] = None,
+    ranking_par: str = "xgb_prob",
+    scored_file: Optional[str] = None,
 ) -> dict:
     """Efficiency-vs-hrss curves using one matched_right row per simulation."""
-    import xgboost as xgb
     from pycwb.modules.statistics.sigmoid_fit import estimate_hrss, fit, logNfit
 
     def _resolve(p: str) -> str:
@@ -206,21 +245,11 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
         )
         mr = mr[~veto_mask].reset_index(drop=True)
 
-    clf = xgb.XGBClassifier()
-    clf.load_model(_resolve(model_file))
-    from .evaluate import _preprocess_and_score
-
-    recovered = mr[mr["id"].notna()].copy()
-    mr["xgb_prob"] = 0.0
-    if len(recovered) > 0:
-        recovered["xgb_prob"] = _preprocess_and_score(
-            recovered, nifo, search, config_file, work_dir, clf,
-        )
-        mr.loc[recovered.index, "xgb_prob"] = recovered["xgb_prob"]
-
-    bkg_df = pd.read_parquet(_resolve(bkg_catalog))
+    scores = _matched_ranking_scores(mr, work_dir, ranking_par, scored_file,
+                                     model_file, nifo, search, config_file)
+    bkg_df = pd.read_parquet(_resolve(bkg_catalog), columns=[ranking_par])
     detected, prob_threshold = _empirical_probability_detection(
-        mr["xgb_prob"], bkg_df["xgb_prob"], livetime, ifar_sec,
+        scores, bkg_df[ranking_par], livetime, ifar_sec,
     )
     mr["detected"] = mr["id"].notna() & detected
 
@@ -258,7 +287,7 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
             "waveform": name,
             "ifar": ifar_label,
             "ifar_sec": ifar_sec,
-            "prob_threshold": float(prob_threshold),
+            **_ranking_metadata(ranking_par, prob_threshold),
             **{k: v for k, v in fit_result.items() if k != "fit_x" and k != "fit_y"},
         })
 
@@ -273,13 +302,13 @@ def _compute_efficiency_vs_hrss_by_waveform_matched(
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         _plot_efficiency_by_waveform_panels(
             curves, prob_threshold, ifar_label, ifar_sec, out_path,
-            show_sigmoid_fit=True,
+            show_sigmoid_fit=True, ranking_par=ranking_par,
         )
 
     return {
         "curves": curves,
         "fit_parameters": fit_rows,
-        "prob_threshold": float(prob_threshold),
+        **_ranking_metadata(ranking_par, prob_threshold),
         "ifar_sec": ifar_sec,
         "method": "unique_simulation_sigmoid_fit",
         "exclude_vetoed": exclude_vetoed,
@@ -299,6 +328,8 @@ def _compute_efficiency_by_waveform_matched(
     ifar_sec: float,
     output_file: Optional[str],
     exclude_vetoed: bool = False,
+    ranking_par: str = "xgb_prob",
+    scored_file: Optional[str] = None,
 ) -> dict:
     """Per-waveform efficiency counting unique simulations from matched_right.parquet.
 
@@ -307,14 +338,11 @@ def _compute_efficiency_by_waveform_matched(
     null trigger columns.  We score the recovered sims with XGBoost and count
     unique sim_sim_idx for numerator and denominator.
     """
-    import xgboost as xgb
-
     def _resolve(p: str) -> str:
         return p if os.path.isabs(p) else os.path.join(work_dir, p)
 
     mr_path = _resolve(matched_file)
     bkg_path = _resolve(bkg_catalog)
-    model_path = _resolve(model_file)
 
     # ── Load matched_right ───────────────────────────────────────────────
     mr = pd.read_parquet(mr_path)
@@ -327,27 +355,13 @@ def _compute_efficiency_by_waveform_matched(
         len(mr), n_total_sims, n_recovered_cwb,
     )
 
-    # ── Load model & score recovered sims ────────────────────────────────
-    clf = xgb.XGBClassifier()
-    clf.load_model(model_path)
-
-    from .evaluate import _preprocess_and_score
-    recovered = mr[mr["id"].notna()].copy()
-    if len(recovered) > 0:
-        recovered["xgb_prob"] = _preprocess_and_score(
-            recovered, nifo, search, config_file, work_dir, clf,
-        )
-        mr["xgb_prob"] = 0.0
-        mr.loc[recovered.index, "xgb_prob"] = recovered["xgb_prob"]
-    else:
-        mr["xgb_prob"] = 0.0
-
-    # ── Compute prob threshold from BKG ──────────────────────────────────
-    bkg_df = pd.read_parquet(bkg_path)
+    scores = _matched_ranking_scores(mr, work_dir, ranking_par, scored_file,
+                                     model_file, nifo, search, config_file)
+    bkg_df = pd.read_parquet(bkg_path, columns=[ranking_par])
     detected, prob_threshold = _empirical_probability_detection(
-        mr["xgb_prob"], bkg_df["xgb_prob"], livetime, ifar_sec,
+        scores, bkg_df[ranking_par], livetime, ifar_sec,
     )
-    logger.info("IFAR=%s: prob >= %.6f", ifar_label, prob_threshold)
+    logger.info("IFAR=%s: %s >= %.6f", ifar_label, ranking_par, prob_threshold)
 
     # ── Detection: cWB-recovered AND XGBoost above threshold ─────────────
     mr["detected"] = mr["id"].notna() & detected
@@ -392,11 +406,12 @@ def _compute_efficiency_by_waveform_matched(
     if output_file:
         out_path = _resolve(output_file)
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-        _plot_waveform_efficiency(results, prob_threshold, ifar_label, ifar_sec, out_path)
+        _plot_waveform_efficiency(results, prob_threshold, ifar_label, ifar_sec, out_path,
+                                  ranking_par=ranking_par)
 
     return {
         "efficiency_by_waveform": results,
-        "prob_threshold": float(prob_threshold),
+        **_ranking_metadata(ranking_par, prob_threshold),
         "ifar_sec": ifar_sec,
         "method": "unique_simulation",
         "exclude_vetoed": exclude_vetoed,

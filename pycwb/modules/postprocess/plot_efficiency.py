@@ -2,7 +2,8 @@
 
 Computes efficiency curves (fraction of injections recovered vs. hrss) at a
 given IFAR threshold.  The IFAR threshold is determined by ranking background
-events by XGBoost probability and computing the false-alarm rate.
+events by the explicitly selected statistic (default: XGBoost probability).
+Use ranking_par="rhor" and scored_file to share the background ranking and cuts.
 
 Workflow actions
 ----------------
@@ -25,6 +26,8 @@ import pandas as pd
 
 from pycwb.post_production.action_spec import action_spec
 from pycwb.modules.postprocess.efficiency_metrics import (
+    _matched_ranking_scores,
+    _ranking_metadata,
     _IFAR_PRESETS,
     _parse_ifar_seconds,
     _validate_unique_simulations,
@@ -48,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 @action_spec(
     outputs=['output_file'],
-    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file'],
+    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file', 'scored_file'],
     description='Compute hrss at 50% efficiency for a given IFAR threshold',
 )
 def compute_hrss50(
@@ -72,6 +75,11 @@ def compute_hrss50(
         Path to BKG parquet (used to compute prob threshold from FAR).
     livetime : float
         Background live time in seconds.
+    ranking_par : str, optional (via kwargs)
+        Statistic shared with the background calibration, default ``xgb_prob``.
+    scored_file : str, optional (via kwargs)
+        Pre-scored SIM catalog. Scores are joined by ID; events removed by
+        prediction cuts remain misses. Takes precedence over model_file.
     ifar : str
         IFAR threshold: ``"1yr"``, ``"6mo"``, ``"1mo"``, ``"1wk"``, ``"1day"``.
     output_file : str, optional
@@ -98,28 +106,18 @@ def compute_hrss50(
     mr = pd.read_parquet(resolve(matched_file))
     _validate_unique_simulations(mr)
     _validate_fixed_hrss_population(mr)
-    model_file = kwargs.get("model_file")
-    if model_file:
-        import xgboost as xgb
-        from .evaluate import _preprocess_and_score
-        clf = xgb.XGBClassifier()
-        clf.load_model(resolve(model_file))
-        recovered = mr[mr.id.notna()].copy()
-        mr["xgb_prob"] = np.nan
-        if len(recovered):
-            mr.loc[recovered.index, "xgb_prob"] = _preprocess_and_score(
-                recovered, kwargs.get("nifo", 2), kwargs.get("search", "blf"),
-                kwargs.get("config_file"), work_dir, clf,
-            )
-    elif "xgb_prob" not in mr:
-        raise ValueError("Provide model_file or xgb_prob in the matched injection table")
+    ranking_par = kwargs.get("ranking_par", "xgb_prob")
+    mr["_ranking"] = _matched_ranking_scores(
+        mr, work_dir, ranking_par, kwargs.get("scored_file"), kwargs.get("model_file"),
+        kwargs.get("nifo", 2), kwargs.get("search", "blf"), kwargs.get("config_file"),
+    )
     exclude_vetoed = kwargs.get("exclude_vetoed", False)
     if exclude_vetoed:
         columns = ["sim_vetoed_cat0", "sim_vetoed_cat1", "sim_vetoed_cat2", "sim_across_segments"]
         mr = mr[~mr[columns].fillna(False).astype(bool).any(axis=1)].copy()
     ifar_sec = _parse_ifar_seconds(ifar)
     background = pd.read_parquet(resolve(bkg_catalog))
-    detected, threshold = _empirical_probability_detection(mr.xgb_prob, background.xgb_prob, livetime, ifar_sec)
+    detected, threshold = _empirical_probability_detection(mr["_ranking"], background[ranking_par], livetime, ifar_sec)
     mr["detected"] = mr.id.notna() & detected
     mr["amplitude"] = pd.to_numeric(mr.sim_hrss, errors="coerce")
     if not (np.isfinite(mr.amplitude) & (mr.amplitude > 0)).all():
@@ -130,8 +128,8 @@ def compute_hrss50(
     if output_file:
         path = resolve(output_file)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        _plot_efficiency_curve(curve,crossing,ifar,ifar_sec,threshold,path)
-    return dict(hrss50=crossing,ifar_sec=ifar_sec,prob_threshold=threshold,
+        _plot_efficiency_curve(curve,crossing,ifar,ifar_sec,threshold,path, ranking_par=ranking_par)
+    return dict(hrss50=crossing,ifar_sec=ifar_sec,**_ranking_metadata(ranking_par, threshold),
                 efficiency_curve=curve,method="unique_simulation",exclude_vetoed=exclude_vetoed)
 
 
@@ -141,7 +139,7 @@ def compute_hrss50(
 
 @action_spec(
     outputs=['output_file'],
-    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file'],
+    inputs=['sim_catalog', 'bkg_catalog', 'model_file', 'config_file', 'scored_file'],
     description='Plot efficiency vs hrss at a given IFAR threshold',
 )
 def plot_efficiency_vs_hrss(
@@ -174,7 +172,7 @@ def plot_efficiency_vs_hrss(
 
 @action_spec(
     outputs=['output_file'],
-    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file', 'scored_file'],
     description='Compute per-waveform efficiency using matched_right cross-match',
 )
 def compute_efficiency_by_waveform(
@@ -211,6 +209,11 @@ def compute_efficiency_by_waveform(
         Background live time in seconds.
     model_file : str
         Path to trained XGBoost model.
+    ranking_par : str, optional (via kwargs)
+        Statistic shared with the background calibration, default ``xgb_prob``.
+    scored_file : str, optional (via kwargs)
+        Pre-scored SIM catalog. Scores are joined by ID; events removed by
+        prediction cuts remain misses. Takes precedence over model_file.
     ifar : str
         IFAR threshold: ``"1yr"``, ``"1mo"``, ``"1wk"``, ``"1day"``.
     output_file : str, optional
@@ -227,6 +230,7 @@ def compute_efficiency_by_waveform(
         work_dir, matched_file, bkg_catalog, livetime, model_file,
         search, nifo, config_file, ifar, _parse_ifar_seconds(ifar), output_file,
         kwargs.get("exclude_vetoed", False),
+        kwargs.get("ranking_par", "xgb_prob"), kwargs.get("scored_file"),
     )
 
 
@@ -236,7 +240,7 @@ def compute_efficiency_by_waveform(
 
 @action_spec(
     outputs=['output_file', 'fit_parameters_file'],
-    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file', 'scored_file'],
     description='Efficiency vs hrss curves for each waveform, grouped by Q-factor',
 )
 def compute_efficiency_vs_hrss_by_waveform(
@@ -272,6 +276,11 @@ def compute_efficiency_vs_hrss_by_waveform(
         Background live time in seconds.
     model_file : str
         Trained XGBoost model path.
+    ranking_par : str, optional (via kwargs)
+        Statistic shared with the background calibration, default ``xgb_prob``.
+    scored_file : str, optional (via kwargs)
+        Pre-scored SIM catalog. Scores are joined by ID; events removed by
+        prediction cuts remain misses. Takes precedence over model_file.
     ifar : str
         IFAR threshold (``"1yr"``, ``"1mo"``, ``"1wk"``, ``"1day"``).
     output_file : str, optional
@@ -289,6 +298,7 @@ def compute_efficiency_vs_hrss_by_waveform(
         work_dir, matched_file, bkg_catalog, livetime, model_file,
         search, nifo, config_file, ifar, output_file,
         kwargs.get("exclude_vetoed", False), kwargs.get("fit_parameters_file"),
+        kwargs.get("ranking_par", "xgb_prob"), kwargs.get("scored_file"),
     )
 
 
@@ -298,7 +308,7 @@ def compute_efficiency_vs_hrss_by_waveform(
 
 @action_spec(
     outputs=['output_csv'],
-    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file'],
+    inputs=['sim_catalog', 'matched_file', 'bkg_catalog', 'model_file', 'config_file', 'scored_file'],
     description='Compute hrss50 for each waveform at multiple IFARs, save CSV',
 )
 def compute_hrss50_by_waveform_csv(
@@ -330,6 +340,7 @@ def compute_hrss50_by_waveform_csv(
             work_dir, sim_catalog, matched_file, bkg_catalog, livetime, model_file,
             search, nifo, config_file, label, None,
             exclude_vetoed=kwargs.get("exclude_vetoed", False),
+            ranking_par=kwargs.get("ranking_par", "xgb_prob"), scored_file=kwargs.get("scored_file"),
         )
         for fit in result["fit_parameters"]:
             row = dict(fit)

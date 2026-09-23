@@ -9,7 +9,7 @@ from pycwb.modules.postprocess import efficiency_metrics as metrics, evaluate
 def run_efficiency(tmp_path, monkeypatch):
     # Scores are explicit fixture inputs: exercise selection/counting, not fitting.
     monkeypatch.setattr(xgboost.XGBClassifier, 'load_model', lambda *a: None)
-    monkeypatch.setattr(evaluate, '_preprocess_and_score', lambda df, *a: df.fixture_score.to_numpy())
+    monkeypatch.setattr(evaluate, '_score_catalog_dataframe', lambda df, *a: df.assign(xgb_prob=df.fixture_score))
     def run(scores, background, cut, duplicate=False):
         n=len(scores)
         df=pd.DataFrame(dict(id=list(range(n))+[None],sim_sim_idx=list(range(n+1)),
@@ -103,7 +103,7 @@ def test_unique_selection_precedes_reference_time_cut(tmp_path):
 def test_public_entrypoints_keep_missed_injections_by_default(tmp_path,monkeypatch):
     from pycwb.modules.postprocess import plot_efficiency as public
     monkeypatch.setattr(xgboost.XGBClassifier,'load_model',lambda *a:None)
-    monkeypatch.setattr(evaluate,'_preprocess_and_score',lambda df,*a:df.fixture_score.to_numpy())
+    monkeypatch.setattr(evaluate,'_score_catalog_dataframe',lambda df,*a:df.assign(xgb_prob=df.fixture_score))
     matched=pd.DataFrame(dict(id=['a',None,'b',None,'c','d'],sim_sim_idx=range(6),
         sim_name=['SGE1304Q9']*6,sim_hrss=[1e-22,1e-22,2e-22,2e-22,4e-22,4e-22],
         fixture_score=[.1,0,.95,0,.99,.98],xgb_prob=[.1,1.,.95,1.,.99,.98]))

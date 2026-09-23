@@ -268,3 +268,28 @@ cuts, first establish compatible injected/reconstructed detector timing
 and injection identity. Do not silently substitute a geocentric GPS cut.
 Dense overlapping injections remain potentially ambiguous under interval
 association; controlled populations with adequate separation are preferable.
+
+Keeping background and sensitivity selections consistent
+-------------------------------------------------------
+
+Use the same ranking statistic for FAR, sensitivity, and the report. The
+standard workflow uses ``rhor`` and supplies its already-scored SIM catalog::
+
+    args:
+      ranking_par: rhor
+      scored_file: ${paths.sim_eval_scored}
+      ifar: 100yr
+
+These options are supported by the per-waveform efficiency, hrss curves,
+hrss50, and hrss50 CSV actions. For ``compute_hrss50``, supply the injection
+truth via ``matched_right_file``. Scores are joined by event ID; missed
+injections and events removed by prediction cuts stay in the denominator.
+Without ``scored_file``, model scoring applies the same user ranking hooks
+and prediction cuts as ``score_catalog``. Probability ranking remains the
+backward-compatible default, ``ranking_par: xgb_prob``.
+
+Calibration uses inclusive empirical background tail counts, including ties.
+No background exceedances means empirical FAR zero, not a measured infinite
+exposure. Results identify ``ranking_par``, ``ranking_threshold``, and
+``ifar_convention``. The legacy ``prob_threshold`` field is populated only
+for probability ranking. Plot labels identify the selected statistic.

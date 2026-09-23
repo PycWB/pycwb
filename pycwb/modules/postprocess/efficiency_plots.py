@@ -23,6 +23,7 @@ def _plot_efficiency_curve(
     ifar_sec: float,
     prob_threshold: float,
     output_path: str,
+    ranking_par: str = "xgb_prob",
 ) -> None:
     """Save an efficiency vs hrss plot."""
     try:
@@ -45,7 +46,7 @@ def _plot_efficiency_curve(
     ax.set_xlabel("hrss")
     ax.set_ylabel("Efficiency [%]")
     ax.set_title(f"Efficiency vs hrss  —  IFAR = {ifar_label} ({ifar_sec:.0f} s)\n"
-                 f"prob threshold = {prob_threshold:.4f}")
+                 f"{ranking_par} threshold = {prob_threshold:.4f}")
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 105)
@@ -61,6 +62,7 @@ def _plot_waveform_efficiency(
     ifar_label: str,
     ifar_sec: float,
     output_path: str,
+    ranking_par: str = "xgb_prob",
 ) -> None:
     """Bar chart of per-waveform efficiency."""
     try:
@@ -86,7 +88,7 @@ def _plot_waveform_efficiency(
     ax.set_yticklabels(names, fontsize=8)
     ax.set_xlabel("Efficiency [%]")
     ax.set_title(f"Efficiency by Waveform  —  IFAR = {ifar_label} ({ifar_sec:.0f} s)\n"
-                 f"prob threshold = {prob_threshold:.4f}")
+                 f"{ranking_par} threshold = {prob_threshold:.4f}")
     ax.axvline(50, color="gray", linestyle="--", alpha=0.5, label="50%")
     ax.set_xlim(0, 105)
     ax.legend(loc="lower right")
@@ -110,6 +112,7 @@ def _plot_efficiency_by_waveform_panels(
     ifar_sec: float,
     output_path: str,
     show_sigmoid_fit: bool = False,
+    ranking_par: str = "xgb_prob",
 ) -> None:
     """Multi-panel plot: efficiency vs hrss, one panel per Q-factor."""
     try:
@@ -178,7 +181,7 @@ def _plot_efficiency_by_waveform_panels(
         ax.legend(fontsize=7, loc="lower right")
 
     fig.suptitle(f"Efficiency vs hrss by Waveform  —  IFAR = {ifar_label} ({ifar_sec:.0f} s)\n"
-                 f"prob threshold = {prob_threshold:.4f}",
+                 f"{ranking_par} threshold = {prob_threshold:.4f}",
                  fontsize=10)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
