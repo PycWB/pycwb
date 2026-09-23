@@ -80,12 +80,21 @@ def whiten_injection_strain(config, strain, noise_rms):
         nrms_anchor = nrms_anchor[:, np.newaxis]
 
     K1 = nrms_anchor.shape[1]
-    if K1 != n_time:
+    if hasattr(noise_rms, "noise_start"):
+        # WSeries::white uses the interior noise-anchor lattice and reversed
+        # interpolation, including the left interval at an exact anchor.
+        step = 1.0 / (float(noise_rms.noise_rate) * float(tf_map.dt))
+        first = (float(noise_rms.noise_start)-t0) / float(tf_map.dt)
+        x = (np.arange(n_time, dtype=float)-first)/step
+        right = np.clip(np.ceil(x).astype(int), 1, K1-1)
+        frac = x-(right-1)
+        nrms_interp = (nrms_anchor[:, right-1]*frac + nrms_anchor[:, right]*(1-frac))
+        nrms_interp[:, x <= 0] = nrms_anchor[:, [0]]
+        nrms_interp[:, x >= K1-1] = nrms_anchor[:, [-1]]
+    elif K1 != n_time:
         anchor_pos = np.linspace(0.0, float(n_time - 1), K1)
         full_pos = np.arange(n_time, dtype=np.float64)
-        nrms_interp = np.empty((n_freq, n_time), dtype=np.float64)
-        for fi in range(n_freq):
-            nrms_interp[fi] = np.interp(full_pos, anchor_pos, nrms_anchor[fi])
+        nrms_interp = np.array([np.interp(full_pos, anchor_pos, row) for row in nrms_anchor])
     else:
         nrms_interp = nrms_anchor
 
@@ -101,10 +110,12 @@ def whiten_injection_strain(config, strain, noise_rms):
     original_coeff = tf_map.data
     tf_map.data = whitened_coeff
     whitened_gwpy = wdm.w2t(tf_map)
+    quadrature_gwpy = wdm.w2tQ(tf_map)
     tf_map.data = original_coeff
 
     whitened_ts = TimeSeries(
-        data=np.asarray(whitened_gwpy.value, dtype=np.float64),
+        data=0.5 * (np.asarray(whitened_gwpy.value, dtype=np.float64)
+                    + np.asarray(quadrature_gwpy.value, dtype=np.float64)),
         dt=h_ts.delta_t,
         t0=h_ts.start_time,
     )

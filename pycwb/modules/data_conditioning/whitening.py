@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _NRMS_DIV_FLOOR = 1.0e-30
 
 
-def whiten_wavelet(config, h):
+def whiten_wavelet(config, h, *, apply_bandpass=True):
     """
     Noise whitening via WDM (pure-Python implementation).
 
@@ -66,24 +66,27 @@ def whiten_wavelet(config, h):
         edge_length=edge_length,
         return_interpolated=True,
     )
-    nRMS_anchor = _apply_cwb_bandpass_constant(
-        nRMS_anchor,
-        f1=16.0,
-        f2=0.0,
-        a=1.0,
-        df=float(tf_map.df),
-        f_low_map=float(config.fLow),
-        f_high_map=float(config.fHigh),
-    )
-    nRMS_interp = _apply_cwb_bandpass_constant(
-        nRMS_interp,
-        f1=16.0,
-        f2=0.0,
-        a=1.0,
-        df=float(tf_map.df),
-        f_low_map=float(config.fLow),
-        f_high_map=float(config.fHigh),
-    )
+    # ReadData target-SNR estimation uses the original noise anchors; the
+    # conditioning stage applies bandpass(16, 0, 1) afterward in cWB.
+    if apply_bandpass:
+        nRMS_anchor = _apply_cwb_bandpass_constant(
+            nRMS_anchor,
+            f1=16.0,
+            f2=0.0,
+            a=1.0,
+            df=float(tf_map.df),
+            f_low_map=float(config.fLow),
+            f_high_map=float(config.fHigh),
+        )
+        nRMS_interp = _apply_cwb_bandpass_constant(
+            nRMS_interp,
+            f1=16.0,
+            f2=0.0,
+            a=1.0,
+            df=float(tf_map.df),
+            f_low_map=float(config.fLow),
+            f_high_map=float(config.fHigh),
+        )
 
     coeff = np.asarray(tf_map.data, dtype=np.complex128)
 

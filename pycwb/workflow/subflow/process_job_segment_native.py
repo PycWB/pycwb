@@ -305,7 +305,9 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             event.id = event.long_id
 
             if sub_job_seg.injections:
-                for injection in sub_job_seg.injections:
+                from pycwb.modules.injection.snr_population import target_snr_scales
+            snr_scales = target_snr_scales(config, sub_job_seg, data)
+            for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
                     if event.start[0] - 0.1 < injection["gps_time"] < event.stop[0] + 0.1:
                         event.injection = injection
 
@@ -573,8 +575,12 @@ def process_job_segment(
                 for _ in sub_job_seg.ifos
             ]
 
-            for injection in sub_job_seg.injections:
+            from pycwb.modules.injection.snr_population import target_snr_scales
+            snr_scales = target_snr_scales(config, sub_job_seg, data)
+            for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
+                for signal in inj:
+                    signal.data *= snr_scale
                 # Track signal timing envelope across all IFOs.
                 n_ifo = len(sub_job_seg.ifos)
                 real_start = min(float(inj[i].t0) for i in range(n_ifo))
