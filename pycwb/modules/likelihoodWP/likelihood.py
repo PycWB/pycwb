@@ -36,6 +36,7 @@ from .dpf import compute_dpf_regulator as _compute_dpf_regulator
 from .dpf_regulator import compute_dpf_regulator_scalar as _compute_dpf_regulator_scalar
 from .sky_mask import sky_valid_indices_for_cluster
 from .results import SkyStatistics, SkyMapStatistics
+from .pixel_selection import select_likelihood_pixels, restore_likelihood_pixels
 
 from typing import TYPE_CHECKING
 
@@ -300,6 +301,8 @@ def evaluate_cluster_likelihood(
     )
     logger.info("   ----------------------------------------------------")
 
+    cluster, pixel_selection = select_likelihood_pixels(cluster, getattr(config, "BATCH", 10000))
+
     # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
     # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
     if nRMS is not None and len(nRMS) == nIFO:
@@ -330,7 +333,7 @@ def evaluate_cluster_likelihood(
 
     # --- Big-cluster sky thinning (mirrors C++ network::likelihoodWP bBB logic) ---
     # C++: bBB = (V > wdmMRA.nRes * csize) → use coarser healpix sky grid in the sky loop.
-    # C++ does NOT truncate pixels — it keeps all pixels and reduces the sky resolution.
+    # Precision thins only the sky grid; BATCH has already limited loaded pixels.
     _precision = int(abs(getattr(config, "precision", 0) or 0))
     _csize = _precision % 65536
     _nres = int(getattr(config, "nRES", 1) or 1)
@@ -495,6 +498,8 @@ def evaluate_cluster_likelihood(
         wdm_list=_wdm_list,
     )
     stage_timings["populate_detection_statistics"] = time.perf_counter() - _t0
+
+    cluster = restore_likelihood_pixels(cluster, pixel_selection)
 
     # --- Post-processing: chirp mass and error region ---
     _t0 = time.perf_counter()
