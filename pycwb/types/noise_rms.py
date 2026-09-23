@@ -8,6 +8,17 @@ from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 
 
 @dataclass
+class NoiseVariation:
+    """Time-dependent RMS correction and the frequency band it affects."""
+
+    data: np.ndarray
+    start: float
+    rate: float
+    low: float
+    high: float
+
+
+@dataclass
 class NoiseRMSMap(TimeFrequencyMap):
     """Noise anchors, with timing separate from the original WDM transform.
 
@@ -19,6 +30,7 @@ class NoiseRMSMap(TimeFrequencyMap):
     noise_start: float
     noise_rate: float
     segment_start: float
+    variation: NoiseVariation | None = None
 
 
 def make_noise_rms_map(tf_map, anchors, edge_length):
@@ -77,6 +89,34 @@ def _pixel_noise_rms(frequencies, indices, layers, rates, start, noise, noise_st
     return result
 
 
+@njit(cache=True)
+def _apply_noise_variation(rms, frequencies, indices, layers, rates, start,
+                           values, var_start, var_rate, low, high):
+    """detector::setrms band overlap and wavearray::get RMS averaging."""
+    for i in range(len(rms)):
+        f = (frequencies[i] - .5) * rates[i] / 2.
+        upper = f + rates[i] / 2.
+        overlap = max(0., min(upper, high) - max(f, low)) * 2. / rates[i]
+        t = indices[i] / rates[i] / layers[i] + start - var_start
+        center = int(t * var_rate)
+        if center < 0 or center >= len(values):
+            raise ValueError('Pixel outside noise-variation timeline')
+        half = .5 / rates[i] + .51 / var_rate
+        a = max(0, min(len(values)-1, int((t-half)*var_rate)))
+        b = max(0, min(len(values)-1, int((t+half)*var_rate)))
+        square = values[center] ** 2
+        if a < b:
+            square = 0.
+            for j in range(a, b+1):
+                # nVAR is a WSeries<float>: products and returned RMS round to float.
+                value = np.float32(values[j])
+                square += np.float32(value * value)
+            value = np.float64(np.float32(np.sqrt(square / (b-a+1))))
+            square = value * value
+        rms[i] /= np.sqrt(1-overlap+overlap*square)
+    return rms
+
+
 def lookup_pixel_noise_rms(frequencies, detector_indices, layers, rates, noise_maps):
     """Return float64 (n_pixels, n_detectors) RMS without a dense TF-time cache."""
     frequencies = np.asarray(frequencies, dtype=np.int64)
@@ -102,4 +142,15 @@ def lookup_pixel_noise_rms(frequencies, detector_indices, layers, rates, noise_m
             noise.noise_rate,
             noise.df,
         )
+        if noise.variation is not None:
+            v = noise.variation
+            if v.rate <= 0 or v.high <= v.low or not len(v.data):
+                raise ValueError('Invalid noise-variation map')
+            if not np.isfinite(v.data).all() or np.any(v.data <= 0):
+                raise ValueError('Noise variation must be finite and positive')
+            result[:, d] = _apply_noise_variation(
+                result[:, d], frequencies, indices[:, d], layers, rates,
+                noise.segment_start, np.asarray(v.data, dtype=np.float64),
+                v.start, v.rate, v.low, v.high,
+            )
     return result
