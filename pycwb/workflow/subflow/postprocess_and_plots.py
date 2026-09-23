@@ -254,7 +254,14 @@ def reconstruct_injection_waveforms_flow(
     
     # output structure {key1: [ifo1, ifo2, ...], key2: [ifo1, ifo2, ...], ...}
     data = {key: [d[key] for d in data] for key in data[0]}
-    
+    if getattr(config, "injection_resampling", "fft") == "cwb" and all(t is not None for t in data["central_time"]):
+        from pycwb.modules.reconstruction.injection_timing import cwb_arrival_times
+        # cWB time[nIFO:] uses one network centroid with geometric arrival
+        # offsets. Individual whitened centroids are separate diagnostics.
+        event.injection["detector_energy_centroids"] = list(data["central_time"])
+        data["central_time"] = cwb_arrival_times(
+            data["central_time"], data["snr"], event.injection, ifos, config,
+        )
     return data
 
 
