@@ -473,6 +473,7 @@ def process_job_segment(
     skip_lags: dict[int, set[int]] | None = None,
     *,
     lag_processor=None,
+    input_provider=None,
 ):
     """
     The core workflow to process single job segment with trials or lags.
@@ -527,7 +528,10 @@ def process_job_segment(
     base_data = None
 
     if job_seg.frames:
-        base_data = read_from_job_segment(config, job_seg)
+        if input_provider is None:
+            base_data = read_from_job_segment(config, job_seg)
+        else:
+            base_data = read_from_job_segment(config, job_seg, input_provider=input_provider)
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
@@ -795,3 +799,6 @@ def process_job_segment(
     )
     logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
     logger.info("============================================")
+
+
+process_job_segment.supports_input_provider = True

@@ -67,9 +67,7 @@ def _consume_bounded(
                 lag = futures.pop(future)
                 result = future.result()
                 if result.lag != lag:
-                    raise RuntimeError(
-                        f"Lag worker returned {result.lag}, expected {lag}"
-                    )
+                    raise RuntimeError(f"Lag worker returned {result.lag}, expected {lag}")
                 native._save_lag_outputs(output_context, result)
                 del result, future
     finally:
@@ -90,9 +88,7 @@ def _initialize_process(path: str, inner_threads: int, log_directory: str) -> No
     )
     # Copy-on-write maps share physical input pages but isolate worker writes.
     # Their writable array signatures also reuse the native Numba disk cache.
-    _worker_context = replace(
-        joblib.load(path, mmap_mode="c"), numba_threads=inner_threads
-    )
+    _worker_context = replace(joblib.load(path, mmap_mode="c"), numba_threads=inner_threads)
     numba.set_num_threads(min(inner_threads, numba.config.NUMBA_NUM_THREADS))
 
 
@@ -128,14 +124,10 @@ def _process_shared_inputs(
     log_directory.mkdir(parents=True, exist_ok=True)
     # Disk-backed job scratch avoids storing a second input copy on tmpfs.
     # The parent retains its original prepared arrays for output processing.
-    with TemporaryDirectory(
-        prefix=".lag-inputs-", dir=output_context.working_dir
-    ) as directory:
+    with TemporaryDirectory(prefix=".lag-inputs-", dir=output_context.working_dir) as directory:
         path = Path(directory) / "context.joblib"
         joblib.dump(context, path, compress=0)
-        logger.info(
-            "Shared lag input file: bytes=%d path=%s", path.stat().st_size, path
-        )
+        logger.info("Shared lag input file: bytes=%d path=%s", path.stat().st_size, path)
         # Forking after JAX/OpenMP initialization can inherit unsafe runtime state.
         with ProcessPoolExecutor(
             max_workers=workers,
@@ -143,9 +135,7 @@ def _process_shared_inputs(
             initializer=_initialize_process,
             initargs=(str(path), inner_threads, str(log_directory)),
         ) as executor:
-            _consume_bounded(
-                executor, _analyze_process, pending_lags, output_context, workers
-            )
+            _consume_bounded(executor, _analyze_process, pending_lags, output_context, workers)
 
 
 def process_lags(
@@ -163,9 +153,7 @@ def process_lags(
     pending = list(native._iter_pending_lags(context, skip_lags))
     if not pending:
         return
-    requested_workers = max(
-        1, int(getattr(context.config, "parallel_lag_workers", 1) or 1)
-    )
+    requested_workers = max(1, int(getattr(context.config, "parallel_lag_workers", 1) or 1))
     workers = min(len(pending), requested_workers)
     if context.sub_job_seg.injections:
         _process_serial(context, output_context, pending)
@@ -188,3 +176,6 @@ def process_lags(
 def process_job_segment(*args, **kwargs):
     """Native segment preparation/output with shared-input lag processes."""
     return native.process_job_segment(*args, **kwargs, lag_processor=process_lags)
+
+
+process_job_segment.supports_input_provider = True

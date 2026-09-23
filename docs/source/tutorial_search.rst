@@ -22,6 +22,47 @@ The command-line interface calls the same function:
 
    search("user_parameters.yaml", working_dir=".", n_proc=4)
 
+Execution Profiles
+------------------
+
+Existing configurations use the ``simple`` execution profile. To group jobs by
+shared frame files and retain raw input between segment processes, opt into the
+``scalable`` profile:
+
+.. code-block:: yaml
+
+   execution:
+     profile: scalable
+     memory_limit: 32GiB
+     worker_memory: 8GiB
+     cache_limit: 2GiB
+     headroom: 1GiB
+     batch_size: 8
+     preload: auto
+
+These are example reservations. ``worker_memory`` must cover the entire segment
+process tree, including lag workers, pixel selection and numerical scratch.
+Different search settings can need different reservations even for the same
+frames. The runtime also accounts for full-frame decoding, bounds cache payload,
+and monitors memory; use scheduler/cgroup limits for a hard allocation ceiling.
+
+The same profile is used by ``run``, ``batch-setup`` and ``batch-runner``.
+``segment_processer`` independently selects the scientific processor. Advanced
+users can configure dotted ``execution.planner`` and ``execution.executor``
+factories. Cluster scripts select explicit groups using stable batch IDs.
+
+Inspect a metadata plan before executing:
+
+.. code-block:: bash
+
+   pycwb prepare user_parameters.yaml --work-dir planned_run --plan-only
+
+Use ``preload: off`` to compare direct reads, or ``preload: batch`` to attempt
+bounded loading of a whole group's reusable inputs. Oversized entries fall back
+to direct reads. Plans and resource measurements from scalable execution are
+saved under the run's ``execution`` directory. Keep scientific configuration and
+batch membership unchanged when resuming an existing run.
+
 Job Control
 -----------
 

@@ -120,7 +120,7 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
 
 
 def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json: bool = True,
-                   n_proc: int = 1) -> tuple[List[WaveSegment], Config, str, str]:
+                   n_proc: int = 1, batch_id: str = None) -> tuple[List[WaveSegment], Config, str, str]:
     """
     This function provides the functionality to return the job segments with given jobs id/range.
     For example, the argument jobs can be 10-15 or 11,12 or even 10, 15-16.
@@ -133,7 +133,12 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     :param n_proc: The number of processes to use, will overwrite the setting the YAML file
     :return:
     """
-    job_ids = parse_id_string(jobs)
+    if jobs is not None and batch_id is not None:
+        raise ValueError("Use either --jobs or --batch-id, not both")
+    if batch_id is not None:
+        from pycwb.workflow.execution.scheduling import validate_batch_id
+        validate_batch_id(batch_id)
+    job_ids = parse_id_string(jobs) if jobs is not None else None
 
     # convert to absolute path in case the current working directory is changed
     working_dir = os.path.abspath(working_dir)
@@ -157,9 +162,15 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     # only that file is present (file-transfer / container mode: the scheduler
     # transfers catalog_$(jobs).parquet but not catalog.parquet).
     default_catalog_path = f'catalog/{Catalog.DEFAULT_FILENAME}'
-    per_job_catalog_path = f'catalog/fragment/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}'
-    if os.path.exists(default_catalog_path):
+    fragment_id = batch_id or jobs
+    per_job_catalog_path = f'catalog/fragment/catalog_{fragment_id}{Catalog.DEFAULT_EXTENSION}'
+    if batch_id is not None and os.path.exists(per_job_catalog_path):
+        catalog_meta_file = per_job_catalog_path
+    elif os.path.exists(default_catalog_path):
         catalog_meta_file = default_catalog_path
+        if batch_id is not None:
+            from pycwb.workflow.execution.scheduling import batch_job_ids
+            job_ids = batch_job_ids(working_dir, batch_id)
     elif os.path.exists(per_job_catalog_path):
         catalog_meta_file = per_job_catalog_path
         logger.info(f"Root catalog not found; reading metadata from per-job fragment: {per_job_catalog_path}")
@@ -175,19 +186,22 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     job_segments = catalog['jobs']
     logger.info(f"Loaded {len(job_segments)} job segments from catalog")
 
-    if catalog_meta_file == default_catalog_path:
-        # Root catalog: segments are indexed 1..N; select by job id.
-        if max(job_ids) - 1 > len(job_segments):
-            raise ValueError(f"job_start {max(job_ids)} is larger than the number of jobs {len(job_segments)}")
-        selected_job_segments = [from_dict(WaveSegment, job_segments[i - 1], config=DaciteConfig(cast=[tuple])) for i in job_ids]
-    else:
-        # Per-job fragment: contains exactly the segments for this batch already.
-        selected_job_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in job_segments]
+    by_id = {job["index"]: job for job in job_segments}
+    if job_ids is None:
+        job_ids = list(by_id)
+        jobs = ",".join(str(index) for index in job_ids)
+    fragment_id = batch_id or jobs
+    missing = set(job_ids) - by_id.keys()
+    if missing:
+        raise ValueError(f"Unknown job IDs: {sorted(missing)}")
+    selected_job_segments = [from_dict(WaveSegment, by_id[index], config=DaciteConfig(cast=[tuple]))
+                             for index in job_ids]
+    config = overwrite_config(config, n_proc=n_proc or None, compress_output_json=compress_json)
 
     create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                             config.trigger_dir, file_name)
 
-    catalog_file = f"{working_dir}/{config.catalog_dir}/fragment/catalog_{jobs}{Catalog.DEFAULT_EXTENSION}"
+    catalog_file = f"{working_dir}/{config.catalog_dir}/fragment/catalog_{fragment_id}{Catalog.DEFAULT_EXTENSION}"
 
     if not os.path.exists(catalog_file):
         # Fragments are transferred to execute nodes without the run-level

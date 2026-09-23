@@ -5,6 +5,7 @@
 
 import argparse
 import pycwb.cli.run as run
+import pycwb.cli.prepare as prepare
 import pycwb.cli.flow as flow
 import pycwb.cli.batch_setup as batch_setup
 import pycwb.cli.config_setup as config_setup
@@ -33,6 +34,10 @@ def main():
     run_parser = subparsers.add_parser('run', help='Run search')
     run.init_parser(run_parser)
     run_parser.set_defaults(func=run.command)
+
+    prepare_parser = subparsers.add_parser('prepare', help='Inspect and save an execution plan')
+    prepare.init_parser(prepare_parser)
+    prepare_parser.set_defaults(func=prepare.command)
 
     flow_parser = subparsers.add_parser('flow', help='Run search')
     flow.init_parser(flow_parser)
