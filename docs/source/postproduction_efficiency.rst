@@ -235,3 +235,12 @@ Manual simulation summary paths
 or ``--output`` path is relative to the caller's directory. Relative paths
 *inside* the config (DQ, frames, waveform inputs) are resolved from the
 production directory, consistently with batch setup and execution.
+
+IFAR duration syntax
+--------------------
+
+IFAR accepts positive numeric seconds (including scientific notation) or
+positive durations with ``s``, ``day``, ``wk``, ``mo``, and ``yr`` suffixes,
+such as ``100yr``. Existing presets retain their exact historical values;
+``1mo`` is 30 days, whereas the historical ``6mo`` is half a Julian year.
+Unknown or nonpositive values fail explicitly, including in MDC scoring.

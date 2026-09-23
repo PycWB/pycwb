@@ -612,13 +612,8 @@ def score_mdc_catalog(
     prog_path = _resolve_path(work_dir, progress_file) if progress_file else None
     jobs_path = _resolve_path(work_dir, job_ids_file) if job_ids_file else None
 
-    # ── IFAR presets ────────────────────────────────────────────────────
-    _IFAR_PRESETS = {
-        "10yr": 315576000, "1yr": 31557600, "6mo": 15778800,
-        "1mo": 2592000, "1wk": 604800, "1day": 86400,
-    }
-    ifar_sec = _IFAR_PRESETS.get(ifar_threshold,
-        float(ifar_threshold) if ifar_threshold.replace(".", "").isdigit() else 31557600)
+    from .efficiency_metrics import _parse_ifar_seconds
+    ifar_sec = _parse_ifar_seconds(ifar_threshold)
 
     # ── Live time ────────────────────────────────────────────────────────
     if livetime is None:

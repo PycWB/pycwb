@@ -36,7 +36,11 @@ _IFAR_PRESETS = {
 
 
 def _parse_ifar_seconds(label):
-    value = _IFAR_PRESETS[label] if label in _IFAR_PRESETS else float(label)
+    # Preserve the historical presets (notably the 30-day "1mo").
+    units = {"s": 1., "day": 86400., "wk": 604800., "mo": 2592000., "yr": 31557600.}
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)(s|day|wk|mo|yr)", str(label))
+    value = (_IFAR_PRESETS[label] if label in _IFAR_PRESETS else
+             float(match[1]) * units[match[2]] if match else float(label))
     if not np.isfinite(value) or value <= 0:
         raise ValueError("IFAR must be a known preset or finite positive seconds")
     return float(value)
