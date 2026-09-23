@@ -7,3 +7,4 @@ recursive-include pycwb/modules/postprocess/templates *
 include pycwb/modules/*/module.yaml
 include README.md
 include LICENSE
+recursive-include pycwb/modules/background_cuda *.cu
