@@ -195,9 +195,9 @@ def _row_to_trigger(row: dict, job_id: int) -> Trigger:
     t.q_factor = _safe(qveto, 1)
 
     # --- per-IFO timing --------------------------------------------------
-    #   lag: waveburst stores [shift_0, shift_1, ...] + [lag_0, lag_1, ...]
+    # cWB stores detector offsets followed by the network lag index.
     lag_raw = _fl(row.get("lag"))
-    n_ifo   = t.n_detectors or (len(lag_raw) // 2)
+    n_ifo   = t.n_detectors or max(0, len(lag_raw) - 1)
     t.time          = _fl(row.get("time"))
     t.segment_start = _fl(row.get("gps"))
     t.event_start   = _fl(row.get("start"))
@@ -206,7 +206,8 @@ def _row_to_trigger(row: dict, job_id: int) -> Trigger:
     t.right_edge    = _fl(row.get("right"))
     t.duration      = _fl(row.get("duration"))
     t.time_lag      = lag_raw[:n_ifo]
-    t.segment_lag   = _fl(row.get("slag"))
+    t.lag_idx       = int(_safe(lag_raw, n_ifo))
+    t.segment_lag   = _fl(row.get("slag"))[:n_ifo]
 
     t.gps_time = t.time[0] if t.time else 0.0
 
