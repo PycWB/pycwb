@@ -140,16 +140,22 @@ def _score_catalog_dataframe(
     """Return a catalog copy with XGBoost and user-defined ranking columns."""
     from pycwb.modules.cwb_xgboost.read_data import apply_user_ranking_statistics
 
-    _, X, ML_options, config_path = _preprocess_for_scoring(
+    processed, X, ML_options, config_path = _preprocess_for_scoring(
         df, nifo, search, config_file, work_dir, clf,
     )
     probs = clf.predict_proba(X)[:, 1]
 
     scored = df.copy()
+    # Ranking hooks use cWB feature names (ecor, Qa, Qp, derived rho0, ...).
+    # Keep native identity/measurement columns and expose the same processed
+    # feature values used for prediction before invoking those hooks.
+    for column in processed.columns:
+        scored[column] = processed[column]
     scored["xgb_prob"] = probs
     scored["MLstat"] = probs
     scored = apply_user_ranking_statistics(scored, search, config_path, ML_options)
-    return scored
+    from .prediction_cuts import prediction_mask
+    return scored.loc[prediction_mask(scored, ML_options.get("cuts(prediction)", ""))].copy()
 
 
 def _resolve_path(work_dir: str, path: str) -> str:
