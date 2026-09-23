@@ -4,6 +4,7 @@ and will also be used to generate the documentation
 """
 
 from .execution_profile import PROFILE_SCHEMA
+from pycwb.workflow.execution.settings import EXECUTION_SCHEMA
 
 NIFO_MAX = 8
 
@@ -18,6 +19,7 @@ schema = {
             "description": "Log detailed coherence setup timings.",
             "cwb": False,
         },
+        "execution": {**EXECUTION_SCHEMA, "description": "Job planning, caching and supervised execution policy", "cwb": False},
         "outputDir": {"type": "string", "description": "output directory", "default": "output", "cwb": False},
         "logDir": {"type": "string", "description": "log directory", "default": "log", "cwb": False},
         "catalog_dir": {"type": "string", "description": "catalog directory", "default": "catalog", "cwb": False},

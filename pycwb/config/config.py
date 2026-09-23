@@ -264,6 +264,8 @@ class Config:
         )
         self._initialize_detectors()
 
+        from pycwb.workflow.execution.settings import ExecutionSettings
+        ExecutionSettings.from_config(self)
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
@@ -312,6 +314,8 @@ class Config:
         )
         self._initialize_detectors()
 
+        from pycwb.workflow.execution.settings import ExecutionSettings
+        ExecutionSettings.from_config(self)
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
         if self.filter_dir and not os.path.exists(self.filter_dir):
