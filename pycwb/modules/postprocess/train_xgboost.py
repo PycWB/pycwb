@@ -142,7 +142,6 @@ def train_xgboost(
         logger.info("Auto-detected nifo = %d from parquet schema", nifo)
 
     xgb_params, ML_list, ML_caps, ML_balance, ML_options = xgb_config(search, nifo)
-    seed = xgb_params["seed"]
 
     if config_path:
         ML_defcaps = copy.deepcopy(ML_caps)
@@ -150,6 +149,9 @@ def train_xgboost(
         update_config_fn(xgb_params, ML_list, ML_caps, ML_balance, ML_options)
         update_ML_list(ML_list, ML_defcaps, ML_caps)
         logger.info("Applied user config from %s", config_path)
+
+    # The configured seed must also control balancing and the evaluation split.
+    seed = xgb_params["seed"]
 
     read_columns = _xgb_required_input_columns(
         bkg_paths + sim_paths,
@@ -426,7 +428,7 @@ def _xgb_required_input_columns(
     def add_prefixes(*prefixes: str) -> None:
         keep.update(col for col in available if any(col == prefix or col.startswith(prefix) for prefix in prefixes))
 
-    add_existing("id", "job_id", "lag_idx", "lag", "trial_idx", "gps_time", "ifar")
+    add_existing("id", "job_id", "lag_idx", "lag", "trial_idx", "gps_time", "ifar", "ifo_list")
     add_prefixes("time_lag_", "segment_lag_", "segment_shift_", "shift_")
 
     xvars = set(ML_options.get("readfile(vars)", []))
@@ -437,7 +439,7 @@ def _xgb_required_input_columns(
         add_prefixes("rho")
 
     if "norm" in xvars or "norm" in feature_text:
-        add_existing("norm", "coherent_energy_norm")
+        add_existing("norm", "packet_norm")
 
     if "netcc" in xvars or "netcc" in feature_text:
         add_existing("net_cc", "netcc", "netcc0", "netcc1")
@@ -596,10 +598,21 @@ def _map_catalog_columns(df: pd.DataFrame, nifo: int) -> pd.DataFrame:
     # Simple renames
     df.rename(columns=_CATALOG_RENAME_MAP, inplace=True)
 
-    # Per-IFO column flattening: duration_H1 → duration0, bandwidth_L1 → bandwidth1, etc.
+    # A catalog's detector order need not be H1/L1 (LF commonly uses L1/H1).
+    ifo_indices = _IFO_SUFFIX_TO_INDEX
+    if "ifo_list" in df.columns and len(df):
+        orders = {tuple(value) for value in df["ifo_list"]}
+        if len(orders) != 1:
+            raise ValueError("XGB input catalogs must have a consistent detector order")
+        order = next(iter(orders))
+        if len(order) != nifo or len(set(order)) != nifo:
+            raise ValueError("Catalog detector order does not match nifo")
+        ifo_indices = {ifo: index for index, ifo in enumerate(order)}
+
+    # Per-IFO column flattening follows the stored detector order when available.
     # Also applies base-name remapping: noise_rms_H1 → noise0, central_freq_H1 → frequency0
     for col in list(df.columns):
-        for suffix, idx in _IFO_SUFFIX_TO_INDEX.items():
+        for suffix, idx in ifo_indices.items():
             if col.endswith(f"_{suffix}"):
                 base = col[:-(len(suffix) + 1)]  # strip _H1 → get "noise_rms"
                 # Look up the target base name
@@ -609,14 +622,11 @@ def _map_catalog_columns(df: pd.DataFrame, nifo: int) -> pd.DataFrame:
                     df.rename(columns={col: new_name}, inplace=True)
                 break  # only match first suffix
 
-    # sSNR may need to be derived from per-IFO signal/noise
-    # If no sSNR0/sSNR1 but we have signal_energy and data_energy, create sSNR
-    if "sSNR0" not in df.columns and "sSNR1" not in df.columns:
-        for i in range(nifo):
-            se_col = f"signal_energy{i}"
-            de_col = f"data_energy{i}"
-            if se_col in df.columns and de_col in df.columns:
-                df[f"sSNR{i}"] = df[se_col] / df[de_col].replace(0, 1.0)
+    # Trigger.signal_energy stores cWB sSNR directly, not an energy fraction.
+    for i in range(nifo):
+        se_col = f"signal_energy{i}"
+        if f"sSNR{i}" not in df.columns and se_col in df.columns:
+            df[f"sSNR{i}"] = df[se_col]
 
     # netcc: if net_cc exists but netcc doesn't, rename
     if "netcc" not in df.columns and "netcc0" not in df.columns:
@@ -626,9 +636,9 @@ def _map_catalog_columns(df: pd.DataFrame, nifo: int) -> pd.DataFrame:
         if "netcc1" not in df.columns and "netcc0" in df.columns:
             df["netcc1"] = df["netcc0"]
 
-    # norm: derive from coherent_energy_norm if not present
-    if "norm" not in df.columns and "coherent_energy_norm" in df.columns:
-        df["norm"] = df["coherent_energy_norm"]
+    # cWB norm is packet normalization; coherent_energy_norm is cWB ECOR.
+    if "norm" not in df.columns and "packet_norm" in df.columns:
+        df["norm"] = df["packet_norm"]
 
     logger.info("  Column mapping: %d columns after rename", len(df.columns))
     return df
