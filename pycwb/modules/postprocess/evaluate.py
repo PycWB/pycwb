@@ -471,8 +471,10 @@ def evaluate_far_rho(
     return_per_event = bool(kwargs.get("return_per_event", bin_size is None))
     far_rho_data = []
     if return_per_event:
-        for i, idx in enumerate(valid_indices):
-            n_above = i + 1
+        sorted_ranks = np.sort(rho_vals[valid])
+        for idx in valid_indices:
+            # Inclusive tails assign identical FAR to tied ranking values.
+            n_above = int(n_total - np.searchsorted(sorted_ranks, rho_vals[idx], side="left"))
             far = n_above / max(livetime, 1.0)
             far_rho_data.append({
                 "rho": float(rho_vals[idx]),
