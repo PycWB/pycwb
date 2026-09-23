@@ -138,12 +138,10 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
     Compiled once per dtype signature (int32/float64) regardless of the
     number of pixels, so there is no per-shape JIT trace cache accumulation.
 
-    Mirrors CWB's ``WDM::getTDamp`` including the pixel-level wdmShift:
-    when ``|dT| >= J`` (= M for L=1), the delay is decomposed as
-    ``dT = wdm_shift * J + sub_dT`` using C++-style truncation (rounds
-    toward zero), and the amplitude is read from the time-bin shifted by
-    ``wdm_shift``. For odd ``wdm_shift`` the two quadratures are swapped
-    and a sign correction is applied, exactly as in CWB's ``getTDamp``.
+    Mirrors cWB's ``WDM::getTDvecSSE`` used by likelihood. Delays are
+    decomposed into even whole-bin shifts and a remainder in [-J, J).
+    The scalar getTDamp convention permits odd shifts and swaps quadratures;
+    it is not interchangeable with this finite-filter SSE path.
 
     Parameters
     ----------
@@ -171,40 +169,17 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
         for ki in range(2 * K + 1):
             dT = (ki - K) * delay_stride
 
-            # Decompose dT into whole-pixel shift + sub-pixel remainder using
-            # C++-style truncation (rounds toward zero, matching WDM::getTDamp).
-            if dT >= 0:
-                wdm_shift = dT // J
-            else:
-                wdm_shift = -((-dT) // J)
+            # getTDvecSSE advances its TF window in steps of two bins.
+            # Floor division also handles negative delays at +/-J boundaries.
+            wdm_shift = 2 * ((dT + J) // (2 * J))
             sub_dT = dT - wdm_shift * J
             n_eff = n - wdm_shift
-
-            if wdm_shift % 2 != 0:
-                # Odd pixel shift: quadratures swap with sign from (n+m) parity,
-                # identical to CWB getTDamp() odd-wdmShift branch.
-                if (n + m) % 2 != 0:
-                    a00 = -_get_pixel_amplitude_nb(
-                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
-                    )
-                    a90 = _get_pixel_amplitude_nb(
-                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
-                    )
-                else:
-                    a00 = _get_pixel_amplitude_nb(
-                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
-                    )
-                    a90 = -_get_pixel_amplitude_nb(
-                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
-                    )
-            else:
-                # Even pixel shift (including 0): standard per-quadrature paths.
-                a00 = _get_pixel_amplitude_nb(
-                    n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
-                )
-                a90 = _get_pixel_amplitude_nb(
-                    n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
-                )
+            a00 = _get_pixel_amplitude_nb(
+                n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+            )
+            a90 = _get_pixel_amplitude_nb(
+                n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+            )
 
             out[p, ki] = a00
             out[p, half + ki] = a90

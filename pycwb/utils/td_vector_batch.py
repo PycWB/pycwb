@@ -12,7 +12,7 @@ with a single Numba-parallelised call per (layer, ifo) group:
 Notes
 -----
 - L=1 is assumed (set_td_filter called with L=1), so J = M.
-- K < J must hold (always true in practice: TDSize << M).
+- Delays beyond J use the even-bin shifts of cWB getTDvecSSE.
 - This replicates core.time_delay.get_pixel_amplitude + get_td_vec(mode="a").
 - Numba compiles once per dtype signature (not per array shape), so there is
   no per-lag JIT-trace-cache accumulation and no associated memory leak.
