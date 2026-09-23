@@ -90,3 +90,9 @@ def test_specialize_can_chain() -> None:
     twice = specialize(once, HELPER_CONSTANT=0)
     assert twice(0) == 201
     assert once.__globals__["HELPER_CONSTANT"] == 10
+
+
+def test_processor_keeps_legacy_private_alias() -> None:
+    from pycwb.modules.background_cuda import processor
+
+    assert processor._specialize is binding.specialize

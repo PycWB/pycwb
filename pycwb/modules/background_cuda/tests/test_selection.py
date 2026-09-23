@@ -154,6 +154,54 @@ class TestSelectionSession:
         assert second.module is first.module
 
 
+@pytest.mark.gpu
+class TestGPUSelectorCUDA:
+    @pytest.mark.parametrize("n_ifo", [2, 3])
+    def test_selector_payload_matches_native(
+        self, rng: np.random.Generator, monkeypatch: pytest.MonkeyPatch, n_ifo: int
+    ) -> None:
+        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+        from pycwb.modules.background_cuda.processor import GPUSelector
+
+        cache = selection_cache(rng, n_ifo)
+        veto = _veto(cache["n_time"])
+        selector = GPUSelector()
+        assert selector.use_cuda
+        for lag_shifts in LAG_SHIFTS[n_ifo]:
+            expected = _native(cache, lag_shifts, veto)
+            actual = selector(None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache)
+            _assert_payload_matches(actual, expected)
+        assert len(selector.sessions) == 1
+        # A veto of the wrong length is ignored like the native selector does.
+        expected = _native(cache, LAG_SHIFTS[n_ifo][1], np.zeros(3, np.int16))
+        actual = selector(None, 0, THRESHOLD, LAG_SHIFTS[n_ifo][1], np.zeros(3, np.int16), selection_cache=cache)
+        _assert_payload_matches(actual, expected)
+        assert len(selector.sessions) == 1
+
+    def test_selector_requires_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+        from pycwb.modules.background_cuda.processor import GPUSelector
+
+        with pytest.raises(ValueError, match="requires a prepared selection cache"):
+            GPUSelector()(None, 0, THRESHOLD, [0.0, 0.0], None, selection_cache=None)
+
+    def test_selector_uses_preindexed_shift_table(
+        self, rng: np.random.Generator, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+        from pycwb.modules.background_cuda.processor import GPUSelector
+
+        cache = selection_cache(rng, 2)
+        rows = LAG_SHIFTS[2]
+        cache["shift_bins_by_lag"] = np.vstack(
+            [selection._shift_bins_from_lag_shifts(r, 2, cache["rate"]) for r in rows]
+        ).astype(np.int64)
+        selector = GPUSelector()
+        for lag_index in range(len(rows)):
+            expected = selection.select_network_pixels(None, lag_index, THRESHOLD, selection_cache=cache)
+            actual = selector(None, lag_index, THRESHOLD, None, None, selection_cache=cache)
+            _assert_payload_matches(actual, expected)
+            assert len(actual["frequency"]) > 0
 
 
 @pytest.mark.jax_gpu
@@ -208,3 +256,23 @@ class TestAlignmentSession:
             session.align(np.zeros((1, 2), np.float64), 1.0)
         with pytest.raises(ValueError, match="finite and nonnegative"):
             session.align(np.zeros((1, 2), np.int64), float("nan"))
+
+    @pytest.mark.parametrize("n_ifo", [2, 3])
+    def test_jax_selector_payload_matches_native(
+        self, rng: np.random.Generator, monkeypatch: pytest.MonkeyPatch, n_ifo: int
+    ) -> None:
+        monkeypatch.delenv("PYCWB_GPU_SELECTION_CUDA", raising=False)
+        from pycwb.modules.background_cuda.processor import GPUSelector
+
+        cache = selection_cache(rng, n_ifo)
+        veto = _veto(cache["n_time"])
+        selector = GPUSelector()
+        assert not selector.use_cuda
+        for lag_shifts in LAG_SHIFTS[n_ifo]:
+            expected = _native(cache, lag_shifts, veto)
+            actual = selector(None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache)
+            _assert_payload_matches(actual, expected)
+        expected = _native(cache, LAG_SHIFTS[n_ifo][0], None)
+        actual = selector(None, 0, THRESHOLD, LAG_SHIFTS[n_ifo][0], None, selection_cache=cache)
+        _assert_payload_matches(actual, expected)
+        selector.sessions.clear()
