@@ -564,15 +564,23 @@ def _format_band(low: Any, high: Any, unit: str) -> str:
 
 
 def _format_rate_block(config: dict[str, Any]) -> str:
+    input_rate = _config_value(config, "inRate")
+    resample = _config_value(config, "fResample")
+    analysis = _config_value(config, "rateANA")
+    level = _config_value(config, "levelR")
+    # Saved input configurations omit derived fields; mirror Config's rate rule.
+    if analysis is None and level is not None:
+        source = resample if resample is not None and resample > 0 else input_rate
+        if source is not None:
+            analysis = int(source) >> int(level)
     parts = []
-    for key, label in [
-        ("inRate", "input"),
-        ("fResample", "resample"),
-        ("rateANA", "analysis"),
-    ]:
-        value = _config_value(config, key)
-        if value is not None:
-            parts.append(f"{label}: {_format_cell(value)} Hz")
+    if input_rate is not None:
+        parts.append(f"input: {_format_cell(input_rate)} Hz")
+    if resample is not None:
+        parts.append("resample: disabled" if resample <= 0
+                     else f"resample: {_format_cell(resample)} Hz")
+    if analysis is not None:
+        parts.append(f"analysis: {_format_cell(analysis)} Hz")
     return " / ".join(parts)
 
 
