@@ -147,16 +147,17 @@ def _plot_efficiency_by_waveform_panels(
         ax = axes[pi]
         group = sorted(q_groups[q_val], key=lambda c: c["frequency"])
 
-        for c in group:
+        for curve_index, c in enumerate(group):
             hrs = np.array([d["hrss"] for d in c["data"]])
             effs = np.array([d["efficiency"] for d in c["data"]])
             # Binomial standard error: sqrt(p*(1-p)/N), in %
             n_totals = np.array([max(d.get("n_total", 1), 1) for d in c["data"]])
             eff_errs = np.sqrt(effs * (1.0 - effs) / n_totals) * 100.0
             effs_pct = effs * 100.0
-            color = freq_colors[c["frequency"]]
+            color = cmap(curve_index % 10) if q_val == 0 else freq_colors[c["frequency"]]
+            label = c["waveform"] if q_val == 0 else f"{c['frequency']}Hz"
             ax.errorbar(hrs, effs_pct, yerr=eff_errs, fmt="o", color=color,
-                        markersize=4, capsize=3, label=f"{c['frequency']}Hz",
+                        markersize=4, capsize=3, label=label,
                         alpha=0.8)
             fit_data = c.get("fit") or {}
             if show_sigmoid_fit and fit_data.get("status") == "ok":
