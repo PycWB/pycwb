@@ -19,7 +19,7 @@ For reproducing the single-worker pilot measurements, use one worker and `NUMBA_
 - Bounded forward/inverse WDM workspaces reduce transient setup allocation while retaining transform precision and accumulation order for validated shapes. Unsupported shapes retain the existing path.
 - Staged TD extraction and compact storage avoid unnecessary copies and delay-vector work. The final profile retains a dense coefficient cache.
 - Indexed lag selection and run-based connectivity reduce repeated work. Connectivity compression never discards the original pixels used by likelihood.
-- Sky delay/scratch reuse and scalar DPF reduce temporary allocation in likelihood.
+- Sky delay/scratch reuse and scalar DPF reduce temporary allocation in likelihood. The [shared CPU sky scan](unified_sky_scan.md) now enables grouping by default; `PYCWB_SKY_DELAY_REUSE=0` selects singleton groups. Scratch reuse is internal and its former environment flag is ignored.
 - GC interval 16 collects young generations between outputs and periodically collects older objects, with a memory-growth safeguard. Automatic GC remains enabled.
 
 The profile also explicitly enables regression witness capping, native micropixel chirp, and release waveform-summary arithmetic. These correct scientific discrepancies and must be enabled on both sides of an optimization-only comparison. `Search: OLD` retains the release's uncapped regression behavior.

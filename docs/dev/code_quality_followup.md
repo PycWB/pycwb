@@ -21,7 +21,7 @@ No pipeline catalog, throughput, peak-memory benchmark or GPU validation was rer
 
 ## Remaining manual decisions
 
-- **Q1:** Whether to unify the three compiled sky-scan implementations. This requires differential numerical and performance validation; documentation alone does not remove duplication.
+- **Q1 (completed 25 September):** The scans now share one compiled group-based kernel, and allocating numerical helpers delegate to their `*_into` implementations. Grouping defaults on with an explicit singleton opt-out. See [implementation, independent regression evidence and performance limits](unified_sky_scan.md).
 - **Q2:** Whether to replace import-time and call-time environment switches with an immutable setup profile. That changes configuration semantics and requires a migration plan.
 - **Q3:** Whether to enforce immutable delay grids or add explicit cache invalidation. The existing identity-based contract is now documented; no mutation policy was silently imposed.
 - **Q5:** Whether to introduce explicit coarse/fine TD types or choose the simpler full-fine path. Stage lifecycle and frequency-offset contracts are documented, while the existing guarded staged behavior remains.

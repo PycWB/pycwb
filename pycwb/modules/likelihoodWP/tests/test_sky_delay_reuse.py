@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from pycwb.modules.likelihoodWP.sky_scan import scan_sky_for_best_fit
+from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_scan import scan_sky_for_best_fit
 from pycwb.modules.likelihoodWP.sky_scan_delay import make_delay_groups, scan_sky_grouped_delays, delay_groups_for_grid
 
 

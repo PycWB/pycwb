@@ -1,6 +1,6 @@
 """Grouped-delay sky scan with scratch arrays reused within each group.
 
-Keep direction-specific arithmetic synchronized with sky_scan_delay.py.
+This is the single numerical scan kernel, also used for singleton groups.
 No buffer escapes the group; returned sky maps own their storage.
 """
 
@@ -72,8 +72,8 @@ def scan_sky_scratch(
     -----
     Per-direction DPF and statistics are recomputed. Only delay-dependent input
     loads, initial energy and masks are reused. Public parameter spellings match
-    the original kernel for keyword compatibility. Keep numerical updates aligned
-    with the ordinary scan and the other grouped implementation.
+    the original kernel for keyword compatibility. Singleton groups disable reuse
+    of delay-dependent work without changing the numerical calculation.
 
     Scratch belongs to one group worker. Returned maps own separate storage;
     no scratch array may escape or be shared with a concurrent group.

@@ -37,8 +37,9 @@ from .likelihood_setup import (
     populate_pixel_noise_from_maps,
 )
 from .pixel_data import extract_pixel_time_delay_data as _extract_pixel_time_delay_data
-from .sky_scan import scan_sky_for_best_fit as _scan_sky_for_best_fit
-from .sky_scan_delay import delay_groups_for_grid, scan_sky_grouped_delays as _scan_sky_grouped_delays
+from .sky_scan import scan_sky_for_best_fit as _scan_sky_for_best_fit  # noqa: F401 -- legacy backend hook
+from .sky_scan_delay import delay_groups_for_grid
+from .sky_scan_delay import scan_sky_grouped_delays as _scan_sky_grouped_delays  # noqa: F401 -- legacy backend hook
 from .sky_scan_scratch import scan_sky_scratch as _scan_sky_scratch
 from .sky_statistics import compute_statistics_at_sky_position as _compute_statistics_at_sky_position
 from .detection_statistics import (
@@ -59,8 +60,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _SCALAR_DPF = os.environ.get("PYCWB_SCALAR_DPF") == "1"
-_DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE") == "1"
-_SCRATCH_REUSE = os.environ.get("PYCWB_SKY_SCRATCH_REUSE") == "1"
+_DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE", "1") != "0"
+# Scratch reuse is internal; the former PYCWB_SKY_SCRATCH_REUSE flag is ignored.
 
 
 def _update_cluster_chirp_statistics(
@@ -410,12 +411,9 @@ def evaluate_cluster_likelihood(
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
     _t0 = time.perf_counter()
-    scan = _scan_sky_for_best_fit
-    group_args = ()
-    if _DELAY_REUSE or _SCRATCH_REUSE:
-        # Geometry is fixed per setup/grid; celestial masks are still per cluster.
-        group_args = delay_groups_for_grid(setup, sky_delay_samples, _bBB)
-        scan = _scan_sky_scratch if _SCRATCH_REUSE else _scan_sky_grouped_delays
+    # Both modes use the same kernel; disabling reuse creates singleton groups.
+    group_args = delay_groups_for_grid(setup, sky_delay_samples, _bBB, _DELAY_REUSE)
+    scan = _scan_sky_scratch
     skymap_statistics = scan(
         nIFO,
         n_pixels,

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from pycwb.modules.likelihoodWP.sky_scan import scan_sky_for_best_fit
+from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_scan import scan_sky_for_best_fit
 from pycwb.modules.likelihoodWP.sky_scan_delay import make_delay_groups
 from pycwb.modules.likelihoodWP.sky_scan_scratch import scan_sky_scratch as scan_sky_grouped_delays
 
@@ -46,6 +46,13 @@ def test_grouped_scan_exact_and_inputs_unchanged(n_ifo, mask_kind, n_pix, thresh
     expected = scan_sky_for_best_fit(*args)
     actual = scan_sky_grouped_delays(*args, *make_delay_groups(ml))
     assert_exact(actual, expected)
+    from pycwb.modules.likelihoodWP.sky_scan import scan_sky, scan_sky_for_best_fit as singleton_scan
+
+    assert_exact(singleton_scan(*args), expected)
+    for reuse in (False, True):
+        assert_exact(
+            scan_sky((fp, fx, ml), (rms, td0, td90), (reg, 0.0, 0.5, threshold, indices), reuse_delays=reuse), expected
+        )
     for x, y in zip([x for x in args if isinstance(x, np.ndarray)], snapshots):
         assert_exact(x, y)
 
@@ -72,14 +79,21 @@ def test_grouping_and_tie_order():
 @pytest.mark.parametrize("n_pix", [1, 8, 65])
 @pytest.mark.parametrize("inactive", [False, True])
 def test_helpers_overwrite_poisoned_and_reused_buffers(n_ifo, n_pix, inactive):
-    from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec
-    from pycwb.modules.likelihoodWP.sky_stat import load_data_from_td, avx_GW_ps, avx_ort_ps, avx_stat_ps
+    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.dpf import dpf_np_loops_vec
+    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_stat import (
+        load_data_from_td,
+        avx_GW_ps,
+        avx_ort_ps,
+        avx_stat_ps,
+    )
     from pycwb.modules.likelihoodWP.sky_scratch import (
         dpf_np_loops_vec_into,
         avx_GW_ps_into,
         avx_ort_ps_into,
         avx_stat_ps_into,
     )
+
+    from pycwb.modules.likelihoodWP import dpf as allocating_dpf, sky_stat as allocating_stat
 
     rng = np.random.default_rng(984)
 
@@ -98,13 +112,72 @@ def test_helpers_overwrite_poisoned_and_reused_buffers(n_ifo, n_pix, inactive):
         p = rng.normal(10, 2, (n_ifo, n_pix)).astype("f4")
         q = rng.normal(8, 2, p.shape).astype("f4")
         dpf = dpf_np_loops_vec(fp0, fx0, rms)
+        assert_exact(allocating_dpf.dpf_np_loops_vec(fp0, fx0, rms), dpf)
         assert_exact(dpf_np_loops_vec_into(fp0, fx0, rms, dpf_buffers), dpf)
         _, _, energy, mask = load_data_from_td(p, q, 1.0e9 if inactive else 1.0)
         args = (p, q, dpf[1], dpf[2], dpf[3], dpf[4], dpf[7], energy, mask, np.array([0.7, 1, 0], dtype="f4"))
         gw = avx_GW_ps(*args)
+        assert_exact(allocating_stat.avx_GW_ps(*args), gw)
         assert_exact(avx_GW_ps_into(*args, gw_buffers), gw)
         args = (gw[1], gw[2], gw[3])
         ort = avx_ort_ps(*args)
+        assert_exact(allocating_stat.avx_ort_ps(*args), ort)
         assert_exact(avx_ort_ps_into(*args, ort_buffers), ort)
         args = (p, q, gw[1], gw[2], ort[1], ort[2], gw[3])
         assert_exact(avx_stat_ps_into(*args, stat_buffers), avx_stat_ps(*args))
+        assert_exact(allocating_stat.avx_stat_ps(*args), avx_stat_ps(*args))
+
+
+def test_singleton_cache_is_separate_from_grouped_and_coarse():
+    from pycwb.modules.likelihoodWP.sky_scan_delay import delay_groups_for_grid
+
+    ml = np.zeros((2, 6), dtype=np.int64)
+    setup = {}
+    grouped = delay_groups_for_grid(setup, ml)
+    singleton = delay_groups_for_grid(setup, ml, reuse_delays=False)
+    assert len(grouped[1]) == 2
+    np.testing.assert_array_equal(singleton[0], np.arange(6))
+    np.testing.assert_array_equal(singleton[1], np.arange(7))
+    assert delay_groups_for_grid(setup, ml, reuse_delays=False)[0] is singleton[0]
+    assert delay_groups_for_grid(setup, ml)[0] is grouped[0]
+    assert delay_groups_for_grid(setup, ml, True, False)[0] is not singleton[0]
+
+
+@pytest.mark.parametrize("reuse", [False, True])
+@pytest.mark.parametrize("backend", ["native", "nogil"])
+def test_real_input_golden_fixture_and_nogil_hooks(reuse, backend):
+    from pathlib import Path
+    from pycwb.modules.likelihoodWP.sky_scan import scan_sky
+
+    with np.load(Path(__file__).with_name("data") / "sky_scan_preconsolidation.npz") as fixture:
+        args = tuple(
+            fixture[f"arg_{i}"].item() if fixture[f"arg_{i}"].ndim == 0 else fixture[f"arg_{i}"] for i in range(14)
+        )
+        expected = tuple(
+            fixture[f"expected_{i}"].item() if fixture[f"expected_{i}"].ndim == 0 else fixture[f"expected_{i}"]
+            for i in range(13)
+        )
+    groups = make_delay_groups(args[8], reuse)
+    assert_exact(scan_sky((args[3], args[4], args[8]), args[5:8], args[9:14], reuse_delays=reuse), expected)
+    if backend == "nogil":
+        nogil = pytest.importorskip("pycwb.workflow.subflow.process_job_segment_nogil")
+        assert_exact(nogil._sky_scratch_nogil(*args, *groups), expected)
+        assert_exact(nogil._sky_grouped_nogil(*args, *groups), expected)
+        assert_exact(nogil._sky_plain_nogil(*args), expected)
+
+
+@pytest.mark.parametrize("value,expected", [(None, True), ("1", True), ("0", False)])
+def test_grouping_default_and_explicit_opt_out(monkeypatch, value, expected):
+    import importlib
+
+    module = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
+    try:
+        with monkeypatch.context() as context:
+            context.delenv("PYCWB_SKY_DELAY_REUSE", raising=False)
+            if value is not None:
+                context.setenv("PYCWB_SKY_DELAY_REUSE", value)
+            # The obsolete scratch flag must not override an explicit opt-out.
+            context.setenv("PYCWB_SKY_SCRATCH_REUSE", "1")
+            assert importlib.reload(module)._DELAY_REUSE is expected
+    finally:
+        importlib.reload(module)

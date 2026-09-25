@@ -363,55 +363,6 @@ def dpf_np_loops_vec(Fp0, Fx0, rms):
         - F: np.ndarray
             The cross polarization component in the DPF.
         - fp: np.ndarray
-            |f+|^2 
-        - fx: np.ndarray
-            |fx|^2
-        - si: np.ndarray
-            The sine component of the DPF.
-        - co: np.ndarray
-            The cosine component of the DPF.
-        - ni: np.ndarray
-            The network index for each pixel.
-    """
-    n_pix, n_ifo = rms.shape
-    scratch = (np.empty((n_pix, n_ifo), dtype=np.float32),
-               np.empty((n_pix, n_ifo), dtype=np.float32),
-               np.empty(n_pix, dtype=np.float32), np.empty(n_pix, dtype=np.float32),
-               np.empty(n_pix, dtype=np.float32), np.empty(n_pix, dtype=np.float32),
-               np.empty(n_pix, dtype=np.float32))
-    return dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch)
-
-
-@njit(cache=True)
-def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
-    """Compute the dominant polarization frame into caller-owned arrays.
-
-    Parameters
-    ----------
-    Fp0 : np.ndarray
-        The Fp0 vector for the current sky location.
-    Fx0 : np.ndarray
-        The Fx0 vector for the current sky location.
-    rms : np.ndarray
-        The rms values for the pixels, shape (NPIX, NIFO).
-
-    scratch : tuple of numpy.ndarray
-        Writable float32 buffers: (f, F, si, co, fp, fx, ni): f/F have shape (n_pix, n_ifo);
-        the remaining arrays have shape (n_pix,). fx/ni are reset before accumulation.
-        Every buffer is overwritten before use and must not alias any input
-        or another scratch buffer. Returned arrays borrow these buffers and
-        remain valid only until the next call with the same scratch tuple.
-
-    Returns
-    -------
-    tuple
-        - NI : float
-            The normalized index. (?)
-        - f: np.ndarray
-            The plus polarization component in the DPF.
-        - F: np.ndarray
-            The cross polarization component in the DPF.
-        - fp: np.ndarray
             |f+|^2
         - fx: np.ndarray
             |fx|^2
@@ -427,12 +378,19 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
     NIFO = uint32(NIFO)
 
     # variables for return
-    f, F, si, co, fp, fx, ni = scratch
-
-    fx.fill(0)
-    ni.fill(0)
+    f = np.empty((NPIX, NIFO), dtype=np.float32)
+    F = np.empty((NPIX, NIFO), dtype=np.float32)
+    si = np.empty(NPIX, dtype=np.float32)
+    co = np.empty(NPIX, dtype=np.float32)
+    fp = np.empty(NPIX, dtype=np.float32)
+    fx = np.zeros(NPIX, dtype=np.float32)
+    ni = np.zeros(NPIX, dtype=np.float32)
 
     _o = float32(1e-9)
+
+    # Prepare constants
+    # NI = np.float32(0.0)
+    # NN = np.uint32(0)
 
     # Compute f and F
     for j in range(NIFO):
@@ -442,9 +400,9 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
 
     # Compute ff, FF, and fF
     for i in range(NPIX):
-        _ff = float32(0.0)
-        _FF = float32(0.0)
-        _fF = float32(0.0)
+        _ff = float32(0.)
+        _FF = float32(0.)
+        _fF = float32(0.)
 
         for j in range(NIFO):
             _ff += f[i, j] * f[i, j]
@@ -452,37 +410,44 @@ def dpf_np_loops_vec_into(Fp0, Fx0, rms, scratch):
             _fF += F[i, j] * f[i, j]
 
         # Compute si, co, AP, nn, fp, and cc
-        _si = mul_vec(float32(2.0), _fF)  # rotation 2*sin*cos*norm
-        _co = sub_vec(_ff, _FF)  # rotation (cos^2-sin^2)*norm
-        _AP = add_vec(_ff, _FF)  # total antenna norm
-        _nn = norm_vec(_co, _si)  # co/si norm    np.sqrt(_co * _co + _si * _si)
-        _cc = div_vec(_co, _nn)  # cos(2p)       _co / (_nn + 1e-9)
-        fp[i] = avg_vec(_AP, _nn)  # |f+|^2        (_AP + _nn) / 2.
-        si[i] = sin_from_cc(_cc)  # |sin(p)|      sqrt((1. - _cc) / 2.)
-        co[i] = cos_from_cc(_cc, _si)  # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
+        _si = mul_vec(float32(2.), _fF)  # rotation 2*sin*cos*norm
+        _co = sub_vec(_ff, _FF)          # rotation (cos^2-sin^2)*norm
+        _AP = add_vec(_ff, _FF)          # total antenna norm
+        _nn = norm_vec(_co, _si)         # co/si norm    np.sqrt(_co * _co + _si * _si)
+        _cc = div_vec(_co, _nn)          # cos(2p)       _co / (_nn + 1e-9)
+        fp[i] = avg_vec(_AP, _nn)        # |f+|^2        (_AP + _nn) / 2.
+        si[i] = sin_from_cc(_cc)         # |sin(p)|      sqrt((1. - _cc) / 2.)
+        co[i] = cos_from_cc(_cc, _si)    # cos(p)        (sqrt((1. + _cc) / 2.) if _si > 0.0 else - sqrt((1. + _cc) / 2.))
 
     # Compute f_new, F_new, fF_new, F_new, fx, ni
     for i in range(NPIX):
         for j in range(NIFO):
             f[i, j], F[i, j] = f[i, j] * co[i] + F[i, j] * si[i], F[i, j] * co[i] - f[i, j] * si[i]
+            # f[i, j] = rotate_fp_vec(f[i, j], F[i, j], si[i], co[i])
+            # F[i, j] = rotate_fx_vec(f[i, j], F[i, j], si[i], co[i])
 
-        fF_new = float32(0.0)
+        fF_new = float32(0.)
         for j in range(NIFO):
             fF_new += f[i, j] * F[i, j]
+        # fF_new /= (fp[i] + _o)
         fF_new = div_vec(fF_new, fp[i])
 
         for j in range(NIFO):
             F[i, j] -= f[i, j] * fF_new
             fx[i] += F[i, j] * F[i, j]
             ni[i] += f[i, j] ** 4
+            # ni[i] += quad_vec(f[i, j])
 
     NI, NN = float32(0.0), uint32(0)
 
     # Compute NI and NN
     for i in range(NPIX):
+        # ni[i] /= (fp[i] * fp[i] + _o)
         ni[i] = div_vec(ni[i], mul_vec(fp[i], fp[i]))
-        NI += div_vec(fx[i], ni[i])  # sum of |fx|^2/2/ni
-        NN += pos_sign_vec(fp[i])  # pixel count
+        # NI += fx[i] / (ni[i] + _o)
+        NI += div_vec(fx[i], ni[i])     # sum of |fx|^2/2/ni
+        # if fp[i] > float32(0.0):
+        NN += pos_sign_vec(fp[i])       # pixel count
         # NN += 1 if fp[i] > 0.0 else 0
 
     return sqrt(NI / (NN + 0.01)), f, F, fp, fx, si, co, ni
