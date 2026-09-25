@@ -107,7 +107,6 @@ def _warm_likelihood_sky() -> None:
     sky_stat.avx_stat_ps(v00, v90, sig00, sig90, si2, co2, mask2)
 
     n_ifo = 2
-    n_pix = 3
     n_sky = 2
     fp = np.vstack((fp0, fp0 * np.float32(0.8))).astype(np.float32)
     fx = np.vstack((fx0, fx0 * np.float32(1.1))).astype(np.float32)
@@ -115,10 +114,13 @@ def _warm_likelihood_sky() -> None:
     td90 = np.repeat(v90[np.newaxis, :, :], 3, axis=0).astype(np.float32)
     ml = np.zeros((n_ifo, n_sky), dtype=np.int64)
     valid = np.array([0, 1], dtype=np.int64)
-    sky_scan.scan_sky_for_best_fit(
-        n_ifo, n_pix, n_sky, fp, fx, rms, td00, td90, ml,
-        reg, -1.0, -1.0, 0.0, valid,
-    )
+    for reuse_delays in (True, False):
+        sky_scan.scan_sky(
+            (fp, fx, ml),
+            (rms, td00, td90),
+            (reg, -1.0, -1.0, 0.0, valid),
+            reuse_delays=reuse_delays,
+        )
 
 
 def _warm_likelihood_packets() -> None:
