@@ -6,7 +6,7 @@ from copy import deepcopy
 from astropy import constants, coordinates, units
 from astropy.coordinates.matrix_utilities import rotation_matrix
 from pycwb.constants.physics_constants import LAL_EARTHFLAT, LAL_REARTH_SI
-from pycwb.constants.detectors import DETECTORS
+from pycwb.constants.detectors import DETECTORS, DETECTOR_GEOMETRIES, resolve_detector_geometry
 from pycwb.utils.geometry import local_to_earth_centered
 from scipy.special import gammaincc, gammainccinv
 
@@ -40,6 +40,7 @@ class Detector:
     y_response: np.ndarray = None
     response: np.ndarray = None
     geometry_model: str = "lal"
+    geometry_id: str | None = None
 
     def __init__(
         self,
@@ -55,29 +56,39 @@ class Detector:
         y_altitude=None,
         y_midpoint=None,
         *,
-        geometry_model="lal",
+        geometry_model=None,
     ):
         """
         Initialize the Detector object with either a name or specific parameters.
         If a name is provided, it will look up the detector information from the DETECTORS dictionary.
         If specific parameters are provided, they will be used to initialize the detector.
 
-        geometry_model selects physical input constants: "lal" (default), or
-        "cwb_6.4.6.9" for the validated H1/L1 fixed-vector release geometry.
+        Select a registry entry with a qualified name such as H1:cwb,
+        or pass a per-detector geometry_model mapping. Bare names use the
+        bundled LAL-derived geometry. geometry_id records the pinned selection.
         No CWB or ROOT runtime is required.
         """
+        geometry = None
+        base_name = name.split(":", 1)[0]
+        if base_name in DETECTORS or ":" in name:
+            self.geometry_id = resolve_detector_geometry(name, geometry_model)
+            geometry = DETECTOR_GEOMETRIES[self.geometry_id]
+            name = geometry["detector"]
+        else:
+            self.geometry_id = None
         if name in DETECTORS:
             self.name = name
-            self.full_name = DETECTORS[name]["name"]
-            self.latitude = DETECTORS[name]["lat"]
-            self.longitude = DETECTORS[name]["lon"]
-            self.altitude = DETECTORS[name]["elevation"]
-            self.x_azimuth = DETECTORS[name]["x"]["az"]
-            self.x_altitude = DETECTORS[name]["x"]["alt"]
-            self.y_azimuth = DETECTORS[name]["y"]["az"]
-            self.y_altitude = DETECTORS[name]["y"]["alt"]
-            self.x_midpoint = DETECTORS[name]["x"]["midpoint"]
-            self.y_midpoint = DETECTORS[name]["y"]["midpoint"]
+            parameters = geometry["parameters"]
+            self.full_name = parameters["name"]
+            self.latitude = parameters["lat"]
+            self.longitude = parameters["lon"]
+            self.altitude = parameters["elevation"]
+            self.x_azimuth = parameters["x"]["az"]
+            self.x_altitude = parameters["x"]["alt"]
+            self.y_azimuth = parameters["y"]["az"]
+            self.y_altitude = parameters["y"]["alt"]
+            self.x_midpoint = parameters["x"]["midpoint"]
+            self.y_midpoint = parameters["y"]["midpoint"]
 
         elif all(
             param is not None
@@ -123,11 +134,9 @@ class Detector:
         self.x_response = ifo_vecs["x_response"]
         self.y_response = ifo_vecs["y_response"]
         self.response = ifo_vecs["response"]
-        self.geometry_model = geometry_model
-        if geometry_model != "lal":
-            from pycwb.constants.release_detector_geometry import apply_release_geometry
-
-            apply_release_geometry(self, geometry_model)
+        self.geometry_model = "lal" if geometry is None else geometry["source"]
+        if geometry is not None and geometry["vectors"] is not None:
+            _apply_fixed_geometry(self, geometry["vectors"])
 
     @property
     def x_length(self):
@@ -1403,3 +1412,31 @@ def compute_sky_delay_and_patterns(
         FX[i] = np.asarray(f_cross, dtype=np.float64)
 
     return ml, FP, FX
+
+
+def _apply_fixed_geometry(detector, vectors):
+    """Construct response and geographic metadata from literal registry vectors."""
+    from astropy.coordinates import EarthLocation
+    from astropy import units
+
+    r, x, y = (np.array(value, dtype=np.float64) for value in vectors)
+    detector.vertex_vec_earth_centered = r
+    detector.x_vec_earth_centered = x
+    detector.y_vec_earth_centered = y
+    detector.x_response = -np.outer(x, x) / 2
+    detector.y_response = -np.outer(y, y) / 2
+    detector.response = detector.y_response - detector.x_response
+    # Keep geographic metadata consistent with the selected vectors. Do not
+    # reconstruct the response from these angles: that would renormalize the
+    # release's literal rounded arm vectors.
+    location = EarthLocation.from_geocentric(*r, unit=units.m)
+    lon, lat = location.lon.rad, location.lat.rad
+    detector.longitude, detector.latitude = float(lon), float(lat)
+    detector.altitude = float(location.height.value)
+    east = np.array([-np.sin(lon), np.cos(lon), 0.0])
+    north = np.array([-np.sin(lat) * np.cos(lon), -np.sin(lat) * np.sin(lon), np.cos(lat)])
+    up = np.array([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
+    for label, arm in [("x", x), ("y", y)]:
+        e, n, u = float(arm @ east), float(arm @ north), float(arm @ up)
+        setattr(detector, label + "_azimuth", float(np.arctan2(e, n) % (2 * np.pi)))
+        setattr(detector, label + "_altitude", float(np.arctan2(u, np.hypot(e, n))))

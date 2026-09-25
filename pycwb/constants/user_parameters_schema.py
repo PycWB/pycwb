@@ -356,10 +356,10 @@ schema = {
         },
         "nIFO": {"type": "integer", "description": "number of interferometers", "default": NIFO_MAX},
         "detector_geometry": {
-            "type": "string",
-            "enum": ["lal", "cwb_6.4.6.9"],
-            "description": "Detector geometry inputs; release model currently supports H1/L1 only",
-            "default": "lal",
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "description": "Per-detector registry IDs, e.g. H1: H1:cwb; omitted detectors use the bundled LAL-derived geometry",
+            "default": {},
         },
         "refIFO": {"type": "string", "description": "reference IFO", "default": "L1"},
         "select_subrho": {

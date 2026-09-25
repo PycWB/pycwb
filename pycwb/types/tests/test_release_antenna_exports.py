@@ -32,7 +32,7 @@ def test_all_observed_release_antenna_exports():
         likelihood=np.ones(2),
     )
     config = SimpleNamespace(
-        nIFO=2, TDRate=32768, inRate=16384, levelR=1, detector_geometry="cwb_6.4.6.9", pattern=10, optim=False
+        nIFO=2, TDRate=32768, inRate=16384, levelR=1, detector_geometry={"H1": "H1:cwb", "L1": "L1:cwb"}, pattern=10, optim=False
     )
     count = 0
     rows = json.loads((Path(__file__).with_name("reference") / "release_antenna_exports.json").read_text())

@@ -7,10 +7,12 @@ Merge `examples/performance/bounded_cpu.yaml` into your `user_parameters.yaml` b
 ```yaml
 segment_processer: pycwb.workflow.subflow.process_job_segment_native.process_job_segment
 # Optional, explicit H1/L1 cWB 6.4.6.9 physical input compatibility:
-detector_geometry: cwb_6.4.6.9
+detector_geometry:
+  H1: H1:cwb
+  L1: L1:cwb
 ```
 
-The geometry default remains `lal`. The release model supports H1/L1 only; it changes literal arm/vertex constants, injection projection, sky delays, and antenna evaluation. It also reproduces release angle narrowing before antenna export. Do not mix geometry models when comparing runs.
+The geometry default remains the bundled LAL-derived `lal@pycwb-1` definition for each instrument. The release model supports H1/L1 only; it changes literal arm/vertex constants, injection projection, sky delays, and antenna evaluation. It also reproduces release angle narrowing before antenna export. Do not mix geometry models when comparing runs.
 
 For reproducing the single-worker pilot measurements, use one worker and `NUMBA_NUM_THREADS=1`, `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and `MKL_NUM_THREADS=1`. These library settings are not a hard process CPU affinity; use the scheduler's CPU allocation for production. Budget node memory using process-tree PSS plus operating-system margin, not summed RSS, which double-counts shared pages.
 

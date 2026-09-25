@@ -648,21 +648,21 @@ class Event:
             try:
                 from pycwb.types.detector import Detector
 
-                angles = np.array([theta_deg, phi_deg, getattr(meta, "psi", 0.0)], dtype=np.float64)
-                if getattr(config, "detector_geometry", "lal") == "cwb_6.4.6.9":
-                    # netevent stores Float_t angles before calling antenna().
-                    # Convert those stored values back to double for radians.
-                    angles = angles.astype(np.float32).astype(np.float64)
-                theta_geo, phi_geo, psi_rad = map(float, np.radians(angles))
-                cT = np.cos(theta_geo)
-                sT = np.sin(theta_geo)
-                cP = np.cos(phi_geo)
-                sP = np.sin(phi_geo)
-                # Polarization basis vectors in geographic Cartesian frame
-                e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
-                e_ph = np.array([-sP, cP, 0.0])  # e_phi   (C++ b)
                 for ifo in job_segment.ifos:
                     det = Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal"))
+                    angles = np.array([theta_deg, phi_deg, getattr(meta, "psi", 0.0)], dtype=np.float64)
+                    if det.geometry_model == "cwb":
+                        # netevent stores Float_t angles before calling antenna().
+                        # Convert those stored values back to double for radians.
+                        angles = angles.astype(np.float32).astype(np.float64)
+                    theta_geo, phi_geo, psi_rad = map(float, np.radians(angles))
+                    cT = np.cos(theta_geo)
+                    sT = np.sin(theta_geo)
+                    cP = np.cos(phi_geo)
+                    sP = np.sin(phi_geo)
+                    # Polarization basis vectors in geographic Cartesian frame
+                    e_th = np.array([cT * cP, cT * sP, -sT])  # e_theta (C++ a)
+                    e_ph = np.array([-sP, cP, 0.0])  # e_phi   (C++ b)
                     D = det.response  # 0.5*(x⊗x - y⊗y), respects the C++ /2 factor
                     Da = D @ e_th
                     Db = D @ e_ph

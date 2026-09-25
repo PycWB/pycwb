@@ -21,6 +21,7 @@ from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
 from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
+from ..constants.detectors import resolve_detector_geometries
 from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ class Config:
     WDM_level: List[int] = field(default_factory=list)
     cfg_search: Optional[Any] = None
     ifo: List[str] = field(default_factory=list)
-    detector_geometry: str = "lal"
+    detector_geometry: Dict[str, str] = field(default_factory=dict)
     DQF: List[List[Any]] = field(default_factory=list)
     upTDF: Optional[int] = None
     segEdge: Optional[float] = None
@@ -207,6 +208,7 @@ class Config:
             setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.detector_geometry = resolve_detector_geometries(self.ifo, self.detector_geometry)
 
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
@@ -240,6 +242,7 @@ class Config:
             setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.detector_geometry = resolve_detector_geometries(self.ifo, self.detector_geometry)
 
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
