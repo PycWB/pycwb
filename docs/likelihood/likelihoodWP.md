@@ -32,7 +32,7 @@ For a single cluster, the Python likelihood pipeline is:
 9. Apply threshold cuts.
 10. Fill cluster-level detection statistics, waveform-derived outputs, and chirp mass.
 
-At the implementation level this is centered in `likelihood(...)`, with the sky scan performed by `find_optimal_sky_localization(...)` and the best-direction detailed evaluation performed by `calculate_sky_statistics(...)`.
+At the implementation level this is centered in `likelihood(...)`, with the sky scan performed by `scan_sky_kernel(...)` and the best-direction detailed evaluation performed by `calculate_sky_statistics(...)`.
 
 ## Inputs and Data Layout
 
@@ -1053,7 +1053,7 @@ This section provides typical sizes for each major loop dimension, useful for es
 
 | Function | Outer Loop | Inner Loop | Complexity |
 |----------|-----------|------------|------------|
-| `find_optimal_sky_localization` | $n_{\mathrm{sky}}$ (`prange`) | 4 kernels × $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `scan_sky_kernel` | delay groups (`prange`) | 4 kernels × $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
 | `calculate_dpf` | $n_{\mathrm{sky}}$ (`prange`) | `dpf_np_loops_vec`: $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
 | `calculate_sky_statistics` | 1 sky point | $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ (many kernels) | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
 | `avx_GW_ps` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ projections + regularization | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
@@ -1075,7 +1075,7 @@ $$
 C_{\mathrm{total}} \approx n_{\mathrm{sky}} \times n_{\mathrm{pix}} \times n_{\mathrm{IFO}} \times c_{\mathrm{kernel}},
 $$
 
-where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per sky point in `find_optimal_sky_localization`). With $n_{\mathrm{sky}} = 196{,}608$, $n_{\mathrm{pix}} = 1{,}000$, and $n_{\mathrm{IFO}} = 3$, this gives approximately $2.4 \times 10^9$ floating-point operations per cluster — the dominant computational cost.
+where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per sky point in `scan_sky_kernel`). With $n_{\mathrm{sky}} = 196{,}608$, $n_{\mathrm{pix}} = 1{,}000$, and $n_{\mathrm{IFO}} = 3$, this gives approximately $2.4 \times 10^9$ floating-point operations per cluster — the dominant computational cost.
 
 ---
 
@@ -1083,7 +1083,7 @@ where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per
 
 This section identifies optimization opportunities for GPU (CUDA/ROCm via JAX or CuPy) acceleration, ordered by expected impact.
 
-### Tier 1: Sky Scan (`find_optimal_sky_localization`) — Highest Impact
+### Tier 1: Sky Scan (`scan_sky_kernel`) — Highest Impact
 
 **Current implementation:** Numba `@njit(parallel=True)` with `prange(n_sky)`. Each sky direction is independent.
 
@@ -1156,7 +1156,7 @@ This section identifies optimization opportunities for GPU (CUDA/ROCm via JAX or
 
 ### Recommended Strategy
 
-1. **Phase 1:** Port `find_optimal_sky_localization` to JAX `vmap` + `jit` over sky directions. This covers Tier 1 and Tier 2 simultaneously since the DPF can be fused. Use `jax.lax.map` or manual scan for the time-delay gather.
+1. **Phase 1:** Port `scan_sky_kernel` to JAX `vmap` + `jit` over sky directions. This covers Tier 1 and Tier 2 simultaneously since the DPF can be fused. Use `jax.lax.map` or manual scan for the time-delay gather.
 
 2. **Phase 2:** Convert xtalk catalog to a sparse JAX representation and port `packet_norm_numpy` + `xtalk_energy_sum_numpy` to sparse JAX ops.
 
@@ -1241,7 +1241,7 @@ On a GPU with $O(10^4)$ active threads, the key constraint is: **the parallelize
 
 ### Current Iteration Orders and Their GPU Implications
 
-#### Sky Scan (`find_optimal_sky_localization`)
+#### Sky Scan (`scan_sky_kernel`)
 
 **Current CPU order:**
 ```

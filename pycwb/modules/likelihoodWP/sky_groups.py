@@ -7,9 +7,8 @@ sky_valid_indices order, independent of group traversal order.
 """
 
 import numpy as np
-from .sky_scan_scratch import scan_sky_scratch as scan_sky_grouped_delays
 
-__all__ = ["make_delay_groups", "delay_groups_for_grid", "scan_sky_grouped_delays"]
+__all__ = ["make_delay_groups", "delay_groups_for_grid"]
 
 
 def make_delay_groups(ml, reuse_delays=True):

@@ -10,7 +10,7 @@ Import the public API from here:
 All helper functions have been extracted to phase submodules:
     - ``likelihood_setup.py``   — prepare_likelihood_inputs
     - ``pixel_data.py``         — extract_pixel_time_delay_data, ...
-    - ``sky_scan.py``           — scan_sky_for_best_fit (@njit)
+    - ``sky_scan.py``           — scan_sky / scan_sky_kernel (@njit)
     - ``sky_statistics.py``     — compute_statistics_at_sky_position
     - ``detection_statistics.py`` — get_likelihood_rejection_reason,
                                     populate_detection_statistics,
@@ -37,10 +37,7 @@ from .likelihood_setup import (
     populate_pixel_noise_from_maps,
 )
 from .pixel_data import extract_pixel_time_delay_data as _extract_pixel_time_delay_data
-from .sky_scan import scan_sky_for_best_fit as _scan_sky_for_best_fit  # noqa: F401 -- legacy backend hook
-from .sky_scan_delay import delay_groups_for_grid
-from .sky_scan_delay import scan_sky_grouped_delays as _scan_sky_grouped_delays  # noqa: F401 -- legacy backend hook
-from .sky_scan_scratch import scan_sky_scratch as _scan_sky_scratch
+from .sky_scan import scan_sky as _scan_sky
 from .sky_statistics import compute_statistics_at_sky_position as _compute_statistics_at_sky_position
 from .detection_statistics import (
     get_likelihood_rejection_reason as _get_likelihood_rejection_reason,
@@ -61,7 +58,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 _SCALAR_DPF = os.environ.get("PYCWB_SCALAR_DPF") == "1"
 _DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE", "1") != "0"
-# Scratch reuse is internal; the former PYCWB_SKY_SCRATCH_REUSE flag is ignored.
 
 
 def _update_cluster_chirp_statistics(
@@ -411,25 +407,13 @@ def evaluate_cluster_likelihood(
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
     _t0 = time.perf_counter()
-    # Both modes use the same kernel; disabling reuse creates singleton groups.
-    group_args = delay_groups_for_grid(setup, sky_delay_samples, _bBB, _DELAY_REUSE)
-    scan = _scan_sky_scratch
-    skymap_statistics = scan(
-        nIFO,
-        n_pixels,
-        n_sky,
-        plus_antenna_patterns,
-        cross_antenna_patterns,
-        noise_weights,
-        td_phase0,
-        td_phase90,
-        sky_delay_samples,
-        regularization,
-        netCC,
-        delta_regulator,
-        network_energy_threshold,
-        sky_valid_indices,
-        *group_args,
+    skymap_statistics = _scan_sky(
+        geometry=(plus_antenna_patterns, cross_antenna_patterns, sky_delay_samples),
+        cluster=(noise_weights, td_phase0, td_phase90),
+        settings=(regularization, netCC, delta_regulator, network_energy_threshold, sky_valid_indices),
+        reuse_delays=_DELAY_REUSE,
+        setup=setup,
+        big_cluster=_bBB,
     )
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
     stage_timings["sky_scan"] = time.perf_counter() - _t0

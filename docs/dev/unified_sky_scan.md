@@ -1,9 +1,9 @@
 # Shared CPU sky scan
 
-The CPU likelihood uses one compiled group-based scan in `sky_scan_scratch.py`.
+The CPU likelihood uses one compiled group-based kernel, `scan_sky_kernel`, in `sky_scan.py`.
 Delay grouping is enabled by default. Set `PYCWB_SKY_DELAY_REUSE=0` before
 importing PycWB to use one sky direction per group. Scratch reuse is internal;
-`PYCWB_SKY_SCRATCH_REUSE` is obsolete and ignored, including when set to `0`.
+The old `PYCWB_SKY_SCRATCH_REUSE` setting has been removed from the example profile.
 
 Both modes evaluate the same direction-statistic arithmetic. Each parallel
 group owns its delayed data and scratch buffers; no mutable scratch crosses
@@ -20,18 +20,27 @@ big_cluster=False)` provides a Python interface:
 - `cluster`: `(rms, td00, td90)`.
 - `settings`: `(REG, netCC, delta_regulator, network_energy_threshold, sky_valid_indices)`.
 
-The compiled kernel continues to receive explicit arrays. The original
-`scan_sky_for_best_fit` signature remains as a compiled singleton wrapper;
-`scan_sky_grouped_delays` aliases the shared kernel. Existing no-GIL and CUDA
-binding names remain available. Production likelihood dispatches through
-`_scan_sky_scratch` for both organization modes, so the existing backend override
-continues to intercept the scan. CUDA retains its own implementation.
+The compiled kernel receives explicit arrays. Production likelihood calls
+`scan_sky` directly; grouping and caching live in `sky_groups.py`. There are no
+legacy scan aliases, singleton wrappers, or compatibility re-export modules.
+Both grouping modes call the same kernel.
 
 The allocating DPF, projection, orthogonalization and coherent-statistic helpers
-now allocate buffers and call their corresponding `*_into` kernels. Their
-returned arrays own their storage. `sky_scratch.py` retains compatibility exports.
+allocate buffers and call the corresponding `*_into` kernels in `dpf.py` and
+`sky_stat.py`. Their returned arrays own their storage.
 
-## Validation, 25 September 2026
+## Module cleanup validation, 25 September 2026
+
+272 likelihood tests pass with two Numba threads. The lower count reflects
+removal of 72 duplicate scan-variant cases and two checks for the absent no-GIL
+backend. Both modes still run against the independent reference across all
+existing detector, pixel, mask and threshold combinations, plus the real-input
+golden fixture. A separate replay of saved HF cluster `likelihood_98.pkl` through
+production likelihood produced identical public-output digests for the frozen
+reference, grouped mode and singleton mode. The compiled numerical kernel body
+is unchanged by the module move. Scoped lint and whitespace checks pass.
+
+## Validation before module cleanup, 25 September 2026
 
 397 likelihood and CUDA-binding tests passed with two Numba threads. These
 include both scan modes, masks, ties, duplicate indices, input immutability,

@@ -146,9 +146,6 @@ def test_likelihood_helper_alias_identity():
         load_data_from_ifo, build_sky_delay_and_antenna_patterns,
         _load_data_from_pixel_arrays, _extract_pixel_array_time_delay_data,
     )
-    from pycwb.modules.likelihoodWP.sky_scan import (
-        find_optimal_sky_localization, scan_sky_for_best_fit,
-    )
     from pycwb.modules.likelihoodWP.sky_statistics import (
         calculate_sky_statistics, compute_statistics_at_sky_position,
     )
@@ -162,7 +159,6 @@ def test_likelihood_helper_alias_identity():
     )
     assert extract_pixel_time_delay_data is load_data_from_pixels
     assert build_sky_delay_and_antenna_patterns is load_data_from_ifo
-    assert scan_sky_for_best_fit is find_optimal_sky_localization
     assert compute_statistics_at_sky_position is calculate_sky_statistics
     assert get_likelihood_rejection_reason is threshold_cut
     assert populate_detection_statistics is fill_detection_statistic

@@ -162,7 +162,7 @@ def find_optimal_sky_localization(n_ifo: int,
                                  sky_valid_indices: np.ndarray | None = None):
     """Find the sky direction that maximises the cross-correlation statistic.
 
-    This is the JAX equivalent of the Numba ``find_optimal_sky_localization``.
+    This is the JAX equivalent of the Numba ``scan_sky_kernel``.
     It uses ``jax.vmap`` to evaluate all sky directions in parallel, processing
     them in batches of ``sky_batch_size`` to bound peak VRAM usage.
 

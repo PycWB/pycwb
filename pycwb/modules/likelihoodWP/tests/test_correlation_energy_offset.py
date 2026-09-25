@@ -8,7 +8,7 @@ perfectly reconstructed pixel must fall below the 0.5 sky-correlation cut.
 import numpy as np
 import pytest
 from pycwb.modules.likelihoodWP.sky_stat import avx_stat_ps
-from pycwb.modules.likelihoodWP.sky_scratch import avx_stat_ps_into
+from pycwb.modules.likelihoodWP.sky_stat import avx_stat_ps_into
 
 
 @pytest.mark.parametrize("scratch", [False, True])
