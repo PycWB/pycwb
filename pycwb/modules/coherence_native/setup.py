@@ -1,9 +1,10 @@
 """Lag-independent setup for native coherence."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import wdm_options
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
-import os
 import time
 import numpy as np
 
@@ -20,7 +21,6 @@ from .tf_batch_generation import batch_t2w_detectors
 from .veto_threshold import compute_threshold
 
 logger = logging.getLogger(__name__)
-_COMPACT_COHERENCE = os.environ.get("PYCWB_COMPACT_COHERENCE") == "1"
 
 
 def _share_prepared_energy_storage(tf_maps, selection_cache):
@@ -39,9 +39,6 @@ def _share_prepared_energy_storage(tf_maps, selection_cache):
 
 def _coherence_timing_enabled(config: Config) -> bool:
     """Return True when detailed coherence setup timing logs are requested."""
-    flag = str(os.getenv("PYCWB_COHERENCE_TIMING", "")).strip().lower()
-    if flag in {"1", "true", "yes", "on"}:
-        return True
     return bool(getattr(config, "coherence_timing", False))
 
 
@@ -121,13 +118,14 @@ def _setup_coherence_single_res(
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
         ``segEdge``, ``selection_cache``.
     """
+    profile = execution_profile(config)
     timer_start = time.perf_counter()
     timing_enabled = _coherence_timing_enabled(config)
     level = config.l_high - i
     layers = 2**level if level > 0 else 0
     rate = config.rateANA // 2**level
     max_energy_backend = _max_energy_backend(config, layers=layers)
-    max_energy_backend_log = _max_energy_backend_label(max_energy_backend)
+    max_energy_backend_log = _max_energy_backend_label(max_energy_backend, profile)
 
     t_stage = time.perf_counter()
     # Ensure at least one WDM layer for zero-lag case
@@ -137,13 +135,14 @@ def _setup_coherence_single_res(
         K=wdm_layers,
         beta_order=config.WDM_beta_order,
         precision=config.WDM_precision,
+        **wdm_options(config),
     )
     t_wdm = time.perf_counter() - t_stage
 
     # Build time-frequency maps via batch WDM transform (preferring fast path)
     t_stage = time.perf_counter()
     try:
-        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
+        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet, profile=profile)
         tf_maps = [
             TimeFrequencyMap(
                 data=batch_data_list[n],
@@ -160,11 +159,7 @@ def _setup_coherence_single_res(
                 # cWB maxEnergy consumes conditioned strain directly. Keep
                 # this separately selectable while validating the numerical
                 # difference from the historical transform/inverse round trip.
-                ts_data=(
-                    np.asarray(strains[n].data, dtype=np.float64)
-                    if os.environ.get("PYCWB_DIRECT_MAX_ENERGY_INPUT") == "1"
-                    else None
-                ),
+                ts_data=(np.asarray(strains[n].data, dtype=np.float64) if profile.direct_max_energy_input else None),
             )
             for n in range(len(strains))
         ]
@@ -187,7 +182,7 @@ def _setup_coherence_single_res(
         ]
         t_tf_maps = time.perf_counter() - t_stage
 
-    if _COMPACT_COHERENCE:
+    if profile.compact_coherence:
         # TF-map objects own the raw transforms now. Do not keep a second
         # reference to every raw map while replacing them with energy maps.
         batch_data_list = None
@@ -217,6 +212,7 @@ def _setup_coherence_single_res(
             f_low=config.fLow,
             f_high=config.fHigh,
             backend=max_energy_backend,
+            profile=profile,
         )
         t_ifo = time.perf_counter() - t_stage
         t_max_energy_total += t_ifo
@@ -231,7 +227,7 @@ def _setup_coherence_single_res(
             )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
-    if _COMPACT_COHERENCE:
+    if profile.compact_coherence:
         # enumerate leaves the last raw detector map in this loop variable.
         tf_map = None
     alp = alp / config.nIFO
@@ -254,7 +250,7 @@ def _setup_coherence_single_res(
         lag_shifts_by_lag=getattr(job_seg, "lag_shifts", None),
     )
     t_selection_cache = time.perf_counter() - t_stage
-    if _COMPACT_COHERENCE:
+    if profile.compact_coherence:
         _share_prepared_energy_storage(tf_maps, selection_cache)
 
     # Extract lag count from job segment for setup dictionary
@@ -283,6 +279,7 @@ def _setup_coherence_single_res(
     )
 
     return {
+        "execution_profile": profile,
         "tf_maps": tf_maps,
         "Eo": Eo,
         "job_seg": job_seg,

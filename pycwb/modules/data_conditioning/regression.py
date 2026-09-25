@@ -5,7 +5,8 @@ This module provides Python-native implementations of cWB regression
 using TimeFrequencyMap methods and NumPy operations.
 """
 
-import os
+from pycwb.constants.execution_profile import execution_profile, wdm_options
+
 import shlex
 from functools import partial
 
@@ -21,8 +22,6 @@ try:
 except Exception:
     _NUMBA_AVAILABLE = False
 
-
-_PERCENTILE_STRIDE = max(1, int(os.getenv("PYCWB_REGRESSION_PERCENTILE_STRIDE", "1")))
 
 
 def _parse_jax_version(version_str):
@@ -62,14 +61,14 @@ def _jax_apply_filters(wq, wQ, filt00, filt90):
     return val_core, valq_core
 
 
-def _jax_percentile_mean(arr, fraction, edge_samples):
+def _jax_percentile_mean(arr, fraction, edge_samples, percentile_stride=1):
     """
     JAX equivalent of cWB percentile mean used in matrix/vector statistics.
 
     For positive fractions, keeps the lowest-|x| fraction after optional
     edge trimming. Implemented without Python control flow so it is JIT-safe.
     """
-    stride = _PERCENTILE_STRIDE
+    stride = percentile_stride
     if stride > 1:
         arr = arr[::stride]
         edge_samples = edge_samples // stride
@@ -515,22 +514,22 @@ if _NUMBA_AVAILABLE:
         return noise_layers, include_mask
 
 
-@partial(jax.jit, static_argnames=("K", "K2", "K4", "half", "fm", "edge_samples", "fltr"))
-def _jax_layer_build_stats(real, imag, K, K2, K4, half, fm, edge_samples, fltr):
+@partial(jax.jit, static_argnames=("K", "K2", "K4", "half", "fm", "edge_samples", "fltr", "percentile_stride"))
+def _jax_layer_build_stats(real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride=1):
     """Build normalized vector/matrix statistics for one layer."""
     power = real * real + imag * imag
-    norm0_sq = _jax_percentile_mean(power, fm, edge_samples)
+    norm0_sq = _jax_percentile_mean(power, fm, edge_samples, percentile_stride)
     norm0 = jnp.sqrt(norm0_sq)
     valid_norm = jnp.isfinite(norm0) & (norm0 > 0)
     safe_norm = jnp.where(valid_norm, norm0, 1.0)
 
-    v_cross = _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr)
-    acf, ccf = _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples)
+    v_cross = _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr, percentile_stride)
+    acf, ccf = _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples, percentile_stride)
     return norm0, valid_norm, safe_norm, v_cross, acf, ccf
 
 
-@partial(jax.jit, static_argnames=("K", "K4", "half", "fm", "edge_samples", "fltr"))
-def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr):
+@partial(jax.jit, static_argnames=("K", "K4", "half", "fm", "edge_samples", "fltr", "percentile_stride"))
+def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr, percentile_stride=1):
     """Build cross vector V over lags [-K, K] for one layer."""
     # ROOT fills products for j in [K, n-K] then trims edge_samples from the full array,
     # giving effective trim (edge_samples - K) on the product sub-array.
@@ -541,8 +540,8 @@ def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_sample
         ww, WW = _jax_rotated_products(real, imag, lag, K)
         idx = K + lag
         base = safe_norm * safe_norm
-        v0 = _jax_percentile_mean(ww, fm, edge_v) / base
-        v1 = _jax_percentile_mean(WW, fm, edge_v) / base
+        v0 = _jax_percentile_mean(ww, fm, edge_v, percentile_stride) / base
+        v1 = _jax_percentile_mean(WW, fm, edge_v, percentile_stride) / base
         scale = jnp.where(lag == 0, fltr, 1.0)
         v_cross = v_cross.at[idx].set(v0 * scale)
         v_cross = v_cross.at[idx + half].set(v1 * scale)
@@ -551,8 +550,8 @@ def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_sample
     return jax.lax.fori_loop(0, 2 * K + 1, _build_v, jnp.zeros((K4,), dtype=jnp.float64))
 
 
-@partial(jax.jit, static_argnames=("K2", "fm", "edge_samples"))
-def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples):
+@partial(jax.jit, static_argnames=("K2", "fm", "edge_samples", "percentile_stride"))
+def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples, percentile_stride=1):
     """Build autocorrelation/cross-correlation vectors over lags [-2K, 2K]."""
     # ROOT fills products for j in [K2, n-K2] then trims edge_samples from the full array,
     # giving effective trim (edge_samples - K2) on the product sub-array.
@@ -567,8 +566,8 @@ def _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples):
         base = safe_norm * safe_norm
         # ROOT matrix WW = x_m*xQ_n - xQ_m*x_n (opposite sign from cross-vector/rotated_products WW)
         # negate to match ROOT's matrix formula
-        acf = acf.at[idx].set(_jax_percentile_mean(ww, fm, edge_m) / base)
-        ccf = ccf.at[idx].set(-_jax_percentile_mean(WW, fm, edge_m) / base)
+        acf = acf.at[idx].set(_jax_percentile_mean(ww, fm, edge_m, percentile_stride) / base)
+        ccf = ccf.at[idx].set(-_jax_percentile_mean(WW, fm, edge_m, percentile_stride) / base)
         return acf, ccf
 
     return jax.lax.fori_loop(
@@ -676,6 +675,7 @@ def _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_se
         "rate_tf",
         "edge_seconds",
         "apply_fraction",
+        "percentile_stride",
     ),
 )
 def _jax_process_one_layer(
@@ -695,6 +695,7 @@ def _jax_process_one_layer(
     rate_tf,
     edge_seconds,
     apply_fraction=1.0,
+    percentile_stride=1,
 ):
     """
     Process one TF layer end-to-end in JAX.
@@ -703,7 +704,7 @@ def _jax_process_one_layer(
     apply filter -> threshold by non-edge RMS -> return predicted noise layer.
     """
     norm0, valid_norm, safe_norm, v_cross, acf, ccf = _jax_layer_build_stats(
-        real, imag, K, K2, K4, half, fm, edge_samples, fltr
+        real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride
     )
     filt00, filt90 = _jax_layer_solve_filters(
         v_cross,
@@ -739,6 +740,7 @@ def _jax_process_one_layer(
         "rate_tf",
         "edge_seconds",
         "apply_fraction",
+        "percentile_stride",
     ),
 )
 def _jax_process_layers(
@@ -758,11 +760,12 @@ def _jax_process_layers(
     rate_tf,
     edge_seconds,
     apply_fraction=1.0,
+    percentile_stride=1,
 ):
     """Vectorized JAX execution of `_jax_process_one_layer` across layers."""
     return jax.vmap(
         _jax_process_one_layer,
-        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
         out_axes=(0, 0),
     )(
         real_layers,
@@ -781,12 +784,13 @@ def _jax_process_layers(
         rate_tf,
         edge_seconds,
         apply_fraction,
+        percentile_stride,
     )
 
 
 def _regression_apply_fraction(config, fraction):
     """Select release amplitude capping, honoring the explicit OLD search option."""
-    if os.getenv("PYCWB_REGRESSION_CAP", "0") != "1":
+    if not execution_profile(config).regression_cap:
         return 1.0
     options = shlex.split(str(getattr(config, "Search", "")))
     for i, option in enumerate(options):
@@ -812,7 +816,7 @@ def regression_python(config, h):
     """
     from pycwb.types.time_series import TimeSeries
 
-    backend = str(getattr(config, "REGRESSION_ENGINE", os.getenv("PYCWB_REGRESSION_ENGINE", "numba"))).lower()
+    backend = execution_profile(config).regression_engine
 
     # Match cWB defaults from schema/regression.cc
     filter_length = int(getattr(config, "REGRESSION_FILTER_LENGTH", 8))
@@ -839,7 +843,7 @@ def regression_python(config, h):
     sample_rate = float(h_ts.sample_rate)
     edge_seconds = float(getattr(config, "segEdge", 0.0))
 
-    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
 
     signal_data = np.array(h_ts.data, dtype=np.float64)
     t0 = float(h_ts.start_time)
@@ -905,7 +909,7 @@ def regression_python(config, h):
             float(apply_threshold),
             float(rate_tf),
             float(edge_seconds),
-            int(_PERCENTILE_STRIDE),
+            execution_profile(config).regression_percentile_stride,
             apply_fraction,
         )
     else:
@@ -928,6 +932,7 @@ def regression_python(config, h):
             float(rate_tf),
             float(edge_seconds),
             apply_fraction,
+            percentile_stride=execution_profile(config).regression_percentile_stride,
         )
         noise_layers_jax = jax.block_until_ready(noise_layers_jax)
         include_mask_jax = jax.block_until_ready(include_mask_jax)

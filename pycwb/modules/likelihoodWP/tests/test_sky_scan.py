@@ -156,18 +156,3 @@ def test_real_input_golden_fixture(reuse):
             for i in range(13)
         )
     assert_exact(scan_sky((args[3], args[4], args[8]), args[5:8], args[9:14], reuse_delays=reuse), expected)
-
-
-@pytest.mark.parametrize("value,expected", [(None, True), ("1", True), ("0", False)])
-def test_grouping_default_and_explicit_opt_out(monkeypatch, value, expected):
-    import importlib
-
-    module = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
-    try:
-        with monkeypatch.context() as context:
-            context.delenv("PYCWB_SKY_DELAY_REUSE", raising=False)
-            if value is not None:
-                context.setenv("PYCWB_SKY_DELAY_REUSE", value)
-            assert importlib.reload(module)._DELAY_REUSE is expected
-    finally:
-        importlib.reload(module)

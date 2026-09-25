@@ -115,11 +115,11 @@ def test_projection_backend_dispatch(monkeypatch):
 
     calls = []
 
-    def fake_jax(tf_map, max_delay, *, downsample, pattern, hist):
+    def fake_jax(tf_map, max_delay, *, downsample, pattern, hist, profile):
         calls.append(("jax", max_delay, downsample, pattern, hist))
         return "jax-map", 1.0
 
-    def fake_numba(tf_map, max_delay, *, downsample, pattern, hist):
+    def fake_numba(tf_map, max_delay, *, downsample, pattern, hist, profile):
         calls.append(("numba", max_delay, downsample, pattern, hist))
         return "numba-map", 2.0
 

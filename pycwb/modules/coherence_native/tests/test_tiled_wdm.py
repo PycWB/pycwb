@@ -1,5 +1,7 @@
 """Real WDM equivalence across tile seams, segment padding, and parity."""
 
+from pycwb.constants.execution_profile import ExecutionProfile
+
 from types import SimpleNamespace
 
 import jax.numpy as jnp
@@ -18,7 +20,6 @@ def test_tiles_preserve_every_output_bit(monkeypatch, M, extra):
     strains = [SimpleNamespace(data=rng.normal(size=(1024 + extra) * M), sample_rate=8192.0) for _ in range(2)]
     # Include impulses at seams and both physical boundaries.
     strains[0].data[[0, 256 * M - 1, 256 * M, -1]] = [4.0, -7.0, 9.0, 3.0]
-    monkeypatch.setattr(batch, "_TILED_WDM", False)
     expected, _ = batch.batch_t2w_detectors(strains, wavelet)
     taps = jnp.asarray(np.asarray(wavelet.filter)[: wavelet.m_H], dtype=jnp.float64)
     actual = batch._tiled_t2w_detectors(strains, M, wavelet.m_H, taps, sample_budget=256 * M)
@@ -31,14 +32,12 @@ def test_tiles_preserve_every_output_bit(monkeypatch, M, extra):
 def test_unaligned_shapes_retain_original_path(monkeypatch, n_time):
     wavelet = WDM(M=16, K=16, beta_order=6, precision=10)
     strain = SimpleNamespace(data=np.random.default_rng(18).normal(size=n_time * 16 - 1), sample_rate=8192.0)
-    monkeypatch.setattr(batch, "_TILED_WDM", False)
     expected, metadata = batch.batch_t2w_detectors([strain], wavelet)
-    monkeypatch.setattr(batch, "_TILED_WDM", True)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("unaligned input must use the original kernel shape")
 
     monkeypatch.setattr(batch, "_tiled_t2w_detectors", forbidden)
-    actual, other_metadata = batch.batch_t2w_detectors([strain], wavelet)
+    actual, other_metadata = batch.batch_t2w_detectors([strain], wavelet, profile=ExecutionProfile(tiled_wdm=True))
     assert metadata == other_metadata
     assert actual[0].tobytes() == expected[0].tobytes()

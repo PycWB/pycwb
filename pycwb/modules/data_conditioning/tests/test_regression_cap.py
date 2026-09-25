@@ -64,9 +64,19 @@ def test_search_old_option_selects_uncapped_behavior(monkeypatch):
     from types import SimpleNamespace
     from pycwb.modules.data_conditioning.regression import _regression_apply_fraction
 
-    monkeypatch.setenv("PYCWB_REGRESSION_CAP", "1")
-    assert _regression_apply_fraction(SimpleNamespace(Search="CBC"), 0.95) == 0.95
-    assert _regression_apply_fraction(SimpleNamespace(Search="CBC --regression OLD"), 0.95) == 1.0
-    assert _regression_apply_fraction(SimpleNamespace(Search="CBC --regression OLD --foo value"), 0.95) == 1.0
-    monkeypatch.setenv("PYCWB_REGRESSION_CAP", "0")
-    assert _regression_apply_fraction(SimpleNamespace(Search="CBC"), 0.95) == 1.0
+    from pycwb.constants.execution_profile import ExecutionProfile
+
+    enabled = ExecutionProfile(regression_cap=True)
+    assert _regression_apply_fraction(SimpleNamespace(execution_profile=enabled, Search="CBC"), 0.95) == 0.95
+    assert (
+        _regression_apply_fraction(SimpleNamespace(execution_profile=enabled, Search="CBC --regression OLD"), 0.95)
+        == 1.0
+    )
+    assert (
+        _regression_apply_fraction(
+            SimpleNamespace(execution_profile=enabled, Search="CBC --regression OLD --foo value"), 0.95
+        )
+        == 1.0
+    )
+    enabled = ExecutionProfile(regression_cap=False)
+    assert _regression_apply_fraction(SimpleNamespace(execution_profile=enabled, Search="CBC"), 0.95) == 1.0

@@ -3,12 +3,21 @@ JSON schema for validating and completing user parameters,
 and will also be used to generate the documentation
 """
 
+from .execution_profile import PROFILE_SCHEMA
+
 NIFO_MAX = 8
 
 # todo: split object into sections, and flatten them before validation
 schema = {
     "type": "object",
     "properties": {
+        "execution_profile": PROFILE_SCHEMA,
+        "coherence_timing": {
+            "type": "boolean",
+            "default": False,
+            "description": "Log detailed coherence setup timings.",
+            "cwb": False,
+        },
         "outputDir": {"type": "string", "description": "output directory", "default": "output", "cwb": False},
         "logDir": {"type": "string", "description": "log directory", "default": "log", "cwb": False},
         "catalog_dir": {"type": "string", "description": "catalog directory", "default": "catalog", "cwb": False},

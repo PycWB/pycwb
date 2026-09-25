@@ -2,6 +2,8 @@
 Pure-Python whitening without ROOT dependencies.
 """
 
+from pycwb.constants.execution_profile import wdm_options
+
 import logging
 
 import numpy as np
@@ -53,7 +55,7 @@ def whitening_python(config, h):
         edge_length,
     )
 
-    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
     tf_map = wdm.t2w(signal_data, sample_rate=sample_rate, t0=t0, MM=-1)
 
     nRMS_anchor, nRMS_interp = _estimate_nrms_cwb_mode0(

@@ -8,6 +8,7 @@ Select ``process_job_segment`` through ``segment_processer``. One worker and
 injection trials run serially.
 """
 
+from pycwb.constants.execution_profile import execution_profile
 import logging
 import multiprocessing
 import os
@@ -103,7 +104,7 @@ def _analyze_process(lag: int) -> native.LagResult:
         return native._run_lag_analysis(_worker_context, lag)
     finally:
         # Analysis workers do not need to initialize JAX just to perform GC.
-        native._cleanup_lag_output_state(release_jax=False)
+        native._cleanup_lag_output_state(release_jax=False, profile=execution_profile(_worker_context.config))
 
 
 def _process_serial(

@@ -1,9 +1,9 @@
 # Shared CPU sky scan
 
 The CPU likelihood uses one compiled group-based kernel, `scan_sky_kernel`, in `sky_scan.py`.
-Delay grouping is enabled by default. Set `PYCWB_SKY_DELAY_REUSE=0` before
-importing PycWB to use one sky direction per group. Scratch reuse is internal;
-The old `PYCWB_SKY_SCRATCH_REUSE` setting has been removed from the example profile.
+Delay grouping is enabled by default. Set `execution_profile.sky_delay_reuse: false` in
+`user_parameters.yaml` to use one sky direction per group. Scratch reuse is internal;
+See [execution-profile configuration](execution_profile.md).
 
 Both modes evaluate the same direction-statistic arithmetic. Each parallel
 group owns its delayed data and scratch buffers; no mutable scratch crosses

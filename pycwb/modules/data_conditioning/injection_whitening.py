@@ -1,5 +1,6 @@
 """Pure-Python whitening of injection strain using a pre-computed nRMS map."""
 
+from pycwb.constants.execution_profile import wdm_options
 import logging
 
 import numpy as np
@@ -36,7 +37,7 @@ def whiten_injection_strain(config, strain, noise_rms):
     from wdm_wavelet.wdm import WDM as WDMpy
     from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 
-    layers = 2 ** config.l_white if getattr(config, "l_white", 0) > 0 else 2 ** config.l_high
+    layers = 2**config.l_white if getattr(config, "l_white", 0) > 0 else 2**config.l_high
     beta_order = getattr(config, "WDM_beta_order", 6)
     precision = getattr(config, "WDM_precision", 10)
 
@@ -51,10 +52,13 @@ def whiten_injection_strain(config, strain, noise_rms):
 
     logger.info(
         "Whitening injection strain: M=%d, beta=%s, prec=%s, sample_rate=%s Hz",
-        layers, beta_order, precision, sample_rate,
+        layers,
+        beta_order,
+        precision,
+        sample_rate,
     )
 
-    wdm = WDMpy(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDMpy(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
     tf_map = wdm.t2w(signal_data, sample_rate=sample_rate, t0=t0, MM=-1)
 
     original_gwpy = wdm.w2t(tf_map)

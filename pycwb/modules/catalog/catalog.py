@@ -50,6 +50,7 @@ from numbers import Integral
 from typing import Optional, Union
 
 import numpy as np
+from pycwb.constants.execution_profile import execution_profile
 import orjson
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -113,6 +114,7 @@ def _jobs_to_serialisable(jobs: list) -> list:
 
 def _build_schema_metadata(config: Config, jobs: list | None = None,
                            *, jobs_in_metadata: bool = False) -> dict:
+    execution_profile(config)
     metadata = {
         b"pycwb_version": pycwb.__version__.encode(),
         b"config": orjson.dumps(config.__dict__, option=orjson.OPT_SERIALIZE_NUMPY),

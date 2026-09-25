@@ -10,6 +10,7 @@ available.
 """
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
 import numpy as np
@@ -162,6 +163,7 @@ def prepare_likelihood_inputs(
         sky_valid_indices_big = None
 
     return {
+        "execution_profile": execution_profile(config),
         "network_energy_threshold": network_energy_threshold,
         "xgb_rho_mode": xgb_rho_mode,
         "gamma_regulator": gamma_regulator,

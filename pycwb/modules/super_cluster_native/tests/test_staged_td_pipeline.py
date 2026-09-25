@@ -1,5 +1,7 @@
 """Verify the boundary between subnet sampling and final likelihood vectors."""
 
+from pycwb.constants.execution_profile import ExecutionProfile
+
 import importlib
 from types import SimpleNamespace
 import numpy as np
@@ -13,7 +15,6 @@ from .test_supercluster_optimizations import _make_pixel_arrays
 @pytest.mark.parametrize("aligned", [False, True])
 def test_survivors_receive_fine_vectors(monkeypatch, pattern, keep, aligned):
     sc = importlib.import_module("pycwb.modules.super_cluster_native.super_cluster")
-    monkeypatch.setenv("PYCWB_STAGED_TD", "1")
     calls = []
 
     class Inputs:
@@ -28,6 +29,7 @@ def test_survivors_receive_fine_vectors(monkeypatch, pattern, keep, aligned):
     ]
     fragment = SimpleNamespace(clusters=clusters)
     config = SimpleNamespace(
+        execution_profile=ExecutionProfile(staged_td=True),
         nIFO=2,
         upTDF=4,
         Acore=1.0,
@@ -46,8 +48,8 @@ def test_survivors_receive_fine_vectors(monkeypatch, pattern, keep, aligned):
     delay = 4 if aligned else 3
     ml = np.array([[0, 0], [delay, -delay]], dtype=np.int32)
     setup = dict(K_td=9, ml=ml, FP=np.ones((2, 2)), FX=np.ones((2, 2)), n_sky=2)
-    monkeypatch.setattr(sc, "supercluster", lambda cs, *args: cs)
-    monkeypatch.setattr(sc, "defragment", lambda cs, *args: cs)
+    monkeypatch.setattr(sc, "supercluster", lambda cs, *args, **kwargs: cs)
+    monkeypatch.setattr(sc, "defragment", lambda cs, *args, **kwargs: cs)
 
     def subnet(cs, loud, actual_ml, *args, **kw):
         np.testing.assert_array_equal(actual_ml, ml // 4 if aligned else ml)

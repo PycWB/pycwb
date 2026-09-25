@@ -61,6 +61,8 @@ Reference
 See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
 """
 
+from pycwb.constants.execution_profile import execution_profile
+
 import logging
 import os
 import time
@@ -113,7 +115,6 @@ from pycwb.workflow.subflow.job_segment_veto import (
 )
 
 logger = logging.getLogger(__name__)
-_PERF_DIAGNOSTICS = os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1"
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,7 @@ class LagResult:
 
 
 def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
+    profile = execution_profile(context.config)
     config = context.config
     sub_job_seg = context.sub_job_seg
     lag_timer = time.perf_counter()
@@ -261,7 +263,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             # A failure indicates a systemic issue (e.g. corrupt sky arrays,
             # OOM, NaN propagation) that requires investigation — silently
             # skipping the cluster would mask the root cause.
-            likelihood_call_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
+            likelihood_call_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
             result_cluster, sky_stats = likelihood(
                 config.nIFO,
                 selected_cluster,
@@ -272,7 +274,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 xtalk=context.xtalk,
                 chirp_seed=sub_job_seg.index,
             )
-            if _PERF_DIAGNOSTICS:
+            if profile.perf_diagnostics:
                 logger.info(
                     "PERF likelihood lag=%d cluster=%d pixels=%d elapsed=%.6f accepted=%d",
                     lag,
@@ -327,7 +329,8 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
 
 def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> None:
-    output_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
+    profile = execution_profile(output_context.config)
+    output_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     # Phase A: create trigger folders and persist raw cluster/skymap data.
     trigger_folders = _create_and_save_trigger_folders(output_context, result)
 
@@ -357,9 +360,9 @@ def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> No
     _log_lag_completion(result)
 
     del trigger_folders
-    cleanup_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
-    _cleanup_lag_output_state()
-    if _PERF_DIAGNOSTICS:
+    cleanup_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
+    _cleanup_lag_output_state(profile=profile)
+    if profile.perf_diagnostics:
         logger.info(
             "PERF output lag=%d elapsed=%.6f cleanup=%.6f lag_total=%.6f",
             result.lag,
@@ -486,6 +489,7 @@ def process_job_segment(
         skip_lags. The default retains the native lag-processing behavior.
 
     """
+    execution_profile(config)
     # ─────────────────────────────────────────────────────────────────────────
     # HIGH-LEVEL WORKFLOW OVERVIEW
     # ─────────────────────────────────────────────────────────────────────────

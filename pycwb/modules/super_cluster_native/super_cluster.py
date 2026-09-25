@@ -1,7 +1,7 @@
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile, DEFAULT_EXECUTION_PROFILE
 
 import logging
-import os
 import time
 import types as _types
 from typing import TYPE_CHECKING, Any
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-_PERF_DIAGNOSTICS = os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1"
 
 
 def _build_link_pixel_matrix(clusters: list[Cluster], n_ifo: int) -> np.ndarray:
@@ -67,6 +66,7 @@ def supercluster(
     mini_pix: int = 3,
     core: bool = False,
     pair: bool = False,
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> list[Cluster]:
     """
     Supercluster algorithm
@@ -101,9 +101,9 @@ def supercluster(
     # FIXME(#?): dF returned by get_cluster_links is the last-computed value for the final
     # pixel pair examined, so it may not represent the cluster as a whole.
     # Tracked in issue — do not use dF for per-cluster frequency normalisation until resolved.
-    link_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
+    link_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     cluster_links, dF = get_cluster_links(pixels, gap, n_ifo)
-    if _PERF_DIAGNOSTICS:
+    if profile.perf_diagnostics:
         logger.info(
             "PERF links stage=supercluster pixels=%d clusters=%d links=%d elapsed=%.6f",
             len(pixels),
@@ -224,6 +224,7 @@ def defragment(
     t_gap: float,
     f_gap: float,
     n_ifo: int,
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> list[Cluster]:
     """
     Defragmentation algorithm — merge clusters that are close in time and frequency.
@@ -253,9 +254,9 @@ def defragment(
     cluster_ids = np.arange(len(clusters))
 
     # find links between clusters
-    link_timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
+    link_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     cluster_links = get_defragment_link(pixels, t_gap, f_gap, n_ifo)
-    if _PERF_DIAGNOSTICS:
+    if profile.perf_diagnostics:
         logger.info(
             "PERF links stage=defragment pixels=%d clusters=%d links=%d elapsed=%.6f",
             len(pixels),
@@ -475,6 +476,7 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
     FX_subnet_t = np.ascontiguousarray(FX_subnet.T, dtype=np.float32)
 
     return {
+        "execution_profile": execution_profile(config),
         "ml": ml_subnet,  # reduced resolution for apply_subnet_cut
         "FP": FP_subnet,
         "FX": FX_subnet,
@@ -605,6 +607,7 @@ def supercluster_single_lag(
         Processed cluster ready for likelihood, or ``None`` if all
         candidates were rejected at the subnet-cut stage.
     """
+    profile = setup.get("execution_profile") or execution_profile(config)
     n_ifo = config.nIFO
     K = int(setup["K_td"])
 
@@ -626,7 +629,7 @@ def supercluster_single_lag(
 
     delay_stride = int(getattr(config, "upTDF", 1))
     subnet_ml = setup.get("ml_subnet_i32", setup["ml"])
-    staged_td = os.environ.get("PYCWB_STAGED_TD") == "1" and delay_stride > 1
+    staged_td = profile.staged_td and delay_stride > 1
     if staged_td:
         # Keep exactly the analysis-rate samples already present in the fine
         # buffer. Fall back for custom setups with non-aligned/outside delays.
@@ -653,7 +656,7 @@ def supercluster_single_lag(
     pattern = int(getattr(config, "pattern", 0))
 
     t_super_start = time.perf_counter()
-    superclusters = supercluster(clusters, "L", config.TFgap, super_e2or, n_ifo)
+    superclusters = supercluster(clusters, "L", config.TFgap, super_e2or, n_ifo, profile=profile)
     super_elapsed = time.perf_counter() - t_super_start
     total_pixels = sum(len(c.pixel_arrays) for c in superclusters)
     accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
@@ -672,7 +675,7 @@ def supercluster_single_lag(
     defrag_first_elapsed = 0.0
     if pattern != 0:
         t_defrag_start = time.perf_counter()
-        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo)
+        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo, profile=profile)
         defrag_first_elapsed = time.perf_counter() - t_defrag_start
         logger.info(
             "   defrag clusters|pixels     : %6d|%d",
@@ -704,7 +707,7 @@ def supercluster_single_lag(
     defrag_final_elapsed = 0.0
     if pattern == 0:
         t_defrag_start = time.perf_counter()
-        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo)
+        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo, profile=profile)
         defrag_final_elapsed = time.perf_counter() - t_defrag_start
 
     total_pixels = sum(len(c.pixel_arrays) for c in accepted_superclusters)

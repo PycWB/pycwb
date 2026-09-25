@@ -1,3 +1,4 @@
+from pycwb.constants.execution_profile import ExecutionProfile
 import numpy as np
 import pytest
 
@@ -41,7 +42,7 @@ def test_large_filled_region_and_nested_boundaries():
 @pytest.mark.parametrize("return_rejected", [False, True])
 def test_cluster_products_and_rejected_contract(monkeypatch, early, return_rejected):
     from types import SimpleNamespace
-    from pycwb.modules.coherence_native import pipeline, clustering
+    from pycwb.modules.coherence_native import pipeline
     from .test_performance_candidates import assert_tree_equal
 
     rng = np.random.default_rng(105)
@@ -69,9 +70,8 @@ def test_cluster_products_and_rejected_contract(monkeypatch, early, return_rejec
         select_subnet=0.1,
     )
     monkeypatch.setattr(pipeline, "select_network_pixels", lambda **kw: candidates)
-    monkeypatch.setattr(pipeline, "_EARLY_CUTS", early)
-    monkeypatch.setattr(clustering, "_RUN_CONNECTIVITY", False)
+    setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=early, cluster_runs=False)
     reference = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
-    monkeypatch.setattr(clustering, "_RUN_CONNECTIVITY", True)
+    setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=early, cluster_runs=True)
     actual = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     assert_tree_equal(reference, actual)

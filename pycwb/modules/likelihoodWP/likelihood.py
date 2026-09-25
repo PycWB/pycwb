@@ -20,9 +20,9 @@ All helper functions have been extracted to phase submodules:
 """
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
-import os
 import time
 import numpy as np
 
@@ -56,8 +56,6 @@ if TYPE_CHECKING:
     from pycwb.config.config import Config
 
 logger = logging.getLogger(__name__)
-_SCALAR_DPF = os.environ.get("PYCWB_SCALAR_DPF") == "1"
-_DELAY_REUSE = os.environ.get("PYCWB_SKY_DELAY_REUSE", "1") != "0"
 
 
 def _update_cluster_chirp_statistics(
@@ -304,6 +302,7 @@ def evaluate_cluster_likelihood(
             "likelihood(): config must be provided. Without it, hrss/strain are zero and "
             "gps_time/central_freq fall back to coarser supercluster estimates."
         )
+    profile = setup.get("execution_profile") or execution_profile(config)
     timer_start = time.perf_counter()
     stage_timings: dict[str, float] = {}
     logger.info("-------------------------------------------------------")
@@ -391,7 +390,7 @@ def evaluate_cluster_likelihood(
 
     # regularization[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     _t0 = time.perf_counter()
-    dpf_regulator = _calculate_dpf_scalar if _SCALAR_DPF else _calculate_dpf
+    dpf_regulator = _calculate_dpf_scalar if profile.scalar_dpf else _calculate_dpf
     regularization[1] = dpf_regulator(
         plus_antenna_patterns,
         cross_antenna_patterns,
@@ -411,7 +410,7 @@ def evaluate_cluster_likelihood(
         geometry=(plus_antenna_patterns, cross_antenna_patterns, sky_delay_samples),
         cluster=(noise_weights, td_phase0, td_phase90),
         settings=(regularization, netCC, delta_regulator, network_energy_threshold, sky_valid_indices),
-        reuse_delays=_DELAY_REUSE,
+        reuse_delays=profile.sky_delay_reuse,
         setup=setup,
         big_cluster=_bBB,
     )
@@ -517,7 +516,7 @@ def evaluate_cluster_likelihood(
         config,
         xgb_rho_mode=xgb_rho_mode,
         chirp_seed=chirp_seed,
-        use_native_chirp=os.environ.get("PYCWB_NATIVE_CHIRP") == "1",
+        use_native_chirp=profile.native_chirp,
     )
     stage_timings["update_chirp_mass_statistics"] = time.perf_counter() - _t0
 

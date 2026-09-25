@@ -6,6 +6,8 @@ This version produces output compatible with whitening_python() from whitening.p
 using the same anchor-point batching logic as cWB's white() mode=0.
 """
 
+from pycwb.constants.execution_profile import wdm_options
+
 import logging
 
 import numpy as np
@@ -141,7 +143,7 @@ def whitening_mesa_python(config, h):
 
     # Create WDM TF maps
     layers = int(layers)
-    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
 
     tf_raw = wdm.t2w(data_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)
     tf_white = wdm.t2w(whitened_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)

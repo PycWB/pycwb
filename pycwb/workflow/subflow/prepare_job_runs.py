@@ -6,6 +6,7 @@ import logging
 from typing import List
 from dacite import from_dict, Config as DaciteConfig
 from jinja2 import Template 
+from pycwb.constants.execution_profile import check_recorded_execution_profile, recorded_execution_profile
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog, read_catalog_metadata
 from pycwb.modules.job_segment import create_job_segment_from_config
@@ -102,6 +103,10 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
                                   plot_trigger=plot, plot_waveform=plot, plot_sky_map=plot,
                                   compress_output_json=compress_json)
 
+        catalog_file = f"{working_dir}/{config.catalog_dir}/{Catalog.DEFAULT_FILENAME}"
+        if os.path.exists(catalog_file):
+            check_recorded_execution_profile(config, read_catalog_metadata(catalog_file)["config"])
+
         check_if_output_exists(working_dir, config.outputDir, overwrite)
         create_output_directory(working_dir, config.outputDir, config.logDir, config.catalog_dir,
                                 config.trigger_dir, file_name)
@@ -164,6 +169,7 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
         )
     catalog = read_catalog_metadata(catalog_meta_file)
     config = Config()
+    recorded_execution_profile(catalog['config'])
     config.load_from_dict(catalog['config'])
     logger.info(f"Loaded config from catalog: {config}")
     job_segments = catalog['jobs']

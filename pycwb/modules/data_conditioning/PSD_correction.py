@@ -2,6 +2,8 @@
 Pure-Python PSD variability correction using wdm_wavelet.
 """
 
+from pycwb.constants.execution_profile import wdm_options
+
 import logging
 
 import numpy as np
@@ -51,7 +53,7 @@ def psd_correction_python(
     precision = int(getattr(config, "WDM_precision", 10))
     edge_seconds = float(getattr(config, "segEdge", 0.0) or 0.0)
 
-    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
     signal_data = np.asarray(h_ts.data, dtype=np.float64)
     t0 = float(h_ts.t0)
     tf_map = wdm.t2w(signal_data, sample_rate=sample_rate, t0=t0, MM=-1)
@@ -184,7 +186,7 @@ def _smooth_envelope(x, smooth_seconds, rate, edge_seconds):
     edge_bins = int(max(0.0, float(edge_seconds)) * float(rate))
     if edge_bins > 0 and 2 * edge_bins < n:
         y[:edge_bins] = x[:edge_bins]
-        y[n - edge_bins:] = x[n - edge_bins:]
+        y[n - edge_bins :] = x[n - edge_bins :]
 
     return y
 

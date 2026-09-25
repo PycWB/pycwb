@@ -1,9 +1,9 @@
 """Public coherence pipeline entry points."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 import logging
-import os
 import time
 
 import numpy as np
@@ -20,7 +20,6 @@ from .veto_threshold import build_veto_mask
 from pycwb.types.noise_rms import lookup_pixel_noise_rms
 
 logger = logging.getLogger(__name__)
-_EARLY_CUTS = os.environ.get("PYCWB_COHERENCE_EARLY_CUTS") == "1"
 
 
 def coherence(
@@ -115,6 +114,7 @@ def coherence_single_lag(
     """
     fragment_clusters = []
     for setup in coherence_setups:
+        profile = setup.get("execution_profile", DEFAULT_EXECUTION_PROFILE)
         # Unpack lag-independent setup data for this resolution
         tf_maps = setup["tf_maps"]
         Eo = setup["Eo"]
@@ -139,6 +139,7 @@ def coherence_single_lag(
             veto=veto,
             edge=setup["segEdge"],
             selection_cache=setup.get("selection_cache"),
+            preindex_shifts=profile.preindex_shifts,
         )
         if setup.get("nRMS") is not None:
             candidates["noise_rms"] = lookup_pixel_noise_rms(
@@ -158,15 +159,15 @@ def coherence_single_lag(
             # Multi-pixel clusters for network patterns (kt=2 time bins, kf=3 freq bins)
             early_thresholds = (
                 {"select_subrho": setup["select_subrho"], "select_subnet": setup["select_subnet"]}
-                if _EARLY_CUTS and not return_rejected
+                if profile.coherence_early_cuts and not return_rejected
                 else {}
             )
-            c = cluster_pixels(candidates, kt=2, kf=3, **early_thresholds)
+            c = cluster_pixels(candidates, kt=2, kf=3, profile=profile, **early_thresholds)
             c.select("subrho", setup["select_subrho"])
             c.select("subnet", setup["select_subnet"])
         else:
             # Single-pixel clusters for non-network patterns
-            c = cluster_pixels(candidates, kt=1, kf=1)
+            c = cluster_pixels(candidates, kt=1, kf=1, profile=profile)
         t_cluster = time.perf_counter() - t0_cluster
 
         # Remove clusters rejected by statistical selection unless explicitly requested

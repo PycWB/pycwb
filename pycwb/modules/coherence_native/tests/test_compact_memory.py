@@ -1,5 +1,7 @@
 """Exact-value and storage-ownership contracts for compact coherence setup."""
 
+from pycwb.constants.execution_profile import ExecutionProfile
+
 from types import SimpleNamespace
 import numpy as np
 import pytest
@@ -42,10 +44,8 @@ def test_batch_output_bit_exact_for_both_transform_paths(monkeypatch, fallback, 
     monkeypatch.setattr(batch, "_LOW_LEVEL_T2W_JAX_IMPL", None if fallback else object())
     monkeypatch.setattr(batch, "_batch_t2w_impl", lambda *a: raw)
     monkeypatch.setattr(batch, "_batch_t2w_fallback", lambda *a: raw)
-    monkeypatch.setattr(batch, "_COMPACT_COHERENCE", False)
     expected, meta = batch.batch_t2w_detectors(strains, wavelet)
-    monkeypatch.setattr(batch, "_COMPACT_COHERENCE", True)
-    actual, other = batch.batch_t2w_detectors(strains, wavelet)
+    actual, other = batch.batch_t2w_detectors(strains, wavelet, profile=ExecutionProfile(compact_coherence=True))
     assert meta == other
     for a, b in zip(actual, expected):
         assert a.dtype == b.dtype and a.shape == b.shape

@@ -1,4 +1,3 @@
-import os
 import numpy as np
 from dataclasses import dataclass
 
@@ -487,7 +486,7 @@ class TimeFrequencyMap:
 
         return shape
 
-    def prepare_td_inputs(self, td_filters, *, frequency_bounds=None):
+    def prepare_td_inputs(self, td_filters, *, frequency_bounds=None, compact=False):
         """
         Build padded quadrature planes and filter tables for batch TD extraction.
 
@@ -516,7 +515,7 @@ class TimeFrequencyMap:
         M = int(td_filters.M)
         J = int(td_filters.max_delay)
 
-        if os.environ.get("PYCWB_COMPACT_TD_CACHE") == "1":
+        if compact:
             # Cast each quadrature directly into its final padded allocation.
             # The conversion is the same float64 -> float32 cast as below.
             n_time = data.shape[1]

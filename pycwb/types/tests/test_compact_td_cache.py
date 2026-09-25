@@ -1,5 +1,7 @@
 """Cache storage and lifetime changes must preserve every stored bit."""
 
+from pycwb.constants.execution_profile import ExecutionProfile
+
 from types import SimpleNamespace
 import numpy as np
 import pytest
@@ -38,10 +40,8 @@ def test_direct_padding_exact(monkeypatch, layout, padding, dtype):
         T0=rng.normal(size=(129, 2 * padding + 1)),
         Tx=rng.normal(size=(129, 2 * padding + 1)),
     )
-    monkeypatch.delenv("PYCWB_COMPACT_TD_CACHE", raising=False)
     a = tf.prepare_td_inputs(filters)
-    monkeypatch.setenv("PYCWB_COMPACT_TD_CACHE", "1")
-    b = tf.prepare_td_inputs(filters)
+    b = tf.prepare_td_inputs(filters, compact=True)
     check_equal(a, b)
     assert not np.shares_memory(data, b.padded00)
     assert not np.shares_memory(data, b.padded90)
@@ -53,9 +53,8 @@ def test_real_wdm_cache_exact(monkeypatch, level, up):
     rng = np.random.default_rng(87)
     config = SimpleNamespace(WDM_beta_order=6, WDM_precision=10, TDSize=12, nIFO=2)
     strains = [SimpleNamespace(data=rng.normal(size=32768), sample_rate=4096, t0=1000.0) for _ in range(2)]
-    monkeypatch.delenv("PYCWB_COMPACT_TD_CACHE", raising=False)
     ka, a = _build_td_inputs_single_level(level, config, strains, up)
-    monkeypatch.setenv("PYCWB_COMPACT_TD_CACHE", "1")
+    config.execution_profile = ExecutionProfile(compact_td_cache=True)
     kb, b = _build_td_inputs_single_level(level, config, strains, up)
     assert ka == kb
     for x, y in zip(a, b):

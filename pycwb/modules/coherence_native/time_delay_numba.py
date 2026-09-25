@@ -1,11 +1,11 @@
 """Numba implementation of WDM time-delay max-energy."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging
 import math
-import os
 
 import numpy as np
 from wdm_wavelet.wdm import t2w_numba as _wdm_t2w_numba
@@ -465,7 +465,7 @@ if _HAS_NUMBA:
         }
         if mode not in aliases:
             raise ValueError(
-                f"PYCWB_NUMBA_MAX_ENERGY_MODE must be one of {{'parallel', 'time-major', 'streaming'}} (got {mode!r})"
+                f"execution_profile.numba_max_energy_mode must be one of {{'parallel', 'time-major', 'streaming'}} (got {mode!r})"
             )
         return aliases[mode]
 
@@ -484,6 +484,7 @@ if _HAS_NUMBA:
         f_high,
         df,
         mode="parallel",
+        bounded=False,
     ):
         """Numba-accelerated time-delay max-energy loop (pattern path).
 
@@ -518,7 +519,7 @@ if _HAS_NUMBA:
         # ---- fully-JIT path (t2w_numba_core is njit-compiled, i.e. rocket-fft present) ----
         if _HAS_T2W_NUMBA_CORE:
             t2w_kernel = _wdm_t2w_numba_core
-            if os.environ.get("WDM_BOUNDED_NUMBA") == "1":
+            if bounded:
                 # An explicit dispatcher argument creates a distinct Numba
                 # specialization; an environment-dependent global alias would
                 # risk reusing cached code for the wrong kernel.
@@ -580,7 +581,7 @@ if _HAS_NUMBA:
             )
 
         # ---- fallback: Python-level t2w_numba wrapper per iteration ----
-        _, _, tf0 = _wdm_t2w_numba(wavelet_M, wavelet_m_H, ts_data, wavelet_filter, mm_mode)
+        _, _, tf0 = _wdm_t2w_numba(wavelet_M, wavelet_m_H, ts_data, wavelet_filter, mm_mode, bounded=bounded)
         re0 = np.ascontiguousarray(tf0[0])
         im0 = np.ascontiguousarray(tf0[1])
 
@@ -591,7 +592,7 @@ if _HAS_NUMBA:
         size = len(ts_data)
         while k <= int(max_delay) and k < size:
             xx[: size - k] = ts_data[k:]
-            _, _, tf_left = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
+            _, _, tf_left = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode, bounded=bounded)
             re_left = np.ascontiguousarray(tf_left[0])
             im_left = np.ascontiguousarray(tf_left[1])
             en_left = _wdm_packet_energy_nb(
@@ -610,7 +611,7 @@ if _HAS_NUMBA:
             current_max = np.maximum(current_max, en_left)
 
             xx[k:] = ts_data[: size - k]
-            _, _, tf_right = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode)
+            _, _, tf_right = _wdm_t2w_numba(wavelet_M, wavelet_m_H, xx, wavelet_filter, mm_mode, bounded=bounded)
             re_right = np.ascontiguousarray(tf_right[0])
             im_right = np.ascontiguousarray(tf_right[1])
             en_right = _wdm_packet_energy_nb(
@@ -648,7 +649,9 @@ else:
         raise RuntimeError(f"numba is required for the numba backend but is unavailable: {_NUMBA_IMPORT_ERROR}")
 
 
-def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, mode=None):
+def time_delay_max_energy_numba(
+    tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, mode=None, profile=DEFAULT_EXECUTION_PROFILE
+):
     """
     Numba-accelerated version of :func:`time_delay_max_energy`.
 
@@ -669,7 +672,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
     :param hist: optional list-like container to collect transformed samples
     :type hist: list | None
     :param mode: numba loop strategy, ``"parallel"``, ``"time-major"`` or ``"streaming"``.
-        Defaults to ``PYCWB_NUMBA_MAX_ENERGY_MODE`` or ``"parallel"``.
+        Defaults to the resolved execution profile (``"parallel"`` by default).
     :type mode: str | None
     :return: ``(new_tf_map, alp)``
     :rtype: tuple[TimeFrequencyMap, float]
@@ -679,7 +682,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
     if not pattern_int:
         # complex path — delegate to JAX implementation
         if _HAS_JAX:
-            return time_delay_max_energy(tf_map, dt, downsample=downsample, pattern=0, hist=hist)
+            return time_delay_max_energy(tf_map, dt, downsample=downsample, pattern=0, hist=hist, profile=profile)
         raise NotImplementedError(
             "time_delay_max_energy_numba: pattern=0 (complex path) requires JAX. "
             "Use pattern != 0 for the pure numba path."
@@ -716,7 +719,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
 
     wavelet_M = int(tf_map.wavelet.M)
     wavelet_m_H = int(tf_map.wavelet.m_H)
-    numba_mode = _normalize_numba_max_energy_mode(os.getenv("PYCWB_NUMBA_MAX_ENERGY_MODE") if mode is None else mode)
+    numba_mode = _normalize_numba_max_energy_mode(profile.numba_max_energy_mode if mode is None else mode)
 
     f_low, f_high = frequency_bounds(tf_map, n_freq)
 
@@ -736,6 +739,7 @@ def time_delay_max_energy_numba(tf_map: TimeFrequencyMap, dt, downsample=1, patt
         f_high,
         float(tf_map.df),
         mode=numba_mode,
+        bounded=profile.wdm_bounded_numba,
     )
 
     new_tf_map = dataclasses.replace(tf_map, data=current_max)

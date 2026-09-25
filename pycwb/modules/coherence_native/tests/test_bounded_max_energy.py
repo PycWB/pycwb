@@ -14,6 +14,5 @@ def test_bounded_max_energy_exact(monkeypatch, mode, M, pattern):
     outputs = []
     # Switch back in the same process to test both compiled specializations.
     for enabled in ["0", "1", "0"]:
-        monkeypatch.setenv("WDM_BOUNDED_NUMBA", enabled)
-        outputs.append(_time_delay_max_energy_pattern_nb(*args, mode=mode))
+        outputs.append(_time_delay_max_energy_pattern_nb(*args, mode=mode, bounded=enabled == "1"))
     assert outputs[0].tobytes() == outputs[1].tobytes() == outputs[2].tobytes()

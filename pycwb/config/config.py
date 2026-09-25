@@ -21,6 +21,7 @@ from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
 from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
+from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ class Config:
     * ``WDM_level`` – list of WDM resolution levels
     * ``dq_files`` – ``DQF`` rows converted to :class:`~pycwb.types.data_quality_file.DQFile` objects
     """
+
+    execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
 
     dq_files: List[DQFile] = field(default_factory=list)
 
@@ -203,6 +206,8 @@ class Config:
         for key in params:
             setattr(self, key, params[key])
 
+        self.execution_profile = resolve_execution_profile(self.execution_profile)
+
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
@@ -215,8 +220,8 @@ class Config:
 
         This is intended for restoring a :class:`Config` from a previously
         serialised (e.g. JSON-dumped) parameter dict.  No schema validation
-        or derived-field computation is performed – the dict values are applied
-        directly as attributes.
+        or derived-field computation is performed for analysis fields. The execution
+        profile is validated and resolved to an immutable snapshot.
 
         Path rebasing: if the stored ``filter_dir`` does not exist on the
         current machine (e.g. when a config serialised on the head node is
@@ -233,6 +238,8 @@ class Config:
         """
         for key in params:
             setattr(self, key, params[key])
+
+        self.execution_profile = resolve_execution_profile(self.execution_profile)
 
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.

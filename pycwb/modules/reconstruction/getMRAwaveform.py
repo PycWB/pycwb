@@ -5,6 +5,7 @@ When numba is available, the per-pixel base-wave computation and accumulation
 loop runs entirely inside @njit-compiled code.  When rocket-fft is also
 installed, the time-of-flight phase-shift correction is JIT-compiled too.
 """
+from pycwb.constants.execution_profile import wdm_options
 import logging
 import numpy as np
 from dataclasses import dataclass
@@ -93,7 +94,7 @@ def _create_wdm_set_python(config):
     beta_order = int(getattr(config, "WDM_beta_order", 6))
     precision = int(getattr(config, "WDM_precision", 10))
 
-    cache_key = (l_low, l_high, rate_ana, seg_edge, td_size, beta_order, precision)
+    cache_key = (l_low, l_high, rate_ana, seg_edge, td_size, beta_order, precision, tuple(wdm_options(config).items()))
     if cache_key in _wdm_set_cache:
         return _wdm_set_cache[cache_key]
 
@@ -102,7 +103,7 @@ def _create_wdm_set_python(config):
         level = l_high + l_low - i
         layers = max(1, 2 ** level)
 
-        wdm = WDMWavelet(M=layers, K=layers, beta_order=beta_order, precision=precision)
+        wdm = WDMWavelet(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
         wavelet_filter, m_h = _extract_wdm_filter_and_mh(wdm)
 
         wdm_f_len = float(m_h) / rate_ana

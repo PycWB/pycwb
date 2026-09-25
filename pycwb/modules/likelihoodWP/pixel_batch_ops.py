@@ -6,6 +6,7 @@ Provides drop-in replacements for the Python loops in:
   - ``_ensure_td_amp``         (fallback path when td_amp is missing)
 """
 
+from pycwb.constants.execution_profile import execution_profile, wdm_options
 import logging
 import numpy as np
 
@@ -152,6 +153,7 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, td_inputs_cache=None):
             M=lc, K=lc,
             beta_order=config.WDM_beta_order,
             precision=config.WDM_precision,
+            **wdm_options(config),
         )
         wdm.set_td_filter(int(config.TDSize), 1)
         tf_maps = []
@@ -176,7 +178,7 @@ def batch_ensure_td_amp(cluster, nIFO, strains, config, td_inputs_cache=None):
                 wavelet=wdm,
                 len_timeseries=len(strain.data),
             ))
-        td_inputs_per_ifo = [tf_maps[n].prepare_td_inputs(wdm.td_filters) for n in range(nIFO)]
+        td_inputs_per_ifo = [tf_maps[n].prepare_td_inputs(wdm.td_filters, compact=execution_profile(config).compact_td_cache) for n in range(nIFO)]
         wdm_contexts[lc] = {"td_inputs": td_inputs_per_ifo}
         wdm_contexts[lc + 1] = wdm_contexts[lc]
 

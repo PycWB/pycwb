@@ -1,3 +1,4 @@
+from pycwb.constants.execution_profile import execution_profile
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import faulthandler
@@ -307,7 +308,7 @@ def processor_wrapper(
         f"Processing job segment {job_seg.index} with {getpass.getuser()} on {multiprocessing.current_process()}"
     )
     try:
-        if os.environ.get("PYCWB_REQUIRE_GPU") == "1":
+        if execution_profile(config).require_gpu:
             import jax
 
             devices = jax.devices()
@@ -328,7 +329,7 @@ def processor_wrapper(
         logger.exception("Job segment %s failed", job_seg.index)
         return e
     finally:
-        if os.environ.get("PYCWB_REQUIRE_GPU") == "1":
+        if execution_profile(config).require_gpu:
             import json
             from pathlib import Path
             import jax

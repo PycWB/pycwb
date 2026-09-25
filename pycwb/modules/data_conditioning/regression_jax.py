@@ -7,7 +7,7 @@ single ``@jax.jit``-compiled call instead of a sequential Numba prange loop.
 
     The public entry point is ``regression_jax``, which has an identical interface
     to ``regression_python`` in ``regression.py`` but always enforces the JAX
-backend regardless of the ``PYCWB_REGRESSION_ENGINE`` environment variable.
+backend through an explicit copy of the execution profile.
 
 Key JAX components (all defined in regression.py and re-exported here)
 --------------------------------------------------------------------------
@@ -34,7 +34,9 @@ all device computation is complete before returning.
 """
 
 import logging
-import numpy as np
+from copy import copy
+from dataclasses import replace
+from pycwb.constants.execution_profile import execution_profile
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ def regression_jax(config, h):
     Run WDM regression with the JAX vmap backend unconditionally.
 
     This is a thin wrapper around ``regression_python`` that forces
-    ``REGRESSION_ENGINE='jax'`` via the config object without mutating the
+    ``execution_profile.regression_engine='jax'`` without mutating the
     original config.
 
     Parameters
@@ -61,20 +63,9 @@ def regression_jax(config, h):
     """
     from pycwb.modules.data_conditioning.regression import regression_python
 
-    class _JAXConfig:
-        """Proxy that forces REGRESSION_ENGINE='jax' without modifying config."""
-        def __init__(self, base):
-            self._base = base
-
-        def __getattr__(self, name):
-            if name == "REGRESSION_ENGINE":
-                return "jax"
-            return getattr(self._base, name)
-
-        def __hasattr__(self, name):
-            return hasattr(self._base, name)
-
-    return regression_python(_JAXConfig(config), h)
+    selected = copy(config)
+    selected.execution_profile = replace(execution_profile(selected), regression_engine="jax")
+    return regression_python(selected, h)
 
 
 __all__ = ["regression_jax"]

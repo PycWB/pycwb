@@ -1,5 +1,7 @@
 """Exact comparisons for opt-in coherence performance candidates."""
 
+from pycwb.constants.execution_profile import ExecutionProfile
+
 import dataclasses
 import numpy as np
 import pytest
@@ -95,9 +97,9 @@ def test_pipeline_early_cuts_preserve_rejected_contract(monkeypatch, return_reje
         select_subnet=0.1,
     )
     monkeypatch.setattr(pipeline, "select_network_pixels", lambda **kw: candidates)
-    monkeypatch.setattr(pipeline, "_EARLY_CUTS", False)
+    setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=False)
     reference = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
-    monkeypatch.setattr(pipeline, "_EARLY_CUTS", True)
+    setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=True)
     actual = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     assert_tree_equal(reference, actual)
     assert len(actual[0].clusters) == int(return_rejected)

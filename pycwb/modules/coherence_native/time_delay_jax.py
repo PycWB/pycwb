@@ -1,10 +1,10 @@
 """JAX implementation of WDM time-delay max-energy."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging
-import os
 from functools import partial
 
 import numpy as np
@@ -117,7 +117,7 @@ if _HAS_JAX:
 
         return (tf_map[0] + 1j * tf_map[1]).T
 
-    def _w2t_data_jax(data_complex, wavelet, output_length):
+    def _w2t_data_jax(data_complex, wavelet, output_length, profile=DEFAULT_EXECUTION_PROFILE):
         n_freq = int(data_complex.shape[0])
         flat = jnp.stack([jnp.real(data_complex).T, jnp.imag(data_complex).T], axis=0).reshape(-1)
         out = _wdm_w2t_jax(
@@ -125,8 +125,8 @@ if _HAS_JAX:
             n_freq,
             np.asarray(wavelet.filter),
             output_length=int(output_length),
-            **({"bounded": True} if os.environ.get("WDM_BOUNDED_JAX_INVERSE") == "1" else {}),
-            **({"deterministic": True} if os.environ.get("WDM_DETERMINISTIC_JAX_INVERSE") == "1" else {}),
+            **({"bounded": True} if profile.wdm_bounded_jax_inverse else {}),
+            **({"deterministic": True} if profile.wdm_deterministic_jax_inverse else {}),
         )
         return jnp.asarray(out, dtype=jnp.float64)
 
@@ -501,7 +501,9 @@ else:
         raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
 
-def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None):
+def time_delay_max_energy(
+    tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, profile=DEFAULT_EXECUTION_PROFILE
+):
     """
     Compute the delayed max-energy map for a TF series.
 
@@ -534,7 +536,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
     if getattr(tf_map, "ts_data", None) is not None:
         ts_data = jnp.asarray(tf_map.ts_data, dtype=jnp.float64)
     else:
-        ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts)
+        ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts, profile)
 
     data_shape = np.asarray(tf_map.data).shape
     n_freq = int(data_shape[0])
@@ -576,7 +578,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
             tuple(np.asarray(tf_map.data).shape),
             wdm_M,
             wdm_m_H,
-            bounded=os.environ.get("PYCWB_BOUNDED_JAX_MAX_ENERGY") == "1",
+            bounded=profile.bounded_jax_max_energy,
         )
 
         new_tf_map = dataclasses.replace(tf_map, data=np.asarray(current_max))
@@ -594,7 +596,7 @@ def time_delay_max_energy(tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0,
         wavelet_filter_jax,
         wdm_M,
         wdm_m_H,
-        bounded=os.environ.get("PYCWB_BOUNDED_JAX_MAX_ENERGY") == "1",
+        bounded=profile.bounded_jax_max_energy,
     )
 
     new_tf_map = dataclasses.replace(tf_map, data=np.asarray(max_complex))

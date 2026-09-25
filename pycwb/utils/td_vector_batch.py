@@ -20,8 +20,10 @@ Notes
   numpy arrays from the TF map before invoking the batch function.
 """
 
+from pycwb.constants.execution_profile import wdm_options
+from pycwb.constants.execution_profile import execution_profile
+
 import logging
-import os
 
 import numpy as np
 from pycwb.utils.td_vector_kernels import batch_get_td_vecs as batch_get_td_vecs
@@ -70,10 +72,11 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
         K=wdm_layers,
         beta_order=config.WDM_beta_order,
         precision=config.WDM_precision,
+        **wdm_options(config),
     )
     wdm.set_td_filter(int(config.TDSize), upTDF)
 
-    compact_cache = os.environ.get("PYCWB_COMPACT_TD_CACHE") == "1"
+    compact_cache = execution_profile(config).compact_td_cache
     detector_tf_maps = []
     per_ifo = []
     for n in range(config.nIFO):
@@ -97,7 +100,7 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
         )
         if compact_cache:
             bounds = None
-            if os.environ.get("PYCWB_BAND_TD_CACHE") == "1":
+            if execution_profile(config).band_td_cache:
                 # Selection stays within fLow/fHigh. Retain its neighboring
                 # frequency bands for the cross-band TD filter terms.
                 low = max(0, int(np.floor(float(getattr(config, "fLow", 0.0)) / wdm_tf.df)))
@@ -106,14 +109,14 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
                 )
                 if low < high:
                     bounds = (low, high)
-            per_ifo.append(tf_map.prepare_td_inputs(wdm.td_filters, frequency_bounds=bounds))
+            per_ifo.append(tf_map.prepare_td_inputs(wdm.td_filters, frequency_bounds=bounds, compact=True))
             # No previous detector's complex map remains live during t2w.
             del tf_map, wdm_tf
         else:
             detector_tf_maps.append(tf_map)
 
     if not compact_cache:
-        per_ifo = [detector_tf_maps[n].prepare_td_inputs(wdm.td_filters) for n in range(config.nIFO)]
+        per_ifo = [detector_tf_maps[n].prepare_td_inputs(wdm.td_filters, compact=False) for n in range(config.nIFO)]
     return wdm_layers, per_ifo
 
 

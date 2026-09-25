@@ -11,9 +11,9 @@ Legacy aliases ``threshold_cut``, ``fill_detection_statistic``,
 """
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
-import os
 from math import sqrt
 import time
 import numpy as np
@@ -241,7 +241,7 @@ def populate_detection_statistics(
     # To/Fo   = sSNR-weighted mean time / frequency over core pixels
 
     _t0 = time.perf_counter()
-    release_waveform_stats = os.getenv("PYCWB_RELEASE_WAVEFORM_STATS", "0") == "1"
+    release_waveform_stats = execution_profile(config).release_waveform_stats
     from .waveform_statistics import (
         waveform_rms,
         waveform_time,
@@ -636,7 +636,7 @@ def compute_sky_error_region(cluster: Cluster, skymap_statistics=None, sky_stati
     mo = int(np.count_nonzero(sky_statistics.pixel_mask > 0))
     chi2 = float(skymap_statistics.nDisbalance[detection_index])
     scale = float(cluster.cluster_meta.norm) / 2.0 * float(sky_statistics.Rc) * np.sqrt(mo) * (1.0 + abs(1.0 - chi2))
-    if os.getenv("PYCWB_RELEASE_WAVEFORM_STATS", "0") == "1":
+    if execution_profile(config).release_waveform_stats:
         from .waveform_statistics import sky_scale
 
         scale = sky_scale(cluster.cluster_meta.norm / 2.0, sky_statistics.Rc, mo, chi2)

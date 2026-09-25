@@ -1,9 +1,9 @@
 """Connected-component clustering for selected coherence pixels."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 import logging
-import os
 import time
 
 import numpy as np
@@ -16,8 +16,6 @@ from .run_clustering import label_components_runs
 from .veto_threshold import _igamma_inv_upper
 
 logger = logging.getLogger(__name__)
-_PERF_DIAGNOSTICS = os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1"
-_RUN_CONNECTIVITY = os.environ.get("PYCWB_CLUSTER_RUNS") == "1"
 
 
 def cluster_pixels(
@@ -26,6 +24,7 @@ def cluster_pixels(
     kf: int = 1,
     select_subrho: float | None = None,
     select_subnet: float | None = None,
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> FragmentCluster:
     """
     Cluster selected pixels using connected-component analysis.
@@ -82,10 +81,10 @@ def cluster_pixels(
     else:
         # --- Connected-components labeling with rectangular (kf, kt) connectivity ---
         # Two pixels are directly connected if |Δfreq| ≤ kf AND |Δtime| ≤ kt.
-        timer = time.perf_counter() if _PERF_DIAGNOSTICS else 0.0
-        label = label_components_runs if _RUN_CONNECTIVITY else _label_components_grid
+        timer = time.perf_counter() if profile.perf_diagnostics else 0.0
+        label = label_components_runs if profile.cluster_runs else _label_components_grid
         raw_labels = label(f_idx_arr, t_idx_arr, mask.shape[0], mask.shape[1], kf, kt)
-        if _PERF_DIAGNOSTICS:
+        if profile.perf_diagnostics:
             label_elapsed = time.perf_counter() - timer
             timer = time.perf_counter()
 
@@ -94,7 +93,7 @@ def cluster_pixels(
         for pix_idx, lbl in enumerate(raw_labels):
             if lbl > 0:
                 group_list[int(lbl) - 1].append(pix_idx)
-        if _PERF_DIAGNOSTICS:
+        if profile.perf_diagnostics:
             group_elapsed = time.perf_counter() - timer
             timer = time.perf_counter()
 
@@ -112,7 +111,7 @@ def cluster_pixels(
         else:
             subnet_arr = np.zeros(n_groups, dtype=np.float64)
             subrho_arr = np.zeros(n_groups, dtype=np.float64)
-        if _PERF_DIAGNOSTICS:
+        if profile.perf_diagnostics:
             stats_elapsed = time.perf_counter() - timer
             timer = time.perf_counter()
 
@@ -153,10 +152,10 @@ def cluster_pixels(
                 c_freq=c_freq,
             )
             clusters.append(Cluster(pixel_arrays=pixel_arrays, cluster_meta=cluster_meta))
-        if _PERF_DIAGNOSTICS:
+        if profile.perf_diagnostics:
             objects_elapsed = time.perf_counter() - timer
 
-    if _PERF_DIAGNOSTICS:
+    if profile.perf_diagnostics:
         cluster_sizes = [len(c.pixel_arrays) for c in clusters]
         logger.info(
             "PERF clustering layers=%d grid_freq=%d grid_time=%d candidates=%d "

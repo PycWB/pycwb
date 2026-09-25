@@ -22,7 +22,7 @@ No pipeline catalog, throughput, peak-memory benchmark or GPU validation was rer
 ## Remaining manual decisions
 
 - **Q1 (completed 25 September):** The scans now share one compiled group-based kernel, and allocating numerical helpers delegate to their `*_into` implementations. Grouping defaults on with an explicit singleton opt-out. See [implementation, independent regression evidence and performance limits](unified_sky_scan.md).
-- **Q2:** Whether to replace import-time and call-time environment switches with an immutable setup profile. That changes configuration semantics and requires a migration plan.
+- **Q2 (completed 25 September):** Native execution settings now use a validated, immutable YAML profile recorded in catalog metadata. See [defaults, migration and scope](execution_profile.md).
 - **Q3:** Whether to enforce immutable delay grids or add explicit cache invalidation. The existing identity-based contract is now documented; no mutation policy was silently imposed.
 - **Q5:** Whether to introduce explicit coarse/fine TD types or choose the simpler full-fine path. Stage lifecycle and frequency-offset contracts are documented, while the existing guarded staged behavior remains.
 - Scientific, backend and experimental choices in the original ledger remain available for review. Completing code cleanup is not approval to enable a new default.

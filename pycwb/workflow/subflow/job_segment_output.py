@@ -1,8 +1,9 @@
 """Output-finalization helpers for native job-segment processing."""
 
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+
 import gc
 import logging
-import os
 import time
 
 import psutil
@@ -272,7 +273,7 @@ def _log_lag_completion(result) -> None:
     logger.info("-------------------------------------------")
 
 
-def _cleanup_lag_output_state(*, release_jax: bool = True) -> None:
+def _cleanup_lag_output_state(*, release_jax: bool = True, profile=DEFAULT_EXECUTION_PROFILE) -> None:
     """Collect short-lived cycles, periodically scanning the full object graph.
 
     Completed outputs are serialized by one thread per job worker. Keep normal
@@ -282,7 +283,7 @@ def _cleanup_lag_output_state(*, release_jax: bool = True) -> None:
     device runtime merely to collect their Python heap.
     """
     global _cleanup_count, _last_full_collection_rss
-    interval = int(os.environ.get("PYCWB_GC_FULL_INTERVAL", "1"))
+    interval = profile.gc_full_interval
     if interval <= 1:
         gc.collect()
         if release_jax:
@@ -298,5 +299,5 @@ def _cleanup_lag_output_state(*, release_jax: bool = True) -> None:
     collected = gc.collect(2 if full else 0)
     if full:
         _last_full_collection_rss = psutil.Process().memory_info().rss
-    if os.environ.get("PYCWB_PERF_DIAGNOSTICS") == "1":
+    if profile.perf_diagnostics:
         logger.info("PERF gc full=%d collected=%d rss=%d", full, collected, rss)
