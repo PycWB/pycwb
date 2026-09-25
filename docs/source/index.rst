@@ -81,6 +81,7 @@ PycWB is a modular Python implementation of the coherent WaveBurst
    User Parameters <schema>
    Coordinate Systems <coordinate_systems>
    Units and Conventions <units_conventions>
+   Detector Support and Geometry <detector_support>
    glossary
 
 .. toctree::
