@@ -24,6 +24,7 @@ from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
 from .detector_definitions import load_detector_definitions, restore_detector_registry
+from .provenance import snapshot_yaml_parameters
 from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
 from ..constants.gpu_options import GPUOptions, resolve_gpu_options
 
@@ -241,6 +242,9 @@ class Config:
         # and merges/replaces the default schema before validation (see
         # yaml_helper.resolve_schema for the supported modes and format).
         params = load_yaml(file_name, schema)
+        # Preserve the validated YAML settings before derived values and CLI
+        # overrides mutate the runtime config. Catalogs serialize this snapshot.
+        self._yaml_parameters = snapshot_yaml_parameters(params, file_name)
 
         # JSON Schema cannot validate Astropy quantity dimensionality or infer
         # a coordinate frame from semantic key names.  Perform that physical

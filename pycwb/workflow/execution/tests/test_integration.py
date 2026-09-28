@@ -5,7 +5,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
+from pycwb.config import Config
 from pycwb.modules.catalog.catalog import Catalog
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
@@ -16,28 +18,24 @@ from pycwb.workflow.execution.tests.test_execution import config, job
 from pycwb.workflow.subflow.prepare_job_runs import load_batch_run
 
 
+@pytest.fixture(autouse=True)
+def no_xtalk_download(monkeypatch):
+    # Scheduling tests exercise YAML loading without a scientific data catalog.
+    monkeypatch.setattr(Config, "check_xtalk_file", staticmethod(lambda path: None))
+    monkeypatch.setattr(Config, "check_MRA_catalog", lambda self: None)
+
+
 def setup_run(path):
-    cfg = config(batch_size=2)
-    from dataclasses import fields
-
-    from pycwb.config import Config
-
-    for field in fields(Config):
-        if not field.init:
-            setattr(cfg, field.name, None)
-    cfg.outputDir, cfg.logDir, cfg.catalog_dir, cfg.trigger_dir = (
-        "output",
-        "log",
-        "catalog",
-        "trigger",
-    )
-    cfg.filter_dir, cfg.wdmXTalk = "", ""
+    parameters = vars(config(batch_size=2))
+    parameters.update(analysis="2G", ifo=["H1", "L1"], refIFO="H1")
     jobs = [job(10, "a.gwf"), job(20, "b.gwf"), job(30, "a.gwf")]
     (path / "catalog").mkdir(parents=True)
     for directory in ("config", "input", "wdmXTalk", "job_status", "log"):
         (path / directory).mkdir(exist_ok=True)
     source = path / "config" / "user_parameters.yaml"
-    source.write_text("{}\n")
+    source.write_text(yaml.safe_dump(parameters))
+    cfg = Config()
+    cfg.load_from_yaml(source)
     Catalog.create(str(path / "catalog" / "catalog.parquet"), cfg, jobs)
     settings = ExecutionSettings.from_config(cfg)
     plan = prepare_plan(jobs, cfg, settings)
@@ -99,12 +97,13 @@ def test_condor_transfer_fragments_are_self_contained(tmp_path, monkeypatch):
     submit = (source_run / "condor" / "pycwb_batch.sub").read_text()
     assert "catalog_$(batch_id).parquet" in submit
     assert "catalog_$(jobs).parquet" not in submit
+    assert f"{source_run}/config" in submit
     subprocess.run(["bash", "-n", str(source_run / "condor" / "run.sh")], check=True)
     execute = tmp_path / "execute"
     (execute / "catalog" / "fragment").mkdir(parents=True)
     (execute / "config").mkdir()
     source = execute / "config" / "user_parameters.yaml"
-    source.write_text("{}\n")
+    shutil.copyfile(source_run / "config" / "user_parameters.yaml", source)
     shutil.copyfile(
         source_run / "catalog" / "fragment" / "catalog_b000000.parquet",
         execute / "catalog" / "fragment" / "catalog_b000000.parquet",
@@ -116,6 +115,14 @@ def test_condor_transfer_fragments_are_self_contained(tmp_path, monkeypatch):
     assert [j.index for j in selected] == [10, 30]
     assert not (execute / "execution-plan.json").exists()
     assert not (execute / "catalog" / "catalog.parquet").exists()
+    parameters = yaml.safe_load(source.read_text())
+    parameters["fLow"] = 42
+    source.write_text(yaml.safe_dump(parameters))
+    with pytest.raises(ValueError, match="Changed settings: fLow"):
+        load_batch_run(str(execute), str(source), None, batch_id="b000000")
+    source.unlink()
+    with pytest.raises(FileNotFoundError):
+        load_batch_run(str(execute), str(source), None, batch_id="b000000")
 
 
 def test_condor_rejects_basename_collisions(tmp_path):
@@ -139,3 +146,200 @@ def test_cli_accepts_execution_batch():
         parser.parse_args(["config.yaml", "--batch-id", "b000000"]).batch_id
         == "b000000"
     )
+
+
+@pytest.mark.parametrize("entry", ["prepare", "batch"])
+def test_yaml_mismatch_fails_before_writing(tmp_path, monkeypatch, entry):
+    from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
+
+    _, _, _, source = setup_run(tmp_path)
+    original_catalog = (tmp_path / "catalog/catalog.parquet").read_bytes()
+    parameters = yaml.safe_load(source.read_text())
+    parameters["fLow"] = 42
+    source.write_text(yaml.safe_dump(parameters))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="Changed settings: fLow.*regenerate"):
+        if entry == "prepare":
+            prepare_job_runs(str(tmp_path), str(source), overwrite=True)
+        else:
+            load_batch_run(str(tmp_path), str(source), "10")
+    assert (tmp_path / "catalog/catalog.parquet").read_bytes() == original_catalog
+    assert not (tmp_path / "catalog/fragment").exists()
+    assert not (tmp_path / "output").exists()
+
+
+def test_batch_uses_yaml_and_allows_cli_overrides(tmp_path, monkeypatch):
+    import orjson
+    import pyarrow.parquet as pq
+
+    _, _, _, source = setup_run(tmp_path)
+    path = tmp_path / "catalog/catalog.parquet"
+    table = pq.read_table(path)
+    metadata = dict(table.schema.metadata)
+    stored = orjson.loads(metadata[b"config"])
+    # Runtime metadata may contain overrides; only the YAML snapshot is checked.
+    stored["fLow"] = -123
+    metadata[b"config"] = orjson.dumps(stored)
+    pq.write_table(table.replace_schema_metadata(metadata), path)
+    source.write_text("# Formatting-only change\n" + source.read_text())
+    monkeypatch.chdir(tmp_path)
+    _, cfg, _, _ = load_batch_run(str(tmp_path), str(source), "10", n_proc=7)
+    assert cfg.fLow == cfg._yaml_parameters["fLow"]
+    assert cfg.nproc == 7
+    assert cfg._yaml_parameters["nproc"] == 1
+    # A fragment made with CLI overrides remains compatible on resume.
+    _, cfg, _, _ = load_batch_run(str(tmp_path), str(source), "10", n_proc=3)
+    assert cfg.nproc == 3
+
+
+def test_changed_fragment_rejected_even_when_root_matches(tmp_path, monkeypatch):
+    cfg, jobs, _, source = setup_run(tmp_path)
+    cfg._yaml_parameters["fLow"] = 42
+    fragment = tmp_path / "catalog/fragment/catalog_10.parquet"
+    fragment.parent.mkdir()
+    Catalog.create(str(fragment), cfg, jobs[:1], jobs_in_metadata=True)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="catalog_10.parquet.*Changed settings: fLow"):
+        load_batch_run(str(tmp_path), str(source), "10")
+
+
+def test_legacy_catalog_requires_regeneration(tmp_path, monkeypatch):
+    from pycwb.workflow.subflow.config_consistency import validate_run_config
+
+    cfg, jobs, _, source = setup_run(tmp_path)
+    del cfg._yaml_parameters
+    path = tmp_path / "catalog/catalog.parquet"
+    path.unlink()
+    Catalog.create(str(path), cfg, jobs)
+    with pytest.raises(ValueError, match="no YAML snapshot.*regenerate"):
+        validate_run_config(source, tmp_path)
+
+
+def test_orphan_manifest_requires_regeneration(tmp_path):
+    from pycwb.workflow.subflow.config_consistency import validate_run_config
+
+    _, _, _, source = setup_run(tmp_path)
+    (tmp_path / "catalog/catalog.parquet").unlink()
+    with pytest.raises(ValueError, match="orphaned Parquet.*regenerate"):
+        validate_run_config(source, tmp_path)
+
+
+def test_staging_replaces_yaml_and_embeds_external_schema(tmp_path, monkeypatch):
+    from pycwb.modules.workflow_utils.job_setup import create_output_directory
+    from pycwb.constants import user_parameters_schema
+    from pycwb.utils.yaml_helper import load_yaml
+
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    source = source_dir / "parameters.yaml"
+    source.write_text("analysis: 2G\nifo: [H1, L1]\nrefIFO: H1\n")
+    work = tmp_path / "run"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    args = (str(work), "output", "log", "catalog", "trigger", str(source))
+    create_output_directory(*args)
+    original = source.read_text()
+    (source_dir / "schema.yaml").write_text("tag: {type: string, default: example}\n")
+    source.write_text(original + "pycwb_schema: {schema_file: schema.yaml}\n")
+    expected = load_yaml(source, user_parameters_schema)
+    create_output_directory(*args)
+    staged = work / "config/user_parameters.yaml"
+    shutil.rmtree(source_dir)
+    assert load_yaml(staged, user_parameters_schema) == expected
+    backups = list((work / "config").glob("user_parameters_old_*.yaml"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == original
+
+
+@pytest.mark.parametrize("reference", ["relative", "absolute", "parent"])
+def test_custom_detector_files_survive_staging_and_transfer(tmp_path, monkeypatch, reference):
+    import importlib
+
+    preparation = importlib.import_module("pycwb.workflow.subflow.prepare_job_runs")
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    definitions = inputs / "detectors.json"
+    document = {"schema_version": 1, "geometries": {
+        "X1:custom": {"detector": "X1", "parameters": {
+            "name": "Example", "lat": 0.0, "lon": 0.0, "elevation": 0.0,
+            "x": {"az": 0.0, "alt": 0.0, "midpoint": 2000.0},
+            "y": {"az": 1.5707963267948966, "alt": 0.0, "midpoint": 2000.0},
+        }}
+    }}
+    definitions.write_text(json.dumps(document))
+    source = inputs / "parameters.yaml"
+    definitions_ref = "detectors.json"
+    if reference == "absolute":
+        definitions_ref = str(definitions)
+    elif reference == "parent":
+        (inputs / "nested").mkdir()
+        source = inputs / "nested/parameters.yaml"
+        definitions_ref = "../detectors.json"
+    source.write_text(yaml.safe_dump({
+        "analysis": "2G", "ifo": ["H1", "X1"], "refIFO": "H1",
+        "detector_definitions_file": definitions_ref,
+        "detector_geometry": {"X1": "X1:custom"},
+    }))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(preparation, "create_job_segment_from_config", lambda cfg: [job(10, "a.gwf")])
+    work = tmp_path / "run"
+    _, original_cfg, _ = preparation.prepare_job_runs(str(work), str(source))
+    staged = work / "config/user_parameters.yaml"
+    staged_params = yaml.safe_load(staged.read_text())
+    assert not Path(staged_params["detector_definitions_file"]).is_absolute()
+    assert (staged.parent / staged_params["detector_definitions_file"]).read_bytes() == definitions.read_bytes()
+    # Preparing again from the original YAML compares the same content identity.
+    preparation.prepare_job_runs(str(work), str(source), overwrite=True)
+    assert not list(staged.parent.glob("user_parameters_old_*.yaml"))
+    _, _, _, fragment = load_batch_run(str(work), str(staged), "10")
+
+    execute = tmp_path / "execute"
+    shutil.copytree(work / "config", execute / "config")
+    (execute / "catalog/fragment").mkdir(parents=True)
+    shutil.copyfile(fragment, execute / "catalog/fragment/catalog_10.parquet")
+    shutil.rmtree(inputs)
+    shutil.rmtree(work)
+    transferred = execute / "config/user_parameters.yaml"
+    selected, cfg, _, _ = load_batch_run(str(execute), str(transferred), "10")
+    assert [segment.index for segment in selected] == [10]
+    assert cfg.get_detector("X1").geometry_model == "custom"
+    assert cfg._yaml_parameters == original_cfg._yaml_parameters
+    assert cfg.detector_definitions_provenance["sha256"] == original_cfg.detector_definitions_provenance["sha256"]
+
+    # Editing the transferred dependency must fail even when YAML is unchanged.
+    document["geometries"]["X1:custom"]["parameters"]["lat"] = 0.1
+    (transferred.parent / cfg.detector_definitions_file).write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="Changed settings: detector_definitions_file"):
+        load_batch_run(str(execute), str(transferred), "10")
+
+
+@pytest.mark.parametrize("entry", ["prepare", "batch"])
+@pytest.mark.parametrize("field", ["execution_profile", "gpu"])
+def test_recorded_effective_profile_guard_is_preserved(tmp_path, monkeypatch, entry, field):
+    import orjson
+    import pyarrow.parquet as pq
+    from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
+
+    _, _, _, source = setup_run(tmp_path)
+    path = tmp_path / "catalog/catalog.parquet"
+    table = pq.read_table(path)
+    metadata = dict(table.schema.metadata)
+    stored = orjson.loads(metadata[b"config"])
+    # YAML still matches its snapshot; the effective recorded settings do not.
+    if field == "gpu":
+        stored[field]["likelihood"] = True
+    else:
+        stored[field]["sky_delay_reuse"] = not stored[field]["sky_delay_reuse"]
+    metadata[b"config"] = orjson.dumps(stored)
+    pq.write_table(table.replace_schema_metadata(metadata), path)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="differ.*existing catalog"):
+        if entry == "prepare":
+            # The effective-profile guard follows segment construction.
+            import importlib
+            module = importlib.import_module("pycwb.workflow.subflow.prepare_job_runs")
+            monkeypatch.setattr(module, "create_job_segment_from_config", lambda cfg: [])
+            prepare_job_runs(str(tmp_path), str(source), overwrite=True)
+        else:
+            load_batch_run(str(tmp_path), str(source), "10")
+    assert not (tmp_path / "output").exists()

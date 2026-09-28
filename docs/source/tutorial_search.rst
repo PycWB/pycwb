@@ -84,6 +84,22 @@ generates job segments, and creates the root catalog.
    )
 
 The user-parameter YAML is loaded into :py:class:`pycwb.config.Config`.
+Both local runs and batch workers use YAML as the runtime configuration.
+The staged ``config/user_parameters.yaml`` is included in Condor file transfers;
+external ``pycwb_schema`` definitions are embedded in that copy. Custom detector
+definition JSON files are copied alongside it and referenced by a relative path.
+
+Before reusing prepared jobs, the YAML settings are compared with a snapshot
+in the existing catalog's Parquet metadata. Defaults are included; comments,
+formatting and key order do not matter. CLI overrides are applied separately.
+A mismatch stops the run and reports the changed settings, even with
+``--overwrite``. Use a new working directory, or clean the existing catalog,
+job manifest, progress and fragment Parquet files and regenerate the run.
+Older catalogs without a YAML snapshot also require regeneration because their
+metadata mixes YAML values, derived fields and runtime overrides.
+Custom detector definitions are checked by content hash, so moving their files
+does not invalidate a run but changing their contents does. Other referenced data
+files are not hashed; changed input data requires regenerating the prepared jobs.
 
 .. code-block:: python
 

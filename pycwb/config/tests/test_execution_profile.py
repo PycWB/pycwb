@@ -217,6 +217,9 @@ def test_run_setup_checks_profile_before_replacing_saved_yaml(tmp_path, monkeypa
         config.outputDir = "output"
 
     monkeypatch.setattr(Config, "load_from_yaml", load)
+    # This test isolates the effective-profile guard; YAML snapshot checks have
+    # separate integration coverage with real configuration and Parquet files.
+    monkeypatch.setattr(module, "validate_run_config", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "create_job_segment_from_config", lambda config: [])
     monkeypatch.setattr(module, "read_catalog_metadata", lambda path: {"config": recorded})
 

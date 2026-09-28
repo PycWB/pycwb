@@ -116,12 +116,7 @@ class TestCreateOutputDirectory:
                 assert "my_param: 42" in f.read()
 
     def test_existing_config_with_different_file_backs_up(self):
-        """When config/user_parameters.yaml differs, old file is renamed.
-
-        Note: the current implementation renames the old file but does NOT
-        copy the new file into place — it only copies when no config file
-        exists yet. This test reflects actual source behaviour.
-        """
+        """A changed config backs up the old file and stages the new one."""
         with tempfile.TemporaryDirectory() as tmp:
             working_dir = tmp
             output_dir = os.path.join(tmp, "output")
@@ -152,6 +147,6 @@ class TestCreateOutputDirectory:
             # Old file should be backed up (renamed with timestamp)
             backups = [f for f in files if f.startswith("user_parameters_old_")]
             assert len(backups) == 1
-            # FIXME: source currently does not copy the new file after moving
-            # old one — only copies when no config exists yet.
-            # assert "user_parameters.yaml" in files
+            assert "user_parameters.yaml" in files
+            with open(os.path.join(config_dir, "user_parameters.yaml")) as f:
+                assert f.read() == "version: 2\n"

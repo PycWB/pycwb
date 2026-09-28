@@ -222,7 +222,7 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             # Transfer only this job's own catalog and progress fragments.
             # catalog_$(jobs).parquet  — created by prepare_job_runs before submission;
             #                            the job opens it and appends triggers to it.
-            #                            also serves as the config metadata source so
+            #                            also carries config provenance so
             #                            the root catalog.parquet does not need to be transferred.
             # progress_$(jobs).parquet — read by get_completed_lags for per-lag resume;
             #                            empty stubs are pre-created below so HTCondor can

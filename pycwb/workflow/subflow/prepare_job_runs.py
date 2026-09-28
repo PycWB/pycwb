@@ -6,7 +6,7 @@ import logging
 from typing import List
 from dacite import from_dict, Config as DaciteConfig
 from jinja2 import Template 
-from pycwb.constants.execution_profile import check_recorded_execution_profile, recorded_execution_profile
+from pycwb.constants.execution_profile import check_recorded_execution_profile
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog, read_catalog_metadata
 from pycwb.modules.job_segment import create_job_segment_from_config
@@ -14,6 +14,7 @@ from pycwb.modules.workflow_utils.job_setup import create_working_directory, \
     check_if_output_exists, create_output_directory
 from pycwb.types.job import WaveSegment
 from pycwb.utils.parser import parse_id_string, parse_vars
+from .config_consistency import validate_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,8 @@ def prepare_job_runs(working_dir: str, config_file: str, n_proc: int = 1,
     if config_vars is not None:
         file_name = generate_config(file_name, config_vars)
 
+    validate_run_config(file_name, working_dir)
+
     # read user parameters
     config = Config()
     config.load_from_yaml(file_name)
@@ -146,24 +149,18 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
 
     os.chdir(working_dir)
 
-    # check_MRACatalog_setting()
-
-    # # TODO: should it be loaded from the catalog?
-    # config = Config()
-    # config.load_from_yaml(file_name)
-
-    # config = overwrite_config(config, n_proc=n_proc,
-    #                           compress_output_json=compress_json)
-
-    # # TODO: load job segments from catalog
-    # job_segments = create_job_segment_from_config(config)
+    # YAML is the runtime source of truth. Metadata is provenance and stores
+    # the prepared job selection; it must never silently override the YAML.
+    validate_run_config(file_name, working_dir, fragment_id=batch_id or jobs)
+    config = Config()
+    config.load_from_yaml(file_name)
 
     # Prefer the root catalog for metadata; fall back to the per-job fragment when
     # only that file is present (file-transfer / container mode: the scheduler
     # transfers catalog_$(jobs).parquet but not catalog.parquet).
-    default_catalog_path = f'catalog/{Catalog.DEFAULT_FILENAME}'
+    default_catalog_path = f'{config.catalog_dir}/{Catalog.DEFAULT_FILENAME}'
     fragment_id = batch_id or jobs
-    per_job_catalog_path = f'catalog/fragment/catalog_{fragment_id}{Catalog.DEFAULT_EXTENSION}'
+    per_job_catalog_path = f'{config.catalog_dir}/fragment/catalog_{fragment_id}{Catalog.DEFAULT_EXTENSION}'
     if batch_id is not None and os.path.exists(per_job_catalog_path):
         catalog_meta_file = per_job_catalog_path
     elif os.path.exists(default_catalog_path):
@@ -179,10 +176,8 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
             f"Catalog metadata not found: tried {default_catalog_path} and {per_job_catalog_path}"
         )
     catalog = read_catalog_metadata(catalog_meta_file)
-    config = Config()
-    recorded_execution_profile(catalog['config'])
-    config.load_from_dict(catalog['config'])
-    logger.info(f"Loaded config from catalog: {config}")
+    check_recorded_execution_profile(config, catalog['config'])
+    logger.info("Loaded config from YAML: %s", file_name)
     job_segments = catalog['jobs']
     logger.info(f"Loaded {len(job_segments)} job segments from catalog")
 
