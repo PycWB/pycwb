@@ -1,7 +1,7 @@
 """Regression against cWB's analysis-rate subnet delay table."""
 
 from pathlib import Path
-from types import SimpleNamespace
+from pycwb.config import Config
 
 import numpy as np
 import pytest
@@ -12,7 +12,7 @@ REFERENCE = Path(__file__).with_name("subnet_grid_reference.npz")
 
 
 def config(upsampling, healpix):
-    return SimpleNamespace(
+    return _config(
         ifo=["L1", "H1"],
         refIFO="L1",
         rateANA=4096,
@@ -45,3 +45,9 @@ def test_likelihood_keeps_fine_delay_grid():
         np.testing.assert_array_equal(setup["ml_likelihood"], data["native_likelihood_delays"])
     assert np.any(setup["ml_likelihood"] % 4 != 0)
     assert setup["K_td"] == 165
+
+
+def _config(**kwargs):
+    result = Config()
+    result.load_from_dict(kwargs)
+    return result

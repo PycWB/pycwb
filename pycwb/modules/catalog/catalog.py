@@ -115,9 +115,10 @@ def _jobs_to_serialisable(jobs: list) -> list:
 def _build_schema_metadata(config: Config, jobs: list | None = None,
                            *, jobs_in_metadata: bool = False) -> dict:
     execution_profile(config)
+    config_data = config.to_dict() if hasattr(config, "to_dict") else vars(config)
     metadata = {
         b"pycwb_version": pycwb.__version__.encode(),
-        b"config": orjson.dumps(config.__dict__, option=orjson.OPT_SERIALIZE_NUMPY),
+        b"config": orjson.dumps(config_data, option=orjson.OPT_SERIALIZE_NUMPY),
     }
     if jobs_in_metadata:
         metadata[b"jobs"] = orjson.dumps(

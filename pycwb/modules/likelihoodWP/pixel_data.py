@@ -118,7 +118,7 @@ def build_sky_delay_and_antenna_patterns(
     _upTDF_lh = int(getattr(config, "upTDF", 1))
     _TDRate_lh = int(getattr(config, "TDRate", int(getattr(config, "rateANA")) * _upTDF_lh))
     sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = compute_sky_delay_and_patterns(
-        ifos=getattr(config, "ifo"),
+        detectors=config.detectors,
         ref_ifo=getattr(config, "refIFO"),
         sample_rate=float(_TDRate_lh),
         td_size=max(
@@ -127,7 +127,6 @@ def build_sky_delay_and_antenna_patterns(
         gps_time=gps_time,
         healpix_order=int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None,
         n_sky=None,
-        geometry_model=getattr(config, "detector_geometry", "lal"),
     )
     return sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns
 

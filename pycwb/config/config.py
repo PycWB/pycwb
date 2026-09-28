@@ -9,6 +9,7 @@ for details.
 """
 
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import List, Dict, Optional, Any
 import os.path
 import logging
@@ -22,6 +23,7 @@ from ..utils.yaml_helper import load_yaml
 from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
+from .detector_definitions import load_detector_definitions, restore_detector_registry
 from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
 
 logger = logging.getLogger(__name__)
@@ -142,11 +144,56 @@ class Config:
     cfg_search: Optional[Any] = None
     ifo: List[str] = field(default_factory=list)
     detector_geometry: Dict[str, str] = field(default_factory=dict)
+    detector_definitions_file: Optional[str] = None
+    detector_registry: Optional[Dict[str, Any]] = None
+    detector_definitions_provenance: Dict[str, Any] = field(default_factory=dict)
     DQF: List[List[Any]] = field(default_factory=list)
     upTDF: Optional[int] = None
     segEdge: Optional[float] = None
     segMLS: Optional[float] = None
     xgb_rho_mode: bool = False
+
+    # Runtime caches are not dataclass fields and are excluded by to_dict().
+    _detectors = ()
+    _detectors_by_name = None
+
+    @property
+    def detectors(self):
+        """Detector instances in ``ifo`` order, constructed when config is loaded.
+
+        Treat these shared instances as read-only during an analysis. Reload the
+        configuration to change its geometry.
+        """
+        return self._detectors
+
+    def get_detector(self, name):
+        """Return the existing instance for an active instrument."""
+        try:
+            return (self._detectors_by_name or {})[name]
+        except KeyError:
+            raise ValueError(f"Detector {name!r} is not active in this configuration") from None
+
+    def get_detectors(self, names=None):
+        """Return shared instances in the requested order (all IFOs by default)."""
+        return self.detectors if names is None else tuple(self.get_detector(name) for name in names)
+
+    def _initialize_detectors(self):
+        from ..types.detector import Detector
+
+        detectors = tuple(
+            Detector(name, geometry_model=self.detector_geometry, geometry_registry=self.detector_registry)
+            for name in self.ifo
+        )
+        self._detectors = detectors
+        self._detectors_by_name = {detector.name: detector for detector in detectors}
+
+    def to_dict(self):
+        """Copy serializable configuration, excluding runtime detector instances.
+
+        The saved registry and geometry IDs reconstruct instances on workers.
+        """
+        return deepcopy({key: value for key, value in vars(self).items()
+                         if key not in ("_detectors", "_detectors_by_name")})
 
     def load_from_yaml(self, file_name, schema=None):
         """
@@ -205,10 +252,17 @@ class Config:
         )
 
         for key in params:
-            setattr(self, key, params[key])
+            if key not in ("_detectors", "_detectors_by_name"):
+                setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
-        self.detector_geometry = resolve_detector_geometries(self.ifo, self.detector_geometry)
+        self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(
+            self.detector_definitions_file, file_name
+        )
+        self.detector_geometry = resolve_detector_geometries(
+            self.ifo, self.detector_geometry, registry=self.detector_registry
+        )
+        self._initialize_detectors()
 
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
@@ -223,7 +277,9 @@ class Config:
         This is intended for restoring a :class:`Config` from a previously
         serialised (e.g. JSON-dumped) parameter dict.  No schema validation
         or derived-field computation is performed for analysis fields. The execution
-        profile is validated and resolved to an immutable snapshot.
+        profile is validated and resolved to an immutable snapshot. Detector
+        definitions are restored from the validated registry snapshot without
+        reopening the original JSON file.
 
         Path rebasing: if the stored ``filter_dir`` does not exist on the
         current machine (e.g. when a config serialised on the head node is
@@ -239,10 +295,22 @@ class Config:
             and set as attributes without validation.
         """
         for key in params:
-            setattr(self, key, params[key])
+            if key not in ("_detectors", "_detectors_by_name"):
+                setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
-        self.detector_geometry = resolve_detector_geometries(self.ifo, self.detector_geometry)
+        self.detector_definitions_file = params.get("detector_definitions_file")
+        self.detector_definitions_provenance = deepcopy(params.get("detector_definitions_provenance", {}))
+        if params.get("detector_registry") is not None:
+            self.detector_registry = restore_detector_registry(params["detector_registry"])
+        elif params.get("detector_definitions_file"):
+            raise ValueError("Custom detector configuration requires a saved detector_registry snapshot")
+        else:
+            self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(None, ".")
+        self.detector_geometry = resolve_detector_geometries(
+            self.ifo, self.detector_geometry, registry=self.detector_registry
+        )
+        self._initialize_detectors()
 
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
@@ -315,7 +383,7 @@ class Config:
         for dqf in self.DQF:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
 
-        self.max_delay = max_delay(self.ifo, geometry_model=self.detector_geometry)
+        self.max_delay = max_delay(self.detectors)
 
         self.WDM_level = [int(self.l_high + self.l_low - i) for i in range(self.l_low, self.l_high + 1)]
 

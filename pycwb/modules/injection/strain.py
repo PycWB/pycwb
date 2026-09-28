@@ -4,7 +4,6 @@ import logging
 from warnings import warn
 
 from pycwb.config import Config
-from pycwb.types.detector import Detector
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from pycwb.utils.module import import_function
 from pycwb.utils.skymap_coord import (
@@ -26,8 +25,6 @@ def project_to_detector(
     detectors,
     geocent_end_time,
     ref_ifo="H1",
-    *,
-    geometry_model="lal",
 ):
     """Project plus/cross polarizations onto a list of detectors.
 
@@ -39,14 +36,12 @@ def project_to_detector(
         Right ascension and declination in radians.
     polarization : float
         Polarization angle in radians.
-    detectors : list of str
-        Detector names, for example ``["H1", "L1"]``.
+    detectors : sequence of Detector
+        Initialized detector instances, for example ``config.detectors``.
     geocent_end_time : float
         Geocentric end time added to the epoch of ``hp`` and ``hc``.
     ref_ifo : str, optional
         Unused compatibility argument.
-    geometry_model : str, optional
-        Physical detector constants; defaults to LAL.
 
     Returns
     -------
@@ -59,7 +54,7 @@ def project_to_detector(
     hc_ts = PycwbTimeSeries(data=hc_ts.data, dt=hc_ts.dt, t0=hc_ts.t0 + geocent_end_time)
 
     return [
-        Detector(ifo, geometry_model=geometry_model).project_wave(
+        detector.project_wave(
             hp_ts,
             hc_ts,
             ra,
@@ -67,7 +62,7 @@ def project_to_detector(
             polarization,
             reference_time=geocent_end_time,
         )
-        for ifo in detectors
+        for detector in detectors
     ]
 
 
@@ -192,7 +187,6 @@ def generate_strain_from_injection(
         right_ascension,
         declination,
         polarization,
-        ifos,
+        config.get_detectors(ifos),
         gps_end_time,
-        geometry_model=getattr(config, "detector_geometry", "lal"),
     )

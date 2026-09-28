@@ -10,21 +10,18 @@ __all__ = [
 ]
 
 
-def max_delay(ifos, *, geometry_model="lal"):
+def max_delay(detectors):
     """Maximum light-travel time between any detector pair (seconds).
 
     Uses the simple geometric baseline: ``|r_i - r_j| / c``, consistent
     with the cWB ``getDelay("MAX")`` approach.
     """
     from astropy import constants
-    from pycwb.types.detector import Detector
 
     c = float(constants.c.value)
     max_d = 0.0
-    for i in range(len(ifos)):
-        for j in range(i + 1, len(ifos)):
-            d1 = Detector(ifos[i], geometry_model=geometry_model)
-            d2 = Detector(ifos[j], geometry_model=geometry_model)
+    for i, d1 in enumerate(detectors):
+        for d2 in detectors[i + 1:]:
             baseline = np.linalg.norm(d1.vertex_vec_earth_centered - d2.vertex_vec_earth_centered)
             max_d = max(max_d, baseline / c)
     return max_d

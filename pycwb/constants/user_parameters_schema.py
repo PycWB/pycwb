@@ -355,6 +355,12 @@ schema = {
             "default": ["L1", "H1", "V1", "I1", "J1", "G1"],
         },
         "nIFO": {"type": "integer", "description": "number of interferometers", "default": NIFO_MAX},
+        "detector_definitions_file": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "description": "JSON geometry definitions, resolved relative to the configuration YAML",
+            "default": None,
+        },
         "detector_geometry": {
             "type": "object",
             "additionalProperties": {"type": "string"},

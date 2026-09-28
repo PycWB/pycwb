@@ -26,7 +26,7 @@ Parameter Categories
      - ``ifo``, ``gps_start``, ``gps_end``, ``inRate``
      - :ref:`start_here`
    * - Detector Geometry
-     - ``ifo``, ``refIFO``, ``detector_geometry``
+     - ``ifo``, ``refIFO``, ``detector_geometry``, ``detector_definitions_file``
      - :ref:`detector_support`
    * - Execution / Memory
      - ``execution_profile``, ``max_energy_backend``, ``coherence_timing``
@@ -89,6 +89,10 @@ Parameter Quick Reference
      - {}
      - Per-detector mapping
      - Omitted entries use bundled LAL-derived geometry; see :ref:`detector_support`.
+   * - ``detector_definitions_file``
+     - ``null``
+     - JSON path
+     - JSON file extending or overriding detector geometries; see :ref:`custom_detector_definitions`.
    * - ``execution_profile``
      - Schema defaults
      - Validated mapping

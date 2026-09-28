@@ -498,16 +498,14 @@ class Event:
         #   time[i] = pcd->cTime + gps[i] + tau_i - tau_0          (ToF correction)
         # Since sync_i - sync_ref = tau_ref - tau_i, negate it here.
         self.time = [c_time + float(self.gps[i]) - (sync_ifo[i] - sync_ref if i > 0 else 0.0) for i in range(n_ifo)]
-        if meta.reconstructed_theta is not None and meta.reconstructed_phi is not None:
-            from pycwb.types.detector import Detector
-
+        if config is not None and meta.reconstructed_theta is not None and meta.reconstructed_phi is not None:
             theta_geo, phi_geo = np.radians([theta_deg, phi_deg])
             direction = np.array(
                 [np.sin(theta_geo) * np.cos(phi_geo), np.sin(theta_geo) * np.sin(phi_geo), np.cos(theta_geo)]
             )
             positions = [
-                Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal")).vertex_vec_earth_centered
-                for ifo in job_segment.ifos
+                detector.vertex_vec_earth_centered
+                for detector in config.get_detectors(job_segment.ifos)
             ]
             # cWB detector::getTau is -R.n/c. Preserve the reference detector time.
             arrival = [-float(np.dot(position, direction)) / 299792458.0 for position in positions]
@@ -646,10 +644,7 @@ class Event:
             # Python det.response = 0.5*(x⊗x - y⊗y), so already carries the /2:
             #   fp/2 = -(a·D_py·a - b·D_py·b), fx/2 = 2*(a·D_py·b)
             try:
-                from pycwb.types.detector import Detector
-
-                for ifo in job_segment.ifos:
-                    det = Detector(ifo, geometry_model=getattr(config, "detector_geometry", "lal"))
+                for det in config.get_detectors(job_segment.ifos):
                     angles = np.array([theta_deg, phi_deg, getattr(meta, "psi", 0.0)], dtype=np.float64)
                     if det.geometry_model == "cwb":
                         # netevent stores Float_t angles before calling antenna().

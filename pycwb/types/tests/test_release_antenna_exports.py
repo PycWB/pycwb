@@ -1,7 +1,7 @@
 """Exported antenna values use release Float_t angles, then double arithmetic."""
 
 from pathlib import Path
-from types import SimpleNamespace
+from pycwb.config import Config
 import json
 import numpy as np
 from pycwb.types.network_cluster import Cluster, ClusterMeta
@@ -31,8 +31,8 @@ def test_all_observed_release_antenna_exports():
         core=np.ones(2, dtype=bool),
         likelihood=np.ones(2),
     )
-    config = SimpleNamespace(
-        nIFO=2, TDRate=32768, inRate=16384, levelR=1, detector_geometry={"H1": "H1:cwb", "L1": "L1:cwb"}, pattern=10, optim=False
+    config = _config(
+        ifo=["L1", "H1"], nIFO=2, TDRate=32768, inRate=16384, levelR=1, detector_geometry={"H1": "H1:cwb", "L1": "L1:cwb"}, pattern=10, optim=False
     )
     count = 0
     rows = json.loads((Path(__file__).with_name("reference") / "release_antenna_exports.json").read_text())
@@ -52,3 +52,9 @@ def test_all_observed_release_antenna_exports():
         np.testing.assert_array_equal(np.array(event.bx, dtype=np.float32), np.array(row["bx"][:2], dtype=np.float32))
         count += 1
     assert count == 300
+
+
+def _config(**kwargs):
+    result = Config()
+    result.load_from_dict(kwargs)
+    return result

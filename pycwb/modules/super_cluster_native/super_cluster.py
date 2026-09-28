@@ -427,14 +427,13 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
 
     # Full-resolution sky arrays (for likelihood) — delays at TDRate resolution
     ml, FP, FX = compute_sky_delay_and_patterns(
-        ifos=config.ifo,
+        detectors=config.detectors,
         ref_ifo=config.refIFO,
         sample_rate=TDRate,
         td_size=K_td,
         gps_time=gps_time,
         healpix_order=healpix_order_full,
         n_sky=None,
-        geometry_model=getattr(config, "detector_geometry", "lal"),
     )
 
     # cWB rounds subnet delays at the analysis rate, before enabling upTDF for
@@ -442,14 +441,13 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
     # Recompute even for equal sky resolutions when the delay sampling differs.
     if healpix_order_subnet != healpix_order_full or upTDF != 1:
         ml_subnet, FP_subnet, FX_subnet = compute_sky_delay_and_patterns(
-            ifos=config.ifo,
+            detectors=config.detectors,
             ref_ifo=config.refIFO,
             sample_rate=analysis_rate,
             td_size=K_subnet,
             gps_time=gps_time,
             healpix_order=healpix_order_subnet,
             n_sky=None,
-            geometry_model=getattr(config, "detector_geometry", "lal"),
         )
         # Index units must still match the existing high-rate TD buffers.
         ml_subnet = ml_subnet * upTDF

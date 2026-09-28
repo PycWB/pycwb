@@ -57,6 +57,7 @@ class Detector:
         y_midpoint=None,
         *,
         geometry_model=None,
+        geometry_registry=None,
     ):
         """
         Initialize the Detector object with either a name or specific parameters.
@@ -66,17 +67,21 @@ class Detector:
         Select a registry entry with a qualified name such as H1:cwb,
         or pass a per-detector geometry_model mapping. Bare names use the
         bundled LAL-derived geometry. geometry_id records the pinned selection.
-        No CWB or ROOT runtime is required.
+        geometry_registry supplies configuration-local definitions; omit it
+        to use the bundled registry. No CWB or ROOT runtime is required.
         """
+        registry = DETECTOR_GEOMETRIES if geometry_registry is None else geometry_registry
         geometry = None
         base_name = name.split(":", 1)[0]
-        if base_name in DETECTORS or ":" in name:
-            self.geometry_id = resolve_detector_geometry(name, geometry_model)
-            geometry = DETECTOR_GEOMETRIES[self.geometry_id]
+        if base_name in DETECTORS or ":" in name or any(
+            entry["detector"] == base_name for entry in registry.values()
+        ):
+            self.geometry_id = resolve_detector_geometry(name, geometry_model, registry=registry)
+            geometry = registry[self.geometry_id]
             name = geometry["detector"]
         else:
             self.geometry_id = None
-        if name in DETECTORS:
+        if geometry is not None:
             self.name = name
             parameters = geometry["parameters"]
             self.full_name = parameters["name"]
@@ -117,6 +122,9 @@ class Detector:
             self.y_azimuth = y_azimuth
             self.y_altitude = y_altitude
             self.y_midpoint = y_midpoint
+
+        else:
+            raise ValueError(f"Complete geographic parameters required for detector {name!r}")
 
         ifo_vecs = earth_centered_vectors(
             self.longitude,
@@ -869,19 +877,16 @@ class DetectorNetwork:
     def _get_detector_info(self):
         detectors = []
         for det in self.detectors:
-            det_info = DETECTORS.get(det.name)
-            if not det_info:
-                continue
             detectors.append(
                 {
                     "code": det.name,
                     "name": det.full_name,
-                    "lat": det_info["lat"],
-                    "lon": det_info["lon"],
-                    "x_alt": det_info["x"]["alt"],
-                    "x_az": det_info["x"]["az"],
-                    "y_alt": det_info["y"]["alt"],
-                    "y_az": det_info["y"]["az"],
+                    "lat": det.latitude,
+                    "lon": det.longitude,
+                    "x_alt": det.x_altitude,
+                    "x_az": det.x_azimuth,
+                    "y_alt": det.y_altitude,
+                    "y_az": det.y_azimuth,
                 }
             )
         return detectors
@@ -1333,17 +1338,17 @@ def _build_sky_directions(n_sky: int, healpix_order: int | None = None):
 
 
 def compute_sky_delay_and_patterns(
-    ifos, ref_ifo, sample_rate, td_size, gps_time, healpix_order=None, n_sky=None, geometry_model="lal"
+    detectors, ref_ifo, sample_rate, td_size, gps_time, healpix_order=None, n_sky=None
 ):
     """
-    Compute pure-Python sky delay indices and antenna patterns.
+    Compute sky delay indices and antenna patterns from initialized detectors.
 
     Returns arrays compatible with `load_data_from_ifo` output:
       - `ml`: int32 delay index, shape `(nIFO, nSky)`
       - `FP`: float64 plus pattern, shape `(nIFO, nSky)`
       - `FX`: float64 cross pattern, shape `(nIFO, nSky)`
     """
-    detector_objs = [Detector(ifo, geometry_model=geometry_model) if isinstance(ifo, str) else ifo for ifo in ifos]
+    detector_objs = detectors
     if len(detector_objs) == 0:
         raise ValueError("No detectors provided")
 

@@ -1,5 +1,5 @@
 from pathlib import Path
-from types import SimpleNamespace
+from pycwb.config import Config
 import numpy as np
 import pytest
 from pycwb.types.detector import Detector, gmst_accurate, compute_sky_delay_and_patterns
@@ -34,7 +34,7 @@ def test_default_lal_and_unsupported_release_instruments():
 
 def test_max_delay_uses_selected_vertices():
     expected = np.linalg.norm(np.array(VECTORS["H1"][0]) - VECTORS["L1"][0]) / 299792458.0
-    assert max_delay(["L1", "H1"], geometry_model={"H1": "H1:cwb", "L1": "L1:cwb"}) == expected
+    assert max_delay([Detector("L1:cwb"), Detector("H1:cwb")]) == expected
 
 
 def test_subnet_and_likelihood_use_selected_model():
@@ -42,7 +42,7 @@ def test_subnet_and_likelihood_use_selected_model():
     from pycwb.modules.likelihoodWP.pixel_data import build_sky_delay_and_antenna_patterns
     from pycwb.types.time_series import TimeSeries
 
-    config = SimpleNamespace(
+    config = _config(
         ifo=["L1", "H1"],
         refIFO="L1",
         rateANA=8192,
@@ -61,13 +61,12 @@ def test_subnet_and_likelihood_use_selected_model():
     for actual, key in zip(full, ["ml_likelihood", "FP_likelihood", "FX_likelihood"]):
         np.testing.assert_array_equal(actual, context[key])
     subnet = compute_sky_delay_and_patterns(
-        config.ifo,
+        config.detectors,
         config.refIFO,
         8192,
         max(12, int(0.0101 * 8192) + 1),
         gps,
         healpix_order=1,
-        geometry_model=config.detector_geometry,
     )
     np.testing.assert_array_equal(context["ml"], subnet[0] * 4)
     np.testing.assert_array_equal(context["FP"], subnet[1])
@@ -81,7 +80,7 @@ def test_injection_projection_uses_selected_geometry():
     gps = 1387221800.0
     hp = TimeSeries(data=np.sin(np.arange(64)), dt=1 / 8192, t0=-0.1)
     hc = TimeSeries(data=np.cos(np.arange(64)), dt=1 / 8192, t0=-0.1)
-    actual = project_to_detector(hp, hc, 0.4, -0.2, 0.3, ["L1", "H1"], gps, geometry_model={"H1": "H1:cwb", "L1": "L1:cwb"})
+    actual = project_to_detector(hp, hc, 0.4, -0.2, 0.3, [Detector("L1:cwb"), Detector("H1:cwb")], gps)
     for name, strain in zip(["L1", "H1"], actual):
         detector = Detector(f"{name}:cwb")
         expected = detector.project_wave(
@@ -109,15 +108,15 @@ def test_qualified_names_and_aliases_are_pinned(name):
 def test_mixed_geometry_delay_and_pattern_selection():
     selections = {"H1": "H1:cwb", "L1": "L1:lal@pycwb-1"}
     explicit = [Detector("H1:cwb"), Detector("L1:lal@pycwb-1")]
+    config = _config(ifo=["H1", "L1"], detector_geometry=selections)
     actual = compute_sky_delay_and_patterns(
-        ["H1", "L1"], "H1", 8192, 12, 1387221740.0, healpix_order=1,
-        geometry_model=selections,
+        config.detectors, "H1", 8192, 12, 1387221740.0, healpix_order=1,
     )
     expected = compute_sky_delay_and_patterns(explicit, "H1", 8192, 12, 1387221740.0, healpix_order=1)
     for a, b in zip(actual, expected):
         np.testing.assert_array_equal(a, b)
     baseline = np.linalg.norm(explicit[0].vertex_vec_earth_centered - explicit[1].vertex_vec_earth_centered)
-    assert max_delay(["H1", "L1"], geometry_model=selections) == baseline / 299792458.0
+    assert max_delay(config.detectors) == baseline / 299792458.0
 
 
 def test_registry_rejects_invalid_selections():
@@ -132,3 +131,9 @@ def test_registry_rejects_invalid_selections():
         resolve_detector_geometries(["H1"], "cwb_6.4.6.9")
     with pytest.raises(ValueError, match="not both"):
         Detector("H1:cwb", geometry_model="H1:lal")
+
+
+def _config(**kwargs):
+    result = Config()
+    result.load_from_dict(kwargs)
+    return result

@@ -164,7 +164,7 @@ class TestDetectorInit:
 
     def test_init_unknown_name_raises(self):
         """Unknown name without explicit params should raise."""
-        with pytest.raises((KeyError, AttributeError)):
+        with pytest.raises(ValueError, match="Complete geographic parameters"):
             Detector("ZZ9")
 
     def test_init_explicit_params(self):
@@ -677,10 +677,10 @@ class TestGetMaxDelay:
 class TestNetworkMaxDelay:
     def test_empty_or_single_ifo_returns_zero(self):
         assert network_utils.max_delay([]) == 0.0
-        assert network_utils.max_delay(["H1"]) == 0.0
+        assert network_utils.max_delay([Detector("H1")]) == 0.0
 
     def test_h1_l1_delay(self):
-        assert network_utils.max_delay(["H1", "L1"]) == pytest.approx(
+        assert network_utils.max_delay([Detector("H1"), Detector("L1")]) == pytest.approx(
             0.010013, rel=1e-4
         )
 
@@ -757,7 +757,7 @@ class TestBuildSkyDirections:
 class TestComputeSkyDelayAndPatterns:
     def test_basic_call(self):
         ml, FP, FX = compute_sky_delay_and_patterns(
-            ["H1", "L1"], "H1", 256.0, 64, 1261873618.0, n_sky=100,
+            [Detector("H1"), Detector("L1")], "H1", 256.0, 64, 1261873618.0, n_sky=100,
         )
         n_ifo, n_sky = 2, 100
         assert ml.shape == (n_ifo, n_sky)
@@ -768,7 +768,7 @@ class TestComputeSkyDelayAndPatterns:
 
     def test_delays_within_bounds(self):
         ml, _, _ = compute_sky_delay_and_patterns(
-            ["H1", "L1"], "H1", 256.0, 64, 1261873618.0, n_sky=100,
+            [Detector("H1"), Detector("L1")], "H1", 256.0, 64, 1261873618.0, n_sky=100,
         )
         assert np.all(np.abs(ml) <= 64)
 
@@ -794,7 +794,7 @@ class TestComputeSkyDelayAndPatterns:
 
     def test_patterns_within_unit_range(self):
         _, FP, FX = compute_sky_delay_and_patterns(
-            ["H1", "L1"], "H1", 256.0, 64, 1261873618.0, n_sky=100,
+            [Detector("H1"), Detector("L1")], "H1", 256.0, 64, 1261873618.0, n_sky=100,
         )
         assert np.all(np.abs(FP) <= 1.0)
         assert np.all(np.abs(FX) <= 1.0)
