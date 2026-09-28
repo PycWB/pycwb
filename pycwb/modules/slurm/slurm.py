@@ -3,7 +3,7 @@ import re
 import subprocess
 import click
 import shutil
-from pycwb.workflow.execution.settings import byte_size
+from pycwb.utils.size import byte_size
 
 
 class Slurm:

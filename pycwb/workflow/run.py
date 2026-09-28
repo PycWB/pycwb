@@ -72,7 +72,7 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
     from pycwb.modules.catalog.catalog import Catalog
     catalog_file = os.path.join(working_dir, config.catalog_dir, Catalog.DEFAULT_FILENAME)
 
-    from pycwb.workflow.execution.settings import ExecutionSettings
+    from pycwb.constants.execution import ExecutionSettings
     from pycwb.workflow.execution.executor import ExecutionContext, execute_jobs
 
     if ExecutionSettings.from_config(config).enabled:

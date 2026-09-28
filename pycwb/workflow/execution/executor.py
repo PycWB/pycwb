@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import NamedTuple, TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from multiprocessing.process import BaseProcess
@@ -155,6 +155,53 @@ def pending_jobs(
     return pending, skips
 
 
+
+def estimate_input_peak(plan: ExecutionPlan, config: Any, supports_cache: bool) -> int:
+    """Reserve simultaneous decode and merged-input bytes before launching workers."""
+    input_peak = 0
+    for requests in plan.requests:
+        readers = (
+            1
+            if supports_cache
+            else max(1, int(getattr(config, "nproc", 1) or 1))
+        )
+        decoding = sum(
+            sorted((r.decode_bytes for r in requests), reverse=True)[:readers]
+        )
+        # Source-frame decoding can greatly exceed the requested slice.
+        # Include simultaneous decoding and job-owned/merged input buffers.
+        input_peak = max(
+            input_peak, 3 * decoding + 2 * sum(r.estimated_bytes for r in requests)
+        )
+    return input_peak
+
+
+def plan_cache_reuse(plan: ExecutionPlan) -> tuple[dict, dict]:
+    """Return reusable frame unions and per-task requests without decoding data."""
+    batch_inputs = {}
+    cache_requests = {}
+    for batch in plan.batches:
+        counts = Counter(r.key for i in batch for r in set(plan.requests[i]))
+        reusable = {key for key, count in counts.items() if count > 1}
+        planned = merged_requests(
+            tuple(r for r in plan.requests[i] if r.key in reusable) for i in batch
+        )
+        for task in batch:
+            batch_inputs[task] = planned
+            cache_requests[task] = tuple(
+                r for r in plan.requests[task] if r.key in reusable
+            )
+    return batch_inputs, cache_requests
+
+class WorkerState(NamedTuple):
+    """Resources retained until a worker exits and its output is acknowledged."""
+
+    process: BaseProcess
+    task: int
+    provider: FrameProvider
+    slot: int
+
+
 class ScalableExecutor:
     """Own allocation-wide admission, input lifetime and acknowledged output."""
 
@@ -190,21 +237,7 @@ class ScalableExecutor:
             )
         requested = min(context.workers, max(1, len(cpus) // per_job_cores))
         supports_cache = getattr(context.processor, "supports_input_provider", False)
-        input_peak = 0
-        for requests in plan.requests:
-            readers = (
-                1
-                if supports_cache
-                else max(1, int(getattr(context.config, "nproc", 1) or 1))
-            )
-            decoding = sum(
-                sorted((r.decode_bytes for r in requests), reverse=True)[:readers]
-            )
-            # Source-frame decoding can greatly exceed the requested slice.
-            # Include simultaneous decoding and job-owned/merged input buffers.
-            input_peak = max(
-                input_peak, 3 * decoding + 2 * sum(r.estimated_bytes for r in requests)
-            )
+        input_peak = estimate_input_peak(plan, context.config, supports_cache)
         budget = MemoryBudget.resolve(settings, requested, input_peak=input_peak)
         if not supports_cache:
             logger.warning(
@@ -213,19 +246,7 @@ class ScalableExecutor:
         order = deque(plan.order)
         # Duplicate scientific IDs (explicit trial selections) must not race in
         # the same output namespace. Admission below serializes these tasks.
-        batch_inputs = {}
-        cache_requests = {}
-        for batch in plan.batches:
-            counts = Counter(r.key for i in batch for r in set(plan.requests[i]))
-            reusable = {key for key, count in counts.items() if count > 1}
-            planned = merged_requests(
-                tuple(r for r in plan.requests[i] if r.key in reusable) for i in batch
-            )
-            for task in batch:
-                batch_inputs[task] = planned
-                cache_requests[task] = tuple(
-                    r for r in plan.requests[task] if r.key in reusable
-                )
+        batch_inputs, cache_requests = plan_cache_reuse(plan)
         cache = FrameCache(
             context.working_dir,
             budget,
@@ -236,7 +257,7 @@ class ScalableExecutor:
             context.config, context.catalog_file, settings.message_limit
         )
         process_context = multiprocessing.get_context("spawn")
-        active: dict[Connection, tuple[BaseProcess, int, FrameProvider, int]] = {}
+        active: dict[Connection, WorkerState] = {}
         retiring: set[Connection] = set()
         completed = []
         started = time.monotonic()
@@ -269,7 +290,7 @@ class ScalableExecutor:
         monitor.start()
         try:
             while order or active:
-                active_ids = {context.jobs[state[1]].index for state in active.values()}
+                active_ids = {context.jobs[state.task].index for state in active.values()}
                 while order and len(active) < budget.workers:
                     task = order[0]
                     if context.jobs[task].index in active_ids:
@@ -299,7 +320,7 @@ class ScalableExecutor:
                         else FrameProvider(())
                     )
                     parent, child = process_context.Pipe()
-                    used_slots = {state[3] for state in active.values()}
+                    used_slots = {state.slot for state in active.values()}
                     slot = next(i for i in range(budget.workers) if i not in used_slots)
                     assigned = cpus[slot * per_job_cores : (slot + 1) * per_job_cores]
                     job = context.jobs[task]
@@ -327,7 +348,7 @@ class ScalableExecutor:
                         raise
                     finally:
                         child.close()
-                    active[parent] = (process, task, provider, slot)
+                    active[parent] = WorkerState(process, task, provider, slot)
                     active_ids.add(job.index)
                     order.popleft()
                 ready = (

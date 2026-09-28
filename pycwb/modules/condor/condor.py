@@ -1,7 +1,7 @@
 import os
 import re
 import shutil
-from pycwb.workflow.execution.settings import byte_size
+from pycwb.utils.size import byte_size
 import socket
 import click
 

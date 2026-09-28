@@ -96,7 +96,7 @@ def batch_setup(
     if n_retries == 5:
         n_retries = getattr(config, "n_retries", 5)  # 5 is the default; prefer config if set
 
-    from pycwb.workflow.execution.settings import ExecutionSettings, byte_size
+    from pycwb.constants.execution import ExecutionSettings, byte_size
     from pycwb.workflow.execution.planner import prepare_plan, write_document
 
     execution = ExecutionSettings.from_config(config)
@@ -386,7 +386,7 @@ def batch_run(
     #     Must run before any subprocess spawns so there are no racing     #
     #     writers when we inspect or delete lock files.                    #
     # ------------------------------------------------------------------ #
-    from pycwb.workflow.execution.settings import ExecutionSettings
+    from pycwb.constants.execution import ExecutionSettings
 
     # Scalable execution performs this cleanup only after acquiring exclusive
     # fragment/job ownership; a concurrent runner must not remove a live lock.

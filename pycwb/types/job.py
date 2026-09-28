@@ -1,3 +1,5 @@
+
+from pycwb.utils.intervals import intersect_intervals as _intersect_intervals
 from typing import List, Optional, Dict
 from dataclasses import dataclass, asdict
 import numpy as np
@@ -513,22 +515,6 @@ def _merge_intervals(intervals) -> list[tuple[float, float]]:
     return [(s, e) for s, e in merged]
 
 
-def _intersect_intervals(
-    a: list[tuple[float, float]],
-    b: list[tuple[float, float]],
-) -> list[tuple[float, float]]:
-    result: list[tuple[float, float]] = []
-    i = j = 0
-    while i < len(a) and j < len(b):
-        lo = max(a[i][0], b[j][0])
-        hi = min(a[i][1], b[j][1])
-        if hi > lo:
-            result.append((lo, hi))
-        if a[i][1] < b[j][1]:
-            i += 1
-        else:
-            j += 1
-    return result
 
 
 def _shift_intervals_circular(

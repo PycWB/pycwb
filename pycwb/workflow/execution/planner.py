@@ -44,16 +44,19 @@ class FrameRequest:
 
     @property
     def key(self) -> tuple[str, str, float]:
+        """Physical frame identity, excluding the requested sample window."""
         return self.path, self.channel, self.rate
 
     @property
     def estimated_bytes(self) -> int:
         # Reader dtype is checked at runtime. float64 is a conservative payload
         # estimate for supported real float32/float64 strain channels.
+        """Conservative float64 payload bytes for the requested window."""
         return math.ceil((self.end - self.start) * self.rate) * 8
 
     @property
     def decode_bytes(self) -> int:
+        """Reserve at least the full decoded source payload."""
         return max(self.estimated_bytes, self.source_bytes)
 
 
@@ -97,6 +100,7 @@ class ExecutionPlan:
 
     @property
     def order(self) -> tuple[int, ...]:
+        """Task indices in validated batch order, including distinct trial tasks."""
         return tuple(task for batch in self.batches for task in batch)
 
     def validate(self, jobs: Sequence[WaveSegment]) -> None:

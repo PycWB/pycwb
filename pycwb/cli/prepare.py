@@ -24,7 +24,7 @@ def init_parser(parser: argparse.ArgumentParser) -> None:
 def command(args: argparse.Namespace) -> None:
     """Prepare job metadata and publish a validated execution plan."""
     from pycwb.workflow.execution.planner import prepare_plan, write_document
-    from pycwb.workflow.execution.settings import ExecutionSettings
+    from pycwb.constants.execution import ExecutionSettings
     from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs
 
     output = Path(args.output).resolve() if args.output else None
