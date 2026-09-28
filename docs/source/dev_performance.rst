@@ -8,6 +8,11 @@ and optimize pycWB's computational hot paths. Scientific calculation choices
 are explained in :ref:`native_calculation_conventions`; detector inputs are
 explained in :ref:`detector_support`.
 
+For experimental job scheduling, shared raw-input caching, and worker memory
+budgets, see :ref:`workflow_execution`. These use the separate ``execution``
+configuration block; ``execution_profile`` below controls native processing
+options within each job.
+
 .. contents:: Table of Contents
    :depth: 2
    :local:

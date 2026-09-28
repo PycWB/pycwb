@@ -62,6 +62,9 @@ Parameter Categories
    * - Batch / Cluster
      - ``cluster``, ``conda_env``, ``job_memory``, ``accounting_group``
      - :ref:`run_on_clusters`
+   * - Workflow Scheduling (experimental)
+     - ``execution.profile``, ``execution.worker_memory``, ``execution.preload``
+     - :ref:`workflow_execution`
    * - Postproduction
      - Workflow YAML (separate file)
      - :ref:`postproduction`

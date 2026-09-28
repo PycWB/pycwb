@@ -1,0 +1,162 @@
+.. _workflow_execution:
+
+Experimental Workflow Execution
+===============================
+
+.. warning::
+
+   The scalable execution layer is experimental and opt-in. Its interfaces and
+   behavior may change. Validate representative workloads before using it for
+   a campaign. The default remains ``execution.profile: simple``.
+
+The ``pycwb.workflow.execution`` package handles resource-aware job planning,
+raw-input reuse, worker supervision, and coordinated output writing. It provides
+load balancing within an allocation by limiting concurrent segment workers
+according to CPU availability and memory reservations. It also groups jobs that
+share input frames, so decoded raw data can be reused.
+
+Adaptive behavior currently covers bounded cache loading and memory-pressure
+monitoring. It does not predict scientific processing cost or dynamically move
+jobs between cluster nodes. Slurm/Condor batch membership is fixed when planned.
+
+Configuration
+-------------
+
+The ``execution`` block controls job scheduling and resource management. It is
+separate from ``execution_profile``, which controls native processing options
+within each job (see :ref:`execution_profile`). Both blocks can appear in the
+same analysis configuration.
+
+Add a top-level ``execution`` block to an existing valid analysis YAML file:
+
+.. code-block:: yaml
+
+   execution:
+     profile: scalable
+     memory_limit: 32GiB
+     worker_memory: 8GiB
+     cache_limit: 2GiB
+     headroom: 1GiB
+     preload: auto
+     batch_size: 8
+     cores: 8
+
+These values illustrate the syntax; they are not recommended limits for every
+search. Measure representative jobs when choosing memory reservations.
+
+The normal ``pycwb run``, ``pycwb batch-setup``, and ``pycwb batch-runner``
+commands use this configuration. The YAML schema accepts the block, and its
+settings are validated both when loading YAML and when restoring configuration
+from a catalog. Unknown execution keys and invalid values are rejected.
+
+Omit the block, or select ``profile: simple``, to retain the existing execution
+path. Setting only memory or cache limits does not enable scalable execution.
+Explicit ``planner`` or ``executor`` factory paths also enable dispatch through
+this package and are intended for advanced extensions.
+
+The scientific implementation is selected separately through
+``segment_processer``. Scalable execution preserves scientific job windows and
+does not adjust numerical selection settings to fit memory. Processors that
+support ``input_provider`` can reuse cached raw inputs; unsupported processors
+use direct reads with a warning.
+
+.. list-table:: Execution settings
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - Setting
+     - Default
+     - Meaning
+   * - ``profile``
+     - ``simple``
+     - Select ``scalable`` to enable the experimental supervisor and planner.
+   * - ``memory_limit``
+     - Detected
+     - Host RAM ceiling, clipped to available resources.
+   * - ``worker_memory``
+     - ``6GiB``
+     - Reservation for an entire segment process tree, including lag workers.
+   * - ``cache_limit``
+     - ``1GiB``
+     - Maximum cached raw sample payload; the actual allowance may be smaller.
+   * - ``headroom``
+     - ``512MiB``
+     - Unallocated memory safety margin.
+   * - ``message_limit``
+     - ``64MiB``
+     - Maximum serialized worker output message.
+   * - ``preload``
+     - ``auto``
+     - Input loading policy: ``"off"``, ``auto``, or ``batch``.
+   * - ``batch_size``
+     - ``8``
+     - Maximum jobs per planned group, not the concurrent worker count.
+   * - ``cache_entries``
+     - ``256``
+     - Maximum live mapped cache entries.
+   * - ``cores``
+     - Allocation affinity
+     - Optional total logical CPU cap.
+   * - ``planner``, ``executor``
+     - Unset
+     - Optional dotted paths to zero-argument factories.
+
+Memory sizes accept integer bytes or explicit SI/IEC units such as ``500MB``
+or ``2GiB``. CPU and memory budgets, together with the runner's worker limit,
+constrain actual concurrency.
+
+Input reuse and execution
+-------------------------
+
+The planner groups jobs with shared frame/channel sources. The supervisor owns
+a bounded cache of raw arrays and shares read-only memory-mapping descriptors
+with workers. Each job receives an owned copy before modifying input data.
+
+- ``preload: "off"`` uses direct reads. Quote ``"off"`` in YAML to avoid
+  parsers interpreting it as a boolean.
+- ``preload: auto`` loads reusable planned input intervals on demand.
+- ``preload: batch`` preloads reusable inputs for a group if they fit, otherwise
+  falls back to bounded demand loading.
+
+Preloading is synchronous. This is local raw-input caching; it does not cache
+conditioned data or provide a distributed cache.
+
+To prepare a plan without decoding strain or running analysis:
+
+.. code-block:: bash
+
+   pycwb prepare CONFIG --work-dir RUN --plan-only
+
+Preparation creates the work directory and preparation files, including
+``execution-plan.json``. Cluster setup persists explicit groups selected by
+``--batch-id``. Executed fragments write plans and metrics under
+``RUN/execution/``.
+
+The supervisor coordinates output writes and records progress after corresponding
+trigger products are flushed. Resume skips committed work. Keep batch membership
+and scientific configuration stable when resuming: progress is not reconciled
+across regrouped catalog fragments.
+
+Limits and validation
+---------------------
+
+Memory reservations and sampled monitoring are not a hard OS memory limit.
+Scientific peaks can exceed estimates between samples. The runtime can stop
+workers under memory pressure; use scheduler/cgroup enforcement for a hard
+ceiling. This layer budgets host RAM, not GPU VRAM.
+
+Fresh worker startup and decoding overhead can make small jobs slower. Measure
+end-to-end performance before assuming a speedup, and compare scientific outputs
+on representative workloads before enabling the profile for a campaign.
+
+Implementation reference
+------------------------
+
+See :doc:`pycwb.workflow.execution` for the Python API. The package is divided
+into planning (``planner.py``), supervision (``executor.py``), resource accounting
+(``resources.py``), raw-input handling (``cache.py`` and ``decoder.py``), output
+transport (``writer.py``), batch membership (``scheduling.py``), configuration
+(``settings.py``), and extension interfaces (``contracts.py``).
+
+The repository also contains :download:`detailed execution design and
+verification notes <../dev/scalable_execution.md>`.

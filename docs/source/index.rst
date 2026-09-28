@@ -79,6 +79,7 @@ PycWB is a modular Python implementation of the coherent WaveBurst
    :maxdepth: 2
 
    User Parameters <schema>
+   workflow_execution
    Coordinate Systems <coordinate_systems>
    Units and Conventions <units_conventions>
    Detector Support and Geometry <detector_support>
