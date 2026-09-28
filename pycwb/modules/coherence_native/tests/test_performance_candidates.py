@@ -74,7 +74,9 @@ def test_early_cuts_exact(thresholds, empty):
 @pytest.mark.parametrize("return_rejected", [False, True])
 def test_pipeline_early_cuts_preserve_rejected_contract(monkeypatch, return_rejected):
     from types import SimpleNamespace
-    from pycwb.modules.coherence_native import pipeline
+    import importlib
+
+    coherence_module = importlib.import_module("pycwb.modules.coherence_native.coherence")
 
     candidates = dict(
         mask=np.ones((5, 5), dtype=bool),
@@ -96,10 +98,10 @@ def test_pipeline_early_cuts_preserve_rejected_contract(monkeypatch, return_reje
         select_subrho=100.0,
         select_subnet=0.1,
     )
-    monkeypatch.setattr(pipeline, "select_network_pixels", lambda **kw: candidates)
+    monkeypatch.setattr(coherence_module, "select_network_pixels", lambda **kw: candidates)
     setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=False)
-    reference = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
+    reference = coherence_module.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=True)
-    actual = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
+    actual = coherence_module.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     assert_tree_equal(reference, actual)
     assert len(actual[0].clusters) == int(return_rejected)

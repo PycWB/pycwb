@@ -14,13 +14,13 @@ from wdm_wavelet.wdm import w2t_numba as _wdm_w2t_numba
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 
 from .time_delay_common import (
+    _compute_packet_energy_params,
     frequency_bounds,
     sample_rate_from_tf_map,
     time_series_length,
     validate_time_delay_inputs,
 )
 from .time_delay_jax import _HAS_JAX, time_delay_max_energy
-from .time_delay_packet import _compute_packet_energy_params
 
 try:
     from wdm_wavelet.core.t2w import t2w_numba_core as _wdm_t2w_numba_core

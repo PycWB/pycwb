@@ -50,7 +50,7 @@ def setup_coherence(
 ) -> list[dict]:
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
-    threshold, lag plan) for every resolution level.
+    threshold, selection cache) for every resolution level.
 
     Call this once per job segment, then pass the returned list to
     :func:`coherence_single_lag` for each lag.
@@ -108,8 +108,8 @@ def _setup_coherence_single_res(
     Lag-independent coherence setup for one resolution level.
 
     Builds the WDM wavelet, TF maps, applies max_energy, computes the
-    energy threshold, and builds the lag plan.  Nothing here depends on
-    which lag is being processed.
+    energy threshold, and caches the supplied job segment's lag shifts.
+    Nothing here depends on which lag is being processed.
 
     Returns
     -------

@@ -42,7 +42,9 @@ def test_large_filled_region_and_nested_boundaries():
 @pytest.mark.parametrize("return_rejected", [False, True])
 def test_cluster_products_and_rejected_contract(monkeypatch, early, return_rejected):
     from types import SimpleNamespace
-    from pycwb.modules.coherence_native import pipeline
+    import importlib
+
+    coherence_module = importlib.import_module("pycwb.modules.coherence_native.coherence")
     from .test_performance_candidates import assert_tree_equal
 
     rng = np.random.default_rng(105)
@@ -69,9 +71,9 @@ def test_cluster_products_and_rejected_contract(monkeypatch, early, return_rejec
         select_subrho=5.0,
         select_subnet=0.1,
     )
-    monkeypatch.setattr(pipeline, "select_network_pixels", lambda **kw: candidates)
+    monkeypatch.setattr(coherence_module, "select_network_pixels", lambda **kw: candidates)
     setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=early, cluster_runs=False)
-    reference = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
+    reference = coherence_module.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     setup["execution_profile"] = ExecutionProfile(coherence_early_cuts=early, cluster_runs=True)
-    actual = pipeline.coherence_single_lag([setup], 0, return_rejected=return_rejected)
+    actual = coherence_module.coherence_single_lag([setup], 0, return_rejected=return_rejected)
     assert_tree_equal(reference, actual)

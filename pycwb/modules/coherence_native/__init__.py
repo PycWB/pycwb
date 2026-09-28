@@ -3,8 +3,8 @@ pycwb.modules.coherence_native — Native coherence engine.
 
 Production coherence pipeline using JAX-accelerated WDM time→frequency
 transforms, max-energy computation, threshold-based pixel selection,
-veto application, and single-resolution pixel clustering. Builds lag
-plans from configuration.
+veto application, and single-resolution pixel clustering. Uses lag shifts
+provided by the job segment.
 """
 
 from .coherence import (
@@ -17,7 +17,6 @@ from .coherence import (
     select_network_pixels,
     cluster_pixels,
 )
-from .lag_plan import LagPlan, build_lag_plan_from_config
 
 __all__ = [
     "coherence",
@@ -28,6 +27,4 @@ __all__ = [
     "apply_veto",
     "select_network_pixels",
     "cluster_pixels",
-    "LagPlan",
-    "build_lag_plan_from_config",
 ]

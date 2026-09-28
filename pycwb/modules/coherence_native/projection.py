@@ -7,7 +7,8 @@ from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 from pycwb.config import Config
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-from .time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
+from .time_delay_jax import time_delay_max_energy
+from .time_delay_numba import time_delay_max_energy_numba
 
 
 def _normalize_max_energy_backend(backend: str | None) -> str:

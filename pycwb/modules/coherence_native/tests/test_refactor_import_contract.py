@@ -58,7 +58,6 @@ def test_coherence_facade_public_and_private_aliases():
     )
     from pycwb.modules.coherence_native import (
         clustering,
-        pipeline,
         projection,
         selection,
         setup,
@@ -76,11 +75,9 @@ def test_coherence_facade_public_and_private_aliases():
         "apply_veto",
         "select_network_pixels",
         "cluster_pixels",
-        "LagPlan",
-        "build_lag_plan_from_config",
     ]
-    assert coherence is pipeline.coherence
-    assert coherence_single_lag is pipeline.coherence_single_lag
+    assert coherence is facade.coherence
+    assert coherence_single_lag is facade.coherence_single_lag
     assert setup_coherence is setup.setup_coherence
     assert max_energy is projection.max_energy
     assert compute_threshold is veto_threshold.compute_threshold
@@ -88,26 +85,6 @@ def test_coherence_facade_public_and_private_aliases():
     assert cluster_pixels is clustering.cluster_pixels
     assert facade._setup_coherence_single_res is setup._setup_coherence_single_res
     assert facade._build_selection_cache is selection._build_selection_cache
-
-
-def test_time_delay_facade_aliases_backend_modules():
-    from pycwb.modules.coherence_native import (
-        time_delay_jax,
-        time_delay_numba,
-        time_delay_packet,
-    )
-    from pycwb.modules.coherence_native import time_delay_max_energy as facade
-
-    assert facade.__all__ == ["time_delay_max_energy", "time_delay_max_energy_numba"]
-    assert facade.time_delay_max_energy is time_delay_jax.time_delay_max_energy
-    assert (
-        facade.time_delay_max_energy_numba
-        is time_delay_numba.time_delay_max_energy_numba
-    )
-    assert (
-        facade._compute_packet_energy_params
-        is time_delay_packet._compute_packet_energy_params
-    )
 
 
 def test_projection_backend_dispatch(monkeypatch):
@@ -288,7 +265,7 @@ def test_cluster_pixels_empty_single_and_multiple_components():
 
 
 def test_time_delay_packet_pattern_parameters():
-    from pycwb.modules.coherence_native.time_delay_packet import (
+    from pycwb.modules.coherence_native.time_delay_common import (
         _compute_packet_energy_params,
     )
 
