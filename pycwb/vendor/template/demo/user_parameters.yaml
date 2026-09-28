@@ -1,0 +1,65 @@
+# Small, deliberately loud synthetic signal. Educational settings, not a
+# production sensitivity or significance measurement.
+analysis: 2G
+ifo: [L1, H1]
+refIFO: L1
+cfg_search: r
+nproc: 1
+inRate: 2048
+levelR: 1
+fLow: 32.0
+fHigh: 480.0
+l_low: 4
+l_high: 7
+l_white: 0
+whiteWindow: 60.0
+whiteStride: 20.0
+segLen: 128
+segMLS: 32
+segTHR: 0
+segEdge: 8
+lagSize: 1
+lagOff: 0
+lagMax: 0
+slagSize: 1
+healpix: 4
+filter_dir: .
+wdmXTalk: wdmXTalk/OverlapCatalog16-1024.bin
+pattern: 10
+subnet: 0.5
+subcut: -1.0
+netRHO: 4.0
+netCC: 0.5
+Acore: 1.7
+Tgap: 0.2
+Fgap: 128.0
+cfg_gamma: -1.0
+iwindow: 2.0
+plot_trigger: false
+save_waveform: true
+plot_waveform: true
+save_injection: true
+plot_injection: false
+plot_sky_map: false
+save_sky_map: false
+simulation: all_inject_in_one_segment
+nfactor: 1
+injection:
+  generator: pycwb.modules.injection.burst_population.get_td_waveform
+  segment:
+    start: 1126259462
+    end: 1126259590
+    noise:
+      seeds: [150914, 150915]
+  parameters:
+    approximant: SGE
+    frequency: 150.0
+    Q: 9.0
+    hrss: 1.0e-21
+    iota: 0.0
+    gps_time: 1126259526
+    ra: 1.0
+    dec: 0.3
+    pol: 0.8
+    t_start: -0.5
+    t_end: 0.5
