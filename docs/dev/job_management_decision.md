@@ -35,7 +35,7 @@ alone cannot cure inadequate preparation throughput.
 The fixed partition used sequential coherence/TD setup internally. Its original
 concurrent setup stalled on the one-core allocation; repeated diagnostic stacks
 showed both stages waiting for JAX transforms with no CPU progress. The prototype
-now honors `PYCWB_GPU_OVERLAP_SETUP=0` to permit sequential internal setup while
+now honors `gpu.overlap_setup: false` to permit sequential internal setup while
 retaining cross-job overlap. The default behavior is unchanged. This is a tested
 workaround for the observed configuration, not a diagnosis or fix of an upstream
 runtime bug. Failed and interrupted attempts remain in the evidence bundle and

@@ -25,6 +25,7 @@ from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
 from .detector_definitions import load_detector_definitions, restore_detector_registry
 from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
+from ..constants.gpu_options import GPUOptions, resolve_gpu_options
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ class Config:
     """
 
     execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+    gpu: GPUOptions = field(default_factory=GPUOptions)
 
     dq_files: List[DQFile] = field(default_factory=list)
 
@@ -256,6 +258,7 @@ class Config:
                 setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.gpu = resolve_gpu_options(self.gpu)
         self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(
             self.detector_definitions_file, file_name
         )
@@ -301,6 +304,7 @@ class Config:
                 setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.gpu = resolve_gpu_options(self.gpu)
         self.detector_definitions_file = params.get("detector_definitions_file")
         self.detector_definitions_provenance = deepcopy(params.get("detector_definitions_provenance", {}))
         if params.get("detector_registry") is not None:

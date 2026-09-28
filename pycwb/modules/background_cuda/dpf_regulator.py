@@ -2,8 +2,8 @@
 
 The kernel in ``dpf_regulator.cu`` evaluates one sky direction per thread with
 the same ordered FP32 pixel/detector arithmetic as the native
-``likelihoodWP.dpf_regulator.dpf_index_only`` loop. The final count reduction
-stays on the host in float64, exactly as in ``calculate_dpf_scalar``.
+``likelihoodWP.dpf_regulator.compute_dpf_index`` loop. The final count reduction
+stays on the host in float64, exactly as in ``compute_dpf_regulator_scalar``.
 """
 
 from __future__ import annotations
@@ -14,16 +14,16 @@ from typing import Any
 
 import numpy as np
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 from .cuda_runtime import DeviceBuffers, load_module
 from .geometry_cache import resident_geometry
 
 
 class DPFRegulator:
-    """Callable counterpart to ``likelihoodWP.dpf_regulator.calculate_dpf_scalar``.
+    """Callable counterpart to ``likelihoodWP.dpf_regulator.compute_dpf_regulator_scalar``.
 
-    Bound by ``processor.py`` as ``_calculate_dpf_scalar`` inside a specialized
-    clone of ``likelihoodWP.likelihood.likelihood`` when ``PYCWB_GPU_DPF=1``.
+    Bound by ``processor.py`` as ``_compute_dpf_regulator_scalar`` inside a specialized
+    clone of ``likelihoodWP.likelihood.evaluate_cluster_likelihood`` when ``gpu.dpf=true``.
 
     Attributes
     ----------
@@ -36,7 +36,7 @@ class DPFRegulator:
         keys stay valid. Release this object at trial end so pointer reuse can
         never alias stale geometry.
     workspace : Workspace or None
-        Reusable device slots when ``PYCWB_GPU_REUSE_WORKSPACE=1`` was set at
+        Reusable device slots when ``gpu.reuse_workspace=true`` was set at
         construction time; otherwise every call allocates fresh device arrays.
     buffers : DeviceBuffers
         Upload/output/download helper wrapping ``workspace``.
@@ -47,11 +47,12 @@ class DPFRegulator:
     fixed-length per-detector registers.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options=None) -> None:
+        self.options = gpu_options(options)
         self.module = load_module(Path(__file__).with_suffix(".cu"))
         self.geometry: dict[tuple[int, ...], Any] = {}
         self.workspace: Any | None = None
-        if flags.enabled("REUSE_WORKSPACE"):
+        if self.options.reuse_workspace:
             from .workspace import Workspace
 
             self.workspace = Workspace()
@@ -110,13 +111,17 @@ class DPFRegulator:
             or rms.ndim != 2
             or rms.shape[1] != n_ifo
         ):
-            raise ValueError("DPF CUDA requires 2/3 detectors and matching sky/pixel shapes")
+            raise ValueError(
+                "DPF CUDA requires 2/3 detectors and matching sky/pixel shapes"
+            )
         skies = np.ascontiguousarray(sky_valid_indices, dtype=np.int64)
         if skies.ndim != 1 or np.any(skies < 0) or np.any(skies >= n_sky):
             raise ValueError("Invalid sky indices")
         if not len(skies):
             return -float(network_energy_threshold)
-        device_fp, device_fx = resident_geometry(self.geometry, (FP, FX), (np.float32, np.float32))
+        device_fp, device_fx = resident_geometry(
+            self.geometry, (FP, FX), (np.float32, np.float32)
+        )
         weights = self.buffers.upload("weights", rms, np.float32)
         indices = self.buffers.upload("skies", skies, np.int64)
         out = self.buffers.output("output", (len(skies),), np.float64)

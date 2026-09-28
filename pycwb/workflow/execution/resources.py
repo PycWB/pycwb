@@ -16,7 +16,6 @@ from pathlib import Path
 
 import psutil
 
-from .settings import byte_size
 
 
 def cgroup_headroom(
@@ -66,9 +65,7 @@ def available_cpus() -> list[int]:
         cpus = sorted(os.sched_getaffinity(0))
     except AttributeError:
         cpus = list(range(os.cpu_count() or 1))
-    allocation = os.environ.get(
-        "PYCWB_ALLOCATED_CORES", os.environ.get("SLURM_CPUS_PER_TASK")
-    )
+    allocation = os.environ.get("SLURM_CPUS_PER_TASK")
     if allocation is not None:
         count = int(allocation)
         if count < 1:
@@ -98,9 +95,6 @@ class MemoryBudget:
         baseline = psutil.Process().memory_info().rss
         available = available_memory()
         limit = min(settings.memory_limit or available + baseline, available + baseline)
-        scheduler_limit = os.environ.get("PYCWB_MEMORY_LIMIT_BYTES")
-        if scheduler_limit is not None:
-            limit = min(limit, byte_size(int(scheduler_limit)))
         # Two serialized-message buffers per worker may coexist with analysis.
         worker = max(settings.worker_memory, input_peak) + 2 * settings.message_limit
         usable = limit - baseline - settings.headroom

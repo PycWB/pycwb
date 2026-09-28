@@ -326,3 +326,29 @@ def test_concurrent_runner_cannot_clean_live_catalog_locks(tmp_path, monkeypatch
     with FileLock(str(lock)), pytest.raises(Timeout):
         execute_jobs(context)
     assert calls == []
+
+
+@pytest.mark.parametrize("allocation", [1, 4])
+def test_explicit_allocation_caps_cpu_and_memory_without_changing_config(monkeypatch, allocation):
+    from pycwb.workflow.execution import executor
+    from types import SimpleNamespace
+
+    cfg = config(cores=2, memory_limit="2GiB")
+    context = ExecutionContext([], cfg, lambda: None, ".", "catalog", workers=8,
+                               allocated_cores=allocation, memory_limit=1024**3)
+    monkeypatch.setattr(executor, "available_cpus", lambda: list(range(8)))
+    seen = []
+
+    class AdmissionChecked(Exception):
+        pass
+
+    def check(settings, requested, **kwargs):
+        seen.append((settings.cores, settings.memory_limit, requested))
+        raise AdmissionChecked
+
+    monkeypatch.setattr(executor.MemoryBudget, "resolve", check)
+    with pytest.raises(AdmissionChecked):
+        executor.ScalableExecutor().execute(SimpleNamespace(requests=[]), context)
+    assert seen == [(min(2, allocation), 1024**3, min(2, allocation))]
+    assert cfg.execution["cores"] == 2
+    assert cfg.execution["memory_limit"] == "2GiB"

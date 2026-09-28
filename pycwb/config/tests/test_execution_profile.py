@@ -226,3 +226,25 @@ def test_run_setup_checks_profile_before_replacing_saved_yaml(tmp_path, monkeypa
     monkeypatch.setattr(module, "create_output_directory", forbidden)
     with pytest.raises(ValueError, match="profile"):
         module.prepare_job_runs(str(tmp_path), "user_parameters.yaml", overwrite=True)
+
+
+def test_gpu_yaml_snapshot_catalog_roundtrip_and_resume_guard(tmp_path, monkeypatch):
+    from pycwb.constants.gpu_options import GPUOptions
+    from pycwb.constants.execution_profile import check_recorded_execution_profile
+
+    for method in ("add_derived_key", "check_xtalk_file", "check_MRA_catalog",
+                   "check_lagStep", "check_analyze_injection_only"):
+        monkeypatch.setattr(Config, method, lambda *args: None)
+    monkeypatch.setattr(Config, "MRAcatalog", "", raising=False)
+    path = tmp_path / "user_parameters.yaml"
+    path.write_text("analysis: 2G\nifo: [H1, L1]\nrefIFO: L1\ngpu:\n  likelihood: true\n  lag_workers: 6\n")
+    config = Config()
+    config.load_from_yaml(path)
+    assert config.gpu == GPUOptions(likelihood=True, lag_workers=6)
+    stored = orjson.loads(orjson.dumps(config.to_dict(), option=orjson.OPT_SERIALIZE_NUMPY))
+    assert stored["gpu"]["lag_workers"] == 6
+    check_recorded_execution_profile(config, stored)
+    assert pickle.loads(pickle.dumps(config)).gpu == config.gpu
+    stored["gpu"]["likelihood"] = False
+    with pytest.raises(ValueError, match="gpu options differ"):
+        check_recorded_execution_profile(config, stored)

@@ -48,14 +48,14 @@ def test_snr_energy_is_sum_of_samples_not_time_integral():
 
 def test_injection_whitening_uses_data_phase_and_noise_anchor_conventions():
     from types import SimpleNamespace
-    from pycwb.modules.data_conditioning.whitening import whitening_python
+    from pycwb.modules.data_conditioning.whitening import whiten_wavelet
     from pycwb.modules.data_conditioning.injection_whitening import whiten_injection_strain
     config=SimpleNamespace(l_white=5,l_high=5,WDM_beta_order=6,WDM_precision=10,
                            whiteWindow=8.,whiteStride=4.,segEdge=2.,fLow=0.,fHigh=512.)
     rng=np.random.default_rng(92)
     samples=rng.normal(size=40960)*np.linspace(1,4,40960)
     signal=TimeSeries(samples,dt=1/1024,t0=1387221730.)
-    expected,rms=whitening_python(config,signal)
+    expected,rms=whiten_wavelet(config,signal)
     actual,_=whiten_injection_strain(config,signal,rms)
     np.testing.assert_allclose(actual.data,expected.data,rtol=1e-11,atol=1e-11)
 
@@ -81,7 +81,7 @@ def test_target_network_snr_scales_actual_whitened_detector_signals():
     from pycwb.modules.injection.snr_population import target_snr_scales
     from pycwb.modules.injection.strain import generate_strain_from_injection
     from pycwb.modules.read_data.data_check import check_and_resample_py
-    from pycwb.modules.data_conditioning.whitening import whitening_python
+    from pycwb.modules.data_conditioning.whitening import whiten_wavelet
     from pycwb.modules.data_conditioning.injection_whitening import whiten_injection_strain
     config=SimpleNamespace(inRate=1024,fResample=0,levelR=0,dcCal=[1,1],
         l_white=5,l_high=5,WDM_beta_order=6,WDM_precision=10,whiteWindow=8.,whiteStride=4.,
@@ -89,6 +89,9 @@ def test_target_network_snr_scales_actual_whitened_detector_signals():
         injection={'generator':'pycwb.modules.injection.burst_population.get_td_waveform'})
     p=dict(approximant='SGE',frequency=100,Q=9,iota=.7,hrss=1e-22,
            ra=1.,dec=.3,pol=.8,gps_time=1387221750.,target_snr=20.)
+    from pycwb.types.detector import Detector
+    detectors = {ifo: Detector(ifo, geometry_model=f"{ifo}:cwb") for ifo in ['L1', 'H1']}
+    config.get_detectors = lambda names: tuple(detectors[name] for name in names)
     segment=SimpleNamespace(injections=[p],sample_rate=1024,ifos=['L1','H1'])
     rng=np.random.default_rng(7)
     data=[TimeSeries(rng.normal(size=40960)*1e-22,dt=1/1024,t0=1387221730.) for _ in range(2)]
@@ -100,7 +103,7 @@ def test_target_network_snr_scales_actual_whitened_detector_signals():
         np.testing.assert_array_equal(noise.data,original[i])
         signal.data*=scale
         full=TimeSeries(np.zeros(40960),dt=1/1024,t0=1387221730.).inject(signal)
-        _,rms=whitening_python(config,check_and_resample_py(noise.copy(),config,i))
+        _,rms=whiten_wavelet(config,check_and_resample_py(noise.copy(),config,i))
         white,_=whiten_injection_strain(config,check_and_resample_py(full,config,i),rms)
         measured+=_window_energy(white,p['gps_time'],2.5)
     assert np.sqrt(measured)==pytest.approx(20.,rel=1e-10)

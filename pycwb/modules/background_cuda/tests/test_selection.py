@@ -51,13 +51,21 @@ def _veto(n_time: int) -> np.ndarray:
 
 def _native(cache: dict, lag_shifts: list[float], veto: np.ndarray | None) -> dict:
     return selection.select_network_pixels(
-        None, 0, THRESHOLD, lag_shifts=lag_shifts, veto=veto, edge=0.0, selection_cache=cache
+        None,
+        0,
+        THRESHOLD,
+        lag_shifts=lag_shifts,
+        veto=veto,
+        edge=0.0,
+        selection_cache=cache,
     )
 
 
 def _assert_payload_matches(actual: dict, expected: dict) -> None:
     for key in ("frequency", "time", "pix_det_index"):
-        np.testing.assert_array_equal(np.asarray(actual[key]), expected[key], err_msg=key)
+        np.testing.assert_array_equal(
+            np.asarray(actual[key]), expected[key], err_msg=key
+        )
     for key in ("energy", "pix_det_energy"):
         assert_same_bits(actual[key], expected[key])
     np.testing.assert_array_equal(actual["mask"], expected["mask"])
@@ -71,16 +79,28 @@ def _assert_payload_matches(actual: dict, expected: dict) -> None:
 class TestSelectionSession:
     @pytest.mark.parametrize("n_ifo", [2, 3])
     @pytest.mark.parametrize("veto_on", [False, True])
-    def test_select_matches_native_selector(self, rng: np.random.Generator, n_ifo: int, veto_on: bool) -> None:
+    def test_select_matches_native_selector(
+        self, rng: np.random.Generator, n_ifo: int, veto_on: bool
+    ) -> None:
         from pycwb.modules.background_cuda.selection_cuda import SelectionSession
 
         cache = selection_cache(rng, n_ifo)
         veto = _veto(cache["n_time"]) if veto_on else None
-        session = SelectionSession(cache["arrays_stack"], cache["valid_start"], cache["nn_valid"], cache["ib"], veto)
+        session = SelectionSession(
+            cache["arrays_stack"],
+            cache["valid_start"],
+            cache["nn_valid"],
+            cache["ib"],
+            veto,
+        )
         for lag_shifts in LAG_SHIFTS[n_ifo]:
             expected = _native(cache, lag_shifts, veto)
-            shifts = selection._shift_bins_from_lag_shifts(lag_shifts, n_ifo, cache["rate"])
-            payload, live = session.select(shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=4096)
+            shifts = selection._shift_bins_from_lag_shifts(
+                lag_shifts, n_ifo, cache["rate"]
+            )
+            payload, live = session.select(
+                shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=4096
+            )
             frequency, time, energy, det_energy, det_index = payload
             assert len(frequency) > 0, "synthetic case must select pixels"
             np.testing.assert_array_equal(frequency, expected["frequency"])
@@ -110,14 +130,22 @@ class TestSelectionSession:
         from pycwb.modules.background_cuda.selection_cuda import SelectionSession
 
         cache = selection_cache(rng, 2)
-        session = SelectionSession(cache["arrays_stack"], cache["valid_start"], cache["nn_valid"], cache["ib"])
+        session = SelectionSession(
+            cache["arrays_stack"], cache["valid_start"], cache["nn_valid"], cache["ib"]
+        )
         shifts = np.zeros(2, np.int64)
         expected = _native(cache, [0.0, 0.0], None)
         count = len(expected["frequency"])
         assert count > 2
-        with pytest.raises(OverflowError, match=f"{count} selected pixels exceed capacity 2"):
-            session.select(shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=2)
-        payload, _ = session.select(shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=count)
+        with pytest.raises(
+            OverflowError, match=f"{count} selected pixels exceed capacity 2"
+        ):
+            session.select(
+                shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=2
+            )
+        payload, _ = session.select(
+            shifts, THRESHOLD, cache["ie"], cache["edge_bins"], capacity=count
+        )
         np.testing.assert_array_equal(payload[0], expected["frequency"])
 
     def test_constructor_and_select_validation(self, rng: np.random.Generator) -> None:
@@ -160,35 +188,46 @@ class TestGPUSelectorCUDA:
     def test_selector_payload_matches_native(
         self, rng: np.random.Generator, monkeypatch: pytest.MonkeyPatch, n_ifo: int
     ) -> None:
-        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+
         from pycwb.modules.background_cuda.processor import GPUSelector
 
         cache = selection_cache(rng, n_ifo)
         veto = _veto(cache["n_time"])
-        selector = GPUSelector()
+        selector = GPUSelector({"selection_cuda": True})
         assert selector.use_cuda
         for lag_shifts in LAG_SHIFTS[n_ifo]:
             expected = _native(cache, lag_shifts, veto)
-            actual = selector(None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache)
+            actual = selector(
+                None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache
+            )
             _assert_payload_matches(actual, expected)
         assert len(selector.sessions) == 1
         # A veto of the wrong length is ignored like the native selector does.
         expected = _native(cache, LAG_SHIFTS[n_ifo][1], np.zeros(3, np.int16))
-        actual = selector(None, 0, THRESHOLD, LAG_SHIFTS[n_ifo][1], np.zeros(3, np.int16), selection_cache=cache)
+        actual = selector(
+            None,
+            0,
+            THRESHOLD,
+            LAG_SHIFTS[n_ifo][1],
+            np.zeros(3, np.int16),
+            selection_cache=cache,
+        )
         _assert_payload_matches(actual, expected)
         assert len(selector.sessions) == 1
 
     def test_selector_requires_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+
         from pycwb.modules.background_cuda.processor import GPUSelector
 
         with pytest.raises(ValueError, match="requires a prepared selection cache"):
-            GPUSelector()(None, 0, THRESHOLD, [0.0, 0.0], None, selection_cache=None)
+            GPUSelector({"selection_cuda": True})(
+                None, 0, THRESHOLD, [0.0, 0.0], None, selection_cache=None
+            )
 
     def test_selector_uses_preindexed_shift_table(
         self, rng: np.random.Generator, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("PYCWB_GPU_SELECTION_CUDA", "1")
+
         from pycwb.modules.background_cuda.processor import GPUSelector
 
         cache = selection_cache(rng, 2)
@@ -196,10 +235,20 @@ class TestGPUSelectorCUDA:
         cache["shift_bins_by_lag"] = np.vstack(
             [selection._shift_bins_from_lag_shifts(r, 2, cache["rate"]) for r in rows]
         ).astype(np.int64)
-        selector = GPUSelector()
+        selector = GPUSelector({"selection_cuda": True})
         for lag_index in range(len(rows)):
-            expected = selection.select_network_pixels(None, lag_index, THRESHOLD, selection_cache=cache)
-            actual = selector(None, lag_index, THRESHOLD, None, None, selection_cache=cache)
+            expected = selection.select_network_pixels(
+                None, lag_index, THRESHOLD, selection_cache=cache, preindex_shifts=True
+            )
+            actual = selector(
+                None,
+                lag_index,
+                THRESHOLD,
+                None,
+                None,
+                selection_cache=cache,
+                preindex_shifts=True,
+            )
             _assert_payload_matches(actual, expected)
             assert len(actual["frequency"]) > 0
 
@@ -218,7 +267,14 @@ class TestAlignmentSession:
 
         maps = rng.uniform(-1.0, 8.0, (n_ifo, 6, 13))
         maps[:, 2, :6] = 0.0
-        maps[0, 2, :6] = [3.0, np.nextafter(3.0, 0.0), np.nextafter(3.0, 4.0), 6.0, np.nextafter(6.0, 0.0), 6.5]
+        maps[0, 2, :6] = [
+            3.0,
+            np.nextafter(3.0, 0.0),
+            np.nextafter(3.0, 4.0),
+            6.0,
+            np.nextafter(6.0, 0.0),
+            6.5,
+        ]
         veto = np.ones(13, np.int16)
         veto[[3, 8]] = 0
         shifts = np.array([[0] * n_ifo, [-17, 100, 5][:n_ifo], [1] * n_ifo], np.int64)
@@ -270,9 +326,13 @@ class TestAlignmentSession:
         assert not selector.use_cuda
         for lag_shifts in LAG_SHIFTS[n_ifo]:
             expected = _native(cache, lag_shifts, veto)
-            actual = selector(None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache)
+            actual = selector(
+                None, 0, THRESHOLD, lag_shifts, veto, selection_cache=cache
+            )
             _assert_payload_matches(actual, expected)
         expected = _native(cache, LAG_SHIFTS[n_ifo][0], None)
-        actual = selector(None, 0, THRESHOLD, LAG_SHIFTS[n_ifo][0], None, selection_cache=cache)
+        actual = selector(
+            None, 0, THRESHOLD, LAG_SHIFTS[n_ifo][0], None, selection_cache=cache
+        )
         _assert_payload_matches(actual, expected)
         selector.sessions.clear()

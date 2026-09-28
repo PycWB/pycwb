@@ -4,8 +4,8 @@ Every check here runs the native CPU implementation *and* the accelerated one
 on the same inputs and compares complete fingerprints of the results, so a
 validation run costs at least the sum of both. Its wall time must never be
 quoted as a benchmark. The checks are enabled per stage by the
-``PYCWB_GPU_VALIDATE_*`` switches read by the calling modules; this module
-only reads ``PYCWB_GPU_STAGE_FAILURE_DIR`` (at call time, inside the paired
+``gpu.validate_*`` switches read by the calling modules; this module
+only reads ``gpu.stage_failure_dir`` (at call time, inside the paired
 call) to decide whether to pickle a failing pair for inspection.
 """
 
@@ -24,18 +24,16 @@ from typing import Any
 
 import numpy as np
 
-from pycwb.modules.likelihoodWP.typing import SkyMapStatistics
+from pycwb.modules.likelihoodWP.results import SkyMapStatistics
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 
 logger = logging.getLogger(__name__)
 
 LIKELIHOOD_HOOKS: dict[str, str] = {
-    "_calculate_dpf_scalar": "dpf",
-    "calculate_dpf": "dpf",
-    "_scan_sky_scratch": "sky_scan",
-    "_scan_sky_grouped_delays": "sky_scan",
-    "_scan_sky_for_best_fit": "sky_scan",
+    "_compute_dpf_regulator_scalar": "dpf",
+    "_compute_dpf_regulator": "dpf",
+    "_scan_sky": "sky_scan",
     "_compute_statistics_at_sky_position": "sky_statistics",
     "_get_likelihood_rejection_reason": "threshold_decision",
 }
@@ -98,7 +96,13 @@ def leaves(value: Any, path: str = "root") -> Fingerprint:
     if isinstance(value, np.ndarray):
         if value.dtype.hasobject:
             raise TypeError("Object arrays need an explicit validation schema")
-        return {path: (value.dtype.str, value.shape, hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest())}
+        return {
+            path: (
+                value.dtype.str,
+                value.shape,
+                hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest(),
+            )
+        }
     if isinstance(value, (list, tuple)):
         result = {path + ".length": len(value)}
         for i, child in enumerate(value):
@@ -140,9 +144,9 @@ def traced(
     Returns
     -------
     callable
-        Private clone produced by :func:`~.binding.specialize`.
+        Private clone produced by :func:`~pycwb.utils.function_binding.specialize`.
     """
-    from .binding import specialize
+    from pycwb.utils.function_binding import specialize
 
     def record(callee: Callable[..., Any], label: str) -> Callable[..., Any]:
         def call(*args: Any, **kwargs: Any) -> Any:
@@ -167,6 +171,8 @@ def paired(
     reference: Callable[..., Any],
     stage: str,
     mutable_arg: int | None = None,
+    *,
+    options=None,
 ) -> Callable[..., Any]:
     """Wrap an accelerated stage so every call is checked against the native reference.
 
@@ -199,7 +205,7 @@ def paired(
 
     Notes
     -----
-    Inside ``check``, ``PYCWB_GPU_STAGE_FAILURE_DIR`` is read at call time; if
+    Inside ``check``, ``gpu.stage_failure_dir`` is read at call time; if
     set, a failing pair is pickled to
     ``<dir>/<stage>_<pid>.pickle`` as ``(reference_snapshot, actual,
     differing_paths)`` before the ``AssertionError`` is raised. The snapshot is
@@ -216,34 +222,45 @@ def paired(
         cpu_trace: list[tuple[str, Fingerprint]] = []
         gpu_trace: list[tuple[str, Fingerprint]] = []
         cpu, gpu = reference, function
-        if stage == "likelihood":
+        if stage in ("likelihood", "evaluate_cluster_likelihood"):
             cpu = traced(reference, LIKELIHOOD_HOOKS, cpu_trace)
             gpu = traced(function, LIKELIHOOD_HOOKS, gpu_trace)
         expected = cpu(*cpu_args, **kwargs)
         # Fingerprint before the second call, so reusable native scratch arrays
         # cannot overwrite the reference and hide a later difference.
         a = leaves(expected)
-        capture = flags.text("STAGE_FAILURE_DIR")
+        capture = gpu_options(options).stage_failure_dir
         reference_snapshot = copy.deepcopy(expected) if capture else None
         actual = gpu(*args, **kwargs)
         b = leaves(actual)
-        differing = [key for key in a.keys() | b.keys() if key not in a or key not in b or a[key] != b[key]]
+        differing = [
+            key
+            for key in a.keys() | b.keys()
+            if key not in a or key not in b or a[key] != b[key]
+        ]
         if differing:
             if capture:
                 directory = Path(capture)
                 directory.mkdir(parents=True, exist_ok=True)
                 with (directory / f"{stage}_{os.getpid()}.pickle").open("wb") as stream:
                     pickle.dump((reference_snapshot, actual, sorted(differing)), stream)
-            raise AssertionError(f"{stage} native parity failed: {sorted(differing)[:MAX_REPORTED_DIFFERENCES]}")
+            raise AssertionError(
+                f"{stage} native parity failed: {sorted(differing)[:MAX_REPORTED_DIFFERENCES]}"
+            )
         if cpu_trace != gpu_trace:
             labels = [
                 cpu_trace[i][0] if i < len(cpu_trace) else "extra_gpu_call"
                 for i in range(max(len(cpu_trace), len(gpu_trace)))
-                if i >= len(cpu_trace) or i >= len(gpu_trace) or cpu_trace[i] != gpu_trace[i]
+                if i >= len(cpu_trace)
+                or i >= len(gpu_trace)
+                or cpu_trace[i] != gpu_trace[i]
             ]
             raise AssertionError(f"{stage} internal parity failed: {labels}")
-        if stage == "likelihood":
-            logger.info("GPU likelihood internal parity: calls=%s exact=1", ",".join(label for label, _ in cpu_trace))
+        if stage in ("likelihood", "evaluate_cluster_likelihood"):
+            logger.info(
+                "GPU likelihood internal parity: calls=%s exact=1",
+                ",".join(label for label, _ in cpu_trace),
+            )
         logger.info("GPU stage parity: stage=%s leaves=%d exact=1", stage, len(a))
         return actual
 

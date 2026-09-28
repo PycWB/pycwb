@@ -4,6 +4,7 @@ and will also be used to generate the documentation
 """
 
 from .execution_profile import PROFILE_SCHEMA
+from .gpu_options import GPU_SCHEMA
 from pycwb.workflow.execution.settings import EXECUTION_SCHEMA
 
 NIFO_MAX = 8
@@ -13,6 +14,7 @@ schema = {
     "type": "object",
     "properties": {
         "execution_profile": PROFILE_SCHEMA,
+        "gpu": GPU_SCHEMA,
         "coherence_timing": {
             "type": "boolean",
             "default": False,

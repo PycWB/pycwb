@@ -309,7 +309,7 @@ Training, scoring, and FAR
 
 .. autofunction:: pycwb.modules.postprocess.train_xgboost.train_xgboost
 
-.. autofunction:: pycwb.modules.postprocess.xgb_heatmap.plot_xgb_heatmap
+
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_catalog
 

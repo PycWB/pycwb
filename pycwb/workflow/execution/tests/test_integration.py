@@ -55,7 +55,9 @@ def test_slurm_uses_stable_batches_and_valid_shell(tmp_path):
     text = Path(scheduler.slurm_script).read_text()
     assert "job_groups=(10,30 20)" in text
     assert "--batch-id=$batch_id" in text
-    assert "PYCWB_MEMORY_LIMIT_BYTES=" in text
+    assert "--memory-limit=" in text
+    assert "--allocated-cores=" in text
+    assert "PYCWB_MEMORY_LIMIT_BYTES" not in text
     subprocess.run(["bash", "-n", scheduler.slurm_script], check=True)
 
 

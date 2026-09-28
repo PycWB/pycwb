@@ -2,19 +2,21 @@
 
 The processor reuses the native preparation, scientific stages, output and
 restart handling of :mod:`pycwb.workflow.subflow.process_job_segment_native`.
-Accelerated stages are composed with :func:`~.binding.specialize`, which clones
+Accelerated stages are composed with :func:`~pycwb.utils.function_binding.specialize`, which clones
 the native caller with a private globals dictionary; no production module is
 mutated. Stages without an enabled GPU switch execute the unchanged CPU code.
 
 Select it in ``user_parameters.yaml`` with
 ``segment_processer: pycwb.modules.background_cuda.processor.process_job_segment``
-and enable stages through the ``PYCWB_GPU_*`` switches documented in the
-package README. All switches are read at call time through :mod:`.flags`.
+and enable stages through the the ``gpu`` YAML mapping documented in the
+package README. All switches are resolved from YAML from the job configuration.
 """
 
 from __future__ import annotations
 
 import importlib
+from pycwb.constants.execution_profile import execution_profile
+from pycwb.constants.gpu_options import gpu_options
 import logging
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -22,24 +24,20 @@ from typing import Any
 import jax
 import numpy as np
 
-from pycwb.modules.coherence_native import pipeline, selection
+from pycwb.modules.coherence_native import selection
+
+coherence = importlib.import_module("pycwb.modules.coherence_native.coherence")
 from pycwb.workflow.subflow import process_job_segment_native as native
 
-from . import flags
 from .alignment_jax import AlignmentSession
-from .binding import specialize
+from pycwb.utils.function_binding import specialize
 from .selection_jax import select_pixels
 
 logger = logging.getLogger(__name__)
 
-# Retained for modules written against the previous private name.
-_specialize = specialize
 
 INITIAL_SELECTION_CAPACITY = 65536
 """Sparse selection capacity tried first; doubled on overflow, never truncated."""
-
-MAX_LAG_WORKERS = 6
-"""Spawned GPU lag workers validated on the 12 GB reference device."""
 
 
 class GPUSelector:
@@ -47,7 +45,7 @@ class GPUSelector:
 
     One instance owns the device copies of every resolution's energy maps and
     is called from exactly one thread. The JAX alignment/selection pair is the
-    default; ``PYCWB_GPU_SELECTION_CUDA=1`` selects the direct CUDA backend.
+    default; ``gpu.selection_cuda=true`` selects the direct CUDA backend.
 
     Attributes
     ----------
@@ -59,9 +57,10 @@ class GPUSelector:
         Compiled selection kernels shared by every CUDA session.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options=None) -> None:
+        self.options = gpu_options(options)
         self.sessions: dict[int, tuple[dict[str, Any], Any, np.ndarray | None]] = {}
-        self.use_cuda = flags.enabled("SELECTION_CUDA")
+        self.use_cuda = self.options.selection_cuda
         self.cuda_module: Any | None = None
 
     def _session(self, cache: dict[str, Any], veto: np.ndarray | None) -> Any:
@@ -70,7 +69,11 @@ class GPUSelector:
         cached = self.sessions.get(key)
         same_veto = cached is not None and (
             (cached[2] is None and veto is None)
-            or (cached[2] is not None and veto is not None and np.array_equal(cached[2], veto))
+            or (
+                cached[2] is not None
+                and veto is not None
+                and np.array_equal(cached[2], veto)
+            )
         )
         if same_veto:
             return cached[1]
@@ -88,7 +91,11 @@ class GPUSelector:
             self.cuda_module = session.module
         else:
             session = AlignmentSession(
-                cache["arrays_stack"], cache["valid_start"], cache["nn_valid"], cache["ib"], veto
+                cache["arrays_stack"],
+                cache["valid_start"],
+                cache["nn_valid"],
+                cache["ib"],
+                veto,
             )
         self.sessions[key] = (cache, session, None if veto is None else veto.copy())
         return session
@@ -102,6 +109,8 @@ class GPUSelector:
         veto: np.ndarray | None = None,
         edge: float = 0.0,
         selection_cache: dict[str, Any] | None = None,
+        *,
+        preindex_shifts: bool = False,
     ) -> dict[str, Any]:
         """Select network pixels for one lag with the native payload layout.
 
@@ -143,13 +152,19 @@ class GPUSelector:
         cache = selection_cache
         if cache is None:
             raise ValueError("GPU selector requires a prepared selection cache")
-        veto_array = None if veto is None or len(veto) != cache["n_time"] else np.asarray(veto, dtype=np.int16)
+        veto_array = (
+            None
+            if veto is None or len(veto) != cache["n_time"]
+            else np.asarray(veto, dtype=np.int16)
+        )
         session = self._session(cache, veto_array)
-        table = cache.get("shift_bins_by_lag")
+        table = cache.get("shift_bins_by_lag") if preindex_shifts else None
         if table is not None and 0 <= lag_index < len(table):
             shifts = np.asarray(table[lag_index], dtype=np.int64)
         else:
-            shifts = selection._shift_bins_from_lag_shifts(lag_shifts, cache["n_ifo"], cache["rate"])
+            shifts = selection._shift_bins_from_lag_shifts(
+                lag_shifts, cache["n_ifo"], cache["rate"]
+            )
         if not self.use_cuda:
             with jax.default_device(session.device):
                 support, device_live = session.align(shifts[None, :], energy_threshold)
@@ -158,11 +173,23 @@ class GPUSelector:
         while True:
             try:
                 if self.use_cuda:
-                    payload, live = session.select(shifts, energy_threshold, cache["ie"], cache["edge_bins"], capacity)
+                    payload, live = session.select(
+                        shifts,
+                        energy_threshold,
+                        cache["ie"],
+                        cache["edge_bins"],
+                        capacity,
+                    )
                 else:
                     with jax.default_device(session.device):
                         payload = select_pixels(
-                            session, support[0], shifts, energy_threshold, cache["ie"], cache["edge_bins"], capacity
+                            session,
+                            support[0],
+                            shifts,
+                            energy_threshold,
+                            cache["ie"],
+                            cache["edge_bins"],
+                            capacity,
                         )
                         live = np.asarray(device_live[0])
                 break
@@ -191,7 +218,7 @@ class GPUSelector:
         }
 
 
-def _build_analyzer() -> tuple[Callable[[Any, int], Any], GPUSelector]:
+def _build_analyzer(config=None) -> tuple[Callable[[Any, int], Any], GPUSelector]:
     """Build the per-lag analysis function with the enabled GPU stage bindings.
 
     Called once per serial caller or once per spawned worker, so every process
@@ -203,73 +230,109 @@ def _build_analyzer() -> tuple[Callable[[Any, int], Any], GPUSelector]:
         ``(analyze, selector)``: a clone of the native ``_run_lag_analysis``
         and the :class:`GPUSelector` whose sessions the caller releases.
     """
-    selector = GPUSelector()
+    options = gpu_options(config)
+    selector = GPUSelector(options)
     select: Callable[..., Any] = selector
-    if flags.enabled("VALIDATE_STAGES"):
+    if options.validate_stages:
         from .validation import paired
 
-        select = paired(selector, selection.select_network_pixels, "selection")
+        select = paired(
+            selector, selection.select_network_pixels, "selection", options=options
+        )
     bindings: dict[str, Any] = {
-        "coherence_single_lag": specialize(pipeline.coherence_single_lag, select_network_pixels=select)
+        "coherence_single_lag": specialize(
+            coherence.coherence_single_lag, select_network_pixels=select
+        )
     }
-    if flags.enabled("EVENT_GEOMETRY_CACHE"):
-        from .event_geometry import CachedGeometryEvent
-
-        bindings["Event"] = CachedGeometryEvent
-    if flags.enabled("DPF"):
+    if options.dpf:
+        if not execution_profile(config).scalar_dpf:
+            raise ValueError("gpu.dpf requires execution_profile.scalar_dpf=true")
         from .dpf_regulator import DPFRegulator
 
-        likelihood_module = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
-        bindings["likelihood"] = specialize(
-            likelihood_module.likelihood, _calculate_dpf_scalar=DPFRegulator(), _SCALAR_DPF=True
+        likelihood_module = importlib.import_module(
+            "pycwb.modules.likelihoodWP.likelihood"
         )
-    if flags.enabled("LIKELIHOOD"):
+        bindings["evaluate_cluster_likelihood"] = specialize(
+            likelihood_module.evaluate_cluster_likelihood,
+            _compute_dpf_regulator_scalar=DPFRegulator(options),
+        )
+    if options.likelihood:
         from .likelihood_scan import LikelihoodScan
 
-        scan = LikelihoodScan()
-        bindings["likelihood"] = specialize(
-            bindings.get("likelihood", native.likelihood),
-            _scan_sky_scratch=scan,
-            _scan_sky_grouped_delays=scan,
-            _scan_sky_for_best_fit=scan,
+        scan = LikelihoodScan(options)
+        bindings["evaluate_cluster_likelihood"] = specialize(
+            bindings.get(
+                "evaluate_cluster_likelihood", native.evaluate_cluster_likelihood
+            ),
+            _scan_sky=scan.scan_sky,
         )
-    if flags.enabled("CHIRP"):
+    if options.chirp:
         from .chirp_bootstrap import make_chirp_update
 
-        bindings["likelihood"] = specialize(
-            bindings.get("likelihood", native.likelihood), _update_cluster_chirp_statistics=make_chirp_update()
+        bindings["evaluate_cluster_likelihood"] = specialize(
+            bindings.get(
+                "evaluate_cluster_likelihood", native.evaluate_cluster_likelihood
+            ),
+            _update_cluster_chirp_statistics=make_chirp_update(),
         )
-    if flags.enabled("SUBNET") or flags.enabled("SUBNET_BATCH"):
-        from .subnet_scan import SubnetScan
-
-        subnet = importlib.import_module("pycwb.modules.super_cluster_native.sub_net_cut")
-        utils = importlib.import_module("pycwb.modules.super_cluster_native.utils")
-        supercluster = importlib.import_module("pycwb.modules.super_cluster_native.super_cluster")
-        packets = specialize(subnet._sub_net_cut_prepared_packets, optimze_sky_loc_from_td=SubnetScan())
-        cut = specialize(subnet.sub_net_cut_from_pixel_arrays, _sub_net_cut_prepared_packets=packets)
-        apply: Callable[..., Any] = specialize(utils.apply_subnet_cut, sub_net_cut_from_pixel_arrays=cut)
-        if flags.enabled("SUBNET_BATCH"):
+    if options.subnet or options.subnet_batch:
+        supercluster = importlib.import_module(
+            "pycwb.modules.super_cluster_native.super_cluster"
+        )
+        if options.subnet_batch:
             from .subnet_batch import BatchedSubnet
 
-            apply = BatchedSubnet()
-        bindings["supercluster_single_lag"] = specialize(supercluster.supercluster_single_lag, apply_subnet_cut=apply)
-    if flags.enabled("TD"):
+            apply = BatchedSubnet(options)
+        else:
+            from .subnet_scan import SubnetScan
+
+            subnet = importlib.import_module(
+                "pycwb.modules.super_cluster_native.sub_net_cut"
+            )
+            utils = importlib.import_module("pycwb.modules.super_cluster_native.utils")
+            packets = specialize(
+                subnet._sub_net_cut_prepared_packets,
+                optimze_sky_loc_from_td=SubnetScan(),
+            )
+            cut = specialize(
+                subnet.sub_net_cut_from_pixel_arrays,
+                _sub_net_cut_prepared_packets=packets,
+            )
+            apply = specialize(
+                utils.apply_subnet_cut, sub_net_cut_from_pixel_arrays=cut
+            )
+        bindings["supercluster_single_lag"] = specialize(
+            supercluster.supercluster_single_lag, apply_subnet_cut=apply
+        )
+    if options.td:
         from .td_vectors import GPUTimeDelays
 
         bindings["supercluster_single_lag"] = specialize(
             bindings.get("supercluster_single_lag", native.supercluster_single_lag),
-            _populate_td_vectors=GPUTimeDelays(),
+            _populate_td_vectors=GPUTimeDelays(options),
         )
-    if flags.enabled("VALIDATE_STAGES"):
+    if options.validate_stages:
         from .validation import paired
 
-        for name, mutable_arg in (("coherence_single_lag", None), ("supercluster_single_lag", 2), ("likelihood", 1)):
+        for name, mutable_arg in (
+            ("coherence_single_lag", None),
+            ("supercluster_single_lag", 2),
+            ("evaluate_cluster_likelihood", 1),
+        ):
             reference = getattr(native, name)
-            bindings[name] = paired(bindings.get(name, reference), reference, name, mutable_arg)
+            bindings[name] = paired(
+                bindings.get(name, reference),
+                reference,
+                name,
+                mutable_arg,
+                options=options,
+            )
     return specialize(native._run_lag_analysis, **bindings), selector
 
 
-def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[int]] | None) -> None:
+def _process_lags(
+    context: Any, output_context: Any, skip_lags: dict[int, set[int]] | None
+) -> None:
     """Run every pending lag and write outputs through the parent-only writer.
 
     Parameters
@@ -283,7 +346,7 @@ def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[in
     """
     from .output_buffer import OutputWriter
 
-    workers = flags.worker_count("LAG_WORKERS", maximum=MAX_LAG_WORKERS)
+    workers = gpu_options(context.config).lag_workers
     writer = OutputWriter(output_context)
     if workers > 1 and not context.sub_job_seg.injections:
         from .process_parallel import process_lags
@@ -292,7 +355,7 @@ def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[in
     else:
         if workers > 1:
             logger.info("GPU lag workers run serially for injection jobs")
-        analyze, selector = _build_analyzer()
+        analyze, selector = _build_analyzer(context.config)
         try:
             pending: Iterable[int] = native._iter_pending_lags(context, skip_lags)
             for lag in pending:
@@ -303,12 +366,12 @@ def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[in
     writer.close()
 
 
-def process_job_segment(*args: Any, **kwargs: Any) -> Any:
+def process_job_segment(working_dir, config, job_seg, *args: Any, **kwargs: Any) -> Any:
     """Configuration entry point; native CPU preparation with GPU lag stages.
 
     Accepts the native ``process_job_segment`` arguments. Preparation stages
     are replaced by their bounded parallel variants when the corresponding
-    ``PYCWB_GPU_*_WORKERS`` switch is set, and lag processing always uses
+    ``gpu`` worker count is set, and lag processing always uses
     :func:`_process_lags`.
 
     Raises
@@ -319,6 +382,7 @@ def process_job_segment(*args: Any, **kwargs: Any) -> Any:
     ValueError
         If a ``lag_processor`` is supplied; this entry point owns it.
     """
+    options = gpu_options(config)
     if not jax.config.x64_enabled:
         raise RuntimeError("Set JAX_ENABLE_X64=1 for the experimental GPU processor")
     jax.devices("gpu")  # Fail before preparation if the GPU is unavailable.
@@ -329,27 +393,28 @@ def process_job_segment(*args: Any, **kwargs: Any) -> Any:
     process = native.process_job_segment
     # An input provider owns decode admission and returns job-local copies.
     # Keep its serial read path instead of spawning unaccounted nested readers.
-    if flags.text("READ_WORKERS", "1") != "1" and kwargs.get("input_provider") is None:
+    if options.read_workers > 1 and kwargs.get("input_provider") is None:
         from .read_parallel import read_from_job_segment
 
         process = specialize(process, read_from_job_segment=read_from_job_segment)
-    if flags.text("CONDITION_WORKERS", "1") != "1":
-        from .conditioning_parallel import data_conditioning
+    if options.condition_workers > 1:
+        from .conditioning_parallel import condition_strains
 
-        process = specialize(process, data_conditioning=data_conditioning)
-    if flags.text("TD_SETUP_WORKERS", "1") != "1":
+        process = specialize(process, condition_strains=condition_strains)
+    if options.td_setup_workers > 1:
         from .td_setup_parallel import build_td_inputs_cache
 
         process = specialize(process, build_td_inputs_cache=build_td_inputs_cache)
-    if flags.text("SETUP_WORKERS", "1") != "1" or flags.enabled("MAX_ENERGY") or flags.enabled("WDM_PREFILTER"):
+    if options.setup_workers > 1 or options.wdm_prefilter:
         from .setup_parallel import setup_coherence
 
         process = specialize(process, setup_coherence=setup_coherence)
-    if flags.enabled("OVERLAP_SETUP"):
+    if options.overlap_setup:
         from .setup_overlap import OverlappedSetup
 
         preparation = OverlappedSetup(
-            process.__globals__["setup_coherence"], process.__globals__["build_td_inputs_cache"]
+            process.__globals__["setup_coherence"],
+            process.__globals__["build_td_inputs_cache"],
         )
         process = specialize(
             process,
@@ -357,8 +422,21 @@ def process_job_segment(*args: Any, **kwargs: Any) -> Any:
             build_td_inputs_cache=preparation.build_td_inputs_cache,
         )
     with jax.default_device(jax.devices("cpu")[0]):
-        return process(*args, **kwargs, lag_processor=_process_lags)
+        return process(
+            working_dir, config, job_seg, *args, **kwargs, lag_processor=_process_lags
+        )
 
 
 # Native preparation accepts owned samples supplied by the allocation cache.
 process_job_segment.supports_input_provider = True  # type: ignore[attr-defined]
+
+
+def requested_cores(config):
+    """CPU slots for the busiest configured GPU preparation/analysis stage."""
+    options = gpu_options(config)
+    setup = (options.setup_workers + options.td_setup_workers if options.overlap_setup
+             else max(options.setup_workers, options.td_setup_workers))
+    return max(options.lag_workers, options.read_workers, options.condition_workers, setup)
+
+
+process_job_segment.requested_cores = requested_cores

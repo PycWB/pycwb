@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.workflow.subflow.postprocess_and_plots import reconstruct_waveforms_flow
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -88,13 +88,20 @@ def reconstruct(
         If ``save``, ``plot``, ``event.injection`` or any of
         ``PLOT_OR_SAVE_FLAGS`` in ``config`` is set.
     AssertionError
-        If ``PYCWB_GPU_VALIDATE_RECONSTRUCTION=1`` and the result differs
+        If ``gpu.validate_reconstruction=true`` and the result differs
         bitwise from the complete native ``reconstruct_waveforms_flow``.
     """
-    if save or plot or event.injection or any(getattr(config, flag, False) for flag in PLOT_OR_SAVE_FLAGS):
-        raise ValueError("Q-veto reconstruction requires background without saved waveforms or plots")
+    if (
+        save
+        or plot
+        or event.injection
+        or any(getattr(config, flag, False) for flag in PLOT_OR_SAVE_FLAGS)
+    ):
+        raise ValueError(
+            "Q-veto reconstruction requires background without saved waveforms or plots"
+        )
     expected = None
-    if flags.enabled("VALIDATE_RECONSTRUCTION"):
+    if gpu_options(config).validate_reconstruction:
         from .validation import leaves
 
         reference = reconstruct_waveforms_flow(
@@ -110,7 +117,11 @@ def reconstruct(
             queue=None,
         )
         expected = leaves(
-            {f"{ifo}_wf_{kind}_whiten": reference[f"{ifo}_wf_{kind}_whiten"] for ifo in ifos for kind in ("REC", "DAT")}
+            {
+                f"{ifo}_wf_{kind}_whiten": reference[f"{ifo}_wf_{kind}_whiten"]
+                for ifo in ifos
+                for kind in ("REC", "DAT")
+            }
         )
         del reference
     data: dict[str, TimeSeries] = {}
@@ -131,8 +142,14 @@ def reconstruct(
             data[f"{ifo}_wf_{label}_whiten"] = wave
     if expected is not None:
         if leaves(data) != expected:
-            raise AssertionError("Q-veto waveforms differ from complete native reconstruction")
-        logger.info("GPU Q-veto reconstruction parity: event=%s waveforms=%d exact=1", event.hash_id, len(data))
+            raise AssertionError(
+                "Q-veto waveforms differ from complete native reconstruction"
+            )
+        logger.info(
+            "GPU Q-veto reconstruction parity: event=%s waveforms=%d exact=1",
+            event.hash_id,
+            len(data),
+        )
     return data
 
 
@@ -158,19 +175,24 @@ def make_save(context: Any) -> Callable[[Any, Any], None]:
     ------
     ValueError
         If the context is not catalog-only background, or if
-        ``PYCWB_GPU_WORKER_OUTPUT=1`` is also set (the worker already ran the
+        ``gpu.worker_output=true`` is also set (the worker already ran the
         post-processing, so a second parent reconstruction is contradictory).
     """
     from pycwb.workflow.subflow import job_segment_output, process_job_segment_native
 
     from . import worker_output
-    from .binding import specialize
+    from pycwb.utils.function_binding import specialize
 
     worker_output.validate(context)
-    if worker_output.enabled():
-        raise ValueError("Parent Q-veto reconstruction cannot combine with worker output")
+    if worker_output.enabled(context.config):
+        raise ValueError(
+            "Parent Q-veto reconstruction cannot combine with worker output"
+        )
     postprocess = specialize(
         job_segment_output._postprocess_saved_triggers,
         reconstruct_waveforms_flow=reconstruct,
     )
-    return specialize(process_job_segment_native._save_lag_outputs, _postprocess_saved_triggers=postprocess)
+    return specialize(
+        process_job_segment_native._save_lag_outputs,
+        _postprocess_saved_triggers=postprocess,
+    )

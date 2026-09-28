@@ -69,7 +69,12 @@ class ChirpBootstrap:
         self.module = load_module(Path(__file__).with_suffix(".cu"))
 
     def __call__(
-        self, x: np.ndarray, f: np.ndarray, energy: np.ndarray, mindt: float, uniforms: np.ndarray
+        self,
+        x: np.ndarray,
+        f: np.ndarray,
+        energy: np.ndarray,
+        mindt: float,
+        uniforms: np.ndarray,
     ) -> tuple[np.ndarray, int]:
         """Run the seeded bootstrap and return the native ``(result, cursor)`` pair.
 
@@ -98,16 +103,27 @@ class ChirpBootstrap:
             If one trial's classification masks alone exceed
             :data:`MASK_BUDGET_BYTES`.
         """
-        x, f, energy, uniforms = (np.ascontiguousarray(a, dtype=np.float64) for a in (x, f, energy, uniforms))
+        x, f, energy, uniforms = (
+            np.ascontiguousarray(a, dtype=np.float64) for a in (x, f, energy, uniforms)
+        )
         if x.ndim != 1 or f.shape != x.shape or energy.shape != x.shape or len(x) < 13:
             raise ValueError("Bootstrap requires at least 13 matching micropixels")
-        _, weights, slopes, mergers, valid, ellipticity, cursor, ready = prepare_bootstrap(
-            x, f, energy, mindt, uniforms
+        _, weights, slopes, mergers, valid, ellipticity, cursor, ready = (
+            prepare_bootstrap(x, f, energy, mindt, uniforms)
         )
         if not ready:
             return np.full(5, np.nan), cursor
-        device_x, device_f, device_weights, device_slopes, device_mergers, device_valid, device_powers = (
-            cuda.to_device(a) for a in (x, f, weights, slopes, mergers, valid, frequency_powers(f))
+        (
+            device_x,
+            device_f,
+            device_weights,
+            device_slopes,
+            device_mergers,
+            device_valid,
+            device_powers,
+        ) = (
+            cuda.to_device(a)
+            for a in (x, f, weights, slopes, mergers, valid, frequency_powers(f))
         )
         out = cuda.device_array((TRIALS, SCORE_COLUMNS), np.float64)
         # Trials are independent. Batch trials, not pixels, so each score
@@ -148,7 +164,9 @@ class ChirpBootstrap:
                 slope, merger = slopes[i], mergers[i]
                 selected = int(scores[i, 1])
                 symmetry = scores[i, 2]
-        return finish_bootstrap(x, f, weights, mindt, slope, merger, selected, ellipticity, symmetry, cursor)
+        return finish_bootstrap(
+            x, f, weights, mindt, slope, merger, selected, ellipticity, symmetry, cursor
+        )
 
 
 def make_chirp_update() -> Callable[..., None]:
@@ -166,13 +184,20 @@ def make_chirp_update() -> Callable[..., None]:
     """
     import importlib
 
-    from .binding import specialize
+    from pycwb.utils.function_binding import specialize
 
     native = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
     chirp = importlib.import_module("pycwb.modules.likelihoodWP.chirp_micropixel")
     estimate = specialize(chirp.estimate_chirp, _bootstrap=ChirpBootstrap())
 
-    def update(cluster: Any, config: Any, *, xgb_rho_mode: bool, chirp_seed: int, use_native_chirp: bool) -> None:
+    def update(
+        cluster: Any,
+        config: Any,
+        *,
+        xgb_rho_mode: bool,
+        chirp_seed: int,
+        use_native_chirp: bool,
+    ) -> None:
         active = (
             use_native_chirp
             and xgb_rho_mode

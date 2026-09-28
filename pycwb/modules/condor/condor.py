@@ -63,10 +63,10 @@ class HTCondor:
 
         os.makedirs(dag_dir, exist_ok=True)
 
-        allocation_env = ""
+        allocation_args = ""
         if self.job_groups is not None:
-            allocation_env = (f"export PYCWB_ALLOCATED_CORES={self.n_proc}\n"
-                              f"export PYCWB_MEMORY_LIMIT_BYTES={byte_size(self.memory)}")
+            allocation_args = (f"--allocated-cores={self.n_proc} "
+                               f"--memory-limit={byte_size(self.memory)}B")
         job_argument = "--batch-id=$1" if self.job_groups is not None else "--jobs=$1"
         # create run.sh
         with open(f"{dag_dir}/run.sh", 'w') as f:
@@ -77,8 +77,7 @@ class HTCondor:
 { '''mkdir -p catalog/fragment job_status trigger output log
 # HTCondor flattens individually-listed files to the execute root; restore expected layout.
 for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/fragment/; done''' if should_transfer_files else ''}
-{allocation_env}
-pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} --n-workers={self.n_proc}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} {allocation_args} --n-workers={self.n_proc}
             """)
 
         # add execute permission to run.sh

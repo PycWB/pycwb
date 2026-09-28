@@ -15,8 +15,8 @@ from typing import Any
 
 import numpy as np
 
-from . import flags
-from .binding import specialize
+from pycwb.constants.gpu_options import gpu_options
+from pycwb.utils.function_binding import specialize
 from .subnet_scan import SubnetScan
 
 native = importlib.import_module("pycwb.modules.super_cluster_native.sub_net_cut")
@@ -28,7 +28,7 @@ class BatchedSubnet:
     """Drop-in for ``super_cluster_native.utils.apply_subnet_cut`` with a batched sky scan.
 
     Bound by ``processor.py`` as ``apply_subnet_cut`` inside a specialized
-    ``supercluster_single_lag`` when ``PYCWB_GPU_SUBNET_BATCH=1``.
+    ``supercluster_single_lag`` when ``gpu.subnet_batch=true``.
 
     Attributes
     ----------
@@ -36,7 +36,8 @@ class BatchedSubnet:
         Owns the resident geometry cache for the trial.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options=None) -> None:
+        self.options = gpu_options(options)
         self.scan = SubnetScan()
 
     def __call__(
@@ -91,17 +92,24 @@ class BatchedSubnet:
         Raises
         ------
         AssertionError
-            Under ``PYCWB_GPU_VALIDATE_STAGES=1``, if a GPU sky result differs
+            Under ``gpu.validate_stages=true``, if a GPU sky result differs
             from the native scan before the packet cuts.
         RuntimeError
             If the native packet code consumed fewer scan results than were
             produced, which would indicate a control-flow change.
         """
         start = time.perf_counter()
-        FP = np.ascontiguousarray(FP_local if arrays_prepared else FP_local.T, dtype=np.float32)
-        FX = np.ascontiguousarray(FX_local if arrays_prepared else FX_local.T, dtype=np.float32)
+        FP = np.ascontiguousarray(
+            FP_local if arrays_prepared else FP_local.T, dtype=np.float32
+        )
+        FX = np.ascontiguousarray(
+            FX_local if arrays_prepared else FX_local.T, dtype=np.float32
+        )
         ml = np.ascontiguousarray(ml_local, dtype=np.int32)
-        rows = [utils._top_loudest_indices(c.pixel_arrays.likelihood, n_loudest_local) for c in superclusters]
+        rows = [
+            utils._top_loudest_indices(c.pixel_arrays.likelihood, n_loudest_local)
+            for c in superclusters
+        ]
         inputs = [
             native._load_selected_pixel_arrays(c.pixel_arrays, r) if len(r) else None
             for c, r in zip(superclusters, rows, strict=True)
@@ -128,7 +136,7 @@ class BatchedSubnet:
         # handing out the precomputed results in order is safe.
         def ready(*args: Any) -> tuple[Any, ...]:
             actual = next(results)
-            if flags.enabled("VALIDATE_STAGES"):
+            if self.options.validate_stages:
                 from .validation import leaves
 
                 expected = native.optimze_sky_loc_from_td(*args)
@@ -137,7 +145,9 @@ class BatchedSubnet:
                 logger.info("GPU subnet sky parity: exact=1")
             return actual
 
-        packets = specialize(native._sub_net_cut_prepared_packets, optimze_sky_loc_from_td=ready)
+        packets = specialize(
+            native._sub_net_cut_prepared_packets, optimze_sky_loc_from_td=ready
+        )
         timing: dict[str, float] = {}
         for cluster, r, data in zip(superclusters, rows, inputs, strict=True):
             if data is None:
@@ -180,9 +190,13 @@ class BatchedSubnet:
                     timing=timing,
                 )
             cluster.cluster_status = (
-                -1 if result["subnet_passed"] and result["subrho_passed"] and result["subthr_passed"] else 1
+                -1
+                if result["subnet_passed"]
+                and result["subrho_passed"]
+                and result["subthr_passed"]
+                else 1
             )
-            if flags.enabled("VALIDATE_STAGES"):
+            if self.options.validate_stages:
                 logger.info(
                     "GPU subnet decisions: subnet=%d subrho=%d subthr=%d",
                     result["subnet_passed"],

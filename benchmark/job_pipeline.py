@@ -72,9 +72,9 @@ def validate_background(config: Any, jobs: list) -> None:
             raise ValueError(f"Unsupported pipeline experiment output: {name}")
 
 
-def _setup_functions(coherence: Any, td: Any) -> tuple[Any, Any]:
+def _setup_functions(coherence: Any, td: Any, *, overlap: bool = True) -> tuple[Any, Any]:
     """Allow serial setup inside a resource-constrained preparation process."""
-    if os.environ.get("PYCWB_GPU_OVERLAP_SETUP", "1") != "1":
+    if not overlap:
         return coherence, td
 
     from pycwb.modules.background_cuda.setup_overlap import OverlappedSetup
@@ -88,8 +88,8 @@ def prepare(task: dict) -> None:
     import jax
     import joblib
 
-    from pycwb.modules.background_cuda.conditioning_parallel import data_conditioning
-    from pycwb.modules.background_cuda.processor import _specialize
+    from pycwb.modules.background_cuda.conditioning_parallel import condition_strains
+    from pycwb.utils.function_binding import specialize
     from pycwb.modules.background_cuda.read_parallel import read_from_job_segment
     from pycwb.modules.background_cuda.setup_parallel import setup_coherence
     from pycwb.modules.background_cuda.td_setup_parallel import build_td_inputs_cache
@@ -129,7 +129,7 @@ def prepare(task: dict) -> None:
         return value
 
     def condition(config: Any, data: Any) -> Any:
-        value = data_conditioning(config, data)
+        value = condition_strains(config, data)
         if task["stage"] == "conditioned":
             checkpoint(value)
         return value
@@ -137,11 +137,16 @@ def prepare(task: dict) -> None:
     def capture(context: Any, output: Any, skip_lags: Any) -> None:
         checkpoint((context, output))
 
-    coherence, td = _setup_functions(setup_coherence, build_td_inputs_cache)
-    implementation = _specialize(
+    from copy import copy
+    from dataclasses import replace
+    from pycwb.constants.gpu_options import gpu_options
+    config = copy(task["config"])
+    config.gpu = replace(gpu_options(config), wdm_prefilter=False)
+    coherence, td = _setup_functions(setup_coherence, build_td_inputs_cache, overlap=config.gpu.overlap_setup)
+    implementation = specialize(
         native.process_job_segment,
         read_from_job_segment=read,
-        data_conditioning=condition,
+        condition_strains=condition,
         setup_coherence=coherence,
         build_td_inputs_cache=td,
     )
@@ -149,7 +154,7 @@ def prepare(task: dict) -> None:
         with jax.default_device(jax.devices("cpu")[0]):
             implementation(
                 task["directory"],
-                task["config"],
+                config,
                 task["job"],
                 catalog_file=task["catalog"],
                 compress_json=True,
@@ -166,6 +171,7 @@ def consume(task: dict) -> None:
     import joblib
 
     from pycwb.modules.background_cuda import processor as gpu
+    from pycwb.utils.function_binding import specialize
     from pycwb.workflow.subflow import process_job_segment_native as native
     from pycwb.workflow.subflow import process_job_segment_parallel as cpu
 
@@ -184,6 +190,13 @@ def consume(task: dict) -> None:
         if not jax.config.x64_enabled:
             raise RuntimeError("GPU consumption requires JAX_ENABLE_X64=1")
         jax.devices("gpu")
+    from copy import copy
+    from dataclasses import replace
+    from pycwb.constants.gpu_options import gpu_options
+    config = copy(task["config"])
+    options = gpu_options(config)
+    config.gpu = replace(options, read_workers=1,
+                         condition_workers=1 if task["stage"] == "conditioned" else options.condition_workers)
     started = time.time()
 
     def analyze(context: Any, output: Any, skip_lags: Any) -> None:
@@ -196,6 +209,8 @@ def consume(task: dict) -> None:
         value = joblib.load(path, mmap_mode="c")
         if task["stage"] == "full":
             context, output = value
+            context = replace(context, config=config)
+            output = replace(output, config=config)
             analyze(context, output, skip_lags=None)
         else:
             # Restricted background adapter: resume at the selected boundary.
@@ -207,18 +222,18 @@ def consume(task: dict) -> None:
                 bindings = {
                     "read_from_job_segment": lambda *_: [None] * len(task["job"].ifos),
                     "check_and_resample_py": lambda series, *_: series,
-                    "data_conditioning": lambda *_: (strains, noise_rms),
+                    "condition_strains": lambda *_: (strains, noise_rms),
                 }
-            process = gpu._specialize(native.process_job_segment, **bindings)
+            process = specialize(native.process_job_segment, **bindings)
             if task["backend"] == "gpu":
-                process = gpu._specialize(
+                process = specialize(
                     gpu.process_job_segment,
                     native=SimpleNamespace(process_job_segment=process),
                     _process_lags=analyze,
                 )
                 process(
                     task["directory"],
-                    task["config"],
+                    config,
                     task["job"],
                     catalog_file=task["catalog"],
                     compress_json=True,
@@ -226,7 +241,7 @@ def consume(task: dict) -> None:
             else:
                 process(
                     task["directory"],
-                    task["config"],
+                    config,
                     task["job"],
                     catalog_file=task["catalog"],
                     compress_json=True,
@@ -383,15 +398,10 @@ def run_pipeline(
                 env.update(
                     JAX_PLATFORMS="cpu",
                     CUDA_VISIBLE_DEVICES="",
-                    PYCWB_GPU_WDM_PREFILTER="0",
-                    PYCWB_GPU_MAX_ENERGY="0",
                 )
             else:
                 if backend == "cpu":
                     env.update(JAX_PLATFORMS="cpu", CUDA_VISIBLE_DEVICES="")
-                env["PYCWB_GPU_READ_WORKERS"] = "1"
-                if stage == "conditioned":
-                    env["PYCWB_GPU_CONDITION_WORKERS"] = "1"
             command = [
                 sys.executable,
                 "-m",

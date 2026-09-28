@@ -88,8 +88,8 @@ cache also consumes allocation RAM.
 ## Memory and CPU accounting
 
 Admission uses the minimum of the explicit ceiling, host availability, visible
-cgroup-v2 headroom and `PYCWB_MEMORY_LIMIT_BYTES` when present. Scheduler adapters
-export allocation limits. CPU affinity and scheduler CPU counts bound segment
+cgroup-v2 headroom and the explicit `--memory-limit` allocation ceiling. Scheduler
+adapters pass `--allocated-cores` and `--memory-limit` to the batch runner. CPU affinity and scheduler CPU counts bound segment
 slots, with each slot reserving the configured lag workers and inner threads.
 
 For each segment, the reservation is at least `worker_memory` and at least an
@@ -119,9 +119,9 @@ its own independent frame readers. Its CUDA numerical stages remain unchanged.
 
 The execution budget is host RAM only. For the single-device GPU configuration,
 use one segment at a time (`batch-runner --n-workers 1`); multiple lag workers
-inside that segment can already occupy most VRAM. Match the configured
-`parallel_lag_workers` to `PYCWB_GPU_LAG_WORKERS` for CPU-slot accounting. Device
-admission is not inferred from available host RAM. The existing optional GPU
+inside that segment can already occupy most VRAM. The processor declares the
+maximum concurrency from `gpu.lag_workers` and the preparation worker counts
+for CPU-slot accounting. Device admission is not inferred from available host RAM. The existing optional GPU
 catalog batcher still owns its writes; enabling raw-input reuse does not replace
 that output path or establish new GPU-product support.
 

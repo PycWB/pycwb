@@ -1,6 +1,6 @@
 """Opt-in native reconstruction in lag workers for catalog-only background.
 
-With ``PYCWB_GPU_WORKER_OUTPUT=1`` each spawned lag worker runs the native
+With ``gpu.worker_output=true`` each spawned lag worker runs the native
 post-processing (waveform reconstruction and Q-veto) on its own lag and ships
 only the resulting timings back to the parent, which then performs the file
 writes. The worker never creates files: :func:`validate` rejects every
@@ -16,7 +16,7 @@ from typing import Any
 
 from pycwb.workflow.subflow import process_job_segment_native as native
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 
 FILE_PRODUCING_FLAGS = (
     "save_waveform",
@@ -29,9 +29,9 @@ FILE_PRODUCING_FLAGS = (
 """Config attributes whose truth makes the native post-processing produce files."""
 
 
-def enabled() -> bool:
-    """Return whether ``PYCWB_GPU_WORKER_OUTPUT=1``; read at call time."""
-    return flags.enabled("WORKER_OUTPUT")
+def enabled(config=None) -> bool:
+    """Return whether ``gpu.worker_output=true``; read at call time."""
+    return gpu_options(config).worker_output
 
 
 def validate(context: Any) -> None:
@@ -54,8 +54,12 @@ def validate(context: Any) -> None:
         ``FILE_PRODUCING_FLAGS`` is enabled in ``context.config``.
     """
     config = context.config
-    if context.sub_job_seg.injections or any(getattr(config, flag, False) for flag in FILE_PRODUCING_FLAGS):
-        raise ValueError("GPU worker output requires catalog-only background without plots")
+    if context.sub_job_seg.injections or any(
+        getattr(config, flag, False) for flag in FILE_PRODUCING_FLAGS
+    ):
+        raise ValueError(
+            "GPU worker output requires catalog-only background without plots"
+        )
 
 
 @dataclass
@@ -112,5 +116,7 @@ def process(context: Any, result: Any) -> ProcessedLag:
         wave_file=None,
         queue=None,
     )
-    timings = native._postprocess_saved_triggers(output, result, [""] * len(result.events_data))
+    timings = native._postprocess_saved_triggers(
+        output, result, [""] * len(result.events_data)
+    )
     return ProcessedLag(result, timings)

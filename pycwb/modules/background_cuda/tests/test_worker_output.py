@@ -10,7 +10,14 @@ import pytest
 from pycwb.modules.background_cuda import worker_output as worker
 from pycwb.modules.background_cuda.output_buffer import OutputWriter
 
-UNSUPPORTED_FLAGS = ("save_waveform", "save_cluster", "save_sky_map", "plot_waveform", "plot_trigger", "plot_sky_map")
+UNSUPPORTED_FLAGS = (
+    "save_waveform",
+    "save_cluster",
+    "save_sky_map",
+    "plot_waveform",
+    "plot_trigger",
+    "plot_sky_map",
+)
 
 
 @pytest.fixture
@@ -23,13 +30,10 @@ def result() -> NS:
     return NS(lag=7, events_data=[(NS(injection=False), None, None)])
 
 
-def test_enabled_reads_environment_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("PYCWB_GPU_WORKER_OUTPUT", raising=False)
+def test_enabled_uses_job_config():
     assert worker.enabled() is False
-    monkeypatch.setenv("PYCWB_GPU_WORKER_OUTPUT", "1")
-    assert worker.enabled() is True
-    monkeypatch.setenv("PYCWB_GPU_WORKER_OUTPUT", "0")
-    assert worker.enabled() is False
+    assert worker.enabled(NS(gpu={"worker_output": True})) is True
+    assert worker.enabled(NS(gpu={"worker_output": False})) is False
 
 
 def test_validate_accepts_catalog_only_background(context: NS) -> None:
@@ -52,7 +56,9 @@ def test_validate_rejects_injection_jobs(context: NS, injections: object) -> Non
         worker.validate(context)
 
 
-def test_process_rejects_before_computation(context: NS, result: NS, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_process_rejects_before_computation(
+    context: NS, result: NS, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def explode(*_: object) -> None:
         raise AssertionError("reconstruction must not run")
 
@@ -71,7 +77,9 @@ def test_process_transport_and_parent_skips_reconstruction(
 ) -> None:
     calls: list[tuple] = []
 
-    def compute(output: object, lag_result: object, names: list[str]) -> tuple[float, float, float]:
+    def compute(
+        output: object, lag_result: object, names: list[str]
+    ) -> tuple[float, float, float]:
         calls.append((output, lag_result, names))
         return (1.0, 2.0, 0.0)
 
@@ -91,6 +99,9 @@ def test_process_transport_and_parent_skips_reconstruction(
 
     writer = object.__new__(OutputWriter)
     writer.context, writer.sink = context, None
+    from pycwb.constants.gpu_options import gpu_options
+
+    writer.options = gpu_options(context.config)
     seen: dict[str, object] = {}
 
     def fake_specialize(function: object, **bindings: object) -> object:
@@ -103,8 +114,7 @@ def test_process_transport_and_parent_skips_reconstruction(
         return save
 
     monkeypatch.delenv("PYCWB_GPU_PROFILE_LAGS", raising=False)
-    monkeypatch.setattr("pycwb.modules.background_cuda.binding.specialize", fake_specialize)
-    monkeypatch.setattr("pycwb.modules.background_cuda.processor._specialize", fake_specialize)
+    monkeypatch.setattr("pycwb.utils.function_binding.specialize", fake_specialize)
     writer.save(None, transported)
     assert seen["function"] is worker.native._save_lag_outputs
     assert seen["saved"] == (context, transported.result)

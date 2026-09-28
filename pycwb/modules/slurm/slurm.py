@@ -93,10 +93,10 @@ jobs=$start-$end"""
             selection = ("job_groups=(" + " ".join(selectors) + ")\njobs=${job_groups[$task_id]}\n"
                          "printf -v batch_id 'b%06d' \"$task_id\"")
 
-        allocation_env = ""
+        allocation_args = ""
         if self.job_groups is not None:
-            allocation_env = (f"export PYCWB_ALLOCATED_CORES={self.n_proc}\n"
-                              f"export PYCWB_MEMORY_LIMIT_BYTES={byte_size(self.memory)}")
+            allocation_args = (f"--allocated-cores={self.n_proc} "
+                               f"--memory-limit={byte_size(self.memory)}B")
         job_argument = "--batch-id=$batch_id" if self.job_groups is not None else "--jobs=$jobs"
         # create run.sh
         with open(f"{slurm_dir}/run.sh", 'w') as f:
@@ -128,8 +128,7 @@ echo "Task ID: $task_id processing jobs $jobs using $n_proc processes."
 MAX_RETRIES={self.n_retries}
 attempt=0
 while [ $attempt -lt $MAX_RETRIES ]; do
-    {allocation_env}
-pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} --n-proc=1 --n-workers={self.n_proc} && break
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} {allocation_args} --n-proc=1 --n-workers={self.n_proc} && break
     attempt=$((attempt + 1))
     echo "Attempt $attempt failed, retrying in 30s..."
     sleep 30

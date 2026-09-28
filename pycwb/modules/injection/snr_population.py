@@ -6,7 +6,7 @@ from pycwb.types.time_series import TimeSeries
 from .snr_energy import cwb_snr_energy
 from pycwb.modules.injection.strain import generate_strain_from_injection
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.whitening import whitening_python
+from pycwb.modules.data_conditioning.whitening import whiten_wavelet
 from pycwb.modules.data_conditioning.injection_whitening import whiten_injection_strain
 
 
@@ -52,7 +52,7 @@ def target_snr_scales(config, segment, clean_data):
     energy=np.zeros(len(injections))
     for i,(data,signal) in enumerate(zip(clean_data,buffers)):
         noise=check_and_resample_py(data.copy(),config,i)
-        _,rms=whitening_python(config,noise,apply_bandpass=not reference_mode)
+        _,rms=whiten_wavelet(config,noise,apply_bandpass=not reference_mode)
         signal=check_and_resample_py(signal,signal_config,i)
         white,_=whiten_injection_strain(config,signal,rms)
         if reference_mode:

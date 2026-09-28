@@ -1,6 +1,7 @@
 """Contracts for the opt-in experimental executors."""
 
 from concurrent.futures import ThreadPoolExecutor
+from pycwb.constants.execution_profile import execution_profile
 from types import SimpleNamespace
 
 import joblib
@@ -138,7 +139,7 @@ def test_process_worker_collects_its_own_heap_without_jax(monkeypatch):
         lambda **kwargs: seen.append(kwargs),
     )
     assert parallel._analyze_process(3) == 3
-    assert seen == [{"release_jax": False}]
+    assert seen == [{"release_jax": False, "profile": execution_profile(context().config)}]
 
 
 def test_analysis_only_gc_does_not_initialize_jax(monkeypatch):
@@ -215,7 +216,7 @@ def test_worker_cleanup_also_runs_on_analysis_failure(monkeypatch):
     )
     with pytest.raises(ValueError, match="analysis failed"):
         parallel._analyze_process(0)
-    assert cleaned == [{"release_jax": False}]
+    assert cleaned == [{"release_jax": False, "profile": execution_profile(context().config)}]
 
 
 @pytest.mark.parametrize(
@@ -263,3 +264,25 @@ def test_bounded_scheduler_stops_submission_on_output_failure(monkeypatch):
         parallel._consume_bounded(ControlledExecutor(), None, range(100), None, 2)
     assert 1 < len(submitted) <= 4
     assert all(future.cancelled() for future in submitted[1:])
+
+
+@pytest.mark.parametrize("reuse_delays", [False, True])
+def test_nogil_release_scan_preserves_cpu_results(reuse_delays):
+    import numpy as np
+    from pycwb.workflow.subflow import process_job_segment_nogil as nogil
+    from pycwb.modules.likelihoodWP.sky_scan import scan_sky
+
+    rng = np.random.default_rng(623)
+    geometry = (rng.normal(size=(16, 2)).astype(np.float32),
+                rng.normal(size=(16, 2)).astype(np.float32),
+                rng.integers(-2, 3, size=(2, 16), dtype=np.int32))
+    cluster = (rng.uniform(.1, 1, size=(11, 2)).astype(np.float32),
+               rng.normal(size=(9, 2, 11)).astype(np.float32),
+               rng.normal(size=(9, 2, 11)).astype(np.float32))
+    settings = (np.array([.1, 2., 0.], np.float32), -.5, .1, .5, np.arange(16))
+    expected = scan_sky(geometry, cluster, settings, reuse_delays=reuse_delays)
+    actual = nogil._likelihood.__globals__["_scan_sky"](
+        geometry, cluster, settings, reuse_delays=reuse_delays)
+    for a, b in zip(actual, expected, strict=True):
+        assert np.asarray(a).dtype == np.asarray(b).dtype
+        assert np.asarray(a).tobytes() == np.asarray(b).tobytes()

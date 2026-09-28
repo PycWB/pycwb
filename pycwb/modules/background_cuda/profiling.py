@@ -1,6 +1,6 @@
 """Opt-in bounded diagnostic profiles; their walltime is not a speed benchmark.
 
-``PYCWB_GPU_PROFILE_LAGS=start:stop`` enables ``cProfile`` around the labelled
+``gpu.profile_lags=start:stop`` enables ``cProfile`` around the labelled
 stages of every lag in ``[start, stop)``. Profiling overhead is significant, so
 a profiled run must never be quoted as a timing result.
 
@@ -21,9 +21,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 
-_profiles: dict[str, cProfile.Profile] = {}
+_profiles: dict[tuple[str, str, str], cProfile.Profile] = {}
 """Per-process ``label -> Profile``; accumulates across the sampled lag range by design (see module docstring)."""
 
 PROFILE_DIRECTORY_NAME = "gpu_profiles"
@@ -31,8 +31,10 @@ PROFILE_DIRECTORY_NAME = "gpu_profiles"
 
 
 @contextmanager
-def span(lag: int, label: str, directory: str | Path) -> Iterator[None]:
-    """Profile the enclosed block when ``lag`` falls in ``PYCWB_GPU_PROFILE_LAGS``.
+def span(
+    lag: int, label: str, directory: str | Path, *, options=None
+) -> Iterator[None]:
+    """Profile the enclosed block when ``lag`` falls in ``gpu.profile_lags``.
 
     The switch is read at every call, so the parent and its spawned workers
     agree on the sampled range without any shared state.
@@ -55,25 +57,22 @@ def span(lag: int, label: str, directory: str | Path) -> Iterator[None]:
     Raises
     ------
     ValueError
-        If ``PYCWB_GPU_PROFILE_LAGS`` is set but is not ``start:stop`` with
+        If ``gpu.profile_lags`` is set but is not ``start:stop`` with
         integers satisfying ``0 <= start < stop``.
     """
-    requested = flags.text("PROFILE_LAGS")
+    requested = gpu_options(options).profile_lags
     if not requested:
         yield
         return
-    bounds = requested.split(":")
-    if len(bounds) != 2:
-        raise ValueError("GPU_PROFILE_LAGS must be start:stop")
-    start, stop = map(int, bounds)
-    if not 0 <= start < stop:
-        raise ValueError("GPU_PROFILE_LAGS requires 0 <= start < stop")
+    start, stop = map(int, requested.split(":"))
     if not start <= lag < stop:
         yield
         return
     destination = Path(directory) / PROFILE_DIRECTORY_NAME
     destination.mkdir(exist_ok=True)
-    profile = _profiles.setdefault(label, cProfile.Profile())
+    profile = _profiles.setdefault(
+        (str(destination.resolve()), label, requested), cProfile.Profile()
+    )
     profile.enable()
     try:
         yield

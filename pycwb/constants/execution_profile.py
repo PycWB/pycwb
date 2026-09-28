@@ -226,6 +226,9 @@ def recorded_execution_profile(recorded_config):
 
 def check_recorded_execution_profile(config, recorded_config):
     """Prevent mixing different execution profiles under one catalog's metadata."""
+    from .gpu_options import gpu_options, resolve_gpu_options
+    if gpu_options(config) != resolve_gpu_options(recorded_config.get("gpu")):
+        raise ValueError("gpu options differ from the existing catalog; use a new working directory")
     if execution_profile(config) != recorded_execution_profile(recorded_config):
         raise ValueError(
             "execution_profile differs from the existing catalog. Restore its settings "

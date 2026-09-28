@@ -369,7 +369,7 @@ def processor_wrapper(
 
 def batch_run(
     config_file, working_dir=".", log_file=None, log_level="INFO", jobs=None, n_proc=1, compress_json=True, n_workers=1,
-    batch_id=None,
+    batch_id=None, allocated_cores=None, memory_limit=None,
 ):
     logger_init(log_file=None, log_level="INFO", worker_prefix=f"BatchRun-{jobs or 'all'}")
 
@@ -409,7 +409,7 @@ def batch_run(
     if ExecutionSettings.from_config(config).enabled:
         return execute_jobs(ExecutionContext(
             job_segments, config, main_func, working_dir, catalog_file, compress_json,
-            workers=n_workers,
+            workers=n_workers, allocated_cores=allocated_cores, memory_limit=memory_limit,
             legacy=lambda ordered: _run_simple_batch(ordered, config, main_func, working_dir,
                                                        catalog_file, compress_json, n_workers),
         ))

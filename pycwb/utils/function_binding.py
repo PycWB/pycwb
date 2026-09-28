@@ -47,10 +47,14 @@ def specialize(function: F, **bindings: Any) -> F:
         If a binding names a global the function's module does not define.
     """
     if not isinstance(function, FunctionType):
-        raise TypeError(f"specialize requires a plain Python function, got {type(function).__name__}")
+        raise TypeError(
+            f"specialize requires a plain Python function, got {type(function).__name__}"
+        )
     missing = [name for name in bindings if name not in function.__globals__]
     if missing:
-        raise KeyError(f"{function.__module__}.{function.__qualname__} has no global(s) {sorted(missing)}")
+        raise KeyError(
+            f"{function.__module__}.{function.__qualname__} has no global(s) {sorted(missing)}"
+        )
     clone = FunctionType(
         function.__code__,
         dict(function.__globals__, **bindings),

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pycwb.modules.background_cuda import binding
-from pycwb.modules.background_cuda.binding import specialize
+from pycwb.utils import function_binding as binding
+from pycwb.utils.function_binding import specialize
 
 HELPER_CONSTANT = 10
 
@@ -59,7 +59,9 @@ def test_specialize_reports_every_missing_name_sorted() -> None:
         specialize(_caller, _b_missing=1, _a_missing=2)
 
 
-@pytest.mark.parametrize("target", [len, "text", 3, type("K", (), {"__call__": lambda self: None})()])
+@pytest.mark.parametrize(
+    "target", [len, "text", 3, type("K", (), {"__call__": lambda self: None})()]
+)
 def test_specialize_rejects_non_functions(target: object) -> None:
     with pytest.raises(TypeError, match="plain Python function"):
         specialize(target)  # type: ignore[arg-type]
@@ -92,7 +94,7 @@ def test_specialize_can_chain() -> None:
     assert once.__globals__["HELPER_CONSTANT"] == 10
 
 
-def test_processor_keeps_legacy_private_alias() -> None:
+def test_processor_uses_shared_binding() -> None:
     from pycwb.modules.background_cuda import processor
 
-    assert processor._specialize is binding.specialize
+    assert processor.specialize is binding.specialize

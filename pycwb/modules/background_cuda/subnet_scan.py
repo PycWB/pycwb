@@ -1,4 +1,4 @@
-"""Ordered CUDA subnet scan, opt-in through ``PYCWB_GPU_SUBNET=1``.
+"""Ordered CUDA subnet scan, opt-in through ``gpu.subnet=true``.
 
 ``subnet_scan.cu`` evaluates the native
 ``super_cluster_native.sub_net_cut.optimze_sky_loc_from_td`` direction loop
@@ -43,7 +43,7 @@ class SubnetScan:
     """CUDA counterpart to ``optimze_sky_loc_from_td``.
 
     ``processor.py`` binds an instance as ``optimze_sky_loc_from_td`` inside a
-    specialized ``_sub_net_cut_prepared_packets`` when ``PYCWB_GPU_SUBNET=1``;
+    specialized ``_sub_net_cut_prepared_packets`` when ``gpu.subnet=true``;
     :class:`subnet_batch.BatchedSubnet` uses :meth:`scan_many`.
 
     Attributes
@@ -132,7 +132,9 @@ class SubnetScan:
         if (
             td00.ndim != 3
             or td00.shape[1:] != (n_ifo, n_pix)
-            or any(np.shape(x) != shape for x, shape in zip(values, shapes, strict=True))
+            or any(
+                np.shape(x) != shape for x, shape in zip(values, shapes, strict=True)
+            )
         ):
             raise ValueError("Invalid subnet array shapes")
         offset = td00.shape[0] // 2
@@ -142,7 +144,8 @@ class SubnetScan:
             self.geometry, (FP, FX, ml), (np.float32, np.float32, np.int32)
         )
         device_rms, device_td00, device_td90 = (
-            cuda.to_device(np.ascontiguousarray(x, dtype=np.float32)) for x in (rms, td00, td90)
+            cuda.to_device(np.ascontiguousarray(x, dtype=np.float32))
+            for x in (rms, td00, td90)
         )
         out = cuda.device_array((n_sky, SCORE_COLUMNS), np.float64)
         # Order matches subnet_scan(FP, FX, rms, td0, td9, ml, nsky, npix, nd,
@@ -220,7 +223,11 @@ class SubnetScan:
         """
         if n_ifo not in (2, 3) or n_sky < 1:
             raise ValueError("Invalid detector/sky dimensions")
-        if FP.shape != (n_sky, n_ifo) or FX.shape != FP.shape or ml.shape != (n_ifo, n_sky):
+        if (
+            FP.shape != (n_sky, n_ifo)
+            or FX.shape != FP.shape
+            or ml.shape != (n_ifo, n_sky)
+        ):
             raise ValueError("Invalid geometry shapes")
         max_batch = SCORE_BUDGET_BYTES // (n_sky * SCORE_COLUMNS * 8)
         if max_batch < 1:
@@ -246,19 +253,31 @@ class SubnetScan:
             batch = inputs[begin : begin + max_batch]
             nc = len(batch)
             pixels = np.array([len(x[0]) for x in batch], np.int32)
-            pixel_offsets = np.concatenate(([0], np.cumsum(pixels[:-1], dtype=np.int64))).astype(np.int32)
+            pixel_offsets = np.concatenate(
+                ([0], np.cumsum(pixels[:-1], dtype=np.int64))
+            ).astype(np.int32)
             sizes = np.array([x[1].size for x in batch], np.int64)
             td_offsets = np.concatenate(([0], np.cumsum(sizes[:-1]))).astype(np.int32)
             if sizes.sum() > np.iinfo(np.int32).max:
                 raise ValueError("Packet batch exceeds 32-bit indexing")
             # Flat float32 concatenations of every packet's rms, td00 and td90.
             device_rms, device_td00, device_td90 = (
-                cuda.to_device(np.ascontiguousarray(np.concatenate([x[j].ravel() for x in batch]), dtype=np.float32))
+                cuda.to_device(
+                    np.ascontiguousarray(
+                        np.concatenate([x[j].ravel() for x in batch]), dtype=np.float32
+                    )
+                )
                 for j in range(3)
             )
             delay_counts = np.array([x[1].shape[0] for x in batch], np.int32)
-            device_pixels, device_pixel_offsets, device_td_offsets, device_delay_counts = (
-                cuda.to_device(x) for x in (pixels, pixel_offsets, td_offsets, delay_counts)
+            (
+                device_pixels,
+                device_pixel_offsets,
+                device_td_offsets,
+                device_delay_counts,
+            ) = (
+                cuda.to_device(x)
+                for x in (pixels, pixel_offsets, td_offsets, delay_counts)
             )
             scores = cuda.device_array((nc, n_sky, SCORE_COLUMNS), np.float64)
             best = cuda.device_array((nc, BEST_COLUMNS), np.float64)
@@ -287,7 +306,14 @@ class SubnetScan:
             self.module.launch("subnet_batch", nc * n_sky, batch_args)
             # One block of SUBNET_BEST_THREADS per cluster; see the constant's docstring.
             best_args = [scores, ct.c_int(nc), ct.c_int(n_sky), best]
-            self.module.launch("subnet_best", nc * SUBNET_BEST_THREADS, best_args, threads=SUBNET_BEST_THREADS)
+            self.module.launch(
+                "subnet_best",
+                nc * SUBNET_BEST_THREADS,
+                best_args,
+                threads=SUBNET_BEST_THREADS,
+            )
             for a in best.copy_to_host():
-                results.append((int(a[0]), a[1], a[2], a[3], int(a[0]), int(a[4]), a[5], a[6]))
+                results.append(
+                    (int(a[0]), a[1], a[2], a[3], int(a[0]), int(a[4]), a[5], a[6])
+                )
         return results

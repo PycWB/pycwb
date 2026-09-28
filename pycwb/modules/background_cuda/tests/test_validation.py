@@ -7,9 +7,9 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from pycwb.modules.background_cuda.binding import specialize
+from pycwb.utils.function_binding import specialize
 from pycwb.modules.background_cuda.validation import leaves, paired
-from pycwb.modules.likelihoodWP.typing import SkyMapStatistics
+from pycwb.modules.likelihoodWP.results import SkyMapStatistics
 
 
 @dataclass
@@ -96,13 +96,17 @@ def test_leaves_of_dataclasses_cover_every_field() -> None:
 
 
 def _sky_statistics(timing: float, l_max: int = 0) -> SkyMapStatistics:
-    return SkyMapStatistics(l_max, *[np.ones(2) for _ in range(11)], stage_timings={"total": timing})
+    return SkyMapStatistics(
+        l_max, *[np.ones(2) for _ in range(11)], stage_timings={"total": timing}
+    )
 
 
 def test_only_skymap_stage_timings_are_excluded() -> None:
     a, b = _sky_statistics(1.0), _sky_statistics(2.0)
     assert leaves(a) == leaves(b)
-    assert not any(key.endswith("stage_timings") or "stage_timings" in key for key in leaves(a))
+    assert not any(
+        key.endswith("stage_timings") or "stage_timings" in key for key in leaves(a)
+    )
     assert leaves(a) != leaves(_sky_statistics(1.0, l_max=1))
     # The exclusion is by type and field name, not by key name in general.
     assert leaves({"stage_timings": 1.0}) != leaves({"stage_timings": 2.0})
@@ -130,7 +134,10 @@ def test_paired_detects_membership_order_and_status_difference() -> None:
     def reference() -> Packet:
         return Packet(np.array([1, 2]), 0)
 
-    for candidate in (lambda: Packet(np.array([2, 1]), 0), lambda: Packet(np.array([1, 2]), 1)):
+    for candidate in (
+        lambda: Packet(np.array([2, 1]), 0),
+        lambda: Packet(np.array([1, 2]), 1),
+    ):
         with pytest.raises(AssertionError, match="native parity failed"):
             paired(candidate, reference, "test")()
 
@@ -152,19 +159,29 @@ def test_paired_fingerprints_reference_before_candidate_runs() -> None:
 
 
 def test_paired_likelihood_detects_internal_hook_difference() -> None:
-    candidate = specialize(_rejected_likelihood, _get_likelihood_rejection_reason=lambda: "different_cut")
+    candidate = specialize(
+        _rejected_likelihood, _get_likelihood_rejection_reason=lambda: "different_cut"
+    )
     with pytest.raises(AssertionError, match="internal parity failed"):
         paired(candidate, _rejected_likelihood, "likelihood")()
 
 
 def test_paired_likelihood_passes_when_hooks_agree() -> None:
-    candidate = specialize(_rejected_likelihood, _get_likelihood_rejection_reason=lambda: "first_cut")
+    candidate = specialize(
+        _rejected_likelihood, _get_likelihood_rejection_reason=lambda: "first_cut"
+    )
     assert paired(candidate, _rejected_likelihood, "likelihood")() == (None, None)
 
 
-def test_paired_writes_failure_capture_when_requested(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PYCWB_GPU_STAGE_FAILURE_DIR", str(tmp_path / "captures"))
+def test_paired_writes_failure_capture_when_requested(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with pytest.raises(AssertionError):
-        paired(lambda: {"v": 1}, lambda: {"v": 2}, "stage")()
+        paired(
+            lambda: {"v": 1},
+            lambda: {"v": 2},
+            "stage",
+            options={"stage_failure_dir": str(tmp_path / "captures")},
+        )()
     captured = list((tmp_path / "captures").glob("stage_*.pickle"))
     assert len(captured) == 1

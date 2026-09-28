@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 from numba import cuda, njit
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 from .cuda_runtime import CUDAModule, DeviceBuffers, load_module
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ OUTPUT_BUDGET_BYTES = 256 * 1024**2
 """Largest TD output batch per call: ``n_pix * (4K+2)`` float32 values, i.e. ``n_pix * (2K+1) * 8`` bytes."""
 
 TD_WORKSPACE_BUDGET_BYTES = 384 * 1024**2
-"""Resident budget of the shared TD workspace under ``PYCWB_GPU_REUSE_TD_WORKSPACE=1``."""
+"""Resident budget of the shared TD workspace under ``gpu.reuse_td_workspace=true``."""
 
 RESIDENT_INPUT_BUDGET_BYTES = 2 * 1024**3
 """Total bytes of detector/layer planes and filter tables kept on the device."""
@@ -81,7 +81,7 @@ class TDSession:
         :func:`cuda_runtime.load_module` when omitted.
     workspace : Workspace, optional
         Shared reusable output/index slots. When omitted and
-        ``PYCWB_GPU_REUSE_TD_WORKSPACE=1`` is set, a private workspace with
+        ``gpu.reuse_td_workspace=true`` is set, a private workspace with
         :data:`TD_WORKSPACE_BUDGET_BYTES` is created.
 
     Attributes
@@ -101,14 +101,27 @@ class TDSession:
         the required dtypes and shapes.
     """
 
-    def __init__(self, inputs: Any, module: CUDAModule | None = None, workspace: Any | None = None) -> None:
+    def __init__(
+        self,
+        inputs: Any,
+        module: CUDAModule | None = None,
+        workspace: Any | None = None,
+        *,
+        options=None,
+    ) -> None:
+        self.options = gpu_options(options)
         if inputs.M <= 0 or inputs.J <= 0 or inputs.n_coeffs < 0:
             raise ValueError("Invalid TD dimensions")
         self.inputs = inputs
         self.module = module or load_module(Path(__file__).with_suffix(".cu"))
         p0, p9 = inputs.padded00, inputs.padded90
         shape = (2 * inputs.J + 1, 2 * inputs.n_coeffs + 1)
-        if p0.ndim != 2 or p0.dtype != np.float32 or p9.dtype != np.float32 or p9.shape != p0.shape:
+        if (
+            p0.ndim != 2
+            or p0.dtype != np.float32
+            or p9.dtype != np.float32
+            or p9.shape != p0.shape
+        ):
             raise ValueError("CUDA TD requires matching compact FP32 planes")
         if (
             inputs.T0.shape != shape
@@ -128,13 +141,15 @@ class TDSession:
         ]
         self.phases: dict[int, Any] = {}
         self.workspace = workspace
-        if workspace is None and flags.enabled("REUSE_TD_WORKSPACE"):
+        if workspace is None and self.options.reuse_td_workspace:
             from .workspace import Workspace
 
             self.workspace = Workspace(budget=TD_WORKSPACE_BUDGET_BYTES)
         self.buffers = DeviceBuffers(self.workspace)
 
-    def extract_td_vecs(self, pixel_indices: np.ndarray, K: int, delay_stride: int = 1) -> np.ndarray:
+    def extract_td_vecs(
+        self, pixel_indices: np.ndarray, K: int, delay_stride: int = 1
+    ) -> np.ndarray:
         """Extract time-delay vectors for ``pixel_indices``; mirrors ``TDBatchInputs.extract_td_vecs``.
 
         Parameters
@@ -163,7 +178,12 @@ class TDSession:
         MemoryError
             If the output batch exceeds :data:`OUTPUT_BUDGET_BYTES`.
         """
-        if int(K) != K or K < 0 or int(delay_stride) != delay_stride or delay_stride < 1:
+        if (
+            int(K) != K
+            or K < 0
+            or int(delay_stride) != delay_stride
+            or delay_stride < 1
+        ):
             raise ValueError("Invalid TD delay range or stride")
         K, stride = int(K), int(delay_stride)
         indices = np.ascontiguousarray(pixel_indices, dtype=np.int32)
@@ -177,7 +197,9 @@ class TDSession:
             raise ValueError("Requested support outside cached frequency bands")
         shifts = 2 * ((K * stride + c.J) // (2 * c.J))
         times = indices // (c.M + 1)
-        if np.any(times - shifts < 0) or np.any(times + shifts + 2 * c.n_coeffs >= len(c.padded00)):
+        if np.any(times - shifts < 0) or np.any(
+            times + shifts + 2 * c.n_coeffs >= len(c.padded00)
+        ):
             raise ValueError("Requested support outside padded time range")
         count = len(indices) * (2 * K + 1)
         if count * 8 > OUTPUT_BUDGET_BYTES:
@@ -209,7 +231,7 @@ class TDSession:
         ]
         self.module.launch("td_vectors", count, kernel_args)
         result = self.buffers.download(out, output_shape)
-        if flags.enabled("VALIDATE_TD"):
+        if self.options.validate_td:
             expected = c.extract_td_vecs(indices, K, delay_stride=stride)
             np.testing.assert_array_equal(expected.view("u4"), result.view("u4"))
             logger.info("GPU TD parity: values=%d exact=1", result.size)
@@ -220,7 +242,7 @@ class GPUTimeDelays:
     """Private replacement for native ``_populate_td_vectors``; keeps its ownership rules.
 
     Bound by ``processor.py`` into ``supercluster_single_lag`` when
-    ``PYCWB_GPU_TD=1``. Sessions are created lazily per distinct
+    ``gpu.td=true``. Sessions are created lazily per distinct
     ``TDBatchInputs`` object (keyed by ``id``) and kept for the lifetime of
     this object, so the cache entries must stay alive as long as it does.
 
@@ -233,23 +255,29 @@ class GPUTimeDelays:
     resident_bytes : int
         Host bytes of planes and tables mirrored on the device so far.
     workspace : Workspace or None
-        Shared scratch under ``PYCWB_GPU_REUSE_TD_WORKSPACE=1``. Every
+        Shared scratch under ``gpu.reuse_td_workspace=true``. Every
         extraction is synchronous, so detector/layer sessions can share it
         without retaining one peak allocation per layer.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options=None) -> None:
+        self.options = gpu_options(options)
         self.module = load_module(Path(__file__).with_suffix(".cu"))
         self.sessions: dict[int, TDSession] = {}
         self.resident_bytes = 0
         self.workspace: Any | None = None
-        if flags.enabled("REUSE_TD_WORKSPACE"):
+        if self.options.reuse_td_workspace:
             from .workspace import Workspace
 
             self.workspace = Workspace(budget=TD_WORKSPACE_BUDGET_BYTES)
 
     def __call__(
-        self, all_clusters: list[Any], n_ifo: int, K: int, td_inputs_cache: dict[int, Any], delay_stride: int = 1
+        self,
+        all_clusters: list[Any],
+        n_ifo: int,
+        K: int,
+        td_inputs_cache: dict[int, Any],
+        delay_stride: int = 1,
     ) -> Any:
         """Populate cluster TD vectors through resident device sessions.
 
@@ -280,7 +308,9 @@ class GPUTimeDelays:
         """
         import importlib
 
-        native = importlib.import_module("pycwb.modules.super_cluster_native.super_cluster")
+        native = importlib.import_module(
+            "pycwb.modules.super_cluster_native.super_cluster"
+        )
         owner = self
 
         class LazyInputs:
@@ -294,12 +324,26 @@ class GPUTimeDelays:
                 for value in values:
                     key = id(value)
                     if key not in owner.sessions:
-                        size = sum(a.nbytes for a in (value.padded00, value.padded90, value.T0, value.Tx))
+                        size = sum(
+                            a.nbytes
+                            for a in (
+                                value.padded00,
+                                value.padded90,
+                                value.T0,
+                                value.Tx,
+                            )
+                        )
                         if owner.resident_bytes + size > RESIDENT_INPUT_BUDGET_BYTES:
-                            raise MemoryError("TD resident input cache exceeds 2 GiB budget")
-                        owner.sessions[key] = TDSession(value, owner.module, owner.workspace)
+                            raise MemoryError(
+                                "TD resident input cache exceeds 2 GiB budget"
+                            )
+                        owner.sessions[key] = TDSession(
+                            value, owner.module, owner.workspace, options=owner.options
+                        )
                         owner.resident_bytes += size
                     result.append(owner.sessions[key])
                 return result
 
-        return native._populate_td_vectors(all_clusters, n_ifo, K, LazyInputs(), delay_stride=delay_stride)
+        return native._populate_td_vectors(
+            all_clusters, n_ifo, K, LazyInputs(), delay_stride=delay_stride
+        )

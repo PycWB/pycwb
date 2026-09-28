@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pyarrow.parquet as pq
 import pytest
+from jsonschema import ValidationError
 
 from pycwb.modules.background_cuda.output_buffer import BufferedCatalog, OutputWriter
 from pycwb.modules.catalog.catalog import Catalog
@@ -24,7 +25,14 @@ def catalog_path(tmp_path: Path) -> Path:
 
 
 def _trigger(lag: int, index: int) -> Trigger:
-    return Trigger(id=f"t{lag}_{index}", job_id=1, lag_idx=lag, trial_idx=0, cluster_id=index, rho=float(lag + index))
+    return Trigger(
+        id=f"t{lag}_{index}",
+        job_id=1,
+        lag_idx=lag,
+        trial_idx=0,
+        cluster_id=index,
+        rho=float(lag + index),
+    )
 
 
 def _progress(lag: int, n_triggers: int, status: str = "completed") -> dict:
@@ -127,7 +135,9 @@ def test_large_trigger_count_forces_flush_before_batch(catalog_path: Path) -> No
     assert pq.read_table(catalog_path).num_rows == 4096
 
 
-def test_trigger_write_failure_cannot_commit_progress(catalog_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_trigger_write_failure_cannot_commit_progress(
+    catalog_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sink = BufferedCatalog(catalog_path, 1)
     _enqueue_lag(sink, 0, 2)
 
@@ -143,7 +153,9 @@ def test_trigger_write_failure_cannot_commit_progress(catalog_path: Path, monkey
     assert len(sink.triggers) == 2 and len(sink.progress) == 1
 
 
-def test_progress_failure_is_recoverable_by_native_resume(catalog_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_progress_failure_is_recoverable_by_native_resume(
+    catalog_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sink = BufferedCatalog(catalog_path, 1)
     _enqueue_lag(sink, 3, 2)
 
@@ -191,8 +203,6 @@ def _context(tmp_path: Path, catalog_path: Path, **config: object) -> LagOutputC
 def test_output_writer_defaults_to_direct_native_saves(
     tmp_path: Path, catalog_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("PYCWB_GPU_OUTPUT_BATCH", raising=False)
-    monkeypatch.delenv("PYCWB_GPU_Q_RECONSTRUCTION", raising=False)
     context = _context(tmp_path, catalog_path)
     writer = OutputWriter(context)
     assert writer.sink is None
@@ -203,9 +213,9 @@ def test_output_writer_defaults_to_direct_native_saves(
 def test_output_writer_replaces_queue_only_in_private_context(
     tmp_path: Path, catalog_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PYCWB_GPU_OUTPUT_BATCH", "2")
-    monkeypatch.delenv("PYCWB_GPU_Q_RECONSTRUCTION", raising=False)
+    options = {"output_batch": int("2")}
     context = _context(tmp_path, catalog_path)
+    context.config.gpu = options
     queue = context.queue
     writer = OutputWriter(context)
     assert context.queue is queue
@@ -226,19 +236,22 @@ def test_output_writer_replaces_queue_only_in_private_context(
 def test_output_writer_rejects_non_positive_batch(
     tmp_path: Path, catalog_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    monkeypatch.setenv("PYCWB_GPU_OUTPUT_BATCH", value)
-    with pytest.raises(ValueError, match="positive"):
-        OutputWriter(_context(tmp_path, catalog_path))
+    options = {"output_batch": int(value)}
+    context = _context(tmp_path, catalog_path)
+    context.config.gpu = options
+    with pytest.raises(ValidationError):
+        OutputWriter(context)
 
 
 def test_output_writer_batching_rejects_saved_waveforms_and_injections(
     tmp_path: Path, catalog_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PYCWB_GPU_OUTPUT_BATCH", "2")
+    options = {"output_batch": int("2")}
     context = _context(tmp_path, catalog_path)
+    context.config.gpu = options
     context = LagOutputContext(
         context.working_dir,
-        SimpleNamespace(save_waveform=True, catalog_dir=""),
+        SimpleNamespace(gpu=options, save_waveform=True, catalog_dir=""),
         context.sub_job_seg,
         context.catalog_file,
         None,
@@ -250,7 +263,7 @@ def test_output_writer_batching_rejects_saved_waveforms_and_injections(
         OutputWriter(context)
     context = LagOutputContext(
         context.working_dir,
-        SimpleNamespace(save_waveform=False, catalog_dir=""),
+        SimpleNamespace(gpu=options, save_waveform=False, catalog_dir=""),
         SimpleNamespace(injections=[object()]),
         context.catalog_file,
         None,
@@ -262,11 +275,13 @@ def test_output_writer_batching_rejects_saved_waveforms_and_injections(
         OutputWriter(context)
 
 
-def test_output_writer_batching_requires_catalog_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PYCWB_GPU_OUTPUT_BATCH", "2")
+def test_output_writer_batching_requires_catalog_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    options = {"output_batch": int("2")}
     context = LagOutputContext(
         str(tmp_path),
-        SimpleNamespace(save_waveform=False, catalog_dir=""),
+        SimpleNamespace(gpu=options, save_waveform=False, catalog_dir=""),
         SimpleNamespace(injections=None),
         None,
         None,
@@ -281,13 +296,13 @@ def test_output_writer_batching_requires_catalog_path(tmp_path: Path, monkeypatc
 def test_output_writer_save_routes_through_native_saver(
     tmp_path: Path, catalog_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PYCWB_GPU_OUTPUT_BATCH", "1")
-    monkeypatch.delenv("PYCWB_GPU_PROFILE_LAGS", raising=False)
+    options = {"output_batch": int("1")}
     context = _context(tmp_path, catalog_path)
+    context.config.gpu = options
     writer = OutputWriter(context)
     saved: list[tuple] = []
     writer.save_native = lambda ctx, res: saved.append((ctx, res))
     result = SimpleNamespace(lag=5)
     writer.save(object(), result)
     assert saved == [(context, result)]
-    assert os.environ.get("PYCWB_GPU_OUTPUT_BATCH") == "1"
+    assert writer.options.output_batch == 1

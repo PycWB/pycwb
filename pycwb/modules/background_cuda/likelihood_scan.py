@@ -3,7 +3,7 @@
 One thread per selected sky direction evaluates the native ``sky_scratch``
 arithmetic fused per pixel and ordered across pixels (``likelihood_scan.cu``).
 The best-direction tie-breaking is done on the host with the same
-"last maximum wins" rule as ``likelihoodWP.sky_scan.scan_sky_for_best_fit``.
+"last maximum wins" rule as ``likelihoodWP.sky_scan.scan_sky``.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 from .cuda_runtime import DeviceBuffers, load_module
 from .geometry_cache import resident_geometry
 
@@ -28,12 +28,9 @@ KERNEL_COLUMNS = MAP_COUNT + 1
 class LikelihoodScan:
     """CUDA replacement for the native likelihood sky scan.
 
-    ``processor.py`` binds one instance to three native hooks of
-    ``likelihoodWP.likelihood.likelihood`` when ``PYCWB_GPU_LIKELIHOOD=1``:
-    ``_scan_sky_for_best_fit``, ``_scan_sky_grouped_delays`` and
-    ``_scan_sky_scratch``. All three receive the same fourteen leading
-    positional arguments; the grouped/scratch variants append
-    ``group_order, group_offsets`` (see :meth:`__call__`).
+    ``processor.py`` binds :meth:`scan_sky` to the release's unified
+    ``_scan_sky`` hook when ``gpu.likelihood`` is true. Device kernels retain
+    their explicit array interface through :meth:`__call__`.
 
     Attributes
     ----------
@@ -44,21 +41,48 @@ class LikelihoodScan:
         keyed by :func:`geometry_cache.geometry_key`; geometry is immutable for
         one trial and the entry retains the host arrays.
     workspace : Workspace or None
-        Reusable device slots when ``PYCWB_GPU_REUSE_WORKSPACE=1`` was set at
+        Reusable device slots when ``gpu.reuse_workspace=true`` was set at
         construction time.
     buffers : DeviceBuffers
         Upload/output/download helper wrapping ``workspace``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, options=None) -> None:
+        self.options = gpu_options(options)
         self.module = load_module(Path(__file__).with_suffix(".cu"))
         self.geometry: dict[tuple[int, ...], Any] = {}
         self.workspace: Any | None = None
-        if flags.enabled("REUSE_WORKSPACE"):
+        if self.options.reuse_workspace:
             from .workspace import Workspace
 
             self.workspace = Workspace()
         self.buffers = DeviceBuffers(self.workspace)
+
+    def scan_sky(
+        self,
+        geometry,
+        cluster,
+        settings,
+        *,
+        reuse_delays=True,
+        setup=None,
+        big_cluster=False,
+    ):
+        """Implement the release scan interface; CUDA gathers delays directly."""
+        FP, FX, ml = geometry
+        rms, td00, td90 = cluster
+        return self(
+            ml.shape[0],
+            rms.shape[0],
+            ml.shape[1],
+            FP,
+            FX,
+            rms,
+            td00,
+            td90,
+            ml,
+            *settings,
+        )
 
     def __call__(
         self,
@@ -76,7 +100,6 @@ class LikelihoodScan:
         delta_regulator: float,
         network_energy_threshold: float,
         sky_valid_indices: np.ndarray,
-        *group_args: Any,
     ) -> tuple[Any, ...]:
         """Scan the selected sky directions and return the native statistics tuple.
 
@@ -112,12 +135,6 @@ class LikelihoodScan:
         sky_valid_indices : array-like
             Sky directions to evaluate; converted to a contiguous int64 vector
             and must be non-empty.
-        *group_args
-            ``group_order, group_offsets`` appended by the
-            ``_scan_sky_grouped_delays`` and ``_scan_sky_scratch`` hooks. They
-            only describe a CPU delay-reuse schedule and are ignored here; the
-            kernel gathers each direction's delays directly.
-
         Returns
         -------
         tuple
@@ -140,7 +157,12 @@ class LikelihoodScan:
         if n_ifo not in (2, 3) or n_pix < 1:
             raise ValueError("Requires nonempty pixels and 2/3 detectors")
         skies = np.ascontiguousarray(sky_valid_indices, dtype=np.int64)
-        if skies.ndim != 1 or len(skies) == 0 or np.any(skies < 0) or np.any(skies >= n_sky):
+        if (
+            skies.ndim != 1
+            or len(skies) == 0
+            or np.any(skies < 0)
+            or np.any(skies >= n_sky)
+        ):
             raise ValueError("Invalid sky mask")
         if (
             FP.shape != (n_sky, n_ifo)

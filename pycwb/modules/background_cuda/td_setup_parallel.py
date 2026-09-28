@@ -18,7 +18,7 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.utils.td_vector_batch import _build_td_inputs_single_level
 from pycwb.utils.td_vector_batch import build_td_inputs_cache as native_build
 
-from . import flags
+from pycwb.constants.gpu_options import gpu_options
 
 if TYPE_CHECKING:
     from pycwb.config import Config
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_TD_SETUP_WORKERS = 3
-"""Largest ``PYCWB_GPU_TD_SETUP_WORKERS``; each level's WDM context is memory-heavy on the reference host."""
+"""Largest ``gpu.td_setup_workers``; each level's WDM context is memory-heavy on the reference host."""
 
 
 def build_td_inputs_cache(config: Config, strains: list[Any]) -> dict[int, Any]:
@@ -35,9 +35,9 @@ def build_td_inputs_cache(config: Config, strains: list[Any]) -> dict[int, Any]:
     Drop-in for the native ``build_td_inputs_cache``. Switches, read at call
     time:
 
-    * ``PYCWB_GPU_TD_SETUP_WORKERS`` (default 1, at most
+    * ``gpu.td_setup_workers`` (default 1, at most
       ``MAX_TD_SETUP_WORKERS``): concurrent level builds.
-    * ``PYCWB_GPU_VALIDATE_TD_SETUP=1``: also run the native function and
+    * ``gpu.validate_td_setup=true``: also run the native function and
       require bitwise identical planes, filters and metadata.
 
     Parameters
@@ -55,12 +55,12 @@ def build_td_inputs_cache(config: Config, strains: list[Any]) -> dict[int, Any]:
     Raises
     ------
     ValueError
-        If ``PYCWB_GPU_TD_SETUP_WORKERS`` is not an integer in
+        If ``gpu.td_setup_workers`` is not an integer in
         ``[1, MAX_TD_SETUP_WORKERS]``.
     AssertionError
         If validation is enabled and the result differs from native.
     """
-    workers = flags.worker_count("TD_SETUP_WORKERS", maximum=MAX_TD_SETUP_WORKERS)
+    workers = gpu_options(config).td_setup_workers
     normalized = [TimeSeries.from_input(value) for value in strains]
     up = int(getattr(config, "upTDF", 1))
 
@@ -74,11 +74,14 @@ def build_td_inputs_cache(config: Config, strains: list[Any]) -> dict[int, Any]:
     for layers, values in groups:
         result[int(layers)] = values
         result[int(layers) + 1] = values
-    if flags.enabled("VALIDATE_TD_SETUP"):
+    if gpu_options(config).validate_td_setup:
         from .validation import leaves
 
         expected = native_build(config, strains)
         if leaves(expected) != leaves(result):
             raise AssertionError("Parallel TD-cache planes, filters or metadata differ")
-        logger.info("GPU TD setup parity: levels=%d all planes filters metadata exact=1", len(groups))
+        logger.info(
+            "GPU TD setup parity: levels=%d all planes filters metadata exact=1",
+            len(groups),
+        )
     return result

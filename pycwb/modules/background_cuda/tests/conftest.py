@@ -53,17 +53,27 @@ def _jax_gpu_available() -> bool:
 CUDA_AVAILABLE = _cuda_available()
 JAX_GPU_AVAILABLE = _jax_gpu_available()
 
-gpu = pytest.mark.skipif(not CUDA_AVAILABLE, reason="requires a CUDA device visible to Numba")
-jax_gpu = pytest.mark.skipif(not JAX_GPU_AVAILABLE, reason="requires a JAX GPU backend with JAX_ENABLE_X64=1")
+gpu = pytest.mark.skipif(
+    not CUDA_AVAILABLE, reason="requires a CUDA device visible to Numba"
+)
+jax_gpu = pytest.mark.skipif(
+    not JAX_GPU_AVAILABLE, reason="requires a JAX GPU backend with JAX_ENABLE_X64=1"
+)
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register the GPU markers so ``--strict-markers`` runs stay warning-free."""
-    config.addinivalue_line("markers", "gpu: test needs a CUDA device (Numba driver context)")
-    config.addinivalue_line("markers", "jax_gpu: test needs a JAX GPU backend with x64 enabled")
+    config.addinivalue_line(
+        "markers", "gpu: test needs a CUDA device (Numba driver context)"
+    )
+    config.addinivalue_line(
+        "markers", "jax_gpu: test needs a JAX GPU backend with x64 enabled"
+    )
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """Skip ``gpu``/``jax_gpu`` marked tests when the device is unavailable."""
     for item in items:
         if item.get_closest_marker("gpu") is not None:
@@ -78,15 +88,6 @@ def rng() -> np.random.Generator:
     return np.random.default_rng(20260921)
 
 
-@pytest.fixture(params=[None, "1"], ids=["fresh_buffers", "reuse_workspace"])
-def reuse_workspace(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str | None:
-    """Run a wrapper both with and without ``PYCWB_GPU_REUSE_WORKSPACE=1``.
-
-    The variable is read in the wrapper constructor, so the fixture must be
-    requested before the wrapper is built.
-    """
-    if request.param is None:
-        monkeypatch.delenv("PYCWB_GPU_REUSE_WORKSPACE", raising=False)
-    else:
-        monkeypatch.setenv("PYCWB_GPU_REUSE_WORKSPACE", request.param)
-    return request.param
+@pytest.fixture(params=[False, True], ids=["fresh_buffers", "reuse_workspace"])
+def reuse_workspace(request):
+    return {"reuse_workspace": request.param}

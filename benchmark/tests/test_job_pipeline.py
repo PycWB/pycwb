@@ -16,10 +16,6 @@ from benchmark import job_pipeline as pipeline
 def test_setup_overlap_can_be_disabled_without_changing_results(monkeypatch, setting):
     import threading
 
-    if setting is None:
-        monkeypatch.delenv("PYCWB_GPU_OVERLAP_SETUP", raising=False)
-    else:
-        monkeypatch.setenv("PYCWB_GPU_OVERLAP_SETUP", setting)
     concurrent = setting != "0"
     td_started = threading.Event()
     calls = []
@@ -41,7 +37,7 @@ def test_setup_overlap_can_be_disabled_without_changing_results(monkeypatch, set
         td_started.set()
         return td_result
 
-    setup, build_td = pipeline._setup_functions(coherence, td)
+    setup, build_td = pipeline._setup_functions(coherence, td, overlap=concurrent)
     assert setup(config, strains, nRMS="noise") is coherence_result
     assert build_td(config, strains) is td_result
     assert sorted(calls) == ["coherence", "td"]

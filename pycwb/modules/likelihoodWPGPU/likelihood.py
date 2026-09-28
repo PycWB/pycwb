@@ -17,12 +17,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pycwb.modules.likelihoodWP.detection_statistics import (
-    fill_detection_statistic,
-    get_chirp_mass,
-    get_error_region,
-    threshold_cut,
-)
 
 # Re-use helpers from CPU phase submodules
 from pycwb.modules.likelihoodWP.likelihood import (

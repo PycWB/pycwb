@@ -18,7 +18,7 @@ import numpy as np
 
 from pycwb.modules.coherence_native import projection, time_delay_jax
 
-from .binding import specialize
+from pycwb.utils.function_binding import specialize
 from .packet_energy import PacketEnergy
 
 logger = logging.getLogger(__name__)
@@ -122,11 +122,24 @@ class HybridMaximum:
             nonlocal transform_s, calls
             t = time.perf_counter()
             with jax.default_device(cpu):
-                coefficients = np.asarray(self.transform(wdm_M, wdm_m_H, wavelet_filter, data, mm_mode, bounded))
+                coefficients = np.asarray(
+                    self.transform(
+                        wdm_M, wdm_m_H, wavelet_filter, data, mm_mode, bounded
+                    )
+                )
             transform_s += time.perf_counter() - t
             if coefficients.shape != coeff_shape:
                 raise ValueError("Hybrid transform shape differs from native input")
-            self.packet(coefficients, pattern, edge, wavelet_rate, f_low, f_high, df, accumulate=calls > 0)
+            self.packet(
+                coefficients,
+                pattern,
+                edge,
+                wavelet_rate,
+                f_low,
+                f_high,
+                df,
+                accumulate=calls > 0,
+            )
             calls += 1
 
         consume(ts)
@@ -141,7 +154,10 @@ class HybridMaximum:
         if pattern in (5, 6, 9) and result.shape[0] > 2:
             result[1, :] = 0.0
         logger.info(
-            "GPU hybrid maximum: calls=%d transforms=%.6f total=%.6f", calls, transform_s, time.perf_counter() - start
+            "GPU hybrid maximum: calls=%d transforms=%.6f total=%.6f",
+            calls,
+            transform_s,
+            time.perf_counter() - start,
         )
         return jax.device_put(result, cpu)
 
@@ -167,5 +183,7 @@ def make_projection(cuda_prefilter: bool = False) -> Callable[..., Any]:
         maximum = HybridMaximum(HybridTransform())
     else:
         maximum = HybridMaximum()
-    td = specialize(time_delay_jax.time_delay_max_energy, _time_delay_max_energy_pattern_jit=maximum)
+    td = specialize(
+        time_delay_jax.time_delay_max_energy, _time_delay_max_energy_pattern_jit=maximum
+    )
     return specialize(projection.max_energy, time_delay_max_energy=td)

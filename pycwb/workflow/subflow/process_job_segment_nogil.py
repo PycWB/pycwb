@@ -6,12 +6,14 @@ points release the GIL; the complete Python lag loop is not GIL-free.
 
 import importlib
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial, update_wrapper
-from types import FunctionType
+from functools import partial
+from pycwb.utils.function_binding import specialize as _specialize
 
 from numba import njit
 
-from pycwb.modules.coherence_native import clustering, pipeline, selection
+from pycwb.modules.coherence_native import clustering, selection
+
+pipeline = importlib.import_module("pycwb.modules.coherence_native.coherence")
 from pycwb.modules.coherence_native.kernels import (
     _align_threshold_map_numba,
     _align_threshold_map_preindexed_numba,
@@ -56,19 +58,6 @@ def _subnet_nogil(*args):
     return _subnet_subrho_batch_numba(*args)
 
 
-def _specialize(function, **bindings):
-    """Reuse a Python stage with private kernel bindings; no global patching."""
-    result = FunctionType(
-        function.__code__,
-        dict(function.__globals__, **bindings),
-        function.__name__,
-        function.__defaults__,
-        function.__closure__,
-    )
-    result.__kwdefaults__ = function.__kwdefaults__
-    return update_wrapper(result, function)
-
-
 _select_pixels = _specialize(
     selection.select_network_pixels,
     _align_threshold_map_numba=_align_nogil,
@@ -98,9 +87,7 @@ _super_utils = importlib.import_module("pycwb.modules.super_cluster_native.utils
 _likelihood_module = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
 _subnet_sky = _subnet_module.optimze_sky_loc_from_td
 _subnet_mra = _subnet_module.mra_statistics_from_td
-_sky_scratch = _likelihood_module._scan_sky_scratch
-_sky_grouped = _likelihood_module._scan_sky_grouped_delays
-_sky_plain = _likelihood_module._scan_sky_for_best_fit
+from pycwb.modules.likelihoodWP.sky_scan import scan_sky, scan_sky_kernel
 
 
 @njit(cache=True, nogil=True)
@@ -114,18 +101,8 @@ def _subnet_mra_nogil(*args):
 
 
 @njit(cache=True, nogil=True)
-def _sky_scratch_nogil(*args):
-    return _sky_scratch(*args)
-
-
-@njit(cache=True, nogil=True)
-def _sky_grouped_nogil(*args):
-    return _sky_grouped(*args)
-
-
-@njit(cache=True, nogil=True)
-def _sky_plain_nogil(*args):
-    return _sky_plain(*args)
+def _sky_scan_nogil(*args):
+    return scan_sky_kernel(*args)
 
 
 _subnet_packets = _specialize(
@@ -144,16 +121,14 @@ _supercluster = _specialize(
     _super_module.supercluster_single_lag, apply_subnet_cut=_apply_subnet
 )
 _likelihood = _specialize(
-    _likelihood_module.likelihood,
-    _scan_sky_scratch=_sky_scratch_nogil,
-    _scan_sky_grouped_delays=_sky_grouped_nogil,
-    _scan_sky_for_best_fit=_sky_plain_nogil,
+    _likelihood_module.evaluate_cluster_likelihood,
+    _scan_sky=_specialize(scan_sky, scan_sky_kernel=_sky_scan_nogil),
 )
 _analyze_nogil_full = _specialize(
     native._run_lag_analysis,
     coherence_single_lag=_coherence,
     supercluster_single_lag=_supercluster,
-    likelihood=_likelihood,
+    evaluate_cluster_likelihood=_likelihood,
 )
 
 

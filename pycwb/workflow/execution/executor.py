@@ -22,7 +22,7 @@ import time
 import traceback
 from collections import Counter, deque
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from multiprocessing.connection import Connection, wait
 from pathlib import Path
 
@@ -53,6 +53,8 @@ class ExecutionContext:
     workers: int = 1
     skip_lags: dict[int, dict[int, set[int]]] | None = None
     legacy: Callable[[list[WaveSegment]], Any] | None = None
+    allocated_cores: int | None = None
+    memory_limit: int | None = None
 
 
 class SimpleExecutor:
@@ -159,6 +161,14 @@ class ScalableExecutor:
     def execute(self, plan: ExecutionPlan, context: ExecutionContext) -> Any:
         """Execute the validated plan, propagating any worker or output failure."""
         settings = ExecutionSettings.from_config(context.config)
+        if context.allocated_cores is not None:
+            if type(context.allocated_cores) is not int or context.allocated_cores < 1:
+                raise ValueError("allocated_cores must be a positive integer")
+            settings = replace(settings, cores=min(settings.cores or context.allocated_cores, context.allocated_cores))
+        if context.memory_limit is not None:
+            if type(context.memory_limit) is not int or context.memory_limit < 1:
+                raise ValueError("memory_limit must be positive integer bytes")
+            settings = replace(settings, memory_limit=min(settings.memory_limit or context.memory_limit, context.memory_limit))
         cpus = available_cpus()
         if settings.cores is not None:
             cpus = cpus[: settings.cores]
@@ -171,6 +181,9 @@ class ScalableExecutor:
         per_job_cores = max(
             1, int(getattr(context.config, "nproc", 1) or 1), lag_workers * inner
         )
+        resource_request = getattr(context.processor, "requested_cores", None)
+        if resource_request is not None:
+            per_job_cores = max(per_job_cores, resource_request(context.config))
         if per_job_cores > len(cpus):
             raise ValueError(
                 f"Segment requests {per_job_cores} cores but allocation has {len(cpus)}"

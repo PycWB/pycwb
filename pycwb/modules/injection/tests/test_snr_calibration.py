@@ -36,7 +36,7 @@ def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mod
     # A scalar noise RMS isolates calibration from the independently tested WDM estimator.
     monkeypatch.setattr(
         snr_population,
-        "whitening_python",
+        "whiten_wavelet",
         lambda config, noise, **kw: (noise, noise.data[0]),
     )
     monkeypatch.setattr(

@@ -208,5 +208,5 @@ A stronger CPU baseline and explicit core-partition experiment are now recorded
 in [the job-management decision](job_management_decision.md). They support a
 narrow opt-in pipeline, with moderate gains and significant RAM tradeoffs, rather
 than replacing the simple default. The preparer now honors
-`PYCWB_GPU_OVERLAP_SETUP=0` for sequential coherence/TD setup inside its process;
+`gpu.overlap_setup: false` for sequential coherence/TD setup inside its process;
 cross-job preparation ahead remains independent of this switch.
