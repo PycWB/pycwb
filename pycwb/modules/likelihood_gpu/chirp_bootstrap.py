@@ -56,7 +56,7 @@ def frequency_powers(f: np.ndarray) -> np.ndarray:
 class ChirpBootstrap:
     """CUDA replacement for ``likelihoodWP.chirp_micropixel._bootstrap``.
 
-    Bound as ``_bootstrap`` inside a specialized ``estimate_chirp`` by
+    Passed as the explicit ``bootstrap`` callback to ``estimate_chirp`` by
     :func:`make_chirp_update`.
 
     Attributes
@@ -170,7 +170,7 @@ class ChirpBootstrap:
 
 
 def make_chirp_update() -> Callable[..., None]:
-    """Specialize native chirp selection while retaining native resets/fallbacks.
+    """Configure native chirp selection while retaining native resets/fallbacks.
 
     Returns
     -------
@@ -178,17 +178,17 @@ def make_chirp_update() -> Callable[..., None]:
         A replacement for ``likelihoodWP.likelihood._update_cluster_chirp_statistics``
         with the same keyword-only signature. It evaluates the native
         enabling conditions itself: when they hold it runs ``estimate_chirp``
-        with :class:`ChirpBootstrap` bound as ``_bootstrap`` and writes the
+        with :class:`ChirpBootstrap` passed as ``bootstrap`` and writes the
         chirp fields of ``cluster.cluster_meta``; otherwise it defers to the
         native function so resets and fallbacks stay native.
     """
     import importlib
 
-    from pycwb.utils.function_binding import specialize
+    from functools import partial
 
     native = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
     chirp = importlib.import_module("pycwb.modules.likelihoodWP.chirp_micropixel")
-    estimate = specialize(chirp.estimate_chirp, _bootstrap=ChirpBootstrap())
+    estimate = partial(chirp.estimate_chirp, bootstrap=ChirpBootstrap())
 
     def update(
         cluster: Any,

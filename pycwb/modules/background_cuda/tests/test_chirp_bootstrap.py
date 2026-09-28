@@ -115,7 +115,7 @@ class TestChirpBootstrap:
         specialized = next(
             cell.cell_contents
             for cell in update.__closure__
-            if getattr(cell.cell_contents, "__wrapped__", None) is native.estimate_chirp
+            if getattr(cell.cell_contents, "func", None) is native.estimate_chirp
         )
-        assert isinstance(specialized.__globals__["_bootstrap"], ChirpBootstrap)
+        assert isinstance(specialized.keywords["bootstrap"], ChirpBootstrap)
         assert native.estimate_chirp.__globals__["_bootstrap"] is _bootstrap
