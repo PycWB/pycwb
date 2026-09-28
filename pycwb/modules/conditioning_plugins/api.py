@@ -92,12 +92,13 @@ def save_diagnostics(result, directory):
     for i, noise in enumerate(result.noise_rms):
         variation = getattr(noise, 'variation', None)
         if variation is not None:
-            arrays[f'nvar_{i}'] = variation.data
+            # Preserve the existing one-dimensional diagnostic file format.
+            arrays[f'nvar_{i}'] = np.asarray(variation.data[0], dtype=np.float64)
     if arrays:
         np.savez_compressed(path / 'noise_variation.npz', **arrays)
     metadata = dict(plugins=result.diagnostics, excluded_intervals=result.excluded_intervals,
                     noise_variation=[None if getattr(n, 'variation', None) is None else
-                                     dict(start=n.variation.start, rate=n.variation.rate,
-                                          low=n.variation.low, high=n.variation.high)
+                                     dict(start=n.variation.start, rate=1.0 / n.variation.dt,
+                                          low=n.variation.f_low, high=n.variation.f_high)
                                      for n in result.noise_rms])
     (path / 'diagnostics.json').write_text(json.dumps(metadata, indent=2, allow_nan=False))

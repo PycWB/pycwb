@@ -7,7 +7,7 @@ import numpy as np
 from numba import njit
 from wdm_wavelet.wdm import WDM
 from pycwb.types.time_series import TimeSeries
-from pycwb.types.noise_rms import NoiseVariation
+from pycwb.types.time_frequency_map import TimeFrequencyMap
 
 HOOK_STAGE = 'post_whitening'
 OPTIONS_SCHEMA = {'type': 'object', 'additionalProperties': False, 'properties': {
@@ -183,8 +183,15 @@ def correct_strain(strain, edge):
     corrected, variation = correct_layer(np.asarray(tf.data[1]), layer_rate, edge)
     tf.data[1] = corrected
     data = .5*(np.asarray(wdm.w2t(tf))+np.asarray(wdm.w2tQ(tf)))
-    return TimeSeries(data=data, t0=ts.t0, dt=ts.dt), NoiseVariation(
-        data=variation.astype(np.float32).astype(np.float64), start=float(ts.t0), rate=layer_rate, low=16., high=48.)
+    # cWB nVAR is a WSeries<float> time series with an affected frequency band,
+    # not another wavelet transform. Store it as one band in the normal TF map.
+    variation_map = TimeFrequencyMap(
+        data=variation.astype(np.float32)[None, :], is_whitened=False,
+        dt=float(tf.dt), df=32., start=float(ts.t0),
+        stop=float(ts.t0) + len(variation) * float(tf.dt),
+        f_low=16., f_high=48., edge=float(edge), wavelet=None,
+    )
+    return TimeSeries(data=data, t0=ts.t0, dt=ts.dt), variation_map
 
 
 def apply(context, result, detectors=None):

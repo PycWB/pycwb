@@ -388,7 +388,8 @@ class PixelArrays:
         nRMS : list[TimeFrequencyMap]
             One noise map per IFO.  ``data`` shape is ``(n_freq, n_time)``.
         """
-        from .noise_rms import NoiseRMSMap, lookup_pixel_noise_rms
+        from .noise_rms import NoiseRMSMap
+        from pycwb.modules.data_conditioning.noise import lookup_pixel_noise_rms
 
         if any(isinstance(m, NoiseRMSMap) for m in nRMS):
             if len(nRMS) != self._n_ifo:

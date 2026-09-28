@@ -9,7 +9,7 @@ import logging
 
 import numpy as np
 from wdm_wavelet.wdm import WDM
-from pycwb.types.noise_rms import make_noise_rms_map
+from pycwb.modules.data_conditioning.noise import make_noise_rms_map
 
 logger = logging.getLogger(__name__)
 

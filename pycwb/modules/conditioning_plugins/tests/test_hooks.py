@@ -6,7 +6,9 @@ import pytest
 import jsonschema
 
 from pycwb.types.time_series import TimeSeries
-from pycwb.types.noise_rms import NoiseRMSMap, NoiseVariation, lookup_pixel_noise_rms
+from pycwb.types.noise_rms import NoiseRMSMap
+from pycwb.types.time_frequency_map import TimeFrequencyMap
+from pycwb.modules.data_conditioning.noise import lookup_pixel_noise_rms
 from pycwb.modules.conditioning_plugins.api import run_hooks, subtract_intervals, save_diagnostics
 from pycwb.modules.conditioning_plugins.cwb_gating import gate_intervals
 from pycwb.modules.conditioning_plugins.o3a_conditioning import correct_strain
@@ -59,7 +61,9 @@ def test_plugin_options_fail_closed():
 def test_noise_variation_overlap_and_lag_index():
     rms=noise()
     # 32 Hz-wide pixels: [16,48], [48,80], [0,64] at different resolutions.
-    var=NoiseVariation(np.full(64*64,.5),1000.,64.,16.,48.)
+    var=TimeFrequencyMap(data=np.full((1,64*64),.5,dtype=np.float32),
+                         is_whitened=False,dt=1/64.,df=32.,start=1000.,stop=1064.,
+                         f_low=16.,f_high=48.,edge=10.,wavelet=None)
     corrected=replace(rms,variation=var)
     frequencies=np.array([1,2,1]);rates=np.array([64.,64.,128.]);layers=np.array([3,3,3])
     idx=(rates*layers*20).astype(int)[:,None]
@@ -67,7 +71,7 @@ def test_noise_variation_overlap_and_lag_index():
     out=lookup_pixel_noise_rms(frequencies,idx,layers,rates,[corrected])[:,0]
     # Last pixel is [32,96]: quarter overlaps [16,48].
     np.testing.assert_allclose(out/baseline,[2,1,1/np.sqrt(.75+.25*.25)])
-    var.data[30*64:]=1
+    var.data[:,30*64:]=1
     out_later=lookup_pixel_noise_rms(frequencies,idx+(rates*layers*15).astype(int)[:,None],layers,rates,[corrected])[:,0]
     np.testing.assert_array_equal(out_later,baseline)
 
@@ -77,9 +81,12 @@ def test_zero_signal_is_finite_identity():
     corrected,var=correct_strain(x,10)
     np.testing.assert_array_equal(corrected.data,x.data)
     np.testing.assert_array_equal(var.data,1.)
+    assert type(var) is TimeFrequencyMap
+    assert var.data.shape == (1,64*64) and var.data.dtype == np.float32
+    assert (var.start,var.stop,var.dt,var.f_low,var.f_high) == (1000.,1064.,1/64.,16.,48.)
 
 
-def test_variation_changes_only_selected_detector():
+def test_variation_changes_only_selected_detector(tmp_path):
     x=TimeSeries(data=np.random.default_rng(21).normal(size=64*128),t0=1000.,dt=1/128.)
     rms=noise()
     config=SimpleNamespace(segEdge=10,conditioning={'post_whitening':[
@@ -88,6 +95,13 @@ def test_variation_changes_only_selected_detector():
     assert result.strains[1] is x and result.noise_rms[1] is rms
     assert result.noise_rms[0].variation is not None and rms.variation is None
     assert np.isfinite(result.strains[0].data).all()
+    save_diagnostics(result,tmp_path)
+    metadata=json.loads((tmp_path/'diagnostics.json').read_text())
+    assert metadata['noise_variation'] == [dict(start=1000.,rate=64.,low=16.,high=48.),None]
+    with np.load(tmp_path/'noise_variation.npz') as saved:
+        assert saved['nvar_0'].shape == (64*64,)
+        assert saved['nvar_0'].dtype == np.float64
+        np.testing.assert_array_equal(saved['nvar_0'],result.noise_rms[0].variation.data[0])
 
 
 def test_builtin_schema_validates_hook_containers():

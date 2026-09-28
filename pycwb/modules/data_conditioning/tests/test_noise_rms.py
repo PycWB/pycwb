@@ -4,8 +4,10 @@ import pickle
 import numpy as np
 import pytest
 
-from pycwb.types.noise_rms import NoiseRMSMap, make_noise_rms_map, lookup_pixel_noise_rms
+from pycwb.types.noise_rms import NoiseRMSMap
+from pycwb.modules.data_conditioning.noise import make_noise_rms_map, lookup_pixel_noise_rms
 from pycwb.types.pixel_arrays import PixelArrays
+from pycwb.types.time_frequency_map import TimeFrequencyMap
 
 
 def noise_map(data, start=1000.0, anchor_start=1010.0, anchor_rate=0.05, df=1.0):
@@ -94,3 +96,23 @@ def test_legacy_pixel_list_uses_same_lagged_mixed_resolution_lookup():
     expected = [[2.0, np.sqrt(2 / (1 / 81 + 1 / 121))], [3.0, np.sqrt(2 / (1 / 64 + 1 / 100))]]
     for detector in range(2):
         np.testing.assert_allclose([p.data[detector].noise_rms for p in pixels], expected[detector])
+
+
+def variation_map():
+    return TimeFrequencyMap(
+        data=np.full((1,4096),.5,dtype=np.float32), is_whitened=False,
+        dt=1/64., df=32., start=1000., stop=1064.,
+        f_low=16., f_high=48., edge=10., wavelet=None,
+    )
+
+
+def test_variation_map_survives_worker_serialization():
+    noise = noise_map(np.full((129,3),2.))
+    noise.variation = variation_map()
+    restored = pickle.loads(pickle.dumps(noise))
+    assert type(restored.variation) is TimeFrequencyMap
+    assert restored.variation.data.dtype == np.float32
+    # Fully covered pixel: a factor of 0.5 doubles its physical noise RMS.
+    np.testing.assert_array_equal(
+        lookup_pixel_noise_rms([1],[[3840]],3,64.,[restored]), [[4.]],
+    )

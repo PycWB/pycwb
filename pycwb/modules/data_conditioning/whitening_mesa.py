@@ -191,7 +191,7 @@ def whiten_mesa(config, h):
         f_high_map=float(config.fHigh),
     )
 
-    from pycwb.types.noise_rms import make_noise_rms_map
+    from pycwb.modules.data_conditioning.noise import make_noise_rms_map
 
     nrms_tf = make_noise_rms_map(tf_white, nrms_anchor, config.segEdge)
     conditioned_strain = TimeSeries(data=whitened, dt=h_ts.dt, t0=h_ts.t0)

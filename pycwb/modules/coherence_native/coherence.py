@@ -15,7 +15,7 @@ from pycwb.config import Config
 from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_cluster import FragmentCluster
-from pycwb.types.noise_rms import lookup_pixel_noise_rms
+from pycwb.modules.data_conditioning.noise import lookup_pixel_noise_rms
 from pycwb.types.time_series import TimeSeries
 
 from .clustering import cluster_pixels as cluster_pixels
