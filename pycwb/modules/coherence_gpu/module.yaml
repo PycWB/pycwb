@@ -1,0 +1,4 @@
+name: coherence_gpu
+author: pycWB
+description: GPU coherence selection and native-compatible map preparation.
+dependencies: [numpy, numba, jax, wdm-wavelet]

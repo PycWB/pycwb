@@ -1,6 +1,8 @@
-"""Experimental, opt-in CUDA background stages; no production hooks are installed.
+"""Compatibility imports for the modular GPU background workflow.
 
-Select ``pycwb.modules.background_cuda.processor.process_job_segment`` as the
-``segment_processer`` and enable stages with the ``gpu`` YAML mapping; see the
-package README for the switch table, bounds and measured results.
+New configurations should select
+``pycwb.workflow.subflow.process_job_segment_gpu.process_job_segment``.
+Scientific implementations live in ``coherence_gpu``, ``super_cluster_gpu``,
+``likelihood_gpu`` and ``gpu_utils``; see this package's README for migration,
+YAML options and validation instructions. Importing this namespace creates no GPU context.
 """

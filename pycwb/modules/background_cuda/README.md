@@ -1,8 +1,8 @@
-# Experimental CUDA background stages
+# Modular GPU background workflow
 
 Opt-in GPU implementations of the per-lag background stages plus a complete
 opt-in job processor. Production numerical modules and defaults are unchanged;
-nothing in this package is imported unless the processor below is selected in
+the GPU workflow is activated by selecting the processor below in
 `user_parameters.yaml`. Historical feature-branch validation showed each accelerated stage reproduces the native CPU
 arithmetic bit for bit (mixed FP32/FP64 and reduction order preserved) and passed paired persisted-output gates; see the evidence directories in the
 enclosing workspace under `runs/gpu_lf_exploration`, `runs/gpu_three_searches`
@@ -11,7 +11,7 @@ and `runs/gpu_review_20260921`.
 ## Selecting the processor
 
 ```yaml
-segment_processer: pycwb.modules.background_cuda.processor.process_job_segment
+segment_processer: pycwb.workflow.subflow.process_job_segment_gpu.process_job_segment
 parallel_lag_workers: 1
 execution_profile:
   scalar_dpf: true
@@ -42,11 +42,19 @@ and passed to spawned workers. Resuming with different options is rejected.
 
 ## How stages are composed
 
-`processor._build_analyzer` clones the native `_run_lag_analysis` with private
-globals through `pycwb.utils.function_binding.specialize`, replacing only the collaborators whose
-switch is enabled. No production module is mutated; the serial CPU path and
-other callers keep the native bindings. The private production names this
-package binds are pinned by `tests/test_bindings.py`.
+The workflow assembles process-owned stages with
+`coherence_gpu.coherence.build_coherence`,
+`super_cluster_gpu.super_cluster.build_supercluster`, and
+`likelihood_gpu.likelihood.build_likelihood`. These accept the job configuration
+or immutable GPU options; the likelihood factory also checks the execution
+profile's scalar DPF requirement.
+
+Explicit `PreparationStages` and `LagStages` bundles connect the GPU stages to
+the native job lifecycle. The job processor and lag analysis are no longer cloned.
+The native CPU workflow retains its default stages. Lower-level numerical,
+worker-pool and output adapters still use `pycwb.utils.function_binding.specialize`
+for private hooks; the binding tests pin these contracts. No native module is
+mutated. Existing `background_cuda` imports and processor paths remain aliases.
 
 Processing remains lag-major: shared preparation, then complete per-lag
 selection, clustering, likelihood and output. `gpu.lag_workers>1` spawns
@@ -98,31 +106,34 @@ native CPU work and must not be enabled in speed measurements. The old
 
 ## Module map
 
-| File | Role |
+| Package / workflow | Responsibility |
 |---|---|
-| `processor.py` | Entry point, stage composition, resident-map selector |
-| `process_parallel.py` | Spawned GPU lag workers on the native shared-input pool |
-| `constants/gpu_options.py`, `utils/function_binding.py` | Explicit configuration and shared private function binding |
-| `cuda_runtime.py`, `workspace.py`, `geometry_cache.py` | NVRTC compile cache, bounded device buffers, resident geometry |
-| `selection_cuda.py/.cu`, `alignment_jax.py`, `selection_jax.py` | Pixel selection backends |
-| `dpf_regulator.py/.cu`, `likelihood_scan.py/.cu` | Likelihood stage kernels |
-| `subnet_scan.py/.cu`, `subnet_batch.py` | Subnet sky scan and per-lag batching |
-| `td_vectors.py/.cu` | Resident TD filter extraction |
-| `chirp_bootstrap.py/.cu`, `chirp_bootstrap_plan.py` | Chirp bootstrap trial scoring |
-| `packet_energy.py/.cu`, `wdm_prefilter.py/.cu`, `wdm_hybrid.py`, `max_energy_hybrid.py` | Setup-phase prefilter path |
-| `read_parallel.py`, `conditioning_parallel.py`, `setup_parallel.py`, `td_setup_parallel.py`, `setup_overlap.py` | Bounded parallel preparation (CPU) |
-| `output_buffer.py`, `reconstruction.py`, `worker_output.py` | Output path |
-| `validation.py`, `profiling.py` | Paired exact validation; opt-in profiles |
-| `tests/` | pytest suite; GPU tests skip without a device |
+| `modules/coherence_gpu` | Resident pixel selection, map preparation, WDM prefilter and packet energy kernels |
+| `modules/super_cluster_gpu` | Subnet scan/batching, TD extraction and parallel TD preparation |
+| `modules/likelihood_gpu` | DPF, likelihood sky scan, chirp bootstrap |
+| `modules/gpu_utils` | CUDA compiler/runtime cache, bounded workspaces, geometry cache, validation and profiling |
+| `modules/read_data/parallel.py` | Bounded parallel frame decoding |
+| `modules/data_conditioning/parallel.py` | Bounded parallel native conditioning |
+| `workflow/subflow/process_job_segment_gpu.py` | Stage selection and job pipeline assembly |
+| `workflow/subflow/process_job_segment_gpu_parallel.py` | Spawned GPU lag workers with native shared inputs |
+| `workflow/subflow/gpu_setup_overlap.py` | Join overlapping preparation before worker creation |
+| `workflow/subflow/gpu_output.py` | Parent-only buffered output and durable progress |
+| `workflow/subflow/gpu_reconstruction.py`, `gpu_worker_output.py` | Catalog-only Q-veto and worker postprocessing flows |
+| `modules/background_cuda` | Compatibility aliases; regression tests retained at their existing location |
+
+CUDA `.cu` sources live beside their Python wrappers and are included in package
+builds. The new scientific packages include `module.yaml` metadata. Importing
+these package namespaces does not initialize CUDA; factories and sessions own
+runtime resources.
 
 ## Tests
 
 ```bash
 # CPU-only environment: GPU tests skip
-python -m pytest pycwb/modules/background_cuda/tests -q
+python -m pytest pycwb/modules/background_cuda/tests pycwb/workflow/execution/tests -q
 # GPU environment: bit-exact parity against the CPU kernels
 JAX_ENABLE_X64=1 JAX_PLATFORMS=cuda,cpu XLA_PYTHON_CLIENT_PREALLOCATE=false \
-  python -m pytest pycwb/modules/background_cuda/tests -q
+  python -m pytest pycwb/modules/background_cuda/tests pycwb/workflow/execution/tests -q
 ```
 
 ## Measured results and limits

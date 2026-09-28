@@ -91,6 +91,7 @@ from pycwb.types.network_event import Event
 from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
+from pycwb.workflow.subflow.job_segment_stages import LagStages, PreparationStages
 from pycwb.workflow.subflow.job_segment_output import (
     _cleanup_lag_output_state,
     _create_and_save_trigger_folders,
@@ -173,7 +174,12 @@ class LagResult:
     progress_record: dict
 
 
-def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
+def _run_lag_analysis(
+    context: LagAnalysisContext, lag: int, *, stages: LagStages | None = None,
+) -> LagResult:
+    """Run one lag using explicit stages, defaulting to native CPU callables."""
+    if stages is None:
+        stages = LagStages(coherence_single_lag, supercluster_single_lag, evaluate_cluster_likelihood, Event)
     profile = execution_profile(context.config)
     config = context.config
     sub_job_seg = context.sub_job_seg
@@ -224,7 +230,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
     with _temporary_numba_threads(context.numba_threads):
         timer_coherence = time.perf_counter()
-        frag_clusters_this_lag = coherence_single_lag(
+        frag_clusters_this_lag = stages.coherence_single_lag(
             context.coherence_setup,
             lag,
             veto_windows=effective_veto,
@@ -232,7 +238,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
         logger.info("Coherence time for lag %d: %.2f s", lag, time.perf_counter() - timer_coherence)
 
         timer_supercluster = time.perf_counter()
-        fragment_cluster = supercluster_single_lag(
+        fragment_cluster = stages.supercluster_single_lag(
             context.supercluster_setup,
             config,
             frag_clusters_this_lag,
@@ -275,7 +281,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             # OOM, NaN propagation) that requires investigation — silently
             # skipping the cluster would mask the root cause.
             likelihood_call_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
-            result_cluster, sky_stats = evaluate_cluster_likelihood(
+            result_cluster, sky_stats = stages.evaluate_cluster_likelihood(
                 config.nIFO,
                 selected_cluster,
                 config,
@@ -308,7 +314,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 result_cluster.high_frequency,
             )
 
-            event = Event()
+            event = stages.event_factory()
             event.output_py(sub_job_seg, result_cluster, config, lag_shifts=lag_shifts)
             event.job_id = sub_job_seg.index
             event.trial_idx = context.trial_idx
@@ -474,6 +480,7 @@ def process_job_segment(
     *,
     lag_processor=None,
     input_provider=None,
+    preparation_stages: PreparationStages | None = None,
 ):
     """
     The core workflow to process single job segment with trials or lags.
@@ -499,6 +506,9 @@ def process_job_segment(
     lag_processor : callable, optional
         Alternate lag executor receiving analysis context, output context and
         skip_lags. The default retains the native lag-processing behavior.
+    preparation_stages : PreparationStages, optional
+        Explicit data-loading, conditioning and setup callables. Defaults to
+        native stages; accelerated workflows supply their own stage bundle.
 
     """
     execution_profile(config)
@@ -518,6 +528,10 @@ def process_job_segment(
     #        d. Post-process   → waveforms, injections, Q-veto, plots
     #        e. Catalog        → persist triggers and release lag memory
     # ─────────────────────────────────────────────────────────────────────────
+    if preparation_stages is None:
+        preparation_stages = PreparationStages(
+            read_from_job_segment, condition_strains, setup_coherence, build_td_inputs_cache,
+        )
     print_job_info(job_seg)
     print_node_info()
     job_timer = time.perf_counter()  # total wall-time for this job segment
@@ -529,9 +543,9 @@ def process_job_segment(
 
     if job_seg.frames:
         if input_provider is None:
-            base_data = read_from_job_segment(config, job_seg)
+            base_data = preparation_stages.read_from_job_segment(config, job_seg)
         else:
-            base_data = read_from_job_segment(config, job_seg, input_provider=input_provider)
+            base_data = preparation_stages.read_from_job_segment(config, job_seg, input_provider=input_provider)
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
@@ -647,7 +661,7 @@ def process_job_segment(
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
         stage_timer = time.perf_counter()
-        strains, nRMS = condition_strains(config, data)
+        strains, nRMS = preparation_stages.condition_strains(config, data)
         from pycwb.modules.conditioning_plugins.api import (
             run_hooks, save_diagnostics, subtract_intervals,
         )
@@ -692,7 +706,7 @@ def process_job_segment(
 
         # 3a. Coherence setup: WDM decomposition + TF maps for all IFOs.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg, nRMS=nRMS)
+        coherence_setup = preparation_stages.setup_coherence(config, strains, job_seg=sub_job_seg, nRMS=nRMS)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -700,7 +714,7 @@ def process_job_segment(
         #     Stored in float32 (vs. float64) to halve memory usage;
         #     Numba accumulates in float64 internally, so precision is preserved.
         stage_timer = time.perf_counter()
-        td_inputs_cache = build_td_inputs_cache(config, strains)
+        td_inputs_cache = preparation_stages.build_td_inputs_cache(config, strains)
         logger.info("TD inputs cache build time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 

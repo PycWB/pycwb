@@ -13,7 +13,8 @@ from pycwb.workflow.execution.cache import FrameProvider
 def test_gpu_processor_preserves_direct_reads_or_accepts_provider(
     monkeypatch, use_cache
 ):
-    from pycwb.modules.background_cuda import processor
+    from pycwb.workflow.subflow import process_job_segment_gpu as processor
+    from pycwb.modules.read_data.parallel import read_from_job_segment
 
     for key in list(os.environ):
         if key.startswith("PYCWB_GPU_"):
@@ -31,21 +32,13 @@ def test_gpu_processor_preserves_direct_reads_or_accepts_provider(
     monkeypatch.setattr(
         processor.native, "process_job_segment", lambda *args, **kwargs: kwargs
     )
-    bindings = []
-
-    def specialize(function, **values):
-        bindings.append(values)
-        return function
-
-    monkeypatch.setattr(processor, "specialize", specialize)
     provider = FrameProvider(()) if use_cache else None
     result = processor.process_job_segment(".", config, object(), input_provider=provider)
     assert processor.process_job_segment.supports_input_provider
     assert result["input_provider"] is provider
     assert result["lag_processor"] is processor._process_lags
-    assert bool(bindings) is not use_cache
-    if bindings:
-        assert set(bindings[0]) == {"read_from_job_segment"}
+    expected_reader = processor.native.read_from_job_segment if use_cache else read_from_job_segment
+    assert result["preparation_stages"].read_from_job_segment is expected_reader
 
 
 def test_gpu_processor_declares_explicit_worker_cpu_budget():

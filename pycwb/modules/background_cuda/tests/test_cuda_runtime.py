@@ -82,11 +82,17 @@ def test_load_module_caches_by_source_hash(tmp_path: Path) -> None:
 
 
 def test_package_kernel_sources_compile_once_each() -> None:
-    from pycwb.modules.background_cuda import cuda_runtime
-    from pycwb.modules.background_cuda.cuda_runtime import load_module
+    from importlib import import_module
+    from pycwb.modules.gpu_utils.cuda_runtime import load_module
 
-    package = Path(cuda_runtime.__file__).parent
-    for name in ("dpf_regulator", "likelihood_scan", "subnet_scan", "selection_cuda", "chirp_bootstrap", "td_vectors"):
-        path = package / f"{name}.cu"
+    modules = (
+        "likelihood_gpu.dpf_regulator", "likelihood_gpu.likelihood_scan",
+        "likelihood_gpu.chirp_bootstrap", "super_cluster_gpu.subnet_scan",
+        "super_cluster_gpu.td_vectors", "coherence_gpu.selection_cuda",
+        "coherence_gpu.packet_energy", "coherence_gpu.wdm_prefilter",
+    )
+    for name in modules:
+        wrapper = import_module(f"pycwb.modules.{name}")
+        path = Path(wrapper.__file__).with_suffix(".cu")
         module = load_module(path)
         assert load_module(path) is module, name
