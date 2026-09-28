@@ -1,10 +1,4 @@
-"""Pin every private production symbol that ``background_cuda`` binds by name.
-
-The package composes GPU stages by replacing module globals of native callers
-through :func:`~pycwb.modules.background_cuda.binding.specialize`. A rename of
-any bound name would otherwise silently fall back to CPU execution, so each
-expected attribute is asserted here.
-"""
+"""Pin remaining native adapters and compatibility imports during migration."""
 
 from __future__ import annotations
 
@@ -108,70 +102,3 @@ def test_native_processor_reexports_callables_bound_by_the_processor() -> None:
     assert callable(native.evaluate_cluster_likelihood)
     assert callable(native.supercluster_single_lag)
     assert inspect.isclass(native.Event)
-
-
-def test_specialize_accepts_every_processor_binding_target() -> None:
-    """The names the processor rebinds must exist as globals of the rebound functions."""
-    from pycwb.utils.function_binding import specialize
-
-    likelihood = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
-    subnet = importlib.import_module("pycwb.modules.super_cluster_native.sub_net_cut")
-    utils = importlib.import_module("pycwb.modules.super_cluster_native.utils")
-    supercluster = importlib.import_module(
-        "pycwb.modules.super_cluster_native.super_cluster"
-    )
-    pipeline = importlib.import_module("pycwb.modules.coherence_native.coherence")
-    chirp = importlib.import_module("pycwb.modules.likelihoodWP.chirp_micropixel")
-    native = importlib.import_module(
-        "pycwb.workflow.subflow.process_job_segment_native"
-    )
-    shared = importlib.import_module(
-        "pycwb.workflow.subflow.process_job_segment_parallel"
-    )
-
-    sentinel = object()
-    specialize(pipeline.coherence_single_lag, select_network_pixels=sentinel)
-    specialize(
-        likelihood.evaluate_cluster_likelihood, _compute_dpf_regulator_scalar=sentinel
-    )
-    specialize(
-        likelihood.evaluate_cluster_likelihood,
-        _scan_sky=sentinel,
-    )
-    specialize(
-        likelihood.evaluate_cluster_likelihood,
-        _update_cluster_chirp_statistics=sentinel,
-    )
-    specialize(chirp.estimate_chirp, _bootstrap=sentinel)
-    specialize(subnet._sub_net_cut_prepared_packets, optimze_sky_loc_from_td=sentinel)
-    specialize(
-        subnet.sub_net_cut_from_pixel_arrays, _sub_net_cut_prepared_packets=sentinel
-    )
-    specialize(utils.apply_subnet_cut, sub_net_cut_from_pixel_arrays=sentinel)
-    specialize(
-        supercluster.supercluster_single_lag,
-        apply_subnet_cut=sentinel,
-        _populate_td_vectors=sentinel,
-    )
-    specialize(
-        native._run_lag_analysis,
-        coherence_single_lag=sentinel,
-        supercluster_single_lag=sentinel,
-        evaluate_cluster_likelihood=sentinel,
-        Event=sentinel,
-    )
-    specialize(native._save_lag_outputs, _postprocess_saved_triggers=sentinel)
-    specialize(shared._consume_bounded, native=sentinel)
-    specialize(
-        shared._process_shared_inputs,
-        _initialize_process=sentinel,
-        _analyze_process=sentinel,
-        _consume_bounded=sentinel,
-    )
-    specialize(
-        native.process_job_segment,
-        read_from_job_segment=sentinel,
-        condition_strains=sentinel,
-        build_td_inputs_cache=sentinel,
-        setup_coherence=sentinel,
-    )

@@ -4,7 +4,7 @@ Runs in the job (parent) process once per trial. The per-resolution body is
 the unchanged native ``_setup_coherence_single_res``; this module only changes
 how the resolutions are scheduled and, for the exploratory max-energy
 switches, which ``max_energy`` implementation that body sees through a
-private :func:`~pycwb.utils.function_binding.specialize` clone.
+process-owned projection callback.
 """
 
 from __future__ import annotations
@@ -148,11 +148,11 @@ def setup_coherence(
                 # Packet accumulation and its device buffers belong to one
                 # worker; never share mutable maxima across resolutions.
                 if not hasattr(local, "single"):
-                    from pycwb.utils.function_binding import specialize
+                    from functools import partial
                     from pycwb.modules.coherence_gpu.max_energy_hybrid import make_projection
 
-                    local.single = specialize(
-                        single, max_energy=make_projection(cuda_prefilter=True)
+                    local.single = partial(
+                        single, projection=make_projection(cuda_prefilter=True)
                     )
                 implementation = local.single
             return implementation(i, config, normalized, up_n, job_seg=job_seg)

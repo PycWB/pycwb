@@ -38,7 +38,12 @@ def test_gpu_processor_preserves_direct_reads_or_accepts_provider(
     assert result["input_provider"] is provider
     assert result["lag_processor"] is processor._process_lags
     expected_reader = processor.native.read_from_job_segment if use_cache else read_from_job_segment
-    assert result["preparation_stages"].read_from_job_segment is expected_reader
+    reader = result["preparation_stages"].read_from_job_segment
+    if use_cache:
+        assert reader is expected_reader
+    else:
+        assert reader.func is expected_reader
+        assert reader.keywords == {"workers": 2, "processes": False, "validate": False}
 
 
 def test_gpu_processor_declares_explicit_worker_cpu_budget():

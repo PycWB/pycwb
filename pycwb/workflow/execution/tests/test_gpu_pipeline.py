@@ -28,7 +28,7 @@ def test_legacy_modules_share_canonical_state():
     assert legacy is gpu
     root = Path(gpu.__file__).parents[2] / "modules" / "background_cuda"
     for path in root.glob("*.py"):
-        if path.name == "__init__.py":
+        if path.name in {"__init__.py", "read_parallel.py", "conditioning_parallel.py"}:
             continue
         old = importlib.import_module(f"pycwb.modules.background_cuda.{path.stem}")
         assert old is importlib.import_module(old.__name__)
@@ -51,9 +51,8 @@ def test_scientific_modules_do_not_depend_on_workflow_or_legacy_package():
 
 def test_spawn_entrypoints_and_output_types_remain_pickleable():
     from pycwb.workflow.subflow import process_job_segment_gpu_parallel as parallel
-    from pycwb.workflow.subflow.gpu_worker_output import ProcessedLag
 
-    for value in (parallel._initialize, parallel._analyze, gpu.process_job_segment, ProcessedLag):
+    for value in (parallel._initialize, parallel._analyze, gpu.process_job_segment, native.LagResult):
         assert pickle.loads(pickle.dumps(value)) is value
 
 
@@ -88,7 +87,8 @@ def test_parallel_preparation_and_overlap_are_composed(monkeypatch):
 
     config = SimpleNamespace(gpu=dict(condition_workers=2, setup_workers=2, td_setup_workers=2))
     stages = gpu._build_preparation(config)
-    assert stages.condition_strains is condition_strains
+    assert stages.condition_strains.func is condition_strains
+    assert stages.condition_strains.keywords == {"workers": 2, "validate": False}
     assert stages.setup_coherence is setup_coherence
     assert stages.build_td_inputs_cache is build_td_inputs_cache
     config.gpu["overlap_setup"] = True

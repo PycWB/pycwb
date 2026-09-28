@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -651,6 +653,8 @@ def apply_subnet_cut(
     subrho_local: float,
     xtalk_local: XTalk,
     arrays_prepared: bool = False,
+    *,
+    pixel_cut: Callable | None = None,
 ) -> list[Cluster]:
     """
     Apply the sub-network cut and mark clusters that pass or fail.
@@ -690,7 +694,16 @@ def apply_subnet_cut(
     -------
     list[Cluster]
         Clusters with ``cluster_status <= 0``, i.e. those that passed the cut.
+
+    Backend callbacks
+    -----------------
+    pixel_cut : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    pixel_cut = pixel_cut or sub_net_cut_from_pixel_arrays
     timing = {
         "topk": 0.0,
         "data_prep": 0.0,
@@ -703,7 +716,7 @@ def apply_subnet_cut(
         t_topk = time.perf_counter()
         _top_idx = _top_loudest_indices(c.pixel_arrays.likelihood, n_loudest_local)
         timing["topk"] += time.perf_counter() - t_topk
-        results = sub_net_cut_from_pixel_arrays(
+        results = pixel_cut(
             c.pixel_arrays,
             _top_idx,
             ml_local,

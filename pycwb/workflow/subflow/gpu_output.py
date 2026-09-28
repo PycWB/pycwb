@@ -269,9 +269,8 @@ class OutputWriter:
             result)`` call signature expected by :func:`~.processor` and
             :func:`~.process_parallel.process_lags`; the writer always uses the
             context it was constructed with, which may carry the batching sink.
-        result : LagResult or ProcessedLag
-            Product of one lag, either the native result or a worker-processed
-            wrapper from :mod:`.worker_output`.
+        result : LagResult
+            Native result of one lag. All postprocessing runs in the parent.
         """
         if not self.options.profile_lags:
             self._save(result)
@@ -282,21 +281,8 @@ class OutputWriter:
             self._save(result)
 
     def _save(self, result: Any) -> None:
-        """Dispatch to the native or worker-output save path, then commit if a batch is ready."""
-        from pycwb.workflow.subflow.gpu_worker_output import ProcessedLag, validate
-
-        if isinstance(result, ProcessedLag):
-            from pycwb.utils.function_binding import specialize
-
-            validate(self.context)
-            timings = result.timings
-            save = specialize(
-                native._save_lag_outputs,
-                _postprocess_saved_triggers=lambda *_: timings,
-            )
-            save(self.context, result.result)
-        else:
-            self.save_native(self.context, result)
+        """Run parent postprocessing and save, then commit any completed batch."""
+        self.save_native(self.context, result)
         if self.sink is not None:
             self.sink.commit_if_ready()
 

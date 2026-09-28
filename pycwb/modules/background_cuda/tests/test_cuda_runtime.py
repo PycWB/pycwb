@@ -78,7 +78,7 @@ def test_load_module_caches_by_source_hash(tmp_path: Path) -> None:
     third_path.write_text(TRIVIAL_SOURCE.replace("+ 1.0", "+ 2.0"))
     third = load_module(third_path)
     assert third is not first
-    assert any(key[0] for key in cuda_runtime._modules)
+    assert any(key[0] for _, cache in cuda_runtime._modules.values() for key in cache)
 
 
 def test_package_kernel_sources_compile_once_each() -> None:

@@ -1,4 +1,4 @@
-"""Private function binding used to compose accelerated stages without patching.
+"""Function cloning for diagnostics and the opt-in GIL-releasing thread experiment.
 
 The native processors call their collaborators through module globals. To swap
 one collaborator for a GPU implementation *for one caller only*, ``specialize``

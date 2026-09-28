@@ -1,6 +1,8 @@
 """Lag-independent setup for native coherence."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from pycwb.constants.execution_profile import wdm_options
 from pycwb.constants.execution_profile import execution_profile
 
@@ -103,6 +105,8 @@ def _setup_coherence_single_res(
     strains: list[TimeSeries],
     up_n: int,
     job_seg: WaveSegment | None = None,
+    *,
+    projection: Callable | None = None,
 ) -> dict:
     """
     Lag-independent coherence setup for one resolution level.
@@ -117,7 +121,16 @@ def _setup_coherence_single_res(
         Keys: ``tf_maps``, ``Eo``, ``job_seg``, ``pattern``, ``level``,
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
         ``segEdge``, ``selection_cache``.
+
+    Backend callbacks
+    -----------------
+    projection : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    projection = projection or max_energy
     profile = execution_profile(config)
     timer_start = time.perf_counter()
     timing_enabled = _coherence_timing_enabled(config)
@@ -204,7 +217,7 @@ def _setup_coherence_single_res(
     t_max_energy_total = 0.0
     for n, tf_map in enumerate(tf_maps):
         t_stage = time.perf_counter()
-        tf_maps[n], alp_n = max_energy(
+        tf_maps[n], alp_n = projection(
             tf_map=tf_map,
             max_delay=max_delay,
             up_n=up_n,

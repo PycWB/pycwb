@@ -13,7 +13,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import jax
@@ -21,11 +20,9 @@ import jax
 from pycwb.workflow.subflow import process_job_segment_native as native
 from pycwb.workflow.subflow import process_job_segment_parallel as shared
 
-from pycwb.workflow.subflow import gpu_worker_output as worker_output
 from pycwb.constants.gpu_options import gpu_options
 from pycwb.constants.execution_profile import execution_profile
 from functools import partial
-from pycwb.utils.function_binding import specialize
 from pycwb.workflow.subflow.process_job_segment_gpu import _build_analyzer
 
 logger = logging.getLogger(__name__)
@@ -99,8 +96,6 @@ def _analyze(lag: int) -> Any:
             jax.default_device(jax.devices("cpu")[0]),
         ):
             result = _analyzer(shared._worker_context, lag)
-            if worker_output.enabled(shared._worker_context.config):
-                return worker_output.process(shared._worker_context, result)
             return result
     finally:
         native._cleanup_lag_output_state(
@@ -131,8 +126,6 @@ def process_lags(
         ``save(output_context, result)`` invoked in the parent for each
         completed lag, in completion order.
     """
-    if worker_output.enabled(context.config):
-        worker_output.validate(context)
     pending = list(native._iter_pending_lags(context, skip_lags))
     if not pending:
         return
@@ -141,13 +134,9 @@ def process_lags(
     logger.info(
         "GPU shared-input lag workers: workers=%d pending=%d", workers, len(pending)
     )
-    consume = specialize(
-        shared._consume_bounded, native=SimpleNamespace(_save_lag_outputs=save)
+    shared._process_shared_inputs(
+        context, output_context, pending, workers, 1,
+        initialize=partial(_initialize, options=gpu_options(context.config)),
+        analyze=_analyze,
+        consume=partial(shared._consume_bounded, save=save),
     )
-    launch = specialize(
-        shared._process_shared_inputs,
-        _initialize_process=partial(_initialize, options=gpu_options(context.config)),
-        _analyze_process=_analyze,
-        _consume_bounded=consume,
-    )
-    launch(context, output_context, pending, workers, 1)

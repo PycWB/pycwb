@@ -185,3 +185,20 @@ def test_paired_writes_failure_capture_when_requested(
         )()
     captured = list((tmp_path / "captures").glob("stage_*.pickle"))
     assert len(captured) == 1
+
+
+def _scan_sky(value):
+    return value * 2
+
+
+def _callback_likelihood(value, *, sky_scan=None):
+    return (sky_scan or _scan_sky)(value)
+
+
+def test_partial_callbacks_preserve_internal_trace_checks():
+    from functools import partial
+    same = partial(_callback_likelihood, sky_scan=lambda value: value * 2)
+    assert paired(same, _callback_likelihood, "likelihood")(3) == 6
+    changed = partial(_callback_likelihood, sky_scan=lambda value: value * 3)
+    with pytest.raises(AssertionError, match="native parity failed"):
+        paired(changed, _callback_likelihood, "likelihood")(3)

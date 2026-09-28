@@ -86,7 +86,7 @@ native CPU work and must not be enabled in speed measurements. The old
 | `reuse_td_workspace` | Reusable TD scratch shared by detector/layer sessions | 384 MiB |
 | `q_reconstruction` | Reconstruct only the whitened DAT/REC waveforms Q-veto needs | Rejects saved waveforms, plots, injections |
 | `output_batch` | Parent catalog batch size in lags | 1–256; background without saved waveforms only |
-| `worker_output` | Move waveform/Q-veto computation into workers | Catalog-only background; slower than parent output in the measured LF job |
+| `worker_output` | Retired experimental option | `true` is rejected; remove it to use parent output |
 | `read_workers` / `read_processes` | Parallel native frame decoding, threads or spawned processes | 1–2 workers |
 | `condition_workers` | Parallel native detector conditioning threads | 1–3 |
 | `setup_workers` | Coherence preparation threads by resolution | 1–8 (≤3 with the prefilter) |
@@ -118,7 +118,7 @@ native CPU work and must not be enabled in speed measurements. The old
 | `workflow/subflow/process_job_segment_gpu_parallel.py` | Spawned GPU lag workers with native shared inputs |
 | `workflow/subflow/gpu_setup_overlap.py` | Join overlapping preparation before worker creation |
 | `workflow/subflow/gpu_output.py` | Parent-only buffered output and durable progress |
-| `workflow/subflow/gpu_reconstruction.py`, `gpu_worker_output.py` | Catalog-only Q-veto and worker postprocessing flows |
+| `workflow/subflow/gpu_reconstruction.py` | Parent-owned catalog-only Q-veto flow |
 | `modules/background_cuda` | Compatibility aliases; regression tests retained at their existing location |
 
 CUDA `.cu` sources live beside their Python wrappers and are included in package
@@ -146,8 +146,10 @@ the CPU reference; speedups were 6.3× (LF), 4.8× (HF, three workers) and 4.5×
 (LD, four workers). Full details, hardware and cache conditions are in
 `runs/gpu_lf_exploration/FINAL_REPORT.md` and `runs/gpu_three_searches`.
 
-Limits: catalog-only background jobs (saved waveforms, plots and injections are
-rejected rather than skipped); FP64 GPU FFT preparation remains rejected; the
+Validated performance scope: catalog-only background jobs. Product/injection
+restrictions are conditional on batching and Q-only reconstruction; default output
+uses native save logic and injections select serial lag dispatch. See the authored
+[backend guide](../../../docs/source/backends.rst) for the support matrix. FP64 GPU FFT preparation remains rejected; the
 LD chirp bootstrap is bound by FP64 `pow` throughput on consumer GPUs; the LF and
 HF lag phases are bound by per-lag Python work in the workers, not by kernels.
 

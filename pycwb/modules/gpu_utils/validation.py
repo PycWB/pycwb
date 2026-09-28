@@ -11,18 +11,17 @@ call) to decide whether to pickle a failing pair for inspection.
 
 from __future__ import annotations
 
+from pycwb.utils.fingerprint import Fingerprint as Fingerprint
+from pycwb.utils.fingerprint import leaves as _leaves
+
 import copy
-import dataclasses
-import hashlib
 import logging
 import os
 import pickle
-import struct
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
 from pycwb.modules.likelihoodWP.results import SkyMapStatistics
 
@@ -49,75 +48,11 @@ the parity log. The internal comparison is order-sensitive: the sequence of
 MAX_REPORTED_DIFFERENCES = 20
 """Differing leaf paths listed in a parity failure message; the full list is in the pickled failure."""
 
-Fingerprint = dict[str, Any]
-"""Flat ``path -> exact value`` mapping produced by :func:`leaves`."""
 
 
 def leaves(value: Any, path: str = "root") -> Fingerprint:
-    """Flatten a stage result into exact, comparable leaves.
-
-    Every dataclass field, list/tuple element and dict entry is visited. Arrays
-    contribute dtype, shape and a SHA-256 of their contiguous bytes; floats
-    contribute their IEEE-754 big-endian bit pattern, so ``-0.0`` and ``0.0``
-    or two NaN payloads compare as different. The traversal is deterministic
-    for a given structure, so two fingerprints are comparable with ``==``.
-
-    Parameters
-    ----------
-    value
-        Dataclass instance, ``np.ndarray``, list, tuple, dict, float, int,
-        bool, str or ``None``, nested arbitrarily.
-    path : str, optional
-        Prefix for the leaf keys. Default is ``"root"``.
-
-    Returns
-    -------
-    dict
-        Leaf path to exact value. ``SkyMapStatistics.stage_timings`` is the
-        single diagnostic field excluded: it records wall-clock durations, not
-        scientific output.
-
-    Raises
-    ------
-    TypeError
-        For object-dtype arrays (they need an explicit schema) and for any
-        other type not listed above, so an unexpected type can never pass
-        silently.
-    """
-    if dataclasses.is_dataclass(value):
-        result: Fingerprint = {}
-        for field in dataclasses.fields(value):
-            # Native SkyMapStatistics records wall-clock durations here. This
-            # explicit diagnostic exclusion does not cover scientific fields.
-            if isinstance(value, SkyMapStatistics) and field.name == "stage_timings":
-                continue
-            result.update(leaves(getattr(value, field.name), path + "." + field.name))
-        return result
-    if isinstance(value, np.ndarray):
-        if value.dtype.hasobject:
-            raise TypeError("Object arrays need an explicit validation schema")
-        return {
-            path: (
-                value.dtype.str,
-                value.shape,
-                hashlib.sha256(np.ascontiguousarray(value).tobytes()).hexdigest(),
-            )
-        }
-    if isinstance(value, (list, tuple)):
-        result = {path + ".length": len(value)}
-        for i, child in enumerate(value):
-            result.update(leaves(child, f"{path}[{i}]"))
-        return result
-    if isinstance(value, dict):
-        result = {path + ".keys": tuple(sorted(value))}
-        for key, child in value.items():
-            result.update(leaves(child, f"{path}[{key!r}]"))
-        return result
-    if isinstance(value, (float, np.floating)):
-        return {path: struct.pack(">d", float(value)).hex()}
-    if value is None or isinstance(value, (str, bool, int, np.integer, np.bool_)):
-        return {path: value}
-    raise TypeError(f"Uncovered stage value {path}: {type(value)}")
+    """Fingerprint scientific results, excluding measured sky-scan durations."""
+    return _leaves(value, path, exclude=lambda obj, field: isinstance(obj, SkyMapStatistics) and field == "stage_timings")
 
 
 def traced(
@@ -156,7 +91,22 @@ def traced(
 
         return call
 
-    return specialize(
+    from functools import partial
+
+    keywords = {}
+    args = ()
+    if isinstance(function, partial):
+        keywords = dict(function.keywords)
+        args = function.args
+        function = function.func
+    callback_names = {
+        "_compute_dpf_regulator_scalar": "scalar_regulator",
+        "_scan_sky": "sky_scan",
+    }
+    for name, callback in callback_names.items():
+        if name in hooks and callback in keywords:
+            keywords[callback] = record(keywords[callback], hooks[name])
+    clone = specialize(
         function,
         **{
             name: record(function.__globals__[name], label)
@@ -164,6 +114,7 @@ def traced(
             if name in function.__globals__
         },
     )
+    return partial(clone, *args, **keywords) if args or keywords else clone
 
 
 def paired(

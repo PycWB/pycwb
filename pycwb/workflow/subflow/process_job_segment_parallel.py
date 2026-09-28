@@ -39,6 +39,8 @@ def _consume_bounded(
     pending_lags: Iterable[int],
     output_context: native.LagOutputContext,
     workers: int,
+    *,
+    save: Callable | None = None,
 ) -> None:
     """Save completed results in the parent, with bounded work in flight.
 
@@ -46,6 +48,7 @@ def _consume_bounded(
     queued work and propagate the exception; the caller joins running workers
     before removing their input maps. Previously saved lags remain resumable.
     """
+    save = save or native._save_lag_outputs
     iterator = iter(pending_lags)
     futures: dict[Future, int] = {}
     try:
@@ -68,7 +71,7 @@ def _consume_bounded(
                 result = future.result()
                 if result.lag != lag:
                     raise RuntimeError(f"Lag worker returned {result.lag}, expected {lag}")
-                native._save_lag_outputs(output_context, result)
+                save(output_context, result)
                 del result, future
     finally:
         for future in futures:
@@ -118,8 +121,15 @@ def _process_shared_inputs(
     pending_lags: Iterable[int],
     workers: int,
     inner_threads: int,
+    *,
+    initialize: Callable | None = None,
+    analyze: Callable | None = None,
+    consume: Callable | None = None,
 ) -> None:
     """Keep job-local input maps alive until every spawned worker exits."""
+    initialize = initialize or _initialize_process
+    analyze = analyze or _analyze_process
+    consume = consume or _consume_bounded
     log_directory = Path(output_context.working_dir) / "log"
     log_directory.mkdir(parents=True, exist_ok=True)
     # Disk-backed job scratch avoids storing a second input copy on tmpfs.
@@ -132,10 +142,10 @@ def _process_shared_inputs(
         with ProcessPoolExecutor(
             max_workers=workers,
             mp_context=multiprocessing.get_context("spawn"),
-            initializer=_initialize_process,
+            initializer=initialize,
             initargs=(str(path), inner_threads, str(log_directory)),
         ) as executor:
-            _consume_bounded(executor, _analyze_process, pending_lags, output_context, workers)
+            consume(executor, analyze, pending_lags, output_context, workers)
 
 
 def process_lags(

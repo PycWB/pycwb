@@ -84,7 +84,10 @@ Reviewers will check:
 - [ ] New code has tests
 - [ ] Docstrings are complete and accurate
 - [ ] No new ROOT dependencies (ROOT is being phased out)
-- [ ] No sideways imports between modules
+- [ ] Constants and generic utilities do not import workflows or scientific stages.
+      Scientific modules may reuse domain algorithms and native payloads, but do
+      not import workflows or the legacy ``background_cuda`` namespace. Workflow
+      modules own stage assembly, scheduling and output lifecycle.
 - [ ] Hot-path code uses Numba or JAX, not pure NumPy
 - [ ] JAX device buffers are freed after use
 - [ ] Config schema updated for new parameters

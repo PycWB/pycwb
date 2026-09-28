@@ -4,7 +4,7 @@ The native post-processing reconstructs six waveform products per event
 through ``reconstruct_waveforms_flow`` even when nothing is saved. Q-veto only
 needs the whitened ``REC`` and ``DAT`` waveforms, so :func:`reconstruct`
 computes exactly those with the same native ``get_network_MRA_wave`` call and
-:func:`make_save` binds it into a private clone of the native save path for
+:func:`make_save` passes it to the native save path for
 the parent process. No file is ever written by this module.
 """
 
@@ -154,9 +154,9 @@ def reconstruct(
 
 
 def make_save(context: Any) -> Callable[[Any, Any], None]:
-    """Return a clone of the native lag save path that reconstructs via :func:`reconstruct`.
+    """Return the native lag save path with an explicit reconstruction callback that reconstructs via :func:`reconstruct`.
 
-    The clone is used by the parent's :class:`~.output_buffer.OutputWriter`
+    The callback is used by the parent's :class:`~.output_buffer.OutputWriter`
     and writes only what the native save path writes (triggers and progress
     for catalog-only background).
 
@@ -164,7 +164,7 @@ def make_save(context: Any) -> Callable[[Any, Any], None]:
     ----------
     context
         Native ``LagOutputContext``; validated with
-        :func:`~.worker_output.validate`.
+        the shared runtime settings validator.
 
     Returns
     -------
@@ -174,25 +174,22 @@ def make_save(context: Any) -> Callable[[Any, Any], None]:
     Raises
     ------
     ValueError
-        If the context is not catalog-only background, or if
-        ``gpu.worker_output=true`` is also set (the worker already ran the
-        post-processing, so a second parent reconstruction is contradictory).
+        If the context is not catalog-only background or its runtime settings
+        are incompatible with parent Q-veto reconstruction.
     """
     from pycwb.workflow.subflow import job_segment_output, process_job_segment_native
 
-    from pycwb.workflow.subflow import gpu_worker_output as worker_output
-    from pycwb.utils.function_binding import specialize
+    from pycwb.config.validation import OUTPUT_PRODUCT_FLAGS, validate_runtime_settings
+    from functools import partial
 
-    worker_output.validate(context)
-    if worker_output.enabled(context.config):
-        raise ValueError(
-            "Parent Q-veto reconstruction cannot combine with worker output"
-        )
-    postprocess = specialize(
+    validate_runtime_settings(context.config)
+    if context.sub_job_seg.injections or any(getattr(context.config, flag, False) for flag in OUTPUT_PRODUCT_FLAGS):
+        raise ValueError("Q-veto reconstruction requires catalog-only background without plots")
+    postprocess = partial(
         job_segment_output._postprocess_saved_triggers,
-        reconstruct_waveforms_flow=reconstruct,
+        reconstruct=reconstruct,
     )
-    return specialize(
+    return partial(
         process_job_segment_native._save_lag_outputs,
-        _postprocess_saved_triggers=postprocess,
+        postprocess=postprocess,
     )

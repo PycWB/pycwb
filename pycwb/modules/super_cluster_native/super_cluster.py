@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from collections.abc import Callable
+from pycwb.types.stages import TimeDelayPopulator
 from pycwb.constants.execution_profile import execution_profile, DEFAULT_EXECUTION_PROFILE
 
 import logging
@@ -577,6 +580,9 @@ def supercluster_single_lag(
     lag_idx: int,
     xtalk: XTalk,
     td_inputs_cache: dict,
+    *,
+    subnet_cut: Callable | None = None,
+    populate_td: TimeDelayPopulator | None = None,
 ) -> Any | None:
     """
     Run the full supercluster pipeline for a single lag.
@@ -604,7 +610,17 @@ def supercluster_single_lag(
     FragmentCluster or None
         Processed cluster ready for likelihood, or ``None`` if all
         candidates were rejected at the subnet-cut stage.
+
+    Backend callbacks
+    -----------------
+    subnet_cut, populate_td : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    subnet_cut = subnet_cut or apply_subnet_cut
+    populate_td = populate_td or _populate_td_vectors
     profile = setup.get("execution_profile") or execution_profile(config)
     n_ifo = config.nIFO
     K = int(setup["K_td"])
@@ -637,9 +653,9 @@ def supercluster_single_lag(
         )
     if staged_td:
         subnet_ml = np.ascontiguousarray(subnet_ml // delay_stride, dtype=np.int32)
-        _populate_td_vectors(all_clusters, n_ifo, coarse_K, td_inputs_cache, delay_stride)
+        populate_td(all_clusters, n_ifo, coarse_K, td_inputs_cache, delay_stride)
     else:
-        _populate_td_vectors(all_clusters, n_ifo, K, td_inputs_cache)
+        populate_td(all_clusters, n_ifo, K, td_inputs_cache)
     td_elapsed = time.perf_counter() - t_td_start
 
     # Supercluster + subnet cut
@@ -683,7 +699,7 @@ def supercluster_single_lag(
 
     subrho = config.subrho if config.subrho > 0 else config.netRHO
     t_subnet_start = time.perf_counter()
-    accepted_superclusters = apply_subnet_cut(
+    accepted_superclusters = subnet_cut(
         accepted_superclusters,
         config.LOUD,
         subnet_ml,
@@ -729,7 +745,7 @@ def supercluster_single_lag(
 
     if staged_td:
         t_fine_start = time.perf_counter()
-        _populate_td_vectors(fragment_cluster.clusters, n_ifo, K, td_inputs_cache)
+        populate_td(fragment_cluster.clusters, n_ifo, K, td_inputs_cache)
         logger.info(
             "   staged TD                  : coarse_pixels=%d fine_pixels=%d coarse_len=%d fine_len=%d fine=%.3fs",
             sum(len(c.pixel_arrays) for c in all_clusters),

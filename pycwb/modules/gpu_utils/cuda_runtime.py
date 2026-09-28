@@ -5,7 +5,7 @@ version limit when the bundled compiler is newer than the installed driver.
 Numba is used only for the context, device buffers and kernel launches, never
 for NVVM compilation, so ``libNVVM`` does not need to be discoverable.
 
-Compiled modules are cached per process by source hash and compute capability:
+Compiled modules are cached per process by source hash, compute capability and CUDA context:
 every wrapper class that shares a kernel file reuses one cubin instead of
 recompiling it, which is numerically neutral because the same source and
 options produce the same code.
@@ -19,6 +19,8 @@ import importlib.util
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+import weakref
 
 import numpy as np
 from numba import cuda
@@ -36,7 +38,7 @@ _NVRTC_OPTIONS = (
 )
 """Options that keep IEEE semantics: no fused multiply-add, no flush-to-zero."""
 
-_modules: dict[tuple[str, tuple[int, int]], CUDAModule] = {}
+_modules: dict[int, tuple[weakref.ReferenceType, dict[tuple[str, tuple[int, int]], CUDAModule]]] = {}
 
 
 def _nvrtc_library() -> ct.CDLL:
@@ -155,17 +157,37 @@ def load_module(path: Path) -> CUDAModule:
     Returns
     -------
     CUDAModule
-        Cached per (source SHA-256, compute capability) in this process. The
+        Cached per (source SHA-256, compute capability, context) in this process.
+        Reset or unloaded module handles are rebuilt on the next request. The
         cache is deliberately in-process only: spawned lag workers own their
         CUDA context and compile once each.
     """
     source = path.read_text()
     capability = tuple(cuda.get_current_device().compute_capability)
+    context = cuda.current_context()
+    identity = id(context)
+    entry = _modules.get(identity)
+    if entry is None or entry[0]() is not context:
+        def discard(reference: weakref.ReferenceType) -> None:
+            current = _modules.get(identity)
+            if current is not None and current[0] is reference:
+                del _modules[identity]
+
+        entry = (weakref.ref(context, discard), {})
+        _modules[identity] = entry
+    cache = entry[1]
     key = (hashlib.sha256(source.encode()).hexdigest(), capability)
-    module = _modules.get(key)
+    module = cache.get(key)
+    if module is not None:
+        try:
+            # Numba owns loaded modules and returns weak proxies. Reset/unload
+            # clears those owners even if the Context Python object survives.
+            module.module.handle
+        except ReferenceError:
+            module = None
     if module is None:
         module = CUDAModule(source, path.name)
-        _modules[key] = module
+        cache[key] = module
     return module
 
 
@@ -203,3 +225,11 @@ class DeviceBuffers:
         if self.workspace is None:
             return buffer.copy_to_host()
         return self.workspace.download(buffer, shape)
+
+
+def make_buffers(reuse: bool) -> DeviceBuffers:
+    """Create process-owned stage buffers, optionally retaining allocation slots."""
+    if reuse:
+        from .workspace import Workspace
+        return DeviceBuffers(Workspace())
+    return DeviceBuffers(None)

@@ -77,6 +77,7 @@ PycWB is a modular Python implementation of the coherent WaveBurst
    Production Analysis <standard_analysis>
    postproduction
    modules_guide
+   backends
 
 .. toctree::
    :hidden:

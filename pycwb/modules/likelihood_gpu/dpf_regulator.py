@@ -15,15 +15,15 @@ from typing import Any
 import numpy as np
 
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.modules.gpu_utils.cuda_runtime import DeviceBuffers, load_module
+from pycwb.modules.gpu_utils.cuda_runtime import make_buffers, load_module
 from pycwb.modules.gpu_utils.geometry_cache import resident_geometry
 
 
 class DPFRegulator:
     """Callable counterpart to ``likelihoodWP.dpf_regulator.compute_dpf_regulator_scalar``.
 
-    Bound by ``processor.py`` as ``_compute_dpf_regulator_scalar`` inside a specialized
-    clone of ``likelihoodWP.likelihood.evaluate_cluster_likelihood`` when ``gpu.dpf=true``.
+    Passed as the explicit ``scalar_regulator`` callback to native likelihood
+    orchestration when ``gpu.dpf=true``.
 
     Attributes
     ----------
@@ -51,12 +51,8 @@ class DPFRegulator:
         self.options = gpu_options(options)
         self.module = load_module(Path(__file__).with_suffix(".cu"))
         self.geometry: dict[tuple[int, ...], Any] = {}
-        self.workspace: Any | None = None
-        if self.options.reuse_workspace:
-            from pycwb.modules.gpu_utils.workspace import Workspace
-
-            self.workspace = Workspace()
-        self.buffers = DeviceBuffers(self.workspace)
+        self.buffers = make_buffers(self.options.reuse_workspace)
+        self.workspace = self.buffers.workspace
 
     def __call__(
         self,

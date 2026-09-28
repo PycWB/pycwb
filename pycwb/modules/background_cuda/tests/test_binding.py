@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from pycwb.utils import function_binding as binding
 from pycwb.utils.function_binding import specialize
 
 HELPER_CONSTANT = 10
@@ -92,9 +91,3 @@ def test_specialize_can_chain() -> None:
     twice = specialize(once, HELPER_CONSTANT=0)
     assert twice(0) == 201
     assert once.__globals__["HELPER_CONSTANT"] == 10
-
-
-def test_processor_uses_shared_binding() -> None:
-    from pycwb.modules.background_cuda import processor
-
-    assert processor.specialize is binding.specialize

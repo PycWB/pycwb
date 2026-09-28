@@ -12,6 +12,9 @@ detailed guides where each parameter is explained in context.
    :local:
 
 
+See :doc:`backends` for the complete nested ``gpu.*`` option reference and
+cross-option restrictions.
+
 Parameter Categories
 --------------------
 

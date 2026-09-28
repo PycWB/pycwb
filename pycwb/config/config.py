@@ -20,7 +20,7 @@ from ..modules.xtalk.monster import read_catalog_metadata
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
-from ..utils.skymap_coord import validate_user_sky_config
+from .validation import validate_runtime_settings
 from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
 from .detector_definitions import load_detector_definitions, restore_detector_registry
@@ -246,17 +246,6 @@ class Config:
         # overrides mutate the runtime config. Catalogs serialize this snapshot.
         self._yaml_parameters = snapshot_yaml_parameters(params, file_name)
 
-        # JSON Schema cannot validate Astropy quantity dimensionality or infer
-        # a coordinate frame from semantic key names.  Perform that physical
-        # cross-check before values become Config attributes.
-        validate_user_sky_config(params.get("sky_mask"), context="sky_mask", default_coordsys="geo")
-        injection_config = params.get("injection") or {}
-        validate_user_sky_config(
-            injection_config.get("sky_distribution"),
-            context="injection.sky_distribution",
-            default_coordsys="icrs",
-        )
-
         for key in params:
             if key not in ("_detectors", "_detectors_by_name"):
                 setattr(self, key, params[key])
@@ -271,8 +260,7 @@ class Config:
         )
         self._initialize_detectors()
 
-        from pycwb.workflow.execution.settings import ExecutionSettings
-        ExecutionSettings.from_config(self)
+        validate_runtime_settings(self)
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
@@ -322,8 +310,7 @@ class Config:
         )
         self._initialize_detectors()
 
-        from pycwb.workflow.execution.settings import ExecutionSettings
-        ExecutionSettings.from_config(self)
+        validate_runtime_settings(self)
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
         if self.filter_dir and not os.path.exists(self.filter_dir):

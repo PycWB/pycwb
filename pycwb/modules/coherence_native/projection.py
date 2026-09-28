@@ -1,6 +1,8 @@
 """Max-energy projection and backend selection for native coherence."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 
@@ -60,6 +62,8 @@ def max_energy(
     hist: list | None = None,
     backend: str = "jax",
     profile=DEFAULT_EXECUTION_PROFILE,
+    *,
+    delay_energy: Callable | None = None,
 ) -> tuple[TimeFrequencyMap, float]:
     """
     Compute max-energy skymap projection for a detector TF map.
@@ -95,7 +99,16 @@ def max_energy(
     tuple[TimeFrequencyMap, float]
         Updated TF map after max-energy projection and Gamma-to-Gauss scaling
         factor.
+
+    Backend callbacks
+    -----------------
+    delay_energy : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    delay_energy = delay_energy or time_delay_max_energy
     if hasattr(tf_map, "bandpass"):
         tf_map.bandpass(f_low=f_low, f_high=f_high)
 
@@ -112,7 +125,7 @@ def max_energy(
             profile=profile,
         )
     else:
-        new_tf_map, result = time_delay_max_energy(
+        new_tf_map, result = delay_energy(
             tf_map,
             max_delay,
             downsample=up_n,

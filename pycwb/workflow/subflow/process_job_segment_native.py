@@ -348,14 +348,14 @@ def _run_lag_analysis(
     )
 
 
-def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> None:
+def _save_lag_outputs(output_context: LagOutputContext, result: LagResult, *, postprocess=None) -> None:
     profile = execution_profile(output_context.config)
     output_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     # Phase A: create trigger folders and persist raw cluster/skymap data.
     trigger_folders = _create_and_save_trigger_folders(output_context, result)
 
     # Phase B: per-event post-processing: waveforms, injections, Q-veto, plots.
-    reconstruct_elapsed, qveto_elapsed, plot_elapsed = _postprocess_saved_triggers(
+    reconstruct_elapsed, qveto_elapsed, plot_elapsed = (postprocess or _postprocess_saved_triggers)(
         output_context,
         result,
         trigger_folders,

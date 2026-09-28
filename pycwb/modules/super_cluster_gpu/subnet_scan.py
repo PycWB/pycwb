@@ -43,7 +43,7 @@ class SubnetScan:
     """CUDA counterpart to ``optimze_sky_loc_from_td``.
 
     ``processor.py`` binds an instance as ``optimze_sky_loc_from_td`` inside a
-    specialized ``_sub_net_cut_prepared_packets`` when ``gpu.subnet=true``;
+    ``sky_optimizer`` callback of ``_sub_net_cut_prepared_packets`` when ``gpu.subnet=true``;
     :class:`subnet_batch.BatchedSubnet` uses :meth:`scan_many`.
 
     Attributes

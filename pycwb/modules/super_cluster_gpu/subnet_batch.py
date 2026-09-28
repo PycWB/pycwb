@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.utils.function_binding import specialize
+from functools import partial
 from pycwb.modules.super_cluster_gpu.subnet_scan import SubnetScan
 
 native = importlib.import_module("pycwb.modules.super_cluster_native.sub_net_cut")
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class BatchedSubnet:
     """Drop-in for ``super_cluster_native.utils.apply_subnet_cut`` with a batched sky scan.
 
-    Bound by ``processor.py`` as ``apply_subnet_cut`` inside a specialized
+    Passed as the explicit ``subnet_cut`` callback to the native
     ``supercluster_single_lag`` when ``gpu.subnet_batch=true``.
 
     Attributes
@@ -139,14 +139,14 @@ class BatchedSubnet:
             if self.options.validate_stages:
                 from pycwb.modules.gpu_utils.validation import leaves
 
-                expected = native.optimze_sky_loc_from_td(*args)
+                expected = native.optimize_sky_loc_from_td(*args)
                 if leaves(expected) != leaves(actual):
                     raise AssertionError("Subnet sky result differs before packet cuts")
                 logger.info("GPU subnet sky parity: exact=1")
             return actual
 
-        packets = specialize(
-            native._sub_net_cut_prepared_packets, optimze_sky_loc_from_td=ready
+        packets = partial(
+            native._sub_net_cut_prepared_packets, sky_optimizer=ready
         )
         timing: dict[str, float] = {}
         for cluster, r, data in zip(superclusters, rows, inputs, strict=True):

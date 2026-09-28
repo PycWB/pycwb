@@ -18,7 +18,7 @@ import numpy as np
 
 from pycwb.modules.coherence_native import projection, time_delay_jax
 
-from pycwb.utils.function_binding import specialize
+from functools import partial
 from pycwb.modules.coherence_gpu.packet_energy import PacketEnergy
 
 logger = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ class HybridMaximum:
 
 
 def make_projection(cuda_prefilter: bool = False) -> Callable[..., Any]:
-    """Return a ``projection.max_energy`` clone whose pattern core is :class:`HybridMaximum`.
+    """Return a ``projection.max_energy`` callable whose pattern core is :class:`HybridMaximum`.
 
     Parameters
     ----------
@@ -174,7 +174,7 @@ def make_projection(cuda_prefilter: bool = False) -> Callable[..., Any]:
     Returns
     -------
     callable
-        Specialized ``max_energy`` bound to a specialized
+        ``max_energy`` with an explicit callback for
         ``time_delay_max_energy``; the production modules are untouched.
     """
     if cuda_prefilter:
@@ -183,7 +183,7 @@ def make_projection(cuda_prefilter: bool = False) -> Callable[..., Any]:
         maximum = HybridMaximum(HybridTransform())
     else:
         maximum = HybridMaximum()
-    td = specialize(
-        time_delay_jax.time_delay_max_energy, _time_delay_max_energy_pattern_jit=maximum
+    td = partial(
+        time_delay_jax.time_delay_max_energy, pattern_maximum=maximum
     )
-    return specialize(projection.max_energy, time_delay_max_energy=td)
+    return partial(projection.max_energy, delay_energy=td)

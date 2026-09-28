@@ -59,7 +59,9 @@ def _create_and_save_trigger_folders(output_context, result) -> list[str | None]
     return trigger_folders
 
 
-def _postprocess_saved_triggers(output_context, result, trigger_folders) -> tuple[float, float, float]:
+def _postprocess_saved_triggers(output_context, result, trigger_folders, *, reconstruct=None) -> tuple[float, float, float]:
+    """Reconstruct and annotate saved events using a process-owned callback."""
+    reconstruct = reconstruct or reconstruct_waveforms_flow
     config = output_context.config
     sub_job_seg = output_context.sub_job_seg
     reconstruct_elapsed = 0.0
@@ -73,7 +75,7 @@ def _postprocess_saved_triggers(output_context, result, trigger_folders) -> tupl
         event, cluster_out, event_skymap_statistics = trigger
 
         reconstruct_timer = time.perf_counter()
-        reconst_data = reconstruct_waveforms_flow(
+        reconst_data = reconstruct(
             trigger_folder,
             config,
             sub_job_seg.ifos,

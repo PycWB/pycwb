@@ -13,7 +13,6 @@ from numba import njit
 
 from pycwb.modules.coherence_native import clustering, selection
 
-pipeline = importlib.import_module("pycwb.modules.coherence_native.coherence")
 from pycwb.modules.coherence_native.kernels import (
     _align_threshold_map_numba,
     _align_threshold_map_preindexed_numba,
@@ -23,6 +22,10 @@ from pycwb.modules.coherence_native.kernels import (
 )
 from pycwb.modules.coherence_native.run_clustering import label_components_runs
 from pycwb.workflow.subflow import process_job_segment_native as native
+
+from pycwb.modules.likelihoodWP.sky_scan import scan_sky, scan_sky_kernel
+
+pipeline = importlib.import_module("pycwb.modules.coherence_native.coherence")
 
 
 # Wrappers call the original compiled arithmetic without changing its flags.
@@ -85,9 +88,8 @@ _super_module = importlib.import_module(
 )
 _super_utils = importlib.import_module("pycwb.modules.super_cluster_native.utils")
 _likelihood_module = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
-_subnet_sky = _subnet_module.optimze_sky_loc_from_td
+_subnet_sky = _subnet_module.optimize_sky_loc_from_td
 _subnet_mra = _subnet_module.mra_statistics_from_td
-from pycwb.modules.likelihoodWP.sky_scan import scan_sky, scan_sky_kernel
 
 
 @njit(cache=True, nogil=True)
@@ -107,7 +109,7 @@ def _sky_scan_nogil(*args):
 
 _subnet_packets = _specialize(
     _subnet_module._sub_net_cut_prepared_packets,
-    optimze_sky_loc_from_td=_subnet_sky_nogil,
+    optimize_sky_loc_from_td=_subnet_sky_nogil,
     mra_statistics_from_td=_subnet_mra_nogil,
 )
 _subnet_arrays = _specialize(

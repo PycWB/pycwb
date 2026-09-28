@@ -19,7 +19,6 @@ import jax
 from pycwb.modules.coherence_gpu.coherence import build_coherence
 from pycwb.modules.coherence_gpu.selection import GPUSelector
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.utils.function_binding import specialize
 from pycwb.modules.likelihood_gpu.likelihood import build_likelihood
 from pycwb.modules.super_cluster_gpu.super_cluster import build_supercluster
 from pycwb.workflow.subflow import process_job_segment_native as native
@@ -94,11 +93,11 @@ def _build_preparation(config=None, *, input_provider: Any = None) -> Preparatio
     if options.read_workers > 1 and input_provider is None:
         from pycwb.modules.read_data.parallel import read_from_job_segment
 
-        stages = replace(stages, read_from_job_segment=read_from_job_segment)
+        stages = replace(stages, read_from_job_segment=partial(read_from_job_segment, workers=options.read_workers, processes=options.read_processes, validate=options.validate_read))
     if options.condition_workers > 1:
         from pycwb.modules.data_conditioning.parallel import condition_strains
 
-        stages = replace(stages, condition_strains=condition_strains)
+        stages = replace(stages, condition_strains=partial(condition_strains, workers=options.condition_workers, validate=options.validate_conditioning))
     if options.td_setup_workers > 1:
         from pycwb.modules.super_cluster_gpu.td_setup_parallel import build_td_inputs_cache
 

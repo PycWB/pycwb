@@ -1,4 +1,6 @@
 import numpy as np
+
+from collections.abc import Callable
 import time
 
 # from numba import float32
@@ -118,8 +120,11 @@ def sub_net_cut_from_pixel_arrays(
     xtalk: XTalk,
     arrays_prepared: bool = False,
     timing: dict | None = None,
+    *,
+    packet_cut: Callable | None = None,
 ):
     """Internal fast path that avoids building a sliced ``PixelArrays`` object."""
+    packet_cut = packet_cut or _sub_net_cut_prepared_packets
     t_total = time.perf_counter()
     if pixel_indices is None:
         rows = np.arange(len(pixels), dtype=np.int64)
@@ -144,7 +149,7 @@ def sub_net_cut_from_pixel_arrays(
         FP_p = np.ascontiguousarray(FP.T, dtype=np.float32)
         FX_p = np.ascontiguousarray(FX.T, dtype=np.float32)
 
-    result = _sub_net_cut_prepared_packets(
+    result = packet_cut(
         rms,
         td00,
         td90,
@@ -290,12 +295,15 @@ def _sub_net_cut_prepared_packets(
     layers=None,
     times=None,
     timing: dict | None = None,
+    *,
+    sky_optimizer: Callable | None = None,
 ):
+    sky_optimizer = sky_optimizer or optimize_sky_loc_from_td
     network_energy_threshold = np.float32(2 * acor * acor * n_ifo)
     n_pix = int(rms.shape[0])
 
     t_stage = time.perf_counter()
-    l_max, stat, Em, Am, lm, Vm, suball, EE = optimze_sky_loc_from_td(
+    l_max, stat, Em, Am, lm, Vm, suball, EE = sky_optimizer(
         n_ifo,
         n_pix,
         n_sky,
@@ -494,7 +502,8 @@ def optimze_sky_loc(
 
 
 @njit(cache=True)
-def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, network_energy_threshold, e2or, subcut):
+def optimize_sky_loc_from_td(n_ifo: int, n_pix: int, n_sky: int, FP: np.ndarray, FX: np.ndarray, rms: np.ndarray, td00: np.ndarray, td90: np.ndarray, ml: np.ndarray, network_energy_threshold: float, e2or: float, subcut: float) -> tuple[int, float, float, float, int, int, float, float]:
+    """Scan prepared detector/sky arrays and return the native eight-value subnet result."""
     Es = float32(2 * e2or)
     network_energy_threshold = float32(network_energy_threshold)
     offset = int(td00.shape[0] / 2)
@@ -931,3 +940,6 @@ def sse_MRA_ps(Eo, K, rNRG, v_00, v_90, xtalks, xtalks_lookup, DEBUG=False):
     #     print("k = ", k, ", K = ", K)
 
     return amp, AMP, rNRG, pNRG
+
+# Historical misspelling retained for external imports and old experiments.
+optimze_sky_loc_from_td = optimize_sky_loc_from_td

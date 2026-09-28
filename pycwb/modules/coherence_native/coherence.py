@@ -6,6 +6,8 @@ remain available here for workflow and notebook compatibility.
 
 from __future__ import annotations
 
+from pycwb.types.stages import PixelSelector
+
 import logging
 import time
 
@@ -112,6 +114,8 @@ def coherence_single_lag(
     lag_idx: int,
     return_rejected: bool = False,
     veto_windows: list[tuple[float, float]] | None = None,
+    *,
+    select_pixels: PixelSelector | None = None,
 ) -> list[FragmentCluster]:
     """
     Compute coherence for one lag index, using pre-built per-resolution setups from :func:`setup_coherence`.
@@ -136,7 +140,16 @@ def coherence_single_lag(
     -------
     list[FragmentCluster]
         One FragmentCluster per resolution for this lag.
+
+    Backend callbacks
+    -----------------
+    select_pixels : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    select_pixels = select_pixels or select_network_pixels
     fragment_clusters = []
     for setup in coherence_setups:
         profile = setup.get("execution_profile", DEFAULT_EXECUTION_PROFILE)
@@ -156,7 +169,7 @@ def coherence_single_lag(
         if veto_windows is not None:
             veto = build_veto_mask(tf_maps[0], veto_windows, edge=setup["segEdge"])
         t0_select = time.perf_counter()
-        candidates = select_network_pixels(
+        candidates = select_pixels(
             tf_maps=tf_maps,
             lag_index=lag_idx,
             energy_threshold=Eo,
