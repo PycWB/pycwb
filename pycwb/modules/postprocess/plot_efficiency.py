@@ -28,22 +28,22 @@ from pycwb.post_production.action_spec import action_spec
 from pycwb.modules.postprocess.efficiency_metrics import (
     _matched_ranking_scores,
     _ranking_metadata,
-    _IFAR_PRESETS,
+    _IFAR_PRESETS as _IFAR_PRESETS,
     _parse_ifar_seconds,
     _validate_unique_simulations,
     _validate_fixed_hrss_population,
     _empirical_probability_detection,
     _compute_efficiency_by_waveform_matched,
     _compute_efficiency_vs_hrss_by_waveform_matched,
-    _fit_efficiency_curve,
+    _fit_efficiency_curve as _fit_efficiency_curve,
     _interpolate_hrss50,
     _interpolate_hrss50_curve,
     _parse_waveform_q_frequency,
 )
 from pycwb.modules.postprocess.efficiency_plots import (
-    _plot_efficiency_by_waveform_panels,
+    _plot_efficiency_by_waveform_panels as _plot_efficiency_by_waveform_panels,
     _plot_efficiency_curve,
-    _plot_waveform_efficiency,
+    _plot_waveform_efficiency as _plot_waveform_efficiency,
 )
 
 logger = logging.getLogger(__name__)

@@ -1,5 +1,8 @@
 """A packaged injection example with an explicit recovery check."""
 
+from argparse import ArgumentParser, Namespace
+from typing import Any
+
 import json
 import os
 import sys
@@ -7,7 +10,7 @@ import time
 from pathlib import Path
 
 
-def init_parser(parser):
+def init_parser(parser: ArgumentParser) -> None:
     """Register creation, execution and result checking."""
     parser.add_argument(
         "directory",
@@ -28,7 +31,7 @@ def init_parser(parser):
     )
 
 
-def create_demo(directory, xtalk=None):
+def create_demo(directory: str | Path, xtalk: str | Path | None = None) -> Path:
     """Create a new project; never overwrite an existing directory."""
     from importlib.resources import files
 
@@ -51,7 +54,7 @@ def create_demo(directory, xtalk=None):
     return config_path
 
 
-def check_demo(directory):
+def check_demo(directory: str | Path) -> dict[str, Any]:
     """Require a completed zero-lag trial and a finite event near injection time.
 
     The one-second tolerance covers detector delays and reconstruction timing.
@@ -119,7 +122,7 @@ def check_demo(directory):
     }
 
 
-def command(args):
+def command(args: Namespace) -> int:
     """Create or check a demo, returning a failing exit status on failed recovery."""
     original_directory = Path.cwd()
     try:

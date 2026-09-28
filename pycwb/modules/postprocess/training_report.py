@@ -12,8 +12,9 @@ from pycwb.post_production.action_spec import action_spec
     description="Plot saved XGBoost learning curves and feature importance",
 )
 def training_diagnostics(
-    work_dir, model_file, output_dir, reference_model_file=None, **kwargs
-):
+    work_dir: str, model_file: str, output_dir: str, reference_model_file: str | None = None, **kwargs: object
+) -> dict:
+    """Write saved learning curves and gain plots; fail if the optional reference differs."""
     import matplotlib.pyplot as plt
     import xgboost as xgb
 

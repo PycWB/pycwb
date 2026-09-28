@@ -25,6 +25,7 @@ def meyer_downsample(values, levels):
 
 
 def uses_cwb_snr_resampling(config, injections):
+    """Return whether the configured SNR path needs reference resampling."""
     if getattr(config, 'injection_resampling', 'fft') != 'cwb':
         return False
     targeted = [float(p.get('target_snr', p.get('targeted_snr', 0))) > 0 for p in injections]

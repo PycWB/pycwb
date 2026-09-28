@@ -14,3 +14,6 @@ include CITATION.cff
 recursive-include pycwb/modules/coherence_gpu *.cu
 recursive-include pycwb/modules/super_cluster_gpu *.cu
 recursive-include pycwb/modules/likelihood_gpu *.cu
+
+# Runtime/benchmark caches are machine-local, never source or wheel assets.
+global-exclude *.py[cod] *.nbc *.nbi

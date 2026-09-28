@@ -35,6 +35,7 @@ class RootResults:
     jobs: list[dict]
 
     def write(self, directory: str | Path) -> dict[str, str]:
+        """Write trigger/progress Parquet tables and return their paths."""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         paths = {}

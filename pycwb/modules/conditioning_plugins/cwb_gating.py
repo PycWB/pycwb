@@ -1,7 +1,7 @@
 """cWB pixel-selection gate (not a strain-zeroing operation)."""
 import numpy as np
 from numba import njit
-from .api import ConditioningResult
+from .api import ConditioningResult, HookContext
 from pycwb.types.time_series import TimeSeries
 
 HOOK_STAGE = 'time_vetoes'
@@ -12,7 +12,8 @@ OPTIONS_SCHEMA = {'type': 'object', 'additionalProperties': False, 'properties':
 
 
 @njit(cache=True)
-def gate_mask(data, rate, edge, threshold, integration, padding):
+def gate_mask(data: np.ndarray, rate: float, edge: float, threshold: float, integration: float, padding: float) -> np.ndarray:
+    """Return an int8 veto mask; rate is Hz and edge/integration/padding are seconds."""
     size = len(data)
     window = max(1, int(integration * rate))
     if window > size:
@@ -43,7 +44,8 @@ def gate_mask(data, rate, edge, threshold, integration, padding):
     return mask
 
 
-def gate_intervals(strain, edge, energy_threshold=1.e6, integration_seconds=.5, padding_seconds=1.5):
+def gate_intervals(strain: TimeSeries, edge: float, energy_threshold: float = 1.e6, integration_seconds: float = .5, padding_seconds: float = 1.5) -> list[tuple[float, float]]:
+    """Return GPS veto intervals using the reference integer rounding convention."""
     ts = TimeSeries.from_input(strain)
     rate = float(ts.sample_rate)
     mask = gate_mask(np.asarray(ts.data, dtype=np.float64), rate, edge,
@@ -56,7 +58,8 @@ def gate_intervals(strain, edge, energy_threshold=1.e6, integration_seconds=.5, 
             for a, b in zip(starts, stops) if int(b/rate+.5) > int(a/rate)]
 
 
-def apply(context, result, **options):
+def apply(context: HookContext, result: ConditioningResult, **options: float) -> ConditioningResult:
+    """Add detector veto intervals and diagnostics in place; strains are unchanged."""
     from pycwb.types.job import _merge_intervals
     per_detector = {}
     for ifo, strain in zip(context.ifos, result.strains):

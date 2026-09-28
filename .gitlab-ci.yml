@@ -65,6 +65,15 @@ injection-consistency:
     reports:
       junit: injection-consistency-report.xml
 
+quality:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
+  needs: [build]
+  script:
+    - python -m pip install ruff==0.16.9 mypy==2.3.1
+    - python tools/check_quality.py
+    - python -m mypy
+
 documentation:
   stage: test
   image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}

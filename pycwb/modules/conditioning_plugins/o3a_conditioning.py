@@ -3,6 +3,7 @@
 This is the narrow-band post-whitening correction, not PSD_correction.py.
 """
 from dataclasses import replace
+from .api import HookContext, ConditioningResult
 import numpy as np
 from numba import njit
 from wdm_wavelet.wdm import WDM
@@ -159,7 +160,8 @@ def _multiplicity(u, cleaned, um, vm, rate, edge):
     return v, variation
 
 
-def correct_layer(layer, rate, edge):
+def correct_layer(layer: np.ndarray, rate: float, edge: float) -> tuple[np.ndarray, np.ndarray]:
+    """Return corrected amplitudes and variation; sample rate is Hz and edge is seconds."""
     u = np.abs(layer)
     um = _reference_median(u, edge, rate)
     if um <= 0:
@@ -171,7 +173,8 @@ def correct_layer(layer, rate, edge):
     return corrected, variation
 
 
-def correct_strain(strain, edge):
+def correct_strain(strain: TimeSeries, edge: float) -> tuple[TimeSeries, TimeFrequencyMap]:
+    """Correct the 16–48 Hz band; reject rates below 128 Hz and preserve input strain."""
     ts = TimeSeries.from_input(strain)
     rate = float(ts.sample_rate)
     layers = int(rate/64+.1)
@@ -194,7 +197,8 @@ def correct_strain(strain, edge):
     return TimeSeries(data=data, t0=ts.t0, dt=ts.dt), variation_map
 
 
-def apply(context, result, detectors=None):
+def apply(context: HookContext, result: ConditioningResult, detectors: list[str] | None = None) -> ConditioningResult:
+    """Replace selected detector products in place; reject stacked variation corrections."""
     selected = set(context.ifos).intersection({"L1", "H1"}) if detectors is None else set(detectors)
     if not selected.issubset(context.ifos):
         raise ValueError('O3a detector selection contains an unknown detector')

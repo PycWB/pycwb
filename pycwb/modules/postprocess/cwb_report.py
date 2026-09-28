@@ -33,7 +33,8 @@ def compare_cwb_report(
     The caller supplies matching selections and the complete injection truth.
     A failed check is recorded in JSON, then raises to stop the workflow.
     """
-    resolve = lambda p: Path(work_dir) / p
+    def resolve(path: str) -> Path:
+        return Path(work_dir) / path
     checks = []
     resolve(output_file).parent.mkdir(parents=True, exist_ok=True)
     if catalog_file:
@@ -171,14 +172,15 @@ def attach_cwb_ifar(
     description="Compare event membership, scores and IFAR with scored cWB ROOT events",
 )
 def compare_cwb_scores(
-    work_dir,
-    scored_file,
-    reference_file,
-    output_file,
-    independent_scored_file=None,
-    time_window=None,
-    **kwargs,
-):
+    work_dir: str,
+    scored_file: str,
+    reference_file: str,
+    output_file: str,
+    independent_scored_file: str | None = None,
+    time_window: float | None = None,
+    **kwargs: object,
+) -> dict:
+    """Write membership, score and IFAR comparisons; time_window is in GPS seconds."""
     import uproot
 
     native = pd.read_parquet(Path(work_dir) / scored_file)
@@ -274,7 +276,8 @@ def compare_cwb_scores(
     outputs=["output_file"],
     description="Collect independently recorded consistency checks",
 )
-def collect_comparisons(work_dir, comparison_files, output_file, notes=None, **kwargs):
+def collect_comparisons(work_dir: str, comparison_files: list[str], output_file: str, notes: list[str] | None = None, **kwargs: object) -> dict:
+    """Combine recorded JSON checks without rerunning analyses; write and return the report."""
     checks = []
     for name in comparison_files:
         result = json.loads((Path(work_dir) / name).read_text())

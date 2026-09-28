@@ -1,5 +1,8 @@
 """Local environment diagnostics suitable for attaching to a bug report."""
 
+from argparse import ArgumentParser, Namespace
+from typing import Any
+
 import importlib
 import json
 import platform
@@ -26,14 +29,14 @@ OPTIONAL = {
 }
 
 
-def init_parser(parser):
+def init_parser(parser: ArgumentParser) -> None:
     """Register machine-readable output."""
     parser.add_argument(
         "--json", action="store_true", help="Print a JSON diagnostic report"
     )
 
 
-def environment_report():
+def environment_report() -> dict[str, Any]:
     """Probe imports without network access or running an analysis."""
     from pycwb import __version__
 
@@ -63,7 +66,7 @@ def environment_report():
     return report
 
 
-def command(args):
+def command(args: Namespace) -> int:
     """Return failure only for required runtime probes."""
     report = environment_report()
     if args.json:
