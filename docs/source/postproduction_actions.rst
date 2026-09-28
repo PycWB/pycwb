@@ -201,6 +201,10 @@ Training, scoring, and FAR
      - Train one XGBoost model from one or more pre-filtered background and
        simulation catalogs; save the model and optional training-review
        artifacts.
+   * - ``postprocess.xgb_heatmap.plot_xgb_heatmap``
+     - Inspect feature distributions and pairwise correlations from a parquet
+       catalog.  Set ``output_file`` to an HTML or PNG path, or a list of paths
+       for both formats.
    * - ``postprocess.evaluate.score_catalog``
      - Apply a trained model and configured ranking expressions to a catalog.
        ``lag_selection`` can restrict scoring to zero lag or non-zero lag.
@@ -304,6 +308,8 @@ Training, scoring, and FAR
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: pycwb.modules.postprocess.train_xgboost.train_xgboost
+
+.. autofunction:: pycwb.modules.postprocess.xgb_heatmap.plot_xgb_heatmap
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_catalog
 
