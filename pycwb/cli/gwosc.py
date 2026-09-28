@@ -1,9 +1,8 @@
 import os
 import shutil
+
 import pycwb
-from pycwb.modules.gwosc.gwosc import download_frames_files
-from pycwb.modules.gwosc.gwosc import get_cat_files
-from pycwb.modules.gwosc.gwosc import analysis_period
+
 
 def init_parser(parser):
 
@@ -66,6 +65,11 @@ def copy_user_parameters(user_parameters_path):
 
 
 def command(args):
+    from pycwb.modules.gwosc.gwosc import (
+        analysis_period,
+        download_frames_files,
+        get_cat_files,
+    )
 
     if not all(ifo in ["H1", "L1"] for ifo in args.ifos) and not args.user_parameters_path:
         raise ValueError("Only H1 and L1 are supported in ifos with the default user_parameters file, "

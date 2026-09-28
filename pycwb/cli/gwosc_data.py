@@ -1,7 +1,5 @@
 import os
-from math import floor, ceil
-from pycwb.config import Config
-from pycwb.modules.gwosc.utils import download_frames_files, get_dq_files
+from math import ceil, floor
 
 
 def init_parser(parser):
@@ -20,6 +18,9 @@ def init_parser(parser):
 
 
 def command(args):
+    from pycwb.config import Config
+    from pycwb.modules.gwosc.utils import download_frames_files, get_dq_files
+
     config = Config()
     config.load_from_yaml(args.user_parameter_file)
 
@@ -43,4 +44,4 @@ def command(args):
                  detectors=ifos,
                  gps_start=data_start,
                  gps_end=data_end)
-    
+

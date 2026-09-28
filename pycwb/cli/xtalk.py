@@ -1,7 +1,5 @@
 import os
 
-from pycwb.modules.xtalk.monster import load_catalog
-
 
 def init_parser(parser):
     # Add the arguments
@@ -19,6 +17,8 @@ def init_parser(parser):
 
 
 def command(args):
+    from pycwb.modules.xtalk.monster import load_catalog
+
     # Create the output directory if it does not exist
     if not os.path.exists(args.output_dir):
         print(f"Creating output directory: {args.output_dir}")
