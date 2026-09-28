@@ -2,11 +2,12 @@
 
 Pure-Python MESA whitening without ROOT dependencies.
 
-This version produces output compatible with whitening_python() from whitening.py,
+This version produces output compatible with whiten_wavelet() from whitening.py,
 using the same anchor-point batching logic as cWB's white() mode=0.
 """
 
 from pycwb.constants.execution_profile import wdm_options
+from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging
 
@@ -22,14 +23,14 @@ logger = logging.getLogger(__name__)
 _NRMS_DIV_FLOOR = 1.0e-30
 
 
-def whitening_mesa_python(config, h):
+def whiten_mesa(config, h):
     """
     Pure-Python MESA whitening.
 
     Returns
     -------
-    tuple[pycwb.types.time_series.TimeSeries, TimeFrequencyMap]
-        `(conditioned_strain, nRMS_tf_map)` compatible with `whitening_python`.
+    tuple[pycwb.types.time_series.TimeSeries, NoiseRMSMap]
+        `(conditioned_strain, nRMS_tf_map)` compatible with `whiten_wavelet`.
     """
     from pycwb.types.time_series import TimeSeries
 
@@ -431,64 +432,3 @@ def planck_taper_window(n_samples, eps=0.15):
         window[right_mask] = expit(-zb)
 
     return window
-
-
-def _apply_cwb_bandpass_constant(nrms_map, f1, f2, a, df, f_low_map, f_high_map):
-    """
-    Mirror cWB `WSeries::bandpass(f1, f2, a)` behavior on TF rows.
-
-    For `bandpass(16., 0., 1.)`, rows below the low edge are set to 1.
-
-    Parameters
-    ----------
-    nrms_map : np.ndarray
-        2D array of nRMS values
-    f1, f2 : float
-        Frequency bounds
-    a : float
-        Value to set for out-of-band rows
-    df : float
-        Frequency resolution
-    f_low_map, f_high_map : float
-        Map frequency bounds
-
-    Returns
-    -------
-    np.ndarray
-        Modified nRMS map
-    """
-    if nrms_map.ndim != 2:
-        raise ValueError("Expected 2D RMS map")
-
-    out = np.array(nrms_map, copy=True)
-    n_freq = out.shape[0]
-    if n_freq == 0:
-        return out
-
-    dF = float(df)
-    fl = abs(float(f1)) if abs(float(f1)) > 0.0 else float(f_low_map)
-    fh = abs(float(f2)) if abs(float(f2)) > 0.0 else float(f_high_map)
-
-    n = int((fl + dF / 2.0) / dF + 0.1)
-    m = int((fh + dF / 2.0) / dF + 0.1) - 1
-
-    if n > m:
-        return out
-
-    n = max(0, min(n, n_freq - 1))
-    m = max(0, min(m, n_freq - 1))
-
-    indices = np.arange(n_freq)
-
-    keep = np.zeros(n_freq, dtype=bool)
-    if f1 >= 0 and f2 >= 0:
-        keep = (indices > n) & (indices <= m)
-    elif f1 < 0 and f2 < 0:
-        keep = (indices < n) | (indices > m)
-    elif f1 < 0 and f2 >= 0:
-        keep = indices < n
-    elif f1 >= 0 and f2 < 0:
-        keep = indices >= m
-
-    out[~keep, :] = float(a)
-    return out

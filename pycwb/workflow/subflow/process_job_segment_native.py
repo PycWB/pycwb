@@ -81,7 +81,7 @@ from pycwb.modules.injection import generate_strain_from_injection
 from pycwb.modules.read_data import read_from_job_segment
 from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning import data_conditioning
+from pycwb.modules.data_conditioning.data_conditioning import condition_strains
 from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
 from pycwb.types.job import WaveSegment
@@ -618,7 +618,7 @@ def process_job_segment(
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
         stage_timer = time.perf_counter()
-        strains, nRMS = data_conditioning(config, data)
+        strains, nRMS = condition_strains(config, data)
         data = None  # raw data no longer needed; drop reference to free memory
         release_memory()
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)

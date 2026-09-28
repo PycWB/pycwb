@@ -3,6 +3,7 @@ Pure-Python whitening without ROOT dependencies.
 """
 
 from pycwb.constants.execution_profile import wdm_options
+from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging
 
@@ -15,13 +16,13 @@ logger = logging.getLogger(__name__)
 _NRMS_DIV_FLOOR = 1.0e-30
 
 
-def whitening_python(config, h):
+def whiten_wavelet(config, h):
     """
     Noise whitening via WDM (pure-Python implementation).
 
     Returns
     -------
-    tuple[pycwb.types.time_series.TimeSeries, TimeFrequencyMap]
+    tuple[pycwb.types.time_series.TimeSeries, NoiseRMSMap]
         `(conditioned_strain, nRMS_tf_map)`.
     """
     from pycwb.types.time_series import TimeSeries
@@ -225,151 +226,3 @@ def _estimate_nrms_cwb_mode0(tf_map, window_length=60.0, stride=60.0, edge_lengt
     if return_interpolated:
         return nrms_anchor, nrms_interp
     return nrms_anchor
-
-
-def _bandpass_rms_frequency(nrms_map, f_low, f_high, sample_rate, df=None):
-    """
-    Approximate WSeries::bandpass in TF by flattening out-of-band rows to nearest in-band values.
-    """
-    if nrms_map.ndim != 2:
-        raise ValueError("Expected 2D RMS map")
-
-    n_freq, _ = nrms_map.shape
-    if n_freq < 2:
-        return np.maximum(nrms_map, 1.0e-12)
-
-    if df is None:
-        nyquist = sample_rate / 2.0
-        freq_bins = np.linspace(0.0, nyquist, n_freq, endpoint=False)
-    else:
-        freq_bins = np.arange(n_freq, dtype=np.float64) * float(df)
-
-    if f_low is None:
-        f_low = 0.0
-    if f_high is None or f_high <= 0.0:
-        f_high = float(np.max(freq_bins))
-
-    out = np.array(nrms_map, copy=True)
-    in_band = np.where((freq_bins >= float(f_low)) & (freq_bins <= float(f_high)))[0]
-    if in_band.size == 0:
-        return np.maximum(out, 0.0)
-
-    low_idx = int(in_band[0])
-    high_idx = int(in_band[-1])
-
-    if low_idx > 0:
-        out[:low_idx, :] = out[low_idx : low_idx + 1, :]
-    if high_idx < n_freq - 1:
-        out[high_idx + 1 :, :] = out[high_idx : high_idx + 1, :]
-
-    return np.maximum(out, 0.0)
-
-
-def _apply_cwb_bandpass_constant(nrms_map, f1, f2, a, df, f_low_map, f_high_map):
-    """
-    Mirror cWB `WSeries::bandpass(f1, f2, a)` behavior on TF rows.
-
-    For `bandpass(16., 0., 1.)`, rows below the low edge are set to 1.
-    """
-    if nrms_map.ndim != 2:
-        raise ValueError("Expected 2D RMS map")
-
-    out = np.array(nrms_map, copy=True)
-    n_freq = out.shape[0]
-    if n_freq == 0:
-        return out
-
-    dF = float(df)
-    fl = abs(float(f1)) if abs(float(f1)) > 0.0 else float(f_low_map)
-    fh = abs(float(f2)) if abs(float(f2)) > 0.0 else float(f_high_map)
-
-    n = int((fl + dF / 2.0) / dF + 0.1)
-    m = int((fh + dF / 2.0) / dF + 0.1) - 1
-
-    if n > m:
-        return out
-
-    n = max(0, min(n, n_freq - 1))
-    m = max(0, min(m, n_freq - 1))
-
-    indices = np.arange(n_freq)
-
-    keep = np.zeros(n_freq, dtype=bool)
-    if f1 >= 0 and f2 >= 0:
-        keep = (indices > n) & (indices <= m)
-    elif f1 < 0 and f2 < 0:
-        keep = (indices < n) | (indices > m)
-    elif f1 < 0 and f2 >= 0:
-        keep = indices < n
-    elif f1 >= 0 and f2 < 0:
-        keep = indices >= m
-
-    out[~keep, :] = float(a)
-    return out
-
-
-# Backward-compatible helpers kept for existing imports/tests.
-def _estimate_noise_rms(tf_map, edge_length=1.0, block_size=4096):
-    del block_size
-    _, nrms_interp = _estimate_nrms_cwb_mode0(
-        tf_map,
-        window_length=60.0,
-        stride=60.0,
-        edge_length=edge_length,
-        return_interpolated=True,
-    )
-    return nrms_interp
-
-
-def _estimate_noise_rms_cwb(
-    tf_coeff, original_length, window_length=60.0, stride=60.0, edge_length=10.0, sample_rate=2048.0
-):
-    del original_length, sample_rate
-    nrms = _estimate_nrms_cwb_mode0(
-        tf_coeff,
-        window_length=window_length,
-        stride=stride,
-        edge_length=edge_length,
-    )
-    median_like = np.maximum((nrms**2) / 0.7191, 0.0)
-    norm50_like = np.array(nrms, copy=True)
-    return median_like, norm50_like
-
-
-def _bandpass_rms(nrms_map, f_low, f_high, sample_rate):
-    return _bandpass_rms_frequency(nrms_map, f_low=f_low, f_high=f_high, sample_rate=sample_rate)
-
-
-def _whiten_coefficients(tf_coeff, nrms_map, regularization=1.0e-6):
-    coeff = np.asarray(tf_coeff.data, dtype=np.complex128)
-    nrms_safe = np.maximum(nrms_map, max(regularization, _NRMS_DIV_FLOOR))
-    tf_coeff.data = coeff / nrms_safe
-    return tf_coeff
-
-
-def _apply_wiener_filter(tf_coeff, nrms_map, snr_threshold=1.0):
-    del snr_threshold
-    coeff = np.asarray(tf_coeff.data, dtype=np.complex128)
-    power = np.abs(coeff) ** 2
-    noise_power = np.maximum(nrms_map, 1.0e-12) ** 2
-    weights = power / (power + noise_power + 1.0e-12)
-    tf_coeff.data = coeff * weights
-    return tf_coeff
-
-
-def _average_phases(tf_coeff):
-    coeff = np.asarray(tf_coeff.data, dtype=np.complex128)
-    if coeff.ndim != 2:
-        return tf_coeff
-
-    _, T = coeff.shape
-    if T % 2 != 0:
-        logger.warning("Odd time length; averaging both phases may produce unexpected results")
-        return tf_coeff
-
-    T_half = T // 2
-    phase_0 = coeff[:, :T_half]
-    phase_90 = coeff[:, T_half:]
-    averaged = (phase_0 + phase_90) / 2.0
-    tf_coeff.data = np.hstack([averaged, averaged])
-    return tf_coeff

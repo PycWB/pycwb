@@ -11,7 +11,7 @@ from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_strain_from_injection, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
 from pycwb.modules.data_conditioning.fake_conditioning import fake_conditioning
-from pycwb.modules.data_conditioning import whitening_mdc
+from pycwb.modules.data_conditioning import whiten_injection_strain
 from pycwb.modules.likelihood import likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
@@ -107,7 +107,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
             mdc = [check_and_resample(mdc[i], config, i) for i in range(len(job_seg.ifos))]
             
             # whitening mdc using nRMS of data
-            mdc_maps, HoT_list = zip(*[whitening_mdc(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)]) 
+            mdc_maps, HoT_list = zip(*[whiten_injection_strain(config, m, nrms) for m, nrms in zip(mdc, nRMS_list)])
 
         # initialize network object 
         network = Network(config, tf_maps, nRMS_list)

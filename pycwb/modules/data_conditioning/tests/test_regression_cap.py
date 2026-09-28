@@ -1,11 +1,7 @@
 import numpy as np
 import pytest
-from pycwb.modules.data_conditioning.regression import (
-    _cap_witness_numba,
-    _cap_witness_jax,
-    _numba_process_layers,
-    _jax_process_layers,
-)
+from pycwb.modules.data_conditioning.regression_numba import _cap_witness_numba, _numba_process_layers
+from pycwb.modules.data_conditioning.regression_jax import _cap_witness_jax, _jax_process_layers
 
 
 @pytest.mark.parametrize("pattern", ["zero", "flat", "outlier", "edge_outliers"])

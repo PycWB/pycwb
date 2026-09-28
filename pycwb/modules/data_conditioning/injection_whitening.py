@@ -23,7 +23,7 @@ def whiten_injection_strain(config, strain, noise_rms):
         Signal-only injection strain for a single detector.
     noise_rms : wdm_wavelet.types.time_frequency_map.TimeFrequencyMap
         Per-frequency noise RMS, as returned by
-        :func:`~pycwb.modules.data_conditioning.whitening.whitening_python`.
+        :func:`~pycwb.modules.data_conditioning.whitening.whiten_wavelet`.
         Its ``data`` array has shape ``(n_freq, K+1)`` (anchor columns spanning the segment).
 
     Returns

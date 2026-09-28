@@ -35,9 +35,9 @@ data = generate_injection(config, job_segments[0])
 #%% md
 ## apply data conditioning to the data
 #%%
-from pycwb.modules.data_conditioning import data_conditioning
+from pycwb.modules.data_conditioning import condition_strains
 
-strains, nRMS = data_conditioning(config, data)
+strains, nRMS = condition_strains(config, data)
 
 #%% md
 ## calculate coherence

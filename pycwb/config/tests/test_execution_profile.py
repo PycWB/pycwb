@@ -126,7 +126,8 @@ def test_wdm_options_and_reconstruction_cache_are_profile_specific(monkeypatch):
 
 
 def test_regression_stride_is_an_explicit_jit_specialization():
-    from pycwb.modules.data_conditioning.regression import _jax_process_layers, _numba_process_layers
+    from pycwb.modules.data_conditioning.regression_jax import _jax_process_layers
+    from pycwb.modules.data_conditioning.regression_numba import _numba_process_layers
 
     rng = np.random.default_rng(78)
     a, b = rng.normal(size=(2, 256)), rng.normal(size=(2, 256))
@@ -173,12 +174,12 @@ def test_explicit_jax_entrypoint_preserves_caller_profile(monkeypatch):
     import importlib
 
     module = importlib.import_module("pycwb.modules.data_conditioning.regression")
-    from pycwb.modules.data_conditioning.regression_jax import regression_jax
+    from pycwb.modules.data_conditioning.regression import apply_regression_jax
 
     config = Config()
     original = config.execution_profile
-    monkeypatch.setattr(module, "regression_python", lambda selected, data: (selected.execution_profile, data))
-    profile, result = regression_jax(config, "input")
+    monkeypatch.setattr(module, "apply_regression", lambda selected, data: (selected.execution_profile, data))
+    profile, result = apply_regression_jax(config, "input")
     assert profile.regression_engine == "jax"
     assert result == "input"
     assert config.execution_profile is original

@@ -13,7 +13,7 @@ from pycwb.types.time_series import TimeSeries
 logger = logging.getLogger(__name__)
 
 
-def psd_correction_python(
+def apply_psd_correction(
     config,
     h,
     high_frequency_threshold: float = 513.0,
@@ -191,4 +191,4 @@ def _smooth_envelope(x, smooth_seconds, rate, edge_seconds):
     return y
 
 
-__all__ = ["psd_correction_python"]
+__all__ = ["apply_psd_correction"]

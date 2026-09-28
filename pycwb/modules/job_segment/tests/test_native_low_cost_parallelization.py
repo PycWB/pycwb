@@ -110,7 +110,7 @@ _stub_module(
     generate_noise_for_job_seg=_not_called,
 )
 _stub_module("pycwb.modules.read_data.data_check", check_and_resample_py=_not_called)
-_stub_module("pycwb.modules.data_conditioning.data_conditioning", data_conditioning=_not_called)
+_stub_module("pycwb.modules.data_conditioning.data_conditioning", condition_strains=_not_called)
 _stub_module("pycwb.modules.cwb_interop", create_cwb_workdir=_not_called)
 _stub_module(
     "pycwb.modules.likelihoodWP.likelihood",

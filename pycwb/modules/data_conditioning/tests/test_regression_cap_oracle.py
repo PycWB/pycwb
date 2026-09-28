@@ -6,10 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pycwb.modules.data_conditioning.regression import (
-    _cap_witness_numba,
-    _jax_layer_apply_filters,
-)
+from pycwb.modules.data_conditioning.regression_numba import _cap_witness_numba
+from pycwb.modules.data_conditioning.regression_jax import _jax_layer_apply_filters
 
 REFERENCE = Path(__file__).with_name("reference")
 CASES = json.loads((REFERENCE / "regression_cap_oracle.json").read_text())

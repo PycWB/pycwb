@@ -31,7 +31,7 @@ import psutil
 
 from pycwb.config import Config
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
-from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
+from pycwb.modules.data_conditioning.data_conditioning import condition_strains
 from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood as likelihood_cpu, prepare_likelihood_inputs
 from pycwb.modules.likelihoodWPGPU.likelihood import likelihood as likelihood_gpu
 from pycwb.modules.read_data import (
@@ -265,7 +265,7 @@ def process_job_segment(
                 psutil.Process().memory_info().rss / 1024 / 1024)
 
     t0 = time.perf_counter()
-    strains, nRMS = data_conditioning(config, data)
+    strains, nRMS = condition_strains(config, data)
     data = None
     release_memory()
     logger.info("Data conditioning: %.2f s  |  memory: %.2f MB",

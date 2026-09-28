@@ -30,9 +30,7 @@ from pycwb.types.network_event import Event
 
 # ── Per-item functions imported from existing modules ────────────────────
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning import (
-    data_conditioning_single,
-)
+from pycwb.modules.data_conditioning.data_conditioning import condition_strain
 from pycwb.modules.coherence_native.coherence import coherence_single_lag
 from pycwb.modules.coherence_native.setup import _setup_coherence_single_res
 from pycwb.utils.td_vector_batch import (
@@ -128,7 +126,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        futures = {pool.submit(data_conditioning_single, config, data[i]): i for i in range(nIFO)}
+        futures = {pool.submit(condition_strain, config, data[i]): i for i in range(nIFO)}
         results = [None] * nIFO
         for fut in as_completed(futures):
             results[futures[fut]] = fut.result()

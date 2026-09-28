@@ -1,31 +1,32 @@
-"""
-pycwb.modules.data_conditioning — Native data conditioning pipeline.
+"""Native segment-level regression, whitening, and noise-map preparation.
 
-Pure-Python resampling, regression (line removal), and whitening
-(wavelet-based or MESA) for GW strain data. Operates per-lag on native
-NumPy time series. This is the production conditioning engine.
+Resampling happens upstream. Condition each detector segment before lag
+processing; use signal-only injection whitening with an existing noise map.
+The MESA entry point is loaded on demand to keep its dependencies optional.
 """
 
-from .regression import *
-from .whitening import whitening_python
+from .data_conditioning import condition_strain, condition_strains
+from .regression import apply_regression, apply_regression_jax
+from .whitening import whiten_wavelet
 from .injection_whitening import whiten_injection_strain
-from .PSD_correction import psd_correction_python
-from .data_conditioning import *
+from .psd_correction import apply_psd_correction
 
 
-def whitening_mesa_python(*args, **kwargs):
-    from .whitening_mesa import whitening_mesa_python as _whitening_mesa_python
+def __getattr__(name):
+    if name == "whiten_mesa":
+        from .whitening_mesa import whiten_mesa
 
-    return _whitening_mesa_python(*args, **kwargs)
+        return whiten_mesa
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
-    "whitening_mesa_python",
-    "whitening_python",
+    "condition_strains",
+    "condition_strain",
+    "apply_regression",
+    "apply_regression_jax",
+    "whiten_wavelet",
+    "whiten_mesa",
     "whiten_injection_strain",
-    "psd_correction_python",
+    "apply_psd_correction",
 ]
-
-# Compatibility alias for one release. Direct imports of the former module emit
-# a DeprecationWarning.
-whitening_mdc = whiten_injection_strain
-__all__.append("whitening_mdc")
