@@ -138,7 +138,7 @@ def build_simulation_summary(
     Returns
     -------
     pd.DataFrame
-        One row per simulation.  Schema:
+        One row per simulation.  Schema::
 
         ==================  ============  ============================================
         Column              dtype         Description

@@ -200,12 +200,12 @@ def plot_detector_antenna_pattern(
     polarization : int
         Polarization quantity to plot:
 
-        - 0: |Fx| (DPF)
-        - 1: |F+| (DPF)
-        - 2: |Fx| / |F+| (DPF)
-        - 3: sqrt(|F+|² + |Fx|²) (DPF, default)
-        - 4: |Fx|² (DPF)
-        - 5: |F+|² (DPF)
+        - 0: \\|Fx\\| (DPF)
+        - 1: \\|F+\\| (DPF)
+        - 2: \\|Fx\\| / \\|F+\\| (DPF)
+        - 3: sqrt(\\|F+\\|² + \\|Fx\\|²) (DPF, default)
+        - 4: \\|Fx\\|² (DPF)
+        - 5: \\|F+\\|² (DPF)
     palette : str
         Matplotlib colormap name.
     resolution : int

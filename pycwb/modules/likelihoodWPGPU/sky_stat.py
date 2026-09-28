@@ -86,7 +86,8 @@ def project_gw_packet(
     ----------
     v00, v90 : shape (n_ifo, n_pix) — delayed data
     f, F     : shape (n_pix, n_ifo) — DPF response vectors
-    fp, fx   : shape (n_pix,) — |f+|², |fx|²
+    fp, fx : jnp.ndarray
+        Squared plus and cross response norms, each with shape (n_pix,).
     network_index : shape (n_pix,)
     total_energy  : shape (n_pix,)
     mask     : shape (n_pix,) int32 — active-pixel mask

@@ -6,14 +6,11 @@
 Welcome to pycWB's documentation!
 ===================================
 
-.. warning::
+.. note::
 
-   🚧 **This documentation is a work in progress.** 🚧
-
-   Many sections are incomplete, under active development, or subject to
-   change. Please check back regularly for updates, and consider
-   `contributing <https://git.ligo.org/yumeng.xu/pycwb>`_ if you find gaps
-   or errors.
+   This site documents PycWB |release|. Match it to ``pycwb --version``.
+   Development documentation may include unreleased features. See
+   :ref:`release_policy` before choosing an installation.
 
 .. raw:: html
 
@@ -55,6 +52,8 @@ PycWB is a modular Python implementation of the coherent WaveBurst
    :maxdepth: 5
 
    credit
+   choose_your_path
+   package
 
 .. toctree::
    :hidden:
@@ -63,6 +62,12 @@ PycWB is a modular Python implementation of the coherent WaveBurst
 
    start_here
    install
+   understanding_results
+   troubleshooting
+   reproducibility
+   validation_status
+   release_policy
+   support
    Learning Path <tutorials>
    analysis_recipes
    decision_guides
@@ -196,14 +201,10 @@ Quick Start
 
 .. code-block:: bash
 
-   # Install
-   pip install pycwb
-
-   # Copy example
-   cp -r examples/injection my_first_search && cd my_first_search
-
-   # Run
-   pycwb run user_parameters_injection.yaml
+   # After installing the matching release or development checkout
+   pycwb doctor
+   pycwb demo my_first_search --run
+   pycwb demo my_first_search --check
 
 See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
 for detailed installation options.
@@ -217,7 +218,7 @@ Documentation Map
    :widths: 25 75
 
    * - :ref:`start_here`
-     - What pycWB does, first run in 10 minutes, common mistakes
+     - What pycWB does, a verified synthetic first run, expected outputs
    * - :ref:`tutorials`
      - Learn by example: injection, multi-injection, batch
    * - :ref:`analysis_recipes`
@@ -255,7 +256,7 @@ Most users only need these three commands:
 
    pycwb run         # Run a single search
    pycwb batch-setup # Generate Condor/SLURM submission scripts
-   pycwb post-process# Run postproduction workflow
+   pycwb post-process # Run postproduction workflow
 
 See the :ref:`run_on_clusters` page for full CLI details, or run
 ``pycwb --help`` for all available commands.

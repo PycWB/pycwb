@@ -1,13 +1,14 @@
-"""
-Batch time-frequency map generation for coherence using JAX vmap.
+"""Batch time-frequency map generation for coherence using JAX vmap.
 
-Replaces the serial per-detector loop:
+Replaces the serial per-detector loop::
+
     tf_maps = [
         TimeFrequencyMap.from_timeseries(ts=strain, wavelet=wdm_wavelet, ...)
         for strain in strains
     ]
 
-with a single vmap'd call over all detectors:
+with a single vmap'd call over all detectors::
+
     batch_t2w_detectors(strains, wdm_wavelet, config)
 
 All detectors share the same WDM parameters and the same segment length, so

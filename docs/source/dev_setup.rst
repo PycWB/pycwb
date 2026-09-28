@@ -25,7 +25,7 @@ Quick Start
 .. code-block:: bash
 
    # Clone the repo
-   git clone git@git.ligo.org:yumeng.xu/pycwb.git
+   git clone https://git.ligo.org/yumeng.xu/pycwb.git
    cd pycwb
 
    # Create conda environment
@@ -39,7 +39,7 @@ Quick Start
    conda install -c conda-forge root=6
 
    # Editable install
-   pip install -e .
+   python -m pip install -e ".[test]"
 
 
 Building the C++ Core (optional)
@@ -78,11 +78,10 @@ Verifying the Installation
 IDE Setup
 ---------
 
-**VS Code** (recommended):
+**VS Code**:
+
 - Python extension with conda environment selected
 - Pylance for type checking
-- Copilot instructions at ``.github/copilot-instructions.md`` provide
-  project-specific context
 
 **Editor settings** (``.vscode/settings.json``):
 
@@ -144,5 +143,5 @@ macOS / Apple Silicon Notes
 ---------------------------
 
 - ROOT may not build natively on arm64 Macs. Use the pure-Python path.
-- JAX runs on CPU via accelerated Metal; install ``jax-metal`` for GPU support.
+- Start with the JAX CPU backend; GPU/Metal compatibility requires separate testing.
 - C++ core requires x86_64 or Rosetta.

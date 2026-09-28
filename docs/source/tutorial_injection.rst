@@ -3,7 +3,7 @@
 Step by Step Injection Search
 =============================
 
-⭐ Beginner  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_search`
+Intermediate · Prerequisites: :ref:`start_here` and :doc:`tutorial_search`
 
 This tutorial shows how to run and inspect a simulated injection search. For a
 complete runnable example, start from ``examples/injection``.
@@ -129,7 +129,7 @@ Finally, calculate likelihood statistics for accepted clusters:
            accepted.append((result_cluster, sky_stats))
 
 Matching cWB target-SNR resampling
----------------------------------
+----------------------------------
 
 With the native segment processor, set the following top-level option when
 matching cWB simulation modes 2 or 5:

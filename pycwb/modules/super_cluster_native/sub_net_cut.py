@@ -835,10 +835,9 @@ def mra_statistics_from_td(
 
 @njit(cache=True)
 def sse_like_ps(fp, fx, am, AM):
-    """
-    input fp,fx - antenna patterns in DPF
+    """input fp,fx - antenna patterns in DPF
     input am,AM - network amplitude vectors
-    returns: (xp*xp+XP*XP)/|f+|^2+(xx*xx+XX*XX)/(|fx|^2)
+    returns: (xp*xp+XP*XP)/\\|f+\\|^2+(xx*xx+XX*XX)/(\\|fx\\|^2)
     """
     xp = np.dot(fp, am)  # fp*am
     XP = np.dot(fp, AM)  # fp*AM

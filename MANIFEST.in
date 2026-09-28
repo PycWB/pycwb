@@ -7,6 +7,10 @@ recursive-include pycwb/modules/postprocess/templates *
 include pycwb/modules/*/module.yaml
 include README.md
 include LICENSE
+include CHANGES.md
+include CONTRIBUTING.md
+include SUPPORT.md
+include CITATION.cff
 recursive-include pycwb/modules/coherence_gpu *.cu
 recursive-include pycwb/modules/super_cluster_gpu *.cu
 recursive-include pycwb/modules/likelihood_gpu *.cu

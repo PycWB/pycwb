@@ -1,6 +1,7 @@
 """Model evaluation — workflow-compatible steps for efficiency & FAR.
 
 Applies a trained XGBoost model to a catalog and computes:
+
 - **Efficiency** (fraction of injections recovered above a threshold)
 - **FAR** (false-alarm rate vs. ranking statistic) using live time from the
   progress file.

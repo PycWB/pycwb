@@ -66,6 +66,8 @@ test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit", "xgboost"]
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
 Documentation = "https://pycwb.readthedocs.io"
+Issues = "https://git.ligo.org/yumeng.xu/pycwb/-/issues"
+Changelog = "https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/CHANGES.md"
 
 [tool.setuptools_scm]
 write_to = "pycwb/_version.py"

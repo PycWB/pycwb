@@ -3,7 +3,8 @@
 Search Workflow
 ================
 
-⭐ Beginner  ·  ~15 min  ·  Prerequisites: :ref:`start_here`
+Intermediate · Prerequisite: a completed :ref:`start_here` demo.
+This page explains pipeline internals after the first user-facing run.
 
 The main user-facing entry point is :py:func:`pycwb.workflow.run.search`.
 It reads a YAML user-parameter file, prepares the working directory, creates

@@ -82,9 +82,9 @@ def project_signal_packet(v00, v90, f, F, fp, fx, ni, et, mask, reg):
     F : np.ndarray
         The cross polarization component in the DPF. F[pixel][ifo]
     fp : np.ndarray
-        The plus polarization component in the DPF, normalized. |f+|^2. fp[pixel][ifo]
+        The plus polarization component in the DPF, normalized. ``|f+|^2``. fp[pixel][ifo]
     fx : np.ndarray
-        The cross polarization component in the DPF, normalized. |fx|^2. fx[pixel][ifo]
+        The cross polarization component in the DPF, normalized. ``|fx|^2``. fx[pixel][ifo]
     ni : np.ndarray
         The noise index for each pixel. ni[pixel][ifo]
     et : np.ndarray
@@ -225,9 +225,9 @@ def project_signal_packet_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratc
     F : np.ndarray
         The cross polarization component in the DPF. F[pixel][ifo]
     fp : np.ndarray
-        The plus polarization component in the DPF, normalized. |f+|^2. fp[pixel][ifo]
+        The plus polarization component in the DPF, normalized. ``|f+|^2``. fp[pixel][ifo]
     fx : np.ndarray
-        The cross polarization component in the DPF, normalized. |fx|^2. fx[pixel][ifo]
+        The cross polarization component in the DPF, normalized. ``|fx|^2``. fx[pixel][ifo]
     ni : np.ndarray
         The noise index for each pixel, shape (n_pix,).
     et : np.ndarray

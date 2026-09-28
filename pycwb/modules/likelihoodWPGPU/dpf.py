@@ -1,5 +1,4 @@
-"""
-Dominant Polarization Frame (DPF) construction — JAX implementation.
+"""Dominant Polarization Frame (DPF) construction — JAX implementation.
 
 The DPF rotates the antenna response vectors (F+, Fx) at each pixel into a
 basis where the plus-like axis captures maximum signal power.  This module
@@ -15,7 +14,7 @@ Variable naming conventions (matching the math doc):
     Fp_sky, Fx_sky  — antenna patterns for one sky direction, shape (n_ifo,)
     rms             — noise-weighted detector response, shape (n_pix, n_ifo)
     f, F            — rotated response vectors in DPF basis, shape (n_pix, n_ifo)
-    fp, fx          — squared norms |f+|² and |fx|², shape (n_pix,)
+    fp, fx          — squared norms \\|f+\\|² and \\|fx\\|², shape (n_pix,)
     psi_sin, psi_cos — DPF rotation sin/cos per pixel, shape (n_pix,)
     network_index   — per-pixel network index, shape (n_pix,)
 """
@@ -48,8 +47,8 @@ def compute_dpf(Fp_sky: jnp.ndarray, Fx_sky: jnp.ndarray, rms: jnp.ndarray) -> d
     dict with keys:
         f          — rotated plus response, shape (n_pix, n_ifo)
         F          — rotated cross response (orthogonalised), shape (n_pix, n_ifo)
-        fp         — |f+|² per pixel, shape (n_pix,)
-        fx         — |fx|² per pixel, shape (n_pix,)
+        fp         — \\|f+\\|² per pixel, shape (n_pix,)
+        fx         — \\|fx\\|² per pixel, shape (n_pix,)
         psi_sin    — sin(ψ) per pixel, shape (n_pix,)
         psi_cos    — cos(ψ) per pixel, shape (n_pix,)
         network_index — per-pixel network index, shape (n_pix,)

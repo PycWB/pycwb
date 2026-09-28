@@ -110,7 +110,7 @@ Every PR that changes user-facing behavior must update the docs:
    * - A CLI command or workflow
      - :ref:`analysis_recipes` (if a recipe is affected) + :ref:`standard_analysis`
    * - A public Python API
-     - Docstring in the source file (auto-documented in :ref:`modules`)
+     - Docstring in the source file (auto-documented in :doc:`modules`)
    * - The build or test system
      - :ref:`dev_build_test`
    * - A new term or concept
@@ -134,30 +134,15 @@ Every PR that changes user-facing behavior must update the docs:
 Release Process
 ---------------
 
-Releases are versioned with ``setuptools_scm`` from Git tags.
-
-.. code-block:: bash
-
-   # 1. Update CHANGES.md with release notes
-   # 2. Tag the release
-   git tag -a v1.1.0 -m "Release v1.1.0"
-   git push --tags
-
-   # 3. Build and upload to PyPI
-   python -m build
-   twine upload dist/*
-
-   # 4. Update conda-forge feedstock (if applicable)
-
-Versioning follows ``MAJOR.MINOR.PATCH``:
-- **MAJOR**: breaking config format changes
-- **MINOR**: new features, modules, or significant improvements
-- **PATCH**: bug fixes, documentation, performance
+Releases are versioned with ``setuptools_scm`` from Git tags. Follow
+:ref:`release_policy` for the release checklist and compatibility notes.
+The GitLab tag pipeline publishes the source distribution; do not duplicate
+that upload manually.
 
 
 Where to Ask Questions
 ----------------------
 
-- **Bug reports / feature requests**: LIGO GitLab issues
-- **Development discussion**: LIGO Slack #cwb channel
-- **Documentation**: This site (``docs/``)
+See :ref:`support` for public issues and an email contact for contributors who
+cannot access the tracker. LIGO Slack is an additional collaboration channel,
+not a prerequisite for contributing.

@@ -117,8 +117,7 @@ def build_dag(workflow: dict) -> dict:
     -------
     dict
         ``{'nodes': [...], 'edges': [...]}`` where each node is
-        ``{'id': str, 'label': str, 'description': str, 'action': str,
-          'step_index': int}`` and each edge is
+        ``{'id': str, 'label': str, 'description': str, 'action': str, 'step_index': int}`` and each edge is
         ``{'from': str, 'to': str, 'label': str, 'via': str}``.
         ``via`` is one of ``'file'``, ``'alias'``, or ``'heuristic'``.
     """

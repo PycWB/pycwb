@@ -6,9 +6,11 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 import sys
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pycwb import __version__
 
@@ -21,6 +23,7 @@ release = __version__
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    'generate_reference',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosummary',
@@ -49,6 +52,8 @@ autodoc_mock_imports = [
     "xgboost",
 ]
 autosummary_mock_imports = autodoc_mock_imports
+autodoc_default_options = {'ignore-module-all': True}
+napoleon_use_ivar = True
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -56,12 +61,18 @@ autosummary_mock_imports = autodoc_mock_imports
 html_theme = "sphinxawesome_theme"
 html_static_path = ['_static']
 
+# Read the Docs injects its version flyout. The version in the page title
+# always comes from the checkout being built, including prerelease suffixes.
+html_title = f"PycWB {release} documentation"
+
 # -- external links ----------------------------------------------------------
 
 intersphinx_mapping = {
     'gwpy': ('https://gwpy.github.io/docs/3.0.0/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
 }
+if os.environ.get('PYCWB_DOCS_OFFLINE') == '1':
+    intersphinx_mapping = {}
 
 
 # from pycwb.constants import user_parameters_schema

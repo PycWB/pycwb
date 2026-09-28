@@ -153,11 +153,10 @@ def whitening_mesa(config, h):
 
 
 def rolling_median(psds, half_size): 
-    """ 
-    Smooths the PSDs estimates with a rolling median filter 
+    """Smooths the PSDs estimates with a rolling median filter
 
-    Parameters: 
-    ----------
+    Parameters
+    -----------
     psds:   np.ndarray (N_segments, N_frequencies)      
             array containing all the PSDs estimates 
     half_size: int, optional
@@ -191,11 +190,10 @@ def rolling_median(psds, half_size):
 
 
 def reindex_psds(psds, f): 
-    """ 
-    Uses Isolation Forest to exclude PSDs estimates with a too large deviation from the median to exclude glitch contamination 
+    """Uses Isolation Forest to exclude PSDs estimates with a too large deviation from the median to exclude glitch contamination
 
-    Parameters: 
-    ----------
+    Parameters
+    -----------
     psds:   np.ndarray (N_segments, N_frequencies)      
             array containing all the PSDs estimates 
     f:      np.ndarray (N_frequencies,) 

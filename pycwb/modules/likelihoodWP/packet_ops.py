@@ -763,7 +763,8 @@ def sum_xtalk_corrected_energy(p, q, xtalks, xtalks_lookup, mk):
     p : array-like, shape (n_ifo, n_pix)
     q : array-like, shape (n_ifo, n_pix)
     xtalks : 2-D array  — packed xtalk entries
-    xtalks_lookup : 2-D array  — (start, end) slice indices per pixel
+    xtalks_lookup : numpy.ndarray
+        Two-dimensional array of (start, end) slice indices per pixel.
     mk : array-like, length n_pix  — event mask (>0 → active pixel)
 
     Returns

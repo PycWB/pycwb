@@ -246,7 +246,7 @@ such as ``100yr``. Existing presets retain their exact historical values;
 Unknown or nonpositive values fail explicitly, including in MDC scoring.
 
 Choosing a simulation association rule
--------------------------------------
+--------------------------------------
 
 Native ``match_simulations`` associates waveform/trigger interval overlaps
 within the same trial and scheduled job, then chooses unique pairs. This is
@@ -270,7 +270,7 @@ Dense overlapping injections remain potentially ambiguous under interval
 association; controlled populations with adequate separation are preferable.
 
 Keeping background and sensitivity selections consistent
--------------------------------------------------------
+--------------------------------------------------------
 
 Use the same ranking statistic for FAR, sensitivity, and the report. The
 standard workflow uses ``rhor`` and supplies its already-scored SIM catalog::

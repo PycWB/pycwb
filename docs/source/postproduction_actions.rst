@@ -289,67 +289,93 @@ Selection, filtering, and matching
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: pycwb.modules.postprocess.selection.trigger_selection
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.selection.filter_real_simulation
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.matching.match_simulations
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.job_selector.select_jobs_by_livetime
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.job_selector.filter_catalog_by_jobs
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.job_selector.compute_livetime
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.random_filter.random_filter_parquet
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.multi_run.read_catalog_runs
+   :no-index:
 
 Training, scoring, and FAR
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: pycwb.modules.postprocess.train_xgboost.train_xgboost
+   :no-index:
 
 
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_catalog
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.evaluate_far_rho
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.evaluate_efficiency
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_mdc_catalog
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.far.far_rho_plot
+   :no-index:
 
 Efficiency products
 ~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: pycwb.modules.postprocess.plot_efficiency.compute_hrss50
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.plot_efficiency.plot_efficiency_vs_hrss
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.plot_efficiency.compute_efficiency_by_waveform
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.plot_efficiency.compute_hrss50_by_waveform_csv
+   :no-index:
 
 Reports and specialized studies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: pycwb.modules.postprocess.zero_lag.zero_lag_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.fake_openbox.fake_openbox_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.report.standard_background_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.report_builder.postproduction_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.generic_report.generic_web_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.angle_comparison.plot_angle_error_comparison
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.waveform_report.generate_waveform_report
+   :no-index:
 
 Controlled simulation comparisons
 ---------------------------------
@@ -390,45 +416,56 @@ whitened energy centroids remain in injection parameters as
 time cut, not the injected strain or reconstruction.
 
 XGBoost feature heatmap
-----------------------
+-----------------------
 
 .. autofunction:: pycwb.modules.postprocess.xgb_heatmap.plot_xgb_heatmap
+   :no-index:
 
 Common background processing
 ----------------------------
 
 .. autofunction:: pycwb.modules.postprocess.background.process_background
+   :no-index:
 
 cWB ROOT catalog import
 -----------------------
 
 .. autofunction:: pycwb.modules.postprocess.root_adapter.import_cwb_root
+   :no-index:
 
 
 Standard cWB comparison and report diagnostics
----------------------------------------------
+----------------------------------------------
 
 These actions adapt cWB simulation truth, compare standard cWB command outputs,
 and add explicit training/efficiency diagnostics. See :ref:`postproduction_root`.
 
 .. autofunction:: pycwb.modules.postprocess.root_simulation.import_cwb_simulation
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.model_io.import_cwb_model
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.simulation_report.simulation_efficiency
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.training_report.training_diagnostics
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.cwb_report.compare_cwb_report
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.cwb_report.compare_cwb_scores
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.cwb_report.attach_cwb_ifar
+   :no-index:
 
 .. autofunction:: pycwb.modules.postprocess.cwb_report.collect_comparisons
+   :no-index:
 
 Amplitude-efficiency input contract
-----------------------------------
+-----------------------------------
 
 The hrss efficiency actions and ``simulation_efficiency`` require fixed-hrss
 injection populations. For target-SNR populations, ``hrss`` is the initial

@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "Please cite the PycWB paper and the cWB method papers described in docs/source/credit.rst, and record the exact software version used."
+title: PycWB
+type: software
+license: GPL-3.0-or-later
+repository-code: https://git.ligo.org/yumeng.xu/pycwb
+url: https://docs.pycwb.org
+authors:
+  - family-names: Xu
+    given-names: Yumeng
+  - family-names: Tiwari
+    given-names: Shubhanshu
+  - family-names: Drago
+    given-names: Marco
+preferred-citation:
+  type: article
+  title: "PycWB: A user-friendly, Modular, and python-based framework for gravitational wave unmodelled search"
+  authors:
+    - family-names: Xu
+      given-names: Yumeng
+    - family-names: Tiwari
+      given-names: Shubhanshu
+    - family-names: Drago
+      given-names: Marco
+  journal: SoftwareX
+  volume: 26
+  start: 101639
+  year: 2024
+  doi: 10.1016/j.softx.2024.101639

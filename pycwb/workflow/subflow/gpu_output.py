@@ -200,7 +200,7 @@ class OutputWriter:
     construction time:
 
     * ``gpu.q_reconstruction=true`` swaps the native save function for the
-      Q-veto reconstruction variant from :mod:`.reconstruction`.
+      Q-veto reconstruction variant from :mod:`pycwb.workflow.subflow.gpu_reconstruction`.
     * ``gpu.output_batch=n`` with ``n > 1`` routes trigger and progress
       messages to a :class:`BufferedCatalog` instead of the collector queue.
 

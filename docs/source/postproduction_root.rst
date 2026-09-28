@@ -1,7 +1,7 @@
 .. _postproduction_root:
 
 cWB ROOT input and same-trigger cross-checks
-==========================================
+============================================
 
 The ROOT adapter makes cWB background results usable by native postproduction
 without rerunning production. It reads ``waveburst`` and ``liveTime`` through
@@ -113,7 +113,7 @@ the same-trigger tests to fixed-model scores, external vetoes, simulation
 truth/matching and efficiency before claiming parity for those stages.
 
 Simulations, training and standard-command validation
-----------------------------------------------------
+-----------------------------------------------------
 
 ``postprocess.root_simulation.import_cwb_simulation`` reads the merged ``waveburst``
 and ``mdc`` trees. It associates triggers with their stored injection time, type

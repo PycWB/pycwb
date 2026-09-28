@@ -1,8 +1,9 @@
-"""
-Core analysis pipeline for a single job segment (native Python path).
+"""Core analysis pipeline for a single job segment (native Python path).
 
 Pipeline overview (one job segment = one GPS time window)
---------------------------------------------------------
+---------------------------------------------------------
+
+.. code-block:: text
 
   ┌──────────────────────────────────────────────────────────┐
   │                  process_job_segment()                   │
@@ -32,6 +33,8 @@ Pipeline overview (one job segment = one GPS time window)
 
 Data flow between pipeline stages
 ----------------------------------
+
+.. code-block:: text
 
   raw data (TimeSeries[])
     │

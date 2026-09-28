@@ -6,12 +6,14 @@ from pycwb.types.time_frequency_series import TimeFrequencySeries
 
 
 def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
-    """
-    get INJ waveforms and calculate injection statistics
+    """get INJ waveforms and calculate injection statistics
+
     - estimate central time based on energy distribution (central time)
-    - estimate injected waveforms 
-        - apply window in time domain to contain 99.9% of the total energy 
-        - apply frequency cut for search frequency band
+    - estimate injected waveforms
+
+      - apply window in time domain to contain 99.9% of the total energy
+      - apply frequency cut for search frequency band
+
     - calculate injection statistics (e.g., injected SNR, duration, central frequency, bandwidth, injected hrss)
 
 
@@ -21,8 +23,8 @@ def get_INJ_waveform(hot, tf_map, gps_time, window, offset, in_rate) -> list:
         list of pycwb.types.time_series.TimeSeries objects
     tf_map : list of pycwb.types.wdm.WDM
         list of WDM objects
-    gps_times : gps_time
-        float
+    gps_times : float
+        Injection GPS time in seconds.
     window : half of the time window to contain the waveform
         float
     # offset : float
