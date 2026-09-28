@@ -197,6 +197,11 @@ def test_memory_reservations_clamp_workers_cache(monkeypatch):
     from pycwb.workflow.execution import resources
 
     monkeypatch.setattr(resources, "available_memory", lambda: 2 * 1024**3)
+    # Earlier numerical tests can leave several GiB resident in this process.
+    monkeypatch.setattr(
+        resources.psutil.Process, "memory_info",
+        lambda self: SimpleNamespace(rss=128 * 1024**2),
+    )
     settings = ExecutionSettings.from_config(
         config(memory_limit="2GiB", worker_memory="512MiB", cache_limit="8GiB")
     )
@@ -330,8 +335,9 @@ def test_concurrent_runner_cannot_clean_live_catalog_locks(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("allocation", [1, 4])
 def test_explicit_allocation_caps_cpu_and_memory_without_changing_config(monkeypatch, allocation):
-    from pycwb.workflow.execution import executor
     from types import SimpleNamespace
+
+    from pycwb.workflow.execution import executor
 
     cfg = config(cores=2, memory_limit="2GiB")
     context = ExecutionContext([], cfg, lambda: None, ".", "catalog", workers=8,

@@ -31,7 +31,7 @@ test:
   script:
     - pip install --no-cache-dir --no-build-isolation -e ".[test]"
     - |
-      pytest pycwb/modules/ tests/ \
+      pytest pycwb/ tests/ \
         --ignore=tests/sample \
         --ignore=tests/injection_consistency \
         -m "not slow" \
@@ -64,6 +64,38 @@ injection-consistency:
     when: always
     reports:
       junit: injection-consistency-report.xml
+
+documentation:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
+  needs: [build]
+  variables:
+    PYCWB_DOCS_OFFLINE: "1"
+  script:
+    - python -m pip install -r docs/requirements.txt
+    - make doc-check
+  artifacts:
+    when: always
+    paths:
+      - docs/build/html/
+
+# The image already contains the built wheel. Do not install the checkout in
+# this job: the subprocess runs outside it to check the shipped template.
+onboarding-smoke:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
+  needs: [build]
+  variables:
+    NUMBA_NUM_THREADS: "1"
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+  script:
+    - python -m pip install pytest
+    - python -m pytest tests/test_demo_e2e.py -m slow --junitxml=demo-report.xml -v
+  artifacts:
+    when: always
+    reports:
+      junit: demo-report.xml
 
 build-latest:
   rules:

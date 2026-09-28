@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -90,6 +91,10 @@ def test_larger_analysis_estimates_reduce_admitted_workers(monkeypatch):
     from pycwb.workflow.execution import resources
 
     monkeypatch.setattr(resources, "available_memory", lambda: 4 * 1024**3)
+    monkeypatch.setattr(
+        resources.psutil.Process, "memory_info",
+        lambda self: SimpleNamespace(rss=128 * 1024**2),
+    )
     base = ExecutionSettings.from_config(
         config(memory_limit="4GiB", cache_limit="1GiB")
     )
