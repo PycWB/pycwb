@@ -6,16 +6,16 @@ This document describes the pure-Python `likelihoodWP` implementation in `pycwb/
 
 The main entry points are:
 
-- `setup_likelihood(...)`
-- `likelihood(...)`
-- `likelihood_wrapper(...)`
+- `prepare_likelihood_inputs(...)`
+- `evaluate_cluster_likelihood(...)`
+- `evaluate_fragment_clusters(...)`
 
 The core supporting kernels are implemented in:
 
 - `dpf.py`: dominant-polarization-frame construction
-- `sky_stat.py`: sky-loop statistics and packet orthogonalization
-- `utils.py`: packet norms, null energy, waveform normalization, and auxiliary statistics
-- `pixel_batch_ops.py`: vectorized extraction of per-pixel TD amplitudes and RMS values
+- `sky_kernels.py`: sky-loop statistics and packet orthogonalization
+- `packet_ops.py`: packet norms, null energy, waveform normalization, and auxiliary statistics
+- `pixel_data.py`: vectorized extraction of per-pixel TD amplitudes and RMS values
 
 ## High-Level Pipeline
 
@@ -32,7 +32,10 @@ For a single cluster, the Python likelihood pipeline is:
 9. Apply threshold cuts.
 10. Fill cluster-level detection statistics, waveform-derived outputs, and chirp mass.
 
-At the implementation level this is centered in `likelihood(...)`, with the sky scan performed by `find_optimal_sky_localization(...)` and the best-direction detailed evaluation performed by `calculate_sky_statistics(...)`.
+At the implementation level this is centered in `evaluate_cluster_likelihood(...)`, with the sky scan performed by `scan_sky_kernel(...)` and the best-direction detailed evaluation performed by `compute_statistics_at_sky_position(...)`.
+
+For file responsibilities and the old-to-new API mapping, see the
+[module README](../../pycwb/modules/likelihoodWP/README.md).
 
 ## Inputs and Data Layout
 
@@ -44,13 +47,13 @@ Each cluster is a list of time-frequency pixels. Each pixel carries, per interfe
 - whitened time-delay amplitudes `td_amp`,
 - reconstructed packet amplitudes filled later by the likelihood stage.
 
-The vectorized loader `load_data_from_pixels_vectorized(...)` converts the Python object graph into dense arrays:
+The vectorized loader `_extract_legacy_pixel_time_delay_data(...)` converts the Python object graph into dense arrays:
 
 - `rms` with shape `(n_ifo, n_pix)`
 - `td00` with shape `(n_ifo, n_pix, n_delay)` before transpose
 - `td90` with shape `(n_ifo, n_pix, n_delay)` before transpose
 
-Inside `likelihood(...)`, these are rearranged into forms better suited to the Numba kernels:
+Inside `evaluate_cluster_likelihood(...)`, these are rearranged into forms better suited to the Numba kernels:
 
 - `rms.T -> (n_pix, n_ifo)` for DPF construction
 - `td00 -> (n_delay, n_ifo, n_pix)`
@@ -58,7 +61,7 @@ Inside `likelihood(...)`, these are rearranged into forms better suited to the N
 
 ### Sky Grid
 
-`setup_likelihood(...)` produces or reuses:
+`prepare_likelihood_inputs(...)` produces or reuses:
 
 - `ml[i, l]`: integer time-delay sample index for interferometer `i` and sky pixel `l`
 - `FP[i, l]`: plus antenna pattern
@@ -162,7 +165,7 @@ $$
 m_j = \mathbf{1}\{e_j > E_{\mathrm{thr}}\}.
 $$
 
-This is implemented in `load_data_from_td(...)`, which returns:
+This is implemented in `compute_pixel_energy_and_mask(...)`, which returns:
 
 - `Eo = \frac{1}{2} \sum_j m_j e_j`
 - `NN = \sum_j m_j`
@@ -233,7 +236,7 @@ $$
 \cos(2\psi_j) = \frac{c_j}{n_j + \epsilon}.
 $$
 
-The code then reconstructs $\sin\psi_j$ and $\cos\psi_j$ and rotates the original response vectors into the DPF basis. This is implemented in `dpf_np_loops_vec(...)`.
+The code then reconstructs $\sin\psi_j$ and $\cos\psi_j$ and rotates the original response vectors into the DPF basis. This is implemented in `compute_dpf(...)`.
 
 ### Orthogonalization and Network Index
 
@@ -259,7 +262,7 @@ where $N_+$ is the number of pixels with positive $f_{p,j}$. In the code this qu
 
 ## DPF-Based Energy Regulator
 
-Before the main sky scan, `calculate_dpf(...)` evaluates the DPF quality across all sky points. For each sky location it computes the scalar returned by `dpf_np_loops_vec(...)`, then counts how many sky directions satisfy
+Before the main sky scan, `compute_dpf_regulator(...)` evaluates the DPF quality across all sky points. For each sky location it computes the scalar returned by `compute_dpf(...)`, then counts how many sky directions satisfy
 
 $$
 \mathrm{DPF}(l) > \gamma_{\mathrm{reg}}.
@@ -275,7 +278,7 @@ This mirrors the original cWB logic: if only a small fraction of the sky has a g
 
 ## Coherent Signal Packet Reconstruction
 
-Once the DPF basis is known for a sky point, the code projects the delayed detector data $(v^{00}, v^{90})$ onto the DPF basis in `avx_GW_ps(...)`.
+Once the DPF basis is known for a sky point, the code projects the delayed detector data $(v^{00}, v^{90})$ onto the DPF basis in `project_signal_packet(...)`.
 
 For each pixel it first forms four detector-space inner products:
 
@@ -323,7 +326,7 @@ The routine also updates the pixel mask according to whether the Gaussian-noise 
 
 ## Orthogonalization of the Reconstructed Packet
 
-The reconstructed packet is passed to `avx_ort_ps(...)`, which orthogonalizes the two quadratures. For each pixel it computes:
+The reconstructed packet is passed to `orthogonalize_quadratures(...)`, which orthogonalizes the two quadratures. For each pixel it computes:
 
 $$
 a_j = \sum_i \left(p^{00}_{i,j}\right)^2,
@@ -351,7 +354,7 @@ These are later stored in `SkyStatistics.energy_array_plus` and `SkyStatistics.e
 
 ## Coherent Statistics per Sky Point
 
-The routine `avx_stat_ps(...)` compares the reconstructed packet `(s, S)` with the delayed data `(v00, v90)`. After a further per-pixel rotation into the orthogonal packet frame, it accumulates:
+The routine `compute_coherent_statistics(...)` compares the reconstructed packet `(s, S)` with the delayed data `(v00, v90)`. After a further per-pixel rotation into the orthogonal packet frame, it accumulates:
 
 - coherent energy,
 - residual noise,
@@ -435,11 +438,11 @@ where $s_l = \mathrm{nSkyStat}[l]$.
 
 ## Detailed Statistics at the Best Sky Location
 
-After selecting `l_max`, `calculate_sky_statistics(...)` recomputes the best-sky quantities and packages them into the `SkyStatistics` dataclass.
+After selecting `l_max`, `compute_statistics_at_sky_position(...)` recomputes the best-sky quantities and packages them into the `SkyStatistics` dataclass.
 
 In addition to the sky-loop quantities (DPF, GW reconstruction, orthogonalization, coherent statistics), it computes additional packet-level quantities described in the following sections.
 
-### Packet Rotation and Amplitude Decomposition (`avx_packet_ps`)
+### Packet Rotation and Amplitude Decomposition (`build_wavelet_packet`)
 
 This Numba-compiled kernel decomposes both the data packet $(v^{00}, v^{90})$ and the signal packet $(p^{00}, p^{90})$ into per-IFO amplitude and rotation components. For each interferometer $i$, it accumulates the masked inner products:
 
@@ -487,9 +490,9 @@ $$
 
 This produces unit-normalized, rotation-aligned packets suitable for xtalk-corrected norm computation.
 
-### Packet Amplitude Setting (`avx_setAMP_ps`)
+### Packet Amplitude Setting (`normalize_packet_amplitudes`)
 
-After signal reconstruction, `avx_setAMP_ps(...)` sets waveform-reconstruction amplitudes by rotating the signal packets $(p, q)$ using the per-IFO rotation parameters $(\sin\psi_i, \cos\psi_i, a_i, A_i)$ from `avx_packet_ps`. The transformation is:
+After signal reconstruction, `normalize_packet_amplitudes(...)` sets waveform-reconstruction amplitudes by rotating the signal packets $(p, q)$ using the per-IFO rotation parameters $(\sin\psi_i, \cos\psi_i, a_i, A_i)$ from `build_wavelet_packet`. The transformation is:
 
 $$
 n_{i,j} = (a_i + A_i)\, \frac{m_j}{2}\, q^{\mathrm{norm}}_{i,j},
@@ -509,7 +512,7 @@ $$
 N_p = \frac{4}{n_{\mathrm{IFO}}} \sum_j \frac{m_j}{2} \sum_i q^{\mathrm{norm}}_{i,j}.
 $$
 
-### Null Stream Computation (`avx_loadNULL_ps`)
+### Null Stream Computation (`compute_null_packet`)
 
 The null stream is the residual after subtracting the reconstructed signal from the data:
 
@@ -532,7 +535,7 @@ where $\mathbf{p}_i, \mathbf{q}_i$ denote the $n_{\mathrm{IFO}}$-dimensional det
 
 The three norm routines differ in how they process this bilinear form:
 
-### `xtalk_energy_sum_numpy` (Raw Xtalk Energy)
+### `sum_xtalk_corrected_energy` (Raw Xtalk Energy)
 
 This computes the total xtalk-convolved energy without clamping:
 
@@ -542,7 +545,7 @@ $$
 
 where $d$ indexes detectors and $T_{i,d}$ is the per-detector contribution. Only positive terms are accumulated (matching the C++ `_avx_norm_ps` with `I<0` branch). This is used for the data energy $E_m$ and null energy $N_p$ in the pixel-domain statistics.
 
-### `packet_norm_numpy` (Detector-Wise Norm)
+### `compute_packet_norms` (Detector-Wise Norm)
 
 For each pixel $i$, the xtalk kernel computes:
 
@@ -579,9 +582,9 @@ $$
 
 where $E_d$ is the per-IFO energy from packet decomposition.
 
-### `gw_norm_numpy` (Signal Norm)
+### `compute_signal_norms` (Signal Norm)
 
-Starting from the q-norms from `packet_norm_numpy`, this function computes signal-specific norms:
+Starting from the q-norms from `compute_packet_norms`, this function computes signal-specific norms:
 
 $$
 p^{\mathrm{norm}}_{d,i} = \begin{cases}
@@ -600,7 +603,7 @@ where $p^E_d$ corresponds to the signal packet energy and $q^E_d$ to the data pa
 
 ## Noise Decomposition
 
-`avx_noise_ps(...)` decomposes the event into core, satellite, and signal-support regions using masks derived from the packet norms and the reconstructed packet.
+`compute_gaussian_noise_correction(...)` decomposes the event into core, satellite, and signal-support regions using masks derived from the packet norms and the reconstructed packet.
 
 Define the per-pixel average signal and norm energies:
 
@@ -637,9 +640,9 @@ rc_j = \begin{cases}
 \end{cases}
 $$
 
-## Polar Coordinate Projection (`avx_pol_ps`)
+## Polar Coordinate Projection (`project_onto_network_plane`)
 
-The `avx_pol_ps(...)` routine projects packet vectors into polar coordinates in the DPF basis. Given per-pixel DPF response vectors $\mathbf{f}_j, \mathbf{F}_j$ (antenna patterns) and data packets $\mathbf{p}_j, \mathbf{q}_j$, it computes four dot products per pixel:
+The `project_onto_network_plane(...)` routine projects packet vectors into polar coordinates in the DPF basis. Given per-pixel DPF response vectors $\mathbf{f}_j, \mathbf{F}_j$ (antenna patterns) and data packets $\mathbf{p}_j, \mathbf{q}_j$, it computes four dot products per pixel:
 
 $$
 x_{p,j} = \sum_i f_{j,i}\, m_j\, p_{i,j}, \quad
@@ -689,11 +692,11 @@ $$
 
 where $c_{p,j}$ and $C_{p,j}$ are the PnP-projected plus-polarization coefficients from the 00 and 90 quadratures respectively.
 
-These projections are applied twice in `calculate_sky_statistics`: once to the data packets and once to the signal packets, yielding the polar-coordinate representations used for ellipticity and polarization outputs.
+These projections are applied twice in `compute_statistics_at_sky_position`: once to the data packets and once to the signal packets, yielding the polar-coordinate representations used for ellipticity and polarization outputs.
 
 ## Rho Computation at Best Sky Point
 
-Within `calculate_sky_statistics(...)`, the detection statistic $\rho$ is computed from the xtalk-corrected energies:
+Within `compute_statistics_at_sky_position(...)`, the detection statistic $\rho$ is computed from the xtalk-corrected energies:
 
 $$
 E_m = \texttt{xtalk\_energy\_sum\_numpy}(\hat{p}^{\mathrm{data}}, \hat{q}^{\mathrm{data}}, \ldots), \quad
@@ -706,11 +709,11 @@ $$
 \rho^2 = \frac{E_m - N_p}{2}.
 $$
 
-This $\rho$ is further modified by `fill_detection_statistic` depending on the mode (2G vs XGB), as described below.
+This $\rho$ is further modified by `populate_detection_statistics` depending on the mode (2G vs XGB), as described below.
 
 ## Time-Domain Waveform Reconstruction
 
-`fill_detection_statistic(...)` performs an additional waveform-domain reconstruction using `get_MRA_wave(...)` from `pycwb.modules.reconstruction.getMRAwaveform`.
+`populate_detection_statistics(...)` performs an additional waveform-domain reconstruction using `get_MRA_wave(...)` from `pycwb.modules.reconstruction.getMRAwaveform`.
 
 For each interferometer $i$, it reconstructs:
 
@@ -760,7 +763,7 @@ where $Z(f_k)$ is the FFT of the reconstructed waveform.
 
 The cluster-level `c_time` and `c_freq` are arrays of these centroids across IFOs.
 
-## Xtalk Double-Loop in `fill_detection_statistic`
+## Xtalk Double-Loop in `populate_detection_statistics`
 
 After waveform reconstruction, the code refines pixel-level flags and energies using a double loop over pixel pairs with xtalk corrections. This is the computationally expensive $O(n_{\mathrm{core}}^2)$ section.
 
@@ -786,7 +789,7 @@ This double loop has complexity $O(n_{\mathrm{core}} \times |\mathcal{K}|)$ wher
 
 ## Cluster-Level Detection Statistics
 
-Once the detailed best-sky quantities are available, `fill_detection_statistic(...)` writes the final event-level fields into `cluster.cluster_meta`.
+Once the detailed best-sky quantities are available, `populate_detection_statistics(...)` writes the final event-level fields into `cluster.cluster_meta`.
 
 The main definitions used by the code are:
 
@@ -882,7 +885,7 @@ In XGB mode the convention is swapped to mirror the C++ event output:
 - `net_rho = raw rho`
 - `net_rho2 = rho / sqrt(max(chi_TD, 1))`
 
-## Chirp Mass Estimation (`get_chirp_mass`)
+## Chirp Mass Estimation (`update_chirp_mass_statistics`)
 
 The chirp mass is estimated via a Hough-transform-based algorithm that searches for a frequency evolution consistent with an inspiraling binary system. This section was previously undocumented.
 
@@ -933,13 +936,13 @@ where $\lambda_1 \ge \lambda_2$ are the eigenvalues. This ellipticity is stored 
 
 If the chirp mass fit quality is good, `net_rho2` is updated using the chirp-weighted pixel ellipticity, providing a chirp-informed detection statistic.
 
-## Error Region (`get_error_region`)
+## Error Region (`populate_sky_localization`)
 
 This function is currently a **stub** (implementation is `pass`). It is a placeholder for future sky-localization error-region computation.
 
 ## Threshold Cuts
 
-The cluster is rejected if `threshold_cut(...)` finds any failed condition.
+The cluster is rejected if `get_likelihood_rejection_reason(...)` finds any failed condition.
 
 ### Standard 2G Mode
 
@@ -1053,19 +1056,19 @@ This section provides typical sizes for each major loop dimension, useful for es
 
 | Function | Outer Loop | Inner Loop | Complexity |
 |----------|-----------|------------|------------|
-| `find_optimal_sky_localization` | $n_{\mathrm{sky}}$ (`prange`) | 4 kernels × $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `calculate_dpf` | $n_{\mathrm{sky}}$ (`prange`) | `dpf_np_loops_vec`: $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `calculate_sky_statistics` | 1 sky point | $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ (many kernels) | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `avx_GW_ps` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ projections + regularization | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `avx_ort_ps` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ inner products | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `avx_stat_ps` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ coherent tests | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `avx_packet_ps` | $n_{\mathrm{IFO}}$ | $n_{\mathrm{pix}}$ accumulation | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `packet_norm_numpy` | $n_{\mathrm{pix}}$ | $|\mathcal{K}| \times n_{\mathrm{IFO}}$ xtalk lookups | $O(n_{\mathrm{pix}} \cdot |\mathcal{K}| \cdot n_{\mathrm{IFO}})$ |
-| `fill_detection_statistic` (xtalk) | $n_{\mathrm{core}}$ | $n_{\mathrm{core}} \cap \mathcal{K}$ | $O(n_{\mathrm{core}} \cdot |\mathcal{K}|)$ |
-| `fill_detection_statistic` (MRA) | $n_{\mathrm{IFO}}$ | 3× `get_MRA_wave` per IFO | $O(n_{\mathrm{IFO}} \cdot n_{\mathrm{layers}} \cdot n_{\mathrm{pix}})$ |
-| `get_chirp_mass` (Hough) | $n_m = 1001$ | $n_{\mathrm{pix}}$ | $O(n_m \cdot n_{\mathrm{pix}})$ |
-| `avx_pol_ps` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ dot products | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
-| `xtalk_energy_sum_numpy` | $n_{\mathrm{pix}}$ | $|\mathcal{K}| \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{pix}} \cdot |\mathcal{K}| \cdot n_{\mathrm{IFO}})$ |
+| `scan_sky_kernel` | delay groups (`prange`) | 4 kernels × $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `compute_dpf_regulator` | $n_{\mathrm{sky}}$ (`prange`) | `compute_dpf`: $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{sky}} \cdot n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `compute_statistics_at_sky_position` | 1 sky point | $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$ (many kernels) | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `project_signal_packet` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ projections + regularization | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `orthogonalize_quadratures` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ inner products | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `compute_coherent_statistics` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ coherent tests | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `build_wavelet_packet` | $n_{\mathrm{IFO}}$ | $n_{\mathrm{pix}}$ accumulation | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `compute_packet_norms` | $n_{\mathrm{pix}}$ | $|\mathcal{K}| \times n_{\mathrm{IFO}}$ xtalk lookups | $O(n_{\mathrm{pix}} \cdot |\mathcal{K}| \cdot n_{\mathrm{IFO}})$ |
+| `populate_detection_statistics` (xtalk) | $n_{\mathrm{core}}$ | $n_{\mathrm{core}} \cap \mathcal{K}$ | $O(n_{\mathrm{core}} \cdot |\mathcal{K}|)$ |
+| `populate_detection_statistics` (MRA) | $n_{\mathrm{IFO}}$ | 3× `get_MRA_wave` per IFO | $O(n_{\mathrm{IFO}} \cdot n_{\mathrm{layers}} \cdot n_{\mathrm{pix}})$ |
+| `update_chirp_mass_statistics` (Hough) | $n_m = 1001$ | $n_{\mathrm{pix}}$ | $O(n_m \cdot n_{\mathrm{pix}})$ |
+| `project_onto_network_plane` | $n_{\mathrm{pix}}$ | $n_{\mathrm{IFO}}$ dot products | $O(n_{\mathrm{pix}} \cdot n_{\mathrm{IFO}})$ |
+| `sum_xtalk_corrected_energy` | $n_{\mathrm{pix}}$ | $|\mathcal{K}| \times n_{\mathrm{IFO}}$ | $O(n_{\mathrm{pix}} \cdot |\mathcal{K}| \cdot n_{\mathrm{IFO}})$ |
 
 ### Dominant Cost
 
@@ -1075,7 +1078,7 @@ $$
 C_{\mathrm{total}} \approx n_{\mathrm{sky}} \times n_{\mathrm{pix}} \times n_{\mathrm{IFO}} \times c_{\mathrm{kernel}},
 $$
 
-where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per sky point in `find_optimal_sky_localization`). With $n_{\mathrm{sky}} = 196{,}608$, $n_{\mathrm{pix}} = 1{,}000$, and $n_{\mathrm{IFO}} = 3$, this gives approximately $2.4 \times 10^9$ floating-point operations per cluster — the dominant computational cost.
+where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per sky point in `scan_sky_kernel`). With $n_{\mathrm{sky}} = 196{,}608$, $n_{\mathrm{pix}} = 1{,}000$, and $n_{\mathrm{IFO}} = 3$, this gives approximately $2.4 \times 10^9$ floating-point operations per cluster — the dominant computational cost.
 
 ---
 
@@ -1083,7 +1086,7 @@ where $c_{\mathrm{kernel}} \approx 4$ (the number of sequential kernel calls per
 
 This section identifies optimization opportunities for GPU (CUDA/ROCm via JAX or CuPy) acceleration, ordered by expected impact.
 
-### Tier 1: Sky Scan (`find_optimal_sky_localization`) — Highest Impact
+### Tier 1: Sky Scan (`scan_sky_kernel`) — Highest Impact
 
 **Current implementation:** Numba `@njit(parallel=True)` with `prange(n_sky)`. Each sky direction is independent.
 
@@ -1099,31 +1102,31 @@ This section identifies optimization opportunities for GPU (CUDA/ROCm via JAX or
 
 **Challenges:**
 - Time-delay slicing (`td00[ml[i,l]+o, i, :]`) is a scattered gather — needs coalescing strategy.
-- Four sequential kernels (`load_data_from_td → dpf → avx_GW_ps → avx_ort_ps → avx_stat_ps`) could be fused into a single GPU kernel to avoid repeated global memory round-trips.
+- Four sequential kernels (`compute_pixel_energy_and_mask → dpf → project_signal_packet → orthogonalize_quadratures → compute_coherent_statistics`) could be fused into a single GPU kernel to avoid repeated global memory round-trips.
 - The `FP_t, FX_t` antenna pattern tables are read-only and shared across all pixels → texture memory or constant memory candidate.
 
 **Expected speedup:** 50–200× over Numba on CPU (est. from similar GPU sky-scan implementations in GW analysis).
 
-### Tier 2: DPF Computation (`calculate_dpf`) — High Impact
+### Tier 2: DPF Computation (`compute_dpf_regulator`) — High Impact
 
 **Current implementation:** Numba `@njit(parallel=True)` with `prange(n_sky)`.
 
-**GPU mapping:** Near-identical structure to the sky scan. Each sky point independently calls `dpf_np_loops_vec` over $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$.
+**GPU mapping:** Near-identical structure to the sky scan. Each sky point independently calls `compute_dpf` over $n_{\mathrm{pix}} \times n_{\mathrm{IFO}}$.
 
 **Optimization note:** Can be fused with Tier 1 if the DPF is computed as the first stage of each sky-scan iteration rather than as a separate pre-scan pass.
 
-### Tier 3: Xtalk Norm Computation (`packet_norm_numpy`, `xtalk_energy_sum_numpy`)
+### Tier 3: Xtalk Norm Computation (`compute_packet_norms`, `sum_xtalk_corrected_energy`)
 
-**Current implementation:** Plain NumPy loops in `packet_norm_numpy` (`@njit`); vectorized NumPy in `xtalk_energy_sum_numpy`.
+**Current implementation:** Plain NumPy loops in `compute_packet_norms` (`@njit`); vectorized NumPy in `sum_xtalk_corrected_energy`.
 
 **GPU mapping:**
 - Xtalk lookups are a sparse-matrix–vector product: the xtalk catalog defines a sparse adjacency matrix with 4 coefficients per non-zero entry.
 - GPU implementation: convert xtalk catalog to CSR format → use batched SpMV (cuSPARSE) or a custom kernel.
 - $n_{\mathrm{pix}} \times |\mathcal{K}| \times n_{\mathrm{IFO}}$ → with $n_{\mathrm{pix}} = 10{,}000$, $|\mathcal{K}| = 10$, $n_{\mathrm{IFO}} = 3$: ~300k operations, moderate parallelism.
 
-**Note:** This is called only at the best sky point (once per cluster), so the absolute time saving is smaller than Tier 1–2. However, for the xtalk double-loop in `fill_detection_statistic`, the $O(n_{\mathrm{core}}^2)$ scaling can become significant for large clusters.
+**Note:** This is called only at the best sky point (once per cluster), so the absolute time saving is smaller than Tier 1–2. However, for the xtalk double-loop in `populate_detection_statistics`, the $O(n_{\mathrm{core}}^2)$ scaling can become significant for large clusters.
 
-### Tier 4: Hough Transform (`get_chirp_mass`)
+### Tier 4: Hough Transform (`update_chirp_mass_statistics`)
 
 **Current implementation:** Python/NumPy loop over 1001 mass values × $n_{\mathrm{pix}}$ pixels.
 
@@ -1156,11 +1159,11 @@ This section identifies optimization opportunities for GPU (CUDA/ROCm via JAX or
 
 ### Recommended Strategy
 
-1. **Phase 1:** Port `find_optimal_sky_localization` to JAX `vmap` + `jit` over sky directions. This covers Tier 1 and Tier 2 simultaneously since the DPF can be fused. Use `jax.lax.map` or manual scan for the time-delay gather.
+1. **Phase 1:** Port `scan_sky_kernel` to JAX `vmap` + `jit` over sky directions. This covers Tier 1 and Tier 2 simultaneously since the DPF can be fused. Use `jax.lax.map` or manual scan for the time-delay gather.
 
-2. **Phase 2:** Convert xtalk catalog to a sparse JAX representation and port `packet_norm_numpy` + `xtalk_energy_sum_numpy` to sparse JAX ops.
+2. **Phase 2:** Convert xtalk catalog to a sparse JAX representation and port `compute_packet_norms` + `sum_xtalk_corrected_energy` to sparse JAX ops.
 
-3. **Phase 3:** Port `get_chirp_mass` Hough transform to batched JAX.
+3. **Phase 3:** Port `update_chirp_mass_statistics` Hough transform to batched JAX.
 
 4. **Phase 4:** Port `get_MRA_wave` WDM inverse transform to JAX (coordinate with `wdm-wavelet` package).
 
@@ -1176,7 +1179,7 @@ The sky loop and DPF kernels are Numba-compiled and operate mostly on `float32` 
 
 ### Why Setup Is Separated From Per-Cluster Likelihood
 
-`setup_likelihood(...)` isolates computations that are constant across clusters in the same job segment:
+`prepare_likelihood_inputs(...)` isolates computations that are constant across clusters in the same job segment:
 
 - sky-delay tables,
 - antenna-pattern tables,
@@ -1241,30 +1244,30 @@ On a GPU with $O(10^4)$ active threads, the key constraint is: **the parallelize
 
 ### Current Iteration Orders and Their GPU Implications
 
-#### Sky Scan (`find_optimal_sky_localization`)
+#### Sky Scan (`scan_sky_kernel`)
 
 **Current CPU order:**
 ```
 prange(n_sky)                          ← Parallel over sky
     for i in range(n_ifo):             ← Sequential: delay fetch
         v00[i] = td00[ml[i,l]+o, i]   ← Scattered gather
-    load_data_from_td(v00, v90):
+    compute_pixel_energy_and_mask(v00, v90):
         for j in range(n_pix):         ← Sequential over pixels
             for i in range(n_ifo):     ← Reduction over IFOs
                 ...accumulate energy
-    dpf_np_loops_vec(FP[l], FX[l], rms):
+    compute_dpf(FP[l], FX[l], rms):
         for j in range(n_pix):         ← Sequential over pixels
             for i in range(n_ifo):     ← Reduction over IFOs
                 ...DPF rotation
-    avx_GW_ps(v00, v90, f, F, ...):
+    project_signal_packet(v00, v90, f, F, ...):
         for j in range(n_pix):         ← Sequential over pixels
             for i in range(n_ifo):     ← Reduction/dot-product
                 ...projection
-    avx_ort_ps(ps, pS, mask):
+    orthogonalize_quadratures(ps, pS, mask):
         for j in range(n_pix):         ← Sequential over pixels
             for i in range(n_ifo):     ← Reduction
                 ...orthogonalization
-    avx_stat_ps(v00, v90, ps, pS, ...):
+    compute_coherent_statistics(v00, v90, ps, pS, ...):
         for j in range(n_pix):         ← Sequential over pixels
             for i in range(n_ifo):     ← Reduction
                 ...coherent statistics
@@ -1274,7 +1277,7 @@ prange(n_sky)                          ← Parallel over sky
 
 #### Per-Pixel Kernels (inside sky loop)
 
-**Current order in `load_data_from_td`, `avx_GW_ps`, `avx_ort_ps`, `avx_stat_ps`:**
+**Current order in `compute_pixel_energy_and_mask`, `project_signal_packet`, `orthogonalize_quadratures`, `compute_coherent_statistics`:**
 ```
 for j in range(n_pix):          ← OUTER: pixel
     for i in range(n_ifo):      ← INNER: IFO reduction
@@ -1282,7 +1285,7 @@ for j in range(n_pix):          ← OUTER: pixel
     per_pixel_scalar_ops(...)
 ```
 
-**Current order in `dpf_np_loops_vec`** (Stage 1):
+**Current order in `compute_dpf`** (Stage 1):
 ```
 for j in range(n_ifo):          ← OUTER: IFO (wrong for C-order!)
     for i in range(n_pix):      ← INNER: pixel
@@ -1291,7 +1294,7 @@ for j in range(n_ifo):          ← OUTER: IFO (wrong for C-order!)
 
 This Stage 1 loop writes `f[i, j]` column-by-column in a row-major array — **stride-1 access is along the pixel axis but the write pattern is column-strided**. On GPU this would cause severe uncoalesced writes.
 
-#### Packet-Level Kernels (`avx_packet_ps`)
+#### Packet-Level Kernels (`build_wavelet_packet`)
 
 **Current order:**
 ```
@@ -1437,22 +1440,22 @@ This table summarizes the recommended GPU iteration order for each kernel, compa
 
 | Kernel | Current CPU Order | Optimal GPU Order | Parallelism | Reduction |
 |--------|------------------|-------------------|-------------|-----------|
-| `load_data_from_td` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
-| `dpf_np_loops_vec` (Stage 1) | `ifo → pix` | `pix ∥ (ifo unrolled)` | Pixel-parallel | Broadcast `Fp0[j]` |
-| `dpf_np_loops_vec` (Stage 2–4) | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
-| `avx_GW_ps` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO dot products in registers |
-| `avx_ort_ps` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
-| `avx_stat_ps` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
-| `avx_packet_ps` | `ifo → pix` | `pix ∥ → block_reduce per ifo` | Pixel-parallel | Shared-mem reduction → per-IFO scalars |
-| `avx_pol_ps` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
-| `packet_norm_numpy` | `pix → ifo` (with gather) | `pix ∥ (ifo unrolled, sparse gather)` | Pixel-parallel | Xtalk neighbors via shared mem |
-| `xtalk_energy_sum_numpy` | `pix → neighbors → ifo` | `pix ∥ (neighbors in shared mem)` | Pixel-parallel | Neighbor gather + IFO unroll |
+| `compute_pixel_energy_and_mask` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
+| `compute_dpf` (Stage 1) | `ifo → pix` | `pix ∥ (ifo unrolled)` | Pixel-parallel | Broadcast `Fp0[j]` |
+| `compute_dpf` (Stage 2–4) | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
+| `project_signal_packet` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO dot products in registers |
+| `orthogonalize_quadratures` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
+| `compute_coherent_statistics` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
+| `build_wavelet_packet` | `ifo → pix` | `pix ∥ → block_reduce per ifo` | Pixel-parallel | Shared-mem reduction → per-IFO scalars |
+| `project_onto_network_plane` | `pix → ifo` | `pix ∥ (ifo unrolled)` | Pixel-parallel | IFO in registers |
+| `compute_packet_norms` | `pix → ifo` (with gather) | `pix ∥ (ifo unrolled, sparse gather)` | Pixel-parallel | Xtalk neighbors via shared mem |
+| `sum_xtalk_corrected_energy` | `pix → neighbors → ifo` | `pix ∥ (neighbors in shared mem)` | Pixel-parallel | Neighbor gather + IFO unroll |
 
 **Key observation:** In every kernel, the optimal GPU inner dimension is the **pixel axis** (parallel), and the IFO dimension should be **unrolled into registers**. The sky dimension is the **batch/grid dimension**. This is a complete inversion of the original C++ design, which used AVX to vectorize the IFO dimension (4–8 wide SIMD lanes) and looped over pixels and sky sequentially.
 
-### Detailed Restructuring: `avx_packet_ps`
+### Detailed Restructuring: `build_wavelet_packet`
 
-`avx_packet_ps` is the most interesting case because its current loop order (`ifo → pix`) is the exact opposite of what GPU wants. It accumulates per-IFO statistics over all pixels:
+`build_wavelet_packet` is the most interesting case because its current loop order (`ifo → pix`) is the exact opposite of what GPU wants. It accumulates per-IFO statistics over all pixels:
 
 $$
 aa_i = \sum_j m_j (v^{00}_{i,j})^2
@@ -1518,7 +1521,7 @@ Each load is fully coalesced because adjacent threads access adjacent pixel indi
 
 ### Detailed Restructuring: DPF Kernel Fusion
 
-The DPF computation (`dpf_np_loops_vec`) has 4 sequential stages that access the same `(n_pix, n_ifo)` data. On CPU, these must be separate loops because each stage depends on the previous one's per-pixel output. On GPU, **stages 1–3 can be fused into a single kernel** because each pixel's computation is independent:
+The DPF computation (`compute_dpf`) has 4 sequential stages that access the same `(n_pix, n_ifo)` data. On CPU, these must be separate loops because each stage depends on the previous one's per-pixel output. On GPU, **stages 1–3 can be fused into a single kernel** because each pixel's computation is independent:
 
 ```
 # Fused GPU kernel: one thread per pixel
@@ -1643,7 +1646,7 @@ For the GPU-optimized implementation, the following array layout conventions sho
 
 2. **IFO axis unrolled**: The IFO dimension never appears as a GPU parallel axis. It is always either:
    - Unrolled in registers (inside per-pixel computation), or
-   - Reduced via warp-shuffle / shared-memory (for `avx_packet_ps`-style accumulations).
+   - Reduced via warp-shuffle / shared-memory (for `build_wavelet_packet`-style accumulations).
 
 3. **Sky axis as batch dimension**: Sky directions map to GPU blocks (or `vmap` batch in JAX). Within each block, all pixel-level work is parallelized.
 

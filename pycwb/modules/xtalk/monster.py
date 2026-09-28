@@ -19,23 +19,23 @@ def _read_catalog_header_and_layers(data):
         offset += struct.calcsize(fmt)
         return result
 
-    nRes = int(unpack('f')[0])
+    nRes = int(unpack("f")[0])
 
     if nRes < 0:
         nRes = -nRes
-        tag, BetaOrder, precision, KWDM = unpack('4f')
+        tag, BetaOrder, precision, KWDM = unpack("4f")
     else:
         tag, BetaOrder, precision, KWDM = 0, 0, 0, 0
 
-    layers = [int(unpack('f')[0]) for _ in range(nRes)]
+    layers = [int(unpack("f")[0]) for _ in range(nRes)]
     return {
-        'nRes': nRes,
-        'tag': tag,
-        'beta_order': BetaOrder,
-        'precision': precision,
-        'kwdm': KWDM,
-        'layers': np.array(layers, dtype=np.int32),
-        'offset': offset,
+        "nRes": nRes,
+        "tag": tag,
+        "beta_order": BetaOrder,
+        "precision": precision,
+        "kwdm": KWDM,
+        "layers": np.array(layers, dtype=np.int32),
+        "offset": offset,
     }
 
 
@@ -45,18 +45,18 @@ def read_catalog_metadata(fn):
     if fn.suffix == ".npz":
         data = np.load(fn)
         return {
-            'nRes': int(data['nRes']),
-            'tag': float(data['tag']) if 'tag' in data.files else 0.0,
-            'beta_order': float(data['beta_order']) if 'beta_order' in data.files else 0.0,
-            'precision': float(data['precision']) if 'precision' in data.files else 0.0,
-            'kwdm': float(data['kwdm']) if 'kwdm' in data.files else 0.0,
-            'layers': np.array(data['layers'], dtype=np.int32),
+            "nRes": int(data["nRes"]),
+            "tag": float(data["tag"]) if "tag" in data.files else 0.0,
+            "beta_order": float(data["beta_order"]) if "beta_order" in data.files else 0.0,
+            "precision": float(data["precision"]) if "precision" in data.files else 0.0,
+            "kwdm": float(data["kwdm"]) if "kwdm" in data.files else 0.0,
+            "layers": np.array(data["layers"], dtype=np.int32),
         }
 
     with open(fn, "rb") as f:
         data = f.read()
     metadata = _read_catalog_header_and_layers(data)
-    metadata.pop('offset', None)
+    metadata.pop("offset", None)
     return metadata
 
 
@@ -89,7 +89,7 @@ def load_catalog(fn, dump=True):
     if pathlib.Path(fn).suffix == ".npz":
         logger.info("Loading %s", fn)
         data = np.load(fn)
-        return data['xtalk_coeff'], data['xtalk_lookup_table'], data['layers'], data['nRes']
+        return data["xtalk_coeff"], data["xtalk_lookup_table"], data["layers"], data["nRes"]
 
     # Check if there is converted file
     # if ext of fn is .bin, search if there is a .npz file with the same name
@@ -111,13 +111,13 @@ def load_catalog(fn, dump=True):
         data = f.read()  # Read the entire file into memory
 
     metadata = _read_catalog_header_and_layers(data)
-    offset = metadata['offset']
-    nRes = metadata['nRes']
-    tag = metadata['tag']
-    BetaOrder = metadata['beta_order']
-    precision = metadata['precision']
-    KWDM = metadata['kwdm']
-    layers = metadata['layers'].tolist()
+    offset = metadata["offset"]
+    nRes = metadata["nRes"]
+    tag = metadata["tag"]
+    BetaOrder = metadata["beta_order"]
+    precision = metadata["precision"]
+    KWDM = metadata["kwdm"]
+    layers = metadata["layers"].tolist()
 
     def unpack(fmt):
         nonlocal offset
@@ -127,30 +127,54 @@ def load_catalog(fn, dump=True):
 
     max_layers = max(layers)
     lookup_table = np.zeros((nRes, nRes, max_layers + 1, 2, 2), dtype=np.int32)
-    xtalk_coeff = []
+    # Record block boundaries first, then allocate the final table once.
+    # A Python list containing one ndarray per coefficient dominates the
+    # first-load memory peak for large LD catalogs.
+    blocks = []
+    entry_dtype = np.dtype([("index", "i"), ("CC", "4f")])
     entry_index = 0
     for i in range(nRes):
         for j in range(i + 1):
             for k in range(layers[i] + 1):
-                for l in range(2):
-                    oa_size = int(unpack('f')[0])
-                    oa_data = np.frombuffer(data, dtype=np.dtype([('index', 'i'), ('CC', '4f')]), count=oa_size,
-                                            offset=offset).tolist()
-                    offset += oa_size * struct.calcsize('i4f')
-                    lookup_table[i, j, k, l, 0] = entry_index
-                    for entry in oa_data:
-                        xtalk_coeff.append(
-                            np.array([entry[0], entry[1][0], entry[1][1], entry[1][2], entry[1][3]], dtype=np.float32))
-                        entry_index += 1
-                    lookup_table[i, j, k, l, 1] = entry_index
+                for quadrature in range(2):
+                    oa_size = int(unpack("f")[0])
+                    end = offset + oa_size * entry_dtype.itemsize
+                    if oa_size < 0 or end > len(data):
+                        raise ValueError("Invalid or truncated cross-talk coefficient block")
+                    blocks.append((offset, oa_size))
+                    offset = end
+                    lookup_table[i, j, k, quadrature, 0] = entry_index
+                    entry_index += oa_size
+                    lookup_table[i, j, k, quadrature, 1] = entry_index
+
+    # Preserve the legacy empty-table representation as well as row order,
+    # float32 index conversion and coefficient bits for nonempty catalogs.
+    xtalk_coeff = np.empty((entry_index, 5), dtype=np.float32) if entry_index else np.empty(0)
+    entry_index = 0
+    for offset, size in blocks:
+        entries = np.frombuffer(data, dtype=entry_dtype, count=size, offset=offset)
+        target = xtalk_coeff[entry_index : entry_index + size]
+        if size:
+            target[:, 0] = entries["index"]
+            target[:, 1:] = entries["CC"]
+        entry_index += size
 
     if dump:
         # dump to current working directory
         # filename = pathlib.Path(fn).name.replace(".bin", ".npz")
         filename = pathlib.Path(fn).with_suffix(".npz")
-        np.savez(filename, xtalk_coeff=xtalk_coeff, xtalk_lookup_table=lookup_table, layers=layers,
-                 nRes=nRes, tag=tag, beta_order=BetaOrder, precision=precision, kwdm=KWDM)
-    return np.array(xtalk_coeff), lookup_table, np.array(layers), nRes
+        np.savez(
+            filename,
+            xtalk_coeff=xtalk_coeff,
+            xtalk_lookup_table=lookup_table,
+            layers=layers,
+            nRes=nRes,
+            tag=tag,
+            beta_order=BetaOrder,
+            precision=precision,
+            kwdm=KWDM,
+        )
+    return xtalk_coeff, lookup_table, np.array(layers), nRes
 
 
 @njit(cache=True)
@@ -179,7 +203,7 @@ def getXTalk(nLayer1, indx1, nLayer2, indx2, layers, xtalk_coeff, xtalk_lookup_t
     # Vector retrieval and processing
     ret = np.array([3.0, 3.0, 3.0, 3.0], dtype=np.float32)  # Preset array
     entry_index = xtalk_lookup_table[r1][r2][freq1][odd]
-    for item in xtalk_coeff[entry_index[0]:entry_index[1]]:
+    for item in xtalk_coeff[entry_index[0] : entry_index[1]]:
         if index == int(item[0]):
             ret[0] = item[1]
             ret[1] = item[2]
@@ -203,8 +227,9 @@ def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table
     count = 0
     for i in range(n_pix):
         for j in range(n_pix):
-            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
-                               layers, xtalk_coeff, xtalk_lookup_table)
+            tmpOvlp = getXTalk(
+                pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1], layers, xtalk_coeff, xtalk_lookup_table
+            )
             if tmpOvlp[0] <= 2:
                 count += 1
 
@@ -216,8 +241,9 @@ def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table
     for i in range(n_pix):
         clusterCC_lookup[i, 0] = index_counter
         for j in range(n_pix):
-            tmpOvlp = getXTalk(pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1],
-                               layers, xtalk_coeff, xtalk_lookup_table)
+            tmpOvlp = getXTalk(
+                pixels[i][0], pixels[i][1], pixels[j][0], pixels[j][1], layers, xtalk_coeff, xtalk_lookup_table
+            )
             if tmpOvlp[0] > 2:
                 continue
 
@@ -228,10 +254,10 @@ def getXTalk_pixels_numba(pixels, check, layers, xtalk_coeff, xtalk_lookup_table
             # the original read clusterCC[i*n_pix+j] which is uninitialized memory
             # whenever index_counter != i*n_pix+j due to sparse filtering).
             clusterCC[index_counter][3] = clusterCC[index_counter][1] + clusterCC[index_counter][2]
-            clusterCC[index_counter][4] = tmpOvlp[0]   # xt[0]
-            clusterCC[index_counter][5] = tmpOvlp[2]   # xt[2]
-            clusterCC[index_counter][6] = tmpOvlp[1]   # xt[1]
-            clusterCC[index_counter][7] = tmpOvlp[3]   # xt[3]
+            clusterCC[index_counter][4] = tmpOvlp[0]  # xt[0]
+            clusterCC[index_counter][5] = tmpOvlp[2]  # xt[2]
+            clusterCC[index_counter][6] = tmpOvlp[1]  # xt[1]
+            clusterCC[index_counter][7] = tmpOvlp[3]  # xt[3]
             index_counter += 1
 
         clusterCC_lookup[i, 1] = index_counter
@@ -274,7 +300,7 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
     getXTalk would have swapped ret[1]↔ret[2] because r_j < r_i.
     """
     n_pix = len(pixels)
-    nRes  = len(layers)
+    nRes = len(layers)
 
     if n_pix == 0:
         return np.empty((0, 2), dtype=np.int32), np.empty((0, 8), dtype=np.float32)
@@ -315,7 +341,7 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
 
     for i in range(n_pix):
         nLayer_i = int(pixels[i][0])
-        time_i   = int(pixels[i][1])
+        time_i = int(pixels[i][1])
         if nLayer_i > int(max_nLayer):
             continue
         r_i = int(layer_to_r[nLayer_i])
@@ -323,19 +349,19 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
             continue
 
         layer_i = int(layers[r_i])
-        time1_i  = time_i // (layer_i + 1)
-        freq1_i  = time_i - time1_i * (layer_i + 1)
-        odd_i    = time1_i & 1
+        time1_i = time_i // (layer_i + 1)
+        freq1_i = time_i - time1_i * (layer_i + 1)
+        odd_i = time1_i & 1
 
         # Iterate over all resolution levels r_j <= r_i.
         # The lookup table is filled only for (r1 >= r2), so r_j plays r2.
         for r_j in range(r_i + 1):
             layer_j = int(layers[r_j])
-            ratio   = layer_i // layer_j          # integer, >= 1
-            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+            ratio = layer_i // layer_j  # integer, >= 1
+            base_i = (time1_i - odd_i) * ratio * (layer_j + 1)
 
             e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
-            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+            e_end = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
 
             for eidx in range(e_start, e_end):
                 indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
@@ -346,9 +372,9 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
                     continue
                 j = int(pixel_map[key_j])
 
-                counts[i] += 1          # (i → j) entry
+                counts[i] += 1  # (i → j) entry
                 if r_j < r_i:
-                    counts[j] += 1      # (j → i) derived via swap
+                    counts[j] += 1  # (j → i) derived via swap
 
     # ------------------------------------------------------------------ #
     # Build CSR offsets from per-pixel counts                             #
@@ -361,14 +387,14 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
         clusterCC_lookup[i, 1] = np.int32(total)
 
     clusterCC = np.empty((int(total), 8), dtype=np.float32)
-    fill_pos  = np.zeros(n_pix, dtype=np.int64)   # per-pixel fill cursor
+    fill_pos = np.zeros(n_pix, dtype=np.int64)  # per-pixel fill cursor
 
     # ------------------------------------------------------------------ #
     # Pass 2: fill entries                                                 #
     # ------------------------------------------------------------------ #
     for i in range(n_pix):
         nLayer_i = int(pixels[i][0])
-        time_i   = int(pixels[i][1])
+        time_i = int(pixels[i][1])
         if nLayer_i > int(max_nLayer):
             continue
         r_i = int(layer_to_r[nLayer_i])
@@ -376,17 +402,17 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
             continue
 
         layer_i = int(layers[r_i])
-        time1_i  = time_i // (layer_i + 1)
-        freq1_i  = time_i - time1_i * (layer_i + 1)
-        odd_i    = time1_i & 1
+        time1_i = time_i // (layer_i + 1)
+        freq1_i = time_i - time1_i * (layer_i + 1)
+        odd_i = time1_i & 1
 
         for r_j in range(r_i + 1):
             layer_j = int(layers[r_j])
-            ratio   = layer_i // layer_j
-            base_i  = (time1_i - odd_i) * ratio * (layer_j + 1)
+            ratio = layer_i // layer_j
+            base_i = (time1_i - odd_i) * ratio * (layer_j + 1)
 
             e_start = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 0])
-            e_end   = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
+            e_end = int(xtalk_lookup_table[r_i, r_j, freq1_i, odd_i, 1])
 
             for eidx in range(e_start, e_end):
                 indx2 = np.int64(xtalk_coeff[eidx, 0]) + np.int64(base_i)
@@ -413,8 +439,8 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
                 clusterCC[pos, 2] = c3 * c3 + c4 * c4
                 clusterCC[pos, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
                 clusterCC[pos, 4] = c1
-                clusterCC[pos, 5] = c3   # tmpOvlp[2]
-                clusterCC[pos, 6] = c2   # tmpOvlp[1]
+                clusterCC[pos, 5] = c3  # tmpOvlp[2]
+                clusterCC[pos, 6] = c2  # tmpOvlp[1]
                 clusterCC[pos, 7] = c4
 
                 # --- (j → i): swap c2 ↔ c3 ---
@@ -430,8 +456,8 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
                     clusterCC[pos2, 2] = c2 * c2 + c4 * c4
                     clusterCC[pos2, 3] = c1 * c1 + c2 * c2 + c3 * c3 + c4 * c4
                     clusterCC[pos2, 4] = c1
-                    clusterCC[pos2, 5] = c2   # tmpOvlp[2] after swap
-                    clusterCC[pos2, 6] = c3   # tmpOvlp[1] after swap
+                    clusterCC[pos2, 5] = c2  # tmpOvlp[2] after swap
+                    clusterCC[pos2, 6] = c3  # tmpOvlp[1] after swap
                     clusterCC[pos2, 7] = c4
 
     return clusterCC_lookup, clusterCC
@@ -439,12 +465,20 @@ def getXTalk_pixels_fast(pixels, check, layers, xtalk_coeff, xtalk_lookup_table)
 
 @njit(cache=True, parallel=True)
 def _compute_null_likelihood_numba(
-    null_k_set, like_k_set,
-    pn, pN, ps, pS,
-    gn, ec,
-    xtalks_lookup, xtalks,
-    null_mask, like_mask,
-    null_out, like_out,
+    null_k_set,
+    like_k_set,
+    pn,
+    pN,
+    ps,
+    pS,
+    gn,
+    ec,
+    xtalks_lookup,
+    xtalks,
+    null_mask,
+    like_mask,
+    null_out,
+    like_out,
 ):
     """Compute per-pixel null and likelihood statistics via sparse xtalk sum.
 
@@ -488,7 +522,7 @@ def _compute_null_likelihood_numba(
             continue
         acc = 0.0
         start = xtalks_lookup[i, 0]
-        end   = xtalks_lookup[i, 1]
+        end = xtalks_lookup[i, 1]
         for m in range(start, end):
             j = int(xtalks[m, 0])
             # Mirror original: inner sum was over null_k_set only
@@ -500,10 +534,12 @@ def _compute_null_likelihood_numba(
             xt3 = float(xtalks[m, 7])
             d = 0.0
             for ifo in range(n_ifo):
-                d += (xt0 * pn[ifo, i] * pn[ifo, j]
-                      + xt1 * pn[ifo, i] * pN[ifo, j]
-                      + xt2 * pN[ifo, i] * pn[ifo, j]
-                      + xt3 * pN[ifo, i] * pN[ifo, j])
+                d += (
+                    xt0 * pn[ifo, i] * pn[ifo, j]
+                    + xt1 * pn[ifo, i] * pN[ifo, j]
+                    + xt2 * pN[ifo, i] * pn[ifo, j]
+                    + xt3 * pN[ifo, i] * pN[ifo, j]
+                )
             acc += d
         null_out[i] = acc
 
@@ -514,7 +550,7 @@ def _compute_null_likelihood_numba(
             continue
         acc = 0.0
         start = xtalks_lookup[i, 0]
-        end   = xtalks_lookup[i, 1]
+        end = xtalks_lookup[i, 1]
         for m in range(start, end):
             j = int(xtalks[m, 0])
             # Mirror original: inner sum was over like_k_set only
@@ -526,9 +562,11 @@ def _compute_null_likelihood_numba(
             xt3 = float(xtalks[m, 7])
             d = 0.0
             for ifo in range(n_ifo):
-                d += (xt0 * ps[ifo, i] * ps[ifo, j]
-                      + xt1 * ps[ifo, i] * pS[ifo, j]
-                      + xt2 * pS[ifo, i] * ps[ifo, j]
-                      + xt3 * pS[ifo, i] * pS[ifo, j])
+                d += (
+                    xt0 * ps[ifo, i] * ps[ifo, j]
+                    + xt1 * ps[ifo, i] * pS[ifo, j]
+                    + xt2 * pS[ifo, i] * ps[ifo, j]
+                    + xt3 * pS[ifo, i] * pS[ifo, j]
+                )
             acc += d
         like_out[i] = acc

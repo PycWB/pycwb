@@ -20,10 +20,13 @@ Notes
   numpy arrays from the TF map before invoking the batch function.
 """
 
+from pycwb.constants.execution_profile import wdm_options
+from pycwb.constants.execution_profile import execution_profile
+
 import logging
 
 import numpy as np
-from pycwb.utils.td_vector_kernels import batch_get_td_vecs
+from pycwb.utils.td_vector_kernels import batch_get_td_vecs as batch_get_td_vecs
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # TD-inputs cache builder
 # ---------------------------------------------------------------------------
+
 
 def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
     """Build WDM context and extract TD inputs for one resolution level.
@@ -61,43 +65,58 @@ def _build_td_inputs_single_level(level, config, strains_ts, upTDF):
     from wdm_wavelet.wdm import WDM as WDMWavelet
     from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-    layers_at_level = 2 ** level if level > 0 else 0
+    layers_at_level = 2**level if level > 0 else 0
     wdm_layers = max(1, int(layers_at_level))
     wdm = WDMWavelet(
         M=wdm_layers,
         K=wdm_layers,
         beta_order=config.WDM_beta_order,
         precision=config.WDM_precision,
+        **wdm_options(config),
     )
     wdm.set_td_filter(int(config.TDSize), upTDF)
 
+    compact_cache = execution_profile(config).compact_td_cache
     detector_tf_maps = []
+    per_ifo = []
     for n in range(config.nIFO):
         strain_ts = strains_ts[n]
         ts_data = np.asarray(strain_ts.data, dtype=np.float64)
         sample_rate = float(strain_ts.sample_rate)
         t0 = float(strain_ts.t0)
         wdm_tf = wdm.t2w(ts_data, sample_rate=sample_rate, t0=t0, MM=-1)
-        detector_tf_maps.append(
-            TimeFrequencyMap(
-                data=wdm_tf.data,
-                is_whitened=True,
-                dt=wdm_tf.dt,
-                df=wdm_tf.df,
-                start=wdm_tf.start_time,
-                stop=wdm_tf.end_time,
-                f_low=wdm_tf.start_freq,
-                f_high=wdm_tf.end_freq,
-                edge=None,
-                wavelet=wdm,
-                len_timeseries=wdm_tf.len_timeseries,
-            )
+        tf_map = TimeFrequencyMap(
+            data=wdm_tf.data,
+            is_whitened=True,
+            dt=wdm_tf.dt,
+            df=wdm_tf.df,
+            start=wdm_tf.start_time,
+            stop=wdm_tf.end_time,
+            f_low=wdm_tf.start_freq,
+            f_high=wdm_tf.end_freq,
+            edge=None,
+            wavelet=wdm,
+            len_timeseries=wdm_tf.len_timeseries,
         )
+        if compact_cache:
+            bounds = None
+            if execution_profile(config).band_td_cache:
+                # Selection stays within fLow/fHigh. Retain its neighboring
+                # frequency bands for the cross-band TD filter terms.
+                low = max(0, int(np.floor(float(getattr(config, "fLow", 0.0)) / wdm_tf.df)))
+                high = min(
+                    wdm_layers + 1, int(np.floor(float(getattr(config, "fHigh", sample_rate / 2.0)) / wdm_tf.df)) + 2
+                )
+                if low < high:
+                    bounds = (low, high)
+            per_ifo.append(tf_map.prepare_td_inputs(wdm.td_filters, frequency_bounds=bounds, compact=True))
+            # No previous detector's complex map remains live during t2w.
+            del tf_map, wdm_tf
+        else:
+            detector_tf_maps.append(tf_map)
 
-    per_ifo = [
-        detector_tf_maps[n].prepare_td_inputs(wdm.td_filters)
-        for n in range(config.nIFO)
-    ]
+    if not compact_cache:
+        per_ifo = [detector_tf_maps[n].prepare_td_inputs(wdm.td_filters, compact=False) for n in range(config.nIFO)]
     return wdm_layers, per_ifo
 
 
@@ -129,14 +148,17 @@ def build_td_inputs_cache(config, strains):
     from pycwb.types.time_series import TimeSeries
 
     strains_ts = [TimeSeries.from_input(strain) for strain in strains]
-    upTDF = int(getattr(config, 'upTDF', 1))
+    upTDF = int(getattr(config, "upTDF", 1))
 
     # Build per-level results sequentially (online workflow parallelises
     # this by calling _build_td_inputs_single_level directly).
     td_inputs_cache = {}
     for level in config.WDM_level:
         wdm_layers, per_ifo = _build_td_inputs_single_level(
-            level, config, strains_ts, upTDF,
+            level,
+            config,
+            strains_ts,
+            upTDF,
         )
         td_inputs_cache[int(wdm_layers)] = per_ifo
         td_inputs_cache[int(wdm_layers) + 1] = per_ifo

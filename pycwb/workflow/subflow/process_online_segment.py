@@ -30,9 +30,7 @@ from pycwb.types.network_event import Event
 
 # ── Per-item functions imported from existing modules ────────────────────
 from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning import (
-    data_conditioning_single,
-)
+from pycwb.modules.data_conditioning.data_conditioning import condition_strain
 from pycwb.modules.coherence_native.coherence import coherence_single_lag
 from pycwb.modules.coherence_native.setup import _setup_coherence_single_res
 from pycwb.utils.td_vector_batch import (
@@ -43,7 +41,7 @@ from pycwb.modules.super_cluster_native.super_cluster import (
     supercluster_single_lag,
 )
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
+from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.utils.memory import release_memory
@@ -97,10 +95,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
                 None,
             )
             if matched is None:
-                raise ValueError(
-                    f"No channel for IFO {ifo!r} in data_payload keys "
-                    f"{list(payload.keys())}"
-                )
+                raise ValueError(f"No channel for IFO {ifo!r} in data_payload keys {list(payload.keys())}")
             data_list.append(matched)
         data = data_list
     else:
@@ -119,27 +114,19 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        futures = {
-            pool.submit(check_and_resample_py, data[i], config, i): i
-            for i in range(nIFO)
-        }
+        futures = {pool.submit(check_and_resample_py, data[i], config, i): i for i in range(nIFO)}
         resampled = [None] * nIFO
         for fut in as_completed(futures):
             resampled[futures[fut]] = fut.result()
     data = resampled
-    logger.info(
-        "Parallel resample time: %.2f s (%d IFOs)", time.perf_counter() - stage_t, nIFO
-    )
+    logger.info("Parallel resample time: %.2f s (%d IFOs)", time.perf_counter() - stage_t, nIFO)
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 2 — Parallel data conditioning (per-IFO)
     # ─────────────────────────────────────────────────────────────────
     stage_t = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max_threads) as pool:
-        futures = {
-            pool.submit(data_conditioning_single, config, data[i]): i
-            for i in range(nIFO)
-        }
+        futures = {pool.submit(condition_strain, config, data[i]): i for i in range(nIFO)}
         results = [None] * nIFO
         for fut in as_completed(futures):
             results[futures[fut]] = fut.result()
@@ -149,9 +136,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     del data, results
     release_memory()
     logger.info("Parallel conditioning time: %.2f s", time.perf_counter() - stage_t)
-    logger.info(
-        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
-    )
+    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # ─────────────────────────────────────────────────────────────────
     # STEP 3 — Overlap three independent setup stages
@@ -165,6 +150,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
             config,
             strains,
             wave_seg,
+            nRMS,
         )
         f_td_cache = pool.submit(
             _parallel_td_cache_build,
@@ -185,13 +171,11 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
         "Parallel setup time (3 stages overlapped): %.2f s",
         time.perf_counter() - stage_t,
     )
-    logger.info(
-        "Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024
-    )
+    logger.info("Memory usage: %.2f MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
     # 3d. Likelihood setup — depends on supercluster output (fast, sequential)
     stage_t = time.perf_counter()
-    likelihood_setup = setup_likelihood(
+    likelihood_setup = prepare_likelihood_inputs(
         config,
         strains,
         config.nIFO,
@@ -223,9 +207,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
     triggers = []
 
     if fragment_cluster is None:
-        logger.warning(
-            "No supercluster results for online segment %d", online_seg.index
-        )
+        logger.warning("No supercluster results for online segment %d", online_seg.index)
     else:
         # 4c. Likelihood — per-cluster (sequential; inner sky scan is Numba @prange)
         events_data = []
@@ -233,7 +215,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
             if selected_cluster.cluster_status > 0:
                 continue
             selected_cluster.cluster_id = k + 1
-            result_cluster, sky_stats = likelihood(
+            result_cluster, sky_stats = evaluate_cluster_likelihood(
                 config.nIFO,
                 selected_cluster,
                 config,
@@ -308,7 +290,7 @@ def _online_seg_to_wave_seg(online_seg: OnlineSegment, config) -> WaveSegment:
     )
 
 
-def _parallel_coherence_setup(config, strains, wave_seg):
+def _parallel_coherence_setup(config, strains, wave_seg, nRMS=None):
     """Run per-resolution coherence setup in parallel threads."""
     up_n = max(1, int(config.rateANA / 1024))
     normalized = [PyCWBTimeSeries.from_input(s) for s in strains]
@@ -330,6 +312,11 @@ def _parallel_coherence_setup(config, strains, wave_seg):
         setups = [None] * nRES
         for fut in as_completed(futures):
             setups[futures[fut]] = fut.result()
+    if nRMS is not None:
+        if len(nRMS) != len(strains):
+            raise ValueError("One whitening-noise map is required per detector")
+        for setup in setups:
+            setup["nRMS"] = nRMS
     return setups
 
 
@@ -433,6 +420,4 @@ def _parallel_postprocess(config, ifos, event, cluster_out):
     event.Qveto = [min_qveto, min_qfactor]
     event.qveto = min_qveto
     event.qfactor = min_qfactor
-    logger.info(
-        "Qveto for event %s: %s, Qfactor: %s", event.hash_id, event.qveto, event.qfactor
-    )
+    logger.info("Qveto for event %s: %s, Qfactor: %s", event.hash_id, event.qveto, event.qfactor)

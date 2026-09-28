@@ -160,3 +160,74 @@ DETECTORS = {
         }
     }
 }
+
+
+# Literal vectors from cWB 6.4.6.9, wat/detector.cc, commit e03cf7f.
+CWB_VECTORS = {
+    "H1": (
+        (-2161414.928, -3834695.183, 4600350.224),
+        (-0.223891216, 0.799830697, 0.556905359),
+        (-0.913978490, 0.026095321, -0.404922650),
+    ),
+    "L1": (
+        (-74276.04192, -5496283.721, 3224257.016),
+        (-0.954574615, -0.141579994, -0.262187738),
+        (0.297740169, -0.487910627, -0.820544948),
+    ),
+}
+
+
+# "pycwb-1" versions the bundled LAL-derived geographic table above. It is
+# deliberately not a claim that these constants track an installed LAL version.
+DETECTOR_GEOMETRIES = {
+    f"{name}:lal@pycwb-1": {
+        "detector": name, "source": "lal", "version": "pycwb-1",
+        "parameters": parameters, "vectors": None,
+    }
+    for name, parameters in DETECTORS.items()
+}
+DETECTOR_GEOMETRIES.update({
+    f"{name}:cwb": {
+        "detector": name, "source": "cwb",
+        "parameters": DETECTORS[name], "vectors": vectors,
+    }
+    for name, vectors in CWB_VECTORS.items()
+})
+DETECTOR_GEOMETRY_ALIASES = {
+    f"{entry['detector']}:{entry['source']}": key
+    for key, entry in DETECTOR_GEOMETRIES.items() if entry["source"] == "lal"
+}
+
+
+def resolve_detector_geometry(name, selection=None, *, registry=None):
+    """Return a canonical, pinned registry ID for one instrument.
+
+    A mapping selects each detector independently. Missing entries use the
+    bundled LAL-derived geometry. Qualified names can also be used directly.
+    """
+    registry = DETECTOR_GEOMETRIES if registry is None else registry
+    base = name.split(":", 1)[0]
+    if isinstance(selection, dict):
+        selection = selection.get(base)
+    if ":" in name:
+        if selection is not None:
+            raise ValueError("Specify geometry in the detector name or selection, not both")
+        selection = name
+    if selection is None or selection == "lal":
+        selection = f"{base}:lal@pycwb-1"
+    selection = DETECTOR_GEOMETRY_ALIASES.get(selection, selection)
+    if selection not in registry:
+        raise ValueError(f"Unknown detector geometry: {selection}")
+    if registry[selection]["detector"] != base:
+        raise ValueError(f"Geometry {selection} does not belong to {base}")
+    return selection
+
+
+def resolve_detector_geometries(ifos, selections, *, registry=None):
+    """Fill defaults and pin aliases before recording a run configuration."""
+    if not isinstance(selections, dict):
+        raise ValueError("detector_geometry must map detector names to geometry IDs")
+    unknown = set(selections) - set(ifos)
+    if unknown:
+        raise ValueError(f"Geometry specified for inactive detectors: {sorted(unknown)}")
+    return {name: resolve_detector_geometry(name, selections, registry=registry) for name in ifos}

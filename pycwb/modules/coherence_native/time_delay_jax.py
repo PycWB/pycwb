@@ -1,6 +1,7 @@
 """JAX implementation of WDM time-delay max-energy."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging
@@ -18,6 +19,11 @@ from .time_delay_common import (
     time_series_length,
     validate_time_delay_inputs,
 )
+
+try:
+    from wdm_wavelet.core.t2w import t2w_jax_bounded_core as _bounded_t2w_jax_impl
+except ImportError:
+    _bounded_t2w_jax_impl = None
 
 try:
     from wdm_wavelet.core.t2w import _t2w_jax_impl as _wdm_t2w_jax_impl
@@ -57,7 +63,7 @@ if _HAS_JAX:
         new_val = ts[jnp.maximum(idx - k, 0)]
         return jnp.where(idx >= k, new_val, xx)
 
-    def _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode):
+    def _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode, bounded=False):
         """Transform time series to WDM TF map using JAX.
 
         Parameters are explicit scalars/arrays rather than a WDMWavelet object
@@ -66,9 +72,7 @@ if _HAS_JAX:
         if _wdm_t2w_jax_impl is None:
             # Fallback — only works outside JIT (ts_data must be concrete)
             filt_np = np.asarray(wavelet_filter)
-            m_l, _, tf_map = _wdm_t2w_jax(
-                int(wdm_M), int(wdm_m_H), np.asarray(ts_data), filt_np, int(mm_mode)
-            )
+            m_l, _, tf_map = _wdm_t2w_jax(int(wdm_M), int(wdm_m_H), np.asarray(ts_data), filt_np, int(mm_mode))
             return jnp.asarray(tf_map[0] + 1j * tf_map[1], dtype=jnp.complex128).T
 
         M = int(wdm_M)
@@ -88,21 +92,20 @@ if _HAS_JAX:
             idx = jnp.arange(left_mirror_max + 1, dtype=jnp.int32)
             extended_signal = extended_signal.at[n_filter_taps - idx].set(ts_data[idx])
 
-        extended_signal = extended_signal.at[
-            n_filter_taps : n_filter_taps + n_input
-        ].set(ts_data)
+        extended_signal = extended_signal.at[n_filter_taps : n_filter_taps + n_input].set(ts_data)
 
         n_right = ext_len - n_filter_taps - n_input
         if n_right > 0:
             idx = jnp.arange(n_right, dtype=jnp.int32)
-            extended_signal = extended_signal.at[n_filter_taps + n_input + idx].set(
-                ts_data[n_input - idx - 1]
-            )
+            extended_signal = extended_signal.at[n_filter_taps + n_input + idx].set(ts_data[n_input - idx - 1])
 
         # wavelet_filter may be a JAX dynamic array inside JIT — slice in JAX
         filter_taps = jnp.asarray(wavelet_filter, dtype=jnp.float64)[:n_filter_taps]
 
-        tf_map = _wdm_t2w_jax_impl(
+        if bounded and _bounded_t2w_jax_impl is None:
+            raise RuntimeError("Bounded JAX WDM requires the updated wdm-wavelet package")
+        kernel = _bounded_t2w_jax_impl if bounded else _wdm_t2w_jax_impl
+        tf_map = kernel(
             M=M,
             n_filter_taps=n_filter_taps,
             mm_eff=mm_eff,
@@ -114,16 +117,16 @@ if _HAS_JAX:
 
         return (tf_map[0] + 1j * tf_map[1]).T
 
-    def _w2t_data_jax(data_complex, wavelet, output_length):
+    def _w2t_data_jax(data_complex, wavelet, output_length, profile=DEFAULT_EXECUTION_PROFILE):
         n_freq = int(data_complex.shape[0])
-        flat = jnp.stack(
-            [jnp.real(data_complex).T, jnp.imag(data_complex).T], axis=0
-        ).reshape(-1)
+        flat = jnp.stack([jnp.real(data_complex).T, jnp.imag(data_complex).T], axis=0).reshape(-1)
         out = _wdm_w2t_jax(
-            np.asarray(flat),
+            flat,
             n_freq,
             np.asarray(wavelet.filter),
             output_length=int(output_length),
+            **({"bounded": True} if profile.wdm_bounded_jax_inverse else {}),
+            **({"deterministic": True} if profile.wdm_deterministic_jax_inverse else {}),
         )
         return jnp.asarray(out, dtype=jnp.float64)
 
@@ -142,9 +145,7 @@ if _HAS_JAX:
         J = M * T
 
         edge_v = jnp.asarray(edge, dtype=jnp.float64)
-        jb = (jnp.floor(edge_v * float(wavelet_rate) / 4.0)).astype(
-            jnp.int32
-        ) * jnp.int32(M)
+        jb = (jnp.floor(edge_v * float(wavelet_rate) / 4.0)).astype(jnp.int32) * jnp.int32(M)
         jb = jnp.maximum(jb, jnp.int32(4 * M))
         je = jnp.int32(J) - jb
 
@@ -266,6 +267,7 @@ if _HAS_JAX:
             "coeff_shape",
             "wdm_M",
             "wdm_m_H",
+            "bounded",
         ),
     )
     def _time_delay_max_energy_pattern_jit(
@@ -285,12 +287,11 @@ if _HAS_JAX:
         coeff_shape,
         wdm_M,
         wdm_m_H,
+        bounded=False,
     ):
         # wavelet_filter is a JAX dynamic array — never call WDMWavelet() here
-        base_data = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode)
-        current_max = _wdm_packet_energy_jax(
-            base_data, pattern, edge, wavelet_rate, f_low, f_high, df
-        )
+        base_data = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode, bounded)
+        current_max = _wdm_packet_energy_jax(base_data, pattern, edge, wavelet_rate, f_low, f_high, df)
 
         def cond_fn(state):
             k, _, _xx = state
@@ -301,22 +302,18 @@ if _HAS_JAX:
 
             # C++ cpf call 1: xx.cpf(ts, size-k, k, 0) — left-shift ts into xx
             xx = _cpf_left(xx, ts_data, k)
-            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode, bounded)
             cur = jnp.maximum(
                 cur,
-                _wdm_packet_energy_jax(
-                    tmp_left, pattern, edge, wavelet_rate, f_low, f_high, df
-                ),
+                _wdm_packet_energy_jax(tmp_left, pattern, edge, wavelet_rate, f_low, f_high, df),
             )
 
             # C++ cpf call 2: xx.cpf(ts, size-k, 0, k) — right-shift ts into tail of xx
             xx = _cpf_right(xx, ts_data, k)
-            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode, bounded)
             cur = jnp.maximum(
                 cur,
-                _wdm_packet_energy_jax(
-                    tmp_right, pattern, edge, wavelet_rate, f_low, f_high, df
-                ),
+                _wdm_packet_energy_jax(tmp_right, pattern, edge, wavelet_rate, f_low, f_high, df),
             )
 
             return k + downsample, cur, xx
@@ -340,6 +337,7 @@ if _HAS_JAX:
             "coeff_shape",
             "wdm_M",
             "wdm_m_H",
+            "bounded",
         ),
     )
     def _time_delay_max_energy_complex_jit(
@@ -353,9 +351,10 @@ if _HAS_JAX:
         wavelet_filter,
         wdm_M,
         wdm_m_H,
+        bounded=False,
     ):
         # wavelet_filter is a JAX dynamic array — never call WDMWavelet() here
-        base_data = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode)
+        base_data = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, ts_data, mm_mode, bounded)
         current_max_real = jnp.array(jnp.real(base_data))
         current_max_imag = jnp.array(jnp.imag(base_data))
 
@@ -368,13 +367,13 @@ if _HAS_JAX:
 
             # C++ cpf call 1: left-shift ts into xx
             xx = _cpf_left(xx, ts_data, k)
-            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            tmp_left = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode, bounded)
             cur_r = jnp.maximum(cur_r, jnp.real(tmp_left))
             cur_i = jnp.maximum(cur_i, jnp.imag(tmp_left))
 
             # C++ cpf call 2: right-shift ts into tail of xx
             xx = _cpf_right(xx, ts_data, k)
-            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode)
+            tmp_right = _t2w_data_jax(wdm_M, wdm_m_H, wavelet_filter, xx, mm_mode, bounded)
             cur_r = jnp.maximum(cur_r, jnp.real(tmp_right))
             cur_i = jnp.maximum(cur_i, jnp.imag(tmp_right))
 
@@ -453,9 +452,7 @@ if _HAS_JAX:
         n_freq = base_data.shape[0]
         freq_bins = jnp.arange(n_freq, dtype=jnp.float64) * df
 
-        current_max = _wdm_packet_energy_jax(
-            base_data, pattern, edge, wavelet_rate, f_low, f_high, df
-        )
+        current_max = _wdm_packet_energy_jax(base_data, pattern, edge, wavelet_rate, f_low, f_high, df)
 
         def cond_fn(state):
             k, _ = state
@@ -463,28 +460,20 @@ if _HAS_JAX:
 
         def body_fn(state):
             k, cur = state
-            phase = jnp.exp(
-                -1j * 2.0 * jnp.pi * freq_bins * (k.astype(jnp.float64) / sample_rate)
-            )
+            phase = jnp.exp(-1j * 2.0 * jnp.pi * freq_bins * (k.astype(jnp.float64) / sample_rate))
             shifted_pos = base_data * phase[:, None]
             cur = jnp.maximum(
                 cur,
-                _wdm_packet_energy_jax(
-                    shifted_pos, pattern, edge, wavelet_rate, f_low, f_high, df
-                ),
+                _wdm_packet_energy_jax(shifted_pos, pattern, edge, wavelet_rate, f_low, f_high, df),
             )
             shifted_neg = base_data * jnp.conj(phase)[:, None]
             cur = jnp.maximum(
                 cur,
-                _wdm_packet_energy_jax(
-                    shifted_neg, pattern, edge, wavelet_rate, f_low, f_high, df
-                ),
+                _wdm_packet_energy_jax(shifted_neg, pattern, edge, wavelet_rate, f_low, f_high, df),
             )
             return k + downsample, cur
 
-        _, current_max = jax.lax.while_loop(
-            cond_fn, body_fn, (jnp.int32(downsample), current_max)
-        )
+        _, current_max = jax.lax.while_loop(cond_fn, body_fn, (jnp.int32(downsample), current_max))
 
         # C++ zeros layer 0 only: after wdmPacket's resize+reset, M=tmp.maxLayer()+1=1,
         # so getLayer(xx,M-1=0) zeroes layer 0 again — the actual last layer is NOT zeroed.
@@ -497,33 +486,23 @@ if _HAS_JAX:
 else:
 
     def _time_delay_max_energy_pattern_jit(*args, **kwargs):
-        raise RuntimeError(
-            f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
     def _time_delay_max_energy_complex_jit(*args, **kwargs):
-        raise RuntimeError(
-            f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
     def _time_delay_max_energy_phase_jit(*args, **kwargs):
-        raise RuntimeError(
-            f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
     def _wdm_packet_energy_jax(*args, **kwargs):
-        raise RuntimeError(
-            f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
     def _w2t_data_jax(*args, **kwargs):
-        raise RuntimeError(
-            f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"JAX is required for time_delay_max_energy but is unavailable: {_JAX_IMPORT_ERROR}")
 
 
 def time_delay_max_energy(
-    tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None
+    tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, profile=DEFAULT_EXECUTION_PROFILE
 ):
     """
     Compute the delayed max-energy map for a TF series.
@@ -548,9 +527,7 @@ def time_delay_max_energy(
     validate_time_delay_inputs(tf_map, dt, downsample, require_wavelet_api=True)
 
     if not _HAS_JAX:
-        raise RuntimeError(
-            f"time_delay_max_energy JAX JIT path requires JAX/JAXLIB: {_JAX_IMPORT_ERROR}"
-        )
+        raise RuntimeError(f"time_delay_max_energy JAX JIT path requires JAX/JAXLIB: {_JAX_IMPORT_ERROR}")
 
     len_ts = time_series_length(tf_map)
 
@@ -559,9 +536,7 @@ def time_delay_max_energy(
     if getattr(tf_map, "ts_data", None) is not None:
         ts_data = jnp.asarray(tf_map.ts_data, dtype=jnp.float64)
     else:
-        ts_data = _w2t_data_jax(
-            jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts
-        )
+        ts_data = _w2t_data_jax(jnp.asarray(tf_map.data, dtype=jnp.complex128), tf_map.wavelet, len_ts, profile)
 
     data_shape = np.asarray(tf_map.data).shape
     n_freq = int(data_shape[0])
@@ -581,9 +556,7 @@ def time_delay_max_energy(
     # TracerArrayConversionError that occurs when WDMWavelet() is constructed
     # inside a jax.jit-traced function (its __post_init__ calls np.asarray on
     # a JAX-produced filter array).
-    wavelet_filter_jax = jnp.asarray(
-        np.asarray(tf_map.wavelet.filter), dtype=jnp.float64
-    )
+    wavelet_filter_jax = jnp.asarray(np.asarray(tf_map.wavelet.filter), dtype=jnp.float64)
 
     if pattern_int:
         f_low, f_high = frequency_bounds(tf_map, n_freq)
@@ -605,6 +578,7 @@ def time_delay_max_energy(
             tuple(np.asarray(tf_map.data).shape),
             wdm_M,
             wdm_m_H,
+            bounded=profile.bounded_jax_max_energy,
         )
 
         new_tf_map = dataclasses.replace(tf_map, data=np.asarray(current_max))
@@ -622,6 +596,7 @@ def time_delay_max_energy(
         wavelet_filter_jax,
         wdm_M,
         wdm_m_H,
+        bounded=profile.bounded_jax_max_energy,
     )
 
     new_tf_map = dataclasses.replace(tf_map, data=np.asarray(max_complex))

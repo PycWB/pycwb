@@ -105,7 +105,7 @@ where :math:`n_{valid}` counts sky directions with :math:`|f_+| > \gamma_{reg}`.
 Sky Scan
 --------
 
-The sky scan (:py:func:`pycwb.modules.likelihoodWP.sky_scan.scan_sky_for_best_fit`)
+The sky scan (:py:func:`pycwb.modules.likelihoodWP.sky_scan.scan_sky`)
 is the computational core of the likelihood pipeline. For each HEALPix sky
 direction (parallelized with Numba ``prange``):
 
@@ -374,7 +374,7 @@ Likelihood Pipeline Flow
         ▼
    evaluate_fragment_clusters()  ← per-cluster loop
         │
-        ├── scan_sky_for_best_fit()        ← Numba-parallel sky scan
+        ├── scan_sky()        ← Numba-parallel sky scan
         │     └── compute_statistics_at_sky_position()
         │           ├── DPF projection
         │           ├── time-delay apply

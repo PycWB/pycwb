@@ -3,257 +3,210 @@ JSON schema for validating and completing user parameters,
 and will also be used to generate the documentation
 """
 
+from .execution_profile import PROFILE_SCHEMA
+
 NIFO_MAX = 8
 
 # todo: split object into sections, and flatten them before validation
 schema = {
     "type": "object",
     "properties": {
-        "outputDir": {
-            "type": "string",
-            "description": "output directory",
-            "default": "output",
-            "cwb": False
-        },
-        "logDir": {
-            "type": "string",
-            "description": "log directory",
-            "default": "log",
-            "cwb": False
-        },
-        "catalog_dir": {
-            "type": "string",
-            "description": "catalog directory",
-            "default": "catalog",
-            "cwb": False
-        },
-        "trigger_dir": {
-            "type": "string",
-            "description": "trigger directory",
-            "default": "trigger",
-            "cwb": False
-        },
-        "plot_trigger": {
+        "execution_profile": PROFILE_SCHEMA,
+        "coherence_timing": {
             "type": "boolean",
-            "description": "plot triggers",
             "default": False,
-            "cwb": False
+            "description": "Log detailed coherence setup timings.",
+            "cwb": False,
         },
+        "outputDir": {"type": "string", "description": "output directory", "default": "output", "cwb": False},
+        "logDir": {"type": "string", "description": "log directory", "default": "log", "cwb": False},
+        "catalog_dir": {"type": "string", "description": "catalog directory", "default": "catalog", "cwb": False},
+        "trigger_dir": {"type": "string", "description": "trigger directory", "default": "trigger", "cwb": False},
+        "plot_trigger": {"type": "boolean", "description": "plot triggers", "default": False, "cwb": False},
         "cwb_compare": {
             "type": "boolean",
             "description": "if true, export raw (injected) data as GWF files and generate an equivalent "
-                           "user_parameters.C for each sub_job_seg so the run can be reproduced with cWB ROOT. "
-                           "The comparison workdir is placed under <working_dir>/cwb_compare/.",
+            "user_parameters.C for each sub_job_seg so the run can be reproduced with cWB ROOT. "
+            "The comparison workdir is placed under <working_dir>/cwb_compare/.",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
         "cwb_compare_dir": {
             "type": "string",
-            "description": "base directory for cWB comparison working directories "
-                           "(default: <working_dir>/cwb_compare)",
+            "description": "base directory for cWB comparison working directories (default: <working_dir>/cwb_compare)",
             "default": "",
-            "cwb": False
+            "cwb": False,
         },
         "save_waveform": {
             "type": "boolean",
             "description": "save waveform from triggers",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
         "save_waveform_format": {
             "enum": ["txt", "hdf"],
             "description": "format to save waveform from triggers, options are: 'txt' and 'hdf'",
-            "default": "hdf"
+            "default": "hdf",
         },
         "plot_waveform": {
             "type": "boolean",
             "description": "plot waveform from triggers",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
-        "save_injection": {
-            "type": "boolean",
-            "description": "save injected waveform",
-            "default": False,
-            "cwb": False
-        },
-        "plot_injection": {
-            "type": "boolean",
-            "description": "plot injected waveform",
-            "default": False,
-            "cwb": False
-        },
-        "save_cluster": {
-            "type": "boolean",
-            "description": "save cluster to json",
-            "default": True,
-            "cwb": False
-        },
-        "save_sky_map": {
-            "type": "boolean",
-            "description": "save sky maps to json",
-            "default": False,
-            "cwb": False
-        },
-        "plot_sky_map": {
-            "type": "boolean",
-            "description": "plot sky maps",
-            "default": False,
-            "cwb": False
-        },
+        "save_injection": {"type": "boolean", "description": "save injected waveform", "default": False, "cwb": False},
+        "plot_injection": {"type": "boolean", "description": "plot injected waveform", "default": False, "cwb": False},
+        "save_cluster": {"type": "boolean", "description": "save cluster to json", "default": True, "cwb": False},
+        "save_sky_map": {"type": "boolean", "description": "save sky maps to json", "default": False, "cwb": False},
+        "plot_sky_map": {"type": "boolean", "description": "plot sky maps", "default": False, "cwb": False},
         "compress_output_json": {
             "type": "boolean",
             "description": "compress output json",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
         "segment_processer": {
             "type": "string",
             "description": "main segment processer function for the analysis, the arguments for the function are: func(working_dir, config, job_seg, **kwargs)",
             "default": "pycwb.workflow.subflow.process_job_segment_native.process_job_segment",
-            "cwb": False
+            "cwb": False,
         },
         "use_root_supercluster": {
             "type": "boolean",
             "description": "use cwb supercluster, if false use python version",
             "default": True,
-            "cwb": False
+            "cwb": False,
         },
-        "nproc": {
-            "type": "integer",
-            "description": "number of processes",
-            "default": 1,
-            "cwb": False
-        },
+        "nproc": {"type": "integer", "description": "number of processes", "default": 1, "cwb": False},
         "cluster": {
             "type": "string",
             "description": "cluster type for batch processing (condor or slurm)",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "conda_env": {
             "type": "string",
             "description": "conda environment name for batch jobs",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "conda_init": {
             "type": "string",
             "description": "conda init command to source before conda activate in batch job scripts",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "additional_init": {
             "type": "string",
             "description": "additional initialization commands for batch jobs",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "accounting_group": {
             "type": "string",
             "description": "accounting group for HTCondor batch jobs",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "job_per_worker": {
             "type": "integer",
             "description": "number of jobs per worker in batch processing",
             "default": 1,
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "job_memory": {
             "type": "string",
             "description": "memory allocation for batch jobs (e.g., '6GB')",
             "default": "6GB",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "job_disk": {
             "type": "string",
             "description": "disk allocation for batch jobs (e.g., '8GB')",
             "default": "8GB",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "container_image": {
             "type": "string",
             "description": "container image for HTCondor batch jobs",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "should_transfer_files": {
             "type": "boolean",
             "description": "whether to transfer files in HTCondor batch jobs",
             "default": False,
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "job_walltime": {
             "type": "string",
             "description": "wall-clock time limit per SLURM job (e.g., '72:00:00')",
             "default": "72:00:00",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "slurm_constraint": {
             "type": "string",
             "description": "SLURM --constraint value (e.g., 'skylake')",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "slurm_partition": {
             "type": "string",
             "description": "SLURM --partition value (e.g., 'ligo')",
             "default": "",
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "n_retries": {
             "type": "integer",
             "description": "number of application-level retries per job (SLURM) or DAG retries (HTCondor)",
             "default": 5,
             "cwb": False,
-            "category": "job_submission"
+            "category": "job_submission",
         },
         "skip_no_injection": {
             "type": "boolean",
             "description": "skip jobs without injection",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
         "parallel_injection_trail": {
             "type": "boolean",
             "description": "flatten job segments by injection trial index for parallel processing",
             "default": False,
-            "cwb": False
+            "cwb": False,
         },
         "parallel_lag_workers": {
             "type": "integer",
             "description": "number of background lags to compute concurrently inside one native segment worker",
             "default": 1,
             "minimum": 1,
-            "cwb": False
+            "cwb": False,
         },
         "parallel_lag_inner_threads": {
             "type": ["integer", "null"],
             "description": "Numba threads per threaded background lag worker; null derives from nproc / parallel_lag_workers",
             "default": None,
             "minimum": 1,
-            "cwb": False
+            "cwb": False,
         },
         "max_energy_backend": {
             "enum": ["jax", "numba", "auto"],
             "description": "backend used by coherence setup for time-delay max-energy maps; auto uses numba for middle WDM resolutions and JAX for endpoint resolutions",
             "default": "jax",
-            "cwb": False
+            "cwb": False,
         },
         "injection": {
             "type": "object",
@@ -264,7 +217,7 @@ schema = {
                 "phi_geo/theta_cwb. Legacy numeric phi/theta plus unit is deprecated."
             ),
             "default": {},
-            "cwb": False
+            "cwb": False,
         },
         "sky_mask": {
             "type": "object",
@@ -282,48 +235,48 @@ schema = {
                 "If omitted, all sky directions are evaluated."
             ),
             "default": None,
-            "cwb": False
+            "cwb": False,
         },
         "gps_start": {
             "type": "number",
             "description": "start gps time, used together with gps_end for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "gps_end": {
             "type": "number",
             "description": "end gps time, used together with gps_start for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "gps_center": {
             "type": "number",
             "description": "center gps time, used together with time_left and time_right for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "time_left": {
             "type": "number",
             "description": "left time offset from gps_center, used together with gps_center and time_right for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "time_right": {
             "type": "number",
             "description": "right time offset from gps_center, used together with gps_center and time_left for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "superevent": {
             "type": "string",
             "description": "superevent name, used together with time_left and time_right for generating job segments",
-            "cwb": False
+            "cwb": False,
         },
         "gwdatafind": {
             "type": "object",
             "description": "If the gwdatafind is set, the framefiles can be pulled from the LIGO data server, "
-                           "the support keys are: site, frametype, host. Example: ",
-                           "     site: ['L','H']"
-                           "     frametype: ['L1_HOFT_C00','H1_HOFT_C00']"
-                           "     host: 'datafind.igwn.org'"
-                           "     urltype: 'osdf'"
+            "the support keys are: site, frametype, host. Example: ",
+            "     site: ['L','H']"
+            "     frametype: ['L1_HOFT_C00','H1_HOFT_C00']"
+            "     host: 'datafind.igwn.org'"
+            "     urltype: 'osdf'"
             "default": {},
-            "cwb": False
+            "cwb": False,
         },
         "WDM_beta_order": {
             "type": "integer",
@@ -358,7 +311,7 @@ schema = {
         "REGRESSION_SOLVE_EIGEN_THR": {
             "type": "number",
             "description": "regression parameters",
-            "default": 0.,
+            "default": 0.0,
         },
         "REGRESSION_SOLVE_EIGEN_NUM": {
             "type": "integer",
@@ -375,95 +328,60 @@ schema = {
             "description": "regression parameters",
             "default": 0.8,
         },
-        "analysis": {
-            "enum": ["1G", "2G"],
-            "description": "true/false -> online/offline",
-            "default": "2G"
-        },
+        "analysis": {"enum": ["1G", "2G"], "description": "true/false -> online/offline", "default": "2G"},
         "cfg_search": {
-            "enum": ["r", "i", "p", "l", "s", "c", "g", "e", "b",
-                     "R", "I", "P", "L", "S", "C", "G", "E", "B"],
+            "enum": ["r", "i", "p", "l", "s", "c", "g", "e", "b", "R", "I", "P", "L", "S", "C", "G", "E", "B"],
             "description": "see description below",
-            "default": "r"
+            "default": "r",
         },
         "Search": {
             "enum": ["", "CBC", "BBH", "IMBHB"],
             "description": "2G pipeline: If equals '' then it is ignored by the 2G pipeline"
-                           " (default, back compatibility), Available values are: ''/CBC/BBH/IMBHB. "
-                           "If equals CBC/BBH/IMBHB then the chirp line is added to the CED l_tfmap_scalogram,"
-                           " moreover when netRHO<0 (rho0.XGB) than the chirp mass is computed"
-                           " only if Search=CBC/BBH/IMBHB ",
-            "default": ""
+            " (default, back compatibility), Available values are: ''/CBC/BBH/IMBHB. "
+            "If equals CBC/BBH/IMBHB then the chirp line is added to the CED l_tfmap_scalogram,"
+            " moreover when netRHO<0 (rho0.XGB) than the chirp mass is computed"
+            " only if Search=CBC/BBH/IMBHB ",
+            "default": "",
         },
-        "online": {
-            "type": "boolean",
-            "description": "true/false -> online/offline",
-            "default": False
-        },
-        "optim": {
-            "type": "boolean",
-            "description": "true -> optimal resolution likelihood analysis",
-            "default": False
-        },
-        "fLow": {
-            "type": "number",
-            "description": "low frequency of the search",
-            "default": 64.
-        },
-        "fHigh": {
-            "type": "number",
-            "description": "high frequency of the search",
-            "default": 2048.
-        },
+        "online": {"type": "boolean", "description": "true/false -> online/offline", "default": False},
+        "optim": {"type": "boolean", "description": "true -> optimal resolution likelihood analysis", "default": False},
+        "fLow": {"type": "number", "description": "low frequency of the search", "default": 64.0},
+        "fHigh": {"type": "number", "description": "high frequency of the search", "default": 2048.0},
         "ifo": {
             "type": "array",
-            "items": {
-                "type": "string"
-            },
+            "items": {"type": "string"},
             "uniqueItems": True,
             "description": "ifo[] can be redefined by user",
-            "default": ["L1", "H1", "V1", "I1", "J1", "G1"]
+            "default": ["L1", "H1", "V1", "I1", "J1", "G1"],
         },
-        "nIFO": {
-            "type": "integer",
-            "description": "number of interferometers",
-            "default": NIFO_MAX
+        "nIFO": {"type": "integer", "description": "number of interferometers", "default": NIFO_MAX},
+        "detector_definitions_file": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "description": "JSON geometry definitions, resolved relative to the configuration YAML",
+            "default": None,
         },
-        "refIFO": {
-            "type": "string",
-            "description": "reference IFO",
-            "default": "L1"
+        "detector_geometry": {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "description": "Per-detector registry IDs, e.g. H1: H1:cwb; omitted detectors use the bundled LAL-derived geometry",
+            "default": {},
         },
+        "refIFO": {"type": "string", "description": "reference IFO", "default": "L1"},
         "select_subrho": {
             "type": "number",
             "description": "subrho netcluster select function threshold (coherence)",
-            "default": 5.0
+            "default": 5.0,
         },
         "select_subnet": {
             "type": "number",
             "description": "subnet netcluster select function threshold (coherence)",
-            "default": 0.1
+            "default": 0.1,
         },
-        "bpp": {
-            "type": "number",
-            "description": "probability for black pixel selection (netpixel)",
-            "default": 0.001
-        },
-        "fResample": {
-            "type": "number",
-            "description": "if zero resampling is not applied",
-            "default": 0
-        },
-        "inRate": {
-            "type": "integer",
-            "description": "input data rate",
-            "default": 16384
-        },
-        "dcCal": {
-            "type": "array",
-            "description": "DC corrections",
-            "default": [1.0] * NIFO_MAX
-        },
+        "bpp": {"type": "number", "description": "probability for black pixel selection (netpixel)", "default": 0.001},
+        "fResample": {"type": "number", "description": "if zero resampling is not applied", "default": 0},
+        "inRate": {"type": "integer", "description": "input data rate", "default": 16384},
+        "dcCal": {"type": "array", "description": "DC corrections", "default": [1.0] * NIFO_MAX},
         "EFEC": {
             "type": "boolean",
             "description": "Earth Fixed / Selestial coordinates",
@@ -478,23 +396,23 @@ schema = {
         "pattern": {
             "type": "integer",
             "description": "select pixel pattern used to produce the energy max maps for pixel's selection \n"
-                           'patterns: "/" - ring-up, "\\" - ring-down, "|" - delta, "-" line, "*" - single \n'
-                           'pattern =  0 - "*"   1-pixel  standard search \n'
-                           'pattern =  1 - "3|"  3-pixels vertical packet (delta) \n'
-                           'pattern =  2 - "3-"  3-pixels horizontal packet (line) \n'
-                           'pattern =  3 - "3/"  3-pixels diagonal packet (ring-up) \n'
-                           'pattern =  4 - "3\"  3-pixels anti-diagonal packet (ring-down) \n'
-                           'pattern =  5 - "5/"  5-pixels diagonal packet (ring-up) \n'
-                           'pattern =  6 - "5\"  5-pixels anti-diagonal packet (ring-down) \n'
-                           'pattern =  7 - "3+"  5-pixels plus packet (plus) \n'
-                           'pattern =  8 - "3x"  5-pixels cross packet (cross) \n'
-                           'pattern =  9 - "9p"  9-pixels square packet (box) \n'
-                           'pattern = else - "*" 1-pixel  packet (single) \n'
-                           '------------------------------------------------------------------------------------ \n'
-                           'pattern==0                   Standard Search : std-pixel    selection + likelihood2G \n'
-                           'pattern!=0 && pattern<0      Mixed    Search : packet-pixel selection + likelihood2G  \n'
-                           'pattern!=0 && pattern>0      Packed   Search : packet-pixel selection + likelihoodWP \n',
-            "default": 0
+            'patterns: "/" - ring-up, "\\" - ring-down, "|" - delta, "-" line, "*" - single \n'
+            'pattern =  0 - "*"   1-pixel  standard search \n'
+            'pattern =  1 - "3|"  3-pixels vertical packet (delta) \n'
+            'pattern =  2 - "3-"  3-pixels horizontal packet (line) \n'
+            'pattern =  3 - "3/"  3-pixels diagonal packet (ring-up) \n'
+            'pattern =  4 - "3"  3-pixels anti-diagonal packet (ring-down) \n'
+            'pattern =  5 - "5/"  5-pixels diagonal packet (ring-up) \n'
+            'pattern =  6 - "5"  5-pixels anti-diagonal packet (ring-down) \n'
+            'pattern =  7 - "3+"  5-pixels plus packet (plus) \n'
+            'pattern =  8 - "3x"  5-pixels cross packet (cross) \n'
+            'pattern =  9 - "9p"  9-pixels square packet (box) \n'
+            'pattern = else - "*" 1-pixel  packet (single) \n'
+            "------------------------------------------------------------------------------------ \n"
+            "pattern==0                   Standard Search : std-pixel    selection + likelihood2G \n"
+            "pattern!=0 && pattern<0      Mixed    Search : packet-pixel selection + likelihood2G  \n"
+            "pattern!=0 && pattern>0      Packed   Search : packet-pixel selection + likelihoodWP \n",
+            "default": 0,
         },
         "BATCH": {
             "type": "integer",
@@ -509,9 +427,9 @@ schema = {
         "nSky": {
             "type": "integer",
             "description": "if nSky>0 -> # of skymap prob pixels dumped to ascii \n "
-                           "if nSky=0 -> (#pixels==1000 || cum prob > 0.99) \n "
-                           "if nSky<0 -> nSky=-XYZ... save all pixels with prob < 0.XYZ...",
-            "default": 0
+            "if nSky=0 -> (#pixels==1000 || cum prob > 0.99) \n "
+            "if nSky<0 -> nSky=-XYZ... save all pixels with prob < 0.XYZ...",
+            "default": 0,
         },
         "subnet": {
             "type": "number",
@@ -536,12 +454,12 @@ schema = {
         "subrho": {
             "type": "number",
             "description": "sub network threshold in the skyloop subNetCuts, if <=0 then subrho=netRHO (supercluster) ",
-            "default": 0.0
+            "default": 0.0,
         },
         "subacor": {
             "type": "number",
             "description": "sub network threshold in the skyloop subNetCuts, if<=0 then subacor=Acore (supercluster) ",
-            "default": 0.0
+            "default": 0.0,
         },
         "netRHO": {
             "type": "number",
@@ -553,30 +471,22 @@ schema = {
             "description": "If True, use XGBoost rho0 statistics (XGB.rho0 mode) instead of the original 2G coherent SNR statistic. Replaces the deprecated convention of setting netRHO < 0.",
             "default": False,
         },
-        "netCC": {
-            "type": "number",
-            "description": "network correlation (supercluster, likelihood)",
-            "default": 0.5
-        },
+        "netCC": {"type": "number", "description": "network correlation (supercluster, likelihood)", "default": 0.5},
         "Acore": {
             "type": "number",
             "description": "threshold of core pixels (supercluster, likelihood)",
-            "default": 2 ** 0.5
+            "default": 2**0.5,
         },
-        "Tgap": {
-            "type": "number",
-            "description": "defragmentation time gap between clusters (sec)",
-            "default": 3.0
-        },
+        "Tgap": {"type": "number", "description": "defragmentation time gap between clusters (sec)", "default": 3.0},
         "Fgap": {
             "type": "number",
             "description": "defragmentation frequency gap between clusters (Hz)",
-            "default": 130.
+            "default": 130.0,
         },
         "TFgap": {
             "type": "number",
             "description": "threshold on the time-frequency separation between two pixels",
-            "default": 6.
+            "default": 6.0,
         },
         "delta": {
             "type": "number",
@@ -592,283 +502,159 @@ schema = {
             "minimum": -1,
             "maximum": 1,
         },
-        "Theta1": {
-            "type": "number",
-            "description": "start theta",
-            "default": 0.0
-        },
+        "Theta1": {"type": "number", "description": "start theta", "default": 0.0},
         "Theta2": {
             "type": "number",
             "description": "stop theta",
-            "default": 180.,
+            "default": 180.0,
         },
-        "Phi1": {
-            "type": "number",
-            "description": "start phi",
-            "default": 0.0
-        },
+        "Phi1": {"type": "number", "description": "start phi", "default": 0.0},
         "Phi2": {
             "type": "number",
             "description": "stop phi",
-            "default": 360.,
+            "default": 360.0,
         },
-        "cedRHO": {
-            "type": "number",
-            "description": "cedRHO",
-            "default": 4.0
-        },
-        "skyMaskFile": {
-            "type": "string",
-            "description": "sky mask file",
-            "default": ""
-        },
-        "skyMaskCCFile": {
-            "type": "string",
-            "description": "sky mask file",
-            "default": ""
-        },
-        "segLen": {
-            "type": "number",
-            "description": "Segment length [sec]",
-            "default": 600.
-        },
-        "segMLS": {
-            "type": "number",
-            "description": "Minimum Segment Length after DQ_CAT1 [sec]",
-            "default": 300.
-        },
+        "cedRHO": {"type": "number", "description": "cedRHO", "default": 4.0},
+        "skyMaskFile": {"type": "string", "description": "sky mask file", "default": ""},
+        "skyMaskCCFile": {"type": "string", "description": "sky mask file", "default": ""},
+        "segLen": {"type": "number", "description": "Segment length [sec]", "default": 600.0},
+        "segMLS": {"type": "number", "description": "Minimum Segment Length after DQ_CAT1 [sec]", "default": 300.0},
         "segTHR": {
             "type": "number",
             "description": "Minimum Segment Length after DQ_CAT2 [sec] (to disable put segTHR=0)",
-            "default": 30.
+            "default": 30.0,
         },
-        "segEdge": {
-            "type": "number",
-            "description": "wavelet boundary offset [sec]",
-            "default": 8.
-        },
-        "segOverlap": {
-            "type": "number",
-            "description": "overlap between job segments [sec]",
-            "default": 0.
-        },
-        "lagSize": {
-            "type": "integer",
-            "description": "number of lags (simulation:1)",
-            "default": 1
-        },
-        "lagStep": {
-            "type": "number",
-            "description": "[sec] time interval between lags",
-            "default": 1.
-        },
-        "lagOff": {
-            "type": "integer",
-            "description": "first lag id (lagOff=0 - include zero lag )",
-            "default": 6
-        },
-        "lagMax": {
-            "type": "number",
-            "description": "0/>0 -  standard/extended lags",
-            "default": 150
-        },
-        "lagMode": {
-            "enum": ["w", "r"],
-            "description": "w/r  -  write/read lag list",
-            "default": "w"
-        },
+        "segEdge": {"type": "number", "description": "wavelet boundary offset [sec]", "default": 8.0},
+        "segOverlap": {"type": "number", "description": "overlap between job segments [sec]", "default": 0.0},
+        "lagSize": {"type": "integer", "description": "number of lags (simulation:1)", "default": 1},
+        "lagStep": {"type": "number", "description": "[sec] time interval between lags", "default": 1.0},
+        "lagOff": {"type": "integer", "description": "first lag id (lagOff=0 - include zero lag )", "default": 6},
+        "lagMax": {"type": "number", "description": "0/>0 -  standard/extended lags", "default": 150},
+        "lagMode": {"enum": ["w", "r"], "description": "w/r  -  write/read lag list", "default": "w"},
         "lagSite": {
             "type": "integer",
             "description": "site index starting with 0",
             "default": None,
         },
-        "lagFile": {
-            "type": "string",
-            "description": "slag file list",
-            "default": None
-        },
+        "lagFile": {"type": "string", "description": "slag file list", "default": None},
         "slagSize": {
             "type": "integer",
             "description": "number of super lags (simulation=1) - if slagSize=0 -> Standard Segments",
-            "default": 0
+            "default": 0,
         },
         "slagMin": {
             "type": "integer",
             "description": "select the minimum available slag distance : slagMin must be <= slagMax",
-            "default": 0
+            "default": 0,
         },
-        "slagMax": {
-            "type": "integer",
-            "description": "select the maximum available slag distance",
-            "default": 0
-        },
-        "slagOff": {
-            "type": "integer",
-            "description": "first slag id (slagOff=0 - include zero slag )",
-            "default": 0
-        },
-        "channelNamesRaw": {
-            "type": "array",
-            "description": "channel names for raw data",
-            "default": []
-        },
-        "channelNamesMDC": {
-            "type": "array",
-            "description": "channel names for MDC data",
-            "default": []
-        },
-        "frFiles": {
-            "type": "array",
-            "default": []
-        },
-        "DQF": {
-            "type": "array",
-            "c_type": "dqfile",
-            "default": []
-        },
-        "nDQF": {
-            "type": "integer",
-            "default": NIFO_MAX
-        },
-        "iwindow": {
-            "type": "number",
-            "description": "injection time window (Tinj +/- iwindow/2)",
-            "default": 5.0
-        },
-        "gap": {
-            "type": "number",
-            "description": "alias of iwindow",
-            "default": 5.0
-        },
+        "slagMax": {"type": "integer", "description": "select the maximum available slag distance", "default": 0},
+        "slagOff": {"type": "integer", "description": "first slag id (slagOff=0 - include zero slag )", "default": 0},
+        "channelNamesRaw": {"type": "array", "description": "channel names for raw data", "default": []},
+        "channelNamesMDC": {"type": "array", "description": "channel names for MDC data", "default": []},
+        "frFiles": {"type": "array", "default": []},
+        "DQF": {"type": "array", "c_type": "dqfile", "default": []},
+        "nDQF": {"type": "integer", "default": NIFO_MAX},
+        "iwindow": {"type": "number", "description": "injection time window (Tinj +/- iwindow/2)", "default": 5.0},
+        "gap": {"type": "number", "description": "alias of iwindow", "default": 5.0},
         "analyze_injection_only": {
             "type": "boolean",
             "description": "If true, only analyse time periods around injected signals (signal duration + injection_padding). Incompatible with lag_size > 1.",
-            "default": False
+            "default": False,
         },
         "injection_padding": {
             "type": "number",
             "description": "Padding in seconds added to each side of the injection signal window when analyze_injection_only is enabled.",
-            "default": 1.0
+            "default": 1.0,
         },
-        "l_low": {
-            "type": "integer",
-            "description": "low frequency resolution level (2^l_low Hz)",
-            "default": 3
-        },
-        "l_high": {
-            "type": "integer",
-            "description": "high frequency resolution level (2^l_high Hz)",
-            "default": 8
-        },
+        "l_low": {"type": "integer", "description": "low frequency resolution level (2^l_low Hz)", "default": 3},
+        "l_high": {"type": "integer", "description": "high frequency resolution level (2^l_high Hz)", "default": 8},
         "l_white": {
             "type": "integer",
             "description": "whitening frequency resolution level (2^l_white Hz), if 0 then l_white=l_high",
-            "default": 0
+            "default": 0,
         },
         "whiteWindow": {
             "type": "number",
             "description": "[sec] time window dT. if = 0 - dT=T, where T is segment duration. If whiteMethod='mesa', controls the MESA nRMS estimate (no values other than 60 have been tested in this context)",
-            "default": 60.
+            "default": 60.0,
         },
         "whiteStride": {
             "type": "number",
             "description": "[sec] noise sampling time stride. If whiteMethod='mesa', controls the MESA nRMS estimate (no values other than 20 have been tested in this context)",
-            "default": 20.
+            "default": 20.0,
         },
         "mesaSolver": {
             "type": "string",
-            "description": "method used to solve Levinson Recursion ['Fast'] or ['Standard']. Only needed if whiteMethod is 'MESA'", 
-            "default": 'Fast'
+            "description": "method used to solve Levinson Recursion ['Fast'] or ['Standard']. Only needed if whiteMethod is 'MESA'",
+            "default": "Fast",
         },
         "mesaOrder": {
-            "type": "number", 
-            "description": "Maximum Autoregressive order for the Lenvinson Recursion", 
-            "default": 800.
+            "type": "number",
+            "description": "Maximum Autoregressive order for the Lenvinson Recursion",
+            "default": 800.0,
         },
         "mesaHalfSeg": {
-            "type": "number", 
-            "description": "half - 1 size of the number of PSD over which the median over which the median is computed. If < 1, no median is applied", 
-            "default": 4
+            "type": "number",
+            "description": "half - 1 size of the number of PSD over which the median over which the median is computed. If < 1, no median is applied",
+            "default": 4,
         },
         "mesaWindow": {
-            "type": "number", 
-            "description": "window length [sec] used to compute MESA PSD estimates", 
-            "default": 15 
+            "type": "number",
+            "description": "window length [sec] used to compute MESA PSD estimates",
+            "default": 15,
         },
         "mesaStride": {
-            "type": "number", 
-            "description": "stride length [sec] between two consecutive MESA PSD estimates. Should be mesaWindow / 3", 
-            "default": 5
+            "type": "number",
+            "description": "stride length [sec] between two consecutive MESA PSD estimates. Should be mesaWindow / 3",
+            "default": 5,
         },
         "whiteMethod": {
             "type": "string",
-            "description": "Sets what type of whitening has to be used. if 'wavelet' WDM time-frequency domain is applied. if 'mesa', it whitens with a PSD estimate given by mesa in the frequency domain. If 'mixed', the whitening is performed in time frequency domain but the nRMS is substitued with a MESA estimate for the coefficients", 
-            "default": "wavelet"
+            "description": "Sets what type of whitening has to be used. if 'wavelet' WDM time-frequency domain is applied. if 'mesa', it whitens with a PSD estimate given by mesa in the frequency domain. The native pipeline also accepts 'python' as a synonym for 'wavelet'. 'mixed' is not supported by the conditioning dispatchers.",
+            "default": "wavelet",
         },
-        "mesaReindex": { 
-            "type": "boolean", 
+        "mesaReindex": {
+            "type": "boolean",
             "description": "If True, Computes possible PSDs outliers that might affect PSDs via Isolation Forest and substitute them with closest in time estimate",
-            "default": True
+            "default": True,
         },
-        "simulation": {
-            "type": "string",
-            "default": None
-        },
-        "nfactor": {
-            "type": "number",
-            "description": "number of simulation factors",
-            "default": 0
-        },
+        "simulation": {"type": "string", "default": None},
+        "nfactor": {"type": "number", "description": "number of simulation factors", "default": 0},
         "factors": {
             "type": "array",
-            "items": {
-                "type": "number"
-            },
+            "items": {"type": "number"},
             "description": "array of simulation factors (when sim=4 factors[0] is used as offset [must be int])",
-            "default": []
+            "default": [],
         },
         "levelR": {
             "type": "integer",
             "description": "resampling level : inRate[fResample]/(2^levelR) Hz",
-            "default": 2
+            "default": 2,
         },
         "healpix": {
             "type": "number",
             "description": "if not 0 use healpix sky map (number of sky pixels = 12*pow(4,healpix))",
-            "default": 7
+            "default": 7,
         },
-        "plugin": {
-            "type": "string",
-            "c_type": "TMacro",
-            "default": ""
-        },
-        "configPlugin": {
-            "type": "string",
-            "c_type": "TMacro",
-            "default": ""
-        },
+        "plugin": {"type": "string", "c_type": "TMacro", "default": ""},
+        "configPlugin": {"type": "string", "c_type": "TMacro", "default": ""},
         "filter_dir": {
             "type": "string",
             "description": "filter directory, defaults to environment HOME_WAT_FILTERS",
-            "default": ""
+            "default": "",
         },
         "wdmXTalk": {
             "type": "string",
             "description": "WDM cross-talk file",
-            "default": "wdmXTalk/OverlapCatalog_Lev_8_16_32_64_128_256_iNu_4_Prec_10.bin"
+            "default": "wdmXTalk/OverlapCatalog_Lev_8_16_32_64_128_256_iNu_4_Prec_10.bin",
         },
         "upTDF": {
             "type": "integer",
             "description": "upsample factor to obtain rate of TD filter : TDRate = (inRate>>levelR)*upTDF",
-            "default": 4
+            "default": 4,
         },
-        "TDSize": {
-            "type": "integer",
-            "description": "time-delay filter size (max 20) ",
-            "default": 12,
-            "maximum": 20
-        },
+        "TDSize": {"type": "integer", "description": "time-delay filter size (max 20) ", "default": 12, "maximum": 20},
     },
     "required": ["analysis", "ifo", "refIFO"],
-    "additionalProperties": False
+    "additionalProperties": False,
 }

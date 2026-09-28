@@ -1,10 +1,12 @@
 """Lag-independent setup for native coherence."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import wdm_options
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
-import os
 import time
+import numpy as np
 
 from wdm_wavelet.wdm import WDM as WDMWavelet
 
@@ -21,20 +23,34 @@ from .veto_threshold import compute_threshold
 logger = logging.getLogger(__name__)
 
 
+def _share_prepared_energy_storage(tf_maps, selection_cache):
+    """Share immutable prepared float64 energies with the contiguous lag cache.
+
+    Only real float64 maps qualify. Complex maps retain their quadratures.
+    Prepared maps/cache must be treated as read-only after setup; changing one
+    independently is unsupported with compact storage enabled.
+    """
+    stack = selection_cache["arrays_stack"]
+    for n, tf_map in enumerate(tf_maps):
+        data = tf_map.data
+        if isinstance(data, np.ndarray) and data.dtype == np.dtype(np.float64):
+            tf_map.data = stack[n]
+
+
 def _coherence_timing_enabled(config: Config) -> bool:
     """Return True when detailed coherence setup timing logs are requested."""
-    flag = str(os.getenv("PYCWB_COHERENCE_TIMING", "")).strip().lower()
-    if flag in {"1", "true", "yes", "on"}:
-        return True
     return bool(getattr(config, "coherence_timing", False))
 
 
 def setup_coherence(
-    config: Config, strains: list[TimeSeries], job_seg: WaveSegment | None = None
+    config: Config,
+    strains: list[TimeSeries],
+    job_seg: WaveSegment | None = None,
+    nRMS: list | None = None,
 ) -> list[dict]:
     """
     Compute all lag-independent coherence data (TF maps after max_energy,
-    threshold, lag plan) for every resolution level.
+    threshold, selection cache) for every resolution level.
 
     Call this once per job segment, then pass the returned list to
     :func:`coherence_single_lag` for each lag.
@@ -47,6 +63,9 @@ def setup_coherence(
         Whitened strain time series.
     job_seg : WaveSegment or None, optional
         Job segment (provides lag count via ``job_seg.n_lag``).
+    nRMS : list[NoiseRMSMap] or None, optional
+        Whitening-noise anchors shared across resolutions. Native workflows
+        supply these for cWB-compatible subnet statistics.
 
     Returns
     -------
@@ -67,12 +86,14 @@ def setup_coherence(
     # (expensive WDM transforms, TF maps, and thresholds are computed once here,
     #  then reused across all lags in coherence_single_lag)
     setups = [
-        _setup_coherence_single_res(
-            i, config, normalized_strains, up_n, job_seg=job_seg
-        )
-        for i in range(config.nRES)
+        _setup_coherence_single_res(i, config, normalized_strains, up_n, job_seg=job_seg) for i in range(config.nRES)
     ]
 
+    if nRMS is not None:
+        if len(nRMS) != len(strains):
+            raise ValueError("One whitening-noise map is required per detector")
+        for setup in setups:
+            setup["nRMS"] = nRMS
     return setups
 
 
@@ -87,8 +108,8 @@ def _setup_coherence_single_res(
     Lag-independent coherence setup for one resolution level.
 
     Builds the WDM wavelet, TF maps, applies max_energy, computes the
-    energy threshold, and builds the lag plan.  Nothing here depends on
-    which lag is being processed.
+    energy threshold, and caches the supplied job segment's lag shifts.
+    Nothing here depends on which lag is being processed.
 
     Returns
     -------
@@ -97,13 +118,14 @@ def _setup_coherence_single_res(
         ``layers``, ``rate``, ``select_subrho``, ``select_subnet``,
         ``segEdge``, ``selection_cache``.
     """
+    profile = execution_profile(config)
     timer_start = time.perf_counter()
     timing_enabled = _coherence_timing_enabled(config)
     level = config.l_high - i
     layers = 2**level if level > 0 else 0
     rate = config.rateANA // 2**level
     max_energy_backend = _max_energy_backend(config, layers=layers)
-    max_energy_backend_log = _max_energy_backend_label(max_energy_backend)
+    max_energy_backend_log = _max_energy_backend_label(max_energy_backend, profile)
 
     t_stage = time.perf_counter()
     # Ensure at least one WDM layer for zero-lag case
@@ -113,13 +135,14 @@ def _setup_coherence_single_res(
         K=wdm_layers,
         beta_order=config.WDM_beta_order,
         precision=config.WDM_precision,
+        **wdm_options(config),
     )
     t_wdm = time.perf_counter() - t_stage
 
     # Build time-frequency maps via batch WDM transform (preferring fast path)
     t_stage = time.perf_counter()
     try:
-        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet)
+        batch_data_list, (dt, df) = batch_t2w_detectors(strains, wdm_wavelet, profile=profile)
         tf_maps = [
             TimeFrequencyMap(
                 data=batch_data_list[n],
@@ -133,18 +156,18 @@ def _setup_coherence_single_res(
                 edge=getattr(config, "segEdge", None),
                 wavelet=wdm_wavelet,
                 len_timeseries=len(strains[n].data),
+                # cWB maxEnergy consumes conditioned strain directly. Keep
+                # this separately selectable while validating the numerical
+                # difference from the historical transform/inverse round trip.
+                ts_data=(np.asarray(strains[n].data, dtype=np.float64) if profile.direct_max_energy_input else None),
             )
             for n in range(len(strains))
         ]
         t_tf_maps = time.perf_counter() - t_stage
-    except (
-        Exception
-    ) as exc:  # broad catch intentional: batch_t2w_detectors may raise any of
+    except Exception as exc:  # broad catch intentional: batch_t2w_detectors may raise any of
         # TypeError / ValueError / AttributeError / RuntimeError / numpy internals depending on
         # the WDM implementation version; we always want the serial fallback to succeed.
-        logger.warning(
-            "Batch t2w failed (%s); falling back to serial from_timeseries", exc
-        )
+        logger.warning("Batch t2w failed (%s); falling back to serial from_timeseries", exc)
         t_stage = time.perf_counter()
         tf_maps = [
             TimeFrequencyMap.from_timeseries(
@@ -158,6 +181,11 @@ def _setup_coherence_single_res(
             for strain in strains
         ]
         t_tf_maps = time.perf_counter() - t_stage
+
+    if profile.compact_coherence:
+        # TF-map objects own the raw transforms now. Do not keep a second
+        # reference to every raw map while replacing them with energy maps.
+        batch_data_list = None
 
     logger.info(
         "level : %d\t rate(hz) : %d\t layers : %d\t df(hz) : %f\t dt(ms) : %f",
@@ -184,6 +212,7 @@ def _setup_coherence_single_res(
             f_low=config.fLow,
             f_high=config.fHigh,
             backend=max_energy_backend,
+            profile=profile,
         )
         t_ifo = time.perf_counter() - t_stage
         t_max_energy_total += t_ifo
@@ -198,6 +227,9 @@ def _setup_coherence_single_res(
             )
         alp += alp_n
     # Average the Gamma-to-Gauss scaling factor across detectors
+    if profile.compact_coherence:
+        # enumerate leaves the last raw detector map in this loop variable.
+        tf_map = None
     alp = alp / config.nIFO
 
     # Compute pixel energy threshold based on black-pixel probability
@@ -218,6 +250,8 @@ def _setup_coherence_single_res(
         lag_shifts_by_lag=getattr(job_seg, "lag_shifts", None),
     )
     t_selection_cache = time.perf_counter() - t_stage
+    if profile.compact_coherence:
+        _share_prepared_energy_storage(tf_maps, selection_cache)
 
     # Extract lag count from job segment for setup dictionary
     n_lag = job_seg.n_lag
@@ -245,6 +279,7 @@ def _setup_coherence_single_res(
     )
 
     return {
+        "execution_profile": profile,
         "tf_maps": tf_maps,
         "Eo": Eo,
         "job_seg": job_seg,

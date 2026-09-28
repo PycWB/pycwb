@@ -5,14 +5,12 @@ Provides :func:`prepare_likelihood_inputs` which computes all job-segment-level
 Also includes :func:`populate_pixel_noise_from_maps` for per-pixel noise
 initialization.
 
-Legacy aliases ``setup_likelihood`` and ``_populate_pixel_noise_rms`` remain
-available.
 """
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile
 
 import logging
-import time
 import numpy as np
 from pycwb.config.config import Config
 from pycwb.types.network_pixel import Pixel
@@ -24,58 +22,22 @@ from .sky_mask import compute_sky_valid_indices
 
 logger = logging.getLogger(__name__)
 
+
 def populate_pixel_noise_from_maps(pixels: list[Pixel], nRMS: list[TimeFrequencyMap]) -> None:
+    """Populate legacy pixel objects using the shared detector-aware RMS lookup.
+
+    Detector indices select the lagged noise anchors. Mixed-resolution pixels
+    use the same harmonic frequency-band averaging as the native SoA pipeline.
     """
-    Populate each ``pixel.data[i].noise_rms`` from the per-IFO TF noise maps.
+    if not pixels or not nRMS:
+        return
+    from pycwb.types.pixel_arrays import PixelArrays
 
-    The nRMS maps come from the highest-resolution whitening step.  For pixels at
-    other resolutions the frequency bin is scaled proportionally to the nRMS grid.
-
-    Parameters
-    ----------
-    pixels : list[Pixel]
-        Cluster pixels.
-    nRMS : list[TimeFrequencyMap]
-        One TF noise map per IFO from whitening_python.  ``data`` shape is
-        ``(n_freq_bins, n_time_bins)`` where n_freq_bins covers [0, fNyq].
-    """
-    n_ifo = len(nRMS)
-    # Precompute nRMS data arrays once
-    nrms_data = []
-    nrms_shapes = []
-    for i in range(n_ifo):
-        arr = np.asarray(nRMS[i].data, dtype=np.float64)
-        nrms_data.append(arr)
-        nrms_shapes.append(arr.shape)  # (n_freq, n_time)
-
-    for pixel in pixels:
-        freq_bin = int(pixel.frequency)
-        n_freq_pix = int(pixel.layers)  # number of frequency bins at this resolution
-        # Derive time bin from composite pixel.time = time_idx * n_freq + freq_bin
-        if n_freq_pix > 0:
-            time_bin_pix = int(pixel.time) // n_freq_pix
-        else:
-            time_bin_pix = 0
-
-        for i in range(n_ifo):
-            try:
-                nf, nt = nrms_shapes[i]
-                # Map pixel freq_bin (at resolution n_freq_pix) to nRMS freq bin
-                if n_freq_pix > 0 and nf > 0:
-                    fb = int(round(freq_bin * nf / n_freq_pix))
-                    fb = min(max(fb, 0), nf - 1)
-                else:
-                    fb = 0
-                # Map time bin 
-                tb = min(time_bin_pix, nt - 1) if nt > 0 else 0
-                val = float(np.abs(nrms_data[i][fb, tb]))
-                if val > 0.0:
-                    pixel.data[i].noise_rms = val
-            except Exception:  # noqa: BLE001
-                logger.debug(
-                    "Failed to populate noise_rms for pixel at freq_bin=%d, ifo=%d",
-                    freq_bin, i, exc_info=True
-                )
+    arrays = PixelArrays.from_pixels(pixels, n_ifo=len(nRMS))
+    arrays.populate_noise_rms(nRMS)
+    for pixel_index, pixel in enumerate(pixels):
+        for detector_index, detector_data in enumerate(pixel.data):
+            detector_data.noise_rms = float(arrays.noise_rms[detector_index, pixel_index])
 
 
 def prepare_likelihood_inputs(
@@ -150,11 +112,13 @@ def prepare_likelihood_inputs(
         # Reuse pre-computed arrays from setup_supercluster to avoid a duplicate
         # compute_sky_delay_and_patterns call (~same GPS time, same config).
         sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = (
-            np.asarray(ml), np.asarray(FP), np.asarray(FX)
+            np.asarray(ml),
+            np.asarray(FP),
+            np.asarray(FX),
         )
     else:
-        sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = (
-            build_sky_delay_and_antenna_patterns(n_detectors, strains, config)
+        sky_delay_samples, plus_antenna_patterns, cross_antenna_patterns = build_sky_delay_and_antenna_patterns(
+            n_detectors, strains, config
         )
     n_sky = int(sky_delay_samples.shape[1])
 
@@ -167,35 +131,27 @@ def prepare_likelihood_inputs(
         sky_delay_samples_big = np.asarray(ml_big)
         plus_antenna_patterns_big_t = np.asarray(FP_big).T.astype(np.float32)
         cross_antenna_patterns_big_t = np.asarray(FX_big).T.astype(np.float32)
-        n_sky_big  = int(sky_delay_samples_big.shape[1])
+        n_sky_big = int(sky_delay_samples_big.shape[1])
     else:
         sky_delay_samples_big = None
         plus_antenna_patterns_big_t = None
         cross_antenna_patterns_big_t = None
-        n_sky_big  = None
+        n_sky_big = None
 
-    healpix_order = int(getattr(config, 'healpix', 0)) if hasattr(config, 'healpix') else None
+    healpix_order = int(getattr(config, "healpix", 0)) if hasattr(config, "healpix") else None
     # _build_sky_directions returns the cWB Earth-fixed grid.  Keep legacy
     # ra_arr/dec_arr aliases below, but use frame-explicit names internally.
     phi_geo_arr, latitude_arr = _build_sky_directions(n_sky, healpix_order)
 
     # Sky mask: restrict the sky scan to a user-defined region (mirrors C++ skyMask).
     # Parsed once per job segment and stored as a sorted int64 index array.
-    _sky_mask_config = getattr(config, 'sky_mask', None)
-    t_ref = (
-        float(strains[0].t0)
-        if strains is not None and len(strains) > 0
-        else None
-    )
-    sky_valid_indices = compute_sky_valid_indices(
-        phi_geo_arr, latitude_arr, _sky_mask_config, t_ref=t_ref
-    )
+    _sky_mask_config = getattr(config, "sky_mask", None)
+    t_ref = float(strains[0].t0) if strains is not None and len(strains) > 0 else None
+    sky_valid_indices = compute_sky_valid_indices(phi_geo_arr, latitude_arr, _sky_mask_config, t_ref=t_ref)
 
     # Separate valid-index array for the coarse (big-cluster) sky grid
     if n_sky_big is not None:
-        phi_geo_arr_big, latitude_arr_big = _build_sky_directions(
-            n_sky_big, big_cluster_healpix_order
-        )
+        phi_geo_arr_big, latitude_arr_big = _build_sky_directions(n_sky_big, big_cluster_healpix_order)
         sky_valid_indices_big = compute_sky_valid_indices(
             phi_geo_arr_big, latitude_arr_big, _sky_mask_config, t_ref=t_ref
         )
@@ -205,6 +161,7 @@ def prepare_likelihood_inputs(
         sky_valid_indices_big = None
 
     return {
+        "execution_profile": execution_profile(config),
         "network_energy_threshold": network_energy_threshold,
         "xgb_rho_mode": xgb_rho_mode,
         "gamma_regulator": gamma_regulator,
@@ -212,9 +169,9 @@ def prepare_likelihood_inputs(
         "net_rho_threshold": net_rho_threshold,
         "netEC_threshold": netEC_threshold,
         "netCC": netCC,
-        "ml": sky_delay_samples,      # legacy key: (nIFO, n_sky)
+        "ml": sky_delay_samples,  # legacy key: (nIFO, n_sky)
         "FP": plus_antenna_patterns,  # legacy key: (nIFO, n_sky)
-        "FX": cross_antenna_patterns, # legacy key: (nIFO, n_sky)
+        "FX": cross_antenna_patterns,  # legacy key: (nIFO, n_sky)
         "FP_t": plus_antenna_patterns_t,
         "FX_t": cross_antenna_patterns_t,
         "n_sky": n_sky,
@@ -237,14 +194,7 @@ def prepare_likelihood_inputs(
         "sky_valid_indices_big": sky_valid_indices_big,
     }
 
-
-
-# Legacy aliases
-setup_likelihood = prepare_likelihood_inputs
-_populate_pixel_noise_rms = populate_pixel_noise_from_maps
-_populate_pixel_noise_from_maps = populate_pixel_noise_from_maps
-
 __all__ = [
-    "setup_likelihood",
     "prepare_likelihood_inputs",
+    "populate_pixel_noise_from_maps",
 ]

@@ -1,0 +1,30 @@
+# Merge this fragment into user_parameters.yaml for a CPU worker.
+# Scientific compatibility choices are explicit alongside performance settings.
+max_energy_backend: jax
+execution_profile:
+  scalar_dpf: true
+  sky_delay_reuse: true
+  native_chirp: true
+  release_waveform_stats: true
+  coherence_early_cuts: true
+  preindex_shifts: true
+  cluster_runs: true
+  compact_coherence: true
+  direct_max_energy_input: false
+  tiled_wdm: true
+  compact_td_cache: true
+  band_td_cache: false
+  staged_td: true
+  bounded_jax_max_energy: true
+  numba_max_energy_mode: parallel
+  regression_cap: true
+  regression_engine: numba
+  regression_percentile_stride: 1
+  gc_full_interval: 16
+  perf_diagnostics: false
+  require_gpu: false
+  wdm_bounded_jax_forward: true
+  wdm_bounded_jax_inverse: true
+  wdm_deterministic_jax_inverse: false
+  wdm_bounded_numba: false
+  wdm_compact_complex: false

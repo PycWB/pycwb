@@ -7,7 +7,9 @@ file may include an optional ``pycwb_schema`` block to extend or replace that
 default schema – see :class:`Config` and :func:`pycwb.utils.yaml_helper.resolve_schema`
 for details.
 """
+
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import List, Dict, Optional, Any
 import os.path
 import logging
@@ -20,8 +22,12 @@ from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
 from ..utils.skymap_coord import validate_user_sky_config
 from ..constants import user_parameters_schema
+from ..constants.detectors import resolve_detector_geometries
+from .detector_definitions import load_detector_definitions, restore_detector_registry
+from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Config:
@@ -96,8 +102,11 @@ class Config:
     * ``WDM_level`` – list of WDM resolution levels
     * ``dq_files`` – ``DQF`` rows converted to :class:`~pycwb.types.data_quality_file.DQFile` objects
     """
+
+    execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+
     dq_files: List[DQFile] = field(default_factory=list)
-    
+
     # Loadable/expected parameters from YAML
     outputDir: Optional[str] = None
     logDir: Optional[str] = None
@@ -134,11 +143,57 @@ class Config:
     WDM_level: List[int] = field(default_factory=list)
     cfg_search: Optional[Any] = None
     ifo: List[str] = field(default_factory=list)
+    detector_geometry: Dict[str, str] = field(default_factory=dict)
+    detector_definitions_file: Optional[str] = None
+    detector_registry: Optional[Dict[str, Any]] = None
+    detector_definitions_provenance: Dict[str, Any] = field(default_factory=dict)
     DQF: List[List[Any]] = field(default_factory=list)
     upTDF: Optional[int] = None
     segEdge: Optional[float] = None
     segMLS: Optional[float] = None
     xgb_rho_mode: bool = False
+
+    # Runtime caches are not dataclass fields and are excluded by to_dict().
+    _detectors = ()
+    _detectors_by_name = None
+
+    @property
+    def detectors(self):
+        """Detector instances in ``ifo`` order, constructed when config is loaded.
+
+        Treat these shared instances as read-only during an analysis. Reload the
+        configuration to change its geometry.
+        """
+        return self._detectors
+
+    def get_detector(self, name):
+        """Return the existing instance for an active instrument."""
+        try:
+            return (self._detectors_by_name or {})[name]
+        except KeyError:
+            raise ValueError(f"Detector {name!r} is not active in this configuration") from None
+
+    def get_detectors(self, names=None):
+        """Return shared instances in the requested order (all IFOs by default)."""
+        return self.detectors if names is None else tuple(self.get_detector(name) for name in names)
+
+    def _initialize_detectors(self):
+        from ..types.detector import Detector
+
+        detectors = tuple(
+            Detector(name, geometry_model=self.detector_geometry, geometry_registry=self.detector_registry)
+            for name in self.ifo
+        )
+        self._detectors = detectors
+        self._detectors_by_name = {detector.name: detector for detector in detectors}
+
+    def to_dict(self):
+        """Copy serializable configuration, excluding runtime detector instances.
+
+        The saved registry and geometry IDs reconstruct instances on workers.
+        """
+        return deepcopy({key: value for key, value in vars(self).items()
+                         if key not in ("_detectors", "_detectors_by_name")})
 
     def load_from_yaml(self, file_name, schema=None):
         """
@@ -188,9 +243,7 @@ class Config:
         # JSON Schema cannot validate Astropy quantity dimensionality or infer
         # a coordinate frame from semantic key names.  Perform that physical
         # cross-check before values become Config attributes.
-        validate_user_sky_config(
-            params.get("sky_mask"), context="sky_mask", default_coordsys="geo"
-        )
+        validate_user_sky_config(params.get("sky_mask"), context="sky_mask", default_coordsys="geo")
         injection_config = params.get("injection") or {}
         validate_user_sky_config(
             injection_config.get("sky_distribution"),
@@ -199,7 +252,17 @@ class Config:
         )
 
         for key in params:
-            setattr(self, key, params[key])
+            if key not in ("_detectors", "_detectors_by_name"):
+                setattr(self, key, params[key])
+
+        self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(
+            self.detector_definitions_file, file_name
+        )
+        self.detector_geometry = resolve_detector_geometries(
+            self.ifo, self.detector_geometry, registry=self.detector_registry
+        )
+        self._initialize_detectors()
 
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
@@ -213,8 +276,10 @@ class Config:
 
         This is intended for restoring a :class:`Config` from a previously
         serialised (e.g. JSON-dumped) parameter dict.  No schema validation
-        or derived-field computation is performed – the dict values are applied
-        directly as attributes.
+        or derived-field computation is performed for analysis fields. The execution
+        profile is validated and resolved to an immutable snapshot. Detector
+        definitions are restored from the validated registry snapshot without
+        reopening the original JSON file.
 
         Path rebasing: if the stored ``filter_dir`` does not exist on the
         current machine (e.g. when a config serialised on the head node is
@@ -230,16 +295,31 @@ class Config:
             and set as attributes without validation.
         """
         for key in params:
-            setattr(self, key, params[key])
+            if key not in ("_detectors", "_detectors_by_name"):
+                setattr(self, key, params[key])
+
+        self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.detector_definitions_file = params.get("detector_definitions_file")
+        self.detector_definitions_provenance = deepcopy(params.get("detector_definitions_provenance", {}))
+        if params.get("detector_registry") is not None:
+            self.detector_registry = restore_detector_registry(params["detector_registry"])
+        elif params.get("detector_definitions_file"):
+            raise ValueError("Custom detector configuration requires a saved detector_registry snapshot")
+        else:
+            self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(None, ".")
+        self.detector_geometry = resolve_detector_geometries(
+            self.ifo, self.detector_geometry, registry=self.detector_registry
+        )
+        self._initialize_detectors()
 
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
         if self.filter_dir and not os.path.exists(self.filter_dir):
-            home_wat = os.environ.get('HOME_WAT_FILTERS')
+            home_wat = os.environ.get("HOME_WAT_FILTERS")
             if home_wat and os.path.exists(home_wat):
                 self.filter_dir = home_wat
             else:
-                self.filter_dir = os.path.abspath('.')
+                self.filter_dir = os.path.abspath(".")
             if self.wdmXTalk:
                 self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
@@ -281,10 +361,10 @@ class Config:
 
         # load WAT filter directory and set MRAcatalog
         if not self.filter_dir:
-            if os.environ.get('HOME_WAT_FILTERS') is None:
+            if os.environ.get("HOME_WAT_FILTERS") is None:
                 self.filter_dir = os.path.abspath(".")
             else:
-                self.filter_dir = os.environ['HOME_WAT_FILTERS']
+                self.filter_dir = os.environ["HOME_WAT_FILTERS"]
 
         self.MRAcatalog = f"{self.filter_dir}/{self.wdmXTalk}"
 
@@ -303,7 +383,7 @@ class Config:
         for dqf in self.DQF:
             self.dq_files.append(DQFile(dqf[0], dqf[1], dqf[2], dqf[3], dqf[4], dqf[5]))
 
-        self.max_delay = max_delay(self.ifo)
+        self.max_delay = max_delay(self.detectors)
 
         self.WDM_level = [int(self.l_high + self.l_low - i) for i in range(self.l_low, self.l_high + 1)]
 
@@ -313,6 +393,7 @@ class Config:
         net_rho = float(getattr(self, "netRHO", 4.0))
         if net_rho < 0 and not self.xgb_rho_mode:
             import warnings
+
             warnings.warn(
                 "Setting netRHO < 0 to activate XGBoost statistics mode is deprecated. "
                 "Please use 'xgb_rho_mode: true' in your config instead. "
@@ -335,10 +416,10 @@ class Config:
         if self.lagMode == "r":
             with open(self.lagFile, "r") as f:
                 self.lagBuffer = f.read()
-            self.lagMode = 's'
+            self.lagMode = "s"
         else:
             self.lagBuffer = self.lagFile
-            self.lagMode = 'w'
+            self.lagMode = "w"
 
     @staticmethod
     def check_file(file_name):
@@ -402,25 +483,29 @@ class Config:
             ``segEdge``, or ``segMLS`` fail the parity check.
         """
         rate_min = self.rateANA >> self.l_high
-        dt_max = 1. / rate_min
+        dt_max = 1.0 / rate_min
         if rate_min % 1:
             logger.error("rate min=%s (Hz) is not integer", rate_min)
             raise ValueError("rate min=%s (Hz) is not integer", rate_min)
         if int(self.lagStep * rate_min + 0.001) & 1:
-            logger.error("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
-                         2 * dt_max)
-            raise ValueError("lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep,
-                             2 * dt_max)
+            logger.error(
+                "lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep, 2 * dt_max
+            )
+            raise ValueError(
+                "lagStep=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.lagStep, 2 * dt_max
+            )
         if int(self.segEdge * rate_min + 0.001) & 1:
-            logger.error("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
-                         2 * dt_max)
-            raise ValueError("segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge,
-                             2 * dt_max)
+            logger.error(
+                "segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge, 2 * dt_max
+            )
+            raise ValueError(
+                "segEdge=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segEdge, 2 * dt_max
+            )
         if int(self.segMLS * rate_min + 0.001) & 1:
-            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
-                         2 * dt_max)
-            raise ValueError("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS,
-                             2 * dt_max)
+            logger.error("segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS, 2 * dt_max)
+            raise ValueError(
+                "segMLS=%s (sec) is not a multple of 2*max_time_resolution=%s (sec)", self.segMLS, 2 * dt_max
+            )
 
     def check_analyze_injection_only(self) -> None:
         """
@@ -435,14 +520,11 @@ class Config:
             If ``analyze_injection_only`` is True but no injections are
             configured, or ``lag_size > 1``.
         """
-        if not getattr(self, 'analyze_injection_only', False):
+        if not getattr(self, "analyze_injection_only", False):
             return
         if not self.injection:
-            raise ValueError(
-                "analyze_injection_only requires injections to be configured "
-                "in the 'injection' block"
-            )
-        lag_size = getattr(self, 'lagSize', None) or getattr(self, 'lag_size', 1)
+            raise ValueError("analyze_injection_only requires injections to be configured in the 'injection' block")
+        lag_size = getattr(self, "lagSize", None) or getattr(self, "lag_size", 1)
         if lag_size > 1:
             raise ValueError(
                 f"analyze_injection_only is incompatible with lag_size={lag_size}. "
@@ -472,13 +554,17 @@ class Config:
         """
         logger.info("Checking MRA catalog")
         metadata = read_catalog_metadata(self.MRAcatalog)
-        layers = metadata['layers'].tolist() if hasattr(metadata['layers'], 'tolist') else [int(x) for x in metadata['layers']]
-        n_res = int(metadata['nRes'])
+        layers = (
+            metadata["layers"].tolist()
+            if hasattr(metadata["layers"], "tolist")
+            else [int(x) for x in metadata["layers"]]
+        )
+        n_res = int(metadata["nRes"])
 
         check_layers = 0
         for i in range(self.l_low, self.l_high + 1):
             level = self.l_high + self.l_low - i
-            expected_layers = 2 ** level if level > 0 else 0
+            expected_layers = 2**level if level > 0 else 0
             for j in range(n_res):
                 if expected_layers == int(layers[j]):
                     check_layers += 1
@@ -495,13 +581,13 @@ class Config:
                 logger.error("layers : %s", int(layers[i]))
             raise ValueError("analysis layers do not match the MRA catalog")
 
-        if float(metadata.get('tag', 0.0)) != 0.0:
+        if float(metadata.get("tag", 0.0)) != 0.0:
             logger.info(
                 "MRA catalog has tag %s, updating beta order and precision from MRA catalog",
-                metadata.get('tag', 0.0),
+                metadata.get("tag", 0.0),
             )
-            self.WDM_beta_order = int(metadata.get('beta_order', self.WDM_beta_order or 0))
-            self.WDM_precision = int(metadata.get('precision', self.WDM_precision or 0))
+            self.WDM_beta_order = int(metadata.get("beta_order", self.WDM_beta_order or 0))
+            self.WDM_precision = int(metadata.get("precision", self.WDM_precision or 0))
 
     @staticmethod
     def get_precision(cluster_size_threshold, healpix_order):
@@ -521,4 +607,4 @@ class Config:
         int
             Combined precision value: ``cluster_size_threshold + 65536 * healpix_order``.
         """
-        return cluster_size_threshold+65536*healpix_order
+        return cluster_size_threshold + 65536 * healpix_order

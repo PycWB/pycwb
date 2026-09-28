@@ -2,9 +2,12 @@
 
 Pure-Python MESA whitening without ROOT dependencies.
 
-This version produces output compatible with whitening_python() from whitening.py,
+This version produces output compatible with whiten_wavelet() from whitening.py,
 using the same anchor-point batching logic as cWB's white() mode=0.
 """
+
+from pycwb.constants.execution_profile import wdm_options
+from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging
 
@@ -13,7 +16,6 @@ from memspectrum import MESA
 from scipy import signal
 from scipy.special import expit
 from sklearn.ensemble import IsolationForest
-from wdm_wavelet.types.time_frequency_map import TimeFrequencyMap
 from wdm_wavelet.wdm import WDM
 
 logger = logging.getLogger(__name__)
@@ -21,14 +23,14 @@ logger = logging.getLogger(__name__)
 _NRMS_DIV_FLOOR = 1.0e-30
 
 
-def whitening_mesa_python(config, h):
+def whiten_mesa(config, h):
     """
     Pure-Python MESA whitening.
 
     Returns
     -------
-    tuple[pycwb.types.time_series.TimeSeries, TimeFrequencyMap]
-        `(conditioned_strain, nRMS_tf_map)` compatible with `whitening_python`.
+    tuple[pycwb.types.time_series.TimeSeries, NoiseRMSMap]
+        `(conditioned_strain, nRMS_tf_map)` compatible with `whiten_wavelet`.
     """
     from pycwb.types.time_series import TimeSeries
 
@@ -37,7 +39,7 @@ def whitening_mesa_python(config, h):
     else:
         h_ts = h
 
-    layers = 2 ** config.l_white if getattr(config, "l_white", 0) > 0 else 2 ** config.l_high
+    layers = 2**config.l_white if getattr(config, "l_white", 0) > 0 else 2**config.l_high
     beta_order = getattr(config, "WDM_beta_order", 6)
     precision = getattr(config, "WDM_precision", 10)
 
@@ -48,7 +50,7 @@ def whitening_mesa_python(config, h):
     # This is crucial for the sqrt(1/sample_rate) normalization!
 
     sample_rate = float(h_ts.sample_rate)
-    
+
     nyquist = 0.5 * sample_rate
 
     logger.info("Whitening data with pure-Python MESA")
@@ -62,7 +64,7 @@ def whitening_mesa_python(config, h):
         beta_order,
         precision,
         getattr(config, "mesaWindow", 15.0),
-    ) 
+    )
 
     # High-pass filter
     low_norm = min(max(float(config.fLow) / nyquist, 1.0e-6), 0.999)
@@ -73,7 +75,7 @@ def whitening_mesa_python(config, h):
     mesa_window = float(getattr(config, "mesaWindow", 15.0))
     mesa_stride = float(getattr(config, "mesaStride", 5.0))
 
-    if not mesa_stride ==  mesa_window / 3.0:
+    if not mesa_stride == mesa_window / 3.0:
         logger.warning("mesaStride must be one third of mesaWindow; using mesaWindow/3")
         mesa_stride = mesa_window / 3.0
 
@@ -90,7 +92,7 @@ def whitening_mesa_python(config, h):
     # Loop over data segment chunks to compute PSDs
     for i in range(n_windows + 1):
         start = i * stride
-        segment = data[start:start + window]
+        segment = data[start : start + window]
         mesa.solve(segment, method=getattr(config, "mesaSolver", "Fast"), m=getattr(config, "mesaOrder", 500))
         freqs, psd = mesa.spectrum(1.0 / sample_rate)
         psds.append(np.asarray(psd, dtype=np.float64))
@@ -122,16 +124,16 @@ def whitening_mesa_python(config, h):
         # Apply taper and FFT
         chunk = data[start:stop] * taper
         chunk_fft = np.fft.rfft(chunk)
-        psd = psds[i, :chunk_fft.size]
+        psd = psds[i, : chunk_fft.size]
         chunk_w = np.fft.irfft(chunk_fft / np.sqrt(psd), n=window) * np.sqrt(1.0 / sample_rate)
 
         # Overlap-save stitching (matching whitening_mesa.py logic)
         if i == 0:
-            whitened[start:stop - stride] = chunk_w[:-stride]
+            whitened[start : stop - stride] = chunk_w[:-stride]
         elif i == n_windows:
-            whitened[start + stride:stop] = chunk_w[stride:]
+            whitened[start + stride : stop] = chunk_w[stride:]
         else:
-            whitened[start + stride:stop - stride] = chunk_w[stride:-stride]
+            whitened[start + stride : stop - stride] = chunk_w[stride:-stride]
 
     # Determine the valid data length (matching whitening_mesa.py)
     final_stop = n_windows * stride + window
@@ -142,7 +144,7 @@ def whitening_mesa_python(config, h):
 
     # Create WDM TF maps
     layers = int(layers)
-    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision)
+    wdm = WDM(M=layers, K=layers, beta_order=beta_order, precision=precision, **wdm_options(config))
 
     tf_raw = wdm.t2w(data_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)
     tf_white = wdm.t2w(whitened_sliced, sample_rate=sample_rate, t0=float(h_ts.t0), MM=-1)
@@ -158,17 +160,16 @@ def whitening_mesa_python(config, h):
     # Use a more reasonable floor to avoid division issues
     abs_white = np.abs(coeff_white)
     abs_raw = np.abs(coeff_raw)
-    
+
     # Floor based on median to avoid extreme ratios from near-zero values
     floor_value = max(_NRMS_DIV_FLOOR, np.median(abs_white) * 1e-6)
     nrms_matrix = abs_raw / np.maximum(abs_white, floor_value)
-    
+
     # Set low-frequency bins to 1.0 BEFORE median computation (matching whitening_mesa.py)
     # This is different from the bandpass applied later!
     wdm_df = float(tf_white.df)
     low_freq_cutoff = int(16.0 / wdm_df) + 1
     nrms_matrix[:low_freq_cutoff, :] = 1.0
-    
 
     # Compute anchor points using the same logic as _estimate_nrms_cwb_mode0
     nrms_anchor = _compute_nrms_anchors_cwb_style(
@@ -190,15 +191,10 @@ def whitening_mesa_python(config, h):
         f_high_map=float(config.fHigh),
     )
 
-    nrms_tf = TimeFrequencyMap(
-        data=np.asarray(nrms_anchor, dtype=np.float64),
-        dt=float(tf_white.dt),
-        df=float(tf_white.df),
-        t0=float(tf_white.t0),
-        len_timeseries=int(tf_white.len_timeseries),
-        wdm_params=dict(tf_white.wdm_params),
-    )
-    conditioned_strain = TimeSeries(data=whitened, dt=h_ts.dt, t0=h_ts.t0) 
+    from pycwb.types.noise_rms import make_noise_rms_map
+
+    nrms_tf = make_noise_rms_map(tf_white, nrms_anchor, config.segEdge)
+    conditioned_strain = TimeSeries(data=whitened, dt=h_ts.dt, t0=h_ts.t0)
     logger.info("Conditioned strain length: %d", len(conditioned_strain))
     logger.info("nRMS TF map shape: %s", nrms_tf.data.shape)
 
@@ -257,7 +253,7 @@ def _compute_nrms_anchors_cwb_style(nrms_matrix, tf_dt, window_length=60.0, stri
     n_usable = n_time - 2 * offset
     if n_usable < 4:
         # Not enough data, return median
-        nrms_const = np.sqrt(np.nanmedian(nrms_matrix ** 2, axis=1, keepdims=True))
+        nrms_const = np.sqrt(np.nanmedian(nrms_matrix**2, axis=1, keepdims=True))
         return nrms_const
 
     # Samples per segment
@@ -300,7 +296,7 @@ def _compute_nrms_anchors_cwb_style(nrms_matrix, tf_dt, window_length=60.0, stri
         else:
             # Use median of squared values, then sqrt (matching RMS computation)
             # This is analogous to sqrt(median(power) * 0.7191) but for ratio-based nRMS
-            sorted_w = np.sort(window_data ** 2, axis=1)
+            sorted_w = np.sort(window_data**2, axis=1)
             median_vals = np.sqrt(sorted_w[:, mm])
 
         nrms_anchor[:, j] = np.maximum(median_vals, 0.0)
@@ -342,7 +338,7 @@ def rolling_median(psds, half_size):
             right = n_segments
             left = max(0, left - deficit)
 
-        out[i] = np.median(psds[int(left):int(right)], axis=0)
+        out[i] = np.median(psds[int(left) : int(right)], axis=0)
 
     return out
 
@@ -436,64 +432,3 @@ def planck_taper_window(n_samples, eps=0.15):
         window[right_mask] = expit(-zb)
 
     return window
-
-
-def _apply_cwb_bandpass_constant(nrms_map, f1, f2, a, df, f_low_map, f_high_map):
-    """
-    Mirror cWB `WSeries::bandpass(f1, f2, a)` behavior on TF rows.
-
-    For `bandpass(16., 0., 1.)`, rows below the low edge are set to 1.
-
-    Parameters
-    ----------
-    nrms_map : np.ndarray
-        2D array of nRMS values
-    f1, f2 : float
-        Frequency bounds
-    a : float
-        Value to set for out-of-band rows
-    df : float
-        Frequency resolution
-    f_low_map, f_high_map : float
-        Map frequency bounds
-
-    Returns
-    -------
-    np.ndarray
-        Modified nRMS map
-    """
-    if nrms_map.ndim != 2:
-        raise ValueError("Expected 2D RMS map")
-
-    out = np.array(nrms_map, copy=True)
-    n_freq = out.shape[0]
-    if n_freq == 0:
-        return out
-
-    dF = float(df)
-    fl = abs(float(f1)) if abs(float(f1)) > 0.0 else float(f_low_map)
-    fh = abs(float(f2)) if abs(float(f2)) > 0.0 else float(f_high_map)
-
-    n = int((fl + dF / 2.0) / dF + 0.1)
-    m = int((fh + dF / 2.0) / dF + 0.1) - 1
-
-    if n > m:
-        return out
-
-    n = max(0, min(n, n_freq - 1))
-    m = max(0, min(m, n_freq - 1))
-
-    indices = np.arange(n_freq)
-
-    keep = np.zeros(n_freq, dtype=bool)
-    if f1 >= 0 and f2 >= 0:
-        keep = (indices > n) & (indices <= m)
-    elif f1 < 0 and f2 < 0:
-        keep = (indices < n) | (indices > m)
-    elif f1 < 0 and f2 >= 0:
-        keep = (indices < n)
-    elif f1 >= 0 and f2 < 0:
-        keep = (indices >= m)
-
-    out[~keep, :] = float(a)
-    return out

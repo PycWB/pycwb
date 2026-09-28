@@ -5,7 +5,7 @@ from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
 
 from pycwb.config import Config
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_ifo
+from pycwb.modules.likelihoodWP.pixel_data import build_sky_delay_and_antenna_patterns
 from pycwb.modules.logger import logger_init
 
 if not os.environ.get('HOME_WAT_FILTERS'):
@@ -39,9 +39,9 @@ if job_seg.injections:
 #%% md
 ## apply data conditioning to the data
 #%%
-from pycwb.modules.data_conditioning import data_conditioning
+from pycwb.modules.data_conditioning import condition_strains
 
-strains, nRMS = data_conditioning(config, data)
+strains, nRMS = condition_strains(config, data)
 
 #%% md
 ## calculate coherence
@@ -139,7 +139,7 @@ subnorm = config.subnorm
 subrho = config.subrho
 netrho = network.net.netRHO
 MRAcatalog = config.MRAcatalog
-ml, FP, FX = load_data_from_ifo(network, config.nIFO)
+ml, FP, FX = build_sky_delay_and_antenna_patterns(network, config.nIFO)
 
 test_data = {
     'strains': strains,

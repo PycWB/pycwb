@@ -13,7 +13,7 @@ from numba import njit, prange
 
 
 @njit(cache=True)
-def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad):
+def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad, frequency_offset=0):
     """
     Numba reimplementation of core.time_delay.get_pixel_amplitude.
 
@@ -45,7 +45,7 @@ def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad
     sum_even_same = 0.0
     sum_odd_same = 0.0
     for k in range(win_len):
-        val = padded_plane[n + k, m] * T0[dT_idx, k]
+        val = padded_plane[n + k, m - frequency_offset] * T0[dT_idx, k]
         if k % 2 == 0:
             sum_even_same += val
         else:
@@ -68,7 +68,7 @@ def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad
         low_even = 0.0
         low_odd = 0.0
         for k in range(win_len):
-            val = padded_plane[n + k, m_low] * Tx[dT_idx, k]
+            val = padded_plane[n + k, m_low - frequency_offset] * Tx[dT_idx, k]
             if k % 2 == 0:
                 low_even += val
             else:
@@ -99,7 +99,7 @@ def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad
         high_even = 0.0
         high_odd = 0.0
         for k in range(win_len):
-            val = padded_plane[n + k, m_high] * Tx[dT_idx, k]
+            val = padded_plane[n + k, m_high - frequency_offset] * Tx[dT_idx, k]
             if k % 2 == 0:
                 high_even += val
             else:
@@ -131,7 +131,7 @@ def _get_pixel_amplitude_nb(n, m, dT, padded_plane, T0, Tx, M, n_coeffs, J, quad
 
 
 @njit(cache=True, parallel=True)
-def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J):
+def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K, J, delay_stride=1, frequency_offset=0):
     """
     Batch TD vector extraction over all pixels in parallel.
 
@@ -156,7 +156,7 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
     Returns
     -------
     float32 array (n_pixels, 4*K+2)
-        Concatenation of [a00(-K..K), a90(-K..K)] for each pixel.
+        Concatenation of both phases at delays (-K..K) * delay_stride.
     """
     n_pixels = len(pixel_indices)
     td_len = 4 * K + 2
@@ -169,7 +169,7 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
         m = idx % M1
         half = 2 * K + 1  # number of delay steps per phase
         for ki in range(2 * K + 1):
-            dT = ki - K
+            dT = (ki - K) * delay_stride
 
             # Decompose dT into whole-pixel shift + sub-pixel remainder using
             # C++-style truncation (rounds toward zero, matching WDM::getTDamp).
@@ -184,15 +184,27 @@ def batch_get_td_vecs(pixel_indices, padded00, padded90, T0, Tx, M, n_coeffs, K,
                 # Odd pixel shift: quadratures swap with sign from (n+m) parity,
                 # identical to CWB getTDamp() odd-wdmShift branch.
                 if (n + m) % 2 != 0:
-                    a00 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
-                    a90 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
+                    a00 = -_get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                    )
+                    a90 = _get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                    )
                 else:
-                    a00 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
-                    a90 = -_get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
+                    a00 = _get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                    )
+                    a90 = -_get_pixel_amplitude_nb(
+                        n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                    )
             else:
                 # Even pixel shift (including 0): standard per-quadrature paths.
-                a00 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False)
-                a90 = _get_pixel_amplitude_nb(n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True)
+                a00 = _get_pixel_amplitude_nb(
+                    n_eff, m, sub_dT, padded00, T0, Tx, M, n_coeffs, J, False, frequency_offset
+                )
+                a90 = _get_pixel_amplitude_nb(
+                    n_eff, m, sub_dT, padded90, T0, Tx, M, n_coeffs, J, True, frequency_offset
+                )
 
             out[p, ki] = a00
             out[p, half + ki] = a90

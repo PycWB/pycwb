@@ -26,7 +26,7 @@ def _reference_cluster_links(pixels, gap, n_ifo):
     d_f = 0.0
     links = []
     for i, p in enumerate(pixels):
-        for q in pixels[i + 1:]:
+        for q in pixels[i + 1 :]:
             if q[0] - p[0] > t_gap:
                 break
             if p[4] == q[4] or max(p[2] / q[2], q[2] / p[2]) > 3:
@@ -50,7 +50,7 @@ def _reference_defrag_links(pixels, t_gap, f_gap, n_ifo):
     search_t_gap = max(np.max(pixels[:, 2]), t_gap)
     links = []
     for i, p in enumerate(pixels):
-        for q in pixels[i + 1:]:
+        for q in pixels[i + 1 :]:
             if q[0] - p[0] > search_t_gap:
                 break
             if p[4] == q[4] or max(p[2] / q[2], q[2] / p[2]) > 3:
@@ -58,8 +58,8 @@ def _reference_defrag_links(pixels, t_gap, f_gap, n_ifo):
             r = 1.0 / p[2] + 1.0 / q[2]
             t = p[2] + q[2]
             d_t = max(abs(p[5 + k] - q[5 + k]) for k in range(n_ifo)) - 0.5 * t
-            d_f = abs(p[1] - q[1]) - 0.5 * r
-            if d_t < t_gap and d_f < f_gap:
+            d_f = abs(p[1] / 2 - q[1] / 2) - 0.25 * r
+            if d_t <= t_gap and d_f <= f_gap:
                 link = (int(min(p[4], q[4])), int(max(p[4], q[4])))
                 if link not in links:
                     links.append(link)
@@ -251,21 +251,40 @@ def test_subnet_kernels_without_td_energy_match_reference_kernels():
     rms = np.ascontiguousarray(rng.uniform(0.2, 1.0, size=(n_pix, n_ifo)).astype(np.float32))
     fp = np.ascontiguousarray(rng.normal(size=(n_sky, n_ifo)).astype(np.float32))
     fx = np.ascontiguousarray(rng.normal(size=(n_sky, n_ifo)).astype(np.float32))
-    ml = np.ascontiguousarray(
-        rng.integers(-offset, offset + 1, size=(n_ifo, n_sky), dtype=np.int32)
-    )
+    ml = np.ascontiguousarray(rng.integers(-offset, offset + 1, size=(n_ifo, n_sky), dtype=np.int32))
 
     network_energy_threshold = np.float32(0.05)
     e2or = 0.1
     subcut = -1.0
 
     expected_sky = optimze_sky_loc(
-        n_ifo, n_pix, n_sky, fp, fx, rms, td00, td90, td_energy,
-        ml, network_energy_threshold, e2or, subcut,
+        n_ifo,
+        n_pix,
+        n_sky,
+        fp,
+        fx,
+        rms,
+        td00,
+        td90,
+        td_energy,
+        ml,
+        network_energy_threshold,
+        e2or,
+        subcut,
     )
     actual_sky = optimze_sky_loc_from_td(
-        n_ifo, n_pix, n_sky, fp, fx, rms, td00, td90,
-        ml, network_energy_threshold, e2or, subcut,
+        n_ifo,
+        n_pix,
+        n_sky,
+        fp,
+        fx,
+        rms,
+        td00,
+        td90,
+        ml,
+        network_energy_threshold,
+        e2or,
+        subcut,
     )
     np.testing.assert_allclose(np.array(actual_sky), np.array(expected_sky), rtol=1e-6, atol=1e-6)
 
@@ -273,12 +292,37 @@ def test_subnet_kernels_without_td_energy_match_reference_kernels():
     xtalk = np.zeros((0, 8), dtype=np.float32)
     l_max = int(expected_sky[0])
     expected_mra = mra_statistics(
-        n_ifo, n_pix, fp, fx, rms, td00, td90, td_energy, ml,
-        network_energy_threshold, e2or, subcut, xtalk, xtalk_lookup, l_max,
+        n_ifo,
+        n_pix,
+        fp,
+        fx,
+        rms,
+        td00,
+        td90,
+        td_energy,
+        ml,
+        network_energy_threshold,
+        e2or,
+        subcut,
+        xtalk,
+        xtalk_lookup,
+        l_max,
     )
     actual_mra = mra_statistics_from_td(
-        n_ifo, n_pix, fp, fx, rms, td00, td90, ml,
-        network_energy_threshold, e2or, subcut, xtalk, xtalk_lookup, l_max,
+        n_ifo,
+        n_pix,
+        fp,
+        fx,
+        rms,
+        td00,
+        td90,
+        ml,
+        network_energy_threshold,
+        e2or,
+        subcut,
+        xtalk,
+        xtalk_lookup,
+        l_max,
     )
     np.testing.assert_allclose(np.array(actual_mra), np.array(expected_mra), rtol=1e-6, atol=1e-6)
 

@@ -1,5 +1,7 @@
 """Output-finalization helpers for native job-segment processing."""
 
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+
 import gc
 import logging
 import time
@@ -20,6 +22,8 @@ from pycwb.workflow.subflow.postprocess_and_plots import (
 )
 
 logger = logging.getLogger(__name__)
+_cleanup_count = 0
+_last_full_collection_rss = None
 
 
 def _create_and_save_trigger_folders(output_context, result) -> list[str | None]:
@@ -28,7 +32,10 @@ def _create_and_save_trigger_folders(output_context, result) -> list[str | None]
     for trigger in result.events_data:
         try:
             trigger_folder = create_single_trigger_folder(
-                output_context.working_dir, config.trigger_dir, output_context.sub_job_seg, trigger,
+                output_context.working_dir,
+                config.trigger_dir,
+                output_context.sub_job_seg,
+                trigger,
             )
             trigger_folders.append(trigger_folder)
             save_trigger(
@@ -82,7 +89,10 @@ def _postprocess_saved_triggers(output_context, result, trigger_folders) -> tupl
 
         if event.injection:
             _update_event_from_injection_reconstruction(
-                output_context, trigger_folder, event, reconst_data,
+                output_context,
+                trigger_folder,
+                event,
+                reconst_data,
             )
 
         qveto_elapsed += _compute_event_qveto(sub_job_seg.ifos, event, reconst_data)
@@ -129,8 +139,7 @@ def _update_event_from_injection_reconstruction(output_context, trigger_folder, 
     rec_waveforms = [reconst_data[f"{ifo}_wf_REC_whiten"] for ifo in sub_job_seg.ifos]
     event.oSNR = [estimate_snr(rec) for rec in rec_waveforms]
     event.ioSNR = [
-        estimate_snr(inj, rec)
-        if (inj is not None) and (rec is not None) else None
+        estimate_snr(inj, rec) if (inj is not None) and (rec is not None) else None
         for inj, rec in zip(inj_waveforms, rec_waveforms)
     ]
     del injected_data, inj_waveforms, rec_waveforms
@@ -264,6 +273,31 @@ def _log_lag_completion(result) -> None:
     logger.info("-------------------------------------------")
 
 
-def _cleanup_lag_output_state() -> None:
-    gc.collect()
-    _free_jax_buffers()
+def _cleanup_lag_output_state(*, release_jax: bool = True, profile=DEFAULT_EXECUTION_PROFILE) -> None:
+    """Collect short-lived cycles, periodically scanning the full object graph.
+
+    Completed outputs are serialized by one thread per job worker. Keep normal
+    Python automatic collection enabled. A full collection also runs after
+    128 MiB RSS growth; device backends remain alive for the next lag/job.
+    Analysis-only process workers disable JAX cleanup to avoid initializing a
+    device runtime merely to collect their Python heap.
+    """
+    global _cleanup_count, _last_full_collection_rss
+    interval = profile.gc_full_interval
+    if interval <= 1:
+        gc.collect()
+        if release_jax:
+            _free_jax_buffers()
+        return
+    _cleanup_count += 1
+    rss = psutil.Process().memory_info().rss
+    full = (
+        _last_full_collection_rss is None
+        or _cleanup_count % interval == 0
+        or rss > _last_full_collection_rss + 128 * 1024**2
+    )
+    collected = gc.collect(2 if full else 0)
+    if full:
+        _last_full_collection_rss = psutil.Process().memory_info().rss
+    if profile.perf_diagnostics:
+        logger.info("PERF gc full=%d collected=%d rss=%d", full, collected, rss)

@@ -1,0 +1,113 @@
+[
+  {
+    "name": "core_only",
+    "rate": 256.0,
+    "time": [
+      330,
+      660
+    ],
+    "frequency": [
+      10,
+      11
+    ],
+    "layers": [
+      33,
+      33
+    ],
+    "pixel_rate": [
+      8.0,
+      8.0
+    ],
+    "core": [
+      true,
+      true
+    ],
+    "likelihood": [
+      4.0,
+      9.0
+    ],
+    "expected": {
+      "freq": 42.76923076923077,
+      "duration": 0.5769230769230771,
+      "bandwidth": 1.8461538461538287
+    }
+  },
+  {
+    "name": "halo_extent",
+    "rate": 256.0,
+    "time": [
+      330,
+      660,
+      130
+    ],
+    "frequency": [
+      10,
+      11,
+      3
+    ],
+    "layers": [
+      33,
+      33,
+      9
+    ],
+    "pixel_rate": [
+      8.0,
+      8.0,
+      32.0
+    ],
+    "core": [
+      true,
+      true,
+      false
+    ],
+    "likelihood": [
+      4.0,
+      9.0,
+      0.0
+    ],
+    "expected": {
+      "freq": 42.76923076923077,
+      "duration": 0.5779800513957127,
+      "bandwidth": 1.8461538461538287
+    }
+  },
+  {
+    "name": "positive_halo",
+    "rate": 256.0,
+    "time": [
+      330,
+      660,
+      130
+    ],
+    "frequency": [
+      10,
+      11,
+      3
+    ],
+    "layers": [
+      33,
+      33,
+      9
+    ],
+    "pixel_rate": [
+      8.0,
+      8.0,
+      32.0
+    ],
+    "core": [
+      true,
+      true,
+      false
+    ],
+    "likelihood": [
+      4.0,
+      9.0,
+      2.0
+    ],
+    "expected": {
+      "freq": 42.96296296296296,
+      "duration": 0.933126194158525,
+      "bandwidth": 2.2357612255980146
+    }
+  }
+]

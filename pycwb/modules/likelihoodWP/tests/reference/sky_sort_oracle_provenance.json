@@ -1,0 +1,9 @@
+{
+  "reference_release": "cWB 6.4.6.9",
+  "reference_commit": "e03cf7f02fa4d4666c5619ffcf9730e988328e3c",
+  "sort_fixture": "sky_sort_oracle.json",
+  "ld_fixture": "ld_sky_tie_oracle.npz",
+  "generation_scripts": "/home/yumengxu/code/burst/runs/ld_validation/sort_oracle.py and /home/yumengxu/code/burst/runs/ld_validation/sky_counterfactual.py",
+  "study_report": "/home/yumengxu/code/burst/runs/ld_validation/REPORT.md",
+  "description": "Sort oracle sampled from actual wavearray<double>::waveSort. LD posterior fixture uses captured reference statistic map, antenna prior and scale; corrected Python reproduces reference posterior bitwise and mode 1827."
+}

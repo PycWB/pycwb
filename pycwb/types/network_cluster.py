@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 import numpy as np
 from scipy.sparse import coo_array
@@ -78,44 +78,54 @@ class ClusterMeta:
     sky_index: float
         index in the skymap
     """
-    energy: float = 0.
-    energy_sky: float = 0.
-    like_net: float = 0.
-    net_ecor: float = 0.
-    norm_cor: float = 0.
-    net_null: float = 0.
-    net_ed: float = 0.
-    g_noise: float = 0.
-    like_sky: float = 0.
-    sky_cc: float = 0.
-    net_cc: float = 0.
-    sky_chi2: float = 0.
-    sub_net: float = 0.
-    sub_net2: float = 0.
-    sky_stat: float = 0.
-    net_rho: float = 0.
-    net_rho2: float = 0.
-    theta: float = 0.
-    phi: float = 0.
-    iota: float = 0.
-    psi: float = 0.
-    ellipticity: float = 0.
-    c_time: float = 0.
-    c_freq: float = 0.
-    g_net: float = 0.
-    a_net: float = 0.
-    i_net: float = 0.
-    norm: float = 0.
-    ndof: float = 0.
+
+    energy: float = 0.0
+    energy_sky: float = 0.0
+    like_net: float = 0.0
+    net_ecor: float = 0.0
+    norm_cor: float = 0.0
+    net_null: float = 0.0
+    net_ed: float = 0.0
+    g_noise: float = 0.0
+    like_sky: float = 0.0
+    sky_cc: float = 0.0
+    net_cc: float = 0.0
+    sky_chi2: float = 0.0
+    sub_net: float = 0.0
+    sub_net2: float = 0.0
+    sky_stat: float = 0.0
+    net_rho: float = 0.0
+    net_rho2: float = 0.0
+    theta: float = 0.0
+    phi: float = 0.0
+    iota: float = 0.0
+    psi: float = 0.0
+    ellipticity: float = 0.0
+    c_time: float = 0.0
+    c_freq: float = 0.0
+    g_net: float = 0.0
+    a_net: float = 0.0
+    i_net: float = 0.0
+    norm: float = 0.0
+    ndof: float = 0.0
     sky_size: int = 0
     sky_index: int = 0
     l_max: int = 0
+    reconstructed_theta: Optional[float] = None
+    reconstructed_phi: Optional[float] = None
     # Per-IFO xtalk-corrected waveform energies (getMRAwave equivalents, set by fill_detection_statistic)
-    wave_snr: list = field(default_factory=list)    # data energy per IFO (C++ d->enrg = get_XX())
+    wave_snr: list = field(default_factory=list)  # data energy per IFO (C++ d->enrg = get_XX())
     signal_snr: list = field(default_factory=list)  # signal energy per IFO (C++ d->sSNR = get_SS())
-    cross_snr: list = field(default_factory=list)   # xSNR per IFO (C++ d->xSNR = get_XS())
+    cross_snr: list = field(default_factory=list)  # xSNR per IFO (C++ d->xSNR = get_XS())
     signal_energy_physical: list = field(default_factory=list)  # physical strain energy per IFO for hrss
     null_energy: list = field(default_factory=list)  # null energy per IFO (C++ d->null)
+    mchirp: float = 0.0
+    mchirp_error: float = 0.0
+    chirp_merger_time: float = 0.0
+    chirp_merger_time_error: float = 0.0
+    chirp_ellipticity: float = 0.0
+    chirp_energy_fraction: float = 0.0
+    chirp_symmetry: float = 0.0
 
 
 @dataclass(init=False)
@@ -138,6 +148,7 @@ class Cluster:
     cluster_status : int
         Selection flag: 1 rejected, 0 accepted/not-processed, -1 incomplete, -2 ready.
     """
+
     # ---- primary storage ----
     pixel_arrays: PixelArrays = field(default=None, repr=False)
 
@@ -157,7 +168,7 @@ class Cluster:
         self,
         cluster_meta: ClusterMeta | None = None,
         pixel_arrays: PixelArrays | None = None,
-        pixels: list | None = None,          # backward-compat alias
+        pixels: list | None = None,  # backward-compat alias
         cluster_status: int = 0,
         cluster_id: int = 0,
         cluster_rate: list | None = None,
@@ -174,17 +185,17 @@ class Cluster:
                 pixel_arrays = PixelArrays.from_pixels(pixels, n_ifo)
             else:
                 pixel_arrays = empty_pixel_arrays(0)
-        self.pixel_arrays    = pixel_arrays
-        self.cluster_meta    = cluster_meta if cluster_meta is not None else ClusterMeta()
-        self.cluster_status  = cluster_status
-        self.cluster_id      = cluster_id
-        self.cluster_rate    = list(cluster_rate) if cluster_rate is not None else []
-        self.cluster_time    = cluster_time
-        self.cluster_freq    = cluster_freq
-        self.sky_area        = list(sky_area)        if sky_area        is not None else []
-        self.sky_pixel_map   = list(sky_pixel_map)   if sky_pixel_map   is not None else []
+        self.pixel_arrays = pixel_arrays
+        self.cluster_meta = cluster_meta if cluster_meta is not None else ClusterMeta()
+        self.cluster_status = cluster_status
+        self.cluster_id = cluster_id
+        self.cluster_rate = list(cluster_rate) if cluster_rate is not None else []
+        self.cluster_time = cluster_time
+        self.cluster_freq = cluster_freq
+        self.sky_area = list(sky_area) if sky_area is not None else []
+        self.sky_pixel_map = list(sky_pixel_map) if sky_pixel_map is not None else []
         self.sky_pixel_index = list(sky_pixel_index) if sky_pixel_index is not None else []
-        self.sky_time_delay  = list(sky_time_delay)  if sky_time_delay  is not None else []
+        self.sky_time_delay = list(sky_time_delay) if sky_time_delay is not None else []
 
     # ------------------------------------------------------------------ #
     # pixels: backward-compat property backed by pixel_arrays
@@ -209,7 +220,7 @@ class Cluster:
         mask = self.pixel_arrays.rate == rate
         return self.pixel_arrays[mask].to_pixel_list()
 
-    def get_sparse_map_by_rate(self, key='likelihood'):
+    def get_sparse_map_by_rate(self, key="likelihood"):
         """
         Get sparse map for selected key
 
@@ -240,8 +251,8 @@ class Cluster:
 
             dt = 1.0 / r
             df = r / 2.0
-            times  = (sub.time  // sub.layers).tolist()
-            freqs  = sub.frequency.tolist()
+            times = (sub.time // sub.layers).tolist()
+            freqs = sub.frequency.tolist()
             values = getattr(sub, key).tolist() if hasattr(sub, key) else [0.0] * len(sub)
             v_map = coo_array((values, (times, freqs)), shape=(max(times) + 1, max(freqs) + 1))
 
@@ -259,7 +270,7 @@ class Cluster:
             t_starts.append(t_start)
         return v_maps, t_starts, dts, dfs
 
-    def get_sparse_map(self, key='likelihood'):
+    def get_sparse_map(self, key="likelihood"):
         """
         Get sparse map for selected key
 
@@ -347,6 +358,7 @@ class Cluster:
         pa = self.pixel_arrays
         return float(np.max((pa.frequency.astype(np.float64) - 0.5) * pa.rate / 2 + pa.rate / 2))
 
+
 @dataclass
 class FragmentCluster:
     """
@@ -379,6 +391,7 @@ class FragmentCluster:
     clusters : list of Cluster
         cluster list
     """
+
     rate: float = 0.0
     start: float = 0.0
     stop: float = 0.0
@@ -392,7 +405,6 @@ class FragmentCluster:
     subnet_threshold: float = 0.0
     clusters: list[Cluster] = field(default_factory=list)
 
-
     def event_count(self, event_status=None):
         """
         Count number of events in clusters
@@ -403,7 +415,7 @@ class FragmentCluster:
         """
         if event_status is not None:
             if not isinstance(event_status, int) or event_status > 1 or event_status < -2:
-                raise ValueError('event_status must be -2, -1, 0, 1 or None')
+                raise ValueError("event_status must be -2, -1, 0, 1 or None")
 
         if event_status is None:
             return sum(1 for cluster in self.clusters if cluster.cluster_status < 1)
@@ -419,7 +431,7 @@ class FragmentCluster:
         """
         if event_status is not None:
             if not isinstance(event_status, int) or event_status > 1 or event_status < -2:
-                raise ValueError('event_status must be -2, -1, 0, 1 or None')
+                raise ValueError("event_status must be -2, -1, 0, 1 or None")
 
         if event_status is None:
             return sum(len(cluster.pixel_arrays) for cluster in self.clusters if cluster.cluster_status < 1)
@@ -492,25 +504,25 @@ class ClusterChirp:
     """
     Class for cluster chirp statistics
     """
-    tmrgr: float   # merger time
+
+    tmrgr: float  # merger time
     tmrgrerr: float  # merger time error
     mchirp: float  # chirp mass
     mchirperr: float  # chirp mass error
-    chi2chirp: float   # chi2 over NDF
+    chi2chirp: float  # chi2 over NDF
     chirp_efrac: float  # chirp energy fraction
     chirp_pfrac: float  # chirp pixel fraction
     chirp_ellip: float  # chirp ellipticity
     chirp: list[float]  # chirp graph
     mchpdf: list[float]  # chirp mass PDF
-        # self.tmrgr = c_data.tmrgr
-        # self.tmrgrerr = c_data.tmrgrerr
-        # self.mchirp = c_data.mchirp
-        # self.mchirperr = c_data.mchirperr
-        # self.chi2chirp = c_data.chi2chirp
-        # self.chirp_efrac = c_data.chirpEfrac
-        # self.chirp_pfrac = c_data.chirpPfrac
-        # self.chirp_ellip = c_data.chirpEllip
-        # # TODO: pythonize these
-        # self.chirp = c_data.chirp
-        # self.mchpdf = c_data.mchpdf
-
+    # self.tmrgr = c_data.tmrgr
+    # self.tmrgrerr = c_data.tmrgrerr
+    # self.mchirp = c_data.mchirp
+    # self.mchirperr = c_data.mchirperr
+    # self.chi2chirp = c_data.chi2chirp
+    # self.chirp_efrac = c_data.chirpEfrac
+    # self.chirp_pfrac = c_data.chirpPfrac
+    # self.chirp_ellip = c_data.chirpEllip
+    # # TODO: pythonize these
+    # self.chirp = c_data.chirp
+    # self.mchpdf = c_data.mchpdf

@@ -9,8 +9,8 @@ from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
-from pycwb.modules.data_conditioning import data_conditioning
-from pycwb.modules.likelihoodWP.likelihood import likelihood
+from pycwb.modules.data_conditioning import condition_strains
+from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
@@ -86,7 +86,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # data conditioning
-        tf_maps, nRMS_list = data_conditioning(config, data)
+        tf_maps, nRMS_list = condition_strains(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # initialize network object 
@@ -148,7 +148,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
                 # Compute likelihood using new python code
                 start_time_new = perf_counter()
-                cluster = likelihood(network, config.nIFO, cluster.clusters[0], config.MRAcatalog)
+                cluster = evaluate_cluster_likelihood(network, config.nIFO, cluster.clusters[0], config.MRAcatalog)
                 end_time_new = perf_counter()
                 if cluster is None:
                     logger.info(f"Cluster {k} at lag {lag} rejected by new likelihood computation.")

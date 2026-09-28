@@ -23,8 +23,18 @@ Parameter Categories
      - Key Parameters
      - Detailed Guide
    * - General / Network
-     - ``ifos``, ``gps_start``, ``gps_end``, ``inRate``
+     - ``ifo``, ``gps_start``, ``gps_end``, ``inRate``
      - :ref:`start_here`
+   * - Detector Geometry
+     - ``ifo``, ``refIFO``, ``detector_geometry``, ``detector_definitions_file``
+     - :ref:`detector_support`
+   * - Execution / Memory
+     - ``execution_profile``, ``max_energy_backend``, ``coherence_timing``
+     - :ref:`execution_profile`
+   * - Calculation Conventions
+     - ``execution_profile.native_chirp``, ``release_waveform_stats``,
+       ``regression_cap``, ``regression_percentile_stride`` (all within the profile)
+     - :ref:`native_calculation_conventions`
    * - Frequency / Resolution
      - ``fLow``, ``fHigh``, ``l_low``, ``l_high``, ``levelR``
      - :ref:`pipeline_lifecycle`
@@ -71,10 +81,30 @@ Parameter Quick Reference
      - Default
      - Range
      - Description
-   * - ``ifos``
-     - [H1, L1]
+   * - ``ifo``
+     - [L1, H1, V1, I1, J1, G1]
      - —
-     - List of interferometer names
+     - Select the actual network explicitly; geometry availability is listed in :ref:`detector_support`.
+   * - ``detector_geometry``
+     - {}
+     - Per-detector mapping
+     - Omitted entries use bundled LAL-derived geometry; see :ref:`detector_support`.
+   * - ``detector_definitions_file``
+     - ``null``
+     - JSON path
+     - JSON file extending or overriding detector geometries; see :ref:`custom_detector_definitions`.
+   * - ``execution_profile``
+     - Schema defaults
+     - Validated mapping
+     - Recorded native execution choices; see :ref:`execution_profile_options` and :ref:`native_calculation_conventions`.
+   * - ``max_energy_backend``
+     - jax
+     - jax / numba / auto
+     - Coherence max-energy backend; see :ref:`execution_profile`.
+   * - ``coherence_timing``
+     - false
+     - Boolean
+     - Coherence setup timing logs; see :ref:`execution_profile`.
    * - ``fLow``
      - 64
      - ≥ 0

@@ -14,6 +14,8 @@ All detectors share the same WDM parameters and the same segment length, so
 vmap over the leading detector dimension compiles once and runs in parallel.
 """
 
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+
 import logging
 from functools import partial
 
@@ -45,26 +47,30 @@ def _build_extended_signal(ts_data, n_filter_taps, mm_eff):
 
     left_mirror_max = min(n_filter_taps, n_input - 1)
     if left_mirror_max >= 0:
-        extended[n_filter_taps - left_mirror_max:n_filter_taps + 1] = (
-            ts_data[:left_mirror_max + 1][::-1]
-        )
+        extended[n_filter_taps - left_mirror_max : n_filter_taps + 1] = ts_data[: left_mirror_max + 1][::-1]
 
-    extended[n_filter_taps:n_filter_taps + n_input] = ts_data
+    extended[n_filter_taps : n_filter_taps + n_input] = ts_data
 
     n_right = ext_len - n_filter_taps - n_input
     if n_right > 0:
         idx = n_input - np.arange(n_right) - 1
-        extended[n_filter_taps + n_input:n_filter_taps + n_input + n_right] = (
-            ts_data[idx]
-        )
+        extended[n_filter_taps + n_input : n_filter_taps + n_input + n_right] = ts_data[idx]
 
     return extended, aligned_length
 
 
 if _LOW_LEVEL_T2W_JAX_IMPL is not None:
-    @partial(jax.jit, static_argnames=(
-        "M", "n_filter_taps", "mm_eff", "return_quadrature", "n_time_bins",
-    ))
+
+    @partial(
+        jax.jit,
+        static_argnames=(
+            "M",
+            "n_filter_taps",
+            "mm_eff",
+            "return_quadrature",
+            "n_time_bins",
+        ),
+    )
     def _batch_t2w_impl(
         extended_signals,
         filter_taps,
@@ -89,11 +95,13 @@ if _LOW_LEVEL_T2W_JAX_IMPL is not None:
 
         return jax.vmap(_single_t2w_impl)(extended_signals)
 else:
+
     def _batch_t2w_impl(*args, **kwargs):
         raise RuntimeError("low-level JAX WDM transform is unavailable")
 
 
 if _T2W_JAX is not None:
+
     @partial(jax.jit, static_argnames=("M", "m_H"))
     def _batch_t2w_fallback(signals, filter_taps, M, m_H):
         """Stable batched JIT wrapper for the high-level fallback transform."""
@@ -104,11 +112,36 @@ if _T2W_JAX is not None:
 
         return jax.vmap(_single_t2w)(signals)
 else:
+
     def _batch_t2w_fallback(*args, **kwargs):
         raise RuntimeError("JAX WDM transform fallback is unavailable")
 
 
-def batch_t2w_detectors(strains, wdm_wavelet):
+def _tiled_t2w_detectors(strains, M, m_H, filter_taps, sample_budget=262144):
+    """Bound FFT/filter temporaries, retaining global padding and time parity.
+
+    Each tile starts at an even time bin, so the unmodified WDM kernel's
+    local parity equals global parity. Halo samples are sliced from the full
+    mirrored signal; internal tile boundaries are never mirror-padded.
+    """
+    # CPU XLA can change rounding for short/unaligned time dimensions.
+    # Keep every kernel invocation on the tested 32-bin alignment.
+    tile_bins = max(32, (sample_budget // M) // 32 * 32)
+    padded = [_build_extended_signal(strain.data, m_H, M) for strain in strains]
+    n_time = padded[0][1] // M
+    outputs = [np.empty((n_time, M + 1), dtype=np.complex128) for _ in strains]
+    for start in range(0, n_time, tile_bins):
+        count = min(tile_bins, n_time - start)
+        window = jnp.asarray(np.stack([ext[start * M : (start + count) * M + 2 * m_H] for ext, _ in padded]))
+        block = _batch_t2w_impl(window, filter_taps, M, m_H, M, True, count)
+        host = np.asarray(jax.block_until_ready(block))
+        for i, output in enumerate(outputs):
+            output[start : start + count] = host[i, 0] + 1j * host[i, 1]
+        del host, block, window
+    return [output.T for output in outputs]
+
+
+def batch_t2w_detectors(strains, wdm_wavelet, profile=DEFAULT_EXECUTION_PROFILE):
     """
     Compute TimeFrequencyMap data for all detectors in one batched JAX call.
 
@@ -131,7 +164,7 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     M = int(wdm_wavelet.M)
     m_H = int(wdm_wavelet.m_H)
     filter_taps = jnp.asarray(np.asarray(wdm_wavelet.filter)[:m_H], dtype=jnp.float64)
-    mm_eff = M   # MM=-1 → stride = M (full quadrature)
+    mm_eff = M  # MM=-1 → stride = M (full quadrature)
     return_quadrature = True
 
     sample_rate = float(strains[0].sample_rate)
@@ -143,6 +176,14 @@ def batch_t2w_detectors(strains, wdm_wavelet):
     aligned_length = ((n_input + mm_eff - 1) // mm_eff) * mm_eff
     n_time_bins = aligned_length // mm_eff
 
+    if (
+        profile.tiled_wdm
+        and _LOW_LEVEL_T2W_JAX_IMPL is not None
+        and n_time_bins % 32 == 0
+        and jax.default_backend() == "cpu"
+    ):
+        return _tiled_t2w_detectors(strains, M, m_H, filter_taps), (dt, df)
+
     if _LOW_LEVEL_T2W_JAX_IMPL is None:
         # Fallback: call high-level t2w_jax per detector
         signals_np = np.stack([np.asarray(s.data, dtype=np.float64) for s in strains])
@@ -150,12 +191,14 @@ def batch_t2w_detectors(strains, wdm_wavelet):
 
         batched = _batch_t2w_fallback(signals_jax, filter_taps, M, m_H)  # (n_det, 2, n_time, M+1)
         batched = jax.block_until_ready(batched)
+        if profile.compact_coherence:
+            signals_np = signals_jax = None
 
         result = []
         for i in range(len(strains)):
             # Convert to pycwb TimeFrequencyMap data format: complex128, shape (M+1, n_time)
             data = (np.asarray(batched[i, 0]) + 1j * np.asarray(batched[i, 1])).T
-            result.append(data.astype(np.complex128))
+            result.append(data.astype(np.complex128, copy=not profile.compact_coherence))
         return result, (dt, df)
 
     # Pre-compute extended signals for all detectors (mirror-padded, on CPU)
@@ -169,6 +212,8 @@ def batch_t2w_detectors(strains, wdm_wavelet):
             mm_eff,
         )
         all_extended[i] = ext
+    if profile.compact_coherence:
+        ext = None
 
     extended_jax = jnp.asarray(all_extended)  # (n_det, ext_len)
 
@@ -180,12 +225,14 @@ def batch_t2w_detectors(strains, wdm_wavelet):
         mm_eff,
         return_quadrature,
         n_time_bins,
-    )   # (n_det, 2, n_time, M+1)
+    )  # (n_det, 2, n_time, M+1)
     batched = jax.block_until_ready(batched)
+    if profile.compact_coherence:
+        extended_jax = all_extended = None
 
     result = []
     for i in range(len(strains)):
         data = (np.asarray(batched[i, 0]) + 1j * np.asarray(batched[i, 1])).T
-        result.append(data.astype(np.complex128))
+        result.append(data.astype(np.complex128, copy=not profile.compact_coherence))
 
     return result, (dt, df)

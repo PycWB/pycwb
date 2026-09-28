@@ -1,10 +1,16 @@
+"""Wavelet packet construction, normalization, noise, and network-plane operations.
+
+The public names describe the operations. Original cWB symbols are recorded in
+the README migration table and the reference comments below for traceability.
+"""
+
 from math import sqrt
 
 import numpy as np
 from numba import njit, float32
 
 # static inline __m256 _avx_noise_ps(float** p, float** q, std::vector<float*> &pAVX, int I) {
-# // q - pointer to pixel norms 
+# // q - pointer to pixel norms
 # // returns noise correction
 # // I - number of pixels
 #    float k = pAVX[1][I];              // number of detectors
@@ -31,31 +37,31 @@ from numba import njit, float32
 #    static const __m128 _k = _mm_set1_ps(1./k);
 
 #    NETX(__m128* _s0 = (__m128*)(p[0]+I);, __m128* _s1 = (__m128*)(p[1]+I);,
-# 	__m128* _s2 = (__m128*)(p[2]+I);, __m128* _s3 = (__m128*)(p[3]+I);, 
+# 	__m128* _s2 = (__m128*)(p[2]+I);, __m128* _s3 = (__m128*)(p[3]+I);,
 # 	__m128* _s4 = (__m128*)(p[4]+I);, __m128* _s5 = (__m128*)(p[5]+I);,
 # 	__m128* _s6 = (__m128*)(p[6]+I);, __m128* _s7 = (__m128*)(p[7]+I);)
 
 #    NETX(__m128* _x0 = (__m128*)(q[0]+I);, __m128* _x1 = (__m128*)(q[1]+I);,
-# 	__m128* _x2 = (__m128*)(q[2]+I);, __m128* _x3 = (__m128*)(q[3]+I);, 
+# 	__m128* _x2 = (__m128*)(q[2]+I);, __m128* _x3 = (__m128*)(q[3]+I);,
 # 	__m128* _x4 = (__m128*)(q[4]+I);, __m128* _x5 = (__m128*)(q[5]+I);,
 # 	__m128* _x6 = (__m128*)(q[6]+I);, __m128* _x7 = (__m128*)(q[7]+I);)
 
-#    for(int i=0; i<I; i+=4) { 
-#       NETX(_ns =*_s0++;,                  _ns = _mm_add_ps(*_s1++,_ns); , 
-#            _ns = _mm_add_ps(*_s2++,_ns);, _ns = _mm_add_ps(*_s3++,_ns); , 
-#            _ns = _mm_add_ps(*_s4++,_ns);, _ns = _mm_add_ps(*_s5++,_ns); , 
+#    for(int i=0; i<I; i+=4) {
+#       NETX(_ns =*_s0++;,                  _ns = _mm_add_ps(*_s1++,_ns); ,
+#            _ns = _mm_add_ps(*_s2++,_ns);, _ns = _mm_add_ps(*_s3++,_ns); ,
+#            _ns = _mm_add_ps(*_s4++,_ns);, _ns = _mm_add_ps(*_s5++,_ns); ,
 #            _ns = _mm_add_ps(*_s6++,_ns);, _ns = _mm_add_ps(*_s7++,_ns); )
-	 
-#       NETX(_nx =*_x0++;,                  _nx = _mm_add_ps(*_x1++,_nx); , 
-#            _nx = _mm_add_ps(*_x2++,_nx);, _nx = _mm_add_ps(*_x3++,_nx); , 
-#            _nx = _mm_add_ps(*_x4++,_nx);, _nx = _mm_add_ps(*_x5++,_nx); , 
+
+#       NETX(_nx =*_x0++;,                  _nx = _mm_add_ps(*_x1++,_nx); ,
+#            _nx = _mm_add_ps(*_x2++,_nx);, _nx = _mm_add_ps(*_x3++,_nx); ,
+#            _nx = _mm_add_ps(*_x4++,_nx);, _nx = _mm_add_ps(*_x5++,_nx); ,
 #            _nx = _mm_add_ps(*_x6++,_nx);, _nx = _mm_add_ps(*_x7++,_nx); )
-	 	 
+
 #       _ns = _mm_mul_ps(_ns,_k);
 #       _nx = _mm_mul_ps(_nx,_k);
 #       _mk = _mm_and_ps(_mm_cmpgt_ps(*_MK,_0),_1);        // event mask
 #       _nm = _mm_and_ps(_mm_cmpgt_ps(_nx,_0),_1);         // data norm mask
-#       _nm = _mm_mul_ps(_mk,_nm);                         // norm x event mask      
+#       _nm = _mm_mul_ps(_mk,_nm);                         // norm x event mask
 #       _EC = _mm_add_ps(_EC,_mm_mul_ps(_nm,*_ec));        // coherent energy
 #       _NC = _mm_add_ps(_NC,_nm);                         // number of core pixels
 
@@ -68,7 +74,7 @@ from numba import njit, float32
 #       _rc = _mm_div_ps(*_ec,_mm_add_ps(_rc,_o));         // normalized EC
 
 #       _nm = _mm_and_ps(_mm_cmpgt_ps(_ns,_0),_1);         // signal norm mask
-#       _nm = _mm_mul_ps(_mk,_nm);                         // norm x event mask      
+#       _nm = _mm_mul_ps(_mk,_nm);                         // norm x event mask
 #      *_gn = _mm_mul_ps(_mk,_mm_mul_ps(*_gn,_nx));        // normalize Gaussian noise ecorrection
 #       _SC = _mm_add_ps(_SC,_mm_mul_ps(_nm,*_ec));        // signal coherent energy
 #       _RC = _mm_add_ps(_RC,_mm_mul_ps(_nm, _rc));        // total normalized EC
@@ -78,19 +84,20 @@ from numba import njit, float32
 #       _nm = _mm_sub_ps(_mk,_nm);                         // satellite mask
 #       _EH = _mm_add_ps(_EH,_mm_mul_ps(_nm,*_et));        // halo energy in TF domain
 
+
 #       _MK++; _gn++; _et++; _ec++; _rn++;
 #    }
-#    float es =  _wat_hsum(_ES)/2;                         // residual satellite energy in time domain 
+#    float es =  _wat_hsum(_ES)/2;                         // residual satellite energy in time domain
 #    float eh =  _wat_hsum(_EH)/2;                         // halo energy in TF domain
 #    float gn =  _wat_hsum(_GN);                           // G-noise correction
 #    float nc =  _wat_hsum(_NC);                           // number of core pixels
 #    float ns =  _wat_hsum(_NS);                           // number of signal pixels
-#    float rc =  _wat_hsum(_RC);                           // normalized EC x 2 
+#    float rc =  _wat_hsum(_RC);                           // normalized EC x 2
 #    float ec =  _wat_hsum(_EC);                           // signal coherent energy x 2
 #    float sc =  _wat_hsum(_SC);                           // core coherent energy x 2
 #    return _mm256_set_ps(ns,nc,es,eh,rc/(sc+0.01),sc-ec,ec,gn);
-# } 
-def avx_noise_ps(p, q, et, MK, ec, gn, rn):
+# }
+def compute_gaussian_noise_correction(p, q, et, MK, ec, gn, rn):
     """
     get G-noise correction
 
@@ -99,7 +106,7 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
     p : np.ndarray
         The p component of the signal.
     q : np.ndarray
-        pointer to pixel norms 
+        pointer to pixel norms
     et : np.ndarray
         The total energy
     MK : np.ndarray
@@ -122,16 +129,16 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
 
     n_ifos = p_arr.shape[0]
 
-    ns = p_arr.sum(axis=0) / n_ifos   # average signal energy per pixel
-    nx = q_arr.sum(axis=0) / n_ifos   # average norm per pixel
+    ns = p_arr.sum(axis=0) / n_ifos  # average signal energy per pixel
+    nx = q_arr.sum(axis=0) / n_ifos  # average norm per pixel
 
-    mk = (MK > 0).astype(np.float64)           # event mask
-    nm_core = mk * (nx > 0).astype(np.float64) # norm x event mask (core)
+    mk = (MK > 0).astype(np.float64)  # event mask
+    nm_core = mk * (nx > 0).astype(np.float64)  # norm x event mask (core)
 
     EC = float(np.sum(nm_core * ec))
     NC = float(np.sum(nm_core))
 
-    nm_halo = mk - nm_core                     # halo mask
+    nm_halo = mk - nm_core  # halo mask
     ES = float(np.sum(nm_halo * rn))
 
     rc = np.where(gn < 2.0, 1.0, 0.0)
@@ -140,23 +147,23 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
     rc = ec / (rc + 1e-9)
 
     nm_sig = mk * (ns > 0).astype(np.float64)  # signal norm mask
-    gn[:] = mk * gn * nx                        # in-place update (same as original)
+    gn[:] = mk * gn * nx  # in-place update (same as original)
 
     SC = float(np.sum(nm_sig * ec))
     RC = float(np.sum(nm_sig * rc))
     GN = float(np.sum(nm_sig * gn))
     NS = float(np.sum(nm_sig))
 
-    nm_sat = mk - nm_sig                        # satellite mask
+    nm_sat = mk - nm_sig  # satellite mask
     EH = float(np.sum(nm_sat * et))
 
     return GN, EC, SC - EC, RC / (SC + 0.01), EH / 2, ES / 2, NC, NS
 
 
-# static inline float _avx_setAMP_ps(float** p, float** q, 
+# static inline float _avx_setAMP_ps(float** p, float** q,
 # 				   std::vector<float*> &pAVX, int I) {
 # // set packet amplitudes for waveform reconstruction
-# // returns number of degrees of freedom - effective # of pixels per detector   
+# // returns number of degrees of freedom - effective # of pixels per detector
 #    int II = I*2;
 #    int I2 = II+2;
 #    int I3 = II+3;
@@ -171,14 +178,14 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
 #    static const __m128 _4 = _mm_set1_ps(4);
 #    static const __m128 o5 = _mm_set1_ps(0.5);
 
-#    NETX(__m128* _p0 = (__m128*)p[0]; __m128* _q0 = (__m128*)q[0]; __m128* _n0 = (__m128*)(q[0]+I); , 
-# 	__m128* _p1 = (__m128*)p[1]; __m128* _q1 = (__m128*)q[1]; __m128* _n1 = (__m128*)(q[1]+I); , 
-# 	__m128* _p2 = (__m128*)p[2]; __m128* _q2 = (__m128*)q[2]; __m128* _n2 = (__m128*)(q[2]+I); , 
-# 	__m128* _p3 = (__m128*)p[3]; __m128* _q3 = (__m128*)q[3]; __m128* _n3 = (__m128*)(q[3]+I); , 
-# 	__m128* _p4 = (__m128*)p[4]; __m128* _q4 = (__m128*)q[4]; __m128* _n4 = (__m128*)(q[4]+I); , 
-# 	__m128* _p5 = (__m128*)p[5]; __m128* _q5 = (__m128*)q[5]; __m128* _n5 = (__m128*)(q[5]+I); , 
-# 	__m128* _p6 = (__m128*)p[6]; __m128* _q6 = (__m128*)q[6]; __m128* _n6 = (__m128*)(q[6]+I); , 
-# 	__m128* _p7 = (__m128*)p[7]; __m128* _q7 = (__m128*)q[7]; __m128* _n7 = (__m128*)(q[7]+I); ) 
+#    NETX(__m128* _p0 = (__m128*)p[0]; __m128* _q0 = (__m128*)q[0]; __m128* _n0 = (__m128*)(q[0]+I); ,
+# 	__m128* _p1 = (__m128*)p[1]; __m128* _q1 = (__m128*)q[1]; __m128* _n1 = (__m128*)(q[1]+I); ,
+# 	__m128* _p2 = (__m128*)p[2]; __m128* _q2 = (__m128*)q[2]; __m128* _n2 = (__m128*)(q[2]+I); ,
+# 	__m128* _p3 = (__m128*)p[3]; __m128* _q3 = (__m128*)q[3]; __m128* _n3 = (__m128*)(q[3]+I); ,
+# 	__m128* _p4 = (__m128*)p[4]; __m128* _q4 = (__m128*)q[4]; __m128* _n4 = (__m128*)(q[4]+I); ,
+# 	__m128* _p5 = (__m128*)p[5]; __m128* _q5 = (__m128*)q[5]; __m128* _n5 = (__m128*)(q[5]+I); ,
+# 	__m128* _p6 = (__m128*)p[6]; __m128* _q6 = (__m128*)q[6]; __m128* _n6 = (__m128*)(q[6]+I); ,
+# 	__m128* _p7 = (__m128*)p[7]; __m128* _q7 = (__m128*)q[7]; __m128* _n7 = (__m128*)(q[7]+I); )
 
 #    NETX(__m128 a0=_mm_set1_ps(q[0][I4]); __m128 s0=_mm_set1_ps(q[0][I2]); __m128 c0=_mm_set1_ps(q[0][I3]); ,
 # 	__m128 a1=_mm_set1_ps(q[1][I4]); __m128 s1=_mm_set1_ps(q[1][I2]); __m128 c1=_mm_set1_ps(q[1][I3]); ,
@@ -190,48 +197,49 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
 # 	__m128 a7=_mm_set1_ps(q[7][I4]); __m128 s7=_mm_set1_ps(q[7][I2]); __m128 c7=_mm_set1_ps(q[7][I3]); )
 
 #    __m128* _MK = (__m128*)pAVX[1];
-#    __m128* _fp = (__m128*)pAVX[2];       
+#    __m128* _fp = (__m128*)pAVX[2];
 #    __m128* _fx = (__m128*)pAVX[3];
 #    __m128* _ee = (__m128*)pAVX[15];
 #    __m128* _EE = (__m128*)pAVX[16];
 #    __m128* _gn = (__m128*)pAVX[20];
 
 #    __m128  _Np = _mm_setzero_ps();        // number of effective pixels per detector
-     
-#    for(int i=0; i<I; i+=4) {  //  packet amplitudes 
+
+#    for(int i=0; i<I; i+=4) {  //  packet amplitudes
 #       _mk = _mm_mul_ps(o5,_mm_and_ps(_mm_cmpgt_ps(*_MK++,_0),_1));                  // event mask
 #       NETX(
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a0,_mk),*_n0); _a=*_p0; _A=*_q0; _nn=*_n0++;
-# 	   *_p0++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c0),_mm_mul_ps(_A,s0))); 
+# 	   *_p0++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c0),_mm_mul_ps(_A,s0)));
 # 	   *_q0++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c0),_mm_mul_ps(_a,s0))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a1,_mk),*_n1); _a=*_p1; _A=*_q1; _nn=_mm_add_ps(_nn,*_n1++);
-# 	   *_p1++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c1),_mm_mul_ps(_A,s1))); 
+# 	   *_p1++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c1),_mm_mul_ps(_A,s1)));
 # 	   *_q1++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c1),_mm_mul_ps(_a,s1))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a2,_mk),*_n2); _a=*_p2; _A=*_q2; _nn=_mm_add_ps(_nn,*_n2++);
-# 	   *_p2++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c2),_mm_mul_ps(_A,s2))); 
+# 	   *_p2++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c2),_mm_mul_ps(_A,s2)));
 # 	   *_q2++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c2),_mm_mul_ps(_a,s2))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a3,_mk),*_n3); _a=*_p3; _A=*_q3; _nn=_mm_add_ps(_nn,*_n3++);
-# 	   *_p3++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c3),_mm_mul_ps(_A,s3))); 
+# 	   *_p3++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c3),_mm_mul_ps(_A,s3)));
 # 	   *_q3++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c3),_mm_mul_ps(_a,s3))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a4,_mk),*_n4); _a=*_p4; _A=*_q4; _nn=_mm_add_ps(_nn,*_n4++);
-# 	   *_p4++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c4),_mm_mul_ps(_A,s4))); 
+# 	   *_p4++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c4),_mm_mul_ps(_A,s4)));
 # 	   *_q4++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c4),_mm_mul_ps(_a,s4))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a5,_mk),*_n5); _a=*_p5; _A=*_q5; _nn=_mm_add_ps(_nn,*_n5++);
-# 	   *_p5++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c5),_mm_mul_ps(_A,s5))); 
+# 	   *_p5++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c5),_mm_mul_ps(_A,s5)));
 # 	   *_q5++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c5),_mm_mul_ps(_a,s5))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a6,_mk),*_n6); _a=*_p6; _A=*_q6; _nn=_mm_add_ps(_nn,*_n6++);
-# 	   *_p6++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c6),_mm_mul_ps(_A,s6))); 
+# 	   *_p6++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c6),_mm_mul_ps(_A,s6)));
 # 	   *_q6++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c6),_mm_mul_ps(_a,s6))); ,
 # 	   _n = _mm_mul_ps(_mm_mul_ps(a7,_mk),*_n7); _a=*_p7; _A=*_q7; _nn=_mm_add_ps(_nn,*_n7++);
-# 	   *_p7++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c7),_mm_mul_ps(_A,s7))); 
+# 	   *_p7++ = _mm_mul_ps(_n,_mm_sub_ps(_mm_mul_ps(_a,c7),_mm_mul_ps(_A,s7)));
 # 	   *_q7++ = _mm_mul_ps(_n,_mm_add_ps(_mm_mul_ps(_A,c7),_mm_mul_ps(_a,s7))); )
+
 
 #       _nn = _mm_mul_ps(_nn,_mk);
 #       _Np = _mm_add_ps(_Np,_nn);                         // Dof * k/4
 #    }
 #    return _wat_hsum(_Np)*4/k;
-# } 
-def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
+# }
+def normalize_packet_amplitudes(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
     """
     set packet amplitudes for waveform reconstruction
     returns number of degrees of freedom - effective # of pixels per detector
@@ -263,14 +271,14 @@ def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
         - new_q : np.ndarray
             Updated q component.
     """
-    p_arr   = np.asarray(p)       # (n_ifo, n_pix)
-    q_arr   = np.asarray(q)
-    qn_arr  = np.asarray(q_norm)   # (n_ifo, n_pix)
+    p_arr = np.asarray(p)  # (n_ifo, n_pix)
+    q_arr = np.asarray(q)
+    qn_arr = np.asarray(q_norm)  # (n_ifo, n_pix)
 
     n_ifo = p_arr.shape[0]
-    aA    = np.asarray(q_a) + np.asarray(q_A)  # (n_ifo,)
-    q_si_arr = np.asarray(q_si)               # (n_ifo,)
-    q_co_arr = np.asarray(q_co)               # (n_ifo,)
+    aA = np.asarray(q_a) + np.asarray(q_A)  # (n_ifo,)
+    q_si_arr = np.asarray(q_si)  # (n_ifo,)
+    q_co_arr = np.asarray(q_co)  # (n_ifo,)
 
     mk = 0.5 * (np.asarray(MK) > 0).astype(p_arr.dtype)  # (n_pix,)
 
@@ -285,38 +293,39 @@ def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
     return _Np * 4 / n_ifo, new_p, new_q
 
 
-# static inline void _avx_loadNULL_ps(float** n, float** N, 
+# static inline void _avx_loadNULL_ps(float** n, float** N,
 # 				    float** d, float** D,
-# 				    float** h, float** H, int I) { 
+# 				    float** h, float** H, int I) {
 # // load NULL packet amplitudes for all detectors and pixels
 # // these amplitudes are used for reconstruction of data time searies
 # // now works only for <4 detector
-#    NETX(__m128* _n0 = (__m128*)n[0]; __m128* _N0 = (__m128*)N[0]; , 
-# 	__m128* _n1 = (__m128*)n[1]; __m128* _N1 = (__m128*)N[1]; , 
-# 	__m128* _n2 = (__m128*)n[2]; __m128* _N2 = (__m128*)N[2]; , 
-# 	__m128* _n3 = (__m128*)n[3]; __m128* _N3 = (__m128*)N[3]; , 
-# 	__m128* _n4 = (__m128*)n[4]; __m128* _N4 = (__m128*)N[4]; , 
-# 	__m128* _n5 = (__m128*)n[5]; __m128* _N5 = (__m128*)N[5]; , 
-# 	__m128* _n6 = (__m128*)n[6]; __m128* _N6 = (__m128*)N[6]; , 
-# 	__m128* _n7 = (__m128*)n[7]; __m128* _N7 = (__m128*)N[7]; ) 
+#    NETX(__m128* _n0 = (__m128*)n[0]; __m128* _N0 = (__m128*)N[0]; ,
+# 	__m128* _n1 = (__m128*)n[1]; __m128* _N1 = (__m128*)N[1]; ,
+# 	__m128* _n2 = (__m128*)n[2]; __m128* _N2 = (__m128*)N[2]; ,
+# 	__m128* _n3 = (__m128*)n[3]; __m128* _N3 = (__m128*)N[3]; ,
+# 	__m128* _n4 = (__m128*)n[4]; __m128* _N4 = (__m128*)N[4]; ,
+# 	__m128* _n5 = (__m128*)n[5]; __m128* _N5 = (__m128*)N[5]; ,
+# 	__m128* _n6 = (__m128*)n[6]; __m128* _N6 = (__m128*)N[6]; ,
+# 	__m128* _n7 = (__m128*)n[7]; __m128* _N7 = (__m128*)N[7]; )
 
-#    NETX(__m128* _d0 = (__m128*)d[0]; __m128* _D0 = (__m128*)D[0]; , 
-# 	__m128* _d1 = (__m128*)d[1]; __m128* _D1 = (__m128*)D[1]; , 
-# 	__m128* _d2 = (__m128*)d[2]; __m128* _D2 = (__m128*)D[2]; , 
-# 	__m128* _d3 = (__m128*)d[3]; __m128* _D3 = (__m128*)D[3]; , 
-# 	__m128* _d4 = (__m128*)d[4]; __m128* _D4 = (__m128*)D[4]; , 
-# 	__m128* _d5 = (__m128*)d[5]; __m128* _D5 = (__m128*)D[5]; , 
-# 	__m128* _d6 = (__m128*)d[6]; __m128* _D6 = (__m128*)D[6]; , 
-# 	__m128* _d7 = (__m128*)d[7]; __m128* _D7 = (__m128*)D[7]; ) 
- 
-#    NETX(__m128* _h0 = (__m128*)h[0]; __m128* _H0 = (__m128*)H[0]; , 
-# 	__m128* _h1 = (__m128*)h[1]; __m128* _H1 = (__m128*)H[1]; , 
-# 	__m128* _h2 = (__m128*)h[2]; __m128* _H2 = (__m128*)H[2]; , 
-# 	__m128* _h3 = (__m128*)h[3]; __m128* _H3 = (__m128*)H[3]; , 
-# 	__m128* _h4 = (__m128*)h[4]; __m128* _H4 = (__m128*)H[4]; , 
-# 	__m128* _h5 = (__m128*)h[5]; __m128* _H5 = (__m128*)H[5]; , 
-# 	__m128* _h6 = (__m128*)h[6]; __m128* _H6 = (__m128*)H[6]; , 
-# 	__m128* _h7 = (__m128*)h[7]; __m128* _H7 = (__m128*)H[7]; ) 
+#    NETX(__m128* _d0 = (__m128*)d[0]; __m128* _D0 = (__m128*)D[0]; ,
+# 	__m128* _d1 = (__m128*)d[1]; __m128* _D1 = (__m128*)D[1]; ,
+# 	__m128* _d2 = (__m128*)d[2]; __m128* _D2 = (__m128*)D[2]; ,
+# 	__m128* _d3 = (__m128*)d[3]; __m128* _D3 = (__m128*)D[3]; ,
+# 	__m128* _d4 = (__m128*)d[4]; __m128* _D4 = (__m128*)D[4]; ,
+# 	__m128* _d5 = (__m128*)d[5]; __m128* _D5 = (__m128*)D[5]; ,
+# 	__m128* _d6 = (__m128*)d[6]; __m128* _D6 = (__m128*)D[6]; ,
+# 	__m128* _d7 = (__m128*)d[7]; __m128* _D7 = (__m128*)D[7]; )
+
+#    NETX(__m128* _h0 = (__m128*)h[0]; __m128* _H0 = (__m128*)H[0]; ,
+# 	__m128* _h1 = (__m128*)h[1]; __m128* _H1 = (__m128*)H[1]; ,
+# 	__m128* _h2 = (__m128*)h[2]; __m128* _H2 = (__m128*)H[2]; ,
+# 	__m128* _h3 = (__m128*)h[3]; __m128* _H3 = (__m128*)H[3]; ,
+# 	__m128* _h4 = (__m128*)h[4]; __m128* _H4 = (__m128*)H[4]; ,
+# 	__m128* _h5 = (__m128*)h[5]; __m128* _H5 = (__m128*)H[5]; ,
+# 	__m128* _h6 = (__m128*)h[6]; __m128* _H6 = (__m128*)H[6]; ,
+# 	__m128* _h7 = (__m128*)h[7]; __m128* _H7 = (__m128*)H[7]; )
+
 
 #    for(int i=0; i<I; i+=4) {
 #       NETX(*_n0++ = _mm_sub_ps(*_d0++,*_h0++); *_N0++ = _mm_sub_ps(*_D0++,*_H0++); ,
@@ -329,8 +338,8 @@ def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
 #            *_n7++ = _mm_sub_ps(*_d7++,*_h7++); *_N7++ = _mm_sub_ps(*_D7++,*_H7++); )
 #    }
 #    return;
-# } 
-def avx_loadNULL_ps(d, D, h, H):
+# }
+def compute_null_packet(d, D, h, H):
     """
     Load NULL packet amplitudes for all detectors and pixels.
     These amplitudes are used for reconstruction of data time series.
@@ -360,12 +369,12 @@ def avx_loadNULL_ps(d, D, h, H):
     return n, N
 
 
-# static inline void _avx_pol_ps(float** p, float ** q, 
+# static inline void _avx_pol_ps(float** p, float ** q,
 #                                wavearray<double>* pol00, wavearray<double>* pol90,
 # 		               std::vector<float*> &pAPN,
 # 			       std::vector<float*> &pAVX, int II) {
-# // calculates the polar coordinates of the input vector v in the DPF frame 
-# // p,q  - input/output - data vector 
+# // calculates the polar coordinates of the input vector v in the DPF frame
+# // p,q  - input/output - data vector
 # // pol00 - output - 00 component in polar coordinates (pol00[0] : radius, pol00[1] : angle in radians)
 # // pol90 - output - 90 component in polar coordinates (pol90[0] : radius, pol90[1] : angle in radians)
 # // pRMS - vector with noise rms data
@@ -374,9 +383,9 @@ def avx_loadNULL_ps(d, D, h, H):
 # // in likelihoodWP these arrays should be stored exactly in the same order.
 
 #    int I = abs(II);
-   
+
 #    __m128* _MK = (__m128*)pAVX[1];
-#    __m128* _fp = (__m128*)pAVX[2];       
+#    __m128* _fp = (__m128*)pAVX[2];
 #    __m128* _fx = (__m128*)pAVX[3];
 
 #    __m128 _xp,_XP,_xx,_XX,_rr,_RR,_mk;
@@ -405,63 +414,63 @@ def avx_loadNULL_ps(d, D, h, H):
 # 	__m128* _f7=(__m128*)pAPN[7]; __m128* _F7=(__m128*)(pAPN[7]+I);)
 
 #    // pointers to data
-#    NETX(__m128* _p0 = (__m128*)p[0]; __m128* _q0 = (__m128*)q[0];, 
-# 	__m128* _p1 = (__m128*)p[1]; __m128* _q1 = (__m128*)q[1];, 
-# 	__m128* _p2 = (__m128*)p[2]; __m128* _q2 = (__m128*)q[2];, 
-# 	__m128* _p3 = (__m128*)p[3]; __m128* _q3 = (__m128*)q[3];, 
-# 	__m128* _p4 = (__m128*)p[4]; __m128* _q4 = (__m128*)q[4];, 
-# 	__m128* _p5 = (__m128*)p[5]; __m128* _q5 = (__m128*)q[5];, 
-# 	__m128* _p6 = (__m128*)p[6]; __m128* _q6 = (__m128*)q[6];, 
-# 	__m128* _p7 = (__m128*)p[7]; __m128* _q7 = (__m128*)q[7];) 
+#    NETX(__m128* _p0 = (__m128*)p[0]; __m128* _q0 = (__m128*)q[0];,
+# 	__m128* _p1 = (__m128*)p[1]; __m128* _q1 = (__m128*)q[1];,
+# 	__m128* _p2 = (__m128*)p[2]; __m128* _q2 = (__m128*)q[2];,
+# 	__m128* _p3 = (__m128*)p[3]; __m128* _q3 = (__m128*)q[3];,
+# 	__m128* _p4 = (__m128*)p[4]; __m128* _q4 = (__m128*)q[4];,
+# 	__m128* _p5 = (__m128*)p[5]; __m128* _q5 = (__m128*)q[5];,
+# 	__m128* _p6 = (__m128*)p[6]; __m128* _q6 = (__m128*)q[6];,
+# 	__m128* _p7 = (__m128*)p[7]; __m128* _q7 = (__m128*)q[7];)
 
 #    int m=0;
-#    for(int i=0; i<I; i+=4) {                                 
+#    for(int i=0; i<I; i+=4) {
 
-# // Compute scalar products 
+# // Compute scalar products
 
 #       _mk = _mm_and_ps(_mm_cmpgt_ps(*_MK++,_0),_1); // event mask - apply energy threshold En
 
-#       NETX(                                                 
+#       NETX(
 # 	   _xp = _mm_mul_ps(*_f0,_mm_mul_ps(_mk,*_p0));                      // (x,f+)
 # 	   _XP = _mm_mul_ps(*_f0,_mm_mul_ps(_mk,*_q0));                      // (X,f+)
 # 	   _xx = _mm_mul_ps(*_F0,_mm_mul_ps(_mk,*_p0));                      // (x,fx)
 # 	   _XX = _mm_mul_ps(*_F0,_mm_mul_ps(_mk,*_q0));                  ,   // (X,fx)
-	   			                            
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f1,_mm_mul_ps(_mk,*_p1)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f1,_mm_mul_ps(_mk,*_q1)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F1,_mm_mul_ps(_mk,*_p1)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F1,_mm_mul_ps(_mk,*_q1)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f2,_mm_mul_ps(_mk,*_p2)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f2,_mm_mul_ps(_mk,*_q2)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F2,_mm_mul_ps(_mk,*_p2)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F2,_mm_mul_ps(_mk,*_q2)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f3,_mm_mul_ps(_mk,*_p3)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f3,_mm_mul_ps(_mk,*_q3)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F3,_mm_mul_ps(_mk,*_p3)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F3,_mm_mul_ps(_mk,*_q3)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f4,_mm_mul_ps(_mk,*_p4)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f4,_mm_mul_ps(_mk,*_q4)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F4,_mm_mul_ps(_mk,*_p4)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F4,_mm_mul_ps(_mk,*_q4)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f5,_mm_mul_ps(_mk,*_p5)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f5,_mm_mul_ps(_mk,*_q5)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F5,_mm_mul_ps(_mk,*_p5)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F5,_mm_mul_ps(_mk,*_q5)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f6,_mm_mul_ps(_mk,*_p6)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f6,_mm_mul_ps(_mk,*_q6)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F6,_mm_mul_ps(_mk,*_p6)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F6,_mm_mul_ps(_mk,*_q6)));  ,   // (X,fx)
-	   		                          
+
 # 	   _xp = _mm_add_ps(_xp,_mm_mul_ps(*_f7,_mm_mul_ps(_mk,*_p7)));      // (x,f+)
 # 	   _XP = _mm_add_ps(_XP,_mm_mul_ps(*_f7,_mm_mul_ps(_mk,*_q7)));      // (X,f+)
 # 	   _xx = _mm_add_ps(_xx,_mm_mul_ps(*_F7,_mm_mul_ps(_mk,*_p7)));      // (x,fx)
 # 	   _XX = _mm_add_ps(_XX,_mm_mul_ps(*_F7,_mm_mul_ps(_mk,*_q7)));  )   // (X,fx)
-	 
+
 # // 00/90 components in polar coordinates (pol00/90[0] : radius, pol00/90[1] : angle in radians)
 
 #       _cc = _mm_div_ps(_xp,_mm_add_ps(_mm_sqrt_ps(*_fp),_o));     // (x,f+) / {|f+|+epsilon}
@@ -472,7 +481,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 #       _mm_storeu_ps(cpol,_cc);					   // cos
 #       _mm_storeu_ps(spol,_ss);					   // sin
-#       _mm_storeu_ps(rpol,_rr);                   		   // (x,x);        
+#       _mm_storeu_ps(rpol,_rr);                   		   // (x,x);
 
 #       _CC = _mm_div_ps(_XP,_mm_add_ps(_mm_sqrt_ps(*_fp),_o));      // (X,f+) / {|f+|+epsilon}
 #       _SS = _mm_div_ps(_XX,_mm_add_ps(_mm_sqrt_ps(*_fx),_o));      // (X,fx) / {|fx|+epsilon}
@@ -482,7 +491,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 #       _mm_storeu_ps(CPOL,_CC);					   // cos
 #       _mm_storeu_ps(SPOL,_SS);					   // sin
-#       _mm_storeu_ps(RPOL,_RR);                   		   // (X,X);        
+#       _mm_storeu_ps(RPOL,_RR);                   		   // (X,X);
 
 #       for(int n=0;n<4;n++) {
 #         r[m] = sqrt(rpol[n]);                        		   // |x|
@@ -520,7 +529,7 @@ def avx_loadNULL_ps(d, D, h, H):
 # // DSP - Dual Stream Phase Transform
 
 #       __m128 _N = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(_cc,_cc),_mm_mul_ps(_CC,_CC)));
-      
+
 #       _cc = _mm_div_ps(_cc,_mm_add_ps(_N,_o)); 			  // cos_dsp = N * (x,f+)/|f+|^2
 #       _CC = _mm_div_ps(_CC,_mm_add_ps(_N,_o)); 			  // sin_dsp = N * (X,f+)/|f+|^2
 
@@ -546,7 +555,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 # // Increment pointers
 
-#       NETX(                                                 
+#       NETX(
 #            _p0++;_q0++;_f0++;_F0++;	,
 #            _p1++;_q1++;_f1++;_F1++;	,
 #            _p2++;_q2++;_f2++;_F2++;	,
@@ -559,9 +568,10 @@ def avx_loadNULL_ps(d, D, h, H):
 #       _fp++;_fx++;
 #    }
 
-#    return; 
-# } 
-def avx_pol_ps(p, q, MK, fp, fx, f, F):
+
+#    return;
+# }
+def project_onto_network_plane(p, q, MK, fp, fx, f, F):
     """
     Calculates the polar coordinates of the input vector v in the DPF frame.
 
@@ -571,10 +581,6 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
         The p component of the signal.
     q : np.ndarray
         The q component of the signal.
-    pol00 : list
-        Output for 00 component in polar coordinates (pol00[0] : radius, pol00[1] : angle in radians).
-    pol90 : list
-        Output for 90 component in polar coordinates (pol90[0] : radius, pol90[1] : angle in radians).
     MK : np.ndarray
         Event mask array.
     fp : np.ndarray
@@ -588,28 +594,25 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
 
     Returns
     -------
-    None
+    tuple
+        Projected/rotated phase-0 and phase-90 arrays, followed by
+        (radius, angle_radians) pairs for the two quadratures.
     """
-    n_ifo = len(p)
-    n_pix = len(p[0])
 
-    new_p = np.empty((n_ifo, n_pix), dtype=np.float32)
-    new_q = np.empty((n_ifo, n_pix), dtype=np.float32)
-
-    _o = float(1.e-9)
+    _o = float(1.0e-9)
 
     # Vectorized pixel loop — replaces the interpreted for i in range(n_pix) loop
-    p_arr = np.asarray(p, dtype=np.float64)   # (n_ifo, n_pix)
+    p_arr = np.asarray(p, dtype=np.float64)  # (n_ifo, n_pix)
     q_arr = np.asarray(q, dtype=np.float64)
-    f_arr = np.asarray(f, dtype=np.float64)   # (n_pix, n_ifo)
+    f_arr = np.asarray(f, dtype=np.float64)  # (n_pix, n_ifo)
     F_arr = np.asarray(F, dtype=np.float64)
 
     mk = (np.asarray(MK) > 0).astype(np.float64)  # (n_pix,)
-    mk_p = p_arr * mk[np.newaxis, :]               # (n_ifo, n_pix)
+    mk_p = p_arr * mk[np.newaxis, :]  # (n_ifo, n_pix)
     mk_q = q_arr * mk[np.newaxis, :]
 
     # Dot products: (f_arr * mk_p.T).sum(axis=1) => xp[i] = sum_j f[i,j]*mk*p[j,i]
-    xp = (f_arr * mk_p.T).sum(axis=1)   # (n_pix,)
+    xp = (f_arr * mk_p.T).sum(axis=1)  # (n_pix,)
     XP = (f_arr * mk_q.T).sum(axis=1)
     xx = (F_arr * mk_p.T).sum(axis=1)
     XX = (F_arr * mk_q.T).sum(axis=1)
@@ -632,31 +635,25 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
     R = np.sqrt(RPOL).astype(np.float32)
     A = np.arctan2(SPOL, CPOL).astype(np.float32)
 
-    # PnP & DSP sections below preserve the original (last-pixel-only) behaviour
-    # to avoid changing any existing output semantics — i is the last pixel index.
-    i = n_pix - 1
-    cpol_s = cpol[i] / (sqrt_fp[i])    # scalar for last pixel
-    spol_s = spol[i] / (sqrt_fx[i])
-    CPOL_s = CPOL[i] / (sqrt_fp[i])
-    SPOL_s = SPOL[i] / (sqrt_fx[i])
-
-    for j in range(n_ifo):
-        new_p[j][i] = f_arr[i][j] * cpol_s + F_arr[i][j] * spol_s
-        new_q[j][i] = f_arr[i][j] * CPOL_s + F_arr[i][j] * SPOL_s
-
-    Nval = np.sqrt(cpol_s * cpol_s + CPOL_s * CPOL_s)
-    cpol_s /= (Nval + _o)
-    CPOL_s /= (Nval + _o)
-
-    for j in range(n_ifo):
-        new_p[j][i] = new_p[j][i] * cpol_s + new_q[j][i] * CPOL_s
-        new_q[j][i] = new_q[j][i] * cpol_s - new_p[j][i] * CPOL_s
+    # Project every pixel onto the network plane. Keep separate inputs for both
+    # DSP outputs: overwriting p before calculating q changes the rotation.
+    c = cpol / sqrt_fp
+    s = spol / sqrt_fx
+    C = CPOL / sqrt_fp
+    S = SPOL / sqrt_fx
+    projected_p = (f_arr.T * c + F_arr.T * s).astype(np.float32)
+    projected_q = (f_arr.T * C + F_arr.T * S).astype(np.float32)
+    magnitude = np.sqrt(c * c + C * C)
+    cosine = c / (magnitude + _o)
+    sine = C / (magnitude + _o)
+    new_p = (projected_p * cosine + projected_q * sine).astype(np.float32)
+    new_q = (projected_q * cosine - projected_p * sine).astype(np.float32)
 
     return new_p, new_q, (r, a), (R, A)
 
 
 @njit(cache=True)
-def avx_packet_ps(v00, v90, mask):
+def build_wavelet_packet(v00, v90, mask):
     """
     calculates packet rotation sin/cos, amplitudes and unit vectors, initialize unit vector arrays
 
@@ -692,7 +689,7 @@ def avx_packet_ps(v00, v90, mask):
     """
     n_ifo = len(v00)
     n_pix = len(v00[0])
-    _o = float(1.e-9)
+    _o = float(1.0e-9)
 
     mk = np.empty(n_pix, dtype=np.float32)
     aa = np.zeros(n_ifo, dtype=np.float32)
@@ -707,7 +704,7 @@ def avx_packet_ps(v00, v90, mask):
     A_save = np.empty(n_ifo, dtype=np.float32)
 
     for i in range(n_pix):
-        mk[i] = float32(1.0) if mask[i] > 0 else float32(0.)
+        mk[i] = float32(1.0) if mask[i] > 0 else float32(0.0)
 
     for j in range(n_ifo):
         for i in range(n_pix):
@@ -717,27 +714,27 @@ def avx_packet_ps(v00, v90, mask):
 
     E = np.empty(n_ifo, dtype=np.float32)
     for i in range(n_ifo):
-        _si = float32(2.) * aA[i] # rotation 2*sin*cos*norm
-        _co = aa[i] - AA[i]       # rotation (cos^2-sin^2)*norm
+        _si = float32(2.0) * aA[i]  # rotation 2*sin*cos*norm
+        _co = aa[i] - AA[i]  # rotation (cos^2-sin^2)*norm
         # print(f"_si[{i}]: ", _si, f"_co[{i}]: ", _co)
-        _x = aa[i] + AA[i] + _o   # total energy
-        _cc = _co * _co           # cos^2
-        _ss = _si * _si           # sin^2
-        _nn = sqrt(_cc + _ss)     # co/si norm
-        a[i] = sqrt((_x + _nn) / float32(2.))      # first component amplitude
-        A[i] = sqrt(abs((_x - _nn) / float32(2.))) # second component energy
-        _cc = _co / (_nn + _o)    # cos(2p)
-        _ss = float32(1.) if _si > float32(0.) else float32(-1.)  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
-        si[i] = sqrt((float32(1.) - _cc) / float32(2.))           # |sin(p)|
-        co[i] = sqrt((float32(1.) + _cc) / float32(2.)) * _ss     # cos(p)
+        _x = aa[i] + AA[i] + _o  # total energy
+        _cc = _co * _co  # cos^2
+        _ss = _si * _si  # sin^2
+        _nn = sqrt(_cc + _ss)  # co/si norm
+        a[i] = sqrt((_x + _nn) / float32(2.0))  # first component amplitude
+        A[i] = sqrt(abs((_x - _nn) / float32(2.0)))  # second component energy
+        _cc = _co / (_nn + _o)  # cos(2p)
+        _ss = float32(1.0) if _si > float32(0.0) else float32(-1.0)  # 1 if sin(2p)>0. or-1 if sin(2p)<0.
+        si[i] = sqrt((float32(1.0) - _cc) / float32(2.0))  # |sin(p)|
+        co[i] = sqrt((float32(1.0) + _cc) / float32(2.0)) * _ss  # cos(p)
 
-        E[i] = (a[i] + A[i]) ** 2 / float32(2.)
+        E[i] = (a[i] + A[i]) ** 2 / float32(2.0)
         a_save[i] = a[i]
         A_save[i] = A[i]
         a[i] = float(1.0) / (a[i] + _o)
         A[i] = float(1.0) / (A[i] + _o)
 
-    Ep = 0.
+    Ep = 0.0
     for i in range(n_ifo):
         Ep += E[i]
 
@@ -750,10 +747,10 @@ def avx_packet_ps(v00, v90, mask):
             v00_updated[j][i] = mk[i] * _a * a[j]
             v90_updated[j][i] = mk[i] * _A * A[j]
 
-    return Ep/float32(2.), v00_updated, v90_updated, E, si, co, a_save, A_save
+    return Ep / float32(2.0), v00_updated, v90_updated, E, si, co, a_save, A_save
 
 
-def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
+def sum_xtalk_corrected_energy(p, q, xtalks, xtalks_lookup, mk):
     """Compute the raw xtalk-convolved energy sum (C++ _avx_norm_ps with I<0).
 
     Mirrors the I<0 branch of network::_avx_norm_ps: accumulates the xtalk-
@@ -774,12 +771,12 @@ def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
     float
         Total xtalk-convolved energy: sum over IFOs and masked pixels.
     """
-    p_arr = np.asarray(p, dtype=np.float64)   # (n_ifo, n_pix)
+    p_arr = np.asarray(p, dtype=np.float64)  # (n_ifo, n_pix)
     q_arr = np.asarray(q, dtype=np.float64)
     mk_arr = np.asarray(mk)
     n_ifos = p_arr.shape[0]
 
-    g = np.zeros(n_ifos, dtype=np.float64)    # per-IFO accumulator
+    g = np.zeros(n_ifos, dtype=np.float64)  # per-IFO accumulator
 
     for i in range(p_arr.shape[1]):
         if mk_arr[i] <= 0.0:
@@ -788,31 +785,34 @@ def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
         r0, r1 = xtalks_lookup[i]
         xt = xtalks[r0:r1]
         idx = xt[:, 0].astype(np.int32)
-        cc = xt[:, 4:8].T.astype(np.float64)   # shape (4, n_nbr)
+        cc = xt[:, 4:8].T.astype(np.float64)  # shape (4, n_nbr)
 
-        p_nbr = p_arr[:, idx]   # (n_ifo, n_nbr)
+        p_nbr = p_arr[:, idx]  # (n_ifo, n_nbr)
         q_nbr = q_arr[:, idx]
 
         # x = [cc[0]*p, cc[1]*p, cc[2]*q, cc[3]*q] summed over neighbours
-        x = np.vstack((p_nbr @ cc[0],
-                       p_nbr @ cc[1],
-                       q_nbr @ cc[2],
-                       q_nbr @ cc[3]))   # (4, n_ifo)
+        x = np.vstack((p_nbr @ cc[0], p_nbr @ cc[1], q_nbr @ cc[2], q_nbr @ cc[3]))  # (4, n_ifo)
 
         pi = p_arr[:, i]
         qi = q_arr[:, i]
-        t = x[0] * pi + x[1] * qi + x[2] * pi + x[3] * qi   # (n_ifo,)
+        t = x[0] * pi + x[1] * qi + x[2] * pi + x[3] * qi  # (n_ifo,)
 
         for j in range(n_ifos):
             if t[j] > 0.0:
                 g[j] += t[j]
 
-    return float(np.sum(g))   # = C++ N_snr[0] or D_snr[0] for I<0 case
+    return float(np.sum(g))  # = C++ N_snr[0] or D_snr[0] for I<0 case
 
 
 @njit(cache=True)
-def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
-    """Compute the norm of a packet of pixels.
+def compute_packet_norms(p, q, xtalks, xtalks_lookup, mk, q_E):
+    """Compute packet norms with cWB 6.4.6.9 float32 arithmetic.
+
+    Accumulation and reduction order follow network::_avx_norm_ps(I>0).
+    Float64 promotion changes the ratio >= 1 decision for near-unit pixels,
+    which can change waveform amplitudes and event acceptance. Keep explicit
+    float32 rounding and do not enable fastmath/reassociation. Inputs are not
+    modified; all four output arrays use float32.
 
     Parameters
     ----------
@@ -827,7 +827,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
     mk : np.ndarray
         Mask indicating valid pixels. mk[pixel]
     q_E : np.ndarray
-        Energy threshold for the q component. q_E[ifo]
+        Packet energy for the q component. q_E[ifo]
 
     Returns
     -------
@@ -841,68 +841,51 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
         - q_norm : np.ndarray
             The 90 degree component norms for each interferometer. Was I + i in cWB
     """
-    n_pixels = len(p[0])
-    n_ifos = len(p)
-    _o = np.float64(1.e-12)
-
-    q_norm = np.zeros((n_ifos, n_pixels))
-    norm = np.zeros(n_ifos)
-    rn = np.zeros(n_pixels)
-    for i in range(n_pixels):
-        if mk[i] <= 0.:
+    p = p.astype(np.float32)
+    q = q.astype(np.float32)
+    xtalks = xtalks.astype(np.float32)
+    q_E = q_E.astype(np.float32)
+    n_ifos, n_pixels = p.shape
+    norm = np.zeros(n_ifos, dtype=np.float32)
+    q_norm = np.zeros((n_ifos, n_pixels), dtype=np.float32)
+    rn = np.zeros(n_pixels, dtype=np.float32)
+    for pixel in range(n_pixels):
+        if mk[pixel] <= 0:
             continue
-        xtalk_range = xtalks_lookup[i]
-        xtalk = xtalks[xtalk_range[0]:xtalk_range[1]]
-        xtalk_indexes = xtalk[:,0].astype(np.int32)
-        xtalk_cc = np.vstack((xtalk[:,4], xtalk[:,5], xtalk[:,6], xtalk[:,7])).astype(np.float64)  # 4xM matrix
-        # Select elements from p and q based on xtalk_indexes
-        p_vec = p[:, xtalk_indexes].astype(np.float64)  # N*M matrix
-        q_vec = q[:, xtalk_indexes].astype(np.float64)  # N*M matrix
-        # Compute the sums using a vectorized approach
-        # x = np.sum(xtalk_cc * np.array([q_vec, p_vec, q_vec, p_vec]), axis=1)  # 4-d vector
-
-        # h = x * np.array([q[:, i], p[:, i], q[:, i], p[:, i]])
-        x = np.vstack((np.dot(p_vec, xtalk_cc[0].T),
-                      np.dot(p_vec, xtalk_cc[1].T),
-                      np.dot(q_vec, xtalk_cc[2].T),
-                      np.dot(q_vec, xtalk_cc[3].T)))  # 4xN matrix
-
-        # Summing all components together
-        pi = p[:, i].astype(np.float64)
-        qi = q[:, i].astype(np.float64)
-        t = (x[0] * pi) + (x[1] * qi) + (x[2] * pi) + (x[3] * qi)
-
-        # if i == 0:
-        #     print('xtalk_cc: ', xtalk_cc)
-        #     print('xtalk: ', xtalk[0], xtalk[4], xtalk[5], xtalk[6], xtalk[7])
-        #     print('x: ', x)
-        #     print('t: ', t)
-        #     print('p[0, i]: ', p[0, i])
-        #     print('q[0, i]: ', q[0, i])
-
-
-        # set t to 0 if t < 0 (same as C++ _avx_norm_ps: t=t>0?t:0)
-        t_clamped = np.where(t < 0, 0, t)
-        norm += t_clamped
-
-        e = (pi * pi + qi * qi) / (t_clamped + _o)  # 1-d vector
-
-        q_norm[:, i] = np.where(e >= 1, 0, e)
-
-        u = x[0] + x[2]
-        v = x[1] + x[3]
-        rn[i] = np.sum(u * u + v * v)
-
-    # print('q: ', norm)
-    e = q_E.astype(np.float64) * 2.0   # TF-Domain SNR
-    norm = np.where(norm < 2.0, 2.0, norm)  # set norm to 2 if norm < 2
-    detector_snr = e / norm  # detector {0:NIFO} SNR
-
+        for ifo in range(n_ifos):
+            x = np.zeros(4, dtype=np.float32)
+            for neighbor in range(xtalks_lookup[pixel, 0], xtalks_lookup[pixel, 1]):
+                index = int(xtalks[neighbor, 0])
+                x[0] = np.float32(x[0] + np.float32(xtalks[neighbor, 4] * p[ifo, index]))
+                x[1] = np.float32(x[1] + np.float32(xtalks[neighbor, 5] * p[ifo, index]))
+                x[2] = np.float32(x[2] + np.float32(xtalks[neighbor, 6] * q[ifo, index]))
+                x[3] = np.float32(x[3] + np.float32(xtalks[neighbor, 7] * q[ifo, index]))
+            u = np.float32(p[ifo, pixel])
+            v = np.float32(q[ifo, pixel])
+            h0 = np.float32(x[0] * u)
+            h1 = np.float32(x[1] * v)
+            h2 = np.float32(x[2] * u)
+            h3 = np.float32(x[3] * v)
+            t = np.float32(np.float32(np.float32(h0 + h1) + h2) + h3)
+            if t < 0:
+                t = np.float32(0)
+            norm[ifo] = np.float32(norm[ifo] + t)
+            numerator = np.float32(np.float32(u * u) + np.float32(v * v))
+            e = np.float32(numerator / np.float32(t + np.float32(1e-12)))
+            q_norm[ifo, pixel] = np.float32(0) if e >= np.float32(1) else e
+            u = np.float32(x[0] + x[2])
+            v = np.float32(x[1] + x[3])
+            rn[pixel] = np.float32(rn[pixel] + np.float32(np.float32(u * u) + np.float32(v * v)))
+    detector_snr = np.zeros(n_ifos, dtype=np.float32)
+    for ifo in range(n_ifos):
+        if norm[ifo] < 2:
+            norm[ifo] = np.float32(2)
+        detector_snr[ifo] = np.float32(np.float32(q_E[ifo] * np.float32(2)) / norm[ifo])
     return detector_snr, norm, rn, q_norm
 
 
 @njit(cache=True)
-def gw_norm_numpy(q_norm, q_E, p_E, ec):
+def compute_signal_norms(q_norm, q_E, p_E, ec):
     """
      set signal norms, return signal SNR
 
@@ -947,82 +930,13 @@ def gw_norm_numpy(q_norm, q_E, p_E, ec):
     total_norm = np.sum(norm)  # total norm
     return total_norm, norm, new_p_E, p_norm
 
-
-@njit
-def orthogonalize_and_rotate(p, q, pAVX, length):
-    event_mask = pAVX[1]
-    rotation_sin = pAVX[4]
-    rotation_cos = pAVX[5]
-    first_component_energy = pAVX[15]
-    second_component_energy = pAVX[16]
-    energy_accumulated_first = np.zeros_like(p[0])
-    energy_accumulated_second = np.zeros_like(q[0])
-
-    for i in range(0, length, 4):
-        accumulated_p_square = np.zeros_like(p[0])
-        accumulated_q_square = np.zeros_like(q[0])
-        accumulated_pq_product = np.zeros_like(p[0])
-
-        for j in range(8):
-            partial_p = p[j][i:i+4]
-            partial_q = q[j][i:i+4]
-
-            accumulated_p_square += partial_p * partial_p
-            accumulated_q_square += partial_q * partial_q
-            accumulated_pq_product += partial_p * partial_q
-
-        event_occurance = (event_mask[i//4] > 0.0) * 1.0
-        rotation_sin[i//4] = accumulated_pq_product * 2.0
-        rotation_cos[i//4] = accumulated_p_square - accumulated_q_square
-
-        total_energy = accumulated_p_square + accumulated_q_square + 1.e-21
-        cos_square = rotation_cos[i//4]**2
-        sin_square = rotation_sin[i//4]**2
-        cos_sin_norm = np.sqrt(cos_square + sin_square)
-
-        first_component_energy[i//4] = (total_energy + cos_sin_norm) / 2.0
-        second_component_energy[i//4] = (total_energy - cos_sin_norm) / 2.0
-
-        cos_divided = rotation_cos[i//4] / (cos_sin_norm + 1.e-21)
-        sin_positive = (rotation_sin[i//4] > 0.0) * 1.0
-        sin_value = 2.0 * sin_positive - 1.0
-
-        rotation_sin[i//4] = np.sqrt((1.0 - cos_divided) / 2.0)
-        rotation_cos[i//4] = np.sqrt((1.0 + cos_divided) / 2.0) * sin_value
-
-        energy_accumulated_first += event_occurance * first_component_energy[i//4]
-        energy_accumulated_second += event_occurance * second_component_energy[i//4]
-
-    pAVX[1] = event_mask
-    pAVX[4] = rotation_sin
-    pAVX[5] = rotation_cos
-    pAVX[15] = first_component_energy
-    pAVX[16] = second_component_energy
-
-    return np.sum(energy_accumulated_first) + np.sum(energy_accumulated_second), pAVX
-
-
-# ---------------------------------------------------------------------------
-# Friendly aliases for researcher readability (new code should prefer these)
-# ---------------------------------------------------------------------------
-
-build_wavelet_packet = avx_packet_ps
-compute_gaussian_noise_correction = avx_noise_ps
-normalize_packet_amplitudes = avx_setAMP_ps
-compute_null_packet = avx_loadNULL_ps
-project_onto_network_plane = avx_pol_ps
-compute_packet_norms = packet_norm_numpy
-compute_signal_norms = gw_norm_numpy
-sum_xtalk_corrected_energy = xtalk_energy_sum_numpy
-orthogonalize_packet_basis = orthogonalize_and_rotate
-
 __all__ = [
-    "avx_noise_ps", "avx_setAMP_ps", "avx_loadNULL_ps", "avx_pol_ps",
-    "avx_packet_ps", "xtalk_energy_sum_numpy", "packet_norm_numpy",
-    "gw_norm_numpy", "orthogonalize_and_rotate",
-    "compute_gaussian_noise_correction", "normalize_packet_amplitudes",
-    "compute_null_packet", "project_onto_network_plane",
-    "build_wavelet_packet", "sum_xtalk_corrected_energy",
-    "compute_packet_norms", "compute_signal_norms",
-    "orthogonalize_packet_basis",
+    "compute_gaussian_noise_correction",
+    "normalize_packet_amplitudes",
+    "compute_null_packet",
+    "project_onto_network_plane",
+    "build_wavelet_packet",
+    "sum_xtalk_corrected_energy",
+    "compute_packet_norms",
+    "compute_signal_norms",
 ]

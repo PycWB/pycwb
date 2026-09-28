@@ -8,7 +8,7 @@ from pycwb.modules.super_cluster.supercluster import supercluster
 from pycwb.modules.xtalk.monster import load_catalog
 from pycwb.modules.coherence.coherence import coherence
 from pycwb.modules.read_data import generate_injections, generate_noise_for_job_seg, read_from_job_segment, check_and_resample
-from pycwb.modules.data_conditioning import data_conditioning
+from pycwb.modules.data_conditioning import condition_strains
 from pycwb.types.job import WaveSegment
 from pycwb.types.network import Network
 from pycwb.modules.workflow_utils.job_setup import print_job_info
@@ -79,7 +79,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # data conditioning
-        tf_maps, nRMS_list = data_conditioning(config, data)
+        tf_maps, nRMS_list = condition_strains(config, data)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # initialize network object 
@@ -117,7 +117,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
 
 
-        from pycwb.modules.likelihoodWP.likelihood import load_data_from_ifo
+        from pycwb.modules.likelihoodWP.pixel_data import build_sky_delay_and_antenna_patterns
         import numpy as np
 
         acor = network.net.acor
@@ -129,7 +129,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         n_sky = network.net.index.size()
 
-        ml, FP, FX = load_data_from_ifo(network, config.nIFO)
+        ml, FP, FX = build_sky_delay_and_antenna_patterns(network, config.nIFO)
 
         cluster_test = convert_netcluster_to_fragment_clusters(pwc)
         pixels = cluster_test.clusters[0].pixels

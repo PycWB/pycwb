@@ -7,8 +7,8 @@ so they are not performance-critical.  We reuse the Numba implementations.
 """
 
 from pycwb.modules.likelihoodWP.packet_ops import (
-    packet_norm_numpy,
-    gw_norm_numpy,
+    compute_packet_norms,
+    compute_signal_norms,
 )
 
-__all__ = ["packet_norm_numpy", "gw_norm_numpy"]
+__all__ = ["compute_packet_norms", "compute_signal_norms"]

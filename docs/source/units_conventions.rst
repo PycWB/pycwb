@@ -98,3 +98,80 @@ Legacy fields remain readable where cWB interoperability requires them, but
 new YAML and new public APIs should use semantic names and explicit units.
 Compatibility is not a reason to propagate an ambiguous representation into a
 new interface.
+
+
+.. _native_calculation_conventions:
+
+Native calculation choices
+--------------------------
+
+Several ``execution_profile`` settings select scientific calculations rather
+than only changing memory layout or scheduling. They are explicit YAML choices,
+resolved at setup and recorded with the run as described in
+:ref:`execution_profile`. Their defaults preserve the previous behavior with
+execution environment switches unset.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 10 62
+
+   * - Setting
+     - Default
+     - Calculation affected
+   * - ``native_chirp``
+     - false
+     - Select the native micropixel chirp estimator in the XGB rho branch.
+       It also requires ``xgb_rho_mode`` (including its legacy negative-netRHO
+       activation), ``optim: false``, an eligible ``cfg_search`` character in
+       ``iecrpblsg``, and ``Search`` equal to ``CBC``, ``BBH`` or ``IMBHB``.
+       Setting this flag alone does not enable chirp estimation for every search.
+       The native branch resets chirp fields before checking eligibility and
+       uses the run's explicit seed for its bootstrap estimator.
+   * - ``release_waveform_stats``
+     - false
+     - Use cWB-release-compatible waveform summaries and sky error regions.
+       This changes reported statistics and uncertainty calculations; it is
+       independent of detector geometry and of chirp-estimator selection.
+   * - ``regression_cap``
+     - false
+     - Apply release-compatible witness-amplitude capping in regression.
+       The explicit ``Search: "--regression OLD"`` option retains uncapped
+       behavior even when this flag is true. This can change conditioned data.
+   * - ``regression_percentile_stride``
+     - 1
+     - Positive integer sampling stride for regression percentile statistics.
+       One uses every sample; larger values subsample the statistic and can
+       change its value. This trades statistical sampling for work reduction
+       and must not be treated as a guaranteed numerically identical speedup.
+
+For example, these are explicit calculation choices, not a general tuning
+recommendation:
+
+.. code-block:: yaml
+
+   execution_profile:
+     native_chirp: true
+     release_waveform_stats: true
+     regression_cap: true
+     regression_percentile_stride: 1
+
+Hold these choices constant across performance comparisons. The bounded CPU
+recipe enables the first three, so enabling that entire recipe changes more
+than execution strategy. Matching a release oracle establishes agreement for
+the tested inputs; it does not by itself establish scientific accuracy or
+statistical detection-efficiency equivalence for a new analysis.
+
+Detector geometry and exported angles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The per-detector ``detector_geometry`` selection is a physical-input choice;
+see :ref:`detector_support` for definitions, defaults and measured differences.
+Vertex vectors are Earth-centered positions in metres, and arm vectors are
+dimensionless. The default LAL-derived entries construct vectors from geographic
+parameters; the cWB entries retain literal rounded vectors.
+
+For detectors selected with ``:cwb``, event antenna exports also reproduce the
+existing cWB convention of narrowing stored sky/polarization angles to float32
+before converting degrees to radians and evaluating the antenna response.
+This output-precision convention is distinct from the geometry constants and
+is applied per detector. It is not controlled by ``release_waveform_stats``.

@@ -131,7 +131,6 @@ for i in range(config.nRES):
     ##############################
 
     print("======== pycwb native coherence =======")
-    from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
     from pycwb.modules.cwb_coherence.coherence import max_energy
 
     timer_start = perf_counter()
@@ -161,9 +160,9 @@ for i in range(config.nRES):
 
     max_delay = config.max_delay
     pattern = config.pattern
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
-    n_lag = lag_plan.n_lag
-    print("lag plan built with %d lags" % n_lag)
+    job_seg = job_segments[0]
+    n_lag = job_seg.n_lag
+    print("job segment provides %d lags" % n_lag)
 
     for n, tf_map in enumerate(tf_maps):
         alp_sum_py += max_energy(
@@ -192,7 +191,7 @@ for i in range(config.nRES):
             lag_index=j,
             energy_threshold=Eo,
             tf_maps=tf_maps,
-            lag_shifts=lag_plan.lag_shifts[j],
+            lag_shifts=job_seg.lag_shifts[j],
             veto=None,
             edge=config.segEdge,
         )

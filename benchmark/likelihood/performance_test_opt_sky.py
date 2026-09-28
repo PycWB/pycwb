@@ -5,11 +5,14 @@ sys.path.insert(0, '../..')
 import pickle
 from math import sqrt
 import numpy as np
-from pycwb.modules.likelihoodWP.likelihood import calculate_dpf, find_optimal_sky_localization, calculate_sky_statistics
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels, threshold_cut, fill_detection_statistic
+from pycwb.modules.likelihoodWP.dpf import compute_dpf_regulator
+from pycwb.modules.likelihoodWP.sky_scan import scan_sky
+from pycwb.modules.likelihoodWP.sky_statistics import compute_statistics_at_sky_position
+from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
+from pycwb.modules.likelihoodWP.detection_statistics import get_likelihood_rejection_reason, populate_detection_statistics
 from pycwb.modules.xtalk.monster import load_catalog, getXTalk_pixels
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.likelihoodWP.typing import SkyMapStatistics
+from pycwb.modules.likelihoodWP.results import SkyMapStatistics
 import time
 
 #################################################################################
@@ -32,7 +35,7 @@ n_ifo = test_data['n_ifo']
 netEC_threshold = test_data['netEC_threshold']
 REG = np.array([delta_regulator * sqrt(2), 0., 0.])
 
-rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
+rms, td00, td90, td_energy = extract_pixel_time_delay_data(pixels, n_ifo)
 
 n_pix = rms.shape[1]
 #####################
@@ -62,24 +65,25 @@ rms = rms.T.astype(np.float32)
 #############################################
 # Calculate DPF and the optimal sky location
 #############################################
-REG[1] = calculate_dpf(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold)
+sky_valid_indices = np.arange(n_sky, dtype=np.int64)
+REG[1] = compute_dpf_regulator(FP, FX, rms, n_sky, n_ifo, gamma_regulator, network_energy_threshold, sky_valid_indices)
 
-skymap_statistics = find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator,
-                                      network_energy_threshold)
+skymap_statistics = scan_sky((FP, FX, ml), (rms, td00, td90),
+        (REG, netCC, delta_regulator, network_energy_threshold, sky_valid_indices))
 skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
 
 #############################################
 # Calculate sky statistics
 #############################################
-sky_statistics = calculate_sky_statistics(skymap_statistics.l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk,
+sky_statistics = compute_statistics_at_sky_position(skymap_statistics.l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold, cluster_xtalk,
                          cluster_xtalk_lookup, DEBUG=True)
 
-rejected = threshold_cut(sky_statistics, network_energy_threshold, netEC_threshold)
+rejected = get_likelihood_rejection_reason(sky_statistics, network_energy_threshold, netEC_threshold)
 if rejected:
     print(f"Cluster rejected due to threshold cuts: {rejected}")
 
 
-fill_detection_statistic(sky_statistics, skymap_statistics, cluster=cluster, 
+populate_detection_statistics(sky_statistics, skymap_statistics, cluster=cluster,
                             n_ifo=n_ifo, xtalk=xtalk,
                             network_energy_threshold=network_energy_threshold)
 # Eo = 8255.51, Lo = 7805.59, Ep = 1552.52, Lp = 1467.77
@@ -105,8 +109,8 @@ total_time = 0
 # # convert FP, FX, rms to float32
 for i in range(10):
     start = time.time()
-    l_max = find_optimal_sky_localization(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, REG, netCC, delta_regulator,
-                                          network_energy_threshold)
+    l_max = scan_sky((FP, FX, ml), (rms, td00, td90),
+        (REG, netCC, delta_regulator, network_energy_threshold, sky_valid_indices))
     end = time.time()
     total_time += end - start
     # print(end - start)
@@ -115,12 +119,12 @@ print(f"Average time for find_optimal_sky_localization: {total_time / 10} s")
 total_time = 0
 for i in range(10):
     start = time.time()
-    calculate_sky_statistics(l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
+    compute_statistics_at_sky_position(l_max, n_ifo, n_pix, FP, FX, rms, td00, td90, ml, REG, network_energy_threshold,
                              cluster_xtalk, cluster_xtalk_lookup)
     end = time.time()
     total_time += end - start
     # print(end - start)
-print(f"Average time for calculate_sky_statistics: {total_time / 10} s")
+print(f"Average time for compute_statistics_at_sky_position: {total_time / 10} s")
 
 total_time = 0
 

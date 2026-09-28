@@ -161,14 +161,12 @@ def remove_duplicates_sorted(arr: np.ndarray) -> np.ndarray:
 
 
 @njit(cache=True)
-def get_cluster_links(
-    pixels: np.ndarray, gap: float, n_ifo: int
-) -> tuple[np.ndarray, float]:
+def get_cluster_links(pixels: np.ndarray, gap: float, n_ifo: int) -> tuple[np.ndarray, float]:
     """
     Find (i, j) links between clusters whose pixels are close enough to merge.
 
     Pixels are represented as rows in *pixels* where columns are:
-    ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+    ``[time_s, 2*freq_hz, 1/rate, rate/2, cluster_id, td_time_ifo0, …]``.
 
     Parameters
     ----------
@@ -251,9 +249,7 @@ def get_cluster_links(
 
 
 @njit(cache=True)
-def get_defragment_link(
-    pixels: np.ndarray, t_gap: float, f_gap: float, n_ifo: int
-) -> np.ndarray:
+def get_defragment_link(pixels: np.ndarray, t_gap: float, f_gap: float, n_ifo: int) -> np.ndarray:
     """
     Find (i, j) links between clusters for defragmentation.
 
@@ -263,7 +259,7 @@ def get_defragment_link(
     Parameters
     ----------
     pixels : np.ndarray of shape (N, 5+n_ifo)
-        Per-pixel feature array: ``[time_s, freq_hz, 1/rate, rate/2, cluster_id, td_index_ifo0, …]``.
+        Per-pixel feature array: ``[time_s, 2*freq_hz, 1/rate, rate/2, cluster_id, td_time_ifo0, …]``.
     t_gap : float
         Maximum allowed time separation in seconds.
     f_gap : float
@@ -277,6 +273,8 @@ def get_defragment_link(
         Unique cluster-index pairs satisfying the defragmentation condition,
         or an empty ``(0, 2)`` array when no links exist.
     """
+    if len(pixels) == 0 or (t_gap <= 0 and f_gap <= 0):
+        return np.empty((0, 2), dtype=np.int32)
     pixels = pixels[pixels[:, 0].argsort()]
 
     Tgap = np.max(pixels[:, 2])  # Base Tgap, inverse of the rate.
@@ -314,10 +312,11 @@ def get_defragment_link(
                     dT = abs(aa)
             dT -= 0.5 * T
 
-            # Calculate dF using half the rate difference.
-            dF = abs(p[1] - q[1]) - 0.5 * R
+            # The shared link matrix stores twice the frequency in Hz.
+            # cWB compares the band-edge distance in Hz with f_gap.
+            dF = 0.5 * abs(p[1] - q[1]) - 0.25 * R
 
-            if dT < t_gap and dF < f_gap:
+            if dT <= t_gap and dF <= f_gap:
                 if p[4] < q[4]:
                     a = int(p[4])
                     b = int(q[4])
@@ -359,7 +358,7 @@ def calculate_statistics_arrays(
     Returns ``(ok, cTime, cFreq, rate_max, rate_min, total_energy)`` and keeps
     the public matrix-wrapper available for compatibility.
     """
-    oEo = atype == 'E' or atype == 'P'
+    oEo = atype == "E" or atype == "P"
     cT, nT, cF, nF, E = 0.0, 0.0, 0.0, 0.0, 0.0
     max_size = len(time_arr)
     rate = np.zeros(max_size, dtype=np.float64)
@@ -382,7 +381,7 @@ def calculate_statistics_arrays(
             if abs(a_ifo) > 1.0:
                 e += abs(a_ifo)
 
-        a = L if atype == 'L' else e
+        a = L if atype == "L" else e
         tt = 1.0 / rate_arr[i]
         mm = layers_arr[i]
         cT += int(time_arr[i] / mm) * a
@@ -417,14 +416,14 @@ def calculate_statistics_arrays(
 
     cut = True
     for i in range(rate_counter):
-        if (atype == 'L' and like[i] < S) or (oEo and ampl[i] < S):
+        if (atype == "L" and like[i] < S) or (oEo and ampl[i] < S):
             continue
         if not pair:
             cuts[i] = False
             cut = False
             continue
         for j in range(rate_counter):
-            if (atype == 'L' and like[j] < S) or (oEo and ampl[j] < S):
+            if (atype == "L" and like[j] < S) or (oEo and ampl[j] < S):
                 continue
             if rate[i] / 2 == rate[j] or rate[j] / 2 == rate[i]:
                 cuts[i] = False
@@ -438,13 +437,13 @@ def calculate_statistics_arrays(
     idx_max = -1
     for j in range(rate_counter):
         powr[j] = ampl[j] / sIZe[j]
-        if atype == 'E' and ampl[j] > a and not cuts[j]:
+        if atype == "E" and ampl[j] > a and not cuts[j]:
             idx_max = j
             a = ampl[j]
-        if atype == 'L' and like[j] > a and not cuts[j]:
+        if atype == "L" and like[j] > a and not cuts[j]:
             idx_max = j
             a = like[j]
-        if atype == 'P' and powr[j] > a and not cuts[j]:
+        if atype == "P" and powr[j] > a and not cuts[j]:
             idx_max = j
             a = powr[j]
 
@@ -456,13 +455,13 @@ def calculate_statistics_arrays(
     for j in range(rate_counter):
         if idx_max == j:
             continue
-        if atype == 'E' and ampl[j] < a and not cuts[j]:
+        if atype == "E" and ampl[j] < a and not cuts[j]:
             idx_min = j
             a = ampl[j]
-        if atype == 'L' and like[j] < a and not cuts[j]:
+        if atype == "L" and like[j] < a and not cuts[j]:
             idx_min = j
             a = like[j]
-        if atype == 'P' and powr[j] < a and not cuts[j]:
+        if atype == "P" and powr[j] < a and not cuts[j]:
             idx_min = j
             a = powr[j]
 
@@ -531,9 +530,7 @@ def calculate_statistics(
     return [c_time, c_freq, rate_max, rate_min, energy]
 
 
-def aggregate_clusters_from_links(
-    cluster_ids: np.ndarray, cluster_links: np.ndarray
-) -> list[list[int]]:
+def aggregate_clusters_from_links(cluster_ids: np.ndarray, cluster_links: np.ndarray) -> list[list[int]]:
     """
     Merge cluster ids using the provided edge list and append singleton clusters.
 
@@ -725,18 +722,18 @@ def apply_subnet_cut(
             timing=timing,
         )
 
-        if results['subnet_passed'] and results['subrho_passed'] and results['subthr_passed']:
+        if results["subnet_passed"] and results["subrho_passed"] and results["subthr_passed"]:
             logger.debug(
                 f"Cluster {i} ({len(c.pixel_arrays)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) passed subnet, subrho, and subthr cut"
             )
             c.cluster_status = -1
         else:
             log_output = f"Cluster {i} ({len(c.pixel_arrays)} pixels, from {c.start_time:.2f} - {c.stop_time:.2f} with freq {c.low_frequency:.2f} - {c.high_frequency:.2f} ) failed "
-            if not results['subnet_passed']:
+            if not results["subnet_passed"]:
                 log_output += f"subnet cut condition: {results['subnet_condition']}, "
-            if not results['subrho_passed']:
+            if not results["subrho_passed"]:
                 log_output += f"subrho cut condition: {results['subrho_condition']}, "
-            if not results['subthr_passed']:
+            if not results["subthr_passed"]:
                 log_output += f"subthr cut condition: {results['subthr_condition']}, "
             logger.debug(log_output)
             c.cluster_status = 1

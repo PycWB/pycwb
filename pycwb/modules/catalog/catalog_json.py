@@ -146,7 +146,7 @@ class JSONCatalog(BaseCatalog):
         """
         data = {
             "pycwb_version": pycwb.__version__,
-            "config": config.__dict__,
+            "config": (config.to_dict() if hasattr(config, "to_dict") else vars(config)),
             "jobs": _jobs_to_serialisable(jobs),
             "triggers": [],
         }

@@ -110,12 +110,12 @@ _stub_module(
     generate_noise_for_job_seg=_not_called,
 )
 _stub_module("pycwb.modules.read_data.data_check", check_and_resample_py=_not_called)
-_stub_module("pycwb.modules.data_conditioning.data_conditioning", data_conditioning=_not_called)
+_stub_module("pycwb.modules.data_conditioning.data_conditioning", condition_strains=_not_called)
 _stub_module("pycwb.modules.cwb_interop", create_cwb_workdir=_not_called)
 _stub_module(
     "pycwb.modules.likelihoodWP.likelihood",
-    likelihood=_not_called,
-    setup_likelihood=_not_called,
+    evaluate_cluster_likelihood=_not_called,
+    prepare_likelihood_inputs=_not_called,
 )
 _stub_module("pycwb.modules.qveto.qveto", get_qveto=_not_called)
 _stub_module("pycwb.modules.reconstruction", estimate_snr=_not_called)

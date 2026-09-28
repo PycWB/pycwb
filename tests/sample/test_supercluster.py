@@ -13,7 +13,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from pycwb.config import Config
 from pycwb.modules.coherence import coherence as coherence_cwb
-from pycwb.modules.cwb_coherence.lag_plan import build_lag_plan_from_config
 from pycwb.modules.data_conditioning import data_conditioning as data_conditioning_cwb
 from pycwb.modules.multi_resolution_wdm import create_wdm_for_level
 from pycwb.modules.read_data import generate_injection, generate_noise_for_job_seg
@@ -213,8 +212,8 @@ def _run_native_supercluster_with_stage_counts(config, fragment_clusters, strain
             ) else 1
         return [c for c in superclusters if c.cluster_status <= 0]
 
-    lag_plan = build_lag_plan_from_config(config, tf_maps)
-    n_lag = int(lag_plan.n_lag)
+    # Use the lags actually produced by coherence.
+    n_lag = len(fragment_clusters[0])
 
     # Collect all unique layer values that appear in the fragments
     merged_by_lag = []

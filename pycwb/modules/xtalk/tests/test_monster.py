@@ -1,4 +1,5 @@
 """Tests for pycwb.modules.xtalk — catalog header parsing and metadata."""
+
 import struct
 import numpy as np
 import pytest
@@ -13,8 +14,7 @@ from pycwb.modules.xtalk.monster import (
 class TestReadCatalogHeaderAndLayers:
     """Tests for _read_catalog_header_and_layers — binary header parser."""
 
-    def _pack_header(self, nRes, tag=0.0, beta_order=0.0, precision=0.0, kwdm=0.0,
-                     layers=None):
+    def _pack_header(self, nRes, tag=0.0, beta_order=0.0, precision=0.0, kwdm=0.0, layers=None):
         """Build a binary header matching the expected format."""
         if layers is None:
             layers = list(range(1, nRes + 1))
@@ -35,32 +35,32 @@ class TestReadCatalogHeaderAndLayers:
         data = self._pack_header(3)
         result = _read_catalog_header_and_layers(data)
 
-        assert result['nRes'] == 3
-        assert result['tag'] == 0.0
-        assert result['beta_order'] == 0.0
-        assert result['precision'] == 0.0
-        assert result['kwdm'] == 0.0
-        assert result['layers'].tolist() == [1, 2, 3]
+        assert result["nRes"] == 3
+        assert result["tag"] == 0.0
+        assert result["beta_order"] == 0.0
+        assert result["precision"] == 0.0
+        assert result["kwdm"] == 0.0
+        assert result["layers"].tolist() == [1, 2, 3]
 
     def test_extended_header_with_negative_nRes(self):
         """Extended header: nRes < 0 signals extra metadata fields."""
         data = self._pack_header(2, tag=1.5, beta_order=2.0, precision=3.0, kwdm=4.0)
         result = _read_catalog_header_and_layers(data)
 
-        assert result['nRes'] == 2
-        assert result['tag'] == 1.5
-        assert result['beta_order'] == 2.0
-        assert result['precision'] == 3.0
-        assert result['kwdm'] == 4.0
-        assert result['layers'].tolist() == [1, 2]
+        assert result["nRes"] == 2
+        assert result["tag"] == 1.5
+        assert result["beta_order"] == 2.0
+        assert result["precision"] == 3.0
+        assert result["kwdm"] == 4.0
+        assert result["layers"].tolist() == [1, 2]
 
     def test_single_layer(self):
         """Single resolution level (nRes=1)."""
         data = self._pack_header(1)
         result = _read_catalog_header_and_layers(data)
-        assert result['nRes'] == 1
-        assert len(result['layers']) == 1
-        assert result['layers'][0] == 1
+        assert result["nRes"] == 1
+        assert len(result["layers"]) == 1
+        assert result["layers"][0] == 1
 
     def test_ten_layers(self):
         """Larger nRes with many layers."""
@@ -68,15 +68,15 @@ class TestReadCatalogHeaderAndLayers:
         layers = [i * 2 for i in range(nRes)]
         data = self._pack_header(nRes, layers=layers)
         result = _read_catalog_header_and_layers(data)
-        assert result['nRes'] == 10
-        assert result['layers'].tolist() == layers
+        assert result["nRes"] == 10
+        assert result["layers"].tolist() == layers
 
     def test_offset_tracks_position(self):
         """offset should point to position after header."""
         data = self._pack_header(3)
         result = _read_catalog_header_and_layers(data)
         expected_offset = struct.calcsize("f" + "3f")
-        assert result['offset'] == expected_offset
+        assert result["offset"] == expected_offset
 
 
 class TestReadCatalogMetadata:
@@ -95,9 +95,9 @@ class TestReadCatalogMetadata:
 
         try:
             meta = read_catalog_metadata(bin_path)
-            assert meta['nRes'] == 4
-            assert meta['tag'] == 0.0
-            assert meta['layers'].tolist() == layers
+            assert meta["nRes"] == 4
+            assert meta["tag"] == 0.0
+            assert meta["layers"].tolist() == layers
         finally:
             os.unlink(bin_path)
 
@@ -109,10 +109,10 @@ class TestReadCatalogMetadata:
         try:
             np.savez(npz_path, nRes=3, layers=layers)
             meta = read_catalog_metadata(npz_path)
-            assert meta['nRes'] == 3
-            assert meta['layers'].tolist() == [3, 6, 9]
+            assert meta["nRes"] == 3
+            assert meta["layers"].tolist() == [3, 6, 9]
             # defaults when tag/precision not in npz
-            assert meta['tag'] == 0.0
+            assert meta["tag"] == 0.0
         finally:
             os.unlink(npz_path)
 
@@ -122,13 +122,74 @@ class TestReadCatalogMetadata:
         with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as f:
             npz_path = f.name
         try:
-            np.savez(npz_path, nRes=2, tag=1.0, beta_order=2.0,
-                     precision=0.01, kwdm=4.0, layers=layers)
+            np.savez(npz_path, nRes=2, tag=1.0, beta_order=2.0, precision=0.01, kwdm=4.0, layers=layers)
             meta = read_catalog_metadata(npz_path)
-            assert meta['nRes'] == 2
-            assert meta['tag'] == 1.0
-            assert meta['beta_order'] == 2.0
-            assert meta['precision'] == 0.01
-            assert meta['kwdm'] == 4.0
+            assert meta["nRes"] == 2
+            assert meta["tag"] == 1.0
+            assert meta["beta_order"] == 2.0
+            assert meta["precision"] == 0.01
+            assert meta["kwdm"] == 4.0
         finally:
             os.unlink(npz_path)
+
+
+@pytest.mark.parametrize("extended", [False, True])
+def test_coefficient_blocks_preserve_order_and_cached_values(tmp_path, extended):
+    from pycwb.modules.xtalk.monster import load_catalog
+
+    layers = [1, 2]
+    header = struct.pack("f", -2.0 if extended else 2.0)
+    if extended:
+        header += struct.pack("4f", 1.0, 6.0, 10.0, 0.0)
+    header += struct.pack("2f", *layers)
+    expected = []
+    lookup = np.zeros((2, 2, 3, 2, 2), dtype=np.int32)
+    content = bytearray(header)
+    for i in range(2):
+        for j in range(i + 1):
+            for k in range(layers[i] + 1):
+                for parity in range(2):
+                    entries = (
+                        []
+                        if (k + parity) % 2
+                        else [
+                            (16777217, 0.125, -0.25, 1e-9, -0.0),
+                            (-3, 1.0, 2.0, 3.0, 4.0),
+                        ]
+                    )
+                    lookup[i, j, k, parity, 0] = len(expected)
+                    content += struct.pack("f", len(entries))
+                    for row in entries:
+                        content += struct.pack("i4f", *row)
+                        expected.append(np.asarray(row, dtype=np.float32))
+                    lookup[i, j, k, parity, 1] = len(expected)
+    path = tmp_path / "catalog.xbin"
+    path.write_bytes(content)
+    result = load_catalog(path)
+    assert result[0].tobytes() == np.asarray(expected).tobytes()
+    np.testing.assert_array_equal(result[1], lookup)
+    np.testing.assert_array_equal(result[2], layers)
+    assert result[3] == 2
+    cached = load_catalog(path)
+    for a, b in zip(result, cached):
+        np.testing.assert_array_equal(a, b)
+
+
+def test_empty_coefficient_blocks(tmp_path):
+    from pycwb.modules.xtalk.monster import load_catalog
+
+    path = tmp_path / "empty.bin"
+    path.write_bytes(struct.pack("6f", 1.0, 1.0, 0.0, 0.0, 0.0, 0.0))
+    coeff, lookup, layers, nres = load_catalog(path, dump=False)
+    assert coeff.shape == (0,) and coeff.dtype == np.float64
+    assert not lookup.any()
+    assert not path.with_suffix(".npz").exists()
+
+
+def test_truncated_coefficient_block(tmp_path):
+    from pycwb.modules.xtalk.monster import load_catalog
+
+    path = tmp_path / "truncated.bin"
+    path.write_bytes(struct.pack("3f", 1.0, 1.0, 2.0))
+    with pytest.raises(ValueError, match="truncated"):
+        load_catalog(path, dump=False)

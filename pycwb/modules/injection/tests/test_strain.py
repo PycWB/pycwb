@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock
 from pycwb.types.time_series import TimeSeries
+from pycwb.types.detector import Detector
 from pycwb.modules.injection.strain import (
     generate_strain_from_injection,
     project_to_detector,
@@ -19,7 +20,7 @@ def test_project_to_detector_applies_physical_arrival_delays():
     hc = TimeSeries(data=np.zeros(32), t0=-1.0, dt=1.0 / 4096)
 
     l1, h1 = project_to_detector(
-        hp, hc, 0.0, 0.0, 0.0, ["L1", "H1"], gps_time
+        hp, hc, 0.0, 0.0, 0.0, [Detector("L1"), Detector("H1")], gps_time
     )
 
     # t_H1 - t_L1 for this source, independently cross-checked against

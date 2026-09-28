@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pycwb.constants.execution_profile import execution_profile, DEFAULT_EXECUTION_PROFILE
 
 import logging
 import time
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_link_pixel_matrix(clusters: list[Cluster], n_ifo: int) -> np.ndarray:
-    """Build the compact feature matrix consumed by link kernels."""
+    """Build [time_s, 2*frequency_hz, 1/rate, rate/2, cluster_id, detector_times]."""
     n_pixels = sum(len(c.pixel_arrays) for c in clusters)
     if n_pixels == 0:
         return np.empty((0, 5 + n_ifo), dtype=np.float64)
@@ -50,9 +51,7 @@ def _build_link_pixel_matrix(clusters: list[Cluster], n_ifo: int) -> np.ndarray:
         pixels[offset:end, 3] = rate_f / 2.0
         pixels[offset:end, 4] = c_id
         for ifo_idx in range(n_ifo):
-            pixels[offset:end, 5 + ifo_idx] = (
-                pa.pixel_index[ifo_idx].astype(np.float64) / denom
-            )
+            pixels[offset:end, 5 + ifo_idx] = pa.pixel_index[ifo_idx].astype(np.float64) / denom
         offset = end
 
     return pixels[:offset]
@@ -67,6 +66,7 @@ def supercluster(
     mini_pix: int = 3,
     core: bool = False,
     pair: bool = False,
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> list[Cluster]:
     """
     Supercluster algorithm
@@ -101,7 +101,16 @@ def supercluster(
     # FIXME(#?): dF returned by get_cluster_links is the last-computed value for the final
     # pixel pair examined, so it may not represent the cluster as a whole.
     # Tracked in issue — do not use dF for per-cluster frequency normalisation until resolved.
+    link_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     cluster_links, dF = get_cluster_links(pixels, gap, n_ifo)
+    if profile.perf_diagnostics:
+        logger.info(
+            "PERF links stage=supercluster pixels=%d clusters=%d links=%d elapsed=%.6f",
+            len(pixels),
+            len(clusters),
+            len(cluster_links),
+            time.perf_counter() - link_timer,
+        )
 
     # remove redundant links
     # cluster_links = remove_duplicates_sorted(cluster_links[np.lexsort((cluster_links[:, 1], cluster_links[:, 0]))])
@@ -215,6 +224,7 @@ def defragment(
     t_gap: float,
     f_gap: float,
     n_ifo: int,
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> list[Cluster]:
     """
     Defragmentation algorithm — merge clusters that are close in time and frequency.
@@ -244,7 +254,16 @@ def defragment(
     cluster_ids = np.arange(len(clusters))
 
     # find links between clusters
+    link_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     cluster_links = get_defragment_link(pixels, t_gap, f_gap, n_ifo)
+    if profile.perf_diagnostics:
+        logger.info(
+            "PERF links stage=defragment pixels=%d clusters=%d links=%d elapsed=%.6f",
+            len(pixels),
+            len(clusters),
+            len(cluster_links),
+            time.perf_counter() - link_timer,
+        )
 
     if len(cluster_links) == 0:
         return clusters
@@ -254,7 +273,6 @@ def defragment(
 
     superclusters = []
     for c_ids in aggregated_clusters:
-
         sc = calculate_supercluster_data(
             [clusters[c_id] for c_id in c_ids],
             atype="L",
@@ -336,8 +354,12 @@ def supercluster_wrapper(
     for j in range(n_lag):
         frag_clusters_this_lag = [fragment_clusters[res][j] for res in range(n_res)]
         fragment_cluster = supercluster_single_lag(
-            setup, config, frag_clusters_this_lag, j,
-            xtalk=xtalk, td_inputs_cache=td_inputs_cache,
+            setup,
+            config,
+            frag_clusters_this_lag,
+            j,
+            xtalk=xtalk,
+            td_inputs_cache=td_inputs_cache,
         )
         if fragment_cluster is None:
             logger.warning("No supercluster results for lag %d", j)
@@ -358,6 +380,7 @@ def supercluster_wrapper(
 # ---------------------------------------------------------------------------
 # Streaming-friendly API: setup once, iterate over lags
 # ---------------------------------------------------------------------------
+
 
 def setup_supercluster(config: Any, gps_time: float) -> dict:
     """
@@ -381,8 +404,9 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
     """
     timer_start = time.perf_counter()
 
-    upTDF = int(getattr(config, 'upTDF', 1))
-    TDRate = int(getattr(config, 'TDRate', int(config.rateANA) * upTDF))
+    upTDF = int(getattr(config, "upTDF", 1))
+    analysis_rate = int(config.rateANA)
+    TDRate = int(getattr(config, "TDRate", analysis_rate * upTDF))
 
     # ---- Sky delay / antenna-pattern matrices ----
     # Compute TWO sky-array sets that mirror ROOT/CWB behaviour:
@@ -396,15 +420,14 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
         healpix_order_full = None
         healpix_order_subnet = None
 
-    # K_td: delay range at TDRate resolution matching CWB's loadTDamp behaviour.
-    # CWB: L = int(max_delay * TDRate) + 1 at TDRate steps.
-    # Python must use the same resolution so nSkyStat discriminates directions.
-    K_td = max(int(config.TDSize) * upTDF,
-               int(getattr(config, 'max_delay', 0.0) * float(TDRate)) + 1)
+    # Keep high-rate TD buffers for likelihood. Subnet selection addresses only
+    # their analysis-rate samples, matching cWB's setTDFilter(TDSize, 1).
+    K_td = max(int(config.TDSize) * upTDF, int(getattr(config, "max_delay", 0.0) * float(TDRate)) + 1)
+    K_subnet = max(int(config.TDSize), int(getattr(config, "max_delay", 0.0) * analysis_rate) + 1)
 
     # Full-resolution sky arrays (for likelihood) — delays at TDRate resolution
     ml, FP, FX = compute_sky_delay_and_patterns(
-        ifos=config.ifo,
+        detectors=config.detectors,
         ref_ifo=config.refIFO,
         sample_rate=TDRate,
         td_size=K_td,
@@ -413,24 +436,36 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
         n_sky=None,
     )
 
-    # Reduced-resolution sky arrays (for subnet cut) — only recompute if different
-    if healpix_order_subnet != healpix_order_full:
+    # cWB rounds subnet delays at the analysis rate, before enabling upTDF for
+    # likelihood. Rounding on the finer grid can change the MRA/subrho decision.
+    # Recompute even for equal sky resolutions when the delay sampling differs.
+    if healpix_order_subnet != healpix_order_full or upTDF != 1:
         ml_subnet, FP_subnet, FX_subnet = compute_sky_delay_and_patterns(
-            ifos=config.ifo,
+            detectors=config.detectors,
             ref_ifo=config.refIFO,
-            sample_rate=TDRate,
-            td_size=K_td,
+            sample_rate=analysis_rate,
+            td_size=K_subnet,
             gps_time=gps_time,
             healpix_order=healpix_order_subnet,
             n_sky=None,
         )
+        # Index units must still match the existing high-rate TD buffers.
+        ml_subnet = ml_subnet * upTDF
     else:
         ml_subnet, FP_subnet, FX_subnet = ml, FP, FX
 
     logger.info(
         "[setup_supercluster] sky pixels: full=%d (healpix=%s), subnet=%d (healpix=%s)",
-        int(ml.shape[1]), healpix_order_full,
-        int(ml_subnet.shape[1]), healpix_order_subnet,
+        int(ml.shape[1]),
+        healpix_order_full,
+        int(ml_subnet.shape[1]),
+        healpix_order_subnet,
+    )
+    logger.info(
+        "[setup_supercluster] TD sampling: subnet=%d Hz, likelihood=%d Hz, subnet index stride=%d",
+        analysis_rate,
+        TDRate,
+        upTDF,
     )
 
     logger.info("Supercluster setup time: %.2f s", time.perf_counter() - timer_start)
@@ -439,19 +474,100 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
     FX_subnet_t = np.ascontiguousarray(FX_subnet.T, dtype=np.float32)
 
     return {
-        "ml": ml_subnet,              # reduced resolution for apply_subnet_cut
+        "execution_profile": execution_profile(config),
+        "ml": ml_subnet,  # reduced resolution for apply_subnet_cut
         "FP": FP_subnet,
         "FX": FX_subnet,
         "ml_subnet_i32": ml_subnet_i32,
         "FP_subnet_t": FP_subnet_t,
         "FX_subnet_t": FX_subnet_t,
         "n_sky": int(ml_subnet.shape[1]),
-        "ml_likelihood": ml,          # full resolution for likelihood sky scan
+        "ml_likelihood": ml,  # full resolution for likelihood sky scan
         "FP_likelihood": FP,
         "FX_likelihood": FX,
         "n_sky_likelihood": int(ml.shape[1]),
         "K_td": K_td,
     }
+
+
+def _populate_td_vectors(all_clusters, n_ifo, K, td_inputs_cache, delay_stride=1):
+    """Extract and assign vectors; release the merged temporary on return.
+
+    Parameters
+    ----------
+    all_clusters : list of Cluster
+        Clusters whose pixel-array TD amplitudes are replaced in place.
+    n_ifo : int
+        Number of detectors represented by each input cache entry.
+    K : int
+        Half-range of the output delay grid. Each quadrature has 2 * K + 1 values.
+    td_inputs_cache : dict
+        Per-layer, per-detector prepared extraction inputs. Existing neighboring
+        layer fallback is retained; a missing layer logs a warning and leaves zeros.
+    delay_stride : int, optional
+        Spacing in fine filter-bank samples, not a pixel-time or frequency stride.
+
+    Notes
+    -----
+    Staged subnet screening uses coarse vectors only until survivor selection;
+    the caller must repopulate surviving clusters with fine vectors before
+    likelihood evaluation. The merged allocation stays local to this call.
+    """
+    if not all_clusters:
+        return
+    # Gather per-cluster sizes and a merged view for layers/pixel_index
+    cluster_sizes = [len(c.pixel_arrays) for c in all_clusters]
+    n_pixels = sum(cluster_sizes)
+    if n_pixels == 0:
+        logger.debug("No pixels for TD extraction")
+        return None
+
+    pixel_layers = np.concatenate([c.pixel_arrays.layers for c in all_clusters]).astype(np.int32)
+    # pixel_index: (n_ifo, n_pix) per cluster — cat along pixel axis → (n_ifo, n_pixels_total)
+    pixel_indices_all = np.concatenate([c.pixel_arrays.pixel_index for c in all_clusters], axis=1)  # (n_ifo, n_pixels)
+    pixel_indices = pixel_indices_all.T.astype(np.int32)  # (n_pixels, n_ifo)
+
+    unique_layers = np.unique(pixel_layers)
+    pixels_by_layer = {int(layer): np.where(pixel_layers == layer)[0] for layer in unique_layers}
+
+    td_vec_len = expected_td_vec_len(K)
+    all_td_amps = np.zeros((n_pixels, n_ifo, td_vec_len), dtype=np.float32)
+
+    for layer_key, pixel_idxs in pixels_by_layer.items():
+        per_ifo_inputs = td_inputs_cache.get(layer_key)
+        if per_ifo_inputs is None:
+            per_ifo_inputs = td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
+        if per_ifo_inputs is None:
+            logger.warning(
+                "Missing TD input cache for layer %d, skipping %d pixels",
+                layer_key,
+                len(pixel_idxs),
+            )
+            continue
+        layer_pixel_indices = pixel_indices[pixel_idxs]
+        for ifo_idx in range(n_ifo):
+            indices_np = np.asarray(layer_pixel_indices[:, ifo_idx], dtype=np.int32)
+            batch_result = (
+                per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
+                if delay_stride == 1
+                else per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K, delay_stride=delay_stride)
+            )
+            all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
+
+    # Build per-cluster PixelArrays from the dense all_td_amps matrix,
+    # eliminating the round-trip:  dense → per-pixel lists → re-assemble.
+    # Compute slice offsets from the precomputed cluster_sizes.
+    cluster_pixel_offsets: list[tuple[int, int]] = []
+    offset = 0
+    for n in cluster_sizes:
+        cluster_pixel_offsets.append((offset, offset + n))
+        offset += n
+
+    for ci, cluster in enumerate(all_clusters):
+        start, end = cluster_pixel_offsets[ci]
+        cluster_td = all_td_amps[start:end]  # (n_cpix, n_ifo, td_vec_len)
+        # pixel_arrays already set from coherence; just update the td_amp fields
+        cluster.pixel_arrays.set_td_amp_from_dense(cluster_td)
 
 
 def supercluster_single_lag(
@@ -489,6 +605,7 @@ def supercluster_single_lag(
         Processed cluster ready for likelihood, or ``None`` if all
         candidates were rejected at the subnet-cut stage.
     """
+    profile = setup.get("execution_profile") or execution_profile(config)
     n_ifo = config.nIFO
     K = int(setup["K_td"])
 
@@ -508,66 +625,25 @@ def supercluster_single_lag(
         logger.info("No pixels to process for lag %d", lag_idx)
         return None
 
-    # Gather per-cluster sizes and a merged view for layers/pixel_index
-    cluster_sizes = [len(c.pixel_arrays) for c in all_clusters]
-    n_pixels = sum(cluster_sizes)
-    if n_pixels == 0:
-        logger.info("No pixels to process for lag %d", lag_idx)
-        return None
-
-    pixel_layers  = np.concatenate([c.pixel_arrays.layers  for c in all_clusters]).astype(np.int32)
-    # pixel_index: (n_ifo, n_pix) per cluster — cat along pixel axis → (n_ifo, n_pixels_total)
-    pixel_indices_all = np.concatenate(
-        [c.pixel_arrays.pixel_index for c in all_clusters], axis=1
-    )  # (n_ifo, n_pixels)
-    pixel_indices = pixel_indices_all.T.astype(np.int32)  # (n_pixels, n_ifo)
-
-    unique_layers = np.unique(pixel_layers)
-    pixels_by_layer = {
-        int(layer): np.where(pixel_layers == layer)[0] for layer in unique_layers
-    }
-
-    td_vec_len = expected_td_vec_len(K)
-    all_td_amps = np.zeros((n_pixels, n_ifo, td_vec_len), dtype=np.float32)
-
-    for layer_key, pixel_idxs in pixels_by_layer.items():
-        per_ifo_inputs = td_inputs_cache.get(layer_key)
-        if per_ifo_inputs is None:
-            per_ifo_inputs = (
-                td_inputs_cache.get(layer_key - 1) or td_inputs_cache.get(layer_key + 1)
-            )
-        if per_ifo_inputs is None:
-            logger.warning(
-                "Missing TD input cache for layer %d, skipping %d pixels",
-                layer_key, len(pixel_idxs),
-            )
-            continue
-        layer_pixel_indices = pixel_indices[pixel_idxs]
-        for ifo_idx in range(n_ifo):
-            indices_np = np.asarray(layer_pixel_indices[:, ifo_idx], dtype=np.int32)
-            batch_result = per_ifo_inputs[ifo_idx].extract_td_vecs(indices_np, K)
-            all_td_amps[pixel_idxs, ifo_idx, :] = batch_result
-
-    # Build per-cluster PixelArrays from the dense all_td_amps matrix,
-    # eliminating the round-trip:  dense → per-pixel lists → re-assemble.
-    # Compute slice offsets from the precomputed cluster_sizes.
-    cluster_pixel_offsets: list[tuple[int, int]] = []
-    offset = 0
-    for n in cluster_sizes:
-        cluster_pixel_offsets.append((offset, offset + n))
-        offset += n
-
-    for ci, cluster in enumerate(fragment_cluster.clusters):
-        start, end = cluster_pixel_offsets[ci]
-        cluster_td = all_td_amps[start:end]  # (n_cpix, n_ifo, td_vec_len)
-        # pixel_arrays already set from coherence; just update the td_amp fields
-        cluster.pixel_arrays.set_td_amp_from_dense(cluster_td)
+    delay_stride = int(getattr(config, "upTDF", 1))
+    subnet_ml = setup.get("ml_subnet_i32", setup["ml"])
+    staged_td = profile.staged_td and delay_stride > 1
+    if staged_td:
+        # Keep exactly the analysis-rate samples already present in the fine
+        # buffer. Fall back for custom setups with non-aligned/outside delays.
+        coarse_K = K // delay_stride
+        staged_td = (
+            np.all(subnet_ml % delay_stride == 0) and np.max(np.abs(subnet_ml), initial=0) <= coarse_K * delay_stride
+        )
+    if staged_td:
+        subnet_ml = np.ascontiguousarray(subnet_ml // delay_stride, dtype=np.int32)
+        _populate_td_vectors(all_clusters, n_ifo, coarse_K, td_inputs_cache, delay_stride)
+    else:
+        _populate_td_vectors(all_clusters, n_ifo, K, td_inputs_cache)
     td_elapsed = time.perf_counter() - t_td_start
 
     # Supercluster + subnet cut
-    logger.info(
-        "-> Processing lag=%d with %d clusters", lag_idx, len(fragment_cluster.clusters)
-    )
+    logger.info("-> Processing lag=%d with %d clusters", lag_idx, len(fragment_cluster.clusters))
     logger.info("   --------------------------------------------------")
     clusters = fragment_cluster.clusters
 
@@ -578,40 +654,39 @@ def supercluster_single_lag(
     pattern = int(getattr(config, "pattern", 0))
 
     t_super_start = time.perf_counter()
-    superclusters = supercluster(clusters, 'L', config.TFgap, super_e2or, n_ifo)
+    superclusters = supercluster(clusters, "L", config.TFgap, super_e2or, n_ifo, profile=profile)
     super_elapsed = time.perf_counter() - t_super_start
     total_pixels = sum(len(c.pixel_arrays) for c in superclusters)
     accepted_superclusters = [sc for sc in superclusters if sc.cluster_status <= 0]
-    logger.info(
-        "   super clusters|pixels      : %6d|%d", len(superclusters), total_pixels
-    )
+    logger.info("   super clusters|pixels      : %6d|%d", len(superclusters), total_pixels)
     logger.info("   accepted superclusters     : %6d", len(accepted_superclusters))
 
     if not accepted_superclusters:
-        logger.warning(
-            "No accepted superclusters after supercluster stage (lag=%d)", lag_idx
-        )
+        logger.warning("No accepted superclusters after supercluster stage (lag=%d)", lag_idx)
         logger.info(
             "   stage timings             : td=%.3fs super=%.3fs",
-            td_elapsed, super_elapsed,
+            td_elapsed,
+            super_elapsed,
         )
         return None
-    
+
     defrag_first_elapsed = 0.0
     if pattern != 0:
         t_defrag_start = time.perf_counter()
-        accepted_superclusters = defragment(
-            accepted_superclusters, config.Tgap, config.Fgap, n_ifo
-        )
+        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo, profile=profile)
         defrag_first_elapsed = time.perf_counter() - t_defrag_start
-        logger.info("   defrag clusters|pixels     : %6d|%d", len(accepted_superclusters), sum(len(c.pixel_arrays) for c in accepted_superclusters))
+        logger.info(
+            "   defrag clusters|pixels     : %6d|%d",
+            len(accepted_superclusters),
+            sum(len(c.pixel_arrays) for c in accepted_superclusters),
+        )
 
     subrho = config.subrho if config.subrho > 0 else config.netRHO
     t_subnet_start = time.perf_counter()
     accepted_superclusters = apply_subnet_cut(
         accepted_superclusters,
         config.LOUD,
-        setup.get("ml_subnet_i32", setup["ml"]),
+        subnet_ml,
         setup.get("FP_subnet_t", setup["FP"]),
         setup.get("FX_subnet_t", setup["FX"]),
         subnet_acor,
@@ -630,15 +705,11 @@ def supercluster_single_lag(
     defrag_final_elapsed = 0.0
     if pattern == 0:
         t_defrag_start = time.perf_counter()
-        accepted_superclusters = defragment(
-            accepted_superclusters, config.Tgap, config.Fgap, n_ifo
-        )
+        accepted_superclusters = defragment(accepted_superclusters, config.Tgap, config.Fgap, n_ifo, profile=profile)
         defrag_final_elapsed = time.perf_counter() - t_defrag_start
 
     total_pixels = sum(len(c.pixel_arrays) for c in accepted_superclusters)
-    logger.info(
-        "   post-cut clusters|pixels   : %6d|%d", len(accepted_superclusters), total_pixels
-    )
+    logger.info("   post-cut clusters|pixels   : %6d|%d", len(accepted_superclusters), total_pixels)
 
     fragment_cluster.clusters = [c for c in accepted_superclusters if c.cluster_status <= 0]
     total_pixels = sum(len(c.pixel_arrays) for c in fragment_cluster.clusters)
@@ -655,6 +726,18 @@ def supercluster_single_lag(
         subnet_elapsed,
         defrag_final_elapsed,
     )
+
+    if staged_td:
+        t_fine_start = time.perf_counter()
+        _populate_td_vectors(fragment_cluster.clusters, n_ifo, K, td_inputs_cache)
+        logger.info(
+            "   staged TD                  : coarse_pixels=%d fine_pixels=%d coarse_len=%d fine_len=%d fine=%.3fs",
+            sum(len(c.pixel_arrays) for c in all_clusters),
+            total_pixels,
+            expected_td_vec_len(coarse_K),
+            expected_td_vec_len(K),
+            time.perf_counter() - t_fine_start,
+        )
 
     # Mark all surviving pixels as core via pixel_arrays
     for c in fragment_cluster.clusters:

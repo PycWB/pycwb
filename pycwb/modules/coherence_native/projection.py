@@ -1,13 +1,14 @@
 """Max-energy projection and backend selection for native coherence."""
 
 from __future__ import annotations
+from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
 
-import os
 
 from pycwb.config import Config
 from pycwb.types.time_frequency_map import TimeFrequencyMap
 
-from .time_delay_max_energy import time_delay_max_energy, time_delay_max_energy_numba
+from .time_delay_jax import time_delay_max_energy
+from .time_delay_numba import time_delay_max_energy_numba
 
 
 def _normalize_max_energy_backend(backend: str | None) -> str:
@@ -22,10 +23,7 @@ def _normalize_max_energy_backend(backend: str | None) -> str:
         "nb": "numba",
     }
     if backend not in aliases:
-        raise ValueError(
-            "max_energy_backend must be one of {'jax', 'numba', 'auto'} "
-            f"(got {backend!r})"
-        )
+        raise ValueError(f"max_energy_backend must be one of {{'jax', 'numba', 'auto'}} (got {backend!r})")
     return aliases[backend]
 
 
@@ -36,19 +34,17 @@ def _auto_max_energy_backend_for_layers(layers: int) -> str:
 
 def _max_energy_backend(config: Config | None = None, layers: int | None = None) -> str:
     """Resolve the configured max-energy backend."""
-    backend = os.getenv("PYCWB_MAX_ENERGY_BACKEND")
-    if backend is None and config is not None:
-        backend = getattr(config, "max_energy_backend", None)
+    backend = getattr(config, "max_energy_backend", None)
     backend = _normalize_max_energy_backend(backend)
     if backend == "auto" and layers is not None:
         return _auto_max_energy_backend_for_layers(layers)
     return backend
 
 
-def _max_energy_backend_label(backend: str) -> str:
+def _max_energy_backend_label(backend: str, profile=DEFAULT_EXECUTION_PROFILE) -> str:
     """Human-readable backend label for timing logs."""
     if backend == "numba":
-        mode = os.getenv("PYCWB_NUMBA_MAX_ENERGY_MODE")
+        mode = profile.numba_max_energy_mode
         if mode:
             return f"{backend}:{mode}"
     return backend
@@ -63,6 +59,7 @@ def max_energy(
     f_high: float | None = None,
     hist: list | None = None,
     backend: str = "jax",
+    profile=DEFAULT_EXECUTION_PROFILE,
 ) -> tuple[TimeFrequencyMap, float]:
     """
     Compute max-energy skymap projection for a detector TF map.
@@ -112,6 +109,7 @@ def max_energy(
             downsample=up_n,
             pattern=pattern,
             hist=hist,
+            profile=profile,
         )
     else:
         new_tf_map, result = time_delay_max_energy(
@@ -120,5 +118,6 @@ def max_energy(
             downsample=up_n,
             pattern=pattern,
             hist=hist,
+            profile=profile,
         )
     return new_tf_map, result
