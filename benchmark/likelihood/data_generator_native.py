@@ -32,7 +32,7 @@ import psutil
 from pycwb.config import Config
 from pycwb.modules.cwb_coherence.coherence import setup_coherence, coherence_single_lag
 from pycwb.modules.data_conditioning.data_conditioning_python import data_conditioning
-from pycwb.modules.likelihoodWP.likelihood import likelihood as likelihood_cpu, setup_likelihood
+from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood as likelihood_cpu, prepare_likelihood_inputs
 from pycwb.modules.likelihoodWPGPU.likelihood import likelihood as likelihood_gpu
 from pycwb.modules.read_data import (
     generate_noise_for_job_seg,
@@ -294,7 +294,7 @@ def process_job_segment(
     logger.info("Supercluster setup: %.2f s", time.perf_counter() - t0)
 
     t0 = time.perf_counter()
-    likelihood_setup = setup_likelihood(
+    likelihood_setup = prepare_likelihood_inputs(
         config, strains, config.nIFO,
         ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
         FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),

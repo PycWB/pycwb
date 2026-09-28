@@ -5,7 +5,7 @@ from pycwb.modules.super_cluster.super_cluster import supercluster_wrapper
 from pycwb.modules.xtalk.monster import load_catalog
 
 from pycwb.config import Config
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_ifo
+from pycwb.modules.likelihoodWP.pixel_data import build_sky_delay_and_antenna_patterns
 from pycwb.modules.logger import logger_init
 
 if not os.environ.get('HOME_WAT_FILTERS'):
@@ -188,7 +188,7 @@ subnorm = config.subnorm
 subrho = config.subrho
 netrho = network.net.netRHO
 MRAcatalog = config.MRAcatalog
-ml, FP, FX = load_data_from_ifo(network, config.nIFO)
+ml, FP, FX = build_sky_delay_and_antenna_patterns(network, config.nIFO)
 
 test_data = {
     'strains': strains,

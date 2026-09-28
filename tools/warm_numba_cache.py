@@ -75,20 +75,16 @@ def _warm_likelihood_dpf() -> None:
     fx = np.vstack((fx0, fx0 * np.float32(1.1))).astype(np.float32)
     valid = np.array([0, 1], dtype=np.int64)
 
-    dpf.avx_dpf_ps(fp0, fx0, rms)
-    dpf.dpf_np_loops_local(fp0, fx0, rms)
-    dpf.dpf_np_loops(fp0, fx0, rms)
-    dpf.dpf_np(fp0, fx0, rms)
-    dpf.dpf_np_loops_vec(fp0, fx0, rms)
-    dpf.calculate_dpf(fp, fx, rms, 2, 2, 0.1, 1.0, valid)
+    dpf.compute_dpf(fp0, fx0, rms)
+    dpf.compute_dpf_regulator(fp, fx, rms, 2, 2, 0.1, 1.0, valid)
 
 
 def _warm_likelihood_sky() -> None:
-    from pycwb.modules.likelihoodWP import dpf, sky_scan, sky_stat
+    from pycwb.modules.likelihoodWP import dpf, sky_scan, sky_kernels
 
     v00 = np.array([[0.3, 0.4, 0.2], [0.2, 0.5, 0.1]], dtype=np.float32)
     v90 = np.array([[0.1, 0.2, 0.3], [0.4, 0.2, 0.1]], dtype=np.float32)
-    _, _, energy_total, mask = sky_stat.load_data_from_td(v00, v90, 0.0)
+    _, _, energy_total, mask = sky_kernels.compute_pixel_energy_and_mask(v00, v90, 0.0)
 
     fp0 = np.array([0.35, 0.75], dtype=np.float32)
     fx0 = np.array([0.25, -0.45], dtype=np.float32)
@@ -96,15 +92,14 @@ def _warm_likelihood_sky() -> None:
         [[1.0, 0.8], [0.9, 1.1], [1.2, 0.7]],
         dtype=np.float32,
     )
-    _, f_arr, f_cross, fp_norm, fx_norm, si, co, ni = dpf.dpf_np_loops_vec(fp0, fx0, rms)
+    _, f_arr, f_cross, fp_norm, fx_norm, si, co, ni = dpf.compute_dpf(fp0, fx0, rms)
     reg = np.array([1.0, 1.0, 0.0], dtype=np.float32)
 
-    sky_stat._avx_loadata_ps(v00, v90, 0.0)
-    _, sig00, sig90, mask2, *_ = sky_stat.avx_GW_ps(
+    _, sig00, sig90, mask2, *_ = sky_kernels.project_signal_packet(
         v00, v90, f_arr, f_cross, fp_norm, fx_norm, ni, energy_total, mask, reg
     )
-    _, si2, co2, _, _ = sky_stat.avx_ort_ps(sig00, sig90, mask2)
-    sky_stat.avx_stat_ps(v00, v90, sig00, sig90, si2, co2, mask2)
+    _, si2, co2, _, _ = sky_kernels.orthogonalize_quadratures(sig00, sig90, mask2)
+    sky_kernels.compute_coherent_statistics(v00, v90, sig00, sig90, si2, co2, mask2)
 
     n_ifo = 2
     n_sky = 2
@@ -142,15 +137,15 @@ def _warm_likelihood_packets() -> None:
     p_energy = np.full(2, 0.8, dtype=np.float64)
     ec = np.ones(3, dtype=np.float64)
 
-    packet_ops.avx_packet_ps(p.astype(np.float32), q.astype(np.float32), mask)
-    _, _, _, q_norm = packet_ops.packet_norm_numpy(
+    packet_ops.build_wavelet_packet(p.astype(np.float32), q.astype(np.float32), mask)
+    _, _, _, q_norm = packet_ops.compute_packet_norms(
         p, q, xtalks, xtalks_lookup, mask.astype(np.float64), q_energy
     )
-    packet_ops.gw_norm_numpy(q_norm, q_energy, p_energy, ec)
+    packet_ops.compute_signal_norms(q_norm, q_energy, p_energy, ec)
 
 
 def _warm_detection_statistics() -> None:
-    from pycwb.modules.likelihoodWP import detection_statistics as ds
+    from pycwb.modules.likelihoodWP import chirp_hough
 
     x = np.array([0.1, 0.2, 0.3], dtype=np.float64)
     y = np.array([1.0, 0.9, 0.8], dtype=np.float64)
@@ -160,8 +155,8 @@ def _warm_detection_statistics() -> None:
     m_vals = np.array([-2.0, -1.0, 1.0], dtype=np.float64)
     candidates = np.array([0, 1], dtype=np.int64)
 
-    ds._count_chirp_track_overlaps_numba(x, y, xerr, yerr, 0.01, m_vals)
-    ds._fit_chirp_track_candidates_numba(
+    chirp_hough._count_chirp_track_overlaps_numba(x, y, xerr, yerr, 0.01, m_vals)
+    chirp_hough._fit_chirp_track_candidates_numba(
         x, y, xerr, yerr, wgt, 0.01, m_vals, candidates, 2, 100.0
     )
 

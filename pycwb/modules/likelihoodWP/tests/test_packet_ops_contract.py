@@ -1,40 +1,13 @@
 """Characterization tests for packet-op contract and deterministic kernels.
 
-Verifies alias identity and stable output for pure-NumPy packet helpers.
+Verifies stable output for the canonical packet helpers.
 """
 
 import numpy as np
-import pytest
-
-
-class TestPacketOpAliases:
-    """Verify alias identity for all packet-op kernels."""
-
-    def test_all_aliases(self):
-        from pycwb.modules.likelihoodWP.packet_ops import (
-            avx_packet_ps, build_wavelet_packet,
-            avx_noise_ps, compute_gaussian_noise_correction,
-            avx_setAMP_ps, normalize_packet_amplitudes,
-            avx_loadNULL_ps, compute_null_packet,
-            avx_pol_ps, project_onto_network_plane,
-            packet_norm_numpy, compute_packet_norms,
-            gw_norm_numpy, compute_signal_norms,
-            xtalk_energy_sum_numpy, sum_xtalk_corrected_energy,
-            orthogonalize_and_rotate, orthogonalize_packet_basis,
-        )
-        assert build_wavelet_packet is avx_packet_ps
-        assert compute_gaussian_noise_correction is avx_noise_ps
-        assert normalize_packet_amplitudes is avx_setAMP_ps
-        assert compute_null_packet is avx_loadNULL_ps
-        assert project_onto_network_plane is avx_pol_ps
-        assert compute_packet_norms is packet_norm_numpy
-        assert compute_signal_norms is gw_norm_numpy
-        assert sum_xtalk_corrected_energy is xtalk_energy_sum_numpy
-        assert orthogonalize_packet_basis is orthogonalize_and_rotate
 
 
 class TestComputeNullPacket:
-    """compute_null_packet (avx_loadNULL_ps) deterministic test."""
+    """Deterministic null-packet subtraction."""
 
     def test_simple_subtraction(self):
         from pycwb.modules.likelihoodWP.packet_ops import compute_null_packet
@@ -50,10 +23,10 @@ class TestComputeNullPacket:
 
 
 class TestXtalkEnergySum:
-    """xtalk_energy_sum_numpy behavior with trivial inputs."""
+    """sum_xtalk_corrected_energy behavior with trivial inputs."""
 
     def test_trivial(self):
-        from pycwb.modules.likelihoodWP.packet_ops import xtalk_energy_sum_numpy
+        from pycwb.modules.likelihoodWP.packet_ops import sum_xtalk_corrected_energy
 
         p = np.array([[1.0, 0.5]], dtype=np.float64)   # (1, 2)
         q = np.array([[2.0, 1.0]], dtype=np.float64)
@@ -63,13 +36,13 @@ class TestXtalkEnergySum:
         xtalks = np.zeros((0, 8), dtype=np.float64)
         xtalks_lookup = np.array([[0, 0], [0, 0]], dtype=np.int64)
 
-        result = xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk)
+        result = sum_xtalk_corrected_energy(p, q, xtalks, xtalks_lookup, mk)
         # Only pixel 0 is active but has zero xtalk neighbours → t=0 → g=0
         assert result == 0.0
 
 
 class TestPacketNormNumpy:
-    """packet_norm_numpy with trivial inputs."""
+    """compute_packet_norms with trivial inputs."""
 
     def test_all_masked_returns_clamped(self):
         from pycwb.modules.likelihoodWP.packet_ops import compute_packet_norms
@@ -90,7 +63,7 @@ class TestPacketNormNumpy:
 
 
 class TestGWNormNumpy:
-    """gw_norm_numpy with trivial inputs."""
+    """compute_signal_norms with trivial inputs."""
 
     def test_basic(self):
         from pycwb.modules.likelihoodWP.packet_ops import compute_signal_norms
@@ -104,11 +77,3 @@ class TestGWNormNumpy:
             q_norm, q_E, p_E, ec)
         assert total > 0
         assert new_p_E[0] == 4.0  # q_E preserved
-
-
-class TestOrthogonalizeAndRotate:
-    """orthogonalize_and_rotate smoke test (unused but preserved)."""
-
-    def test_import_and_call(self):
-        from pycwb.modules.likelihoodWP.packet_ops import orthogonalize_and_rotate
-        assert orthogonalize_and_rotate is not None

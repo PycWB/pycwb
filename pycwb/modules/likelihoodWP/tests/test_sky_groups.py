@@ -1,5 +1,5 @@
 import numpy as np
-from pycwb.modules.likelihoodWP.sky_groups import make_delay_groups, delay_groups_for_grid
+from pycwb.modules.likelihoodWP.sky_delay_groups import make_delay_groups, delay_groups_for_grid
 
 
 def test_groups_contain_equal_delay_tuples():

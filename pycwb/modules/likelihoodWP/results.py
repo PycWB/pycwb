@@ -1,3 +1,5 @@
+"""Result records for one sky direction and the complete likelihood sky scan."""
+
 import numpy as np
 from dataclasses import dataclass
 
@@ -14,7 +16,7 @@ class SkyStatistics:
         Rc (np.float32): Normalization factor for the EC measurements.
         Eh (np.float32): Satellite energy in the TF domain.
         Es (np.float32): Sideband energy in the TF domain.
-        Np (np.float32): Number of pixels utilized in the analysis.
+        Np (np.float32): Cross-talk-corrected null-packet energy.
         Lm (np.float32): Likelihood map value.
         norm (np.float32): Overall normalization factor.
         cc (np.float32): Cross-correlation value.
@@ -37,7 +39,7 @@ class SkyStatistics:
     Rc: np.float32    # EC normalization
     Eh: np.float32    # satellite energy in TF domain
     Es: np.float32    # sideband energy in TF domain
-    Np: np.float32    # number of pixels
+    Np: np.float32    # cross-talk-corrected null-packet energy
     Em: np.float32    # energy map
     Lm: np.float32    # likelihood map
     norm: np.float32  # normalization factor
@@ -72,10 +74,10 @@ class SkyStatistics:
 @dataclass
 class SkyMapStatistics:
     """
-    Dataclass that encapsulates the sky map statistics for a specific sky location.
+    Statistics over the full sky grid, with the selected direction index.
 
     Attributes:
-        l_max (int): The maximum likelihood value for the sky location.
+        l_max (int): Index of the selected sky direction (not the statistic value).
     """
     l_max: int
     nAntennaPrior: np.array  # sqrt(ff + FF)
@@ -90,8 +92,8 @@ class SkyMapStatistics:
     nEllipticity: np.array  # Cr
     nPolarisation: np.array  # Mp
     sky_stat_max: float = 0 
-    nProbability: np.array = None  # normalized sky probability (softmax of nSkyStat)
-    stage_timings: dict = None  # per-stage wall-clock timings (GPU only)
+    nProbability: np.array = None  # normalized sky posterior after localization
+    stage_timings: dict = None  # per-stage wall-clock timings for CPU or GPU
 
     @classmethod
     def from_tuple(cls, t):

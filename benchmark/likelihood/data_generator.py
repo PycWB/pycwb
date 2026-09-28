@@ -117,7 +117,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
         pwc.loadTDampSSE(network.net, 'a', config.BATCH, config.BATCH)
 
 
-        from pycwb.modules.likelihoodWP.likelihood import load_data_from_ifo
+        from pycwb.modules.likelihoodWP.pixel_data import build_sky_delay_and_antenna_patterns
         import numpy as np
 
         acor = network.net.acor
@@ -129,7 +129,7 @@ def process_job_segment(working_dir: str, config: Config, job_seg: WaveSegment, 
 
         n_sky = network.net.index.size()
 
-        ml, FP, FX = load_data_from_ifo(network, config.nIFO)
+        ml, FP, FX = build_sky_delay_and_antenna_patterns(network, config.nIFO)
 
         cluster_test = convert_netcluster_to_fragment_clusters(pwc)
         pixels = cluster_test.clusters[0].pixels

@@ -303,7 +303,7 @@ def main():
                              "Multiple files produce a multi-scale report.")
     args = parser.parse_args()
 
-    from pycwb.modules.likelihoodWP.likelihood import likelihood as likelihood_cpu
+    from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood as likelihood_cpu
     from pycwb.modules.likelihoodWPGPU.likelihood import likelihood as likelihood_gpu
 
     # Resolve data paths: if relative, interpret them relative to this script's directory

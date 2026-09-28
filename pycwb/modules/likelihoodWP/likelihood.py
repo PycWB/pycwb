@@ -1,22 +1,10 @@
-"""Thin facade module — public entry points for likelihoodWP.
+"""Likelihood orchestration and public entry points for likelihoodWP.
 
-Import the public API from here:
-    from pycwb.modules.likelihoodWP.likelihood import (
-        setup_likelihood, likelihood, likelihood_wrapper,
-        prepare_likelihood_inputs, evaluate_cluster_likelihood,
-        evaluate_fragment_clusters,
-    )
-
-All helper functions have been extracted to phase submodules:
-    - ``likelihood_setup.py``   — prepare_likelihood_inputs
-    - ``pixel_data.py``         — extract_pixel_time_delay_data, ...
-    - ``sky_scan.py``           — scan_sky / scan_sky_kernel (@njit)
-    - ``sky_statistics.py``     — compute_statistics_at_sky_position
-    - ``detection_statistics.py`` — get_likelihood_rejection_reason,
-                                    populate_detection_statistics,
-                                    update_chirp_mass_statistics,
-                                    compute_sky_error_region, ...
-    - ``packet_ops.py``         — avx_noise_ps, avx_packet_ps, packet_norm_numpy, ...
+Use prepare_likelihood_inputs, evaluate_cluster_likelihood, and
+evaluate_fragment_clusters (also exported at package level).
+Setup, scan kernels, selected-direction statistics, and event population live
+in their corresponding modules. Hough chirp updates live in chirp_hough.py;
+chirp_micropixel.py contains the alternative micropixel estimator.
 """
 
 from __future__ import annotations
@@ -34,7 +22,6 @@ from pycwb.modules.xtalk.type import XTalk
 # Phase submodule imports
 from .likelihood_setup import (
     prepare_likelihood_inputs,
-    populate_pixel_noise_from_maps,
 )
 from .pixel_data import extract_pixel_time_delay_data as _extract_pixel_time_delay_data
 from .sky_scan import scan_sky as _scan_sky
@@ -42,13 +29,13 @@ from .sky_statistics import compute_statistics_at_sky_position as _compute_stati
 from .detection_statistics import (
     get_likelihood_rejection_reason as _get_likelihood_rejection_reason,
     populate_detection_statistics as _populate_detection_statistics,
-    update_chirp_mass_statistics as _update_chirp_mass_statistics,
-    compute_sky_error_region as _compute_sky_error_region,
+    populate_sky_localization as _populate_sky_localization,
 )
-from .dpf import calculate_dpf as _calculate_dpf
-from .dpf_regulator import calculate_dpf_scalar as _calculate_dpf_scalar
+from .chirp_hough import update_chirp_mass_statistics as _update_chirp_mass_statistics
+from .dpf import compute_dpf_regulator as _compute_dpf_regulator
+from .dpf_regulator import compute_dpf_regulator_scalar as _compute_dpf_regulator_scalar
 from .sky_mask import sky_valid_indices_for_cluster
-from .typing import SkyStatistics, SkyMapStatistics
+from .results import SkyStatistics, SkyMapStatistics
 
 from typing import TYPE_CHECKING
 
@@ -146,7 +133,7 @@ def evaluate_fragment_clusters(
         One :class:`~pycwb.types.network_cluster.FragmentCluster` per lag —
         the direct output of
         :func:`~pycwb.modules.super_cluster_native.super_cluster.supercluster_wrapper`.
-        Clusters with ``cluster_status != 0`` are skipped automatically.
+        Clusters with ``cluster_status > 0`` are skipped automatically.
     strains : list
         Whitened strain time series (one per IFO); used for sky-pattern
         computation inside :func:`prepare_likelihood_inputs`.
@@ -390,7 +377,7 @@ def evaluate_cluster_likelihood(
 
     # regularization[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     _t0 = time.perf_counter()
-    dpf_regulator = _calculate_dpf_scalar if profile.scalar_dpf else _calculate_dpf
+    dpf_regulator = _compute_dpf_regulator_scalar if profile.scalar_dpf else _compute_dpf_regulator
     regularization[1] = dpf_regulator(
         plus_antenna_patterns,
         cross_antenna_patterns,
@@ -470,7 +457,7 @@ def evaluate_cluster_likelihood(
         net_rho_threshold=net_rho_threshold,
         xgb_rho_mode=xgb_rho_mode,
     )
-    stage_timings["threshold_cut"] = time.perf_counter() - _t0
+    stage_timings["get_likelihood_rejection_reason"] = time.perf_counter() - _t0
     if rejected:
         logger.debug("Cluster rejected due to threshold cuts: %s", rejected)
         logger.info(
@@ -521,8 +508,8 @@ def evaluate_cluster_likelihood(
     stage_timings["update_chirp_mass_statistics"] = time.perf_counter() - _t0
 
     _t0 = time.perf_counter()
-    _compute_sky_error_region(cluster, skymap_statistics, sky_statistics, config)
-    stage_timings["compute_sky_error_region"] = time.perf_counter() - _t0
+    _populate_sky_localization(cluster, skymap_statistics, sky_statistics, config)
+    stage_timings["populate_sky_localization"] = time.perf_counter() - _t0
 
     # --- Store sky localisation metadata ---
     _t0 = time.perf_counter()
@@ -576,21 +563,7 @@ def evaluate_cluster_likelihood(
 
     return cluster, skymap_statistics
 
-
-# ---------------------------------------------------------------------------
-# Friendly aliases for researcher readability
-# ---------------------------------------------------------------------------
-
-setup_likelihood = prepare_likelihood_inputs
-likelihood = evaluate_cluster_likelihood
-likelihood_wrapper = evaluate_fragment_clusters
-_populate_pixel_noise_rms = populate_pixel_noise_from_maps
-
-# Public API surface for the facade
 __all__ = [
-    "setup_likelihood",
-    "likelihood",
-    "likelihood_wrapper",
     "prepare_likelihood_inputs",
     "evaluate_cluster_likelihood",
     "evaluate_fragment_clusters",

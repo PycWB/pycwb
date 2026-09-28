@@ -8,8 +8,6 @@ sky_valid_indices order, independent of group traversal order.
 
 import numpy as np
 
-__all__ = ["make_delay_groups", "delay_groups_for_grid"]
-
 
 def make_delay_groups(ml, reuse_delays=True):
     """Return all sky indices grouped by equal integer detector-delay tuples.
@@ -77,3 +75,8 @@ def delay_groups_for_grid(setup, ml, big_cluster=False, reuse_delays=True):
         cached = (ml, *make_delay_groups(ml, reuse_delays))
         cache[key] = cached
     return cached[1:]
+
+__all__ = [
+    "make_delay_groups",
+    "delay_groups_for_grid",
+]

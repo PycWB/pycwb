@@ -5,8 +5,6 @@ Provides :func:`prepare_likelihood_inputs` which computes all job-segment-level
 Also includes :func:`populate_pixel_noise_from_maps` for per-pixel noise
 initialization.
 
-Legacy aliases ``setup_likelihood`` and ``_populate_pixel_noise_rms`` remain
-available.
 """
 
 from __future__ import annotations
@@ -196,13 +194,7 @@ def prepare_likelihood_inputs(
         "sky_valid_indices_big": sky_valid_indices_big,
     }
 
-
-# Legacy aliases
-setup_likelihood = prepare_likelihood_inputs
-_populate_pixel_noise_rms = populate_pixel_noise_from_maps
-_populate_pixel_noise_from_maps = populate_pixel_noise_from_maps
-
 __all__ = [
-    "setup_likelihood",
     "prepare_likelihood_inputs",
+    "populate_pixel_noise_from_maps",
 ]

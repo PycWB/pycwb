@@ -49,13 +49,24 @@ def _make_synthetic_pa(
 class TestPixelDataExtraction:
     """Test the pixel data extraction contract."""
 
+    def test_legacy_pixel_loader_matches_pixel_arrays(self):
+        from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
+
+        arrays = _make_synthetic_pa()
+        expected = extract_pixel_time_delay_data(None, 2, pixel_arrays=arrays)
+        actual = extract_pixel_time_delay_data(arrays.to_pixel_list(), 2)
+
+        for actual_array, expected_array in zip(actual, expected):
+            assert actual_array.dtype == expected_array.dtype
+            np.testing.assert_array_equal(actual_array, expected_array)
+
     def test_load_data_from_pixels_returns_expected_shapes(self):
         """Verify rms, td00, td90, td_energy shapes from PixelArrays."""
-        from pycwb.modules.likelihoodWP.pixel_data import load_data_from_pixels
+        from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
 
         n_ifo, n_pix, tsize = 2, 3, 8
         pa = _make_synthetic_pa(n_ifo=n_ifo, n_pix=n_pix, tsize=tsize)
-        rms, td00, td90, td_energy = load_data_from_pixels(None, n_ifo, pixel_arrays=pa)
+        rms, td00, td90, td_energy = extract_pixel_time_delay_data(None, n_ifo, pixel_arrays=pa)
 
         tsize_half = tsize // 2
         assert rms.shape == (n_ifo, n_pix)
@@ -65,20 +76,14 @@ class TestPixelDataExtraction:
 
     def test_td_energy_equals_sqsum(self):
         """td_energy == td00**2 + td90**2."""
-        from pycwb.modules.likelihoodWP.pixel_data import load_data_from_pixels
+        from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
 
         n_ifo, n_pix, tsize = 2, 3, 8
         pa = _make_synthetic_pa(n_ifo=n_ifo, n_pix=n_pix, tsize=tsize)
-        rms, td00, td90, td_energy = load_data_from_pixels(None, n_ifo, pixel_arrays=pa)
+        rms, td00, td90, td_energy = extract_pixel_time_delay_data(None, n_ifo, pixel_arrays=pa)
 
         np.testing.assert_allclose(td_energy, td00 ** 2 + td90 ** 2, rtol=1e-6)
 
-    def test_extract_pixel_time_delay_data_is_alias(self):
-        """load_data_from_pixels is the same as extract_pixel_time_delay_data."""
-        from pycwb.modules.likelihoodWP.pixel_data import (
-            load_data_from_pixels, extract_pixel_time_delay_data,
-        )
-        assert extract_pixel_time_delay_data is load_data_from_pixels
 
     def test_rms_normalization_contract(self):
         """RMS normalization matches the explicit formula.
@@ -87,31 +92,15 @@ class TestPixelDataExtraction:
         rms_ifo_pix = (1/noise_rms) * rms_pix
         """
         from pycwb.modules.likelihoodWP.pixel_data import (
-            load_data_from_pixels, _load_data_from_pixel_arrays,
+            extract_pixel_time_delay_data, _extract_pixel_array_time_delay_data,
         )
 
         n_ifo, n_pix, tsize = 2, 3, 8
         pa = _make_synthetic_pa(n_ifo=n_ifo, n_pix=n_pix, tsize=tsize)
-        rms, td00, td90, td_energy = load_data_from_pixels(None, n_ifo, pixel_arrays=pa)
+        rms, td00, td90, td_energy = extract_pixel_time_delay_data(None, n_ifo, pixel_arrays=pa)
 
         inv_rms = 1.0 / pa.noise_rms.astype(np.float64)
         rms_pix_expected = 1.0 / np.sqrt(np.sum(inv_rms ** 2, axis=0))
         rms_expected = (inv_rms * rms_pix_expected[np.newaxis, :]).astype(np.float32)
 
         np.testing.assert_allclose(rms, rms_expected, rtol=1e-5)
-
-    def test_alias_returns_same_output(self):
-        """load_data_from_pixels and _load_data_from_pixel_arrays via aliases."""
-        from pycwb.modules.likelihoodWP.pixel_data import (
-            load_data_from_pixels,
-            extract_pixel_time_delay_data,
-        )
-
-        n_ifo, n_pix, tsize = 2, 3, 8
-        pa = _make_synthetic_pa(n_ifo=n_ifo, n_pix=n_pix, tsize=tsize)
-
-        r1 = load_data_from_pixels(None, n_ifo, pixel_arrays=pa)
-        r2 = extract_pixel_time_delay_data(None, n_ifo, pixel_arrays=pa)
-
-        for a, b in zip(r1, r2):
-            np.testing.assert_array_equal(a, b)

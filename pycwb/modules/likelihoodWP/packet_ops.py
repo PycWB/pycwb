@@ -1,3 +1,9 @@
+"""Wavelet packet construction, normalization, noise, and network-plane operations.
+
+The public names describe the operations. Original cWB symbols are recorded in
+the README migration table and the reference comments below for traceability.
+"""
+
 from math import sqrt
 
 import numpy as np
@@ -91,7 +97,7 @@ from numba import njit, float32
 #    float sc =  _wat_hsum(_SC);                           // core coherent energy x 2
 #    return _mm256_set_ps(ns,nc,es,eh,rc/(sc+0.01),sc-ec,ec,gn);
 # }
-def avx_noise_ps(p, q, et, MK, ec, gn, rn):
+def compute_gaussian_noise_correction(p, q, et, MK, ec, gn, rn):
     """
     get G-noise correction
 
@@ -233,7 +239,7 @@ def avx_noise_ps(p, q, et, MK, ec, gn, rn):
 #    }
 #    return _wat_hsum(_Np)*4/k;
 # }
-def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
+def normalize_packet_amplitudes(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
     """
     set packet amplitudes for waveform reconstruction
     returns number of degrees of freedom - effective # of pixels per detector
@@ -333,7 +339,7 @@ def avx_setAMP_ps(p, q, q_norm, q_si, q_co, q_a, q_A, MK):
 #    }
 #    return;
 # }
-def avx_loadNULL_ps(d, D, h, H):
+def compute_null_packet(d, D, h, H):
     """
     Load NULL packet amplitudes for all detectors and pixels.
     These amplitudes are used for reconstruction of data time series.
@@ -565,7 +571,7 @@ def avx_loadNULL_ps(d, D, h, H):
 
 #    return;
 # }
-def avx_pol_ps(p, q, MK, fp, fx, f, F):
+def project_onto_network_plane(p, q, MK, fp, fx, f, F):
     """
     Calculates the polar coordinates of the input vector v in the DPF frame.
 
@@ -575,10 +581,6 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
         The p component of the signal.
     q : np.ndarray
         The q component of the signal.
-    pol00 : list
-        Output for 00 component in polar coordinates (pol00[0] : radius, pol00[1] : angle in radians).
-    pol90 : list
-        Output for 90 component in polar coordinates (pol90[0] : radius, pol90[1] : angle in radians).
     MK : np.ndarray
         Event mask array.
     fp : np.ndarray
@@ -592,7 +594,9 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
 
     Returns
     -------
-    None
+    tuple
+        Projected/rotated phase-0 and phase-90 arrays, followed by
+        (radius, angle_radians) pairs for the two quadratures.
     """
 
     _o = float(1.0e-9)
@@ -649,7 +653,7 @@ def avx_pol_ps(p, q, MK, fp, fx, f, F):
 
 
 @njit(cache=True)
-def avx_packet_ps(v00, v90, mask):
+def build_wavelet_packet(v00, v90, mask):
     """
     calculates packet rotation sin/cos, amplitudes and unit vectors, initialize unit vector arrays
 
@@ -746,7 +750,7 @@ def avx_packet_ps(v00, v90, mask):
     return Ep / float32(2.0), v00_updated, v90_updated, E, si, co, a_save, A_save
 
 
-def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
+def sum_xtalk_corrected_energy(p, q, xtalks, xtalks_lookup, mk):
     """Compute the raw xtalk-convolved energy sum (C++ _avx_norm_ps with I<0).
 
     Mirrors the I<0 branch of network::_avx_norm_ps: accumulates the xtalk-
@@ -801,7 +805,7 @@ def xtalk_energy_sum_numpy(p, q, xtalks, xtalks_lookup, mk):
 
 
 @njit(cache=True)
-def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
+def compute_packet_norms(p, q, xtalks, xtalks_lookup, mk, q_E):
     """Compute packet norms with cWB 6.4.6.9 float32 arithmetic.
 
     Accumulation and reduction order follow network::_avx_norm_ps(I>0).
@@ -881,7 +885,7 @@ def packet_norm_numpy(p, q, xtalks, xtalks_lookup, mk, q_E):
 
 
 @njit(cache=True)
-def gw_norm_numpy(q_norm, q_E, p_E, ec):
+def compute_signal_norms(q_norm, q_E, p_E, ec):
     """
      set signal norms, return signal SNR
 
@@ -926,85 +930,7 @@ def gw_norm_numpy(q_norm, q_E, p_E, ec):
     total_norm = np.sum(norm)  # total norm
     return total_norm, norm, new_p_E, p_norm
 
-
-@njit
-def orthogonalize_and_rotate(p, q, pAVX, length):
-    event_mask = pAVX[1]
-    rotation_sin = pAVX[4]
-    rotation_cos = pAVX[5]
-    first_component_energy = pAVX[15]
-    second_component_energy = pAVX[16]
-    energy_accumulated_first = np.zeros_like(p[0])
-    energy_accumulated_second = np.zeros_like(q[0])
-
-    for i in range(0, length, 4):
-        accumulated_p_square = np.zeros_like(p[0])
-        accumulated_q_square = np.zeros_like(q[0])
-        accumulated_pq_product = np.zeros_like(p[0])
-
-        for j in range(8):
-            partial_p = p[j][i : i + 4]
-            partial_q = q[j][i : i + 4]
-
-            accumulated_p_square += partial_p * partial_p
-            accumulated_q_square += partial_q * partial_q
-            accumulated_pq_product += partial_p * partial_q
-
-        event_occurance = (event_mask[i // 4] > 0.0) * 1.0
-        rotation_sin[i // 4] = accumulated_pq_product * 2.0
-        rotation_cos[i // 4] = accumulated_p_square - accumulated_q_square
-
-        total_energy = accumulated_p_square + accumulated_q_square + 1.0e-21
-        cos_square = rotation_cos[i // 4] ** 2
-        sin_square = rotation_sin[i // 4] ** 2
-        cos_sin_norm = np.sqrt(cos_square + sin_square)
-
-        first_component_energy[i // 4] = (total_energy + cos_sin_norm) / 2.0
-        second_component_energy[i // 4] = (total_energy - cos_sin_norm) / 2.0
-
-        cos_divided = rotation_cos[i // 4] / (cos_sin_norm + 1.0e-21)
-        sin_positive = (rotation_sin[i // 4] > 0.0) * 1.0
-        sin_value = 2.0 * sin_positive - 1.0
-
-        rotation_sin[i // 4] = np.sqrt((1.0 - cos_divided) / 2.0)
-        rotation_cos[i // 4] = np.sqrt((1.0 + cos_divided) / 2.0) * sin_value
-
-        energy_accumulated_first += event_occurance * first_component_energy[i // 4]
-        energy_accumulated_second += event_occurance * second_component_energy[i // 4]
-
-    pAVX[1] = event_mask
-    pAVX[4] = rotation_sin
-    pAVX[5] = rotation_cos
-    pAVX[15] = first_component_energy
-    pAVX[16] = second_component_energy
-
-    return np.sum(energy_accumulated_first) + np.sum(energy_accumulated_second), pAVX
-
-
-# ---------------------------------------------------------------------------
-# Friendly aliases for researcher readability (new code should prefer these)
-# ---------------------------------------------------------------------------
-
-build_wavelet_packet = avx_packet_ps
-compute_gaussian_noise_correction = avx_noise_ps
-normalize_packet_amplitudes = avx_setAMP_ps
-compute_null_packet = avx_loadNULL_ps
-project_onto_network_plane = avx_pol_ps
-compute_packet_norms = packet_norm_numpy
-compute_signal_norms = gw_norm_numpy
-sum_xtalk_corrected_energy = xtalk_energy_sum_numpy
-orthogonalize_packet_basis = orthogonalize_and_rotate
-
 __all__ = [
-    "avx_noise_ps",
-    "avx_setAMP_ps",
-    "avx_loadNULL_ps",
-    "avx_pol_ps",
-    "avx_packet_ps",
-    "xtalk_energy_sum_numpy",
-    "packet_norm_numpy",
-    "gw_norm_numpy",
-    "orthogonalize_and_rotate",
     "compute_gaussian_noise_correction",
     "normalize_packet_amplitudes",
     "compute_null_packet",
@@ -1013,5 +939,4 @@ __all__ = [
     "sum_xtalk_corrected_energy",
     "compute_packet_norms",
     "compute_signal_norms",
-    "orthogonalize_packet_basis",
 ]

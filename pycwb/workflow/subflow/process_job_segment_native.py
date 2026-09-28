@@ -41,7 +41,7 @@ Data flow between pipeline stages
     ├─[setup_coherence]────────► coherence_setup (WDM TF maps)
     ├─[build_td_inputs_cache]──► td_inputs_cache (float32)
     ├─[setup_supercluster]─────► supercluster_setup + xtalk catalog
-    ├─[setup_likelihood]───────► likelihood_setup (sky arrays)
+    ├─[prepare_likelihood_inputs]───────► likelihood_setup (sky arrays)
     │
     └─[per lag]────────────────► LagResult (events + metadata)
                                   │
@@ -83,7 +83,7 @@ from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
 from pycwb.modules.read_data.data_check import check_and_resample_py
 from pycwb.modules.data_conditioning.data_conditioning import data_conditioning
 from pycwb.modules.cwb_interop import create_cwb_workdir
-from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
+from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
 from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
@@ -259,12 +259,12 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 continue
             selected_cluster.cluster_id = k + 1
 
-            # NOTE: likelihood() errors are intentionally NOT caught here.
+            # NOTE: evaluate_cluster_likelihood() errors are intentionally NOT caught here.
             # A failure indicates a systemic issue (e.g. corrupt sky arrays,
             # OOM, NaN propagation) that requires investigation — silently
             # skipping the cluster would mask the root cause.
             likelihood_call_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
-            result_cluster, sky_stats = likelihood(
+            result_cluster, sky_stats = evaluate_cluster_likelihood(
                 config.nIFO,
                 selected_cluster,
                 config,
@@ -679,7 +679,7 @@ def process_job_segment(
         # 3d. Likelihood setup: reuse full-resolution sky arrays from supercluster
         #     so the sky scan runs at config.healpix resolution without rebuilding them.
         stage_timer = time.perf_counter()
-        likelihood_setup = setup_likelihood(
+        likelihood_setup = prepare_likelihood_inputs(
             config,
             strains,
             config.nIFO,

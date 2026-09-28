@@ -5,7 +5,7 @@ import time
 from numba import njit
 from numpy import float32, uint32
 from pycwb.modules.likelihoodWP.dpf import (
-    dpf_np_loops_vec,
+    compute_dpf,
     add_vec,
     avg_vec,
     cos_from_cc,
@@ -17,7 +17,7 @@ from pycwb.modules.likelihoodWP.dpf import (
 )
 from pycwb.modules.xtalk.monster import getXTalk_pixels_fast
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.likelihoodWP.pixel_data import load_data_from_pixels
+from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
 
 
 def sub_net_cut(
@@ -68,7 +68,7 @@ def sub_net_cut(
         return _format_subnet_result(False, False, False, 0.0, 0.0, 0.0, 0.0, subnet, subrho, subnorm)
 
     t_stage = time.perf_counter()
-    rms, td00, td90, _ = load_data_from_pixels(pixels, n_ifo)
+    rms, td00, td90, _ = extract_pixel_time_delay_data(pixels, n_ifo)
 
     td00 = np.ascontiguousarray(np.transpose(td00.astype(np.float32), (2, 0, 1)))  # (ndelay, nifo, npix)
     td90 = np.ascontiguousarray(np.transpose(td90.astype(np.float32), (2, 0, 1)))  # (ndelay, nifo, npix)
@@ -467,7 +467,7 @@ def optimze_sky_loc(
         Lo = float32(0.0)
         # calculate dpf
         # TODO: check if the dpf is the same as the one in the likelihood module
-        _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[sky_index], FX[sky_index], reduced_rms[:m, :])
+        _, f, F, _, _, _, _, _ = compute_dpf(FP[sky_index], FX[sky_index], reduced_rms[:m, :])
 
         for j in range(m):
             # calculate likelihood
@@ -619,7 +619,7 @@ def optimze_sky_loc_from_td(n_ifo, n_pix, n_sky, FP, FX, rms, td00, td90, ml, ne
 
 @njit(cache=True)
 def _dpf_np_loops_vec_into(Fp0, Fx0, rms, n_pix, n_ifo, f, F, si, co, fp):
-    """Fill DPF ``f``/``F`` arrays with the same math as dpf_np_loops_vec."""
+    """Fill DPF ``f``/``F`` arrays with the same math as compute_dpf."""
     NPIX = uint32(n_pix)
     NIFO = uint32(n_ifo)
 
@@ -747,7 +747,7 @@ def mra_statistics(
             Ln += ee  # network energy above subnet threshold
 
     Lo = float32(0.0)
-    _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l_max], FX[l_max], reduced_rms[:m, :])
+    _, f, F, _, _, _, _, _ = compute_dpf(FP[l_max], FX[l_max], reduced_rms[:m, :])
 
     # calculate likelihood
     for j in range(m):
@@ -822,7 +822,7 @@ def mra_statistics_from_td(
             Ln += ee
 
     Lo = float32(0.0)
-    _, f, F, _, _, _, _, _ = dpf_np_loops_vec(FP[l_max], FX[l_max], reduced_rms[:m, :])
+    _, f, F, _, _, _, _, _ = compute_dpf(FP[l_max], FX[l_max], reduced_rms[:m, :])
 
     for j in range(m):
         Lo += sse_like_ps(f[j], F[j], reduced_v00[j], reduced_v90[j])

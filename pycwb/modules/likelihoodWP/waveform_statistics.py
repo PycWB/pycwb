@@ -135,7 +135,7 @@ def network_centroids(signal_energy, times, frequencies):
     return total, time, frequency
 
 
-def sky_scale(norm, rc, pixel_count, disbalance):
+def compute_sky_posterior_scale(norm, rc, pixel_count, disbalance):
     """Compute the release sky-posterior scale with float32 arithmetic.
 
     Parameters
@@ -158,7 +158,7 @@ def sky_scale(norm, rc, pixel_count, disbalance):
     return float(f(norm) * f(rc) * np.sqrt(f(pixel_count)) * (f(1) + np.abs(f(1) - f(disbalance))))
 
 
-def final_statistics(eo, eh, ew, nw, gn, dc, ec, rc, count, nifo, rho, xrho):
+def compute_final_detection_statistics(eo, eh, ew, nw, gn, dc, ec, rc, count, nifo, rho, xrho):
     """Float scalar operations from the final network::likelihood2G block.
 
     Retain native guards for invalid/degenerate energies. Ordinary accepted

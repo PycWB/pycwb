@@ -2,8 +2,8 @@
 likelihoodWPGPU — JAX-accelerated coherent likelihood for gravitational wave bursts.
 
 This module is a GPU-optimized reimplementation of ``likelihoodWP`` using JAX.
-It provides the same external interface (``setup_likelihood``, ``likelihood``,
-``likelihood_wrapper``) so it can be used as a drop-in replacement.
+It shares input preparation with CPU likelihood and exports ``prepare_likelihood_inputs``,
+``likelihood``, and ``likelihood_wrapper`` for GPU cluster evaluation.
 
 Key design differences from the CPU module:
 
@@ -16,4 +16,4 @@ Key design differences from the CPU module:
 - All computation uses float32 (FP32).
 """
 
-from .likelihood import setup_likelihood, likelihood, likelihood_wrapper
+from .likelihood import prepare_likelihood_inputs, likelihood, likelihood_wrapper

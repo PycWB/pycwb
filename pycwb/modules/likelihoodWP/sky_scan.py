@@ -9,10 +9,14 @@ import numpy as np
 from numba import njit, prange, float32
 
 # The shared reduced-correlation kernel retains the release LL + 0.001 offset.
-from .sky_stat import load_data_from_td
-from .dpf import dpf_np_loops_vec_into
-from .sky_stat import avx_GW_ps_into, avx_ort_ps_into, avx_stat_ps_into
-from .sky_groups import make_delay_groups, delay_groups_for_grid
+from .sky_kernels import compute_pixel_energy_and_mask
+from .dpf import compute_dpf_into
+from .sky_kernels import (
+    project_signal_packet_into,
+    orthogonalize_quadratures_into,
+    compute_coherent_statistics_into,
+)
+from .sky_delay_groups import make_delay_groups, delay_groups_for_grid
 
 
 @njit(cache=True, parallel=True)
@@ -84,7 +88,7 @@ def scan_sky_kernel(
     td_phase90 = td90
     sky_delay_samples = ml
 
-    # Arrays are pre-transposed and cast to float32 by setup_likelihood / the caller.
+    # Arrays are pre-transposed and cast to float32 by prepare_likelihood_inputs / the caller.
     regularization_arr = REG.astype(np.float32)
 
     # --- Allocate per-sky-location statistics arrays ---
@@ -128,7 +132,7 @@ def scan_sky_kernel(
             data_phase90[i] = td_phase90[sky_delay_samples[i, sky_idx] + offset, i]
 
         # --- Compute data energy and pixel mask ---
-        total_data_energy, _, energy_total, input_mask = load_data_from_td(
+        total_data_energy, _, energy_total, input_mask = compute_pixel_energy_and_mask(
             data_phase0, data_phase90, network_energy_threshold
         )
 
@@ -181,7 +185,7 @@ def scan_sky_kernel(
             mask = input_mask
             # --- Compute DPF (dominant polarisation frame) f+/fx and their norms ---
             _, dominant_plus, dominant_cross, plus_norm, cross_norm, rotation_sin, rotation_cos, network_index = (
-                dpf_np_loops_vec_into(
+                compute_dpf_into(
                     plus_antenna_patterns[sky_idx],
                     cross_antenna_patterns[sky_idx],
                     noise_weights,
@@ -190,7 +194,7 @@ def scan_sky_kernel(
             )
 
             # --- Project data onto GW strain packet; select pixels above threshold ---
-            active_pixel_count, signal_phase0, signal_phase90, mask, _, _, _, _ = avx_GW_ps_into(
+            active_pixel_count, signal_phase0, signal_phase90, mask, _, _, _, _ = project_signal_packet_into(
                 data_phase0,
                 data_phase90,
                 dominant_plus,
@@ -205,12 +209,12 @@ def scan_sky_kernel(
             )
 
             # --- Orthogonalise signal amplitudes (+ and x polarisations) ---
-            _, rotation_sin, rotation_cos, energy_plus, energy_cross = avx_ort_ps_into(
+            _, rotation_sin, rotation_cos, energy_plus, energy_cross = orthogonalize_quadratures_into(
                 signal_phase0, signal_phase90, mask, avx_ort_ps_scratch
             )
 
             # --- Compute coherent network statistics ---
-            ellipticity, coherent_energy, polarisation, null_energy, _, _, _ = avx_stat_ps_into(
+            ellipticity, coherent_energy, polarisation, null_energy, _, _, _ = compute_coherent_statistics_into(
                 data_phase0,
                 data_phase90,
                 signal_phase0,

@@ -7,8 +7,8 @@ from pycwb.modules.likelihoodWP.waveform_statistics import (
     waveform_time,
     waveform_frequency,
     network_centroids,
-    final_statistics,
-    sky_scale,
+    compute_final_detection_statistics,
+    compute_sky_posterior_scale,
 )
 
 OUT = Path(__file__).with_name("reference")
@@ -44,9 +44,9 @@ def test_centroid_and_final_statistic_release_fixtures():
         result = network_centroids(*(data[name + "__" + k] for k in ["energy", "time", "frequency"]))
         np.testing.assert_array_equal(result, data[name + "__centroid"])
         args = data[name + "__args"]
-        values = final_statistics(*args[:12])
+        values = compute_final_detection_statistics(*args[:12])
         result = [
             values[k] for k in ["ch", "cr", "cp", "norm", "null", "residual", "norm_cor", "rho_reduced", "xrho_reduced"]
         ]
-        result.append(sky_scale(values["norm"] / 2.0, args[7], args[12], args[13]))
+        result.append(compute_sky_posterior_scale(values["norm"] / 2.0, args[7], args[12], args[13]))
         np.testing.assert_array_equal(result, data[name + "__final"])

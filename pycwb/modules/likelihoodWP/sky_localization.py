@@ -20,7 +20,7 @@ class SkyLocalization:
     error_regions: np.ndarray
 
 
-def localize_sky(statistic, antenna_prior, rms, *, use_prior=False, n_sky=0):
+def localize_sky(statistic, antenna_prior, posterior_scale, *, use_prior=False, n_sky=0):
     """Return posterior and cWB's sqrt(area) deciles for a full HEALPix grid.
 
     Nonpositive sky statistics carry zero probability. Invalid scales/maps and
@@ -32,7 +32,7 @@ def localize_sky(statistic, antenna_prior, rms, *, use_prior=False, n_sky=0):
     ----------
     statistic, antenna_prior : array-like
         Aligned one-dimensional sky-statistic and antenna-sensitivity maps.
-    rms : float
+    posterior_scale : float
         Posterior scale; its absolute value is used.
     use_prior : bool, optional
         Multiply probabilities by the normalized fourth-power antenna prior.
@@ -51,7 +51,7 @@ def localize_sky(statistic, antenna_prior, rms, *, use_prior=False, n_sky=0):
         raise ValueError("Sky statistic and antenna prior must be aligned vectors")
     length = len(stat)
     low = length - int(0.9999 * length)
-    scale = abs(float(rms))
+    scale = abs(float(posterior_scale))
     valid = np.isfinite(stat) & (stat > 0)
     if low < 2 or not np.isfinite(scale) or scale <= 0 or not np.any(valid):
         return None

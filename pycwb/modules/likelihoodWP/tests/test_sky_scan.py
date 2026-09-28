@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_scan import scan_sky_for_best_fit
-from pycwb.modules.likelihoodWP.sky_groups import make_delay_groups
+from pycwb.modules.likelihoodWP.sky_delay_groups import make_delay_groups
 from pycwb.modules.likelihoodWP.sky_scan import scan_sky_kernel
 
 
@@ -78,21 +78,16 @@ def test_grouping_and_tie_order():
 @pytest.mark.parametrize("n_pix", [1, 8, 65])
 @pytest.mark.parametrize("inactive", [False, True])
 def test_helpers_overwrite_poisoned_and_reused_buffers(n_ifo, n_pix, inactive):
-    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.dpf import dpf_np_loops_vec
-    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_stat import (
-        load_data_from_td,
-        avx_GW_ps,
-        avx_ort_ps,
-        avx_stat_ps,
-    )
-    from pycwb.modules.likelihoodWP.dpf import dpf_np_loops_vec_into
-    from pycwb.modules.likelihoodWP.sky_stat import (
-        avx_GW_ps_into,
-        avx_ort_ps_into,
-        avx_stat_ps_into,
+    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.dpf import dpf_np_loops_vec as compute_dpf
+    from pycwb.modules.likelihoodWP.tests.sky_scan_reference.sky_stat import load_data_from_td as compute_pixel_energy_and_mask, avx_GW_ps as project_signal_packet, avx_ort_ps as orthogonalize_quadratures, avx_stat_ps as compute_coherent_statistics
+    from pycwb.modules.likelihoodWP.dpf import compute_dpf_into
+    from pycwb.modules.likelihoodWP.sky_kernels import (
+        project_signal_packet_into,
+        orthogonalize_quadratures_into,
+        compute_coherent_statistics_into,
     )
 
-    from pycwb.modules.likelihoodWP import dpf as allocating_dpf, sky_stat as allocating_stat
+    from pycwb.modules.likelihoodWP import dpf as allocating_dpf, sky_kernels as allocating_stat
 
     rng = np.random.default_rng(984)
 
@@ -110,25 +105,25 @@ def test_helpers_overwrite_poisoned_and_reused_buffers(n_ifo, n_pix, inactive):
         rms = rng.uniform(0.2, 1, (n_pix, n_ifo)).astype("f4")
         p = rng.normal(10, 2, (n_ifo, n_pix)).astype("f4")
         q = rng.normal(8, 2, p.shape).astype("f4")
-        dpf = dpf_np_loops_vec(fp0, fx0, rms)
-        assert_exact(allocating_dpf.dpf_np_loops_vec(fp0, fx0, rms), dpf)
-        assert_exact(dpf_np_loops_vec_into(fp0, fx0, rms, dpf_buffers), dpf)
-        _, _, energy, mask = load_data_from_td(p, q, 1.0e9 if inactive else 1.0)
+        dpf = compute_dpf(fp0, fx0, rms)
+        assert_exact(allocating_dpf.compute_dpf(fp0, fx0, rms), dpf)
+        assert_exact(compute_dpf_into(fp0, fx0, rms, dpf_buffers), dpf)
+        _, _, energy, mask = compute_pixel_energy_and_mask(p, q, 1.0e9 if inactive else 1.0)
         args = (p, q, dpf[1], dpf[2], dpf[3], dpf[4], dpf[7], energy, mask, np.array([0.7, 1, 0], dtype="f4"))
-        gw = avx_GW_ps(*args)
-        assert_exact(allocating_stat.avx_GW_ps(*args), gw)
-        assert_exact(avx_GW_ps_into(*args, gw_buffers), gw)
+        gw = project_signal_packet(*args)
+        assert_exact(allocating_stat.project_signal_packet(*args), gw)
+        assert_exact(project_signal_packet_into(*args, gw_buffers), gw)
         args = (gw[1], gw[2], gw[3])
-        ort = avx_ort_ps(*args)
-        assert_exact(allocating_stat.avx_ort_ps(*args), ort)
-        assert_exact(avx_ort_ps_into(*args, ort_buffers), ort)
+        ort = orthogonalize_quadratures(*args)
+        assert_exact(allocating_stat.orthogonalize_quadratures(*args), ort)
+        assert_exact(orthogonalize_quadratures_into(*args, ort_buffers), ort)
         args = (p, q, gw[1], gw[2], ort[1], ort[2], gw[3])
-        assert_exact(avx_stat_ps_into(*args, stat_buffers), avx_stat_ps(*args))
-        assert_exact(allocating_stat.avx_stat_ps(*args), avx_stat_ps(*args))
+        assert_exact(compute_coherent_statistics_into(*args, stat_buffers), compute_coherent_statistics(*args))
+        assert_exact(allocating_stat.compute_coherent_statistics(*args), compute_coherent_statistics(*args))
 
 
 def test_singleton_cache_is_separate_from_grouped_and_coarse():
-    from pycwb.modules.likelihoodWP.sky_groups import delay_groups_for_grid
+    from pycwb.modules.likelihoodWP.sky_delay_groups import delay_groups_for_grid
 
     ml = np.zeros((2, 6), dtype=np.int64)
     setup = {}

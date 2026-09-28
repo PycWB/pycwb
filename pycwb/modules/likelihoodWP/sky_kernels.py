@@ -1,3 +1,11 @@
+"""Numba kernels for coherent response, quadrature rotation, and statistics.
+
+These are shared by the sky scan and the detailed evaluation of one direction.
+Allocating wrappers delegate to matching _into kernels with caller-owned buffers.
+Original cWB symbols: project_signal_packet (_avx_GW_ps),
+orthogonalize_quadratures (_avx_ort_ps), compute_coherent_statistics (_avx_stat_ps).
+"""
+
 from math import sqrt
 
 import numpy as np
@@ -5,47 +13,16 @@ from numba import njit, float32, int32
 
 
 @njit(cache=True)
-def _avx_loadata_ps(p, q, En):
-    n_ifo = len(p)  # Number of interferometers
-    n_pix = len(p[0])  # Number of pixels
-
-    energy_total = np.empty(n_pix, dtype=float32)
-    mask = np.empty(n_pix, dtype=int32)
-    ee = float32(0.0)
-    EE = float32(0.0)
-    NN = int32(0)
-
-    for i in range(n_pix):
-        aa = float32(0.0)
-        AA = float32(0.0)
-
-        for j in range(n_ifo):
-            aa += p[j][i] * p[j][i]
-            AA += q[j][i] * q[j][i]
-
-        energy_total[i] = aa + AA + float32(1e-12)
-        mask[i] = energy_total[i] > En
-        NN += mask[i]
-        ee += energy_total[i]
-        energy_total[i] *= mask[i]
-        EE += energy_total[i]
-
-    return EE / float32(2.0), NN, energy_total, mask
-
-
-@njit(cache=True)
-def load_data_from_td(v00, v90, network_energy_threshold):
+def compute_pixel_energy_and_mask(v00, v90, network_energy_threshold):
     """
     Compute the total energy for each pixel and the mask based on the network energy threshold.
-
-    TODO: rename this function to something more descriptive, like `compute_pixel_energy_and_mask`. And split the logic into smaller functions if necessary.
 
     Parameters:
     -----------
     v00 : np.ndarray
-        The 00 polarization data for each interferometer and pixel.
+        The phase-0 quadrature data for each interferometer and pixel.
     v90 : np.ndarray
-        The 90 polarization data for each interferometer and pixel.
+        The phase-90 quadrature data for each interferometer and pixel.
     network_energy_threshold : float
         The threshold for the network energy to determine if a pixel is active.
 
@@ -90,7 +67,7 @@ def load_data_from_td(v00, v90, network_energy_threshold):
 
 
 @njit(cache=True)
-def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
+def project_signal_packet(v00, v90, f, F, fp, fx, ni, et, mask, reg):
     """
     GW strain packet
 
@@ -147,11 +124,11 @@ def avx_GW_ps(v00, v90, f, F, fp, fx, ni, et, mask, reg):
         np.empty((n_ifo, n_pix), dtype=np.float32),
         np.empty((n_ifo, n_pix), dtype=np.float32),
     )
-    return avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch)
+    return project_signal_packet_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch)
 
 
 @njit(cache=True)
-def avx_ort_ps(v00, v90, mask):
+def orthogonalize_quadratures(v00, v90, mask):
     """
     orthogonalize data vectors v00 and v90, calculate norms of orthogonal vectors and rotation sin & cos
 
@@ -185,11 +162,11 @@ def avx_ort_ps(v00, v90, mask):
         np.empty(n_pix, dtype=np.float32),
         np.empty(n_pix, dtype=np.float32),
     )
-    return avx_ort_ps_into(v00, v90, mask, scratch)
+    return orthogonalize_quadratures_into(v00, v90, mask, scratch)
 
 
 @njit(cache=True)
-def avx_stat_ps(v00, v90, s, S, si, co, mask):
+def compute_coherent_statistics(v00, v90, s, S, si, co, mask):
     """
     returns coherent statistics in the format {cc,ec,ed,gn}
 
@@ -230,11 +207,11 @@ def avx_stat_ps(v00, v90, s, S, si, co, mask):
     """
     n_pix = len(v00[0])
     scratch = (np.empty(n_pix, dtype=np.float32), np.empty(n_pix, dtype=np.float32), np.empty(n_pix, dtype=np.float32))
-    return avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch)
+    return compute_coherent_statistics_into(v00, v90, s, S, si, co, mask, scratch)
 
 
 @njit(cache=True)
-def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
+def project_signal_packet_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
     """Project a GW strain packet into caller-owned arrays.
 
     Parameters
@@ -336,7 +313,7 @@ def avx_GW_ps_into(v00, v90, f, F, fp, fx, ni, et, mask, reg, scratch):
 
 
 @njit(cache=True)
-def avx_ort_ps_into(v00, v90, mask, scratch):
+def orthogonalize_quadratures_into(v00, v90, mask, scratch):
     """Orthogonalize quadratures into caller-owned rotation and energy arrays.
 
     Parameters
@@ -413,7 +390,7 @@ def avx_ort_ps_into(v00, v90, mask, scratch):
 
 
 @njit(cache=True)
-def avx_stat_ps_into(v00, v90, s, S, si, co, mask, scratch):
+def compute_coherent_statistics_into(v00, v90, s, S, si, co, mask, scratch):
     """Compute coherent statistics into caller-owned per-pixel arrays.
 
     Parameters

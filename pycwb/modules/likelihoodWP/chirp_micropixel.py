@@ -29,7 +29,7 @@ class ChirpResult:
     symmetry: float = 0.0
 
 
-def micropixels(pixels, analysis_rate):
+def build_micropixels(pixels, analysis_rate):
     """Return ordered occupied TH2F-equivalent cells and minimum time step.
 
     Use only the occupied frequency extent, retaining ROOT's underflow row
@@ -265,7 +265,7 @@ def estimate_chirp(pixels, analysis_rate, seed):
     Growing the random stream restarts from the same seed, preserving the prefix
     and reference sampling order. Do not replace this with a global RNG.
     """
-    cells, mindt = micropixels(pixels, analysis_rate)
+    cells, mindt = build_micropixels(pixels, analysis_rate)
     if len(cells) < 5:
         return ChirpResult()
     if len(cells) < 13:

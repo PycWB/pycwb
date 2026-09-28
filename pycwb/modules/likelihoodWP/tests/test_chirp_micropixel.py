@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import numpy as np
 import pytest
-from pycwb.modules.likelihoodWP.chirp_micropixel import estimate_chirp, micropixels, root_uniforms
+from pycwb.modules.likelihoodWP.chirp_micropixel import estimate_chirp, build_micropixels, root_uniforms
 
 REF = Path(__file__).parent / "reference"
 FIELDS = ["time", "frequency", "layers", "rate", "core", "likelihood"]
@@ -31,7 +31,7 @@ def test_release_random_sequence(seed):
 def test_synthetic_release(case):
     with np.load(REF / "chirp_oracle.npz") as saved:
         pixels = SimpleNamespace(**{k: saved[case["case"] + "__" + k] for k in FIELDS})
-        cells, dt = micropixels(pixels, 256.0)
+        cells, dt = build_micropixels(pixels, 256.0)
         np.testing.assert_array_equal(cells, saved[case["case"] + "__cells"])
     assert dt == case["min_dt"]
     result = estimate_chirp(pixels, 256.0, case["seed"])
@@ -43,7 +43,7 @@ def test_synthetic_release(case):
 def test_real_release(case):
     with np.load(REF / "chirp_real_inputs.npz") as inputs:
         pixels = SimpleNamespace(**{k: inputs[case["name"] + "__" + k] for k in FIELDS})
-    cells, dt = micropixels(pixels, case["analysis_rate"])
+    cells, dt = build_micropixels(pixels, case["analysis_rate"])
     with np.load(REF / "chirp_real_oracle_cells.npz") as saved:
         np.testing.assert_array_equal(cells, saved[case["name"]])
     result = estimate_chirp(pixels, case["analysis_rate"], case["seed"])

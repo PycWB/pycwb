@@ -1,7 +1,7 @@
 import pickle
 import numpy as np
 
-from pycwb.modules.likelihoodWP.likelihood import load_data_from_pixels
+from pycwb.modules.likelihoodWP.pixel_data import extract_pixel_time_delay_data
 
 # load FP, FX, rms, n_sky, gamma_regulator, network_energy_threshold from pickle
 with open('test_data.pkl', 'rb') as f:
@@ -14,7 +14,7 @@ n_ifo = test_data['n_ifo']
 n_sky = test_data['n_sky']
 gamma_regulator = test_data['gamma_regulator']
 network_energy_threshold = test_data['network_energy_threshold']
-rms, td00, td90, td_energy = load_data_from_pixels(pixels, n_ifo)
+rms, td00, td90, td_energy = extract_pixel_time_delay_data(pixels, n_ifo)
 
 from numba import njit, prange, vectorize, guvectorize, float32, uint32
 

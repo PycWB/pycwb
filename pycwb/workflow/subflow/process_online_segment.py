@@ -43,7 +43,7 @@ from pycwb.modules.super_cluster_native.super_cluster import (
     supercluster_single_lag,
 )
 from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.likelihoodWP.likelihood import likelihood, setup_likelihood
+from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
 from pycwb.modules.reconstruction import get_network_MRA_wave
 from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.utils.memory import release_memory
@@ -177,7 +177,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
 
     # 3d. Likelihood setup — depends on supercluster output (fast, sequential)
     stage_t = time.perf_counter()
-    likelihood_setup = setup_likelihood(
+    likelihood_setup = prepare_likelihood_inputs(
         config,
         strains,
         config.nIFO,
@@ -217,7 +217,7 @@ def process_online_segment(config: Config, online_seg: OnlineSegment):
             if selected_cluster.cluster_status > 0:
                 continue
             selected_cluster.cluster_id = k + 1
-            result_cluster, sky_stats = likelihood(
+            result_cluster, sky_stats = evaluate_cluster_likelihood(
                 config.nIFO,
                 selected_cluster,
                 config,

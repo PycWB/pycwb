@@ -1,9 +1,8 @@
 """
 Likelihood entry points — JAX GPU implementation.
 
-Provides ``setup_likelihood``, ``likelihood``, and ``likelihood_wrapper`` with
-the same external interface as the CPU module so the GPU version is a drop-in
-replacement.
+Provides ``prepare_likelihood_inputs``, ``likelihood``, and ``likelihood_wrapper`` using
+shared CPU input preparation and GPU-specific evaluation entry points.
 
 The sky scan and DPF kernels run on JAX (CPU or GPU); the per-cluster post-
 processing (xtalk norms, waveform reconstruction, chirp mass) reuses the CPU
@@ -26,18 +25,18 @@ from pycwb.modules.xtalk.type import XTalk
 
 # Re-use helpers from CPU phase submodules
 from pycwb.modules.likelihoodWP.likelihood import (
-    setup_likelihood,
+    prepare_likelihood_inputs,
 )
 from pycwb.modules.likelihoodWP.pixel_data import (
-    load_data_from_ifo,
-    load_data_from_pixels,
+    build_sky_delay_and_antenna_patterns,
+    extract_pixel_time_delay_data,
 )
 from pycwb.modules.likelihoodWP.detection_statistics import (
-    threshold_cut,
-    fill_detection_statistic,
-    get_chirp_mass,
-    get_error_region,
+    get_likelihood_rejection_reason,
+    populate_detection_statistics,
+    populate_sky_localization,
 )
+from pycwb.modules.likelihoodWP.chirp_hough import update_chirp_mass_statistics
 from pycwb.modules.likelihoodWP.sky_mask import sky_valid_indices_for_cluster
 
 from .types import SkyStatistics, SkyMapStatistics
@@ -57,7 +56,7 @@ from .utils import (
     project_polarisation,
     xtalk_energy_sum,
 )
-from .xtalk_ops import packet_norm_numpy, gw_norm_numpy
+from .xtalk_ops import compute_packet_norms, compute_signal_norms
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -158,10 +157,10 @@ def calculate_sky_statistics_gpu(
     Lp_sig, ps_rot, pS_rot, pS_E, pS_si, pS_co, pS_a, pS_A = _numpy_packet_rotation(ps_np, pS_np, mask)
 
     # --- Xtalk-corrected norms ---
-    detector_snr, pD_E_out, rn_out, pD_norm = packet_norm_numpy(
+    detector_snr, pD_E_out, rn_out, pD_norm = compute_packet_norms(
         pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E)
     D_snr = np.sum(detector_snr)
-    S_snr, signal_snr, pS_E_out, pS_norm = gw_norm_numpy(pD_norm, pD_E_out, pS_E, coherent_energy)
+    S_snr, signal_snr, pS_E_out, pS_norm = compute_signal_norms(pD_norm, pD_E_out, pS_E, coherent_energy)
 
     if DEBUG:
         print(S_snr, signal_snr)
@@ -182,7 +181,7 @@ def calculate_sky_statistics_gpu(
     pn, pN = compute_null_packet(pd, pD, ps_rot, pS_rot)
 
     # Raw xtalk sums
-    _, pD_E_out2, rn_out2, _ = packet_norm_numpy(
+    _, pD_E_out2, rn_out2, _ = compute_packet_norms(
         pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask, pD_E_out)
     Em = xtalk_energy_sum(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)
     Np = xtalk_energy_sum(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)
@@ -255,9 +254,9 @@ def calculate_sky_statistics_gpu(
 
 
 def _numpy_packet_rotation(v00, v90, mask):
-    """Wrapper to call avx_packet_ps from the CPU module (numba-compiled)."""
-    from pycwb.modules.likelihoodWP.packet_ops import avx_packet_ps
-    return avx_packet_ps(np.asarray(v00), np.asarray(v90), np.asarray(mask))
+    """Wrapper to call build_wavelet_packet from the CPU module (numba-compiled)."""
+    from pycwb.modules.likelihoodWP.packet_ops import build_wavelet_packet
+    return build_wavelet_packet(np.asarray(v00), np.asarray(v90), np.asarray(mask))
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +292,7 @@ def likelihood(
             FX = supercluster_setup.get("FX_likelihood", supercluster_setup.get("FX"))
         if strains is None and ml is None:
             raise ValueError("likelihood(): setup, strains, or supercluster_setup must be provided.")
-        setup = setup_likelihood(
+        setup = prepare_likelihood_inputs(
             config, strains, nIFO, ml=ml, FP=FP, FX=FX,
             ml_big=supercluster_setup.get("ml_big_cluster") if supercluster_setup else None,
             FP_big=supercluster_setup.get("FP_big_cluster") if supercluster_setup else None,
@@ -368,7 +367,7 @@ def likelihood(
     # --- Prepare per-cluster inputs ---
     _t0 = time.perf_counter()
     cluster_xtalk_lookup, cluster_xtalk = xtalk.get_xtalk_pixels(cluster.pixel_arrays, True)
-    rms, td00, td90, td_energy = load_data_from_pixels(None, nIFO, pixel_arrays=cluster.pixel_arrays)
+    rms, td00, td90, td_energy = extract_pixel_time_delay_data(None, nIFO, pixel_arrays=cluster.pixel_arrays)
     td00 = np.transpose(td00.astype(np.float32), (2, 0, 1))
     td90 = np.transpose(td90.astype(np.float32), (2, 0, 1))
     rms_t = rms.T.astype(np.float32)  # (n_pix, n_ifo) — GPU-optimal layout
@@ -432,11 +431,11 @@ def likelihood(
     selected_core_pixels = int(np.count_nonzero(np.asarray(sky_statistics.pixel_mask) > 0))
     logger.info("Selected core pixels: %d / %d", selected_core_pixels, n_pix)
 
-    rejected = threshold_cut(
+    rejected = get_likelihood_rejection_reason(
         sky_statistics, network_energy_threshold, netEC_threshold,
         net_rho_threshold=net_rho_threshold, xgb_rho_mode=xgb_rho_mode,
     )
-    stage_timings["threshold_cut"] = time.perf_counter() - _t0
+    stage_timings["get_likelihood_rejection_reason"] = time.perf_counter() - _t0
     if rejected:
         logger.debug("Cluster rejected: %s", rejected)
         logger.info("   cluster-id|pixels: %5d|%d",
@@ -455,7 +454,7 @@ def likelihood(
         _wdm_list = _create_wdm_set_python(config)
     else:
         _wdm_list = None
-    fill_detection_statistic(
+    populate_detection_statistics(
         sky_statistics, skymap_statistics, cluster=cluster, n_ifo=nIFO, xtalk=xtalk,
         network_energy_threshold=network_energy_threshold,
         xgb_rho_mode=xgb_rho_mode, config=config,
@@ -465,8 +464,8 @@ def likelihood(
     )
 
     pat0 = (getattr(config, 'pattern', 10) == 0) if config is not None else False
-    get_chirp_mass(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
-    get_error_region(cluster)
+    update_chirp_mass_statistics(cluster, xgb_rho_mode=xgb_rho_mode, pat0=pat0)
+    populate_sky_localization(cluster)
     stage_timings["post_processing"] = time.perf_counter() - _t0
 
     # --- Store sky localisation metadata ---
@@ -517,9 +516,9 @@ def likelihood_wrapper(
     nRMS: list[TimeFrequencyMap] | None = None,
     xtalk: XTalk | None = None,
 ) -> list[list[tuple[Cluster, SkyMapStatistics]]]:
-    """Convenience wrapper: same interface as the CPU ``likelihood_wrapper``.
+    """Convenience wrapper: corresponds to CPU ``evaluate_fragment_clusters``.
 
-    Calls :func:`setup_likelihood` once (shared with CPU) then routes every
+    Calls :func:`prepare_likelihood_inputs` once (shared with CPU) then routes every
     cluster through the GPU :func:`likelihood`.
     """
     timer_start = time.perf_counter()
@@ -528,7 +527,7 @@ def likelihood_wrapper(
     if xtalk is None:
         xtalk = XTalk.load(MRAcatalog, dump=True)
 
-    likelihood_setup = setup_likelihood(config, strains, config.nIFO)
+    likelihood_setup = prepare_likelihood_inputs(config, strains, config.nIFO)
 
     results = []
     for fragment_cluster in fragment_clusters:

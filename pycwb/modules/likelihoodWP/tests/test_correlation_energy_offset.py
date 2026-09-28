@@ -7,8 +7,8 @@ perfectly reconstructed pixel must fall below the 0.5 sky-correlation cut.
 
 import numpy as np
 import pytest
-from pycwb.modules.likelihoodWP.sky_stat import avx_stat_ps
-from pycwb.modules.likelihoodWP.sky_stat import avx_stat_ps_into
+from pycwb.modules.likelihoodWP.sky_kernels import compute_coherent_statistics
+from pycwb.modules.likelihoodWP.sky_kernels import compute_coherent_statistics_into
 
 
 @pytest.mark.parametrize("scratch", [False, True])
@@ -28,9 +28,9 @@ def test_release_correlation_energy_offset(scratch, amplitude, expected):
     mask = np.array([1.0, -1.0, -1.0, -1.0], dtype=np.float32)
     args = (data, quad, data, quad, sine, cosine, mask)
     if scratch:
-        actual = avx_stat_ps_into(*args, tuple(np.empty(4, dtype=np.float32) for _ in range(3)))
+        actual = compute_coherent_statistics_into(*args, tuple(np.empty(4, dtype=np.float32) for _ in range(3)))
     else:
-        actual = avx_stat_ps(*args)
+        actual = compute_coherent_statistics(*args)
     np.testing.assert_array_equal(actual[:4], expected)
     if amplitude == 1.0:
         assert actual[0] < 0.5
