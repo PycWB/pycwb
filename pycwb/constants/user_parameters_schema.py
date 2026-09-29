@@ -279,12 +279,14 @@ schema = {
         },
         "gwdatafind": {
             "type": "object",
-            "description": "If the gwdatafind is set, the framefiles can be pulled from the LIGO data server, "
-            "the support keys are: site, frametype, host. Example: ",
-            "     site: ['L','H']"
-            "     frametype: ['L1_HOFT_C00','H1_HOFT_C00']"
-            "     host: 'datafind.igwn.org'"
-            "     urltype: 'osdf'"
+            "description": "Configure frame-file discovery via gwdatafind. "
+            "Supported keys are: site, frametype, host, urltype. "
+            "If gwdatafind is omitted or empty ({}), frame files are not fetched "
+            "from the data server via gwdatafind. Example: \n"
+            "     site: ['L','H'] \n"
+            "     frametype: ['L1_HOFT_C00','H1_HOFT_C00'] \n"
+            "     host: 'datafind.igwn.org' \n"
+            "     urltype: 'osdf'",
             "default": {},
             "cwb": False,
         },
