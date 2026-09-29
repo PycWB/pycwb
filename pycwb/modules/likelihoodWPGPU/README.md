@@ -1,3 +1,7 @@
+> [!WARNING]
+> This module is experimental only. It is not a validated production backend.
+> Validate results against the native implementation before scientific use.
+
 # Experimental JAX likelihood implementation
 
 This package is a separate JAX implementation of coherent likelihood evaluation.

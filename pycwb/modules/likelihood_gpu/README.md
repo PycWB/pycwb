@@ -1,3 +1,7 @@
+> [!WARNING]
+> This module is experimental only. It is not a validated production backend.
+> Validate results against the native implementation before scientific use.
+
 # CUDA callbacks for the native likelihood
 
 This package supplies optional CUDA implementations to the native
