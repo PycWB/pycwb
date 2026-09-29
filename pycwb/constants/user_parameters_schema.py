@@ -538,8 +538,8 @@ schema = {
         "segOverlap": {"type": "number", "description": "overlap between job segments [sec]", "default": 0.0},
         "lagSize": {"type": "integer", "description": "number of lags (simulation:1)", "default": 1},
         "lagStep": {"type": "number", "description": "[sec] time interval between lags", "default": 1.0},
-        "lagOff": {"type": "integer", "description": "first lag id (lagOff=0 - include zero lag )", "default": 6},
-        "lagMax": {"type": "number", "description": "0/>0 -  standard/extended lags", "default": 150},
+        "lagOff": {"type": "integer", "description": "first lag id (lagOff=0 - include zero lag )", "default": 0},
+        "lagMax": {"type": "number", "description": "0/>0 -  standard/extended lags", "default": 0},
         "lagMode": {"enum": ["w", "r"], "description": "w/r  -  write/read lag list", "default": "w"},
         "lagSite": {
             "type": "integer",

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
+  unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved
+  YAML snapshot used those implicit defaults will fail the resume consistency
+  check after upgrading. To continue such a run, explicitly restore its recorded
+  lag settings; use a new working directory to change the run to zero-lag.
 - Apply native supercluster size and statistics cuts to isolated clusters even
   when no clusters link. Previously those candidates bypassed the cuts. Trigger
   selection and background counts can change; production impact has not been
