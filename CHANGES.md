@@ -17,6 +17,12 @@
 - Bound completed scalable workers' shutdown with
   `execution.worker_shutdown_timeout` (60 seconds by default). A timeout fails
   the allocation and cleans up worker processes and reservations.
+- Record `cwb-compatible-v1` catalog preprocessing in newly trained models and
+  trusted cWB model imports. Scoring rejects incompatible or unversioned models
+  by default. Older native-catalog models need retraining because `norm`,
+  `sSNR` and detector-indexed inputs changed. Independently verified compatible
+  unversioned models can declare `ML_options['model_preprocessing']` in their
+  scoring config; this declaration does not convert old feature definitions.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
   unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved

@@ -8,12 +8,14 @@ import pytest
 import xgboost as xgb
 
 from pycwb.modules.postprocess import evaluate
+from pycwb.modules.postprocess.model_io import _record_catalog_preprocessing
 
 
 @pytest.fixture
 def model_file(tmp_path):
     model = xgb.XGBClassifier(n_estimators=2, max_depth=1, n_jobs=1)
     model.fit(pd.DataFrame({"norm": [1., 2., 8., 9.]}), [0, 0, 1, 1])
+    _record_catalog_preprocessing(model)
     path = tmp_path / "model.ubj"
     model.save_model(path)
     return str(path)
@@ -112,3 +114,65 @@ def test_inconsistent_ranking_columns_are_not_silently_dropped(tmp_path, model_f
         evaluate.score_catalog(
             str(tmp_path), str(source), model_file, output_file="scored.parquet", batch_size=1,
         )
+
+
+@pytest.mark.parametrize("version", [None, "older-native-conventions"])
+def test_unknown_model_preprocessing_fails_before_writing(tmp_path, model_file, version):
+    model = xgb.XGBClassifier()
+    model.load_model(model_file)
+    model.get_booster().set_attr(pycwb_catalog_preprocessing=version)
+    model.save_model(model_file)
+    source = tmp_path / "input.parquet"
+    pd.DataFrame([catalog_row(100.)]).to_parquet(source, index=False)
+    with pytest.raises(ValueError, match="Retrain older PycWB native-catalog models"):
+        evaluate.score_catalog(
+            str(tmp_path), str(source), model_file, output_file="scored.parquet",
+        )
+    assert not (tmp_path / "scored.parquet").exists()
+
+
+def test_verified_unversioned_model_can_declare_its_conventions(tmp_path, model_file):
+    from pycwb.modules.postprocess.model_io import CATALOG_PREPROCESSING_VERSION
+
+    model = xgb.XGBClassifier()
+    model.load_model(model_file)
+    model.get_booster().set_attr(pycwb_catalog_preprocessing=None)
+    model.save_model(model_file)
+    source = tmp_path / "input.parquet"
+    pd.DataFrame([catalog_row(100.)]).to_parquet(source, index=False)
+    config = tmp_path / "config.py"
+    config.write_text(
+        "def update_config(params, features, caps, balance, options):\n"
+        f"    options['model_preprocessing'] = {CATALOG_PREPROCESSING_VERSION!r}\n"
+    )
+    result = evaluate.score_catalog(
+        str(tmp_path), str(source), model_file, config_file=str(config),
+        output_file="scored.parquet",
+    )
+    assert result["n_scored"] == 1
+    model.get_booster().set_attr(pycwb_catalog_preprocessing="incompatible")
+    model.save_model(model_file)
+    with pytest.raises(ValueError, match="incompatible"):
+        evaluate.score_catalog(
+            str(tmp_path), str(source), model_file, config_file=str(config),
+            output_file="incompatible.parquet",
+        )
+
+
+def test_cwb_import_records_preprocessing_without_changing_predictions(tmp_path, model_file):
+    import pickle
+    from pycwb.modules.postprocess.model_io import (
+        CATALOG_PREPROCESSING_VERSION, import_cwb_model,
+    )
+
+    model = xgb.XGBClassifier()
+    model.load_model(model_file)
+    model.get_booster().set_attr(pycwb_catalog_preprocessing=None, best_iteration="1")
+    source = tmp_path / "cwb.pkl"
+    source.write_bytes(pickle.dumps(model))
+    result = import_cwb_model(str(tmp_path), str(source), "converted.ubj", trusted_pickle=True)
+    restored = xgb.XGBClassifier()
+    restored.load_model(result["model_file"])
+    assert restored.get_booster().attr("pycwb_catalog_preprocessing") == CATALOG_PREPROCESSING_VERSION
+    features = pd.DataFrame({"norm": [1., 9.]})
+    np.testing.assert_array_equal(restored.predict_proba(features), model.predict_proba(features))

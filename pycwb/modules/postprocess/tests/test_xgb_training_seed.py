@@ -32,8 +32,13 @@ def test_configured_seed_controls_all_training_randomness(tmp_path, monkeypatch,
         best_iteration = 0
         def __init__(self, **kw): seen['booster'] = kw['seed']
         def fit(self, *a, **kw): pass
+        def get_booster(self): return self
+        def attr(self, key): return None
+        def set_attr(self, **kwargs): self.attributes = kwargs
         def save_model(self, path):
             from pathlib import Path
+            from pycwb.modules.postprocess.model_io import CATALOG_PREPROCESSING_VERSION
+            assert self.attributes['pycwb_catalog_preprocessing'] == CATALOG_PREPROCESSING_VERSION
             Path(path).write_bytes(b'test')
     monkeypatch.setattr(train.xgb, 'XGBClassifier', Model)
     cfg = tmp_path/'config.py'

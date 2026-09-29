@@ -7,6 +7,7 @@ import pandas as pd
 
 from pycwb.modules.cwb_xgboost.read_data import apply_user_ranking_statistics
 from pycwb.modules.postprocess import evaluate
+from pycwb.modules.postprocess.model_io import CATALOG_PREPROCESSING_VERSION
 from pycwb.modules.postprocess.train_xgboost import (
     _compact_training_frame,
     _read_and_concat,
@@ -69,6 +70,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -141,6 +145,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -220,6 +227,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -304,6 +314,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):

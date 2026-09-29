@@ -146,6 +146,26 @@ in ``examples/postproduction/standard_analysis_10pct_workflow.yaml``. For that
 selected FAR holdout, use ``exclude_zero_lag: false``; do not discard a selected
 superlag merely because its regular ``lag_idx`` is zero.
 
+Newly trained models record the ``cwb-compatible-v1`` catalog field conventions
+alongside their trees. Scoring rejects a missing or incompatible convention
+identifier before prediction. Retrain older PycWB native-catalog models: the
+``norm`` and ``sSNR`` definitions and detector-indexed ordering have changed,
+even though the feature names are unchanged.
+
+Use ``postprocess.model_io.import_cwb_model`` for a trusted original cWB pickle.
+For an unversioned portable model whose training inputs have been independently
+verified to use the current cWB conventions, declare that in the existing
+scoring configuration hook:
+
+.. code-block:: python
+
+   def update_config(xgb_params, ML_list, ML_caps, ML_balance, ML_options):
+       ML_options["model_preprocessing"] = "cwb-compatible-v1"
+
+This declaration does not convert incompatible old models and cannot override
+an incompatible identifier already recorded in a model. Keep the training
+feature caps and other configuration choices consistent with scoring as well.
+
 Trained models are applied to new catalogs via the scoring actions:
 
 - :py:func:`~pycwb.modules.postprocess.evaluate.evaluate_far_rho` — score background for FAR

@@ -118,11 +118,15 @@ def _preprocess_for_scoring(
     else:
         config_path = None
 
+    from .model_io import _validate_catalog_preprocessing
+    booster = clf.get_booster()
+    _validate_catalog_preprocessing(booster, ML_options)
+
     # Preprocess (creates derived features: rho0_40d0, Qa, Qp, ecor/likelihood, …)
     df = preprocess_events(df, nifo, ML_options, ML_caps)
 
     # Build feature matrix
-    feature_names = clf.get_booster().feature_names
+    feature_names = booster.feature_names
     X = pd.DataFrame(index=df.index)
     for f in feature_names:
         X[f] = df[f] if f in df.columns else 0.0

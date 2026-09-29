@@ -323,6 +323,8 @@ def train_xgboost(
     print(f"  Best iteration:  {XGB_clf.best_iteration}")
 
     # ── save model ───────────────────────────────────────────────────────
+    from .model_io import _record_catalog_preprocessing
+    _record_catalog_preprocessing(XGB_clf)
     os.makedirs(model_dir, exist_ok=True)
     _ext = model_path.rsplit(".", 1)[-1].lower()
     if _ext in ("ubj", "json"):
