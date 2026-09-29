@@ -1,7 +1,10 @@
 """Compose the release likelihood API with selected CUDA implementations."""
 
-from pycwb.types.stages import LikelihoodStage
+from __future__ import annotations
+
 import importlib
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from pycwb.constants.gpu_options import gpu_options
 from pycwb.modules.likelihoodWP.likelihood import prepare_likelihood_inputs
 from functools import partial
@@ -11,7 +14,12 @@ native = importlib.import_module("pycwb.modules.likelihoodWP.likelihood")
 __all__ = ["build_likelihood", "prepare_likelihood_inputs"]
 
 
-def build_likelihood(config: object | None = None) -> LikelihoodStage:
+if TYPE_CHECKING:
+    from pycwb.types.network_cluster import Cluster
+    from pycwb.modules.likelihoodWP.results import SkyMapStatistics
+
+
+def build_likelihood(config: object | None = None) -> Callable[..., tuple[Cluster | None, SkyMapStatistics | None]]:
     """Build process-owned callbacks; native orchestration owns scientific policy."""
     from pycwb.config.validation import validate_runtime_settings
 

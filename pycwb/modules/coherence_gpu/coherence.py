@@ -1,10 +1,10 @@
 """Build process-owned GPU coherence using native payloads and YAML options."""
 
 from __future__ import annotations
-from pycwb.types.stages import CoherenceStage
+
 import importlib
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from pycwb.constants.gpu_options import gpu_options
 from pycwb.modules.coherence_native import selection
 from functools import partial
@@ -15,7 +15,11 @@ coherence = importlib.import_module("pycwb.modules.coherence_native.coherence")
 __all__ = ["build_coherence", "setup_coherence", "GPUSelector"]
 
 
-def build_coherence(config: object | None = None) -> tuple[CoherenceStage, GPUSelector]:
+if TYPE_CHECKING:
+    from pycwb.types.network_cluster import FragmentCluster
+
+
+def build_coherence(config: object | None = None) -> tuple[Callable[..., list[FragmentCluster]], GPUSelector]:
     """Return a single-lag callable and its resident-map owner; clear sessions after use."""
     options = gpu_options(config)
     selector = GPUSelector(options)

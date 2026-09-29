@@ -40,22 +40,32 @@ it never falls back to the CPU silently. Previous timing presets used environmen
 `gpu` YAML block before reuse. Options are validated, serialized in the catalog,
 and passed to spawned workers. Resuming with different options is rejected.
 
-## How stages are composed
+## How functions are composed
 
-The workflow assembles process-owned stages with
-`coherence_gpu.coherence.build_coherence`,
+The GPU entry point chooses ordinary preparation functions directly in
+`process_job_segment_gpu.process_job_segment`: `read_data`, `condition_data`,
+`prepare_coherence` and `prepare_td`. It passes these by name to the supplied
+native job recipe, which retains trial handling, vetoes, resume and output.
+
+For each worker, `coherence_gpu.coherence.build_coherence`,
 `super_cluster_gpu.super_cluster.build_supercluster`, and
-`likelihood_gpu.likelihood.build_likelihood`. These accept the job configuration
-or immutable GPU options; the likelihood factory also checks the execution
-profile's scalar DPF requirement.
+`likelihood_gpu.likelihood.build_likelihood` return process-owned callables.
+`_build_analyzer` passes them to `native._run_lag_analysis` using
+`functools.partial`. Optional paired validation wraps those functions explicitly.
+No native module globals are mutated, and no fixed stage bundle is needed.
 
-Explicit `PreparationStages` and `LagStages` bundles connect the GPU stages to
-the native job lifecycle. The job processor and lag analysis are no longer cloned.
-The native CPU workflow retains its default stages. Lower-level numerical,
-worker-pool and output adapters still use `pycwb.utils.function_binding.specialize`
-for private hooks; the binding tests pin these contracts. No native module is
-mutated. Import the stage packages and workflow directly; the development-only
-`background_cuda` compatibility namespace has been removed.
+These are choices within the supplied native/GPU recipes, not a required sequence
+for all workflows. Users select their own `segment_processer` and compose normal
+function calls. They can reuse the native recipe through its optional callables,
+replace the whole lag loop with `lag_processor`, or implement a different segment
+recipe directly. The [custom processor example](../../examples/custom_workflow/README.md)
+shows an additional operation selected through YAML and run by `pycwb run`.
+
+Detailed contracts for optional numerical callbacks live in `callbacks.py` beside
+`coherence_native`, `super_cluster_native` and `likelihoodWP`. They describe
+individual operations, not workflow order. Scientific modules do not import the
+workflow. Import the GPU packages directly; the development-only `background_cuda`
+compatibility namespace has been removed.
 
 Processing remains lag-major: shared preparation, then complete per-lag
 selection, clustering, likelihood and output. `gpu.lag_workers>1` spawns
@@ -117,7 +127,7 @@ native CPU work and must not be enabled in speed measurements. The old
 | `workflow/profiling.py` | Optional lag analysis and output profiling |
 | `modules/read_data/parallel.py` | Bounded parallel frame decoding |
 | `modules/data_conditioning/parallel.py` | Bounded parallel native conditioning |
-| `workflow/subflow/process_job_segment_gpu.py` | Stage selection and job pipeline assembly |
+| `workflow/subflow/process_job_segment_gpu.py` | Function selection and job pipeline assembly |
 | `workflow/subflow/process_job_segment_gpu_parallel.py` | Spawned GPU lag workers with native shared inputs |
 | `workflow/subflow/gpu_setup_overlap.py` | Join overlapping preparation before worker creation |
 | `workflow/subflow/gpu_output.py` | Parent-only buffered output and durable progress |

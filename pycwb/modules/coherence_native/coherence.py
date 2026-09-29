@@ -6,7 +6,7 @@ remain available here for workflow and notebook compatibility.
 
 from __future__ import annotations
 
-from pycwb.types.stages import PixelSelector
+from .callbacks import PixelSelector
 
 import logging
 import time

@@ -38,7 +38,7 @@ def test_gpu_processor_preserves_direct_reads_or_accepts_provider(
     assert result["input_provider"] is provider
     assert result["lag_processor"] is processor._process_lags
     expected_reader = processor.native.read_from_job_segment if use_cache else read_from_job_segment
-    reader = result["preparation_stages"].read_from_job_segment
+    reader = result["read_data"]
     if use_cache:
         assert reader is expected_reader
     else:

@@ -9,7 +9,7 @@ chirp_micropixel.py contains the alternative micropixel estimator.
 
 from __future__ import annotations
 
-from pycwb.types.stages import ScalarRegulator, SkyScanner, ChirpUpdater
+from .callbacks import ScalarRegulator, SkyScanner, ChirpUpdater
 from pycwb.config.processing import execution_profile
 
 import logging

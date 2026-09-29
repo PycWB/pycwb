@@ -1,4 +1,4 @@
-"""Exercise GPU workflow composition and native stage dispatch without a GPU."""
+"""Exercise GPU workflow composition and native function dispatch without a GPU."""
 
 import ast
 import os
@@ -12,7 +12,6 @@ import pytest
 
 from pycwb.workflow.subflow import process_job_segment_gpu as gpu
 from pycwb.workflow.subflow import process_job_segment_native as native
-from pycwb.workflow.subflow.job_segment_stages import LagStages, PreparationStages
 
 
 @pytest.fixture(autouse=True)
@@ -43,19 +42,19 @@ def test_spawn_entrypoints_and_output_types_remain_pickleable():
         assert pickle.loads(pickle.dumps(value)) is value
 
 
-def test_analyzer_composes_stages_without_mutating_native(monkeypatch):
+def test_analyzer_composes_functions_without_mutating_native(monkeypatch):
     calls = []
     selector = SimpleNamespace(sessions={})
     coherence, supercluster, likelihood = object(), object(), object()
     monkeypatch.setattr(gpu, "build_coherence", lambda config: (coherence, selector))
     monkeypatch.setattr(gpu, "build_supercluster", lambda config: supercluster)
     monkeypatch.setattr(gpu, "build_likelihood", lambda config: likelihood)
-    monkeypatch.setattr(native, "_run_lag_analysis", lambda context, lag, *, stages: calls.append((context, lag, stages)))
+    monkeypatch.setattr(native, "_run_lag_analysis", lambda context, lag, **functions: calls.append((context, lag, functions)))
     original = (native.coherence_single_lag, native.supercluster_single_lag, native.evaluate_cluster_likelihood)
     analyze, owner = gpu._build_analyzer()
     analyze("context", 2)
     assert owner is selector
-    assert calls == [("context", 2, LagStages(coherence, supercluster, likelihood, native.Event))]
+    assert calls == [("context", 2, dict(coherence=coherence, supercluster=supercluster, likelihood=likelihood))]
     assert original == (native.coherence_single_lag, native.supercluster_single_lag, native.evaluate_cluster_likelihood)
 
 
@@ -73,15 +72,20 @@ def test_parallel_preparation_and_overlap_are_composed(monkeypatch):
     from pycwb.modules.super_cluster_gpu.td_setup_parallel import build_td_inputs_cache
 
     config = SimpleNamespace(gpu=dict(condition_workers=2, setup_workers=2, td_setup_workers=2))
-    stages = gpu._build_preparation(config)
-    assert stages.condition_strains.func is condition_strains
-    assert stages.condition_strains.keywords == {"workers": 2, "validate": False}
-    assert stages.setup_coherence is setup_coherence
-    assert stages.build_td_inputs_cache is build_td_inputs_cache
+    monkeypatch.setattr(gpu, "jax", SimpleNamespace(
+        config=SimpleNamespace(x64_enabled=True), devices=lambda kind: [kind],
+        default_device=lambda device: nullcontext(),
+    ))
+    monkeypatch.setattr(native, "process_job_segment", lambda *args, **kwargs: kwargs)
+    functions = gpu.process_job_segment(".", config, object())
+    assert functions["condition_data"].func is condition_strains
+    assert functions["condition_data"].keywords == {"workers": 2, "validate": False}
+    assert functions["prepare_coherence"] is setup_coherence
+    assert functions["prepare_td"] is build_td_inputs_cache
     config.gpu["overlap_setup"] = True
-    overlapped = gpu._build_preparation(config)
-    owner = overlapped.setup_coherence.__self__
-    assert overlapped.build_td_inputs_cache.__self__ is owner
+    overlapped = gpu.process_job_segment(".", config, object())
+    owner = overlapped["prepare_coherence"].__self__
+    assert overlapped["prepare_td"].__self__ is owner
     assert owner.coherence is setup_coherence
     assert owner.td is build_td_inputs_cache
 
@@ -112,30 +116,30 @@ def test_serial_lags_honor_resume_release_maps_and_commit_only_on_success(monkey
     assert selector.sessions == {}
 
 
-def test_native_lag_dispatches_explicit_stages_in_order(monkeypatch):
+def test_native_lag_dispatches_explicit_functions_in_order(monkeypatch):
     calls = []
     cluster = SimpleNamespace(
         cluster_status=-1, cluster_id=1, pixel_arrays=[], start_time=0, stop_time=1,
         low_frequency=32, high_frequency=64,
     )
     event = SimpleNamespace(output_py=lambda *a, **k: calls.append("event"), long_id="event-id")
-    stages = LagStages(
-        lambda *a, **k: calls.append("coherence") or [cluster],
-        lambda *a, **k: calls.append("supercluster") or SimpleNamespace(clusters=[cluster]),
-        lambda *a, **k: (calls.append("likelihood") or cluster, "sky"),
-        lambda: event,
-    )
     segment = SimpleNamespace(index=4, ifos=["H1", "L1"], n_lag=1, lag_shifts=np.zeros((1, 2)),
                               shift=None, injections=None, livetime=lambda lag: 10)
     context = native.LagAnalysisContext(
         SimpleNamespace(nIFO=2), segment, segment, 0, 1, [], None, None, None, None, None, None,
     )
-    # Native module globals must not run when explicit stages are supplied.
-    def wrong_stage(*args, **kwargs):
-        pytest.fail("used native stage instead of explicit stage")
+    # Native module globals must not run when explicit functions are supplied.
+    def wrong_function(*args, **kwargs):
+        pytest.fail("used native default instead of explicit function")
     for name in ("coherence_single_lag", "supercluster_single_lag", "evaluate_cluster_likelihood", "Event"):
-        monkeypatch.setattr(native, name, wrong_stage)
-    result = native._run_lag_analysis(context, 0, stages=stages)
+        monkeypatch.setattr(native, name, wrong_function)
+    result = native._run_lag_analysis(
+        context, 0,
+        coherence=lambda *a, **k: calls.append("coherence") or [cluster],
+        supercluster=lambda *a, **k: calls.append("supercluster") or SimpleNamespace(clusters=[cluster]),
+        likelihood=lambda *a, **k: (calls.append("likelihood") or cluster, "sky"),
+        event_factory=lambda: event,
+    )
     assert calls == ["coherence", "supercluster", "likelihood", "event"]
     assert result.events_data == [(event, cluster, "sky")]
     assert result.progress_record["n_triggers"] == 1
@@ -143,7 +147,7 @@ def test_native_lag_dispatches_explicit_stages_in_order(monkeypatch):
 
 
 def test_native_preparation_passes_products_into_lag_pipeline(monkeypatch, tmp_path):
-    """Run the real job lifecycle with cheap stages and assert every handoff."""
+    """Run the real job lifecycle with cheap functions and assert every handoff."""
     from pycwb.modules.conditioning_plugins import api
 
     calls = []
@@ -190,12 +194,97 @@ def test_native_preparation_passes_products_into_lag_pipeline(monkeypatch, tmp_p
     monkeypatch.setattr(native, "prepare_likelihood_inputs", lambda *args, **kwargs: None)
     native.process_job_segment(str(tmp_path), config, segment, skip_lags={0: set()},
                                input_provider=provider, lag_processor=lags,
-                               preparation_stages=PreparationStages(read, condition, setup, setup_td))
+                               read_data=read, condition_data=condition,
+                               prepare_coherence=setup, prepare_td=setup_td)
     assert calls == ["read", "condition", "coherence setup", "td setup", "lags"]
 
 
-@pytest.mark.parametrize("argument", ["lag_processor", "preparation_stages"])
+@pytest.mark.parametrize("argument", [
+    "lag_processor", "read_data", "condition_data", "prepare_coherence", "prepare_td",
+])
 def test_gpu_workflow_rejects_conflicting_ownership(monkeypatch, argument):
     monkeypatch.setattr(gpu, "jax", SimpleNamespace(config=SimpleNamespace(x64_enabled=True), devices=lambda kind: [kind]))
     with pytest.raises(ValueError, match="owns"):
         gpu.process_job_segment(".", SimpleNamespace(gpu={}), object(), **{argument: None})
+
+
+def test_paired_validation_wraps_each_selected_function(monkeypatch):
+    from pycwb.modules import stage_validation
+
+    selected = dict(coherence=object(), supercluster=object(), likelihood=object())
+    checked = {name: object() for name in selected}
+    calls = []
+    monkeypatch.setattr(gpu, "build_coherence", lambda config: (selected["coherence"], object()))
+    monkeypatch.setattr(gpu, "build_supercluster", lambda config: selected["supercluster"])
+    monkeypatch.setattr(gpu, "build_likelihood", lambda config: selected["likelihood"])
+
+    def paired(function, reference, name, mutable_arg=None, *, options):
+        assert options.validate_stages
+        kind = next(key for key, value in selected.items() if value is function)
+        calls.append((reference, name, mutable_arg))
+        return checked[kind]
+
+    monkeypatch.setattr(stage_validation, "paired", paired)
+    analyze, _ = gpu._build_analyzer(SimpleNamespace(gpu={"validate_stages": True}))
+    assert analyze.keywords == checked
+    assert calls == [
+        (native.coherence_single_lag, "coherence_single_lag", None),
+        (native.supercluster_single_lag, "supercluster_single_lag", 2),
+        (native.evaluate_cluster_likelihood, "evaluate_cluster_likelihood", 1),
+    ]
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_custom_processor_loads_and_inserts_operation_without_stage_schema(monkeypatch, caplog, failure):
+    """Exercise the example through the same loader used by pycwb run."""
+    import sys
+
+    from pycwb.utils.module import import_function
+
+    path = Path(__file__).resolve().parents[4] / "examples/custom_workflow/processor.py"
+    process = import_function(f"{path}.process_job_segment")
+    example = sys.modules[process.__module__]
+    calls, saved = [], []
+    cluster = SimpleNamespace(
+        cluster_status=-1, cluster_id=1, pixel_arrays=[], start_time=0, stop_time=1,
+        low_frequency=32, high_frequency=64,
+    )
+    event = SimpleNamespace(output_py=lambda *a, **k: calls.append("event"), long_id="event-id")
+    segment = SimpleNamespace(index=4, ifos=["H1", "L1"], n_lag=2, lag_shifts=np.zeros((2, 2)),
+                              shift=None, injections=None, livetime=lambda lag: 10)
+    config = SimpleNamespace(nIFO=2)
+    context = native.LagAnalysisContext(config, segment, segment, 0, 2, [], None, None, None, None, None, None)
+    output, provider = object(), object()
+    report_candidates = example.report_candidates
+
+    def diagnostic(fragment_cluster, lag):
+        calls.append("diagnostic")
+        report_candidates(fragment_cluster, lag)
+        if failure:
+            raise RuntimeError("diagnostic failed")
+
+    def prepared_job(working_dir, cfg, job, *, lag_processor, input_provider, skip_lags):
+        assert (working_dir, cfg, job, input_provider) == (".", config, segment, provider)
+        lag_processor(context, output, skip_lags)
+
+    monkeypatch.setattr(native, "process_job_segment", prepared_job)
+    monkeypatch.setattr(native, "coherence_single_lag", lambda *a, **k: calls.append("coherence") or [cluster])
+    monkeypatch.setattr(example, "supercluster_single_lag", lambda *a, **k: calls.append("supercluster")
+                        or SimpleNamespace(clusters=[cluster]))
+    monkeypatch.setattr(example, "report_candidates", diagnostic)
+    monkeypatch.setattr(native, "evaluate_cluster_likelihood", lambda *a, **k: (calls.append("likelihood") or cluster, "sky"))
+    monkeypatch.setattr(native, "Event", lambda: event)
+    monkeypatch.setattr(native, "_save_lag_outputs", lambda ctx, result: saved.append((ctx, result)))
+    assert process.supports_input_provider
+    with caplog.at_level("INFO"), pytest.raises(RuntimeError, match="diagnostic failed") if failure else nullcontext():
+        process(".", config, segment, input_provider=provider, skip_lags={0: {1}})
+    assert "lag 0 has 1 candidates before likelihood" in caplog.text
+    if failure:
+        assert calls == ["coherence", "supercluster", "diagnostic"]
+        assert saved == []
+    else:
+        assert calls == ["coherence", "supercluster", "diagnostic", "likelihood", "event"]
+        assert len(saved) == 1
+        assert saved[0][0] is output
+        assert saved[0][1].lag == 0
+        assert saved[0][1].events_data == [(event, cluster, "sky")]

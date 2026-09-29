@@ -84,12 +84,21 @@ Validation repeats native work and must be disabled for performance measurements
 The driver, available devices, wavelet sizes, frame data and segment injections
 are checked at runtime; offline validation cannot establish their suitability.
 
-The native orchestration accepts explicit, keyword-only backend callbacks.
-``pycwb.types.stages`` defines the scientific stage interfaces; factories create
-process-owned callbacks and workflow stage bundles assemble them. Modules may
-reuse native payloads and domain algorithms without importing the workflow.
+The supplied native recipe accepts ordinary, keyword-only function replacements.
+The GPU entry point chooses these functions directly and shares native trial,
+resume and output handling. There is no fixed stage bundle. A user-selected
+``segment_processer`` owns its composition and can call scientific modules in a
+different sequence, subject to their data dependencies. Reusing the native
+recipe is optional; its ``lag_processor`` argument also allows replacing the
+whole lag loop. See ``examples/custom_workflow`` for a CLI-driven example.
+
+Detailed numerical callback contracts live beside their consumers, in
+``coherence_native.callbacks``, ``super_cluster_native.callbacks`` and
+``likelihoodWP.callbacks`` under ``pycwb.modules``. They describe individual
+operations, not a workflow order. GPU factories create process-owned callables;
+modules may reuse native payloads and algorithms without importing the workflow.
 CUDA kernel handles are cached by source, architecture and context identity;
-reset/unloaded handles are rebuilt on the next load. Recreate stage objects after
+reset/unloaded handles are rebuilt on the next load. Recreate GPU callables after
 resetting a device: their existing buffers also belong to the old context.
 
 Output combinations

@@ -2,15 +2,14 @@
 
 Select ``pycwb.workflow.subflow.process_job_segment_gpu.process_job_segment``
 as ``segment_processer``. Native preparation, trial handling, resume records
-and output contracts are shared with the CPU workflow through explicit stage
-bundles. Each process builds and owns its GPU stages and resident maps.
+and output handling reuse the supplied native recipe through ordinary function
+arguments. Each process builds and owns its GPU callables and resident maps.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable
-from dataclasses import replace
 from functools import partial
 from typing import Any
 
@@ -22,43 +21,40 @@ from pycwb.constants.gpu_options import gpu_options
 from pycwb.modules.likelihood_gpu.likelihood import build_likelihood
 from pycwb.modules.super_cluster_gpu.super_cluster import build_supercluster
 from pycwb.workflow.subflow import process_job_segment_native as native
-from pycwb.workflow.subflow.job_segment_stages import LagStages, PreparationStages
 
 logger = logging.getLogger(__name__)
 
 
-
 def _build_analyzer(config=None) -> tuple[Callable[[Any, int], Any], GPUSelector]:
-    """Assemble explicit lag stages; factories own each process's GPU resources."""
+    """Assemble per-lag functions; factories own each process's GPU resources."""
     options = gpu_options(config)
     coherence, selector = build_coherence(options)
-    bindings = {
-        "coherence_single_lag": coherence,
-        "supercluster_single_lag": build_supercluster(options),
-        "evaluate_cluster_likelihood": build_likelihood(config),
-    }
+    supercluster = build_supercluster(options)
+    likelihood = build_likelihood(config)
     if options.validate_stages:
         from pycwb.modules.stage_validation import paired
 
-        for name, mutable_arg in (
-            ("coherence_single_lag", None),
-            ("supercluster_single_lag", 2),
-            ("evaluate_cluster_likelihood", 1),
-        ):
-            reference = getattr(native, name)
-            bindings[name] = paired(
-                bindings.get(name, reference),
-                reference,
-                name,
-                mutable_arg,
-                options=options,
-            )
-    stages = LagStages(**bindings, event_factory=native.Event)
-    return partial(native._run_lag_analysis, stages=stages), selector
+        coherence = paired(
+            coherence, native.coherence_single_lag, "coherence_single_lag", options=options,
+        )
+        supercluster = paired(
+            supercluster, native.supercluster_single_lag, "supercluster_single_lag", 2,
+            options=options,
+        )
+        likelihood = paired(
+            likelihood, native.evaluate_cluster_likelihood, "evaluate_cluster_likelihood", 1,
+            options=options,
+        )
+    return partial(
+        native._run_lag_analysis,
+        coherence=coherence,
+        supercluster=supercluster,
+        likelihood=likelihood,
+    ), selector
 
 
 def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[int]] | None) -> None:
-    """Run pending lags with process-owned stages and parent-only output."""
+    """Run pending lags with process-owned functions and parent-only output."""
     from .gpu_output import OutputWriter
 
     workers = gpu_options(context.config).lag_workers
@@ -81,59 +77,65 @@ def _process_lags(context: Any, output_context: Any, skip_lags: dict[int, set[in
     writer.close()
 
 
-def _build_preparation(config=None, *, input_provider: Any = None) -> PreparationStages:
-    """Choose bounded preparation stages, respecting provider-owned reads."""
-    options = gpu_options(config)
-    stages = PreparationStages(
-        native.read_from_job_segment, native.condition_strains,
-        native.setup_coherence, native.build_td_inputs_cache,
-    )
-    # Providers own decode admission and supply job-local copies; do not start
-    # nested readers outside the allocation cache's resource accounting.
-    if options.read_workers > 1 and input_provider is None:
-        from pycwb.modules.read_data.parallel import read_from_job_segment
-
-        stages = replace(stages, read_from_job_segment=partial(read_from_job_segment, workers=options.read_workers, processes=options.read_processes, validate=options.validate_read))
-    if options.condition_workers > 1:
-        from pycwb.modules.data_conditioning.parallel import condition_strains
-
-        stages = replace(stages, condition_strains=partial(condition_strains, workers=options.condition_workers, validate=options.validate_conditioning))
-    if options.td_setup_workers > 1:
-        from pycwb.modules.super_cluster_gpu.td_setup_parallel import build_td_inputs_cache
-
-        stages = replace(stages, build_td_inputs_cache=build_td_inputs_cache)
-    if options.setup_workers > 1 or options.wdm_prefilter:
-        from pycwb.modules.coherence_gpu.coherence import setup_coherence
-
-        stages = replace(stages, setup_coherence=setup_coherence)
-    if options.overlap_setup:
-        from .gpu_setup_overlap import OverlappedSetup
-
-        preparation = OverlappedSetup(stages.setup_coherence, stages.build_td_inputs_cache)
-        stages = replace(
-            stages,
-            setup_coherence=preparation.setup_coherence,
-            build_td_inputs_cache=preparation.build_td_inputs_cache,
-        )
-    return stages
-
-
 def process_job_segment(working_dir, config, job_seg, *args: Any, **kwargs: Any) -> Any:
-    """Run the native job lifecycle with explicit GPU stage composition.
+    """Select accelerated functions and reuse the supplied native job recipe.
 
-    Accepts the native processor arguments except ``lag_processor`` and
-    ``preparation_stages``, which this workflow owns. Requires JAX x64 and a
-    visible GPU before any preparation; never silently falls back to CPU.
+    This entry point owns its function choices and lag worker scheduling. Custom
+    compositions use their own segment_processer, with ordinary scientific calls
+    or selected helpers from the native recipe. Device resources remain local to
+    the process that uses them.
     """
     if not jax.config.x64_enabled:
         raise RuntimeError("Set JAX_ENABLE_X64=1 for the experimental GPU processor")
     jax.devices("gpu")
-    if "lag_processor" in kwargs or "preparation_stages" in kwargs:
-        raise ValueError("This entry point owns its lag processor and preparation stages")
-    preparation = _build_preparation(config, input_provider=kwargs.get("input_provider"))
+    owned = {"lag_processor", "read_data", "condition_data", "prepare_coherence", "prepare_td"}
+    if owned.intersection(kwargs):
+        raise ValueError("This entry point owns its lag processor and preparation functions")
+
+    options = gpu_options(config)
+    read_data = native.read_from_job_segment
+    condition_data = native.condition_strains
+    prepare_coherence = native.setup_coherence
+    prepare_td = native.build_td_inputs_cache
+
+    # Providers own decode admission; avoid nested readers outside their budget.
+    if options.read_workers > 1 and kwargs.get("input_provider") is None:
+        from pycwb.modules.read_data.parallel import read_from_job_segment
+
+        read_data = partial(
+            read_from_job_segment, workers=options.read_workers,
+            processes=options.read_processes, validate=options.validate_read,
+        )
+    if options.condition_workers > 1:
+        from pycwb.modules.data_conditioning.parallel import condition_strains
+
+        condition_data = partial(
+            condition_strains, workers=options.condition_workers,
+            validate=options.validate_conditioning,
+        )
+    if options.td_setup_workers > 1:
+        from pycwb.modules.super_cluster_gpu.td_setup_parallel import build_td_inputs_cache
+
+        prepare_td = build_td_inputs_cache
+    if options.setup_workers > 1 or options.wdm_prefilter:
+        from pycwb.modules.coherence_gpu.coherence import setup_coherence
+
+        prepare_coherence = setup_coherence
+    if options.overlap_setup:
+        from .gpu_setup_overlap import OverlappedSetup
+
+        overlapped = OverlappedSetup(prepare_coherence, prepare_td)
+        prepare_coherence = overlapped.setup_coherence
+        prepare_td = overlapped.build_td_inputs_cache
+
     with jax.default_device(jax.devices("cpu")[0]):
         return native.process_job_segment(
-            working_dir, config, job_seg, *args, **kwargs, lag_processor=_process_lags, preparation_stages=preparation,
+            working_dir, config, job_seg, *args, **kwargs,
+            lag_processor=_process_lags,
+            read_data=read_data,
+            condition_data=condition_data,
+            prepare_coherence=prepare_coherence,
+            prepare_td=prepare_td,
         )
 
 

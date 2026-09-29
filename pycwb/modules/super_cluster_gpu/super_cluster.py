@@ -1,7 +1,10 @@
 """Compose native superclustering with job-owned CUDA subnet and TD stages."""
 
-from pycwb.types.stages import SuperclusterStage
+from __future__ import annotations
+
 import importlib
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from pycwb.constants.gpu_options import gpu_options
 from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster
 from functools import partial
@@ -11,7 +14,11 @@ native = importlib.import_module("pycwb.modules.super_cluster_native.super_clust
 __all__ = ["build_supercluster", "setup_supercluster", "build_td_inputs_cache"]
 
 
-def build_supercluster(config: object | None = None) -> SuperclusterStage:
+if TYPE_CHECKING:
+    from pycwb.types.network_cluster import FragmentCluster
+
+
+def build_supercluster(config: object | None = None) -> Callable[..., FragmentCluster | None]:
     """Return a single-lag callable owning this process's device resources."""
     options = gpu_options(config)
     bindings = {}
