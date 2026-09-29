@@ -4,6 +4,9 @@
 
 - Preserve Parquet list types across prediction-cut batches, including scored
   catalogs with no surviving rows.
+- Reuse configured detector instances for injection arrival times, including
+  external geometries. Already projected strains without sky coordinates keep
+  their measured detector centroids instead of aborting reconstruction.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
   unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved

@@ -21,17 +21,31 @@ def network_reference_times(centroids, snr_squared, delays):
     return (center+(delay-delay[0])).tolist()
 
 
-def cwb_arrival_times(centroids,snr_squared,injection,ifos,config):
-    """Use the same geometry and coordinate convention as strain generation."""
-    from pycwb.types.detector import Detector
+def cwb_arrival_times(centroids, snr_squared, injection, ifos, config):
+    """Use configured geometry, retaining measured times for skyless strains.
+
+    Already projected detector-strain generators need not supply a source sky
+    position. Their measured detector centroids remain the arrival metadata;
+    no geometric network reference can be inferred in that case.
+    """
     from pycwb.utils.skymap_coord import convert_to_celestial_coordinates, normalize_coordinate_system
-    gps=injection['gps_time']
-    coords=normalize_coordinate_system(injection.get('coordsys','icrs'))
-    if coords!='icrs':
-        ra,dec=convert_to_celestial_coordinates(*injection['sky_loc'],gps,coords,gmst_model='astropy')
+    gps = injection['gps_time']
+    coords = normalize_coordinate_system(injection.get('coordsys', 'icrs'))
+    if coords != 'icrs':
+        sky_loc = injection.get('sky_loc')
+        if sky_loc is None:
+            return list(centroids)
+        ra, dec = convert_to_celestial_coordinates(
+            *sky_loc, gps, coords, gmst_model='astropy',
+        )
     else:
-        ra,dec=injection.get('ra'),injection.get('dec')
+        ra, dec = injection.get('ra'), injection.get('dec')
+        if ra is None and dec is None:
+            return list(centroids)
     if ra is None or dec is None:
         raise ValueError('cWB injection-arrival metadata requires source sky coordinates')
-    delays=[Detector(ifo,geometry_model=getattr(config,'detector_geometry','lal')).time_delay_from_earth_center(ra,dec,gps) for ifo in ifos]
-    return network_reference_times(centroids,snr_squared,delays)
+    delays = [
+        config.get_detector(ifo).time_delay_from_earth_center(ra, dec, gps)
+        for ifo in ifos
+    ]
+    return network_reference_times(centroids, snr_squared, delays)

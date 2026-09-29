@@ -151,7 +151,7 @@ This option does not select the SNR population: source parameters must still
 provide ``target_snr`` (or ``targeted_snr``).
 
 Waveform generation and SNR scaling
-----------------------------------
+-----------------------------------
 
 Use ``burst_waveform.interface.generate_waveform_pycwb.get_td_waveform`` for
 cWB SG, SGE, GA, and WNB waveforms. The duplicate
