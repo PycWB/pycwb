@@ -17,25 +17,37 @@ prereleases; an explicit ``pycwb==VERSION`` selects a recorded version. Consult
 follow that release's requirements. Never infer compatibility from the word
 "latest" across PyPI, documentation and container tags.
 
-Release checklist for maintainers
----------------------------------
+.. _release-checklist-for-maintainers:
 
-1. Update ``CHANGES.md`` with user-visible changes, known limitations and upgrade
-   instructions, including scientific behavior changes.
-2. Run the regular tests, strict documentation build and standalone recovery example. Record
-   which numerical reference comparisons were run and their outcome.
-3. Verify a clean installation from the built wheel/source distribution,
-   including packaged templates. Check version reporting outside the checkout.
-4. Create the release tag using the existing release process. The GitLab tag
-   pipeline builds and publishes the source distribution; avoid a second manual
-   upload of the same version.
-5. Enable the tag's documentation build in Read the Docs, retain older release
-   documentation, and point the stable alias only at a stable release.
-6. Publish release notes and, when available, an immutable software archive/DOI.
-   Document container tags and digests that were actually built and tested.
+Maintainers: follow :doc:`dev_release` for the release checklist, publication
+steps, and hosted documentation settings.
 
-Enabling hosted documentation versions and publishing archives are maintainer
-service settings; changing the repository alone does not publish a release.
+.. _installation_release_channels:
+
+Choose a release channel
+------------------------
+
+**Stable release:** install the version appropriate for your analysis, then
+select that version in the documentation. The PyPI release description contains
+its installation requirements; older ROOT-based releases have different
+requirements from the native Python path described below.
+
+.. code-block:: bash
+
+   python -m pip install pycwb
+   pycwb --version
+
+**Prerelease:** alpha releases require an explicit version or ``--pre``. An
+explicit version is preferable when preserving an analysis environment.
+
+.. code-block:: bash
+
+   python -m pip install --pre pycwb
+   pycwb --version
+
+Check the `PyPI release history <https://pypi.org/project/PycWB/#history>`_
+for available versions. Do not assume a prerelease contains every feature
+shown in the development documentation.
 
 Compatibility changes
 ---------------------

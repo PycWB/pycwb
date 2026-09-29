@@ -1,3 +1,5 @@
+:orphan:
+
 .. _decision_guides:
 
 Decision Guides

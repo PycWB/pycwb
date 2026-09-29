@@ -7,23 +7,16 @@ The postproduction pipeline takes the trigger catalogs produced by pycWB
 search jobs and produces final analysis products: background estimates, ranked
 candidate lists, detection efficiency curves, and HTML summary reports.
 
-.. image:: _static/diagrams/postproduction.svg
-   :alt: Postproduction ranking and significance
-
-This section covers the complete postproduction workflow and each analysis
-component.
+Follow the workflow, prepare training inputs, or import cWB ROOT results.
+Scientific explanations live under :doc:`core_concepts`; exact action signatures
+live in :doc:`postproduction_actions`.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    postproduction_workflow
-   postproduction_actions
-   postproduction_background
-   postproduction_root
-   postproduction_xgboost
    postproduction_trainingset
-   postproduction_efficiency
-
+   postproduction_root
 
 Quick Start
 -----------
@@ -48,38 +41,9 @@ and the :ref:`postproduction_actions` page to choose an action and look up its
 exact Python signature.
 
 
-Postproduction Architecture
----------------------------
 
-The postproduction system is built on a **YAML-driven workflow engine**
-(:py:mod:`pycwb.post_production.workflow`) that chains actions as a directed
-acyclic graph (DAG). Actions are Python functions registered with the
-:py:func:`~pycwb.post_production.action_spec.action_spec` decorator
-(:py:mod:`pycwb.post_production.action_spec`), declaring their inputs, outputs,
-and arguments.
-
-Key modules:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Module
-     - Purpose
-   * - :py:mod:`pycwb.modules.postprocess.far`
-     - FAR vs. ranking statistic computation
-   * - :py:mod:`pycwb.modules.postprocess.train_xgboost`
-     - XGBoost classifier training
-   * - :py:mod:`pycwb.modules.postprocess.evaluate`
-     - Model scoring, FAR evaluation, efficiency
-   * - :py:mod:`pycwb.modules.postprocess.selection`
-     - Trigger/job selection and train/FAR splitting
-   * - :py:mod:`pycwb.modules.postprocess.matching`
-     - Trigger-to-injection matching
-   * - :py:mod:`pycwb.modules.postprocess.zero_lag`
-     - Zero-lag significance analysis
-   * - :py:mod:`pycwb.modules.postprocess.report_builder`
-     - Multi-tab HTML report generation
+.. image:: _static/diagrams/postproduction.svg
+   :alt: Postproduction ranking and significance
 
 
 Typical Workflow Steps
@@ -102,35 +66,17 @@ A complete postproduction analysis follows this sequence:
 
 See :ref:`postproduction_workflow` for detailed YAML examples of each step.
 
-Catalog job provenance
-----------------------
+Reference and implementation
+----------------------------
 
-New master catalogs keep job descriptions in an immutable ``jobs.parquet``
-next to ``catalog.parquet``. The catalog footer contains a versioned
-``pycwb_jobs_manifest`` reference with a relative path and manifest identity.
-The reader checks that identity when loading jobs. Older catalogs and batch
-fragments with inline ``jobs`` metadata remain supported. Ordinary Parquet
-inputs with neither inline jobs nor an explicit reference have no job metadata;
-they do not implicitly use a nearby ``jobs.parquet``.
+.. _catalog-job-provenance:
 
-Selection, simulation matching and filtering, and scoring preserve source
-provenance in their single-run trigger outputs. A selected or scored catalog in
-another directory references the original manifest through a rebased relative
-path. It does not copy the full job list into each output. Different runs can
-therefore write outputs into the same temporary directory without sharing job
-metadata accidentally.
+* :doc:`catalog_format`: job manifests, selection provenance, compatibility,
+  and transferring complete results.
 
-The manifest describes the full source run. It does **not** describe selection
-membership or selected exposure. Use the selection's job-ID, progress, interval,
-and livetime outputs for those quantities; jobs with no triggers may still
-contribute exposure. Multi-run combined tables retain their separate per-run
-provenance model.
+.. _postproduction-architecture:
 
-When transferring results, include the referenced manifest and preserve the
-relative directory layout. Moving only a manifest-backed catalog is insufficient.
-A missing, corrupt, or mismatched explicit manifest is an error, including when
-building a report. Do not remove its reference to suppress the error.
-
-Pre-release files produced with an unmarked sibling manifest must be regenerated
-from their run inputs before using this format. The reader deliberately does not
-guess whether an unmarked Parquet file was intended to depend on that manifest.
+* :doc:`dev_postproduction`: workflow engine, action registration, and module roles.
+* :doc:`postproduction_actions`: action selection, signatures, and data contracts.
+* :doc:`postproduction_background`, :doc:`postproduction_xgboost`, and
+  :doc:`postproduction_efficiency`: methods and interpretation.

@@ -1,7 +1,7 @@
 .. _tutorial_multi_injection:
 
 Performing Multi-Injection
---------------------------
+==========================
 
 ⭐ Intermediate  ·  ~25 min  ·  Prerequisites: :doc:`tutorial_injection`
 

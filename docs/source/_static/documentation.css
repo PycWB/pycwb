@@ -1,0 +1,66 @@
+/* Scoped landing-page layout; content and links remain ordinary Sphinx nodes. */
+#content .docs-start > ul,
+#content .docs-paths > ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+#content .docs-start > ul > li,
+#content .docs-paths > ul > li {
+  margin: 0;
+  padding: 1rem 1.2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+}
+
+#content .docs-start > ul > li {
+  border-left: 3px solid #2563eb;
+}
+
+#content .docs-start li > p,
+#content .docs-paths li > p {
+  margin: 0;
+}
+
+#content .docs-start li > p + p,
+#content .docs-paths li > p + p {
+  margin-top: 0.5rem;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+
+#content .docs-start li > p:first-child,
+#content .docs-paths li > p:first-child {
+  font-weight: 600;
+}
+
+.docs-version,
+.docs-sidebar-version {
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.docs-sidebar-version {
+  margin: 1rem;
+}
+
+.dark #content .docs-start > ul > li,
+.dark #content .docs-paths > ul > li {
+  border-color: #475569;
+}
+
+.dark #content .docs-start > ul > li {
+  border-left-color: #60a5fa;
+}
+
+@media (max-width: 640px) {
+  #content .docs-start > ul,
+  #content .docs-paths > ul {
+    grid-template-columns: 1fr;
+  }
+}

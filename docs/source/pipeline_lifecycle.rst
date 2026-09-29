@@ -12,10 +12,38 @@ cWB/cWB-2G search algorithms: WDM time-frequency analysis, coherent pixel
 selection, clustering and superclustering, likelihood evaluation, waveform
 reconstruction, and postproduction ranking.
 
+.. _search_lifecycle_animation:
+
+Search lifecycle animation
+--------------------------
+
+Watch a simulated H1–L1 signal move through detector projection, whitening,
+multi-resolution WDM analysis, pixel selection, clustering, superclustering,
+sky reconstruction, waveform recovery, and time-slide background estimation
+in 60 seconds.
+
+.. raw:: html
+
+   <video controls playsinline preload="none" width="1280" height="720"
+          style="width: 100%; height: auto;"
+          poster="_static/media/pycwb_search_animation_poster.png"
+          aria-label="PycWB search lifecycle: nine stages from detector projection to time-slide background estimation">
+     <source src="_static/media/pycwb_search_animation.mp4" type="video/mp4">
+     <p><a href="_static/media/pycwb_search_animation.mp4">Download the search lifecycle animation.</a></p>
+   </video>
+
+`Download the video (MP4) <_static/media/pycwb_search_animation.mp4>`_
+or `view the GIF <_static/img/pycwb_search_animation.gif>`_.
+
+The panels are computed from simulated data using the educational model in
+``examples/search_animation/``. The model simplifies the production likelihood,
+subnet cuts, and multi-resolution reconstruction; it does not illustrate
+postproduction training or detection-efficiency studies. See the
+:download:`animation notes <../../examples/search_animation/README.md>`
+for the scene descriptions, approximations, and rendering instructions.
+
 .. contents:: Table of Contents
    :depth: 2
-   :local:
-
 
 Overview
 --------

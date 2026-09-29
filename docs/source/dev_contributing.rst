@@ -119,7 +119,7 @@ Every PR that changes user-facing behavior must update the docs:
    * - A new term or concept
      - :ref:`glossary`
    * - Anything user-facing
-     - :ref:`choose_your_path` (check if paths need updating)
+     - :doc:`index` and the relevant section index (check navigation and links)
 
 **PR doc checklist** (add to PR description):
 
@@ -138,7 +138,8 @@ Release Process
 ---------------
 
 Releases are versioned with ``setuptools_scm`` from Git tags. Follow
-:ref:`release_policy` for the release checklist and compatibility notes.
+:doc:`dev_release` for the release checklist and :ref:`release_policy` for
+compatibility notes.
 The GitLab tag pipeline publishes the source distribution; do not duplicate
 that upload manually.
 

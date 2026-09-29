@@ -10,9 +10,9 @@ account or ROOT installation. The example YAML lives in the source checkout
 under ``examples/demo/`` and runs through the ordinary PycWB CLI.
 
 Install the version described by this documentation using :ref:`installing_pycwb`.
-The ``doctor`` and ``validate`` commands are new development features;
-older PyPI releases do not contain them. Use the source installation until a
-release containing these commands is available.
+The ``validate`` command is a new development feature; older PyPI releases
+do not contain it. Use the source installation until a release containing
+this command is available.
 
 Check the environment
 ---------------------
@@ -20,12 +20,11 @@ Check the environment
 .. code-block:: bash
 
    pycwb --version
-   pycwb doctor
+   python --version
+   python -m pip check
 
-``doctor`` records the interpreter, platform and installed package versions.
-It reads distribution metadata and does not check backend imports, devices or
-pipeline readiness. Its zero exit status means the report was generated. Use
-``python -m pip check`` for declared dependency consistency. See :ref:`troubleshooting`.
+``python -m pip check`` checks declared dependency consistency.
+For installation problems, see :ref:`troubleshooting`.
 
 Create and run the example
 --------------------------

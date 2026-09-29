@@ -1,272 +1,92 @@
-.. pycWB documentation master file, created by
-   sphinx-quickstart on Wed Mar  8 13:16:45 2023.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. _welcome-to-pycwb-s-documentation:
 
-Welcome to pycWB's documentation!
-===================================
+PycWB documentation
+===================
 
-.. note::
+PycWB is a modular Python implementation of coherent WaveBurst (cWB/cWB-2G)
+for gravitational-wave burst searches.
 
-   This site documents PycWB |release|. Match it to ``pycwb --version``.
-   Development documentation may include unreleased features. See
-   :ref:`release_policy` before choosing an installation.
+.. rst-class:: docs-version
 
-.. raw:: html
+   Version |release|. Match it to ``pycwb --version``. Development documentation
+   may include unreleased features; check :ref:`release_policy` before installing.
 
-   <p>
-     <a href="https://docs.pycwb.org">
-       <img src="https://readthedocs.org/projects/pycwb/badge/?version=latest" alt="Documentation">
-     </a>
-     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/pipelines">
-       <img src="https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg" alt="Build Status">
-     </a>
-     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/releases">
-       <img src="https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg" alt="Releases">
-     </a>
-     <a href="https://badge.fury.io/py/pycWB">
-       <img src="https://badge.fury.io/py/pycWB.svg" alt="PyPI version">
-     </a>
-     <a href="https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/LICENSE">
-       <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License">
-     </a>
-   </p>
+.. _quick-start:
 
-
-PycWB is a modular Python implementation of the coherent WaveBurst
-(cWB/cWB-2G) search algorithms for gravitational-wave burst searches.
-
-.. figure:: _static/img/pycwb_search_animation.gif
-   :alt: Animated overview of the pycWB search process
-   :align: center
-   :width: 100%
-
-   A compact animation of the pycWB search flow: detector strain scanning,
-   WDM time-frequency pixel selection, and network coherence.
-   This animation is for reference only and is not a 100% accurate
-   representation of every pycWB pipeline step.
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 5
-
-   credit
-   choose_your_path
-   package
-
-.. toctree::
-   :hidden:
-   :caption: User Guides
-   :maxdepth: 2
-
-   start_here
-   install
-   understanding_results
-   troubleshooting
-   reproducibility
-   validation_status
-   release_policy
-   support
-   Learning Path <tutorials>
-   analysis_recipes
-   decision_guides
-   core_concepts
-   Migration from cWB <cwb_heritage>
-   Public GWTC References <public_gwtc_references>
-   Production Analysis <standard_analysis>
-   postproduction
-   modules_guide
-   backends
-
-.. toctree::
-   :hidden:
-   :caption: Technical Reference
-   :maxdepth: 2
-
-   User Parameters <schema>
-   workflow_execution
-   Coordinate Systems <coordinate_systems>
-   Units and Conventions <units_conventions>
-   Detector Support and Geometry <detector_support>
-   glossary
-
-.. toctree::
-   :hidden:
-   :caption: API Reference
-   :maxdepth: 2
-
-   Python API <modules>
-   CLI Reference <cli_reference>
-
-.. toctree::
-   :hidden:
-   :caption: Developer Guides
-   :maxdepth: 1
-
-   dev_architecture
-   dev_setup
-   dev_modules
-   dev_performance
-   dev_build_test
-   dev_contributing
-   dev_cxx_core
-
-
-What is pycWB?
---------------
-
-pycWB is a Python package for **coherent gravitational-wave burst searches**.
-It implements the same cWB/cWB-2G algorithmic chain used by the ROOT/C++ cWB
-pipeline: WDM time-frequency analysis, coherent pixel selection, clustering and
-superclustering, coherent likelihood evaluation, waveform reconstruction, and
-postproduction ranking.
-
-pycWB implements the cWB/cWB-2G algorithms for coherent burst searches. It
-analyzes strain data from the LIGO-Virgo-KAGRA detector network, transforms it
-into a wavelet time-frequency representation, and searches for short
-gravitational-wave transients with minimal assumptions about the signal
-waveform by identifying coherent excess-power structures across the detector
-network.
-
-Unlike template-based searches that look for specific waveforms, pycWB
-identifies **any statistically significant coherence** between detectors,
-making it sensitive to both known and unknown source types.
-
-.. image:: _static/diagrams/pipeline_overview.svg
-   :alt: pycWB pipeline overview
-
-
-Choose Your Path
-----------------
-
-.. raw:: html
-
-   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8em; margin: 1.5em 0;">
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>🆕 New to pycWB?</strong><br>
-     <a href="start_here.html">Start Here →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>🔍 Run a search</strong><br>
-     <a href="standard_analysis.html">Standard Analysis →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>📋 Solve a task</strong><br>
-     <a href="analysis_recipes.html">Analysis Recipes →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>🤔 Make a choice</strong><br>
-     <a href="decision_guides.html">Decision Guides →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>🔬 Understand algorithms</strong><br>
-     <a href="core_concepts.html">Core Concepts →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>Coming from cWB?</strong><br>
-     <a href="cwb_heritage.html">Migration from cWB →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>📊 Postproduction</strong><br>
-     <a href="postproduction.html">Background, XGBoost, Efficiency →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>📖 Look up parameters</strong><br>
-     <a href="schema.html">Schema →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>📐 Check conventions</strong><br>
-     <a href="coordinate_systems.html">Coordinates, units, definitions →</a>
-   </div>
-
-   <div style="border: 1px solid #ddd; border-radius: 6px; padding: 1em;">
-     <strong>💻 Contribute code</strong><br>
-     <a href="dev_architecture.html">Developer Guides →</a>
-   </div>
-
-   </div>
-
-
-Quick Start
+Get started
 -----------
 
-.. code-block:: bash
+.. container:: docs-start
 
-   # From the matching source checkout, with PycWB installed
-   pycwb doctor
-   pycwb validate examples/demo/user_parameters.yaml
-   pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
-   pycwb progress --work-dir my_first_search
+   * :doc:`Install PycWB <install>`
 
-See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
-for detailed installation options.
+     Choose a version and prepare your environment.
 
+   * :doc:`Run your first search <start_here>`
 
-Documentation Map
------------------
+     Recover a simulated burst and inspect the results.
 
-.. list-table::
-   :header-rows: 0
-   :widths: 25 75
+.. _choose-your-path:
+.. _documentation-map:
 
-   * - :ref:`start_here`
-     - What pycWB does, a verified synthetic first run, expected outputs
-   * - :ref:`tutorials`
-     - Learn by example: injection, multi-injection, batch
-   * - :ref:`analysis_recipes`
-     - Copy-paste workflows: all-sky, targeted, injection campaign, debugging
-   * - :ref:`decision_guides`
-     - Flowcharts: which settings, which recipe, which split strategy
-   * - :ref:`core_concepts`
-     - Algorithms: pipeline lifecycle, job control, clustering, likelihood
-   * - :ref:`cwb_heritage`
-     - How cWB, cWB-2G, cWB-XP, and public examples relate to pycWB
-   * - :ref:`public_gwtc_references`
-     - Public GWTC cWB waveform reconstruction and CED reference links
-   * - :ref:`standard_analysis`
-     - Config templates, cluster submission (Condor & SLURM)
-   * - :ref:`postproduction`
-     - Background estimation, XGBoost ranking, detection efficiency
-   * - Technical Reference
-     - :ref:`coordinate_systems_angles`, units, and configuration conventions
-   * - :ref:`schema`
-     - All parameters: defaults, ranges, descriptions, cross-references
-   * - :doc:`modules`
-     - Auto-generated API reference from docstrings
-   * - :ref:`glossary`
-     - Short definitions with links to the canonical technical reference
-   * - Developer Guides
-     - Architecture, setup, build/test, modules, performance, contributing
+Explore the documentation
+-------------------------
 
+.. container:: docs-paths
 
-CLI Reference
--------------
+   * :doc:`Tutorials <tutorials>`
 
-Most users only need these three commands:
+     Learn with worked examples: injections, custom waveforms, and batch runs.
 
-.. code-block:: bash
+   * :doc:`Run analyses <run_analyses>`
 
-   pycwb run         # Run a single search
-   pycwb batch-setup # Generate Condor/SLURM submission scripts
-   pycwb post-process # Run postproduction workflow
+     Configure searches, run on clusters, and process the results.
 
-See the :ref:`run_on_clusters` page for full CLI details, or run
-``pycwb --help`` for all available commands.
+   * :doc:`Concepts and methods <core_concepts>`
 
+     Understand the pipeline, coherent reconstruction, and significance.
 
-Indices and tables
-==================
+   * :doc:`Reference <reference>`
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+     Look up parameters, commands, data formats, conventions, and Python APIs.
+
+Contributing code? See :doc:`development` for setup, architecture, and testing.
+
+.. _what-is-pycwb:
+.. _id1:
+
+How the search works
+--------------------
+
+.. image:: _static/diagrams/pipeline_overview.svg
+   :alt: PycWB pipeline from detector data to reconstructed events and postproduction
+   :width: 100%
+
+Watch the :ref:`60-second search lifecycle animation <search_lifecycle_animation>`
+and explore each stage in :doc:`pipeline_lifecycle`.
+For the project introduction, see :doc:`about`.
+
+.. _cli-reference:
+.. _indices-and-tables:
+
+See :doc:`cli_reference` for commands, or :ref:`reference_indexes` for the
+complete indexes and search. For questions, see :doc:`support`; for publication
+credits, see :doc:`credit`.
+
+.. toctree::
+   :hidden:
+   :maxdepth: 6
+
+   getting_started
+   tutorials
+   run_analyses
+   core_concepts
+   reference
+   development
+
+.. toctree::
+   :hidden:
+   :caption: Project
+   :maxdepth: 6
+
+   about

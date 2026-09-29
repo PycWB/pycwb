@@ -12,9 +12,6 @@ does not establish equivalence to every cWB production configuration.
    * - Check
      - What it establishes
      - What it does not establish
-   * - ``pycwb doctor``
-     - Interpreter, platform and installed distribution versions are recorded
-     - Backend imports, device availability, pipeline readiness or numerical agreement
    * - ``pycwb validate``
      - YAML/schema validity, sky units, execution/GPU settings and detector definitions
      - Data availability, all cross-field constraints or scientific suitability
@@ -27,6 +24,31 @@ does not establish equivalence to every cWB production configuration.
    * - Injection consistency job
      - The explicitly invoked reference fixtures and comparison tolerances
      - Unexamined configurations; this CI job is currently manual
+
+.. _platform_coverage:
+
+Platform coverage
+-----------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Environment
+     - Evidence and limitations
+   * - Linux x86_64, Python 3.13, CPU
+     - Native CI container and automated tests. Recommended starting point.
+   * - Python 3.11
+     - Minimum supported version; lint/type checks run in a separate 3.11 environment. Full runtime tests currently run on 3.13.
+   * - Other Python versions >=3.11
+     - Permitted by package metadata; no full multi-version runtime CI matrix yet.
+   * - macOS Intel / Apple Silicon, CPU
+     - Dependency availability must be checked locally; not covered by the current CI.
+   * - Windows / WSL2
+     - Native Windows is not tested. A Linux environment under WSL2 is a possible route, not a validated configuration.
+   * - GPU backends
+     - Require backend-specific dependencies and validation. The beginner demo uses the CPU workflow.
+   * - ROOT interoperability
+     - Legacy backend reference tests are separate from native CI. For ROOT-based analyses, use the original cWB; see :ref:`cwb_heritage`.
 
 Reference comparisons
 ---------------------

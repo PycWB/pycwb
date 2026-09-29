@@ -64,6 +64,8 @@ html_static_path = ['_static']
 # Read the Docs injects its version flyout. The version in the page title
 # always comes from the checkout being built, including prerelease suffixes.
 html_title = f"PycWB {release} documentation"
+html_short_title = "PycWB documentation"
+html_css_files = ['documentation.css']
 
 # -- external links ----------------------------------------------------------
 

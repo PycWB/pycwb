@@ -32,6 +32,27 @@ bindings. This step is optional and only needed for the ROOT-backed wavelet
 extension or legacy ROOT I/O.
 
 
+.. _building_documentation:
+
+Build the documentation
+-----------------------
+
+From a source checkout with its runtime dependencies installed:
+
+.. code-block:: bash
+
+   python -m pip install -r docs/requirements.txt
+   python -m pip install --no-deps -e .
+   make doc-check
+
+Installing the checkout generates ``pycwb/_version.py``, which is not tracked
+in Git and is required when Sphinx imports the package.
+
+HTML is written to ``docs/build/html``. API pages and CLI help are generated
+automatically for both local and hosted builds; edit the source docstrings and
+parser definitions rather than generated ``pycwb*.rst``, ``modules.rst`` or
+``_cli_help.rst.inc`` files.
+
 Running Tests
 -------------
 
@@ -105,7 +126,7 @@ describe the same Python version:
    .venv-quality/bin/python -m mypy
 
 The quality script rejects new lint, public-contract and import-boundary debt
-against the reviewed baseline. Mypy checks the 13 boundary files listed in
+against the reviewed baseline. Mypy checks the boundary files listed in
 ``pyproject.toml``. This environment includes NumPy's real type stubs; the
 NumPy pin in ``tools/quality/requirements.txt`` applies only to these checks.
 The scientific runtime retains its separate ``numpy>=2`` requirement.

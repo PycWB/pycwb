@@ -1,7 +1,7 @@
 .. _tutorial_batch_inj:
 
 Batch Injection Runs
---------------------
+====================
 
 ⭐ Intermediate  ·  ~15 min  ·  Prerequisites: :doc:`tutorial_customized_wf_gen`
 

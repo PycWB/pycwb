@@ -1,7 +1,7 @@
 .. _tutorial_customized_wf_gen:
 
 Injections with Customized Waveform Generation
-----------------------------------------------
+==============================================
 
 ⭐ Intermediate  ·  ~20 min  ·  Prerequisites: :doc:`tutorial_multi_injection`
 

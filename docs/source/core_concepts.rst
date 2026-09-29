@@ -1,20 +1,36 @@
 .. _core_concepts:
+.. _core-concepts:
 
-Core Concepts
-=============
+Concepts and methods
+====================
 
-These pages explain the algorithms and infrastructure inside pycWB. Start with
-the :ref:`pipeline_lifecycle` for a high-level overview of how data flows
-through the search, then dive into specific components.
+Understand how detector strain becomes reconstructed events and analysis
+products. Start with :doc:`pipeline_lifecycle`; :doc:`tutorial_search` then walks
+through the Python workflow after a completed :doc:`start_here` demo.
 
-If you're new to pycWB, begin with :ref:`start_here` instead.
+Search and reconstruction
+-------------------------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    pipeline_lifecycle
+   tutorial_search
    job_control
-   injection_infrastructure
-   targeted_search
    clustering_algorithm
    likelihood_guide
+
+Significance and sensitivity
+----------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   postproduction_background
+   postproduction_xgboost
+   postproduction_efficiency
+
+For practical configuration, see :doc:`targeted_search` and
+:doc:`injection_infrastructure`. To apply these methods, follow
+:doc:`postproduction_workflow` and :doc:`postproduction_trainingset`.
+Definitions and conventions are collected in :doc:`reference`.

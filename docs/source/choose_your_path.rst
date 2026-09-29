@@ -1,57 +1,35 @@
+:orphan:
+
 .. _choose_your_path:
 
 Choose Your Path
 ================
 
-pycWB serves different audiences. Pick the path that matches what you're
-trying to do.
+The main sections now follow the kind of documentation you need. This page
+keeps the audience-based routes for existing readers.
 
-.. raw:: html
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
 
-   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1em; margin: 2em 0;">
-
-   <div style="border: 1px solid #ccc; border-radius: 8px; padding: 1.2em;">
-     <h3 style="margin-top:0;">🆕 New User</h3>
-     <p>Never used pycWB before. Want to understand what it does and run a first search.</p>
-     <a href="start_here.html" style="font-weight:bold;">Start Here →</a>
-     <hr>
-     <small>Then: <a href="tutorials.html">Tutorials</a> · <a href="glossary.html">Glossary</a></small>
-   </div>
-
-   <div style="border: 1px solid #ccc; border-radius: 8px; padding: 1.2em;">
-     <h3 style="margin-top:0;">🔍 Search Analyst</h3>
-     <p>Running production searches. Need config templates, cluster submission, and postproduction.</p>
-     <a href="standard_analysis.html" style="font-weight:bold;">Standard Analysis →</a>
-     <hr>
-     <small>Then: <a href="analysis_recipes.html">Recipes</a> · <a href="postproduction.html">Postproduction</a></small>
-   </div>
-
-   <div style="border: 1px solid #ccc; border-radius: 8px; padding: 1.2em;">
-     <h3 style="margin-top:0;">🔬 Algorithm Researcher</h3>
-     <p>Understanding the physics. Want to know how clustering, likelihood, and ranking work.</p>
-     <a href="core_concepts.html" style="font-weight:bold;">Core Concepts →</a>
-     <hr>
-     <small>Then: <a href="pipeline_lifecycle.html">Pipeline Lifecycle</a> · <a href="likelihood_guide.html">Likelihood</a></small>
-   </div>
-
-   <div style="border: 1px solid #ccc; border-radius: 8px; padding: 1.2em;">
-     <h3 style="margin-top:0;">💻 Developer</h3>
-     <p>Contributing code. Need architecture, setup, module conventions, and performance guides.</p>
-     <a href="dev_architecture.html" style="font-weight:bold;">Architecture →</a>
-     <hr>
-     <small>Then: <a href="dev_setup.html">Dev Setup</a> · <a href="dev_modules.html">Module Dev</a></small>
-   </div>
-
-   <div style="border: 1px solid #ccc; border-radius: 8px; padding: 1.2em;">
-     <h3 style="margin-top:0;">🛠️ Maintainer</h3>
-     <p>Managing releases, CI, reviewing PRs. Need build/test workflows and contribution guidelines.</p>
-     <a href="dev_build_test.html" style="font-weight:bold;">Build & Test →</a>
-     <hr>
-     <small>Then: <a href="dev_contributing.html">Contributing</a> · <a href="dev_cxx_core.html">C++ Core</a></small>
-   </div>
-
-   </div>
-
+   * - Audience
+     - Start
+     - Continue
+   * - New user
+     - :doc:`getting_started` and :doc:`start_here`
+     - :doc:`tutorials`, :doc:`glossary`
+   * - Search analyst
+     - :doc:`standard_analysis`
+     - :doc:`analysis_recipes`, :doc:`postproduction`
+   * - Algorithm researcher
+     - :doc:`core_concepts`
+     - :doc:`pipeline_lifecycle`, :doc:`likelihood_guide`
+   * - Developer
+     - :doc:`dev_architecture`
+     - :doc:`dev_setup`, :doc:`dev_modules`
+   * - Maintainer
+     - :doc:`dev_build_test`
+     - :doc:`dev_contributing`, :doc:`dev_release`, :doc:`dev_cxx_core`
 
 Not Sure Where to Start?
 -------------------------
@@ -80,3 +58,7 @@ Not Sure Where to Start?
      - :ref:`dev_architecture`
    * - Find a Python function's API
      - :doc:`modules`
+
+
+The earlier :doc:`decision_guides` page remains available as an explicitly
+marked placeholder; its recommendations have not been validated.

@@ -1,14 +1,17 @@
+:orphan:
+
+.. _pycwb:
+
 .. _package:
 
-pycWB
-=======
+Python package shortcuts
+========================
 
-.. toctree::
-    :hidden:
-    :maxdepth: 2
+For the complete Python API, use :doc:`modules`. These shortcuts retain the
+original package entry points:
 
-    Config <pycwb.config>
-    Classes <pycwb.types>
-    Modules <pycwb.modules>
-    Constants <pycwb.constants>
-    Utilities <pycwb.utils>
+* :doc:`Config <pycwb.config>`
+* :doc:`Classes <pycwb.types>`
+* :doc:`Modules <pycwb.modules>`
+* :doc:`Constants <pycwb.constants>`
+* :doc:`Utilities <pycwb.utils>`

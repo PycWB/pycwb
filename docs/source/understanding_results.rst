@@ -78,6 +78,9 @@ Output directory
    * - ``output/``
      - Additional pipeline products, including waveform files when enabled
 
+See :doc:`catalog_format` for manifest identity, selection provenance, and
+compatibility rules.
+
 The CLI writes its run log to the terminal; redirect it to a file when needed.
 
 Batch runs have fragment catalogs until merged. See :ref:`run_on_clusters` and

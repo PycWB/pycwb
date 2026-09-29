@@ -20,7 +20,7 @@ commitment is currently advertised.
 For a bug report, include:
 
 * the PycWB version or source revision and whether it has local modifications;
-* operating system, Python version and ``pycwb doctor`` output;
+* operating system, ``python --version`` and ``python -m pip list`` output;
 * the exact command, smallest useful YAML and a public/synthetic reproducer;
 * expected behavior, observed behavior and relevant traceback;
 * whether the unmodified CLI example in ``examples/demo/`` works.

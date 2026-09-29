@@ -1,6 +1,6 @@
 # PycWB
 
-[![Documentation](https://readthedocs.org/projects/pycwb/badge/?version=latest)](https://pycwb.readthedocs.io)
+[![Documentation](https://readthedocs.org/projects/pycwb/badge/?version=latest)](https://docs.pycwb.org)
 [![Build Status](https://git.ligo.org/yumeng.xu/pycwb/badges/main/pipeline.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/pipelines)
 [![Coverage](https://git.ligo.org/yumeng.xu/pycwb/badges/main/coverage.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/pipelines)
 [![Releases](https://git.ligo.org/yumeng.xu/pycwb/-/badges/release.svg)](https://git.ligo.org/yumeng.xu/pycwb/-/releases)
@@ -9,12 +9,12 @@
 
 PycWB is a modular Python implementation of the coherent WaveBurst
 (cWB/cWB-2G) algorithms for gravitational-wave burst searches.
-The documentation can be found at [pycwb.readthedocs.io](https://pycwb.readthedocs.io).
+The documentation can be found at [docs.pycwb.org](https://docs.pycwb.org).
 
 ## Get started
 
-This checkout contains new `doctor` and `validate` commands. Until a
-release containing them is published, install this source checkout:
+This checkout contains the new `validate` command. Until a
+release containing it is published, install this source checkout:
 
 ```bash
 conda create -n pycwb -c conda-forge python=3.13 pip nds2-client python-nds2-client lalsuite python-ligo-lw
@@ -23,7 +23,6 @@ git clone https://git.ligo.org/yumeng.xu/pycwb.git
 cd pycwb
 python -m pip install .
 pycwb --version
-pycwb doctor
 pycwb validate examples/demo/user_parameters.yaml
 pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
 pycwb progress --work-dir my_first_search
