@@ -104,7 +104,11 @@ From a source checkout with its runtime dependencies installed:
 .. code-block:: bash
 
    python -m pip install -r docs/requirements.txt
+   python -m pip install --no-deps -e .
    make doc-check
+
+Installing the checkout generates ``pycwb/_version.py``, which is not tracked
+in Git and is required when Sphinx imports the package.
 
 HTML is written to ``docs/build/html``. API pages and CLI help are generated
 automatically for both local and hosted builds; edit the source docstrings and

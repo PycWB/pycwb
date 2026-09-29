@@ -83,6 +83,8 @@ documentation:
     PYCWB_DOCS_OFFLINE: "1"
   script:
     - python -m pip install -r docs/requirements.txt
+    # Sphinx imports this fresh checkout, including setuptools-scm's generated version.
+    - python -m pip install --no-deps --no-build-isolation -e .
     - TZ=UTC python -m sphinx -W --keep-going -b html docs/source docs/build/html
   artifacts:
     when: always

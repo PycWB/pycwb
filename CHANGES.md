@@ -5,6 +5,7 @@
 - Require Python 3.11 or newer, matching the worker-recycling API used by batch and online searches. Remove the older-Python exception-group backport.
 - Run lint/type checks in a separate Python 3.11 environment with compatible NumPy stubs; runtime CI remains on Python 3.13.
 - Run the strict Sphinx check directly in CI so documentation builds do not require `make` in the runtime image.
+- Install the documentation checkout before running Sphinx so fresh CI checkouts include the generated package version.
 
 - Propagate command exit statuses to the shell and defer scientific implementation imports until the selected command runs.
 
