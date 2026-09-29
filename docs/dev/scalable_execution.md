@@ -113,7 +113,7 @@ changing numerical selection settings to fit memory. It does not budget GPU RAM.
 
 ## GPU processors
 
-The experimental `background_cuda.processor` accepts the same input provider.
+The experimental `workflow.subflow.process_job_segment_gpu` accepts the same input provider.
 When supplied, it uses the supervisor's bounded read path rather than spawning
 its own independent frame readers. Its CUDA numerical stages remain unchanged.
 

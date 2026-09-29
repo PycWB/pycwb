@@ -77,7 +77,7 @@ def _setup_functions(coherence: Any, td: Any, *, overlap: bool = True) -> tuple[
     if not overlap:
         return coherence, td
 
-    from pycwb.modules.background_cuda.setup_overlap import OverlappedSetup
+    from pycwb.workflow.subflow.gpu_setup_overlap import OverlappedSetup
 
     overlap = OverlappedSetup(coherence, td)
     return overlap.setup_coherence, overlap.build_td_inputs_cache
@@ -88,11 +88,12 @@ def prepare(task: dict) -> None:
     import jax
     import joblib
 
-    from pycwb.modules.background_cuda.conditioning_parallel import condition_strains
+    from pycwb.constants.gpu_options import gpu_options
+    from pycwb.modules.data_conditioning.parallel import condition_strains
     from pycwb.utils.function_binding import specialize
-    from pycwb.modules.background_cuda.read_parallel import read_from_job_segment
-    from pycwb.modules.background_cuda.setup_parallel import setup_coherence
-    from pycwb.modules.background_cuda.td_setup_parallel import build_td_inputs_cache
+    from pycwb.modules.read_data.parallel import read_from_job_segment
+    from pycwb.modules.coherence_gpu.setup_parallel import setup_coherence
+    from pycwb.modules.super_cluster_gpu.td_setup_parallel import build_td_inputs_cache
     from pycwb.workflow.subflow import process_job_segment_native as native
 
     if any(device.platform != "cpu" for device in jax.devices()):
@@ -123,13 +124,17 @@ def prepare(task: dict) -> None:
         raise Prepared
 
     def read(config: Any, job: Any) -> Any:
-        value = read_from_job_segment(config, job)
+        options = gpu_options(config)
+        value = read_from_job_segment(config, job, workers=options.read_workers,
+                                      processes=options.read_processes, validate=options.validate_read)
         if task["stage"] == "read":
             checkpoint(value)
         return value
 
     def condition(config: Any, data: Any) -> Any:
-        value = condition_strains(config, data)
+        options = gpu_options(config)
+        value = condition_strains(config, data, workers=options.condition_workers,
+                                  validate=options.validate_conditioning)
         if task["stage"] == "conditioned":
             checkpoint(value)
         return value
@@ -139,7 +144,6 @@ def prepare(task: dict) -> None:
 
     from copy import copy
     from dataclasses import replace
-    from pycwb.constants.gpu_options import gpu_options
     config = copy(task["config"])
     config.gpu = replace(gpu_options(config), wdm_prefilter=False)
     coherence, td = _setup_functions(setup_coherence, build_td_inputs_cache, overlap=config.gpu.overlap_setup)
@@ -170,7 +174,7 @@ def consume(task: dict) -> None:
     import jax
     import joblib
 
-    from pycwb.modules.background_cuda import processor as gpu
+    from pycwb.workflow.subflow import process_job_segment_gpu as gpu
     from pycwb.utils.function_binding import specialize
     from pycwb.workflow.subflow import process_job_segment_native as native
     from pycwb.workflow.subflow import process_job_segment_parallel as cpu

@@ -1,7 +1,6 @@
 """Exercise GPU workflow composition and native stage dispatch without a GPU."""
 
 import ast
-import importlib
 import os
 import pickle
 from contextlib import nullcontext
@@ -21,18 +20,6 @@ def clean_gpu_options(monkeypatch):
     for key in os.environ:
         if key.startswith("PYCWB_GPU_"):
             monkeypatch.delenv(key)
-
-
-def test_legacy_modules_share_canonical_state():
-    legacy = importlib.import_module("pycwb.modules.background_cuda.processor")
-    assert legacy is gpu
-    root = Path(gpu.__file__).parents[2] / "modules" / "background_cuda"
-    for path in root.glob("*.py"):
-        if path.name in {"__init__.py", "read_parallel.py", "conditioning_parallel.py"}:
-            continue
-        old = importlib.import_module(f"pycwb.modules.background_cuda.{path.stem}")
-        assert old is importlib.import_module(old.__name__)
-        assert ".background_cuda." not in old.__name__
 
 
 def test_scientific_modules_do_not_depend_on_workflow_or_legacy_package():

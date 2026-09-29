@@ -47,7 +47,7 @@ def test_gpu_processor_preserves_direct_reads_or_accepts_provider(
 
 
 def test_gpu_processor_declares_explicit_worker_cpu_budget():
-    from pycwb.modules.background_cuda.processor import process_job_segment
+    from pycwb.workflow.subflow.process_job_segment_gpu import process_job_segment
 
     config = SimpleNamespace(gpu={"lag_workers": 6})
     assert process_job_segment.requested_cores(config) == 6
@@ -57,7 +57,7 @@ def test_gpu_processor_declares_explicit_worker_cpu_budget():
 
 def test_executor_reserves_gpu_lag_workers(monkeypatch):
     from pycwb.workflow.execution import executor
-    from pycwb.modules.background_cuda.processor import process_job_segment
+    from pycwb.workflow.subflow.process_job_segment_gpu import process_job_segment
 
     monkeypatch.setattr(executor, "available_cpus", lambda: [0, 1, 2, 3])
     config = SimpleNamespace(gpu={"lag_workers": 6}, execution={"profile": "scalable"})

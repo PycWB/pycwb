@@ -122,14 +122,16 @@ boolean defaults are false; CPU preparation and lag worker counts default to one
 Compatibility and naming
 ------------------------
 
-New code imports the stage packages listed above. ``background_cuda`` is the
-legacy import namespace; aliases remain where they preserve cache identity.
-Its frame-read and conditioning adapters translate old GPU settings into the
-explicit CPU scheduling arguments. Tests retained under ``background_cuda/tests``
-cover both CUDA parity and these compatibility paths.
+Code imports the stage packages listed above directly. CUDA runtime helpers live
+in ``pycwb.utils.gpu``; scientific comparison helpers live in
+``pycwb.modules.stage_validation`` and profiling lives in ``pycwb.workflow.profiling``.
+The development-only ``background_cuda`` compatibility namespace has been removed.
+Use the processor path in the example above and explicit scheduling arguments
+for ``read_data.parallel`` and ``data_conditioning.parallel``. Regression tests
+live alongside their owning modules and workflows.
 
 The retired worker-output import is removed with its experimental implementation.
-The old chirp-plan import remains an alias to shared host helpers. Existing YAML
-spellings ``segment_processer`` and ``parallel_injection_trail`` remain supported.
+Chirp bootstrap host helpers live in ``likelihoodWP.chirp_bootstrap``.
+Existing YAML spellings ``segment_processer`` and ``parallel_injection_trail`` remain supported.
 The corrected ``optimize_sky_loc_from_td`` also retains the historical misspelled
 import alias. Avoid renaming persisted configuration keys without a migration.

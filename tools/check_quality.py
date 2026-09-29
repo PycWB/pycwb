@@ -71,7 +71,7 @@ def audit(root: Path) -> Counter[str]:
                 modules = [".".join(prefix + ([node.module] if node.module else []))]
             for module in modules:
                 lower_layer = relative.parts[1] in {"constants", "types", "utils", "modules"}
-                scientific = relative.parts[1] == "modules" and "background_cuda" not in relative.parts
+                scientific = relative.parts[1] == "modules"
                 if lower_layer and module.startswith("pycwb.workflow") or scientific and module.startswith("pycwb.modules.background_cuda"):
                     result[f"boundary|{relative}|{module}"] += 1
     return result

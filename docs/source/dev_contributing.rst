@@ -86,7 +86,7 @@ Reviewers will check:
 - [ ] No new ROOT dependencies (ROOT is being phased out)
 - [ ] Constants and generic utilities do not import workflows or scientific stages.
       Scientific modules may reuse domain algorithms and native payloads, but do
-      not import workflows or the legacy ``background_cuda`` namespace. Workflow
+      not import workflows. Shared CUDA runtime code lives in ``pycwb.utils.gpu``. Workflow
       modules own stage assembly, scheduling and output lifecycle.
 - [ ] Hot-path code uses Numba or JAX, not pure NumPy
 - [ ] JAX device buffers are freed after use
