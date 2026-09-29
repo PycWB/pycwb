@@ -1,9 +1,13 @@
-direction: right
+# Pixels to superclusters (clustering_algorithm.rst).
+# Order follows coherence_native (per resolution) and
+# super_cluster_native.super_cluster.supercluster_single_lag (all resolutions).
+direction: down
 
 vars: {
   d2-config: {
     layout-engine: elk
     theme-id: 1
+    pad: 24
   }
 }
 
@@ -17,34 +21,34 @@ style: {
   shadow: true
 }
 
-"Selected\nPixels" -> "Per-Resolution\nClusters" -> "Multi-Resolution\nMerge" -> "Sub-Network\nCut" -> Superclusters -> Defragmentation -> "To\nLikelihood"
+coherence: "Coherence stage, each WDM resolution" {
+  label.near: top-left
+  style.font-size: 14
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
 
-"Selected\nPixels".style.fill: "#e3f2fd"
-"Per-Resolution\nClusters".style.fill: "#e8f5e9"
-"Multi-Resolution\nMerge".style.fill: "#fff3e0"
-"Sub-Network\nCut".style.fill: "#fce4ec"
-Superclusters.style.fill: "#f3e5f5"
-Defragmentation.style.fill: "#e8eaf6"
-"To\nLikelihood".style.fill: "#c8e6c9"
-
-# Annotations
-"Per-Resolution\nClusters" -- "Multi-Resolution\nMerge": {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
+  pixels: "Select pixels above the\nbpp threshold" {style.fill: "#e3f2fd"}
+  clusters: "Cluster neighbouring pixels\n(fragment clusters)" {style.fill: "#e8f5e9"}
+  pixels -> clusters
 }
-"TFgap"
 
-"Sub-Network\nCut" -- Superclusters: {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
-}
-"subnet / subcut"
+supercluster: "Supercluster stage" {
+  label.near: top-left
+  style.font-size: 14
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
 
-Superclusters -- Defragmentation: {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
+  merge: "Merge clusters from\nall resolutions" {style.fill: "#fff3e0"}
+  td: "Load time-delay amplitudes\nfor all their pixels" {style.fill: "#fff3e0"}
+  linking: "Link clusters within TFgap;\nkeep ≥ 3 pixels above e2or" {style.fill: "#f3e5f5"}
+  subnet: "Sub-network cut on the LOUD\nloudest pixels (subnet, subcut, subrho)" {style.fill: "#fce4ec"}
+  defrag: "Defragment (Tgap, Fgap)\nruns before the subnet cut if pattern ≠ 0" {style.fill: "#e8eaf6"}
+  merge -> td -> linking -> subnet -> defrag
 }
-"Tgap / Fgap"
+
+likelihood: "Superclusters to likelihood" {style.fill: "#c8e6c9"}
+
+coherence.clusters -> supercluster.merge
+supercluster.defrag -> likelihood

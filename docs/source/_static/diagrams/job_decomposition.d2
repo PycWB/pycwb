@@ -1,9 +1,14 @@
+# How a run is split into jobs (job_control.rst).
+# Job segments come from job_segment.create_job_segment_from_config (one per
+# segment chunk and superlag); inside a job, trials are the outer loop and lags
+# the inner loop (process_job_segment_native.py).
 direction: down
 
 vars: {
   d2-config: {
     layout-engine: elk
     theme-id: 1
+    pad: 24
   }
 }
 
@@ -17,40 +22,37 @@ style: {
   shadow: true
 }
 
-"Frame Files" -> Segments -> "Jobs\nsegment × lag × trial" -> "Lags\ntime-shift hypotheses" -> "Trials\ninjection groups" -> "Output\ncatalog + progress"
+dq: "DQ files\nCAT0 science, CAT1 veto" {style.fill: "#e3f2fd"}
+config: "Config YAML\nsegLen, segMLS, segEdge,\nlags, superlags" {style.fill: "#e3f2fd"}
 
-"Frame Files".style.fill: "#e3f2fd"
-Segments.style.fill: "#e8f5e9"
-"Jobs\nsegment × lag × trial".style.fill: "#fff3e0"
-"Lags\ntime-shift hypotheses".style.fill: "#fce4ec"
-"Trials\ninjection groups".style.fill: "#f3e5f5"
-"Output\ncatalog + progress".style.fill: "#e8eaf6"
+build: "Build segments\nremove CAT1, keep ≥ segMLS,\nsplit into segLen, pad segEdge" {style.fill: "#e8f5e9"}
+jobs: "Job segments (WaveSegment)\none per segment chunk × superlag" {style.fill: "#fff3e0"}
+scheduler: "Condor, SLURM or local run\none job segment per task" {style.fill: "#eceff1"}
 
-# Side connections
-Segments -- "CAT0/1/2 Veto": {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
+dq -> build
+config -> build
+build -> jobs -> scheduler
+
+job: "Inside one job segment" {
+  label.near: top-left
+  style.font-size: 14
+  style.fill: "#f5f5f5"
+  style.stroke: "#90a4ae"
+  style.stroke-dash: 1
+
+  frames: "Read frame files\nfor the GPS window" {style.fill: "#e8f5e9"}
+  trials: "Trial loop\ninjection realisations (0 if none)" {style.fill: "#f3e5f5"}
+  lags: "Lag loop\nCAT2 veto windows, segTHR livetime" {style.fill: "#fce4ec"}
+  frames -> trials -> lags
+
+  zero: "Zero-lag:\ncandidates" {style.fill: "#e8eaf6"}
+  background: "Non-zero lags:\nbackground" {style.fill: "#e8eaf6"}
+  lags -> zero
+  lags -> background
 }
-"DQ files"
 
-"Jobs\nsegment × lag × trial" -- "Condor / SLURM": {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
-}
-"cluster"
+output: "catalog.parquet + progress.parquet\none progress row per job × trial × lag" {style.fill: "#c8e6c9"}
 
-"Lags\ntime-shift hypotheses" -- "Physical Signal": {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
-}
-"zero-lag"
-
-"Lags\ntime-shift hypotheses" -- Background: {
-  style.stroke-dash: 2
-  style.stroke: "#78909c"
-  style.font-size: 10
-}
-"non-zero"
+scheduler -> job.frames
+job.zero -> output
+job.background -> output
