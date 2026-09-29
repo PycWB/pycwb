@@ -75,25 +75,10 @@ quality:
     - python tools/check_quality.py
     - python -m mypy
 
-documentation:
-  stage: test
-  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
-  needs: [build]
-  variables:
-    PYCWB_DOCS_OFFLINE: "1"
-  script:
-    - python -m pip install -r docs/requirements.txt
-    # Sphinx imports this fresh checkout, including setuptools-scm's generated version.
-    - python -m pip install --no-deps --no-build-isolation -e .
-    - TZ=UTC python -m sphinx -W --keep-going -b html docs/source docs/build/html
-  artifacts:
-    when: always
-    paths:
-      - docs/build/html/
-
 # The image already contains the built wheel. Do not install the checkout in
-# this job: the CLI subprocess runs outside it against the installed package.
-onboarding-smoke:
+# this job. Isolate pytest too, so recovery checks import the installed package
+# rather than the fresh checkout (which has no generated _version.py).
+installed-cli-smoke:
   stage: test
   image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
   needs: [build]
@@ -103,11 +88,11 @@ onboarding-smoke:
     OPENBLAS_NUM_THREADS: "1"
   script:
     - python -m pip install pytest
-    - python -m pytest tests/test_demo_e2e.py -m slow --junitxml=demo-report.xml -v
+    - python -I -m pytest tests/test_demo_e2e.py -m slow --junitxml=installed-cli-report.xml -v
   artifacts:
     when: always
     reports:
-      junit: demo-report.xml
+      junit: installed-cli-report.xml
 
 build-latest:
   rules:

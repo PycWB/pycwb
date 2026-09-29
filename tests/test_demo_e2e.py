@@ -25,6 +25,14 @@ def test_example_cli_validates_from_outside_checkout(tmp_path):
 @pytest.mark.slow
 def test_installed_synthetic_recovery(tmp_path):
     """Run the ordinary CLI outside the checkout and check persisted recovery."""
+    import pycwb
+
+    # Both pytest's recovery check and the CLI must exercise the installed wheel.
+    checkout = Path(__file__).resolve().parents[1]
+    assert not Path(pycwb.__file__).resolve().is_relative_to(checkout), (
+        "Run this installed-package test with python -I -m pytest to avoid "
+        "importing the source checkout."
+    )
     config = copy_example(tmp_path / "inputs")
     if os.environ.get("PYCWB_DEMO_XTALK"):
         xtalk = Path(os.environ["PYCWB_DEMO_XTALK"]).resolve(strict=True)

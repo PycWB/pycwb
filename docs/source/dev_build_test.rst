@@ -118,14 +118,13 @@ Continuous Integration
 
 CI runs on LIGO GitLab via ``.gitlab-ci.yml``. The native Linux image uses
 Python 3.13 and builds without the optional ROOT wavelet extension. The pipeline
-runs unit/integration tests excluding slow and fixture-dependent cases, a strict
-documentation build, onboarding tests and the standalone synthetic example against the installed package.
+runs unit/integration tests excluding slow and fixture-dependent cases, onboarding
+tests and the standalone synthetic example against the installed package.
 The independent quality job uses Python 3.11 and the pinned requirements above.
-The documentation job installs the checkout in editable mode without replacing
-the image's runtime dependencies. This generates ``pycwb/_version.py`` before
-Sphinx imports the source tree.
-CI invokes Sphinx directly for the documentation check; ``make doc-check`` is
-the equivalent local shortcut.
+The ``installed-cli-smoke`` job runs pytest with ``python -I`` so both the CLI
+and recovery checks import the installed wheel instead of the source checkout.
+Documentation builds run on Read the Docs using ``.readthedocs.yaml``, with
+Sphinx warnings treated as errors. Use ``make doc-check`` for a local check.
 The injection-consistency reference job is manual. A multi-Python/OS matrix and
 ROOT validation are not implied by the native test badge.
 
