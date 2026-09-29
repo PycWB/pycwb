@@ -25,6 +25,7 @@ release = __version__
 extensions = [
     'generate_reference',
     'stage_nav',
+    'image_cache',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosummary',
