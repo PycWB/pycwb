@@ -128,7 +128,7 @@ build-sdist:
       - dist/*
 
 publish:
-  image: python:3.10
+  image: python:3.11
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
   environment: production
   only:

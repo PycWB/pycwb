@@ -1,4 +1,5 @@
-# CI-ready image for PycWB (mirrors .gitlab-ci.yml install steps)
+# Historical ROOT/Python 3.10 reference image, not for current PycWB (Python >=3.11).
+# Current native CI uses envs/Dockerfile.ci-native.
 FROM buildpack-deps:jammy
 
 ARG ROOT_VERSION=6.26.14

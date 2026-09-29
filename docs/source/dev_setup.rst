@@ -13,7 +13,7 @@ How to set up a pycWB development environment from source.
 Prerequisites
 -------------
 
-- Python 3.10+
+- Python 3.11+
 - conda or mamba
 - Git
 - C++ compiler (for ``cwb-core/``; optional for pure-Python development)

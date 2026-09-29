@@ -40,7 +40,7 @@ prereleases. Older releases have different dependencies and may require ROOT.
 Match `pycwb --version` to the documentation version. Development documentation
 can describe features not yet available on PyPI.
 
-The current native path requires Python >=3.10 and does not require ROOT.
+The current native path requires Python >=3.11 and does not require ROOT.
 Linux x86_64/Python 3.13 is the current CI environment. Other platform coverage
 and optional ROOT/PyCBC/XGBoost setup are described in the
 [installation guide](docs/source/install.rst).

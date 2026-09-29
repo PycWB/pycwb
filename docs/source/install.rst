@@ -36,7 +36,7 @@ shown in the development documentation.
 Source installation for this development guide
 ----------------------------------------------
 
-The current native Python path requires Python 3.10 or newer. The Linux CI
+The current native Python path requires Python 3.11 or newer. The Linux CI
 container uses Python 3.13. Use a separate environment:
 
 .. code-block:: bash
@@ -67,7 +67,7 @@ Platform coverage
      - Evidence and limitations
    * - Linux x86_64, Python 3.13, CPU
      - Native CI container and automated tests. Recommended starting point.
-   * - Other Python versions >=3.10
+   * - Other Python versions >=3.11
      - Permitted by package metadata; no full multi-version CI matrix yet.
    * - macOS Intel / Apple Silicon, CPU
      - Dependency availability must be checked locally; not covered by the current CI.

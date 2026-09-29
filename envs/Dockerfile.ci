@@ -1,3 +1,5 @@
+# Historical ROOT/Python 3.10 recipe, not for current PycWB (Python >=3.11).
+# Current native CI uses envs/Dockerfile.ci-native.
 FROM buildpack-deps:jammy
 
 # ---- Install ROOT ----

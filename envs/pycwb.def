@@ -1,9 +1,12 @@
 Bootstrap: docker
 From: buildpack-deps:jammy
 
+# Historical ROOT/Python 3.10 recipe, not for current PycWB (Python >=3.11).
+# Use the current native CI container for current releases.
+
 %labels
     Author your-name
-    Description CI-ready image for PycWB (converted from Dockerfile)
+    Description Historical ROOT/Python 3.10 image; current PycWB requires Python >=3.11
 
 %environment
     export ROOTSYS=/usr/local

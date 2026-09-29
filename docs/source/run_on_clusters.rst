@@ -7,6 +7,10 @@ This guide explains how to configure and submit pycWB jobs to **HTCondor (on
 LDG)** and **SLURM** batch systems using the ``pycwb batch-setup`` and
 ``pycwb config-setup`` commands.
 
+The worker environment must contain PycWB and Python 3.11 or newer. The examples
+use the environment name ``pycwb`` from the installation guide; replace it with
+your site's compatible environment name.
+
 .. contents:: Table of Contents
    :depth: 2
    :local:
@@ -39,7 +43,7 @@ Common Settings (both Condor and SLURM)
    cluster: slurm
 
    # Conda environment to activate on the worker node
-   conda_env: igwn-py310
+   conda_env: pycwb
 
    # Additional shell commands to run before pycwb (e.g. module loads)
    additional_init: ""
@@ -96,7 +100,7 @@ Using ``pycwb batch-setup`` (already-initialised working directory):
        --cluster condor \
        --work-dir /path/to/workdir \
        --accounting-group ligo.dev.o4.burst.ebbh.cwb \
-       --conda-env igwn-py310 \
+       --conda-env pycwb \
        --n-proc 2 \
        --memory 6GB \
        --submit
@@ -182,7 +186,7 @@ Using ``pycwb batch-setup``:
    pycwb batch-setup user_parameters.yaml \
        --cluster slurm \
        --work-dir /path/to/workdir \
-       --conda-env igwn-py310 \
+       --conda-env pycwb \
        --n-proc 4 \
        --memory 8GB \
        --walltime 48:00:00 \

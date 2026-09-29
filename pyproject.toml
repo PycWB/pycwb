@@ -11,7 +11,7 @@ authors = [
     {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
 keywords = ["ligo", "physics", "gravity", "signal processing", "gravitational waves", "cwb", "coherent wave burst"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dynamic = ["version"]
 
 dependencies = [
@@ -43,7 +43,6 @@ dependencies = [
     "htcondor",
     "psutil",
     "memspectrum",
-    "exceptiongroup>=1.0.0; python_version<'3.11'",
     "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
@@ -86,7 +85,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 force-exclude = true
 extend-exclude = ["**/tests/**", "**/vendor/**", "_version.py"]
 
@@ -94,7 +93,7 @@ extend-exclude = ["**/tests/**", "**/vendor/**", "_version.py"]
 select = ["E4", "E7", "E9", "F"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 files = ["pycwb/constants/execution.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/types/stages.py", "pycwb/workflow/subflow/job_segment_stages.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/cli/validate.py", "pycwb/cli/demo.py", "pycwb/cli/doctor.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
 follow_imports = "skip"
 ignore_missing_imports = true

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require Python 3.11 or newer, matching the worker-recycling API used by batch and online searches. Remove the older-Python exception-group backport.
+
 - Propagate command exit statuses to the shell and defer scientific implementation imports until the selected command runs.
 
 - Add a packaged synthetic injection demo with a recovery check, available through `pycwb demo`.
