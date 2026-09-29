@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Demean only the regression self-witness, preserving the original target transform and separate target/witness normalization in Numba and JAX. This corrects nonzero-mean conditioning differences that can change downstream chirp estimates.
+
 - Require Python 3.11 or newer, matching the worker-recycling API used by batch and online searches. Remove the older-Python exception-group backport.
 - Run lint/type checks in a separate Python 3.11 environment with compatible NumPy stubs; runtime CI remains on Python 3.13.
 - Run the strict Sphinx check directly in CI so documentation builds do not require `make` in the runtime image.

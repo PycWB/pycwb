@@ -131,7 +131,7 @@ def test_regression_stride_is_an_explicit_jit_specialization():
 
     rng = np.random.default_rng(78)
     a, b = rng.normal(size=(2, 256)), rng.normal(size=(2, 256))
-    args = (a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
+    args = (a, b, a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
     outputs = []
     for stride in (1, 2, 1):
         actual, mask = _jax_process_layers(*args, percentile_stride=stride)

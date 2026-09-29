@@ -143,7 +143,25 @@ if _NUMBA_AVAILABLE:
         return matrix
 
     @njit(cache=True)
+    def _numba_cross_products(target_real, target_imag, real, imag, lag, boundary):
+        """Target/witness products with cWB's lag and quadrature conventions."""
+        size = len(real) - 2 * boundary
+        ww = np.empty(size, dtype=np.float64)
+        WW = np.empty(size, dtype=np.float64)
+        for i in range(size):
+            j = i + boundary
+            witness_index = j + max(lag, 0)
+            target_index = j + max(-lag, 0)
+            wr, wi = real[witness_index], imag[witness_index]
+            tr, ti = target_real[target_index], target_imag[target_index]
+            ww[i] = wr * tr + wi * ti
+            WW[i] = ti * wr - tr * wi
+        return ww, WW
+
+    @njit(cache=True)
     def _numba_process_one_layer(
+        target_real,
+        target_imag,
         real,
         imag,
         K,
@@ -164,6 +182,10 @@ if _NUMBA_AVAILABLE:
     ):
         n_time = real.shape[0]
 
+        target_power = target_real * target_real + target_imag * target_imag
+        target_norm = np.sqrt(_numba_percentile_mean(target_power, fm, edge_samples, stride))
+        valid_target = np.isfinite(target_norm) and (target_norm > 0.0)
+        safe_target = target_norm if valid_target else 1.0
         power = real * real + imag * imag
         norm0_sq = _numba_percentile_mean(power, fm, edge_samples, stride)
         norm0 = np.sqrt(norm0_sq)
@@ -184,10 +206,10 @@ if _NUMBA_AVAILABLE:
 
         v_cross = np.zeros((K4,), dtype=np.float64)
         for lag in range(-K, K + 1):
-            ww, WW = _numba_rotated_products(real, imag, lag, K)
+            ww, WW = _numba_cross_products(target_real, target_imag, real, imag, lag, K)
             idx = K + lag
-            v0 = _numba_percentile_mean(ww, fm, edge_v, stride) / base
-            v1 = _numba_percentile_mean(WW, fm, edge_v, stride) / base
+            v0 = _numba_percentile_mean(ww, fm, edge_v, stride) / safe_target / safe_norm
+            v1 = _numba_percentile_mean(WW, fm, edge_v, stride) / safe_target / safe_norm
             scale = fltr if lag == 0 else 1.0
             v_cross[idx] = v0 * scale
             v_cross[idx + half] = v1 * scale
@@ -299,16 +321,18 @@ if _NUMBA_AVAILABLE:
         NN_var /= count
         layer_power = nn_var + NN_var
 
-        included = valid_norm and valid_range and (layer_power >= apply_threshold * apply_threshold)
+        included = valid_target and valid_norm and valid_range and (layer_power >= apply_threshold * apply_threshold)
         noise = np.zeros((n_time,), dtype=np.complex128)
         if included:
             for i in range(n_time):
-                noise[i] = (nn[i] + 1j * NN[i]) * norm0
+                noise[i] = (nn[i] + 1j * NN[i]) * target_norm
 
         return noise, included
 
     @njit(cache=True, parallel=True)
     def _numba_process_layers(
+        target_real_layers,
+        target_imag_layers,
         real_layers,
         imag_layers,
         K,
@@ -334,6 +358,8 @@ if _NUMBA_AVAILABLE:
 
         for i in prange(n_layers):
             noise, included = _numba_process_one_layer(
+                target_real_layers[i],
+                target_imag_layers[i],
                 real_layers[i],
                 imag_layers[i],
                 K,

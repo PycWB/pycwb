@@ -48,6 +48,20 @@ Neither automatically selects CUDA.
      - Follow the selected legacy processor's contracts. ROOT support does not
        imply interchangeability with native payloads.
 
+Regression target and witness
+-----------------------------
+
+Both native regression engines (Numba and JAX) preserve the original target
+transform and transform a separate, mean-subtracted self-witness, following
+cWB's witness preparation. Cross-correlations use both transforms; the filter
+matrix and capped filter input use the witness. Predicted noise is restored
+with the target normalization. The caller's strain array is not modified.
+
+This correction can change regression trim decisions and downstream event
+parameters for nonzero-mean input. Use a new run directory when comparing with
+results generated before this correction and retain the source revision.
+The independent cWB sliced-RMS normalization discrepancy is not emulated.
+
 CUDA workflow assembly
 ----------------------
 
