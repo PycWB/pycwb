@@ -6,6 +6,7 @@ points release the GIL; the complete Python lag loop is not GIL-free.
 
 import importlib
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Iterable
 from functools import partial
 from pycwb.utils.function_binding import specialize as _specialize
 
@@ -134,7 +135,14 @@ _analyze_nogil_full = _specialize(
 )
 
 
-def process_lags(context, output_context, pending_lags, workers, *, full=False):
+def process_lags(
+    context: native.LagAnalysisContext,
+    output_context: native.LagOutputContext,
+    pending_lags: Iterable[int],
+    workers: int,
+    *,
+    full: bool = False,
+) -> None:
     """Run the selected private call graph with shared Python input objects."""
     from pycwb.workflow.subflow.process_job_segment_parallel import _consume_bounded
 

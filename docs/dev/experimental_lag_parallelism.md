@@ -8,16 +8,18 @@ preparation, scientific stages and output finalization.
 ## Optional GIL-releasing thread experiments
 
 The thread experiments have no `segment_processer` entry point. They live in
-`process_job_segment_nogil.py`, which exposes one function:
+`pycwb/workflow/subflow_experimental/process_job_segment_nogil.py`, which exposes one function:
 
 ```python
-from pycwb.workflow.subflow.process_job_segment_nogil import process_lags
+from pycwb.workflow.subflow_experimental.process_job_segment_nogil import process_lags
 
 process_lags(context, output_context, pending_lags, workers, full=False)
 ```
 
-Pass it as the `lag_processor` argument of the native `process_job_segment`
-(the same hook the shared-input process path uses). `full=False` selects the
+A custom segment processor can supply a `lag_processor` adapter that turns
+`skip_lags` into pending lag indices and chooses the worker count. See the
+[experimental package README](../../pycwb/workflow/subflow_experimental/README.md) for the adapter;
+`process_lags` itself accepts pending indices rather than the native hook signature. `full=False` selects the
 coherence-only wrappers; `full=True` adds the subnet and likelihood wrappers.
 The module is imported only when requested. The wrappers call existing compiled
 functions with `nogil=True` at selected Python-to-Numba boundaries, preserving

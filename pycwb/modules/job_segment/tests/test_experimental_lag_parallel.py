@@ -269,7 +269,7 @@ def test_bounded_scheduler_stops_submission_on_output_failure(monkeypatch):
 @pytest.mark.parametrize("reuse_delays", [False, True])
 def test_nogil_release_scan_preserves_cpu_results(reuse_delays):
     import numpy as np
-    from pycwb.workflow.subflow import process_job_segment_nogil as nogil
+    from pycwb.workflow.subflow_experimental import process_job_segment_nogil as nogil
     from pycwb.modules.likelihoodWP.sky_scan import scan_sky
 
     rng = np.random.default_rng(623)

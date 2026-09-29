@@ -1072,7 +1072,6 @@
   "typing|pycwb/workflow/subflow/process_job_segment_gpu.py|process_job_segment|config,job_seg,working_dir": 1,
   "typing|pycwb/workflow/subflow/process_job_segment_gpu.py|requested_cores|config,return": 1,
   "typing|pycwb/workflow/subflow/process_job_segment_native.py|process_job_segment|input_provider,lag_processor,queue,return": 1,
-  "typing|pycwb/workflow/subflow/process_job_segment_nogil.py|process_lags|context,full,output_context,pending_lags,return,workers": 1,
   "typing|pycwb/workflow/subflow/process_job_segment_parallel.py|process_job_segment|args,kwargs,return": 1,
   "typing|pycwb/workflow/subflow/process_job_segment_root.py|process_job_segment|queue,return": 1,
   "typing|pycwb/workflow/subflow/process_online_segment.py|process_online_segment|return": 1

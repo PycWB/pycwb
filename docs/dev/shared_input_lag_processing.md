@@ -83,8 +83,8 @@ scratch has not been benchmarked.
   input-file lifetime, worker initialization and native analysis calls.
 - `process_job_segment_native.py`: shared preparation, analysis, output and
   resume logic.
-- `process_job_segment_nogil.py`: separate experimental thread wrappers, loaded
-  only when one of the legacy thread entry points is selected.
+- `pycwb/workflow/subflow_experimental/process_job_segment_nogil.py`: separate experimental thread wrappers, loaded
+  only when a custom processor explicitly imports the experiment.
 - `test_experimental_lag_parallel.py`: copy-on-write isolation under real spawn,
   resume and serial fallbacks, result identity, exception propagation, cleanup
   and compatibility of the experimental thread wrappers.
