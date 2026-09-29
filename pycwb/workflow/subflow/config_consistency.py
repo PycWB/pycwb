@@ -10,6 +10,12 @@ from pycwb.config.provenance import snapshot_yaml_parameters
 from pycwb.utils.yaml_helper import load_yaml
 
 
+_SUBMISSION_SETTINGS = frozenset(
+    key for key, definition in user_parameters_schema["properties"].items()
+    if definition.get("category") == "job_submission"
+)
+
+
 def _validate_catalog_configs(config_file, catalog_files, parameters):
     """Compare parsed YAML (including defaults) before loading jobs or writing.
 
@@ -31,12 +37,15 @@ def _validate_catalog_configs(config_file, catalog_files, parameters):
                 f"Cannot verify YAML configuration {config_file} against {path}: "
                 f"the Parquet metadata has no YAML snapshot. {recovery}"
             )
-        if snapshot != parameters:
-            changed = sorted(
-                key for key in snapshot.keys() | parameters.keys()
-                if key not in snapshot or key not in parameters
-                or snapshot[key] != parameters[key]
-            )
+        # Scheduler settings can change on resubmission without changing the
+        # analysis. Keep the complete snapshots as provenance; prepared batch
+        # membership is checked separately when fragments are regenerated.
+        changed = sorted(
+            key for key in (snapshot.keys() | parameters.keys()) - _SUBMISSION_SETTINGS
+            if key not in snapshot or key not in parameters
+            or snapshot[key] != parameters[key]
+        )
+        if changed:
             raise ValueError(
                 f"YAML configuration {config_file} does not match {path}. "
                 f"Changed settings: {', '.join(changed)}. {recovery}"

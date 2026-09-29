@@ -74,6 +74,17 @@ See :ref:`postproduction` for the catalog provenance contract.
 Re-run and compare
 ------------------
 
+Resuming a prepared run compares the validated YAML with its recorded snapshot.
+Submission settings such as memory, disk, walltime and scheduler partition can
+change; analysis settings and prepared batch membership must remain consistent.
+The original catalog snapshot is retained as provenance.
+
+Catalogs created before YAML snapshots were recorded cannot be verified by the
+new loader. Continue those runs with their original software environment, or
+regenerate them in a new working directory. ``--force-overwrite`` does not
+bypass the consistency check. Preserve the existing catalogs and results when
+migrating; do not invent a snapshot for an old run.
+
 Restore the recorded environment and inputs in a new working directory.
 Compare job completion and selected exposure before comparing trigger counts,
 waveforms, statistics or efficiency. Use tolerances stated by the relevant

@@ -7,6 +7,11 @@
 - Reuse configured detector instances for injection arrival times, including
   external geometries. Already projected strains without sky coordinates keep
   their measured detector centroids instead of aborting reconstruction.
+- Allow submission settings such as YAML `job_memory`, `job_disk` and walltime
+  to change on resubmission. Analysis settings and prepared batch membership
+  remain checked. Legacy catalogs without a YAML snapshot cannot be verified:
+  continue them with their original software or regenerate in a new working
+  directory. `--force-overwrite` does not bypass this requirement.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
   unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved

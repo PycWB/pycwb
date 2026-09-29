@@ -247,6 +247,30 @@ def test_changed_fragment_rejected_even_when_root_matches(tmp_path, monkeypatch)
         load_batch_run(str(tmp_path), str(source), "10")
 
 
+@pytest.mark.parametrize("setting,value", [
+    ("job_memory", "8GB"), ("job_disk", "12GB"),
+    ("job_walltime", "96:00:00"), ("slurm_partition", "long"),
+])
+def test_submission_yaml_changes_preserve_catalog_and_allow_resume(
+    tmp_path, monkeypatch, setting, value,
+):
+    from pycwb.workflow.subflow.config_consistency import validate_run_config
+
+    _, _, _, source = setup_run(tmp_path)
+    path = tmp_path / "catalog/catalog.parquet"
+    original = path.read_bytes()
+    monkeypatch.chdir(tmp_path)
+    # Prepare a fragment with the original submission settings as well.
+    load_batch_run(str(tmp_path), str(source), "10")
+    parameters = yaml.safe_load(source.read_text())
+    parameters[setting] = value
+    source.write_text(yaml.safe_dump(parameters))
+    validate_run_config(source, tmp_path)
+    _, cfg, _, _ = load_batch_run(str(tmp_path), str(source), "10")
+    assert getattr(cfg, setting) == value
+    assert path.read_bytes() == original
+
+
 def test_legacy_catalog_requires_regeneration(tmp_path, monkeypatch):
     from pycwb.workflow.subflow.config_consistency import validate_run_config
 
