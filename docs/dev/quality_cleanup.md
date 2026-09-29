@@ -45,8 +45,10 @@ failure, pressure, resume and output acknowledgement tests remain mandatory.
 Large numerical loops and unrelated legacy typing debt are intentionally not
 rewritten to satisfy style limits.
 
-Run `python tools/check_quality.py`, `python -m mypy`, the non-slow test suite,
-and `make doc-check`. The type checker covers the 13 selected public boundary
+Run `python tools/check_quality.py` and `python -m mypy` in a clean Python 3.11
+environment with `tools/quality/requirements.txt` installed. Run the non-slow
+test suite and `make doc-check` in the scientific development environment.
+The type checker covers the 13 selected public boundary
 files listed in `pyproject.toml`; it does not type-check every numerical kernel. The checked-in quality baseline allows inherited lint and
 annotation debt, but rejects new diagnostics and missing public contracts. It is
 not a claim that every legacy function has complete types or that every possible

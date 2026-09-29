@@ -90,6 +90,29 @@ Test Categories
 The test suite includes pytest tests and unittest test cases; pytest runs both.
 
 
+Lint and Type Checks
+--------------------
+
+PycWB requires Python 3.11 or newer. Run the quality checks in a separate
+Python 3.11 environment so mypy's target and the installed dependency stubs
+describe the same Python version:
+
+.. code-block:: bash
+
+   python3.11 -m venv .venv-quality
+   .venv-quality/bin/python -m pip install -r tools/quality/requirements.txt
+   .venv-quality/bin/python tools/check_quality.py
+   .venv-quality/bin/python -m mypy
+
+The quality script rejects new lint, public-contract and import-boundary debt
+against the reviewed baseline. Mypy checks the 13 boundary files listed in
+``pyproject.toml``. This environment includes NumPy's real type stubs; the
+NumPy pin in ``tools/quality/requirements.txt`` applies only to these checks.
+The scientific runtime retains its separate ``numpy>=2`` requirement.
+These static checks do not require importing or installing the full scientific
+stack and do not replace runtime tests on the minimum supported Python.
+
+
 Continuous Integration
 ----------------------
 
@@ -97,6 +120,7 @@ CI runs on LIGO GitLab via ``.gitlab-ci.yml``. The native Linux image uses
 Python 3.13 and builds without the optional ROOT wavelet extension. The pipeline
 runs unit/integration tests excluding slow and fixture-dependent cases, a strict
 documentation build, onboarding tests and the packaged synthetic demo.
+The independent quality job uses Python 3.11 and the pinned requirements above.
 The injection-consistency reference job is manual. A multi-Python/OS matrix and
 ROOT validation are not implied by the native test badge.
 

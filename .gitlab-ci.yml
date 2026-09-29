@@ -67,10 +67,11 @@ injection-consistency:
 
 quality:
   stage: test
-  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
-  needs: [build]
+  # Match mypy's minimum-version target and its third-party stubs.
+  image: python:3.11
+  needs: []
   script:
-    - python -m pip install ruff==0.16.9 mypy==2.3.1
+    - python -m pip install -r tools/quality/requirements.txt
     - python tools/check_quality.py
     - python -m mypy
 

@@ -67,8 +67,10 @@ Platform coverage
      - Evidence and limitations
    * - Linux x86_64, Python 3.13, CPU
      - Native CI container and automated tests. Recommended starting point.
+   * - Python 3.11
+     - Minimum supported version; lint/type checks run in a separate 3.11 environment. Full runtime tests currently run on 3.13.
    * - Other Python versions >=3.11
-     - Permitted by package metadata; no full multi-version CI matrix yet.
+     - Permitted by package metadata; no full multi-version runtime CI matrix yet.
    * - macOS Intel / Apple Silicon, CPU
      - Dependency availability must be checked locally; not covered by the current CI.
    * - Windows / WSL2

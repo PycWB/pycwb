@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Require Python 3.11 or newer, matching the worker-recycling API used by batch and online searches. Remove the older-Python exception-group backport.
+- Run lint/type checks in a separate Python 3.11 environment with compatible NumPy stubs; runtime CI remains on Python 3.13.
 
 - Propagate command exit statuses to the shell and defer scientific implementation imports until the selected command runs.
 
