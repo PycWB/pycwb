@@ -6,10 +6,11 @@ Your First Search
 PycWB searches for coherent transient signals across gravitational-wave
 detectors. This tutorial recovers one deliberately loud simulated sine-Gaussian
 burst in generated Gaussian noise. It needs no detector data, collaboration
-account, ROOT installation, or source-tree example directory.
+account or ROOT installation. The example script and YAML live in the source
+checkout under ``examples/demo/``.
 
 Install the version described by this documentation using :ref:`installing_pycwb`.
-The ``demo``, ``doctor`` and ``validate`` commands are new development features;
+The ``doctor`` and ``validate`` commands are new development features;
 older PyPI releases do not contain them. Use the source installation until a
 release containing these commands is available.
 
@@ -21,19 +22,23 @@ Check the environment
    pycwb --version
    pycwb doctor
 
-Missing optional ROOT, PyCBC or XGBoost packages do not fail this check. A failed
-required import should be resolved before continuing. See :ref:`troubleshooting`.
+``doctor`` records the interpreter, platform and installed package versions.
+It reads distribution metadata and does not check backend imports, devices or
+pipeline readiness. Its zero exit status means the report was generated. Use
+``python -m pip check`` for declared dependency consistency. See :ref:`troubleshooting`.
 
 Create and run the example
 --------------------------
 
-From any directory where you can create files:
+From the source checkout, record the script path so it also works after changing
+directories:
 
 .. code-block:: bash
 
-   pycwb demo my_first_search --run
+   demo_script="$(pwd)/examples/demo/run_demo.py"
+   python "$demo_script" my_first_search --run
 
-The command copies a template shipped inside your installed package, runs one
+The script copies its adjacent example YAML, uses the installed PycWB to run one
 128-second synthetic segment with H1 and L1, and checks recovery. It refuses to
 overwrite an existing directory. Use another name for a new run.
 
@@ -44,7 +49,7 @@ are downloaded. To reuse an existing compatible catalog:
 
 .. code-block:: bash
 
-   pycwb demo another_search --run --xtalk /path/to/OverlapCatalog16-1024.bin
+   python "$demo_script" another_search --run --xtalk /path/to/OverlapCatalog16-1024.bin
 
 A successful run ends with JSON containing ``"ok": true`` and
 ``"recovered_triggers"`` of at least one. It also writes ``demo-result.json``.
@@ -59,7 +64,7 @@ Inspect the result
 .. code-block:: bash
 
    pycwb progress --work-dir my_first_search
-   pycwb demo my_first_search --check
+   python "$demo_script" my_first_search --check
 
 .. code-block:: python
 
@@ -82,7 +87,7 @@ Create another example without executing it:
 
 .. code-block:: bash
 
-   pycwb demo quieter_search
+   python "$demo_script" quieter_search
    cd quieter_search
 
 Edit ``injection.parameters.hrss`` in ``user_parameters.yaml`` from ``1.0e-21``
@@ -93,7 +98,7 @@ seeds, sky position and search settings fixed. Then run:
 
    pycwb validate user_parameters.yaml
    pycwb run user_parameters.yaml
-   pycwb demo . --check
+   python "$demo_script" . --check
 
 Compare the reconstructed waveform amplitude and ranking statistic. A sufficiently
 weak injection may fail the recovery check. Estimating efficiency requires many

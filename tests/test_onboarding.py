@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from pycwb.cli.demo import check_demo, create_demo
+from examples.demo.run_demo import check_demo, create_demo
 from pycwb.cli.main import create_parser, main
 from pycwb.cli.validate import validate_config
 
 
-def test_packaged_demo_validates_without_downloading(tmp_path, monkeypatch):
+def test_example_validates_without_downloading(tmp_path, monkeypatch):
     import requests
 
     def offline(*args, **kwargs):
@@ -196,19 +196,6 @@ def test_demo_rejects_unfinished_job(completed_demo):
         check_demo(completed_demo)
 
 
-def test_doctor_optional_failure_is_not_a_required_failure(monkeypatch, capsys):
-    from pycwb.cli import doctor
-
-    monkeypatch.setattr(doctor, "REQUIRED", {"json": "not-a-distribution"})
-    monkeypatch.setattr(doctor, "OPTIONAL", {"missing_optional_pycwb_test": "missing"})
-    assert main(["doctor", "--json"]) == 0
-    import json
-
-    assert json.loads(capsys.readouterr().out)["ok"]
-    monkeypatch.setattr(doctor, "REQUIRED", {"missing_required_pycwb_test": "missing"})
-    assert main(["doctor"]) == 1
-
-
 def test_reference_commands_match_parser():
     parser = create_parser()
     assert parser.parse_args(["merge", "--work-dir", "run", "--wave"]).wave
@@ -221,4 +208,4 @@ def test_reference_commands_match_parser():
     with pytest.raises(SystemExit):
         parser.parse_args(["prepare", "config.yaml"])
     with pytest.raises(SystemExit):
-        parser.parse_args(["demo", "run", "--run", "--check"])
+        parser.parse_args(["demo", "run"])

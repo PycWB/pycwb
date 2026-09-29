@@ -6,8 +6,7 @@ from importlib import import_module
 from pycwb import __version__
 
 COMMANDS = (
-    ("demo", "demo", "Create and verify a small synthetic search"),
-    ("doctor", "doctor", "Check the local scientific Python environment"),
+    ("doctor", "doctor", "Report interpreter, platform and installed package versions"),
     ("validate", "validate", "Check configuration syntax without downloading data"),
     ("run", "run", "Run search"),
     ("flow", "flow", "Run search through the Prefect wrapper"),

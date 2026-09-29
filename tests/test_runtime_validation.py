@@ -17,7 +17,7 @@ from pycwb.modules.likelihood_gpu.likelihood import build_likelihood
     ({'worker_output': True}, {}, 'retired'),
 ])
 def test_offline_runtime_and_factory_reject_same_options(tmp_path, gpu, extra, message):
-    params = yaml.safe_load(Path('pycwb/vendor/template/demo/user_parameters.yaml').read_text())
+    params = yaml.safe_load((Path(__file__).resolve().parents[1] / 'examples/demo/user_parameters.yaml').read_text())
     params.update(gpu=gpu, **extra)
     path = tmp_path / 'invalid.yaml'
     path.write_text(yaml.safe_dump(params))

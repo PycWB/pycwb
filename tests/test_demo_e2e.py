@@ -1,4 +1,4 @@
-"""Opt-in test of the installed package's complete beginner workflow."""
+"""Opt-in recovery test using the standalone example and installed package."""
 
 import os
 import subprocess
@@ -8,15 +8,28 @@ from pathlib import Path
 import pytest
 
 
+def test_standalone_example_from_outside_checkout(tmp_path):
+    """Creation uses the adjacent example YAML, independent of the caller's cwd."""
+    script = Path(__file__).resolve().parents[1] / "examples/demo/run_demo.py"
+    command = [sys.executable, "-I", str(script), str(tmp_path / "demo")]
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "demo/user_parameters.yaml").read_text() == (
+        script.with_name("user_parameters.yaml").read_text()
+    )
+    assert "pycwb demo" not in result.stdout
+    assert str(script) in result.stdout
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode != 0
+
+
 @pytest.mark.slow
 def test_installed_demo(tmp_path):
     """Run outside the checkout; optionally reuse a verified local catalog."""
     command = [
         sys.executable,
         "-I",
-        "-m",
-        "pycwb",
-        "demo",
+        str(Path(__file__).resolve().parents[1] / "examples/demo/run_demo.py"),
         str(tmp_path / "demo"),
         "--run",
     ]

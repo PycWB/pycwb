@@ -1,86 +1,56 @@
-"""Local environment diagnostics suitable for attaching to a bug report."""
+"""Report the local environment using installed distribution metadata."""
 
 from argparse import ArgumentParser, Namespace
-from typing import Any
-
-import importlib
+from importlib import metadata
 import json
 import platform
 import sys
-from importlib import metadata
-
-REQUIRED = {
-    "numpy": "numpy",
-    "scipy": "scipy",
-    "numba": "numba",
-    "jax": "jax",
-    "lal": "lalsuite",
-    "lalsimulation": "lalsuite",
-    "wdm_wavelet": "wdm-wavelet",
-    "pyarrow": "pyarrow",
-    "gwpy": "gwpy",
-    "astropy": "astropy",
-}
-OPTIONAL = {
-    "ROOT": "ROOT",
-    "pycbc": "pycbc",
-    "htcondor2": "htcondor",
-    "xgboost": "xgboost",
-}
+from typing import Any
 
 
 def init_parser(parser: ArgumentParser) -> None:
-    """Register machine-readable output."""
+    """Register machine-readable output for bug reports and provenance."""
     parser.add_argument(
-        "--json", action="store_true", help="Print a JSON diagnostic report"
+        "--json", action="store_true", help="Print a JSON environment inventory"
     )
 
 
 def environment_report() -> dict[str, Any]:
-    """Probe imports without network access or running an analysis."""
+    """Read package versions without probing backend imports or hardware.
+
+    Distribution metadata is the source of truth for the inventory. There is
+    deliberately no second dependency list or configuration-readiness verdict.
+    """
     from pycwb import __version__
 
-    report = {
+    packages = [
+        {"name": distribution.metadata["Name"] or "<unknown>",
+         "version": distribution.version}
+        for distribution in metadata.distributions()
+    ]
+    packages.sort(key=lambda package: (package["name"].casefold(), package["version"]))
+    return {
         "pycwb": __version__,
         "python": platform.python_version(),
         "executable": sys.executable,
         "platform": platform.platform(),
-        "checks": [],
+        "scope": (
+            "Installed package inventory; backend imports, hardware and pipeline "
+            "readiness are not checked."
+        ),
+        "packages": packages,
     }
-    for required, modules in ((True, REQUIRED), (False, OPTIONAL)):
-        for module_name, distribution in modules.items():
-            check = {"module": module_name, "required": required}
-            try:
-                module = importlib.import_module(module_name)
-                try:
-                    check["version"] = metadata.version(distribution)
-                except metadata.PackageNotFoundError:
-                    check["version"] = str(getattr(module, "__version__", "unknown"))
-                if module_name == "jax":
-                    check["devices"] = [str(device) for device in module.devices()]
-                check["ok"] = True
-            except Exception as error:  # noqa: BLE001 -- report broken dependency imports
-                check.update(ok=False, error=f"{type(error).__name__}: {error}")
-            report["checks"].append(check)
-    report["ok"] = all(check["ok"] for check in report["checks"] if check["required"])
-    return report
 
 
 def command(args: Namespace) -> int:
-    """Return failure only for required runtime probes."""
+    """Print the inventory; zero means the report was generated successfully."""
     report = environment_report()
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        print(
-            f"PycWB {report['pycwb']} | Python {report['python']} | {report['platform']}"
-        )
-        for check in report["checks"]:
-            status = (
-                "OK" if check["ok"] else ("FAIL" if check["required"] else "OPTIONAL")
-            )
-            print(
-                f"{status:8} {check['module']}: {check.get('version', check.get('error'))}"
-            )
-        print("Environment checks only; use the demo to test a complete search.")
-    return 0 if report["ok"] else 1
+        print(f"PycWB {report['pycwb']} | Python {report['python']} | {report['platform']}")
+        print(f"Interpreter: {report['executable']}")
+        print(report["scope"])
+        for package in report["packages"]:
+            print(f"{package['name']}=={package['version']}")
+    return 0

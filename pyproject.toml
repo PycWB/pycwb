@@ -94,7 +94,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["pycwb/constants/execution.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/types/stages.py", "pycwb/workflow/subflow/job_segment_stages.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/cli/validate.py", "pycwb/cli/demo.py", "pycwb/cli/doctor.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
+files = ["pycwb/constants/execution.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/types/stages.py", "pycwb/workflow/subflow/job_segment_stages.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/cli/validate.py", "pycwb/cli/doctor.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
 follow_imports = "skip"
 ignore_missing_imports = true
 check_untyped_defs = true

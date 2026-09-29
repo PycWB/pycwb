@@ -13,12 +13,12 @@ does not establish equivalence to every cWB production configuration.
      - What it establishes
      - What it does not establish
    * - ``pycwb doctor``
-     - Selected dependencies import and JAX exposes a device
-     - End-to-end execution or numerical agreement
+     - Interpreter, platform and installed distribution versions are recorded
+     - Backend imports, device availability, pipeline readiness or numerical agreement
    * - ``pycwb validate``
      - YAML/schema validity, sky units, execution/GPU settings and detector definitions
      - Data availability, all cross-field constraints or scientific suitability
-   * - ``pycwb demo --run``
+   * - ``examples/demo/run_demo.py --run``
      - One loud SGE injection is recovered by the native H1/L1 CPU workflow
      - FAR calibration, sensitivity, other networks or GPU equivalence
    * - Regular CI tests

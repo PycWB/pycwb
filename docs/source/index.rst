@@ -202,10 +202,10 @@ Quick Start
 
 .. code-block:: bash
 
-   # After installing the matching release or development checkout
+   # From the matching source checkout, with PycWB installed
    pycwb doctor
-   pycwb demo my_first_search --run
-   pycwb demo my_first_search --check
+   python examples/demo/run_demo.py my_first_search --run
+   python examples/demo/run_demo.py my_first_search --check
 
 See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
 for detailed installation options.

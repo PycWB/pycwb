@@ -23,7 +23,7 @@ For a bug report, include:
 * operating system, Python version and ``pycwb doctor`` output;
 * the exact command, smallest useful YAML and a public/synthetic reproducer;
 * expected behavior, observed behavior and relevant traceback;
-* whether the unmodified bundled demo works.
+* whether the unmodified standalone example in ``examples/demo/`` works.
 
 Keep private data and credentials out of public issues. Send a suspected
 security problem privately to the package contact rather than publishing

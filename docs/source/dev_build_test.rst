@@ -119,7 +119,7 @@ Continuous Integration
 CI runs on LIGO GitLab via ``.gitlab-ci.yml``. The native Linux image uses
 Python 3.13 and builds without the optional ROOT wavelet extension. The pipeline
 runs unit/integration tests excluding slow and fixture-dependent cases, a strict
-documentation build, onboarding tests and the packaged synthetic demo.
+documentation build, onboarding tests and the standalone synthetic example against the installed package.
 The independent quality job uses Python 3.11 and the pinned requirements above.
 CI invokes Sphinx directly for the documentation check; ``make doc-check`` is
 the equivalent local shortcut.
@@ -153,8 +153,10 @@ Verifying Before PR
    python -m pip install --force-reinstall --no-deps dist/*.whl
    python -m pytest tests/test_demo_e2e.py -m slow
 
-The packaged-demo subprocess uses Python isolated mode (``-I``), so the current
-checkout and ``PYTHONPATH`` cannot hide a missing wheel resource. Use a separate
+The standalone example subprocess uses Python isolated mode (``-I``), so it
+imports PycWB from the installed package while loading the example YAML from
+the source checkout. The checkout and ``PYTHONPATH`` cannot replace installed
+pipeline modules. Use a separate
 environment for this wheel check. Set ``PYCWB_DEMO_XTALK`` to the absolute path
 of a compatible local catalog to avoid downloading it.
 

@@ -13,12 +13,17 @@ Common workflows
 .. code-block:: bash
 
    pycwb doctor
-   pycwb demo my_first_search --run
-   pycwb validate my_first_search/user_parameters.yaml
-   pycwb progress --work-dir my_first_search
+   pycwb validate user_parameters.yaml
+   pycwb run user_parameters.yaml
+   pycwb progress --work-dir my_search
    pycwb merge --work-dir my_search
    pycwb merge --work-dir my_search --wave
    pycwb xtalk input.bin --output_dir converted
+
+``doctor`` reports the interpreter, platform and all installed distribution
+versions from Python package metadata. A zero exit status means the report was
+generated; it does not certify backend imports, devices or pipeline readiness.
+Use ``python -m pip check`` separately for declared dependency consistency.
 
 ``validate`` checks a rendered YAML configuration without data access.
 ``batch-setup`` builds job metadata and scheduler files, including catalog

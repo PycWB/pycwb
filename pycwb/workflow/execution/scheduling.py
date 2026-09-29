@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pycwb.config import Config
+    from pycwb.types.job import WaveSegment
 
 
 def validate_batch_id(batch_id: str) -> int:
@@ -14,7 +19,9 @@ def validate_batch_id(batch_id: str) -> int:
     return int(batch_id[1:])
 
 
-def prepare_batch_fragments(working_dir, config, job_groups) -> None:
+def prepare_batch_fragments(
+    working_dir: str | Path, config: Config, job_groups: list[list[WaveSegment]]
+) -> None:
     """Create batch catalogs, preserving existing results only for identical jobs.
 
     Check every existing batch before publishing new fragments so regrouping

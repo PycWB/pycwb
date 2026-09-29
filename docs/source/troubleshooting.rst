@@ -3,13 +3,17 @@
 Troubleshooting
 ===============
 
-Start by recording the package version and checking the environment:
+Start by recording the package version and environment inventory, then check
+declared dependency consistency:
 
 .. code-block:: bash
 
    pycwb --version
    pycwb doctor
    python -m pip check
+
+``doctor`` lists installed package metadata; it does not probe imports or
+certify that a chosen backend can run.
 
 If Python cannot import PycWB at all, ``doctor`` may not start. Confirm the active
 interpreter with ``python -c "import sys; print(sys.executable)"`` and reinstall
@@ -20,7 +24,7 @@ Command not found or unrecognized command
 
 Activate the environment in which PycWB was installed. Try
 ``python -m pycwb --help`` with the current source version. An older release may
-lack ``demo``, ``doctor``, ``validate`` or ``prepare``; select matching release
+lack ``doctor`` or ``validate``; select matching release
 documentation or install the development checkout. Avoid mixing a new tutorial
 with an older environment.
 
@@ -42,7 +46,7 @@ Cross-talk catalog unavailable
 
 A first run downloads a missing catalog from the public PycWB cross-talk data
 repository. On an offline machine, copy a compatible catalog from an online
-machine and pass its path to ``pycwb demo ... --xtalk PATH``. For other searches,
+machine and pass ``--xtalk PATH`` to ``examples/demo/run_demo.py``. For other searches,
 set ``filter_dir`` and ``wdmXTalk`` explicitly. Record the checksum and verify
 that the catalog covers ``l_low`` through ``l_high``.
 
@@ -67,7 +71,8 @@ First check completion:
 .. code-block:: bash
 
    pycwb progress --work-dir my_first_search --verbose
-   pycwb demo my_first_search --check
+   # From the source checkout:
+   python examples/demo/run_demo.py my_first_search --check
 
 Inspect the run log, injection time, detector network and search band. For a
 modified example, a faint injection can legitimately be missed. Do not change
@@ -103,4 +108,4 @@ Still stuck
 -----------
 
 Use :ref:`support` and include the failing command, version, minimal YAML,
-relevant traceback, and whether the bundled demo succeeds.
+relevant traceback, and whether the standalone example succeeds.

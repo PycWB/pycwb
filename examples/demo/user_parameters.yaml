@@ -1,4 +1,5 @@
-# Small, deliberately loud synthetic signal. Educational settings, not a
+# Small, deliberately loud synthetic signal for the standalone example.
+# Educational settings, not a
 # production sensitivity or significance measurement.
 analysis: 2G
 ifo: [L1, H1]

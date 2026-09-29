@@ -1,10 +1,11 @@
-"""A packaged injection example with an explicit recovery check."""
+"""Run the synthetic injection example and check recovery with an installed PycWB."""
 
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -33,13 +34,9 @@ def init_parser(parser: ArgumentParser) -> None:
 
 def create_demo(directory: str | Path, xtalk: str | Path | None = None) -> Path:
     """Create a new project; never overwrite an existing directory."""
-    from importlib.resources import files
-
     import yaml
 
-    template = (
-        files("pycwb").joinpath("vendor/template/demo/user_parameters.yaml").read_text()
-    )
+    template = Path(__file__).with_name("user_parameters.yaml").read_text()
     if xtalk is not None:
         xtalk = Path(xtalk).resolve(strict=True)
         if not xtalk.is_file():
@@ -135,7 +132,7 @@ def command(args: Namespace) -> int:
             print("Next: cd into the demo directory, then run:")
             print("  pycwb validate user_parameters.yaml")
             print("  pycwb run user_parameters.yaml")
-            print("  pycwb demo . --check")
+            print(f"  python {shlex.quote(str(Path(__file__).resolve()))} . --check")
             return 0
         from pycwb.workflow.run import search
 
@@ -160,3 +157,9 @@ def command(args: Namespace) -> int:
         return 1
     finally:
         os.chdir(original_directory)
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser(description=__doc__)
+    init_parser(parser)
+    raise SystemExit(command(parser.parse_args()))

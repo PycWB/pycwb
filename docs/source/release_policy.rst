@@ -22,7 +22,7 @@ Release checklist for maintainers
 
 1. Update ``CHANGES.md`` with user-visible changes, known limitations and upgrade
    instructions, including scientific behavior changes.
-2. Run the regular tests, strict documentation build and packaged demo. Record
+2. Run the regular tests, strict documentation build and standalone recovery example. Record
    which numerical reference comparisons were run and their outcome.
 3. Verify a clean installation from the built wheel/source distribution,
    including packaged templates. Check version reporting outside the checkout.
