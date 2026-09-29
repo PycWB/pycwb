@@ -45,7 +45,6 @@ The ``gated.yaml`` prepared in :doc:`tutorial_signals` contains:
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/gated.yaml
    pycwb run tutorial-work/gated.yaml --work-dir tutorial-work/runs/gated
 
 Inspect ``conditioning/job_*/trial_*/diagnostics.json`` beneath that run.

@@ -26,7 +26,6 @@ Run with an explicit CPU budget
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/bounded.yaml
    pycwb run tutorial-work/bounded.yaml --work-dir tutorial-work/runs/bounded
    pycwb progress --work-dir tutorial-work/runs/bounded --verbose
 

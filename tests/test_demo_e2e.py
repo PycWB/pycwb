@@ -11,15 +11,20 @@ import yaml
 from synthetic_recovery_helpers import check_recovery, copy_example
 
 
-def test_example_cli_validates_from_outside_checkout(tmp_path):
-    """The copied example is accepted by the installed CLI without a runner."""
+def test_installed_run_rejects_invalid_config_from_outside_checkout(tmp_path):
+    """The normal run command checks YAML before accessing data or catalogs."""
     config = copy_example(tmp_path / "inputs")
+    config.write_text("[]\n")
+    working_dir = tmp_path / "search"
     result = subprocess.run(
-        [sys.executable, "-I", "-m", "pycwb", "validate", str(config)],
+        [sys.executable, "-I", "-m", "pycwb", "run", str(config),
+         "--work-dir", str(working_dir)],
         cwd=tmp_path, capture_output=True, text=True, timeout=60,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert not (tmp_path / "catalog").exists()
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "Expected a YAML mapping" in result.stderr
+    assert not (working_dir / "catalog").exists()
+    assert not (working_dir / "wdmXTalk").exists()
 
 
 @pytest.mark.slow

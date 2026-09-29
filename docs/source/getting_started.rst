@@ -20,7 +20,6 @@ Already installed?
 .. code-block:: bash
 
    # From a source checkout, with PycWB installed
-   pycwb validate examples/demo/user_parameters.yaml
    pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
    pycwb progress --work-dir my_first_search
 

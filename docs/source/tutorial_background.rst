@@ -20,7 +20,6 @@ Run nonzero lags
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/background.yaml
    pycwb run tutorial-work/background.yaml \
      --work-dir tutorial-work/runs/background --list-jobs
    pycwb run tutorial-work/background.yaml \

@@ -27,12 +27,11 @@ those frames, and ``inRate`` with their sample rate. Update ``gps_start``,
 intervals; keep detector order consistent across ``ifo``, channels and frame
 lists. Use :doc:`job_control` for segment, DQ and frame-discovery behavior.
 
-For already available local frames, omit the GWOSC download step. Validate
-your complete YAML, inspect the listed jobs and run in a new work directory:
+For already available local frames, omit the GWOSC download step. Inspect the
+listed jobs and run in a new work directory:
 
 .. code-block:: bash
 
-   pycwb validate user_parameters.yaml
    pycwb run user_parameters.yaml --work-dir RUN_DIRECTORY --list-jobs
    pycwb run user_parameters.yaml --work-dir RUN_DIRECTORY
 

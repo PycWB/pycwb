@@ -16,9 +16,9 @@ comparisons used in development. See :doc:`dev_build_test` for commands.
    * - Check
      - What it establishes
      - What it does not establish
-   * - ``pycwb validate``
-     - YAML/schema validity, sky units, execution/GPU settings and detector definitions
-     - Data availability, all cross-field constraints or scientific suitability
+   * - Configuration-loading tests
+     - Rejection of invalid YAML, schema values, sky units, execution/GPU settings and detector definitions
+     - Data availability or scientific suitability
    * - Synthetic CLI recovery test (``tests/test_demo_e2e.py``)
      - When passing: one loud SGE injection is recovered through the installed CLI
      - FAR calibration, sensitivity, other networks or GPU equivalence

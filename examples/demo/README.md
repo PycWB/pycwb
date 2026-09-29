@@ -3,7 +3,6 @@
 From the repository root, with PycWB installed:
 
 ```bash
-pycwb validate examples/demo/user_parameters.yaml
 pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
 pycwb progress --work-dir my_first_search
 ```
@@ -34,7 +33,7 @@ catalog fields and output files using figures produced by this helper.
 No detector strain download or collaboration account is needed. The first run
 may download the cross-talk catalog and compile numerical kernels. To reuse a
 local catalog, copy the YAML and set `filter_dir` to its directory and `wdmXTalk`
-to its filename before validating and running that copy.
+to its filename before running that copy.
 
 Inspect `my_first_search/catalog/catalog.parquet` and the products under
 `my_first_search/trigger/`. Completion reported by `pycwb progress` establishes

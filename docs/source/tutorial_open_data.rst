@@ -16,7 +16,6 @@ and the corresponding GWOSC channel names, and analyzes zero lag.
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/open_data.yaml
    pycwb gwosc-data tutorial-work/open_data.yaml --work-dir tutorial-work
    pycwb run tutorial-work/open_data.yaml \
      --work-dir tutorial-work/runs/open_data --list-jobs

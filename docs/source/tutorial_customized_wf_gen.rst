@@ -33,7 +33,6 @@ linearly polarized sine-Gaussian normalized to a requested source hrss:
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/custom_waveform.yaml
    pycwb run tutorial-work/custom_waveform.yaml \
      --work-dir tutorial-work/runs/custom_waveform
 

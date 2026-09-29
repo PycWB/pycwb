@@ -236,7 +236,6 @@ Troubleshoot input data
 - **Coverage fails early**: ``pycwb run ... --list-jobs`` runs job setup. A
   detector without frames, or frames that do not cover a job's padded window
   without gaps, raises ``ValueError`` there, before any strain is read.
-  ``pycwb validate`` does not check data availability.
 - **Sample rate matches** ``inRate``: the log line
   ``data info: start=..., duration=..., rate=...`` shows each merged detector
   series. A rate mismatch is a ``ValueError`` naming the frame file.

@@ -4,7 +4,6 @@ From the repository root, in an installed PycWB environment:
 
 ```bash
 python examples/tutorials/prepare.py
-pycwb validate tutorial-work/patch.yaml
 pycwb run tutorial-work/patch.yaml --work-dir tutorial-work/runs/patch
 ```
 
@@ -29,4 +28,3 @@ nonzero time slides. This is a small educational background, not an estimate
 of a published event's significance.
 
 See the documentation's Tutorials section for the exercises and interpretation.
-Neither preparation nor offline validation establishes signal recovery.

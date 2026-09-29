@@ -15,7 +15,6 @@ From the repository root, in your installed PycWB environment:
 .. code-block:: bash
 
    python examples/tutorials/prepare.py
-   pycwb validate tutorial-work/all_sky.yaml
    pycwb run tutorial-work/all_sky.yaml --work-dir tutorial-work/runs/all_sky
    pycwb progress --work-dir tutorial-work/runs/all_sky
 

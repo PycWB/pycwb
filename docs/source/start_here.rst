@@ -96,11 +96,9 @@ Run the search
 
 .. code-block:: bash
 
-   pycwb validate user_parameters.yaml
    pycwb run user_parameters.yaml --work-dir my_first_search
 
-``validate`` checks the YAML before the search starts. Use a fresh work
-directory for each run.
+Use a fresh work directory for each run.
 
 The first execution may download the approximately 53 MiB wavelet cross-talk
 catalog and compile numerical kernels. Allow several minutes and several GiB

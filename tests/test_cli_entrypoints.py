@@ -34,8 +34,8 @@ def run_entrypoint(entrypoint, prelude, arguments):
 def test_shell_receives_command_status(entrypoint, status, expected):
     result = run_entrypoint(
         entrypoint,
-        f"import pycwb.cli.validate\npycwb.cli.validate.command = lambda args: {status!r}",
-        ["validate", "unused.yaml"],
+        f"import pycwb.cli.run\npycwb.cli.run.command = lambda args: {status!r}",
+        ["run", "unused.yaml"],
     )
     assert result.returncode == expected, result.stderr
 

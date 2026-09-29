@@ -92,7 +92,7 @@ The first implementation adds 17 pages (three learning-path indexes and 14 lesso
 
 Checks performed on 2026-09-29, using Python 3.13 in the local development environment:
 
-- All 13 final generated YAML configurations pass offline `pycwb validate`.
+- All 13 final generated YAML configurations passed YAML/schema, runtime-setting and detector-definition checks.
 - Synthetic searches exercised all-sky, fixed/patch/custom/displaced masks, HLV and custom geometry, custom waveforms, population, gating and bounded execution. Runs used the compatible local cross-talk catalog and one numerical thread for this check.
 - The final four-source population recovered three sources. Simulation summary and a right match retained four rows, including the weakest source with no trigger ID.
 - The multi-run comparison workflow generated its plots, manifest and HTML report from actual all-sky/fixed/patch catalogs.

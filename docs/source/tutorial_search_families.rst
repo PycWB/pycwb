@@ -47,7 +47,6 @@ Perform a small band-selection experiment
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/band_exclusion.yaml
    pycwb run tutorial-work/band_exclusion.yaml \
      --work-dir tutorial-work/runs/band_exclusion
 

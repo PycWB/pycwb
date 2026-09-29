@@ -11,7 +11,6 @@ Compare H1/L1 with H1/L1/V1
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/hlv.yaml
    pycwb run tutorial-work/hlv.yaml --work-dir tutorial-work/runs/hlv
 
 The prepared configuration adds V1 and a third independent noise seed. The
@@ -51,7 +50,6 @@ angle units and geometry validation rules.
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/custom_network.yaml
    pycwb run tutorial-work/custom_network.yaml \
      --work-dir tutorial-work/runs/custom_network
 

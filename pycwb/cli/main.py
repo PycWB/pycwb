@@ -6,7 +6,6 @@ from importlib import import_module
 from pycwb import __version__
 
 COMMANDS = (
-    ("validate", "validate", "Check configuration syntax without downloading data"),
     ("run", "run", "Run search"),
     ("flow", "flow", "Run search through the Prefect wrapper"),
     ("batch-setup", "batch_setup", "Set up batch run"),

@@ -11,14 +11,12 @@ Common workflows
 
 .. code-block:: bash
 
-   pycwb validate user_parameters.yaml
    pycwb run user_parameters.yaml
    pycwb progress --work-dir my_search
    pycwb merge --work-dir my_search
    pycwb merge --work-dir my_search --wave
    pycwb xtalk input.bin --output_dir converted
 
-``validate`` checks a rendered YAML configuration without data access.
 ``batch-setup`` builds job metadata and scheduler files, including catalog
 fragments for planned batches; it can download a missing cross-talk catalog.
 See :ref:`start_here`, :ref:`troubleshooting`, and :ref:`run_on_clusters` for

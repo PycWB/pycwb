@@ -15,7 +15,6 @@ Run and match to truth
 
 .. code-block:: bash
 
-   pycwb validate tutorial-work/population.yaml
    pycwb run tutorial-work/population.yaml \
      --work-dir tutorial-work/runs/population
    pycwb simulation-summary --work-dir tutorial-work/runs/population

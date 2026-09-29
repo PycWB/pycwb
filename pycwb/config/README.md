@@ -8,7 +8,7 @@ Importing a policy module does not load the full analysis `Config`; the public
 | --- | --- | --- |
 | `execution.py` | `execution` | Scheduling profile, planner/executor selection, CPU and memory budgets, input-cache policy |
 | `processing.py` | `execution_profile` | Native numerical choices, implementation optimizations, WDM options and runtime diagnostics |
-| `validation.py` | Multiple blocks | Cross-field checks shared by offline validation and runtime loading |
+| `validation.py` | Multiple blocks | Cross-field checks shared by configuration loading and runtime restoration |
 | `config.py` | Full configuration | Load settings, resolve model snapshots and derive analysis parameters |
 
 `execution.profile: scalable` selects scheduling infrastructure in

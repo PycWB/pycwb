@@ -13,8 +13,7 @@ The documentation can be found at [docs.pycwb.org](https://docs.pycwb.org).
 
 ## Get started
 
-This checkout contains the new `validate` command. Until a
-release containing it is published, install this source checkout:
+To run the bundled example from a source checkout:
 
 ```bash
 conda create -n pycwb -c conda-forge python=3.13 pip nds2-client python-nds2-client lalsuite python-ligo-lw
@@ -23,7 +22,6 @@ git clone https://git.ligo.org/yumeng.xu/pycwb.git
 cd pycwb
 python -m pip install .
 pycwb --version
-pycwb validate examples/demo/user_parameters.yaml
 pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
 pycwb progress --work-dir my_first_search
 ```
@@ -49,7 +47,6 @@ and optional ROOT/PyCBC/XGBoost setup are described in the
 ## Run your own analysis
 
 ```bash
-pycwb validate user_parameters.yaml
 pycwb run user_parameters.yaml
 ```
 
