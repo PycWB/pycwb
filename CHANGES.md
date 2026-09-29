@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Apply native supercluster size and statistics cuts to isolated clusters even
+  when no clusters link. Previously those candidates bypassed the cuts. Trigger
+  selection and background counts can change; production impact has not been
+  quantified against a full cWB reference run.
 - Accept bare elementwise `max`/`min` in prediction cuts, matching training cuts.
 
 - Import the frame-reader job type directly from its defining module, avoiding a cold-import cycle through job segmentation and injection SNR setup.

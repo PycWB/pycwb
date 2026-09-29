@@ -549,6 +549,10 @@ def aggregate_clusters_from_links(cluster_ids: np.ndarray, cluster_links: np.nda
         Each inner list holds the cluster indices belonging to one component.
         Isolated clusters appear as single-element lists.
     """
+    # The compiled reducer needs a nonempty edge list to size its graph.
+    if len(cluster_links) == 0:
+        return [[int(c)] for c in cluster_ids]
+
     # Build connected components.
     aggregated_clusters = aggregate_clusters(cluster_links)
     aggregated_clusters = [list(cluster) for cluster in aggregated_clusters]

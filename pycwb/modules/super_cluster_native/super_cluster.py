@@ -118,10 +118,8 @@ def supercluster(
     # remove redundant links
     # cluster_links = remove_duplicates_sorted(cluster_links[np.lexsort((cluster_links[:, 1], cluster_links[:, 0]))])
 
-    if len(cluster_links) == 0:
-        return clusters
-
-    # aggregate clusters
+    # Isolated clusters still need the same size/statistics cuts as linked
+    # clusters; the aggregator returns singleton groups for an empty graph.
     aggregated_clusters = aggregate_clusters_from_links(cluster_ids, cluster_links)
 
     superclusters = []
