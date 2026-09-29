@@ -25,6 +25,11 @@ def prediction_mask(frame, expression):
     ]:
         text = text.replace(root, python)
 
+    # Training cuts also accept bare, elementwise max/min functions.
+    # Match calls only, preserving column names and qualified functions.
+    text = re.sub(r"(?<![\w.@])max\s*\(", "@maximum(", text)
+    text = re.sub(r"(?<![\w.@])min\s*\(", "@minimum(", text)
+
     def column(match):
         base, index = match.groups()
         return "rho0_std" if base == "rho" and index == "0" else base + index

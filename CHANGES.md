@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Accept bare elementwise `max`/`min` in prediction cuts, matching training cuts.
+
 - Import the frame-reader job type directly from its defining module, avoiding a cold-import cycle through job segmentation and injection SNR setup.
 
 - Demean only the regression self-witness, preserving the original target transform and separate target/witness normalization in Numba and JAX. This corrects nonzero-mean conditioning differences that can change downstream chirp estimates.

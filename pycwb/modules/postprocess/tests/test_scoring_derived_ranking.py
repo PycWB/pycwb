@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from pycwb.modules.postprocess import evaluate
 
@@ -71,3 +72,28 @@ def test_q_features_match_cwb_array_flattening_precision():
     result = preprocess_events(events, 2, {"readfile(vars)": [], "Qp(index)": 1}, {})
     np.testing.assert_array_equal(result.Qa, expected_qa)
     np.testing.assert_array_equal(result.Qp, expected_qp)
+
+
+@pytest.mark.parametrize("expression", [
+    "sqrt(ecor/(1+penalty*(max(1.0,penalty)-1)))>6.5",
+    "min(1.0, penalty)<0.5",
+    "max(penalty, min(1.0, ecor))>1.5",
+    "max_value > max (1.0, penalty)",
+])
+def test_prediction_min_max_match_root_and_training_selection(expression):
+    from pycwb.modules.cwb_xgboost.read_data import apply_training_cuts
+    from pycwb.modules.postprocess.prediction_cuts import prediction_mask
+
+    frame = pd.DataFrame({
+        "ecor": [25., 100., 400., 81.],
+        "penalty": [1., 1., 2., .25],
+        "max_value": [0., 2., 3., 0.],
+    }, index=[3, 8, 13, 21])
+    root_expression = expression.replace("max(", "TMath::Max(").replace(
+        "min(", "TMath::Min("
+    ).replace("max (", "TMath::Max(")
+    mask = prediction_mask(frame, expression)
+    pd.testing.assert_series_equal(mask, prediction_mask(frame, root_expression))
+    pd.testing.assert_frame_equal(
+        frame.loc[mask].reset_index(drop=True), apply_training_cuts(frame, expression)
+    )
