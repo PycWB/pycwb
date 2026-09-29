@@ -16,8 +16,7 @@ Use `GitHub issues <https://github.com/PycWB/pycwb/issues>`_ or
 `GitLab issues <https://git.ligo.org/yumeng.xu/pycwb/-/issues>`_.
 If you cannot access either tracker, email the package contact at
 `yumeng.xu@ligo.org <mailto:yumeng.xu@ligo.org>`_.
-You do not need access to LIGO Slack to report a problem. No response-time
-commitment is currently advertised.
+You do not need access to LIGO Slack to report a problem.
 
 For a bug report, include:
 
@@ -40,10 +39,6 @@ on LIGO GitLab; see :ref:`dev_contributing`. Start with a small
 change and explain the user-facing behavior it improves. Be respectful and
 constructive; critique the work rather than the person.
 
-Near-term roadmap
------------------
+.. raw:: html
 
-The next maturity steps are a published native stable release with matching
-documentation, clean-install coverage on more platforms, release-specific
-scientific validation reports, and reproducible versioned containers. These are
-work items, not claims that those platforms or releases are already validated.
+   <span id="near-term-roadmap"></span>

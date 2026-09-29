@@ -62,7 +62,7 @@ candidate is scientifically relevant:
    :width: 100%
 
    Example output from the seeded all-sky exercise. The curves use each
-   dataset's saved epoch and sample rate; values can vary with the code version.
+   dataset's saved epoch and sample rate.
 
 Select a recovered row before running this block; an empty selection needs
 investigation rather than an arbitrary event. For real data there is no

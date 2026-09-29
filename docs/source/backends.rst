@@ -5,11 +5,10 @@ Scientific backends and execution support
 
 Choose a scientific implementation separately from the workflow scheduler.
 ``execution.profile`` controls job admission and input reuse; ``execution_profile``
-controls numerical conventions and processing options. Their models live in
-``pycwb.config.execution`` and ``pycwb.config.processing``, respectively.
-Neither automatically selects CUDA.
+controls numerical conventions and processing options. Select the CUDA
+processor explicitly with ``segment_processer``, as shown below.
 
-.. list-table:: Backend contracts
+.. list-table:: Backend options
    :header-rows: 1
    :widths: 18 28 27 27
 
@@ -24,43 +23,31 @@ Neither automatically selects CUDA.
        Shared-input lag workers fall back to serial for injections.
        Catalog progress supports resume.
      - Injection trials, catalog records, saved waveforms and plots follow
-       native configuration. Numerical reference and end-to-end tests apply.
+       native configuration.
    * - JAX likelihood (experimental)
      - ``likelihoodWPGPU``; JAX device backend, mostly FP32 kernels
      - A separate likelihood implementation; it is not the CUDA workflow
-       selected below. Scheduler/resume guarantees require a compatible
-       processor adapter; no equivalent whole-job matrix is claimed.
-     - Do not infer CPU/CUDA parity or injection support from the package name.
-       Its kernel tests do not certify every full-pipeline configuration.
+       selected below. Scheduling and resume depend on the processor adapter.
+     - A likelihood-stage implementation; use the native or CUDA workflow
+       for the complete search and its output options.
    * - CUDA workflow (experimental)
      - ``coherence_gpu``, ``super_cluster_gpu``, ``likelihood_gpu``,
        ``pycwb.utils.gpu``; NVIDIA driver, bundled NVRTC and JAX CUDA wheels, x64 enabled
      - Simple or scalable job scheduling; spawned lag workers own device state.
        Parent commits catalog progress. Resume requires matching recorded options.
-     - Whole-job performance/parity evidence covers catalog-only LF/HF/LD
-       background. Injections use serial lag dispatch, but this is not equivalent
-       to full CUDA injection validation. Product restrictions depend on the
-       output options described below.
+     - Injections use serial lag dispatch. Saved products and injection support
+       depend on ``output_batch`` and ``q_reconstruction``; see below.
    * - ROOT compatibility
      - Legacy ROOT-backed modules and cWB library
-     - Legacy workflow contracts; scalable processors without an input-provider
-       contract use supervised direct reads and receive no cache-reuse guarantee.
-     - Follow the selected legacy processor's contracts. ROOT support does not
-       imply interchangeability with native payloads.
+     - Legacy processors without an input-provider adapter read data directly
+       instead of using the scalable executor's input cache.
+     - Uses ROOT-backed data structures; see :doc:`dev_cxx_core`.
 
-Regression target and witness
------------------------------
+.. raw:: html
 
-Both native regression engines (Numba and JAX) preserve the original target
-transform and transform a separate, mean-subtracted self-witness, following
-cWB's witness preparation. Cross-correlations use both transforms; the filter
-matrix and capped filter input use the witness. Predicted noise is restored
-with the target normalization. The caller's strain array is not modified.
+   <span id="regression-target-and-witness"></span>
 
-This correction can change regression trim decisions and downstream event
-parameters for nonzero-mean input. Use a new run directory when comparing with
-results generated before this correction and retain the source revision.
-The independent cWB sliced-RMS normalization discrepancy is not emulated.
+For regression and whitening, see :doc:`data_conditioning`.
 
 CUDA workflow assembly
 ----------------------
@@ -77,36 +64,17 @@ Add this overlay to an otherwise valid search YAML::
       lag_workers: 1
       output_batch: 1
 
-Start with one worker. More workers require measured CPU/RAM/device capacity;
-worker counts are limits, not speed guarantees. Run ``pycwb validate`` first,
-then a representative paired validation job (``gpu.validate_stages: true``).
-Validation repeats native work and must be disabled for performance measurements.
-The driver, available devices, wavelet sizes, frame data and segment injections
-are checked at runtime; offline validation cannot establish their suitability.
+Start with one worker and measure CPU, host-memory and device-memory use before
+increasing concurrency. ``gpu.validate_stages: true`` compares CUDA stages with
+the native calculation; disable it when measuring performance because it
+repeats that work.
 
-The supplied native recipe accepts ordinary, keyword-only function replacements.
-The GPU entry point chooses these functions directly and shares native trial,
-resume and output handling. There is no fixed stage bundle. A user-selected
-``segment_processer`` owns its composition and can call scientific modules in a
-different sequence, subject to their data dependencies. Reusing the native
-recipe is optional; its ``lag_processor`` argument also allows replacing the
-whole lag loop. See ``examples/custom_workflow`` for a CLI-driven example.
-
-Detailed numerical callback contracts live beside their consumers, in
-``coherence_native.callbacks``, ``super_cluster_native.callbacks`` and
-``likelihoodWP.callbacks`` under ``pycwb.modules``. They describe individual
-operations, not a workflow order. GPU factories create process-owned callables;
-modules may reuse native payloads and algorithms without importing the workflow.
-CUDA kernel handles are cached by source, architecture and context identity;
-reset/unloaded handles are rebuilt on the next load. Recreate GPU callables after
-resetting a device: their existing buffers also belong to the old context.
 
 Output combinations
 -------------------
 
 * With ``output_batch: 1`` and ``q_reconstruction: false``, the parent uses
-  native reconstruction and save logic. The workflow does not categorically
-  reject all plots, waveforms or injections.
+  native reconstruction and save logic, including waveforms, plots and injections.
 * ``output_batch > 1`` rejects saved waveforms and segments with injections.
   Trigger records are committed before progress; uncommitted lags rerun on resume.
 * ``q_reconstruction: true`` computes only the whitened REC/DAT products needed
@@ -114,23 +82,16 @@ Output combinations
   reconstruction when those products are needed.
 * ``dpf: true`` with ``execution_profile.scalar_dpf: false`` is rejected both
   offline and at runtime.
-* ``worker_output: true`` is retired. Remove it to use parent output. A historical
-  128-lag LF comparison found exact records but slower execution; maintaining a
-  second output path provided no measured benefit. False remains readable in
-  old configuration snapshots. If an existing catalog recorded true, use a new
-  working directory; recorded options must not be rewritten to bypass resume checks.
+* Remove the retired ``worker_output: true`` option to use parent output.
+  If an existing catalog recorded it as true, start a new working directory.
+  Old snapshots with ``worker_output: false`` remain readable.
 
-These combinations are covered by ``tests/test_runtime_validation.py`` and the
-GPU output, pipeline, resume and numerical tests. Numerical tests skip when CUDA
-is unavailable; a CPU-only CI pass is not CUDA evidence. Historical measurements
-and retained alternatives are described in :doc:`validation_status` and
-``docs/dev/quality_cleanup.md`` in the source tree.
 
 GPU option reference
 --------------------
 
-Generated from the same nested schema used for configuration validation. All
-boolean defaults are false; CPU preparation and lag worker counts default to one.
+All boolean defaults are false; CPU preparation and lag worker counts default
+to one.
 
 .. exec::
 
@@ -147,16 +108,6 @@ boolean defaults are false; CPU preparation and lag worker counts default to one
 Compatibility and naming
 ------------------------
 
-Code imports the stage packages listed above directly. CUDA runtime helpers live
-in ``pycwb.utils.gpu``; scientific comparison helpers live in
-``pycwb.modules.stage_validation`` and profiling lives in ``pycwb.workflow.profiling``.
-The development-only ``background_cuda`` compatibility namespace has been removed.
-Use the processor path in the example above and explicit scheduling arguments
-for ``read_data.parallel`` and ``data_conditioning.parallel``. Regression tests
-live alongside their owning modules and workflows.
-
-The retired worker-output import is removed with its experimental implementation.
-Chirp bootstrap host helpers live in ``likelihoodWP.chirp_bootstrap``.
-Existing YAML spellings ``segment_processer`` and ``parallel_injection_trail`` remain supported.
-The corrected ``optimize_sky_loc_from_td`` also retains the historical misspelled
-import alias. Avoid renaming persisted configuration keys without a migration.
+The YAML spellings ``segment_processer`` and ``parallel_injection_trail``
+remain supported. Use the processor path in the example above to select the
+CUDA workflow.

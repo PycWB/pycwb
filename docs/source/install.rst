@@ -65,13 +65,11 @@ Continue with :doc:`start_here` or :doc:`postproduction`.
 
 .. _choose-a-release-channel:
 
-* :ref:`installation_release_channels`: stable and prerelease installation
-  commands. Match the documentation version to ``pycwb --version``.
+* :ref:`installation_release_channels`: stable and prerelease installation options.
 
 .. _platform-coverage:
 
-* :ref:`platform_coverage`: tested platforms and current limitations.
 
 .. _build-the-documentation:
 
-* :ref:`building_documentation`: build this documentation locally.
+For development and documentation builds, see :doc:`dev_setup`.

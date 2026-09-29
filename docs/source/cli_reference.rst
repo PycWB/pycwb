@@ -3,9 +3,8 @@
 CLI Reference
 =============
 
-This reference is generated from the command parser for documentation version
-|release|. Check your installation with ``pycwb --version``. Each command also
-accepts ``--help``. ``python -m pycwb`` runs the CLI with the active interpreter.
+Use ``pycwb --help`` to list commands and ``pycwb COMMAND --help`` for a
+command's options. ``python -m pycwb`` runs the CLI with the active interpreter.
 
 Common workflows
 ----------------

@@ -345,26 +345,22 @@ importance type (``weight``, ``gain``, ``cover``, ``total_gain``,
      ...
 
 
-Validation Checks
------------------
+.. raw:: html
 
-After training an XGBoost model, verify:
+   <span id="validation-checks"></span>
 
-- **Train and FAR samples are disjoint**: with the ``interval_livetime``
-  split, check that no (``shift_key``, ``lag_idx``) interval appears in both
-  intervals files; the same job IDs appear in both by design. With a
-  whole-job split, check that no job ID appears in both job files.
-- **Features are stable across chunks**: plot feature distributions for each
-  training chunk. Large shifts indicate data quality issues or different
-  noise conditions.
-- **Model improves separation without pathological background sculpting**:
-  the ranking statistic should separate BKG and SIM distributions clearly.
-  The FAR curve with the model should be steeper than the SNR-only curve,
-  but should never be flatter or bumpy.
-- **Feature importances are physically reasonable**: the SNR-like feature
-  (``rho0_<cap>``) should be among the dominant ones. If a low-level feature
-  dominates, investigate data leakage or label errors.
+Evaluate the trained model
+--------------------------
 
+Keep model-training data separate from FAR and sensitivity evaluation samples.
+With ``interval_livetime``, compare the selected (``shift_key``, ``lag_idx``)
+intervals; the same job IDs can appear in both partitions. With a whole-job
+split, compare the job lists.
+
+Compare the trained ranking with the original statistic at the same FAR on an
+independent evaluation population. Inspect feature distributions across data
+chunks and the training diagnostics in :doc:`postproduction_report` when
+investigating a change in performance.
 
 ----
 

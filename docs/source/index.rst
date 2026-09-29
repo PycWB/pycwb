@@ -23,11 +23,6 @@ for gravitational-wave burst searches.
        <a href="pipeline_lifecycle.html#search-lifecycle-animation">Watch the full 60-second search lifecycle</a>.</figcaption>
    </figure>
 
-.. rst-class:: docs-version
-
-   Version |release|. Match it to ``pycwb --version``. Development documentation
-   may include unreleased features; check :ref:`release_policy` before installing.
-
 .. _quick-start:
 
 Get started
@@ -37,7 +32,7 @@ Get started
 
    * :doc:`Install PycWB <install>`
 
-     Choose a version and prepare your environment.
+     Install the package and its dependencies.
 
    * :doc:`Run your first search <start_here>`
 

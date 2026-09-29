@@ -258,8 +258,12 @@ conditioned strains at each level from ``l_low`` to ``l_high``
 (:doc:`wdm_transform`).
 
 
-Validation checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect conditioned data
+------------------------
 
 - **Analysis rate**: the ``Resampling data from … to …`` log lines should
   end at ``rateANA``. ``Sample rate is not consistent`` means the input is

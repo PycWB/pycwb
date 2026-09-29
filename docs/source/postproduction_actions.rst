@@ -3,11 +3,8 @@
 Post-Production Action Reference
 ================================
 
-This page is the canonical catalog of actions that can be used in the
-``steps`` section of a post-production workflow.  It lists every function in
-``pycwb.modules.postprocess`` registered with ``@action_spec``.  For a
-complete pipeline assembled from these actions, start with
-:ref:`postproduction_workflow`.
+Use these actions in the ``steps`` section of a postproduction workflow.
+For a complete example, start with :ref:`postproduction_workflow`.
 
 
 Choosing The Main Actions
@@ -129,10 +126,14 @@ relative to ``work_dir``.  Keep ``cleanup_tmp: never`` until the workflow is
 validated, then choose ``on_success`` for routine production.
 
 
-Scientific And Reproducibility Checks
--------------------------------------
+.. raw:: html
 
-Before running a production pipeline, verify all of the following:
+   <span id="scientific-and-reproducibility-checks"></span>
+
+Prepare consistent inputs
+-------------------------
+
+Use consistent selections and inputs across workflow actions:
 
 * Background used for FAR is disjoint from model training data, and its live
   time describes exactly the selected rows or intervals.
@@ -328,7 +329,6 @@ Training, scoring, and FAR
 
 .. autofunction:: pycwb.modules.postprocess.train_xgboost.train_xgboost
    :no-index:
-
 
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_catalog

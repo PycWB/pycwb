@@ -141,8 +141,7 @@ execution environment switches unset.
      - 1
      - Positive integer sampling stride for regression percentile statistics.
        One uses every sample; larger values subsample the statistic and can
-       change its value. This trades statistical sampling for work reduction
-       and must not be treated as a guaranteed numerically identical speedup.
+       change its value while reducing the calculation cost.
 
 For example, these are explicit calculation choices, not a general tuning
 recommendation:
@@ -156,16 +155,14 @@ recommendation:
      regression_percentile_stride: 1
 
 Hold these choices constant across performance comparisons. The bounded CPU
-recipe enables the first three, so enabling that entire recipe changes more
-than execution strategy. Matching a release oracle establishes agreement for
-the tested inputs; it does not by itself establish scientific accuracy or
-statistical detection-efficiency equivalence for a new analysis.
+recipe enables the first three, so selecting the entire recipe changes both
+the numerical calculation and the execution strategy.
 
 Detector geometry and exported angles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The per-detector ``detector_geometry`` selection is a physical-input choice;
-see :ref:`detector_support` for definitions, defaults and measured differences.
+see :ref:`detector_support` for definitions and defaults.
 Vertex vectors are Earth-centered positions in metres, and arm vectors are
 dimensionless. The default LAL-derived entries construct vectors from geographic
 parameters; the cWB entries retain literal rounded vectors.

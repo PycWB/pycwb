@@ -282,28 +282,21 @@ Interpreting Efficiency Results
   injections per waveform type.
 
 
-Validation Checks
------------------
+.. raw:: html
 
-After computing efficiency, verify:
+   <span id="validation-checks"></span>
 
-- **Efficiency saturates at 100% for loud signals**: with
-  ``exclude_vetoed: true``, the efficiency curve should approach 1.0 at high
-  :math:`h_{rss}`. If it plateaus below 100%, check for a pipeline bug (e.g.,
-  waveform generation errors or matching problems). With the default
-  ``exclude_vetoed: false``, compare the plateau with the fraction of
-  non-vetoed injections first.
-- **hrss50/hrss90 are consistent across waveform families**: similar waveform
-  types should have similar sensitivity. Large outliers suggest injection
-  parameter errors. Check the fit ``status`` column of the fit-parameters CSV
-  (``fit_status`` in the hrss50 CSV) before comparing values.
-- **Binomial error bars are reasonable**: with N injections per amplitude, the
-  error is :math:`\sqrt{\epsilon(1-\epsilon)/N}`. Error bars > 20% indicate
-  insufficient statistics.
-- **Efficiency at low amplitude approaches FAR probability**: very faint
-  signals are indistinguishable from background, so efficiency should
-  approach (not equal) the false-alarm probability at threshold.
+Read efficiency curves
+----------------------
 
+Read each curve together with its eligible injection count, uncertainty and
+ranking threshold. Include missed eligible injections in the denominator and
+account for the ``exclude_vetoed`` setting when interpreting the plateau.
+
+Compare waveform families using their frequency content and chosen amplitude
+coordinate. Inspect the fit ``status`` column (``fit_status`` in the hrss50 CSV)
+before quoting hrss50 or hrss90; the sampled amplitudes must cover the requested
+crossing. Add trials or amplitude points where the curve is poorly determined.
 
 ----
 

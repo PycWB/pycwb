@@ -37,8 +37,7 @@ Process and preserve results
    reproducibility
    troubleshooting
 
-Look up exact options in :doc:`schema` and :doc:`cli_reference`. Check
-:doc:`validation_status` before extending a result beyond the tested scope.
+Look up exact options in :doc:`schema` and :doc:`cli_reference`.
 
 .. toctree::
    :hidden:

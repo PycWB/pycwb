@@ -258,8 +258,12 @@ Configuration
 ``plot_trigger``, ``plot_waveform`` and ``plot_sky_map`` for that run.
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect saved products
+----------------------
 
 - **Progress first**: run ``pycwb progress --work-dir <run>``. A missing
   (job, trial, lag) row means that lag failed, was interrupted or never ran.

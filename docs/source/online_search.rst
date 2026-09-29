@@ -59,10 +59,10 @@ reader with the same work directory; inspect its recovery log and whether
 previously handled candidates are repeated. Do not infer recovery only from
 the process starting successfully.
 
-Use the generated stream to inspect measured latency. Shorter strides create
-more overlapping work; they do not guarantee lower total latency if processing
-cannot keep up. Local ranking thresholds alone do not establish a calibrated
-online false-alarm rate.
+Use the generated stream to measure latency and choose a stride that the
+processor can sustain. Shorter strides create more overlapping work. To assign
+a false-alarm rate to online candidates, configure a background estimate for
+the same search.
 
 **Keep with the run:** a record of input frame times, completed windows, emitted
 candidates and restart behavior. The example README describes deployment

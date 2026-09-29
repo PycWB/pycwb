@@ -7,10 +7,8 @@ Choose an Analysis Task
 
    <span id="id1"></span>
 
-These short routes identify the inputs, guides and completion checks for common
-research tasks. Configuration and commands are maintained in the linked
-:doc:`run_analyses`, so each procedure has one authoritative version.
-For a prepared experiment to learn from, use :doc:`tutorials`.
+Choose a research task to find its required inputs, configuration guide and
+expected outputs. For a prepared experiment to learn from, use :doc:`tutorials`.
 
 .. _table-of-contents:
 

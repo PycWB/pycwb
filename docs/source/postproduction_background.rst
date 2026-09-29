@@ -315,8 +315,12 @@ Key actions for background workflows:
      - Randomly downsample catalogs
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect the background estimate
+-------------------------------
 
 After running background estimation, verify:
 

@@ -367,8 +367,12 @@ Related Config Parameters
      - Flatten job segments by trial for parallel processing
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect injection recovery
+--------------------------
 
 After setting up injections, verify:
 
@@ -377,13 +381,14 @@ After setting up injections, verify:
   injections usually mean the time range or DQ segments are wrong.
 - **Recovered sim_idx matches injection table**: after running, match
   ``catalog.parquet`` against ``simulations.parquet`` with
-  ``pycwb match-simulations``. Unmatched injections indicate recovery failure.
+  ``pycwb match-simulations``. Inspect unmatched sources alongside their
+  amplitudes, search cuts and matching window.
 - **Sky distribution matches requested mask**: plot the RA/Dec of injected
   signals to verify they follow the requested distribution (UniformAllSky,
   Patch, Fixed, or Custom).
-- **Waveform amplitudes scale correctly**: for ``hrss_scaling``, verify that
-  the injected :math:`h_{rss}` matches the target value (± a few percent after
-  resampling).
+- **Waveform amplitude**: for ``hrss_scaling``, compare the requested source
+  :math:`h_{rss}` with the generated polarizations, and inspect the detector
+  projections after resampling.
 
 
 ----

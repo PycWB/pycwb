@@ -594,25 +594,21 @@ This is the Python workflow analogue of the cWB-2G cluster loop:
         └── write trigger and postproduction inputs
 
 
-Validation Checks
------------------
+.. raw:: html
 
-After configuring likelihood parameters, verify:
+   <span id="validation-checks"></span>
 
-- **SNR distribution is reasonable**: peak near ``netRHO``, smooth tail to
-  high SNR. A sharp cutoff at ``netRHO`` without a tail suggests the
-  threshold is too aggressive.
-- **Sky positions are physically distributed**: for all-sky searches, triggers
-  should cover the full sky (modulo antenna pattern sensitivity). Clustering
-  at one sky location suggests a detector artifact or xtalk.
-- **:math:`\chi^2` distribution is well-behaved**: :math:`\chi^2 \sim 1` for
-  the bulk of triggers. A long tail of high :math:`\chi^2` indicates glitch
-  contamination.
-- **``delta`` and ``cfg_gamma`` aren't causing sky bias**: for 2-detector
-  networks, check that the sky distribution of triggers isn't artificially
-  peaked at the degenerate sky locations that the regulators are meant to
-  suppress.
+Inspect reconstructed candidates
+--------------------------------
 
+Use the catalog's ranking, correlation and sky quantities together with the
+reconstructed waveforms to understand which candidates passed the configured
+cuts.
+
+To study a regulator or search-mode change, compare the same background and
+injection population under both settings. Inspect which candidates pass the
+cuts, how their sky estimates change and which signals are recovered. See
+:doc:`tutorial_comparisons` for a worked comparison.
 
 ----
 

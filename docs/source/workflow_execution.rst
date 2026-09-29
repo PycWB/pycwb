@@ -166,8 +166,12 @@ and select unfinished work within those prepared fragments.
 After completion, follow :ref:`cluster_collect_results` for merging and
 preserving the result set.
 
-Limits and validation
----------------------
+.. raw:: html
+
+   <span id="limits-and-validation"></span>
+
+Memory and performance
+----------------------
 
 Memory reservations and sampled monitoring are not a hard OS memory limit.
 Scientific peaks can exceed estimates between samples. The runtime can stop
@@ -179,9 +183,8 @@ workload and supported injection/output settings. Paired stage validation
 repeats work, so disable it when measuring speed; keep the numerical comparison
 and the performance measurement as separate results.
 
-Fresh worker startup and decoding overhead can make small jobs slower. Measure
-end-to-end performance before assuming a speedup, and compare scientific outputs
-on representative workloads before enabling the profile for a campaign.
+Worker startup and decoding overhead can make small jobs slower. Measure
+end-to-end runtime on a representative workload when choosing worker counts.
 
 Implementation reference
 ------------------------

@@ -17,8 +17,8 @@ as an all-sky analysis.
 
 **Completion check:** the mask is interpreted in the intended frame at the event
 time, recovered positions are inspected against it, and the background describes
-the same search. Measure the recovery and ranking changes; a smaller mask or a
-finer grid does not guarantee fewer triggers or better localization.
+the same search. Compare recovery, ranking and reconstructed positions before
+and after changing the mask or grid.
 
 **Worked example:** :doc:`tutorial_sky_masks`.
 

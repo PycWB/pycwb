@@ -3,19 +3,16 @@
 Releases and Compatibility
 ==========================
 
-Match software, examples and documentation
-------------------------------------------
+Release versions
+----------------
 
-``latest`` documentation is built from the development checkout. Stable and
-prerelease documentation should be built from the corresponding Git tags. The
-page title contains the checkout's package version. Until a tagged build is
-published, use the source checkout for newly documented features.
+.. raw:: html
 
-``pip install pycwb`` normally selects a stable release. ``--pre`` allows
-prereleases; an explicit ``pycwb==VERSION`` selects a recorded version. Consult
-`PyPI <https://pypi.org/project/PycWB/#history>`_ for available versions, then
-follow that release's requirements. Never infer compatibility from the word
-"latest" across PyPI, documentation and container tags.
+   <span id="match-software-examples-and-documentation"></span>
+
+The ``latest`` documentation follows development. For a released version,
+select its documentation in the version menu. Available releases are listed
+in the `PyPI release history <https://pypi.org/project/PycWB/#history>`_.
 
 .. _release-checklist-for-maintainers:
 
@@ -27,38 +24,27 @@ steps, and hosted documentation settings.
 Choose a release channel
 ------------------------
 
-**Stable release:** install the version appropriate for your analysis, then
-select that version in the documentation. The PyPI release description contains
-its installation requirements; older ROOT-based releases have different
-requirements from the native Python path described below.
+**Stable release:** install the latest stable package from PyPI.
 
 .. code-block:: bash
 
    python -m pip install pycwb
    pycwb --version
 
-**Prerelease:** alpha releases require an explicit version or ``--pre``. An
-explicit version is preferable when preserving an analysis environment.
+**Prerelease:** include ``--pre`` to install alpha and other prereleases.
 
 .. code-block:: bash
 
    python -m pip install --pre pycwb
    pycwb --version
 
-Check the `PyPI release history <https://pypi.org/project/PycWB/#history>`_
-for available versions. Do not assume a prerelease contains every feature
-shown in the development documentation.
+To install a specific version, use ``python -m pip install pycwb==VERSION``.
+See :doc:`install` for environment setup and optional dependencies.
 
 Compatibility changes
 ---------------------
 
-Document CLI, YAML, Python API and output-format changes separately. For each
-breaking change, provide an old/new example and state whether existing runs can
-be resumed or must be regenerated. Scientific changes such as detector geometry,
-normalization, thresholds or matching conventions need explicit release notes
-even when the file format is unchanged.
+Read ``CHANGES.md`` for changes to commands, configuration and output formats.
+Catalog and job-manifest compatibility is described in :doc:`catalog_format`.
 
-The project does not yet promise a fixed deprecation-support interval or a
-stable interface for every internal module. Prefer documented workflow APIs;
-record exact revisions for custom integrations. Existing catalog compatibility
-rules are described in :ref:`postproduction`.
+Use the documented interfaces in :doc:`reference` when writing integrations.

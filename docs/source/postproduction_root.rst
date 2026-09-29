@@ -106,11 +106,8 @@ in-memory versus Parquet equality and the existing native selection action.
 It saves input hashes, ROOT version, reference output, selected entries,
 rate curves and a summary. Assertion failures terminate the check.
 
-Passing these checks isolates the tested postproduction steps from production
-trigger differences. It supports reusing pycWB for cWB background results;
-it does not prove that all postproduction configurations are bug-free. Extend
-the same-trigger tests to fixed-model scores, external vetoes, simulation
-truth/matching and efficiency before claiming parity for those stages.
+These comparisons use the same input triggers, so differences identify
+postproduction behavior rather than differences between searches.
 
 Simulations, training and standard-command validation
 -----------------------------------------------------
@@ -182,5 +179,3 @@ from the saved native model. Declare them in the report's ``training.plots``.
 For each ``simulation_runs`` entry, declare ``efficiency_file``,
 ``efficiency_summary_file`` and its plot in ``plots``. Supply the JSON written by
 ``collect_comparisons`` as ``validation_file`` to add a Consistency checks tab.
-This provides numerical evidence for the configurations exercised, not a proof
-that all postproduction configurations are free of bugs.

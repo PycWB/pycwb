@@ -40,9 +40,8 @@ trigger. Multiple matches can occur; counting matched rows is not the same
 as counting recovered injections. Use the injection identity, eligibility
 and recovery rules described in :doc:`postproduction_efficiency`.
 
-In the checked example run, the right match retained all four sources: three
-had a recovered trigger and the weakest had an empty ``id``. Treat that as a
-worked example, not a recovery guarantee for other versions or settings.
+In this example, the right match retained all four sources: three had a
+recovered trigger and the weakest had an empty ``id``.
 
 Change one population choice
 ----------------------------

@@ -234,8 +234,12 @@ Implementation
   :py:mod:`~pycwb.modules.postprocess.waveform_report`.
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect the report
+------------------
 
 After building the report, verify:
 

@@ -19,7 +19,7 @@ Already installed?
 
 .. code-block:: bash
 
-   # From the matching source checkout, with PycWB installed
+   # From a source checkout, with PycWB installed
    pycwb validate examples/demo/user_parameters.yaml
    pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
    pycwb progress --work-dir my_first_search
@@ -28,9 +28,8 @@ See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
 for detailed installation options.
 
 
-Before using results in an analysis, read :doc:`validation_status` and
-:doc:`reproducibility`. For a failed installation or run, use
-:doc:`troubleshooting` or :doc:`support`.
+For help with installation or a failed run, use :doc:`troubleshooting`
+or :doc:`support`.
 
 Continue with :doc:`tutorials` for worked examples or :doc:`run_analyses` for
 workflows using your own inputs.

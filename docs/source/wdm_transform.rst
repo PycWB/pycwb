@@ -255,8 +255,12 @@ Output
 - **XTalk object**: passed to the sub-network cut and to likelihood.
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Troubleshoot transform setup
+----------------------------
 
 - **Resolution log**: each level logs ``rate(hz)``, ``layers``, ``df(hz)`` and
   ``dt(ms)``; compare with the table for your ``rateANA``.

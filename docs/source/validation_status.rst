@@ -1,10 +1,14 @@
 .. _validation_status:
 
-Validation Scope and Limitations
-================================
+Test Coverage
+=============
 
-Different checks support different claims. A successful installation or demo
-does not establish equivalence to every cWB production configuration.
+.. raw:: html
+
+   <span id="validation-scope-and-limitations"></span>
+
+This page describes the automated checks, platform coverage and reference
+comparisons used in development. See :doc:`dev_build_test` for commands.
 
 .. list-table::
    :header-rows: 1
@@ -65,6 +69,5 @@ For a scientific release, attach a validation record with:
 * compared quantities, tolerances, measured differences and test commands;
 * known exceptions and the release/configurations to which the record applies.
 
-The presence of a comparison script is not evidence that it passed for the
-release being used. No comprehensive release validation matrix is claimed by
-this page. Experimental modules are identified in :ref:`modules_guide`.
+Include the results of the comparisons you ran in the release record.
+Experimental modules are listed in :ref:`modules_guide`.

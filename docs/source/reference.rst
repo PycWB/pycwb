@@ -30,7 +30,6 @@ Data and conventions
    units_conventions
    detector_support
    glossary
-   validation_status
 
 Programming interfaces
 ----------------------
@@ -50,5 +49,5 @@ Indexes and search
 * :ref:`modindex`: Python module index.
 * :ref:`search`: search all documentation.
 
-The :doc:`package` page retains shortcuts to configuration, classes, modules,
-constants, and utilities for existing bookmarks.
+See :doc:`package` for shortcuts to configuration, classes, modules,
+constants, and utilities.

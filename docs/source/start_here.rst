@@ -96,14 +96,11 @@ Run the search
 
 .. code-block:: bash
 
-   pycwb --version
    pycwb validate user_parameters.yaml
    pycwb run user_parameters.yaml --work-dir my_first_search
 
-``validate`` checks the configuration before processing; it does not run the
-search. If an older installed release has no ``validate`` command, omit that
-preflight command. The search also loads and validates its configuration.
-Use a fresh work directory for each run.
+``validate`` checks the YAML before the search starts. Use a fresh work
+directory for each run.
 
 The first execution may download the approximately 53 MiB wavelet cross-talk
 catalog and compile numerical kernels. Allow several minutes and several GiB
@@ -121,10 +118,9 @@ Check that processing finished
 
    pycwb progress --work-dir my_first_search
 
-Expect one completed job/trial/lag combination. In the run used for this page,
-it contained **one trigger** and **128 seconds of analyzed livetime**. Completion
-and recovery are separate checks: a completed empty catalog is different from
-a failed job, but this deliberately loud example should recover its source.
+Expect one completed job/trial/lag combination. This example produced
+**one trigger** and **128 seconds of analyzed livetime**. If no trigger appears,
+see :ref:`troubleshooting`.
 
 Find the recovered event
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -146,8 +142,7 @@ Run this in Python or a notebook from your tutorial folder:
    ]
    print("Candidates near the injection:", len(recovered))
 
-Each catalog row is a candidate. The checked run gave the following values
-(small differences across versions and numerical environments are possible):
+Each catalog row is a candidate. The example run produced these values:
 
 .. list-table:: Example recovered event
    :header-rows: 1
@@ -230,9 +225,8 @@ amplitude and arrival time because of detector geometry. Noise and the selected
 time-frequency pixels leave differences between injection and reconstruction.
 For direct HDF access and further plots, continue with :doc:`tutorial_event_inspection`.
 
-This CPU run used the unmodified demo YAML and a local cross-talk catalog. The
-:download:`example result summary <_static/img/first_search/summary.json>`
-records the software versions, configuration hash, event values and completion.
+Download the :download:`example result summary <_static/img/first_search/summary.json>`
+for the event values and run details.
 
 Change one setting
 ------------------
@@ -255,7 +249,7 @@ settings fixed. Then run:
 
 Compare the catalog's ``rho`` and the waveform amplitudes with the first run.
 The plotting script preserves amplitudes in strain, so it does not normalize
-away the change. In the checked repeat, the quieter source was still recovered,
+away the change. In the second run, the quieter source was still recovered,
 and ``rho`` decreased from **169.96 to 98.62**. The statistic need not scale
 exactly with source amplitude. A sufficiently weak injection may produce no
 candidate; the script reports that case instead of selecting an unrelated event.

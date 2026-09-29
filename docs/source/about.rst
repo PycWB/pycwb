@@ -37,7 +37,7 @@ Search animation
 Watch the :ref:`60-second search lifecycle animation <search_lifecycle_animation>`
 to follow a simulated signal from detector projection through reconstruction
 and time-slide background estimation. The :doc:`pipeline_lifecycle` page
-explains each stage and the animation's scope.
+explains each stage.
 
 
 Project links
@@ -74,4 +74,4 @@ For citation guidance and BibTeX entries, see :doc:`credit`.
    release_policy
    support
 
-For the earlier audience-based navigation, see :doc:`choose_your_path`.
+For suggestions based on your interests, see :doc:`choose_your_path`.

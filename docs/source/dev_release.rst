@@ -24,3 +24,12 @@ Enabling hosted documentation versions and publishing archives are maintainer
 service settings; changing the repository alone does not publish a release.
 
 For user-facing version and compatibility guidance, see :doc:`release_policy`.
+
+Compatibility notes
+-------------------
+
+Document CLI, YAML, Python API and output-format changes separately. For each
+breaking change, provide an old/new example and state whether existing runs can
+be resumed or must be regenerated. Scientific changes such as detector geometry,
+normalization, thresholds or matching conventions need explicit release notes
+even when the file format is unchanged.

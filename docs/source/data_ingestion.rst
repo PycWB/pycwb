@@ -223,8 +223,12 @@ one per detector in ``ifo`` order. Each series:
   fixed-amplitude injections.
 
 
-Validation checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Troubleshoot input data
+-----------------------
 
 - **Frames exist and are named correctly**: every file in a ``frFiles`` list
   must exist and be named ``...-<gps>-<duration>.gwf`` (GPS start ≥ 1104105616,

@@ -168,8 +168,7 @@ used unconditionally by ``burst_population``. NumPy and ROOT random streams
 differ, so equal seeds do not imply equal WNB realizations.
 
 ``pycwb.modules.injection.snr_scaling.target_snr_scales`` computes per-source
-network-SNR multipliers from clean detector data. It replaces ``snr_population``;
-the unimplemented ``par_generator.snr_scaling`` placeholder was removed.
+network-SNR multipliers from clean detector data.
 Population parameter generation remains separate from signal normalization.
 Meyer resampling lives in ``pycwb.modules.data_conditioning.resampling`` and
 is applied by the segment workflow before regression and whitening.

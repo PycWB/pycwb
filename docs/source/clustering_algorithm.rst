@@ -405,22 +405,20 @@ Config Quick Reference
      - Upsample factor for TD filter rate
 
 
-Validation Checks
------------------
+.. raw:: html
 
-After tuning clustering parameters, verify:
+   <span id="validation-checks"></span>
 
-- **Number of clusters scales with segment length**: longer segments should
-  produce proportionally more clusters. A flat or zero count suggests the
-  pixel selection threshold is too strict.
-- **Superclusters merge within TFgap**: every merge must be justified by at
-  least one pixel pair within the ``TFgap`` metric. Because links are
-  transitive (and defragmentation merges further within ``Tgap``/``Fgap``),
-  constituent pixels themselves can be far apart.
-- **Defragmentation doesn't merge independent events**: verify that
-  ``Tgap`` and ``Fgap`` are small enough that distinct astrophysical
-  signals (e.g., from different sources) are not merged into one event.
+Inspect clusters
+----------------
 
+Inspect the selected pixels and cluster boundaries when changing clustering
+settings. ``TFgap`` links pixel pairs transitively, so the outermost pixels of
+a supercluster can be far apart. ``Tgap`` and ``Fgap`` can merge nearby
+structures further during defragmentation.
+
+Compare the same data before and after a parameter change to see which
+structures split or merge, and how those changes affect recovered events.
 
 ----
 

@@ -4,9 +4,9 @@ Understanding Your Results
 ==========================
 
 A trigger is a reconstructed candidate that passed the configured search cuts.
-It is not automatically an astrophysical detection. The synthetic demo checks
-that the software can recover a known signal; it does not measure a false-alarm
-rate, population efficiency or production sensitivity.
+To assess its significance, compare it with the search background. Injection
+populations measure how often the search recovers signals; see
+:ref:`postproduction_background` and :ref:`postproduction_efficiency`.
 
 Inspect a catalog
 -----------------
@@ -113,5 +113,5 @@ Compute exposure from completed jobs and the actual interval/lag selection,
 including vetoes and overlap handling. ``N_jobs × N_lags × segLen`` is only an
 idealized check when every job has that usable duration and no selection losses.
 
-Next, preserve an analysis using :ref:`reproducibility` and check the scope of
-validation in :ref:`validation_status`.
+Continue with :doc:`tutorial_event_inspection` to plot an event, or
+:doc:`postproduction_study` to analyze a collection of runs.

@@ -5,8 +5,7 @@
 Choose Your Path
 ================
 
-The main sections now follow the kind of documentation you need. This page
-keeps the audience-based routes for existing readers.
+Choose a starting point based on what you want to do with PycWB.
 
 .. list-table::
    :header-rows: 1
@@ -60,5 +59,4 @@ Not Sure Where to Start?
      - :doc:`modules`
 
 
-The earlier :doc:`decision_guides` page remains available as an explicitly
-marked placeholder; its recommendations have not been validated.
+See :doc:`decision_guides` for links to configuration and analysis choices.

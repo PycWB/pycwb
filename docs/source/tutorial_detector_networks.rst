@@ -21,8 +21,8 @@ forecast of the actual detectors' relative sensitivities.
 
 Compare detector arrival times, ``rho``, ``net_cc``, sky position and saved
 waveforms with ``all_sky``. Use :doc:`tutorial_comparisons` to keep both runs
-in one report. A new detector does not guarantee improvement for every source:
-its response, noise and the search settings all matter.
+in one report. The change in recovery depends on the added detector's response,
+noise and search settings.
 
 For a realistic noise comparison, supply one PSD per detector in the same
 order as ``ifo`` under ``injection.segment.noise.psds``. Keep PSD frequency and
@@ -55,11 +55,9 @@ angle units and geometry validation rules.
    pycwb run tutorial-work/custom_network.yaml \
      --work-dir tutorial-work/runs/custom_network
 
-Inspect the saved configuration/geometry provenance and the reconstructed
-X1 waveform. A geometry definition supplies neither real data nor a PSD;
-both must be provided for your own instrument. This extension uses the
-supported ground-detector response model and does not establish support for
-moving space interferometers.
+Inspect the saved detector geometry and reconstructed X1 waveform. For your
+own instrument, supply its data and noise model along with its geometry.
+The response model assumes fixed ground-based detectors.
 
 **Result to keep:** a comparison of recovery and sky reconstruction for the
 three networks, stating which geometry and noise model each run used.
