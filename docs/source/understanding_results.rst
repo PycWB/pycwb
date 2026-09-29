@@ -65,8 +65,6 @@ Output directory
 
    * - Path
      - Purpose
-   * - ``user_parameters.yaml``
-     - Input settings for the demo
    * - ``config/user_parameters.yaml``
      - Configuration copied during run setup
    * - ``catalog/catalog.parquet``
@@ -79,10 +77,8 @@ Output directory
      - Event-specific products selected by the output flags
    * - ``output/``
      - Additional pipeline products, including waveform files when enabled
-   * - ``log/demo.log``
-     - Log from the standalone example with ``--run``; ordinary runs also log to the console
-   * - ``demo-result.json``
-     - Recovery-check result and elapsed time from the standalone example
+
+The CLI writes its run log to the terminal; redirect it to a file when needed.
 
 Batch runs have fragment catalogs until merged. See :ref:`run_on_clusters` and
 ``pycwb merge --help``. Transfer the full catalog directory and any externally
@@ -94,7 +90,7 @@ Empty catalogs and failed jobs
 Use ``pycwb progress --work-dir my_first_search`` before interpreting trigger
 counts. A completed job with zero triggers is different from a missing or failed
 job. An empty catalog can be scientifically reasonable for background or weak
-injections. The deliberately loud standalone example must recover its injection.
+injections. The deliberately loud CLI example must recover its injection.
 
 FAR, IFAR and efficiency
 ------------------------

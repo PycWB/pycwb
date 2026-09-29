@@ -9,7 +9,7 @@
 
 - Propagate command exit statuses to the shell and defer scientific implementation imports until the selected command runs.
 
-- Keep the synthetic injection example and recovery check in `examples/demo/`, outside the production CLI.
+- Run the synthetic injection YAML in `examples/demo/` through the ordinary `pycwb` CLI; keep recovery assertions in the test suite.
 - Add offline configuration checks, including execution/GPU settings and detector definitions (`pycwb validate`), a metadata-based environment inventory (`pycwb doctor`), and `python -m pycwb`.
 - Generate CLI help and parameter summaries from the implementation. Correct detector-key and injection-window guidance.
 - Document installation channels, output interpretation, troubleshooting, analysis archiving, support access and release validation scope.

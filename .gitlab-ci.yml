@@ -92,7 +92,7 @@ documentation:
       - docs/build/html/
 
 # The image already contains the built wheel. Do not install the checkout in
-# this job: the standalone example runs outside it against the installed package.
+# this job: the CLI subprocess runs outside it against the installed package.
 onboarding-smoke:
   stage: test
   image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}

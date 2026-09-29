@@ -12,4 +12,4 @@ PycWB version/commit, local changes, operating system and Python version:
 
 Output from `pycwb doctor` and the relevant traceback (remove credentials):
 
-From the checkout, does `python examples/demo/run_demo.py NEW_DIRECTORY --run` succeed?
+From the checkout, does `pycwb run examples/demo/user_parameters.yaml --work-dir NEW_DIRECTORY` succeed?

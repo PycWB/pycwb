@@ -24,11 +24,13 @@ cd pycwb
 python -m pip install .
 pycwb --version
 pycwb doctor
-python examples/demo/run_demo.py my_first_search --run
+pycwb validate examples/demo/user_parameters.yaml
+pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
+pycwb progress --work-dir my_first_search
 ```
 
-The standalone example in `examples/demo/` generates synthetic data and verifies recovery
-of a loud injected burst. It needs no detector-data account. The first run may
+The CLI example in `examples/demo/` generates synthetic data containing a loud
+injected burst and writes the normal pipeline outputs. It needs no detector-data account. The first run may
 download a roughly 53 MiB cross-talk catalog and compile numerical kernels.
 Use a fresh directory for each run. See [Your First Search](https://docs.pycwb.org/en/latest/start_here.html)
 for expected outputs and [troubleshooting](docs/source/troubleshooting.rst).
@@ -72,4 +74,4 @@ Read [Understanding Your Results](docs/source/understanding_results.rst),
 - [Release and compatibility process](docs/source/release_policy.rst).
 
 Legacy notebooks are available in [examples](examples); their installation
-cells may target older releases. The standalone [synthetic example](examples/demo/README.md) is the maintained beginner path.
+cells may target older releases. The CLI [synthetic example](examples/demo/README.md) is the maintained beginner path.

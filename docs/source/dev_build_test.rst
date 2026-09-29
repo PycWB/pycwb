@@ -156,8 +156,8 @@ Verifying Before PR
    python -m pip install --force-reinstall --no-deps dist/*.whl
    python -m pytest tests/test_demo_e2e.py -m slow
 
-The standalone example subprocess uses Python isolated mode (``-I``), so it
-imports PycWB from the installed package while loading the example YAML from
+The test invokes ``python -I -m pycwb run`` outside the checkout, so it
+imports PycWB from the installed package with the example YAML copied from
 the source checkout. The checkout and ``PYTHONPATH`` cannot replace installed
 pipeline modules. Use a separate
 environment for this wheel check. Set ``PYCWB_DEMO_XTALK`` to the absolute path

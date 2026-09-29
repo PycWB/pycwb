@@ -204,8 +204,9 @@ Quick Start
 
    # From the matching source checkout, with PycWB installed
    pycwb doctor
-   python examples/demo/run_demo.py my_first_search --run
-   python examples/demo/run_demo.py my_first_search --check
+   pycwb validate examples/demo/user_parameters.yaml
+   pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
+   pycwb progress --work-dir my_first_search
 
 See :ref:`start_here` for a guided first run, or :ref:`installing_pycwb`
 for detailed installation options.

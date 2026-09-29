@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from examples.demo.run_demo import check_demo, create_demo
+from synthetic_recovery_helpers import check_recovery, copy_example
 from pycwb.cli.main import create_parser, main
 from pycwb.cli.validate import validate_config
 
@@ -17,28 +17,11 @@ def test_example_validates_without_downloading(tmp_path, monkeypatch):
         pytest.fail("Configuration checking must not access the network")
 
     monkeypatch.setattr(requests, "get", offline)
-    config = create_demo(tmp_path / "demo")
+    config = copy_example(tmp_path / "demo")
     params = validate_config(config)
     assert params["ifo"] == ["L1", "H1"]
     assert params["injection"]["segment"]["noise"]["seeds"] == [150914, 150915]
     assert not (config.parent / "wdmXTalk").exists()
-
-
-def test_demo_never_overwrites_existing_directory(tmp_path):
-    existing = tmp_path / "analysis"
-    existing.mkdir()
-    data = existing / "user_parameters.yaml"
-    data.write_text("important analysis settings")
-    with pytest.raises(FileExistsError):
-        create_demo(existing)
-    assert data.read_text() == "important analysis settings"
-
-
-def test_missing_catalog_does_not_create_project(tmp_path):
-    destination = tmp_path / "new"
-    with pytest.raises(FileNotFoundError):
-        create_demo(destination, tmp_path / "missing.bin")
-    assert not destination.exists()
 
 
 @pytest.mark.parametrize(
@@ -52,7 +35,7 @@ def test_invalid_configuration_has_nonzero_exit(tmp_path, content, capsys):
 
 
 def test_validate_honors_external_schema_extension(tmp_path):
-    config = create_demo(tmp_path / "demo")
+    config = copy_example(tmp_path / "demo")
     params = yaml.safe_load(config.read_text())
     (config.parent / "extra.yaml").write_text(
         "properties:\n  label:\n    type: string\n"
@@ -75,7 +58,7 @@ def test_validate_honors_external_schema_extension(tmp_path):
     ],
 )
 def test_validate_rejects_invalid_runtime_settings(tmp_path, updates, capsys):
-    path = create_demo(tmp_path / "demo")
+    path = copy_example(tmp_path / "demo")
     params = yaml.safe_load(path.read_text())
     path.write_text(yaml.safe_dump({**params, **updates}))
     assert main(["validate", str(path)]) == 1
@@ -94,7 +77,7 @@ def test_validate_resolves_local_detector_definitions_offline(tmp_path, monkeypa
         pytest.fail("Configuration checking must not access the network")
 
     monkeypatch.setattr(requests, "get", offline)
-    path = create_demo(tmp_path / "demo")
+    path = copy_example(tmp_path / "demo")
     entry = deepcopy(DETECTOR_GEOMETRIES["H1:lal@pycwb-1"])
     definitions = {
         "schema_version": 1,
@@ -128,7 +111,7 @@ def completed_demo(tmp_path):
     from pycwb.modules.catalog import Catalog
     from pycwb.types.trigger import Trigger
 
-    config_path = create_demo(tmp_path / "demo")
+    config_path = copy_example(tmp_path / "demo")
     params = yaml.safe_load(config_path.read_text())
     directory = config_path.parent / "catalog"
     directory.mkdir()
@@ -152,11 +135,11 @@ def completed_demo(tmp_path):
 
 
 def test_demo_recovers_signal_and_checks_manifest(completed_demo):
-    report = check_demo(completed_demo)
+    report = check_recovery(completed_demo, completed_demo / "user_parameters.yaml")
     assert report["ok"] and report["recovered_triggers"] == 1
     (completed_demo / "catalog/jobs.parquet").unlink()
     with pytest.raises((ValueError, FileNotFoundError)):
-        check_demo(completed_demo)
+        check_recovery(completed_demo, completed_demo / "user_parameters.yaml")
 
 
 @pytest.mark.parametrize(
@@ -180,7 +163,7 @@ def test_demo_rejects_wrong_or_nonfinite_event(completed_demo, field, value):
     rows[0][field] = value
     pq.write_table(pa.Table.from_pylist(rows, schema=table.schema), path)
     with pytest.raises(ValueError, match="No finite trigger"):
-        check_demo(completed_demo)
+        check_recovery(completed_demo, completed_demo / "user_parameters.yaml")
 
 
 def test_demo_rejects_unfinished_job(completed_demo):
@@ -193,7 +176,7 @@ def test_demo_rejects_unfinished_job(completed_demo):
     rows[0]["status"] = "failed"
     pq.write_table(pa.Table.from_pylist(rows, schema=table.schema), path)
     with pytest.raises(ValueError, match="completed zero-lag"):
-        check_demo(completed_demo)
+        check_recovery(completed_demo, completed_demo / "user_parameters.yaml")
 
 
 def test_reference_commands_match_parser():

@@ -46,8 +46,7 @@ Cross-talk catalog unavailable
 
 A first run downloads a missing catalog from the public PycWB cross-talk data
 repository. On an offline machine, copy a compatible catalog from an online
-machine and pass ``--xtalk PATH`` to ``examples/demo/run_demo.py``. For other searches,
-set ``filter_dir`` and ``wdmXTalk`` explicitly. Record the checksum and verify
+machine and set ``filter_dir`` and ``wdmXTalk`` explicitly in your YAML. Record the checksum and verify
 that the catalog covers ``l_low`` through ``l_high``.
 
 If the download was interrupted, preserve the error log and replace the
@@ -71,8 +70,6 @@ First check completion:
 .. code-block:: bash
 
    pycwb progress --work-dir my_first_search --verbose
-   # From the source checkout:
-   python examples/demo/run_demo.py my_first_search --check
 
 Inspect the run log, injection time, detector network and search band. For a
 modified example, a faint injection can legitimately be missed. Do not change
@@ -108,4 +105,4 @@ Still stuck
 -----------
 
 Use :ref:`support` and include the failing command, version, minimal YAML,
-relevant traceback, and whether the standalone example succeeds.
+relevant traceback, and whether the CLI example succeeds.

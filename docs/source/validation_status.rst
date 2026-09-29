@@ -18,8 +18,8 @@ does not establish equivalence to every cWB production configuration.
    * - ``pycwb validate``
      - YAML/schema validity, sky units, execution/GPU settings and detector definitions
      - Data availability, all cross-field constraints or scientific suitability
-   * - ``examples/demo/run_demo.py --run``
-     - One loud SGE injection is recovered by the native H1/L1 CPU workflow
+   * - Synthetic CLI recovery test (``tests/test_demo_e2e.py``)
+     - When passing: one loud SGE injection is recovered through the installed CLI
      - FAR calibration, sensitivity, other networks or GPU equivalence
    * - Regular CI tests
      - Regression checks selected in ``.gitlab-ci.yml`` on the native Linux image

@@ -1,28 +1,35 @@
-# Synthetic recovery example
+# Synthetic injection through the PycWB CLI
 
-Run from the repository root with PycWB installed:
-
-```bash
-python examples/demo/run_demo.py my_first_search --run
-python examples/demo/run_demo.py my_first_search --check
-```
-
-The script copies the adjacent `user_parameters.yaml` into a new directory,
-runs one seeded H1/L1 injection, and checks completion and recovery. Omit
-`--run` to create the configuration only. Existing directories are never
-overwritten. Use `--xtalk /path/to/OverlapCatalog16-1024.bin` to reuse a local
-cross-talk catalog; otherwise the first search may download it.
-
-You can also run the created configuration with the ordinary pipeline:
+From the repository root, with PycWB installed:
 
 ```bash
-cd my_first_search
-pycwb validate user_parameters.yaml
-pycwb run user_parameters.yaml
-python /path/to/pycwb/examples/demo/run_demo.py . --check
+pycwb validate examples/demo/user_parameters.yaml
+pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
+pycwb progress --work-dir my_first_search
 ```
 
-The recovery check requires one completed zero-lag job and a finite trigger
-above the configured threshold within one second of the injection in both
-detectors. It is a smoke test, not sensitivity or significance validation.
-The installed-package integration test is `tests/test_demo_e2e.py`.
+The YAML configures one seeded 128-second H1/L1 segment containing a deliberately
+loud sine-Gaussian injection at GPS 1126259526 and 150 Hz. The ordinary pipeline
+generates the noise and signal, processes the segment, and writes its catalog and
+waveform products. No example-specific Python runner is needed. Use a fresh
+working directory for each run.
+
+No detector strain download or collaboration account is needed. The first run
+may download the cross-talk catalog and compile numerical kernels. To reuse a
+local catalog, copy the YAML and set `filter_dir` to its directory and `wdmXTalk`
+to its filename before validating and running that copy.
+
+Inspect `my_first_search/catalog/catalog.parquet` and the products under
+`my_first_search/trigger/`. Completion reported by `pycwb progress` establishes
+that the job finished; inspect the trigger times and ranking statistic to assess
+recovery. A loud injection is a smoke test, not sensitivity or significance
+validation. The automated recovery assertion belongs to `tests/test_demo_e2e.py`.
+
+## Difference from the Colab notebooks
+
+This example demonstrates configuration-driven use of the production CLI with
+synthetic input. The notebooks in [`examples/colab`](../colab/) analyse real
+GW150914 open data by calling individual Python stages and inspecting intermediate
+results. Some notebook APIs and installation cells target older releases. They
+serve a different educational purpose and are not a replacement for this CLI
+example or its recovery test.
