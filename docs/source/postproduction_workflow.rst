@@ -346,6 +346,7 @@ training subset.  Then score the target FAR holdout and build the FAR lookup.
        config_file: ${paths.config_file}
      args:
        livetime: "@k21_bkg_split.far.livetime.seconds"
+       exclude_zero_lag: false      # Preserve the upstream background selection
        ranking_par: rhor
        bin_size: 0.0001
        vmin: 0.0

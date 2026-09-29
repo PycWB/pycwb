@@ -157,8 +157,9 @@ Common to all searches: ``objective: binary:logistic``, ``tree_method: hist``,
 
 **Training procedure** (as implemented):
 
-1. BKG catalogs are concatenated and labelled ``classifier = 0``; physical
-   zero-lag rows are removed. SIM catalogs are labelled ``classifier = 1``;
+1. BKG catalogs selected upstream are concatenated and labelled
+   ``classifier = 0``; training preserves that selection. SIM catalogs are
+   labelled ``classifier = 1``;
    rows flagged ``sim_vetoed_cat0``, ``sim_vetoed_cat2`` or
    ``sim_across_segments`` are removed when those columns exist. Every other
    SIM row is treated as signal, so clean SIM catalogs first with
@@ -216,7 +217,8 @@ Model Output
 
 With a ``.ubj`` (Universal Binary JSON) or ``.json`` extension the model is
 written with XGBoost's native ``save_model``; any other extension is pickled.
-The native file holds the trained booster and its feature names only.
+The native file holds the trained booster, feature names and the
+``cwb-compatible-v1`` catalog preprocessing identifier.
 Derived features are recomputed from ``config_file`` at scoring time, so the
 same ``config_file`` must be passed to every scoring action.
 
@@ -303,6 +305,7 @@ The statistic used for FAR is selected with ``ranking_par``. It defaults to
        config_file: ${paths.config_file}
      args:
        livetime: "@bkg_split.far.livetime.seconds"
+       exclude_zero_lag: false      # Preserve the upstream background selection
        ranking_par: rhor
        bin_size: 0.0001
        vmin: 0.0

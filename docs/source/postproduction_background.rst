@@ -243,6 +243,7 @@ the result is floored at the smallest nonzero tabulated FAR.
        config_file: ${paths.config_file}
      args:
        livetime: "@bkg_split.far.livetime.seconds"
+       exclude_zero_lag: false      # Preserve the upstream background selection
        ranking_par: rhor
        bin_size: 0.0001
        vmin: 0.0
