@@ -1,6 +1,6 @@
 """Exact comparisons for opt-in coherence performance candidates."""
 
-from pycwb.constants.execution_profile import ExecutionProfile
+from pycwb.config.processing import ExecutionProfile
 
 import dataclasses
 import numpy as np

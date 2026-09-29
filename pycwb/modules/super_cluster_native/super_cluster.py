@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pycwb.types.stages import TimeDelayPopulator
-from pycwb.constants.execution_profile import execution_profile, DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import execution_profile, DEFAULT_EXECUTION_PROFILE
 
 import logging
 import time

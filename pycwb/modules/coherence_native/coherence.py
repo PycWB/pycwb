@@ -14,7 +14,7 @@ import time
 import numpy as np
 
 from pycwb.config import Config
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_cluster import FragmentCluster
 from pycwb.modules.data_conditioning.noise import lookup_pixel_noise_rms

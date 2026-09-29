@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from pycwb.constants.execution import ExecutionSettings
-from pycwb.constants.execution_profile import resolve_execution_profile
+from pycwb.config.execution import ExecutionSettings
+from pycwb.config.processing import resolve_execution_profile
 from pycwb.constants.gpu_options import gpu_options
 from pycwb.utils.skymap_coord import validate_user_sky_config
 

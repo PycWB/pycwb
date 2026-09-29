@@ -1,4 +1,4 @@
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import faulthandler
@@ -89,7 +89,8 @@ def batch_setup(
     if n_retries == 5:
         n_retries = getattr(config, "n_retries", 5)  # 5 is the default; prefer config if set
 
-    from pycwb.constants.execution import ExecutionSettings, byte_size
+    from pycwb.config.execution import ExecutionSettings
+    from pycwb.utils.size import byte_size
     from pycwb.workflow.execution.planner import prepare_plan
     from pycwb.workflow.execution.scheduling import prepare_batch_fragments
 
@@ -380,7 +381,7 @@ def batch_run(
     #     Must run before any subprocess spawns so there are no racing     #
     #     writers when we inspect or delete lock files.                    #
     # ------------------------------------------------------------------ #
-    from pycwb.constants.execution import ExecutionSettings
+    from pycwb.config.execution import ExecutionSettings
 
     # Scalable execution performs this cleanup only after acquiring exclusive
     # fragment/job ownership; a concurrent runner must not remove a live lock.

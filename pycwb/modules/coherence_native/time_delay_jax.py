@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from collections.abc import Callable
-from pycwb.constants.execution_profile import ExecutionProfile, DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import ExecutionProfile, DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging

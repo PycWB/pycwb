@@ -5,7 +5,9 @@ Scientific backends and execution support
 
 Choose a scientific implementation separately from the workflow scheduler.
 ``execution.profile`` controls job admission and input reuse; ``execution_profile``
-controls numerical conventions. Neither automatically selects CUDA.
+controls numerical conventions and processing options. Their models live in
+``pycwb.config.execution`` and ``pycwb.config.processing``, respectively.
+Neither automatically selects CUDA.
 
 .. list-table:: Backend contracts
    :header-rows: 1

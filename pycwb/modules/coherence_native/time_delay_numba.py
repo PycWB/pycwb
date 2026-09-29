@@ -1,7 +1,7 @@
 """Numba implementation of WDM time-delay max-energy."""
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging

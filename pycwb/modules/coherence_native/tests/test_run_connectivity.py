@@ -1,4 +1,4 @@
-from pycwb.constants.execution_profile import ExecutionProfile
+from pycwb.config.processing import ExecutionProfile
 import numpy as np
 import pytest
 

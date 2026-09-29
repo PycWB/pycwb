@@ -6,7 +6,7 @@ import logging
 from typing import List
 from dacite import from_dict, Config as DaciteConfig
 from jinja2 import Template 
-from pycwb.constants.execution_profile import check_recorded_execution_profile
+from pycwb.config.processing import check_recorded_execution_profile
 from pycwb.config import Config
 from pycwb.modules.catalog import Catalog, read_catalog_metadata
 from pycwb.modules.job_segment import create_job_segment_from_config

@@ -71,7 +71,7 @@ the ROOT-backed workflow. Its APIs and compatibility imports are independent.
 
 - `config.whiteMethod` selects `wavelet` (default), `python` (the same wavelet
   path), or `mesa`. The dispatchers do not implement `mixed`.
-- [`ExecutionProfile`](../../constants/execution_profile.py) selects
+- [`ExecutionProfile`](../../config/processing.py) selects
   `regression_engine='numba'` (default) or `'jax'`. The dispatcher imports the
   selected backend when needed; if Numba cannot import, the existing JAX fallback
   is retained. Other PycWB/WDM components may load JAX independently.

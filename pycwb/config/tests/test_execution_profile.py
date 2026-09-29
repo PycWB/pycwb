@@ -10,7 +10,7 @@ import pytest
 from jsonschema import ValidationError
 
 from pycwb.config import Config
-from pycwb.constants.execution_profile import (
+from pycwb.config.processing import (
     ExecutionProfile,
     PROFILE_SCHEMA,
     execution_profile,
@@ -187,7 +187,7 @@ def test_explicit_jax_entrypoint_preserves_caller_profile(monkeypatch):
 
 
 def test_catalog_profile_guard_rejects_mixed_and_unrecorded_runs():
-    from pycwb.constants.execution_profile import check_recorded_execution_profile
+    from pycwb.config.processing import check_recorded_execution_profile
 
     config = Config()
     stored = {"execution_profile": asdict(config.execution_profile)}
@@ -233,7 +233,7 @@ def test_run_setup_checks_profile_before_replacing_saved_yaml(tmp_path, monkeypa
 
 def test_gpu_yaml_snapshot_catalog_roundtrip_and_resume_guard(tmp_path, monkeypatch):
     from pycwb.constants.gpu_options import GPUOptions
-    from pycwb.constants.execution_profile import check_recorded_execution_profile
+    from pycwb.config.processing import check_recorded_execution_profile
 
     for method in ("add_derived_key", "check_xtalk_file", "check_MRA_catalog",
                    "check_lagStep", "check_analyze_injection_only"):

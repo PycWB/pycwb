@@ -1,6 +1,6 @@
 """Cache storage and lifetime changes must preserve every stored bit."""
 
-from pycwb.constants.execution_profile import ExecutionProfile
+from pycwb.config.processing import ExecutionProfile
 
 from types import SimpleNamespace
 import numpy as np

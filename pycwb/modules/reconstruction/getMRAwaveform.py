@@ -5,7 +5,7 @@ When numba is available, the per-pixel base-wave computation and accumulation
 loop runs entirely inside @njit-compiled code.  When rocket-fft is also
 installed, the time-of-flight phase-shift correction is JIT-compiled too.
 """
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 import logging
 import numpy as np
 from dataclasses import dataclass

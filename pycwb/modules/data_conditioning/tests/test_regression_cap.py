@@ -60,7 +60,7 @@ def test_search_old_option_selects_uncapped_behavior(monkeypatch):
     from types import SimpleNamespace
     from pycwb.modules.data_conditioning.regression import _regression_apply_fraction
 
-    from pycwb.constants.execution_profile import ExecutionProfile
+    from pycwb.config.processing import ExecutionProfile
 
     enabled = ExecutionProfile(regression_cap=True)
     assert _regression_apply_fraction(SimpleNamespace(execution_profile=enabled, Search="CBC"), 0.95) == 0.95

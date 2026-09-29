@@ -1,6 +1,6 @@
 """Pure-Python whitening of injection strain using a pre-computed nRMS map."""
 
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 import logging
 
 import numpy as np

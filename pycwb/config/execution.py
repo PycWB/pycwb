@@ -1,4 +1,9 @@
-"""Execution policy validation, also used for configurations restored from catalogs."""
+"""Scheduling and resource policy for the YAML ``execution`` block.
+
+This module defines schema, defaults and validation only. Job planning and
+worker admission live in ``pycwb.workflow.execution``; numerical processing
+choices live in ``pycwb.config.processing``.
+"""
 
 from __future__ import annotations
 

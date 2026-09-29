@@ -25,7 +25,7 @@ from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
 from .detector_definitions import load_detector_definitions, restore_detector_registry
 from .provenance import snapshot_yaml_parameters
-from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
+from pycwb.config.processing import ExecutionProfile, resolve_execution_profile
 from ..constants.gpu_options import GPUOptions, resolve_gpu_options
 
 logger = logging.getLogger(__name__)

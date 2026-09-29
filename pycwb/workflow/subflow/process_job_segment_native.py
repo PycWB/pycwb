@@ -64,7 +64,7 @@ Reference
 See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
 """
 
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 
 import logging
 import os

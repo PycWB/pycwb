@@ -17,7 +17,8 @@ between cluster nodes. Slurm/Condor batch membership is fixed when planned.
 
 The `execution` block controls job scheduling and resource management. The
 separate `execution_profile` block controls native processing options within
-each job. Both can appear in the same analysis configuration; see the
+each job. The models live in `pycwb.config.execution` and
+`pycwb.config.processing`, respectively. Both can appear in the same analysis configuration; see the
 [Performance Guide](../../../docs/source/dev_performance.rst) for the latter.
 
 Yes: this package is connected to the normal analysis YAML configuration. Add a

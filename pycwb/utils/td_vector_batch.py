@@ -20,8 +20,8 @@ Notes
   numpy arrays from the TF map before invoking the batch function.
 """
 
-from pycwb.constants.execution_profile import wdm_options
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import wdm_options
+from pycwb.config.processing import execution_profile
 
 import logging
 

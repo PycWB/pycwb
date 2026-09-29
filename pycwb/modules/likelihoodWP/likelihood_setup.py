@@ -8,7 +8,7 @@ initialization.
 """
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 
 import logging
 import numpy as np

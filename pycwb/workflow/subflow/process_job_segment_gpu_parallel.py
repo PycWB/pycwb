@@ -21,7 +21,7 @@ from pycwb.workflow.subflow import process_job_segment_native as native
 from pycwb.workflow.subflow import process_job_segment_parallel as shared
 
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 from functools import partial
 from pycwb.workflow.subflow.process_job_segment_gpu import _build_analyzer
 

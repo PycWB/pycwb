@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 from wdm_wavelet.wdm import WDM
-from pycwb.constants.execution_profile import execution_profile, wdm_options
+from pycwb.config.processing import execution_profile, wdm_options
 
 
 def _regression_apply_fraction(config, fraction):

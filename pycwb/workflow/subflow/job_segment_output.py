@@ -1,6 +1,6 @@
 """Output-finalization helpers for native job-segment processing."""
 
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 import gc
 import logging

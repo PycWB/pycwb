@@ -6,7 +6,7 @@ This version produces output compatible with whiten_wavelet() from whitening.py,
 using the same anchor-point batching logic as cWB's white() mode=0.
 """
 
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging

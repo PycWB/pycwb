@@ -3,9 +3,9 @@ JSON schema for validating and completing user parameters,
 and will also be used to generate the documentation
 """
 
-from .execution_profile import PROFILE_SCHEMA
+from pycwb.config.processing import PROFILE_SCHEMA
 from .gpu_options import GPU_SCHEMA
-from pycwb.constants.execution import EXECUTION_SCHEMA
+from pycwb.config.execution import EXECUTION_SCHEMA
 
 NIFO_MAX = 8
 

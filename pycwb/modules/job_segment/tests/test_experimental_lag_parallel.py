@@ -1,7 +1,7 @@
 """Contracts for the opt-in experimental executors."""
 
 from concurrent.futures import ThreadPoolExecutor
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 from types import SimpleNamespace
 
 import joblib

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 
 from pycwb.config import Config

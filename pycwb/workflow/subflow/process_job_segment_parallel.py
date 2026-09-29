@@ -8,7 +8,7 @@ Select ``process_job_segment`` through ``segment_processer``. One worker and
 injection trials run serially.
 """
 
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 import logging
 import multiprocessing
 import os

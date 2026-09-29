@@ -15,7 +15,7 @@ All detectors share the same WDM parameters and the same segment length, so
 vmap over the leading detector dimension compiles once and runs in parallel.
 """
 
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 import logging
 from functools import partial

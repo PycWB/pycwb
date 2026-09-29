@@ -2,7 +2,7 @@
 Pure-Python whitening without ROOT dependencies.
 """
 
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging
