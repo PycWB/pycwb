@@ -35,9 +35,9 @@ Run and match to truth
    print("Unmatched sources:", matched.loc[matched["id"].isna(), "sim_sim_idx"].tolist())
 
 A right match retains all scheduled simulations, including those without a
-trigger. Multiple matches can occur; counting matched rows is not the same
-as counting recovered injections. Use the injection identity, eligibility
-and recovery rules described in :doc:`postproduction_efficiency`.
+trigger. The matcher resolves competing candidates into unique associations.
+See :ref:`reading_simulation_matches` for the output columns and join choices,
+and :doc:`postproduction_efficiency` for eligibility and recovery rules.
 
 In this example, the right match retained all four sources: three had a
 recovered trigger and the weakest had an empty ``id``.

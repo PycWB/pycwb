@@ -10,6 +10,9 @@ The synthetic lessons share generated inputs; the public-data lesson provides
 a download command. To work with your own dataset or production configuration,
 go directly to :doc:`run_analyses`.
 
+For the basics of loading catalogs, job segments, progress and simulation
+matches in Python, start with :doc:`understanding_results`.
+
 .. list-table::
    :header-rows: 1
    :widths: 30 35 35

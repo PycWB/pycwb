@@ -30,6 +30,8 @@ Prepare and run
 Process and preserve results
 ----------------------------
 
+Start with :doc:`understanding_results` to read and explore a completed run.
+
 .. toctree::
    :maxdepth: 1
 

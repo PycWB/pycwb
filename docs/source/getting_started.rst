@@ -3,9 +3,10 @@
 Getting started
 ===============
 
-Start with installation, complete the synthetic first search, then learn what
-its catalog and plots mean. The example uses generated noise and a simulated
-signal; it does not require detector data or a collaboration account.
+Start with installation, complete the synthetic first search, then learn to
+read its triggers, jobs, progress and simulation matches. The example uses
+generated noise and a simulated signal; it does not require detector data or
+a collaboration account.
 
 .. toctree::
    :maxdepth: 1

@@ -22,6 +22,9 @@ For resource planning, caching and restart procedures, use
 Data and conventions
 --------------------
 
+For examples of reading and exploring these files, use
+:doc:`understanding_results`.
+
 .. toctree::
    :maxdepth: 1
 
