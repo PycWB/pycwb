@@ -67,7 +67,7 @@ iwindow: 2.0
 
 # --- Seeded noise and synthetic burst ---
 injection:
-  generator: pycwb.modules.injection.burst_population.get_td_waveform
+  generator: burst_waveform.interface.generate_waveform_pycwb.get_td_waveform
 
   # GPS interval and reproducible noise seeds, in the order listed in ifo.
   segment:

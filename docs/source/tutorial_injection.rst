@@ -150,6 +150,21 @@ them as separate trials. The default ``fft`` preserves the existing behavior.
 This option does not select the SNR population: source parameters must still
 provide ``target_snr`` (or ``targeted_snr``).
 
+Waveform generation
+-------------------
+
+Use ``burst_waveform.interface.generate_waveform_pycwb.get_td_waveform`` for
+cWB SG, SGE, GA, and WNB waveforms. The duplicate
+``pycwb.modules.injection.burst_population`` module has been removed; install
+``burst-waveform>=0.5.0`` when migrating.
+SGE ``hrss`` is the source amplitude before inclination weighting; ``iota``
+is in radians (``ellipticity`` remains an alias). WNB does not receive
+inclination factors. Its ``duration`` is the Gaussian amplitude standard
+deviation, and ``frequency`` is the lower band edge. WNB defaults to cWB's
+``mode: 0``; specify ``mode: 1`` to retain the symmetric construction formerly
+used unconditionally by ``burst_population``. NumPy and ROOT random streams
+differ, so equal seeds do not imply equal WNB realizations.
+
 The complete ``pycwb run`` path also saves triggers, reconstructed waveforms,
 injection products, Q-veto values, plots, and catalog rows according to the
 output options in the YAML file.

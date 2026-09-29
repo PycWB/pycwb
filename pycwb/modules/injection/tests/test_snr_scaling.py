@@ -1,44 +1,8 @@
-"""Scientific convention checks for LF burst populations."""
+"""Target-SNR scaling and injection scheduling contracts."""
 import numpy as np
 import pytest
-from pycwb.modules.injection.burst_population import get_td_waveform
 from pycwb.modules.injection.snr_population import _window_energy
 from pycwb.types.time_series import TimeSeries
-
-
-def energy(wave):
-    return np.sum(wave.data**2)*wave.dt
-
-
-@pytest.mark.parametrize('kind,parameters',[
-    ('GA',dict(duration=.001)),('SG',dict(frequency=100,Q=9)),
-    ('SGE',dict(frequency=100,Q=9,iota=0)),
-    ('WNB',dict(frequency=150,bandwidth=100,duration=.1,pseed=1,xseed=2)),
-])
-def test_source_amplitude(kind,parameters):
-    w=get_td_waveform(approximant=kind,hrss=2e-22,**parameters)
-    assert np.sqrt(energy(w['hp'])+energy(w['hc']))==pytest.approx(2e-22)
-    if kind=='WNB':
-        assert energy(w['hp'])==pytest.approx(energy(w['hc']),rel=1e-12,abs=0)
-    if kind in ('GA','SG'):
-        assert np.count_nonzero(w['hc'].data)==0
-
-
-def test_sge_inclination_does_not_renormalize_source_amplitude():
-    a=get_td_waveform(approximant='SGE',frequency=70,Q=3,iota=0,hrss=1e-22)
-    b=get_td_waveform(approximant='SGE',frequency=70,Q=3,iota=np.pi/2,hrss=1e-22)
-    np.testing.assert_allclose(b['hp'].data,a['hp'].data/2,atol=0)
-    assert energy(b['hc'])<energy(a['hc'])*1e-28
-
-
-def test_wnb_duration_is_amplitude_standard_deviation():
-    # Wide band averages stochastic power fluctuations; energy envelope has sigma/sqrt(2).
-    moments=[]
-    for seed in range(32):
-        w=get_td_waveform(approximant='WNB',frequency=300,bandwidth=800,duration=.06,pseed=seed,xseed=seed+50)['hp']
-        t=(np.arange(len(w.data))+1)*w.dt-.5
-        moments.append(np.sum(t*t*w.data*w.data)/np.sum(w.data*w.data))
-    assert np.sqrt(np.mean(moments))==pytest.approx(.06/np.sqrt(2),rel=.06)
 
 
 def test_snr_energy_is_sum_of_samples_not_time_integral():
@@ -83,10 +47,10 @@ def test_target_network_snr_scales_actual_whitened_detector_signals():
     from pycwb.modules.read_data.data_check import check_and_resample_py
     from pycwb.modules.data_conditioning.whitening import whiten_wavelet
     from pycwb.modules.data_conditioning.injection_whitening import whiten_injection_strain
-    config=SimpleNamespace(inRate=1024,fResample=0,levelR=0,dcCal=[1,1],
+    config=SimpleNamespace(injection_resampling="fft",inRate=1024,fResample=0,levelR=0,dcCal=[1,1],
         l_white=5,l_high=5,WDM_beta_order=6,WDM_precision=10,whiteWindow=8.,whiteStride=4.,
         segEdge=2.,fLow=16.,fHigh=512.,iwindow=5.,detector_geometry='cwb_6.4.6.9',
-        injection={'generator':'pycwb.modules.injection.burst_population.get_td_waveform'})
+        injection={'generator':'burst_waveform.interface.generate_waveform_pycwb.get_td_waveform'})
     p=dict(approximant='SGE',frequency=100,Q=9,iota=.7,hrss=1e-22,
            ra=1.,dec=.3,pol=.8,gps_time=1387221750.,target_snr=20.)
     from pycwb.types.detector import Detector
