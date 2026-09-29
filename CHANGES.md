@@ -12,6 +12,9 @@
   remain checked. Legacy catalogs without a YAML snapshot cannot be verified:
   continue them with their original software or regenerate in a new working
   directory. `--force-overwrite` does not bypass this requirement.
+- Bound completed scalable workers' shutdown with
+  `execution.worker_shutdown_timeout` (60 seconds by default). A timeout fails
+  the allocation and cleans up worker processes and reservations.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
   unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved

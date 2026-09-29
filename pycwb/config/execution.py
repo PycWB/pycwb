@@ -8,6 +8,7 @@ choices live in ``pycwb.config.processing``.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+import math
 from typing import Any
 
 from pycwb.utils.size import byte_size
@@ -38,6 +39,7 @@ EXECUTION_SCHEMA = {
         "batch_size": {"type": "integer", "minimum": 1},
         "cache_entries": {"type": "integer", "minimum": 1},
         "cores": {"type": ["integer", "null"], "minimum": 1},
+        "worker_shutdown_timeout": {"type": "number", "exclusiveMinimum": 0},
     },
 }
 
@@ -58,6 +60,7 @@ class ExecutionSettings:
     batch_size: int = 8
     cache_entries: int = 256
     cores: int | None = None
+    worker_shutdown_timeout: float = 60.0
 
     @property
     def enabled(self) -> bool:
@@ -104,6 +107,9 @@ class ExecutionSettings:
             value = getattr(result, key)
             if value is not None and value <= 0:
                 raise ValueError(f"execution.{key} must be positive")
+        timeout = result.worker_shutdown_timeout
+        if (type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("execution.worker_shutdown_timeout must be finite and positive")
         for key in ("planner", "executor"):
             value = getattr(result, key)
             if value is not None and (not isinstance(value, str) or "." not in value):

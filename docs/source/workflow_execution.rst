@@ -85,6 +85,10 @@ use direct reads with a warning.
    * - ``message_limit``
      - ``64MiB``
      - Maximum serialized worker output message.
+   * - ``worker_shutdown_timeout``
+     - ``60`` seconds
+     - Deadline to exit after reporting completion. A timeout fails the allocation
+       and cleans up workers; this does not limit scientific processing time.
    * - ``preload``
      - ``auto``
      - Input loading policy: ``"off"``, ``auto``, or ``batch``.

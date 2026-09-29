@@ -45,6 +45,7 @@ basename collisions are rejected.
 | `cache_limit` | `1GiB` | Maximum raw sample payload; actual allowance can be smaller |
 | `headroom` | `512MiB` | Unallocated safety margin |
 | `message_limit` | `64MiB` | Maximum serialized output message |
+| `worker_shutdown_timeout` | `60` seconds | Deadline to exit after reporting completion; a timeout fails and cleans up the allocation |
 | `preload` | `auto` | `off`, `auto`, or `batch` |
 | `batch_size` | `8` | Maximum tasks in a planned group |
 | `cache_entries` | `256` | Maximum live mapped cache entries |

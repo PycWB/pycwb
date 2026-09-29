@@ -258,7 +258,7 @@ class ScalableExecutor:
         )
         process_context = multiprocessing.get_context("spawn")
         active: dict[Connection, WorkerState] = {}
-        retiring: set[Connection] = set()
+        retiring: dict[Connection, float] = {}
         completed = []
         started = time.monotonic()
 
@@ -385,12 +385,17 @@ class ScalableExecutor:
                         # Native runtimes can take longer than five seconds to
                         # shut down. Keep their reservations until they exit,
                         # while continuing to service other workers' output.
-                        retiring.add(connection)
+                        retiring[connection] = time.monotonic() + settings.worker_shutdown_timeout
                     else:
                         raise ValueError(f"Invalid worker message: {kind!r}")
                 for connection in list(retiring):
                     process, task, provider, _ = active[connection]
                     if process.is_alive():
+                        if time.monotonic() >= retiring[connection]:
+                            raise RuntimeError(
+                                f"Job {context.jobs[task].index} worker did not exit within "
+                                f"{settings.worker_shutdown_timeout:g} seconds after completion"
+                            )
                         continue
                     process.join()
                     if process.exitcode != 0:
@@ -401,7 +406,7 @@ class ScalableExecutor:
                     cache.release(provider)
                     connection.close()
                     del active[connection]
-                    retiring.remove(connection)
+                    del retiring[connection]
                     completed.append(task)
                 if monitor.exceeded:
                     cache.evict_idle()

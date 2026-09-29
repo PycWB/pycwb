@@ -65,6 +65,12 @@ def test_settings_legacy_and_validation():
         {"cores": True},
         {"unknown": 1},
         {"executor": "missingdot"},
+        {"worker_shutdown_timeout": 0},
+        {"worker_shutdown_timeout": -1},
+        {"worker_shutdown_timeout": True},
+        {"worker_shutdown_timeout": "60"},
+        {"worker_shutdown_timeout": float("inf")},
+        {"worker_shutdown_timeout": float("nan")},
     ):
         with pytest.raises(ValueError):
             ExecutionSettings.from_config(SimpleNamespace(execution=values))
@@ -295,6 +301,25 @@ def test_worker_shutdown_failure_is_not_accepted_as_success(tmp_path):
     context = make_context(tmp_path / "run", jobs, config(), failed_shutdown)
     with pytest.raises(RuntimeError, match="exit code 17"):
         execute_jobs(context)
+
+
+def test_worker_shutdown_deadline_cleans_up_process_and_reservations(tmp_path):
+    import multiprocessing
+    import json
+    from pycwb.workflow.execution.tests.helpers import slow_shutdown
+
+    children_before = {child.pid for child in multiprocessing.active_children()}
+    jobs = [WaveSegment(1, ["H1"], 100, 104, 128, 0)]
+    context = make_context(
+        tmp_path / "run", jobs, config(worker_shutdown_timeout=.1), slow_shutdown,
+    )
+    with pytest.raises(RuntimeError, match="worker did not exit within 0.1 seconds"):
+        execute_jobs(context)
+    assert {child.pid for child in multiprocessing.active_children()} <= children_before
+    assert not list(Path(context.working_dir).glob(".frame-cache-*"))
+    metrics = json.loads((tmp_path / "run/execution/catalog.metrics.json").read_text())
+    assert metrics["status"] == "failed"
+    assert metrics["completed_tasks"] == []
 
 
 def test_writer_does_not_commit_progress_after_failed_flush(monkeypatch):
