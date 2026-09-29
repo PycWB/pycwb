@@ -2,7 +2,7 @@
 import weakref
 from types import SimpleNamespace
 
-from pycwb.modules.gpu_utils import cuda_runtime as runtime
+from pycwb.utils.gpu import cuda_runtime as runtime
 
 
 class Context:

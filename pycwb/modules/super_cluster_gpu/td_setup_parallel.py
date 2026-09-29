@@ -75,7 +75,7 @@ def build_td_inputs_cache(config: Config, strains: list[Any]) -> dict[int, Any]:
         result[int(layers)] = values
         result[int(layers) + 1] = values
     if gpu_options(config).validate_td_setup:
-        from pycwb.modules.gpu_utils.validation import leaves
+        from pycwb.modules.stage_validation import leaves
 
         expected = native_build(config, strains)
         if leaves(expected) != leaves(result):

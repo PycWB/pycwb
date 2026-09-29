@@ -15,8 +15,8 @@ from typing import Any
 import numpy as np
 
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.modules.gpu_utils.cuda_runtime import make_buffers, load_module
-from pycwb.modules.gpu_utils.geometry_cache import resident_geometry
+from pycwb.utils.gpu.cuda_runtime import make_buffers, load_module
+from pycwb.utils.gpu.geometry_cache import resident_geometry
 
 MAP_COUNT = 11
 """Per-direction statistics returned as sky maps, in native tuple order."""

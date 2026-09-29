@@ -81,7 +81,7 @@ def _initialize(
 
 def _analyze(lag: int) -> Any:
     """Analyze one lag in this worker and return the native ``LagResult``."""
-    from pycwb.modules.gpu_utils.profiling import span
+    from pycwb.workflow.profiling import span
 
     if _analyzer is None or shared._worker_context is None:
         raise RuntimeError("GPU lag worker not initialized")

@@ -83,7 +83,7 @@ def test_load_module_caches_by_source_hash(tmp_path: Path) -> None:
 
 def test_package_kernel_sources_compile_once_each() -> None:
     from importlib import import_module
-    from pycwb.modules.gpu_utils.cuda_runtime import load_module
+    from pycwb.utils.gpu.cuda_runtime import load_module
 
     modules = (
         "likelihood_gpu.dpf_regulator", "likelihood_gpu.likelihood_scan",

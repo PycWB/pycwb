@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from numba import cuda
 
-from pycwb.modules.gpu_utils.cuda_runtime import load_module
+from pycwb.utils.gpu.cuda_runtime import load_module
 
 INPUT_BUDGET_BYTES = 512 * 1024**2
 """Largest complex128 coefficient map accepted per call."""

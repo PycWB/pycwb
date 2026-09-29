@@ -38,7 +38,7 @@ def _build_analyzer(config=None) -> tuple[Callable[[Any, int], Any], GPUSelector
         "evaluate_cluster_likelihood": build_likelihood(config),
     }
     if options.validate_stages:
-        from pycwb.modules.gpu_utils.validation import paired
+        from pycwb.modules.stage_validation import paired
 
         for name, mutable_arg in (
             ("coherence_single_lag", None),

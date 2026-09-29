@@ -275,7 +275,7 @@ class OutputWriter:
         if not self.options.profile_lags:
             self._save(result)
             return
-        from pycwb.modules.gpu_utils.profiling import span
+        from pycwb.workflow.profiling import span
 
         with span(result.lag, "output", self.context.working_dir, options=self.options):
             self._save(result)

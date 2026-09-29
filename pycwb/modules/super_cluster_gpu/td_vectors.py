@@ -19,7 +19,7 @@ import numpy as np
 from numba import cuda, njit
 
 from pycwb.constants.gpu_options import gpu_options
-from pycwb.modules.gpu_utils.cuda_runtime import CUDAModule, DeviceBuffers, load_module
+from pycwb.utils.gpu.cuda_runtime import CUDAModule, DeviceBuffers, load_module
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ class TDSession:
         self.phases: dict[int, Any] = {}
         self.workspace = workspace
         if workspace is None and self.options.reuse_td_workspace:
-            from pycwb.modules.gpu_utils.workspace import Workspace
+            from pycwb.utils.gpu.workspace import Workspace
 
             self.workspace = Workspace(budget=TD_WORKSPACE_BUDGET_BYTES)
         self.buffers = DeviceBuffers(self.workspace)
@@ -267,7 +267,7 @@ class GPUTimeDelays:
         self.resident_bytes = 0
         self.workspace: Any | None = None
         if self.options.reuse_td_workspace:
-            from pycwb.modules.gpu_utils.workspace import Workspace
+            from pycwb.utils.gpu.workspace import Workspace
 
             self.workspace = Workspace(budget=TD_WORKSPACE_BUDGET_BYTES)
 

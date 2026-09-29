@@ -102,7 +102,7 @@ def reconstruct(
         )
     expected = None
     if gpu_options(config).validate_reconstruction:
-        from pycwb.modules.gpu_utils.validation import leaves
+        from pycwb.modules.stage_validation import leaves
 
         reference = reconstruct_waveforms_flow(
             trigger_folder,

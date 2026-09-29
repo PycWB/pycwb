@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from numba import cuda
 
-from pycwb.modules.gpu_utils.cuda_runtime import load_module
+from pycwb.utils.gpu.cuda_runtime import load_module
 
 OUTPUT_BUDGET_BYTES = 256 * 1024**2
 """Largest float64 ``(n_time, 2 * m)`` prefilter output per call."""

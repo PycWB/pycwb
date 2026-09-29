@@ -21,7 +21,7 @@ def build_coherence(config: object | None = None) -> tuple[CoherenceStage, GPUSe
     selector = GPUSelector(options)
     select: Callable[..., Any] = selector
     if options.validate_stages:
-        from pycwb.modules.gpu_utils.validation import paired
+        from pycwb.modules.stage_validation import paired
 
         select = paired(selector, selection.select_network_pixels, "selection", options=options)
     return partial(coherence.coherence_single_lag, select_pixels=select), selector

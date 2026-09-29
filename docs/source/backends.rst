@@ -32,7 +32,7 @@ controls numerical conventions. Neither automatically selects CUDA.
        Its kernel tests do not certify every full-pipeline configuration.
    * - CUDA workflow (experimental)
      - ``coherence_gpu``, ``super_cluster_gpu``, ``likelihood_gpu``,
-       ``gpu_utils``; NVIDIA driver, bundled NVRTC and JAX CUDA wheels, x64 enabled
+       ``pycwb.utils.gpu``; NVIDIA driver, bundled NVRTC and JAX CUDA wheels, x64 enabled
      - Simple or scalable job scheduling; spawned lag workers own device state.
        Parent commits catalog progress. Resume requires matching recorded options.
      - Whole-job performance/parity evidence covers catalog-only LF/HF/LD

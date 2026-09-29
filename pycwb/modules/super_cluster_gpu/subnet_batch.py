@@ -137,7 +137,7 @@ class BatchedSubnet:
         def ready(*args: Any) -> tuple[Any, ...]:
             actual = next(results)
             if self.options.validate_stages:
-                from pycwb.modules.gpu_utils.validation import leaves
+                from pycwb.modules.stage_validation import leaves
 
                 expected = native.optimize_sky_loc_from_td(*args)
                 if leaves(expected) != leaves(actual):

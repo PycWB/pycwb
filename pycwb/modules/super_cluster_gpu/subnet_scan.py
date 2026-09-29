@@ -17,8 +17,8 @@ from typing import Any
 import numpy as np
 from numba import cuda
 
-from pycwb.modules.gpu_utils.cuda_runtime import load_module
-from pycwb.modules.gpu_utils.geometry_cache import resident_geometry
+from pycwb.utils.gpu.cuda_runtime import load_module
+from pycwb.utils.gpu.geometry_cache import resident_geometry
 
 SCORE_COLUMNS = 6
 """Per-direction kernel outputs: ``AA, Eo, subnet, m, suball, EE`` as float64."""

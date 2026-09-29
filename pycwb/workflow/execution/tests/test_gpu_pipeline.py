@@ -37,7 +37,7 @@ def test_legacy_modules_share_canonical_state():
 
 def test_scientific_modules_do_not_depend_on_workflow_or_legacy_package():
     root = Path(gpu.__file__).parents[2] / "modules"
-    for package in ("coherence_gpu", "super_cluster_gpu", "likelihood_gpu", "gpu_utils"):
+    for package in ("coherence_gpu", "super_cluster_gpu", "likelihood_gpu"):
         for path in (root / package).glob("*.py"):
             tree = ast.parse(path.read_text())
             for node in ast.walk(tree):

@@ -19,7 +19,7 @@ import numpy as np
 from numba import cuda, njit
 
 from pycwb.modules.likelihood_gpu.chirp_bootstrap_plan import TRIALS, finish_bootstrap, prepare_bootstrap
-from pycwb.modules.gpu_utils.cuda_runtime import load_module
+from pycwb.utils.gpu.cuda_runtime import load_module
 
 MASK_BUDGET_BYTES = 256 * 1024**2
 """Largest ``(n_micropixels, trials)`` uint8 classification buffer per launch."""

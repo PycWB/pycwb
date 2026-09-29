@@ -1,4 +1,0 @@
-name: gpu_utils
-author: pycWB
-description: Shared CUDA runtime, bounded buffers and validation.
-dependencies: [numpy, numba, jax]
