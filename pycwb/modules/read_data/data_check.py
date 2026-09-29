@@ -61,7 +61,7 @@ def check_and_resample(data, config, ifo_index):
         data = data.cwb_resampling(float(config.fResample))
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
-    if new_sample_rate != config.inRate:
+    if new_sample_rate != data.sample_rate:
         logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
         data = data.cwb_resampling(float(new_sample_rate))
 
@@ -103,7 +103,7 @@ def check_and_resample_py(data, config, ifo_index):
         data = data.cwb_resampling(float(config.fResample))
 
     new_sample_rate = data.sample_rate / (1 << config.levelR)
-    if new_sample_rate != config.inRate:
+    if new_sample_rate != data.sample_rate:
         logger.info(f"Resampling data from {data.sample_rate} to {new_sample_rate}")
         data = data.cwb_resampling(float(new_sample_rate))
     else:
