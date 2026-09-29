@@ -14,6 +14,23 @@ generates the noise and signal, processes the segment, and writes its catalog an
 waveform products. No example-specific Python runner is needed. Use a fresh
 working directory for each run.
 
+After the run, make the input-polarization and injection/reconstruction plots:
+
+```bash
+python examples/demo/plot_results.py my_first_search
+```
+
+The helper reads the run's saved YAML, catalog and `output/wave.h5`. It writes
+`injected_signal.png`, `reconstruction.png` and a result summary under
+`my_first_search/plots/`. The source plot regenerates the configured polarizations;
+the detector plot uses the saved `INJ` and `REC` samples with their original
+epochs, sample rates and strain amplitudes. It selects the loudest candidate
+within one second of the injected epoch in both detectors and reports an error
+if no such candidate exists.
+
+The [Your First Search](../../docs/source/start_here.rst) page explains the YAML,
+catalog fields and output files using figures produced by this helper.
+
 No detector strain download or collaboration account is needed. The first run
 may download the cross-talk catalog and compile numerical kernels. To reuse a
 local catalog, copy the YAML and set `filter_dir` to its directory and `wdmXTalk`
