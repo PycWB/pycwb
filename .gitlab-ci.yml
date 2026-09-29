@@ -83,7 +83,7 @@ documentation:
     PYCWB_DOCS_OFFLINE: "1"
   script:
     - python -m pip install -r docs/requirements.txt
-    - make doc-check
+    - TZ=UTC python -m sphinx -W --keep-going -b html docs/source docs/build/html
   artifacts:
     when: always
     paths:

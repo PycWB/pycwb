@@ -121,6 +121,8 @@ Python 3.13 and builds without the optional ROOT wavelet extension. The pipeline
 runs unit/integration tests excluding slow and fixture-dependent cases, a strict
 documentation build, onboarding tests and the packaged synthetic demo.
 The independent quality job uses Python 3.11 and the pinned requirements above.
+CI invokes Sphinx directly for the documentation check; ``make doc-check`` is
+the equivalent local shortcut.
 The injection-consistency reference job is manual. A multi-Python/OS matrix and
 ROOT validation are not implied by the native test badge.
 
