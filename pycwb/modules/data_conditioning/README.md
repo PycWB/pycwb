@@ -3,7 +3,12 @@
 This package regresses and whitens detector strain **once per segment**, before
 coherence and time-lag processing. It returns conditioned time series and noise
 RMS anchor maps used by downstream pixel statistics and injection reconstruction.
-Resampling is performed upstream by the data-reading workflow.
+Resampling is applied before regression and whitening by the segment workflow.
+`resampling.py` owns the cWB target-SNR injection path: noise and SNR estimation
+use FFT resampling; final scaled injections use Meyer(1024) separately from
+noise. `injection_resampling: cwb` is the default; explicit `fft` and fixed-hrss
+trials retain the ordinary data-reading resampler. Mixed target-SNR/fixed-hrss
+sources require separate trials in cWB mode.
 
 ## Public entry points
 
@@ -55,6 +60,8 @@ flowchart TD
 | [`whitening_mesa.py`](whitening_mesa.py) | MESA PSD estimation, optional smoothing/reindexing, FFT whitening, and ratio-based noise anchors. |
 | [`whitening_common.py`](whitening_common.py) | Shared cWB frequency-bin masking and constant filling for noise maps. |
 | [`noise.py`](noise.py) | Noise-anchor construction and lagged pixel RMS lookup. |
+| [`resampling.py`](resampling.py) | cWB target-SNR selection and final-injection Meyer downsampling; called before conditioning. |
+| [`_meyer_coefficients.py`](_meyer_coefficients.py) | Internal cWB Meyer(1024) reference filter coefficients. |
 | [`injection_whitening.py`](injection_whitening.py) | Whitens signal-only injections using a supplied noise estimate. |
 | [`psd_correction.py`](psd_correction.py) | Optional PSD-variability correction; not automatically called by the conditioning entry points. |
 | [`module.yaml`](module.yaml) | Module metadata and dependencies. |

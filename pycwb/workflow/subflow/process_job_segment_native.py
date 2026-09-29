@@ -81,7 +81,7 @@ from pycwb.modules.coherence_native.coherence import coherence_single_lag, setup
 from pycwb.modules.cwb_interop import create_cwb_workdir
 from pycwb.modules.data_conditioning.data_conditioning import condition_strains
 from pycwb.modules.injection import generate_strain_from_injection
-from pycwb.modules.injection.resampling import uses_cwb_snr_resampling, resample_snr_injection
+from pycwb.modules.data_conditioning.resampling import uses_cwb_snr_resampling, resample_snr_injection
 from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
 from pycwb.modules.read_data import read_from_job_segment
 from pycwb.modules.read_data.data_check import check_and_resample_py

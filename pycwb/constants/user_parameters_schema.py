@@ -217,7 +217,7 @@ schema = {
             "default": "jax",
             "cwb": False,
         },
-        "injection_resampling": {"type": "string", "enum": ["fft", "cwb"], "default": "fft", "description": "cwb uses Meyer for final target-SNR injections; SNR estimation and fixed-hrss injections retain FFT", "cwb": False},
+        "injection_resampling": {"type": "string", "enum": ["fft", "cwb"], "default": "cwb", "description": "cwb uses Meyer for final target-SNR injections; SNR estimation and fixed-hrss injections retain FFT", "cwb": False},
         "injection": {
             "type": "object",
             "description": (

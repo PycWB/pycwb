@@ -9,7 +9,7 @@ from pycwb.modules.injection import snr_scaling
 from pycwb.types.time_series import TimeSeries
 
 
-@pytest.mark.parametrize("mode", ["fft", "cwb"])
+@pytest.mark.parametrize("mode", ["fft", "cwb", None])
 def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mode):
     config = SimpleNamespace(
         injection_resampling=mode,
@@ -21,6 +21,8 @@ def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mod
         fLow=0.0,
         fHigh=8.0,
     )
+    if mode is None:
+        del config.injection_resampling
     source = {"gps_time": 2.0, "target_snr": 12.0, "hrss": 1e-22}
     segment = SimpleNamespace(injections=[source], sample_rate=16, ifos=["L1", "H1"])
     data = [TimeSeries(np.ones(64), dt=1 / 16, t0=0.0) for _ in range(2)]

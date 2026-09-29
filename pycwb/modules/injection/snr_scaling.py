@@ -57,7 +57,7 @@ def target_snr_scales(
         signals = generate_strain_from_injection(p, config, segment.sample_rate, segment.ifos)
         for buffer, signal in zip(buffers, signals):
             buffer.inject(signal, copy=False)
-    reference_mode = getattr(config, "injection_resampling", "fft") == "cwb"
+    reference_mode = getattr(config, "injection_resampling", "cwb") == "cwb"
     signal_config = config
     if reference_mode:
         # cWB calibrates noise only; its separately added MDC is not calibrated.

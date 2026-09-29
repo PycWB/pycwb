@@ -131,8 +131,8 @@ Finally, calculate likelihood statistics for accepted clusters:
 Matching cWB target-SNR resampling
 ----------------------------------
 
-With the native segment processor, set the following top-level option when
-matching cWB simulation modes 2 or 5:
+The native segment processor defaults to cWB-compatible resampling for
+target-SNR injections (cWB simulation modes 2 or 5):
 
 .. code-block:: yaml
 
@@ -146,7 +146,7 @@ This convention matters even when the generated waveform is identical. The final
 injection is then downsampled with Meyer(1024), separately from the noise,
 before conditioning. Fixed-hrss trials retain FFT resampling. A trial containing
 both target-SNR and fixed-hrss sources is rejected with this option; schedule
-them as separate trials. The default ``fft`` preserves the existing behavior.
+them as separate trials. Set ``injection_resampling: fft`` explicitly to retain the previous FFT-only behavior.
 This option does not select the SNR population: source parameters must still
 provide ``target_snr`` (or ``targeted_snr``).
 
@@ -169,6 +169,8 @@ differ, so equal seeds do not imply equal WNB realizations.
 network-SNR multipliers from clean detector data. It replaces ``snr_population``;
 the unimplemented ``par_generator.snr_scaling`` placeholder was removed.
 Population parameter generation remains separate from signal normalization.
+Meyer resampling lives in ``pycwb.modules.data_conditioning.resampling`` and
+is applied by the segment workflow before regression and whitening.
 
 The complete ``pycwb run`` path also saves triggers, reconstructed waveforms,
 injection products, Q-veto values, plots, and catalog rows according to the
