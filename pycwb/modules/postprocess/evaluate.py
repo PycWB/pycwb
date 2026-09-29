@@ -325,6 +325,7 @@ def score_catalog(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     parquet_file = pq.ParquetFile(cat_path)
     writer: pq.ParquetWriter | None = None
+    empty_scored = None
     n_input = 0
     n_scored = 0
 
@@ -342,7 +343,26 @@ def score_catalog(
             scored = _score_catalog_dataframe(
                 df.reset_index(drop=True), nifo, search, config_file, work_dir, clf,
             )
-            table = pa.Table.from_pandas(scored, preserve_index=False)
+            if writer is not None:
+                if scored.empty:
+                    continue
+                table = pa.Table.from_pandas(scored, preserve_index=False).cast(writer.schema)
+            else:
+                table = pa.Table.from_pandas(scored, preserve_index=False)
+                # Pandas object columns lose their Arrow type when every row is
+                # cut (or every value is null). Recover raw column types from
+                # the input, while retaining the derived scoring columns.
+                source_schema = parquet_file.schema_arrow
+                schema = pa.schema([
+                    source_schema.field(field.name)
+                    if pa.types.is_null(field.type) and field.name in source_schema.names
+                    else field
+                    for field in table.schema
+                ], metadata=table.schema.metadata)
+                table = table.cast(schema)
+                if scored.empty:
+                    empty_scored = table
+                    continue
             if writer is None:
                 table = with_catalog_provenance(table, cat_path, out_path)
                 writer = pq.ParquetWriter(out_path, table.schema)
@@ -353,7 +373,9 @@ def score_catalog(
             writer.close()
 
     if writer is None:
-        empty = pa.Table.from_batches([], schema=parquet_file.schema_arrow)
+        empty = empty_scored if empty_scored is not None else pa.Table.from_batches(
+            [], schema=parquet_file.schema_arrow,
+        )
         pq.write_table(with_catalog_provenance(empty, cat_path, out_path), out_path)
 
     logger.info("Scored %d / %d catalog rows → %s", n_scored, n_input, out_path)

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve Parquet list types across prediction-cut batches, including scored
+  catalogs with no surviving rows.
+
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
   unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved
   YAML snapshot used those implicit defaults will fail the resume consistency
