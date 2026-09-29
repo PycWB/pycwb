@@ -31,7 +31,7 @@ from filelock import SoftFileLock
 
 from pycwb.modules.catalog.catalog import PROGRESS_SCHEMA, Catalog, _write_table_atomic
 from pycwb.workflow.subflow import process_job_segment_native as native
-from pycwb.workflow.subflow.job_segment_progress import _catalog_path
+from pycwb.workflow.subflow.job_segment_output import _catalog_path
 
 from pycwb.constants.gpu_options import gpu_options
 

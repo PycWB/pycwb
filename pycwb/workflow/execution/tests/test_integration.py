@@ -254,7 +254,7 @@ def test_changed_fragment_rejected_even_when_root_matches(tmp_path, monkeypatch)
 def test_submission_yaml_changes_preserve_catalog_and_allow_resume(
     tmp_path, monkeypatch, setting, value,
 ):
-    from pycwb.workflow.subflow.config_consistency import validate_run_config
+    from pycwb.workflow.subflow.prepare_job_runs import validate_run_config
 
     _, _, _, source = setup_run(tmp_path)
     path = tmp_path / "catalog/catalog.parquet"
@@ -272,7 +272,7 @@ def test_submission_yaml_changes_preserve_catalog_and_allow_resume(
 
 
 def test_legacy_catalog_requires_regeneration(tmp_path, monkeypatch):
-    from pycwb.workflow.subflow.config_consistency import validate_run_config
+    from pycwb.workflow.subflow.prepare_job_runs import validate_run_config
 
     cfg, jobs, _, source = setup_run(tmp_path)
     del cfg._yaml_parameters
@@ -284,7 +284,7 @@ def test_legacy_catalog_requires_regeneration(tmp_path, monkeypatch):
 
 
 def test_orphan_manifest_requires_regeneration(tmp_path):
-    from pycwb.workflow.subflow.config_consistency import validate_run_config
+    from pycwb.workflow.subflow.prepare_job_runs import validate_run_config
 
     _, _, _, source = setup_run(tmp_path)
     (tmp_path / "catalog/catalog.parquet").unlink()

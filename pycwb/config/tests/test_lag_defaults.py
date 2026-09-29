@@ -9,7 +9,7 @@ import pytest
 from pycwb.constants import user_parameters_schema
 from pycwb.types.job import WaveSegment
 from pycwb.utils.yaml_helper import load_yaml
-from pycwb.workflow.subflow.config_consistency import validate_run_config
+from pycwb.workflow.subflow.prepare_job_runs import validate_run_config
 
 
 BASE_YAML = "analysis: 2G\nifo: [H1, L1]\nrefIFO: H1\n"

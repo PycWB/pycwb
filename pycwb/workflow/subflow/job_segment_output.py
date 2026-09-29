@@ -4,6 +4,7 @@ from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 import gc
 import logging
+import os
 import time
 
 import psutil
@@ -12,7 +13,7 @@ from pycwb.modules.qveto.qveto import get_qveto
 from pycwb.modules.reconstruction import estimate_snr
 from pycwb.modules.workflow_utils import create_single_trigger_folder, save_trigger
 from pycwb.types.trigger import Trigger
-from pycwb.workflow.subflow.job_segment_progress import _catalog_path, _record_lag_progress
+from pycwb.config import Config
 from pycwb.workflow.subflow.job_segment_resources import _free_jax_buffers
 from pycwb.workflow.subflow.postprocess_and_plots import (
     plot_skymap_flow,
@@ -24,6 +25,31 @@ from pycwb.workflow.subflow.postprocess_and_plots import (
 logger = logging.getLogger(__name__)
 _cleanup_count = 0
 _last_full_collection_rss = None
+
+
+def _catalog_path(working_dir: str, config: Config, catalog_file: str | None) -> str | None:
+    if not catalog_file:
+        return None
+    if os.path.isabs(catalog_file):
+        return catalog_file
+    return os.path.join(working_dir, config.catalog_dir, catalog_file)
+
+
+def _record_lag_progress(
+    working_dir: str,
+    config: Config,
+    catalog_file: str | None,
+    queue,
+    progress_record: dict,
+) -> None:
+    if queue is not None:
+        queue.put({"type": "progress", **progress_record})
+        return
+    catalog_path = _catalog_path(working_dir, config, catalog_file)
+    if catalog_path:
+        from pycwb.modules.catalog.catalog import Catalog
+
+        Catalog.open(catalog_path).add_lag_progress(**progress_record)
 
 
 def _create_and_save_trigger_folders(output_context, result) -> list[str | None]:

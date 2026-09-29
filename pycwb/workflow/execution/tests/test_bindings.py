@@ -69,8 +69,7 @@ BOUND_SYMBOLS: dict[str, tuple[str, ...]] = {
         "PROGRESS_SCHEMA",
         "Catalog",
     ),
-    "pycwb.workflow.subflow.job_segment_progress": ("_catalog_path",),
-    "pycwb.workflow.subflow.job_segment_output": ("_postprocess_saved_triggers",),
+    "pycwb.workflow.subflow.job_segment_output": ("_catalog_path", "_postprocess_saved_triggers"),
     "pycwb.workflow.subflow.postprocess_and_plots": ("reconstruct_waveforms_flow",),
     "pycwb.modules.reconstruction": ("get_network_MRA_wave",),
 }

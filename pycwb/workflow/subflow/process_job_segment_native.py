@@ -96,23 +96,15 @@ from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
 from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.workflow.subflow.job_segment_output import (
+    _catalog_path as _catalog_path,
     _cleanup_lag_output_state,
     _create_and_save_trigger_folders,
     _log_lag_completion,
     _log_lag_output_timing,
     _postprocess_saved_triggers,
+    _record_lag_progress as _record_lag_progress,
     _record_output_progress,
     _write_trigger_records,
-)
-from pycwb.workflow.subflow.job_segment_progress import (
-    _catalog_path as _catalog_path,
-)
-from pycwb.workflow.subflow.job_segment_progress import (
-    _lag_metadata,
-    _lag_progress_record,
-)
-from pycwb.workflow.subflow.job_segment_progress import (
-    _record_lag_progress as _record_lag_progress,
 )
 from pycwb.workflow.subflow.job_segment_resources import (
     _free_jax_buffers as _free_jax_buffers,
@@ -175,6 +167,34 @@ class LagResult:
     segment_lag: list[float]
     events_data: list[tuple[Event, object, object]]
     progress_record: dict
+
+
+def _lag_metadata(sub_job_seg: WaveSegment, lag: int) -> tuple[list[float], list[float], np.ndarray]:
+    lag_shifts = sub_job_seg.lag_shifts[lag]
+    time_lag = [float(v) for v in lag_shifts]
+    segment_lag = (
+        [float(v) for v in sub_job_seg.shift]
+        if sub_job_seg.shift is not None
+        else [0.0 for _ in sub_job_seg.ifos]
+    )
+    return time_lag, segment_lag, lag_shifts
+
+
+def _lag_progress_record(
+    context,
+    lag: int,
+    n_triggers: int,
+    livetime: float,
+    status: str,
+) -> dict:
+    return dict(
+        job_id=context.sub_job_seg.index,
+        trial_idx=context.trial_idx,
+        lag_idx=lag,
+        n_triggers=n_triggers,
+        livetime=livetime,
+        status=status,
+    )
 
 
 def _run_lag_analysis(

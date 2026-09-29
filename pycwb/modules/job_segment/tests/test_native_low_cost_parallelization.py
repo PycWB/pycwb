@@ -267,7 +267,6 @@ def test_parallel_lag_config_defaults_are_registered():
 
 def test_native_workflow_import_contract_points_to_support_helpers():
     from pycwb.workflow.subflow import job_segment_output
-    from pycwb.workflow.subflow import job_segment_progress
     from pycwb.workflow.subflow import job_segment_resources
     from pycwb.workflow.subflow import job_segment_veto
 
@@ -275,8 +274,8 @@ def test_native_workflow_import_contract_points_to_support_helpers():
     assert default_processor == "pycwb.workflow.subflow.process_job_segment_native.process_job_segment"
     assert getattr(native, default_processor.rsplit(".", 1)[1]) is native.process_job_segment
 
-    assert native._catalog_path is job_segment_progress._catalog_path
-    assert native._record_lag_progress is job_segment_progress._record_lag_progress
+    assert native._catalog_path is job_segment_output._catalog_path
+    assert native._record_lag_progress is job_segment_output._record_lag_progress
     assert native._effective_veto_windows is job_segment_veto._effective_veto_windows
     assert native._lag_livetime is job_segment_veto._lag_livetime
     assert native._parallel_inner_threads is job_segment_resources._parallel_inner_threads

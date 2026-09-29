@@ -127,9 +127,8 @@ native CPU work and must not be enabled in speed measurements. The old
 | `workflow/profiling.py` | Optional lag analysis and output profiling |
 | `modules/read_data/parallel.py` | Bounded parallel frame decoding |
 | `modules/data_conditioning/parallel.py` | Bounded parallel native conditioning |
-| `workflow/subflow/process_job_segment_gpu.py` | Function selection and job pipeline assembly |
+| `workflow/subflow/process_job_segment_gpu.py` | Function selection, job pipeline assembly and overlapping setup |
 | `workflow/subflow/process_job_segment_gpu_parallel.py` | Spawned GPU lag workers with native shared inputs |
-| `workflow/subflow/gpu_setup_overlap.py` | Join overlapping preparation before worker creation |
 | `workflow/subflow/gpu_output.py` | Parent-only buffered output and durable progress |
 | `workflow/subflow/gpu_reconstruction.py` | Parent-owned catalog-only Q-veto flow |
 

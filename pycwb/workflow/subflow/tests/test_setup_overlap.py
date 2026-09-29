@@ -7,8 +7,8 @@ from threading import Event
 
 import pytest
 
-from pycwb.workflow.subflow import gpu_setup_overlap as setup_overlap
-from pycwb.workflow.subflow.gpu_setup_overlap import OverlappedSetup
+from pycwb.workflow.subflow import process_job_segment_gpu as setup_overlap
+from pycwb.workflow.subflow.process_job_segment_gpu import OverlappedSetup
 
 
 @pytest.fixture(autouse=True)

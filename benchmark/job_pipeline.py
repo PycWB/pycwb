@@ -77,7 +77,7 @@ def _setup_functions(coherence: Any, td: Any, *, overlap: bool = True) -> tuple[
     if not overlap:
         return coherence, td
 
-    from pycwb.workflow.subflow.gpu_setup_overlap import OverlappedSetup
+    from pycwb.workflow.subflow.process_job_segment_gpu import OverlappedSetup
 
     overlap = OverlappedSetup(coherence, td)
     return overlap.setup_coherence, overlap.build_td_inputs_cache
