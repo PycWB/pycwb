@@ -24,6 +24,7 @@ release = __version__
 
 extensions = [
     'generate_reference',
+    'stage_nav',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosummary',
@@ -32,7 +33,8 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "pycwb/vendor/*"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "pycwb/vendor/*",
+                    "pycwb.*.tests.rst", "pycwb.*.tests.*.rst"]
 
 autodoc_mock_imports = [
     "ROOT",

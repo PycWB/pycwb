@@ -64,3 +64,225 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Pipeline stage navigator emitted by docs/stage_nav.py. */
+#content .stage-nav {
+  --stage-accent: #2563eb;
+  --stage-line: hsl(var(--border));
+  --stage-marker: 1.375rem;
+  margin: 1.25rem 0 2rem;
+  padding: 0.85rem 1rem 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.6rem;
+  background: hsl(var(--muted) / 0.45);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.dark #content .stage-nav {
+  --stage-accent: #60a5fa;
+}
+
+#content .stage-nav a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#content .stage-nav__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.9rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#content .stage-nav__title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+}
+
+#content .stage-nav__track {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+#content .stage-nav__count::before {
+  content: "\00B7";
+  margin-right: 0.5rem;
+}
+
+#content .stage-nav__neighbor {
+  font-size: 0.8rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#content .stage-nav__track a:hover,
+#content .stage-nav__neighbor a:hover {
+  color: var(--stage-accent);
+}
+
+#content .stage-nav__steps {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#content .stage-nav__step {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+
+/* Connector from the previous marker to this one. */
+#content .stage-nav__step + .stage-nav__step::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--stage-marker) / 2 - 1px);
+  right: calc(50% + var(--stage-marker) / 2 + 0.2rem);
+  left: calc(-50% + var(--stage-marker) / 2 + 0.2rem);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--stage-line);
+}
+
+#content .stage-nav__step.is-upstream + .stage-nav__step::before {
+  background: color-mix(in srgb, var(--stage-accent) 45%, transparent);
+}
+
+#content .stage-nav__marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--stage-marker);
+  height: var(--stage-marker);
+  border: 2px solid var(--stage-line);
+  border-radius: 50%;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#content .stage-nav__label {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+/* The whole step is the link target, not just its label. */
+#content .stage-nav__label a::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem 0;
+}
+
+#content .stage-nav__step:hover .stage-nav__marker,
+#content .stage-nav__step:has(a:focus-visible) .stage-nav__marker {
+  border-color: var(--stage-accent);
+  color: var(--stage-accent);
+}
+
+#content .stage-nav__step:hover .stage-nav__label {
+  color: hsl(var(--foreground));
+}
+
+#content .stage-nav__step.is-upstream .stage-nav__marker {
+  border-color: color-mix(in srgb, var(--stage-accent) 45%, transparent);
+  color: var(--stage-accent);
+}
+
+#content .stage-nav__step.is-touched .stage-nav__marker {
+  border-color: var(--stage-accent);
+  background: color-mix(in srgb, var(--stage-accent) 12%, hsl(var(--background)));
+  color: var(--stage-accent);
+}
+
+#content .stage-nav__step.is-current .stage-nav__marker {
+  border-color: var(--stage-accent);
+  background: var(--stage-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--stage-accent) 18%, transparent);
+  color: hsl(var(--background));
+}
+
+#content .stage-nav__step.is-current .stage-nav__label,
+#content .stage-nav__step.is-touched .stage-nav__label {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+#content .stage-nav__note {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font-size: 0.82rem;
+}
+
+#content .stage-nav__note p {
+  margin: 0;
+}
+
+#content .stage-nav__note strong {
+  color: hsl(var(--foreground));
+}
+
+/* Narrow screens: steps become wrapping chips instead of a connected line. */
+@media (max-width: 720px) {
+  #content .stage-nav {
+    --stage-marker: 1.15rem;
+  }
+
+  #content .stage-nav__steps {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  #content .stage-nav__step {
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem 0.2rem 0.25rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    background: hsl(var(--background));
+  }
+
+  #content .stage-nav__step + .stage-nav__step::before {
+    display: none;
+  }
+
+  #content .stage-nav__marker {
+    border-width: 1.5px;
+    font-size: 0.62rem;
+  }
+
+  #content .stage-nav__step.is-current,
+  #content .stage-nav__step.is-touched {
+    border-color: var(--stage-accent);
+  }
+
+  #content .stage-nav__step.is-current .stage-nav__marker {
+    box-shadow: none;
+  }
+}
