@@ -3,15 +3,18 @@
 Injection Infrastructure
 ========================
 
-.. rubric:: Pipeline: :doc:`data <pipeline_lifecycle>` → :doc:`segments <job_control>` → **[inject signals]** ← you are here → :doc:`conditioning <pipeline_lifecycle>` → :doc:`WDM <pipeline_lifecycle>` → :doc:`pixels <clustering_algorithm>` → :doc:`clusters <clustering_algorithm>` → :doc:`likelihood <likelihood_guide>` → **[recover injections]** → :doc:`events <pipeline_lifecycle>` → :doc:`bkg <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → :doc:`eff <postproduction_efficiency>`
+.. stage-nav:: search
+   :touches: conditioning events
 
-The injection path begins before conditioning and follows the signal through
-conditioning, time-frequency decomposition, pixel and cluster formation, and
-likelihood-based recovery.
+   Signals are added to each segment's strain before **Conditioning** and
+   matched against the recovered **Events**.
 
 This guide covers pycWB's flexible injection infrastructure for simulation
 studies, including injection methods, sky distributions, time scheduling, and
 waveform generation.
+Use it to configure your own population. The worked :doc:`tutorial_population`
+lesson supplies four sources and demonstrates recovery and missed-event
+matching; :doc:`tutorial_customized_wf_gen` supplies a small custom generator.
 
 .. contents:: Table of Contents
    :depth: 2

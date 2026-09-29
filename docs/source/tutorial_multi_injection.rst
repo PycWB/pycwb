@@ -1,35 +1,22 @@
+:orphan:
+
 .. _tutorial_multi_injection:
 
 Performing Multi-Injection
 ==========================
 
-⭐ Intermediate  ·  ~25 min  ·  Prerequisites: :doc:`tutorial_injection`
+The worked population lesson is :doc:`tutorial_population`. It supplies a small
+parameter list, a complete run command and truth matching that includes missed
+sources. For your own population and scheduling choices, use
+:doc:`injection_infrastructure`.
 
-Multi-injection runs are configured by providing a list under
-``injection.parameters``. The scheduler attaches each injection to the job
-segment that contains its GPS time.
+The earlier ``examples/multiple_injection`` input remains available. Scheduled
+examples are collected under ``examples/new_injection_infra_with_gaussian_noise``
+and ``examples/new_injection_infra_with_real_data``; they cover repeated
+injections, sky/time distributions and generated or real detector noise.
 
-The repository includes a complete example in ``examples/multiple_injection``:
+.. raw:: html
 
-.. code-block:: bash
+   <span id="you-have-learned"></span>
 
-   cd examples/multiple_injection
-   pycwb run user_parameters_injection.yaml
-
-For larger simulation campaigns, use the newer scheduled-injection options
-shown in ``examples/new_injection_infra_with_gaussian_noise`` and related
-example folders. Those examples support repeated injections, sky and time
-distributions, generated Gaussian noise, and real-data injections.
-
-
-----
-
-You have learned
-----------------
-
-- ✅ How to configure multiple injections with a parameter list
-- ✅ How GPS-time scheduling assigns injections to job segments
-- ✅ The difference between simple parameter lists and scheduled-injection options
-- ✅ When to use the newer injection infrastructure for large campaigns
-
-**Next:** :doc:`tutorial_customized_wf_gen` — use custom waveform generators
+Continue with :doc:`tutorial_customized_wf_gen` for the worked custom generator.

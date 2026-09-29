@@ -1,13 +1,19 @@
 .. _workflow_execution:
+.. _experimental-workflow-execution:
 
-Experimental Workflow Execution
-===============================
+Configure Resources and Resume Work
+===================================
 
 .. warning::
 
    The scalable execution layer is experimental and opt-in. Its interfaces and
    behavior may change. Validate representative workloads before using it for
    a campaign. The default remains ``execution.profile: simple``.
+
+Use this guide to choose execution settings for your own workload and recover
+unfinished work. For a small worked comparison, complete
+:doc:`tutorial_resources`. The exact ``execution`` fields are also listed in
+:doc:`schema`.
 
 The ``pycwb.workflow.execution`` package handles resource-aware job planning,
 raw-input reuse, worker supervision, and coordinated output writing. It provides
@@ -136,6 +142,30 @@ trigger products are flushed. Resume skips committed work. Keep batch membership
 and scientific configuration stable when resuming: progress is not reconciled
 across regrouped catalog fragments.
 
+.. _execution_resume:
+
+Resume an unchanged run
+-----------------------
+
+For a local run using ``execution.profile: scalable``, keep the original YAML
+and work directory and allow reuse of the existing output directory:
+
+.. code-block:: bash
+
+   pycwb progress --work-dir RUN_DIRECTORY --verbose
+   pycwb run user_parameters.yaml --work-dir RUN_DIRECTORY --force-overwrite
+   pycwb progress --work-dir RUN_DIRECTORY --verbose
+
+The scalable executor skips committed jobs/lags and retains their products.
+``--force-overwrite`` passes the existing-output-directory check; it does not
+bypass YAML or execution-profile consistency checks and is not a general
+recovery command for every processor. Use a new directory for changed inputs
+or scientific settings. For batch runs, retain the original job membership
+and select unfinished work within those prepared fragments.
+
+After completion, follow :ref:`cluster_collect_results` for merging and
+preserving the result set.
+
 Limits and validation
 ---------------------
 
@@ -143,6 +173,11 @@ Memory reservations and sampled monitoring are not a hard OS memory limit.
 Scientific peaks can exceed estimates between samples. The runtime can stop
 workers under memory pressure; use scheduler/cgroup enforcement for a hard
 ceiling. This layer budgets host RAM, not GPU VRAM.
+
+For GPU or processor comparisons, use :doc:`backends`. Match the scientific
+workload and supported injection/output settings. Paired stage validation
+repeats work, so disable it when measuring speed; keep the numerical comparison
+and the performance measurement as separate results.
 
 Fresh worker startup and decoding overhead can make small jobs slower. Measure
 end-to-end performance before assuming a speedup, and compare scientific outputs

@@ -3,40 +3,26 @@
 Debugging a Failed Production
 =============================
 
-**Goal:** Diagnose and fix a failed or suspicious production run.
+**Use this route for:** a failed, incomplete or unexpected run. Preserve the
+configuration, logs, catalog manifests and progress before changing inputs.
 
-**Checklist:**
+1. Start with :doc:`troubleshooting` to distinguish import/data failures,
+   incomplete work and a completed run with no candidates.
+2. Check frames, channels and requested GPS coverage with :ref:`analysis_local_frames`;
+   inspect DQ windows, padding and lag selection with :doc:`job_control`.
+3. For memory or worker failures, inspect allocation and execution diagnostics
+   using :doc:`run_on_clusters` and :doc:`workflow_execution`.
+4. For unexpected background or recovery, inspect the selected exposure, zero-lag
+   separation, injection timing and truth matching with :doc:`postproduction_study`.
+5. Identify unfinished job/trial/lag tuples before retrying. For the scalable
+   executor, follow :ref:`execution_resume`; other modes have their own recovery
+   constraints in :doc:`troubleshooting`.
 
-1. **Check logs** — ``log/`` directory, look for ERROR or traceback
-2. **Check progress** — ``pycwb progress --work-dir .`` shows failed lags/jobs
-3. **Check catalog** — is ``catalog.parquet`` non-empty? Reasonable row count?
-4. **Check DQ** — do CAT0 segments cover your GPS range? Are CAT2 windows reasonable?
-5. **Check frames** — do ``.gwf`` files exist for all detectors and times?
-6. **Check zero-lag** — is it excluded from background?
-7. **Check SNR distribution** — does it peak near ``netRHO``? Long tail?
-8. **Check livetime** — compare selected exposure with completed progress and intervals, including veto and overlap losses
-9. **Check memory** — did any job hit OOM? Check ``job_memory`` setting.
-10. **Rescue failed lags** — identify incomplete job/trial/lag tuples with ``progress`` and consult :ref:`troubleshooting` before selecting work to rerun
+**Completion check:** identify the failed stage and reproduce the problem or
+account for the unexpected result. Do not use catalog size or the shape of a
+ranking distribution alone as a pass/fail test.
 
-**Common Root Causes:**
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 75
-
-   * - Symptom
-     - Likely Cause
-   * - Zero triggers
-     - ``netRHO`` too high, wrong frequency range, bad frame data
-   * - All triggers at same time
-     - Injection GPS times overlap with glitch
-   * - FAR curve flat
-     - Zero-lag leaked into background
-   * - Efficiency near 0%
-     - Injections not recovered (check SNR, GPS times, waveform params)
-   * - Job OOM
-     - ``segLen`` too long, ``healpix`` too high, ``job_memory`` too low
-   * - Run time too long
-     - ``healpix`` too high, ``lagSize`` too large, no parallelization
+**Worked precursor:** :doc:`tutorial_resources` demonstrates completion-aware
+restart on a small, unchanged run.
 
 See :doc:`analysis_recipes` for the other analysis tasks.

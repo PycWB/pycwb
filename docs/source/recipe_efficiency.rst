@@ -3,38 +3,22 @@
 Efficiency Study
 ================
 
-**Goal:** Compute detection efficiency vs. signal amplitude and produce
-hrss50/hrss90 sensitivity metrics.
+**Use this route for:** measuring recovery at a stated significance threshold.
+Supply eligible simulation truth, recovered/scored triggers, the ranking model
+when used, and a FAR mapping built from the appropriate background exposure.
 
-**Inputs:**
+1. Follow :doc:`postproduction_study` to score independent evaluation simulations
+   and generate efficiency products with the maintained workflow.
+2. Use :doc:`postproduction_efficiency` to define source eligibility, matching,
+   amplitude coordinates, waveform groups and uncertainty.
+3. Keep the chosen threshold and population definition with the curves and model.
 
-- Scored simulation catalog (from XGBoost inference)
-- Simulation truth table (``simulations.parquet``)
-- Trained model (``model.ubj``)
+**Completion check:** retain missed eligible injections in the denominator and
+handle duplicate matches explicitly. Report hrss50/hrss90 or fitted crossings
+only where the population samples support them. Investigate unexpected recovery
+using waveform support, timing, grouping and the selected threshold.
 
-**Commands:**
-
-.. code-block:: bash
-
-   # Score simulations with trained model
-   pycwb post-process efficiency_workflow.yaml
-
-**Expected Outputs:**
-
-- Efficiency vs. hrss curves (per waveform type)
-- hrss50 and hrss90 values
-- Sigmoid-fit parameters
-
-**Validation Checks:**
-
-- Efficiency → 100% for loud signals (hrss ≫ hrss50)
-- hrss50/hrss90 agree with the reference for each waveform family; different families can have different sensitivities
-- Binomial error bars decrease with more injections
-
-**Common Failure Modes:**
-
-- FAR threshold too strict (many real signals missed)
-- Insufficient injection statistics at low hrss
-- Waveform groups not filtering correctly (check ``waveform_groups``)
+**Worked precursor:** :doc:`tutorial_population` demonstrates recovered and missed
+sources before a larger sensitivity study.
 
 See :doc:`analysis_recipes` for the other analysis tasks.

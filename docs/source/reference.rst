@@ -15,7 +15,9 @@ Configuration and commands
    schema
    cli_reference
    backends
-   workflow_execution
+
+For resource planning, caching and restart procedures, use
+:doc:`workflow_execution` under :doc:`run_analyses`.
 
 Data and conventions
 --------------------

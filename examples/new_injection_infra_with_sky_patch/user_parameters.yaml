@@ -84,12 +84,12 @@ injection:
   repeat_injection: 20
   sky_distribution:
     type: Patch
+    coordsys: icrs
     patch:
-      unit: 'deg'
       center:
-        ra: 0.0
-        dec: 90.0
-      radius: 5.0
+        ra: "0 deg"
+        dec: "90 deg"
+      radius: "5 deg"
   time_distribution:
     type: 'rate'
     rate: 1/100

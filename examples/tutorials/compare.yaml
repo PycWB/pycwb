@@ -1,0 +1,47 @@
+vars:
+  work_dir: tutorial-work
+  runs:
+    - name: All sky
+      catalog_file: runs/all_sky/catalog/catalog.parquet
+    - name: Fixed direction
+      catalog_file: runs/fixed/catalog/catalog.parquet
+    - name: Circular patch
+      catalog_file: runs/patch/catalog/catalog.parquet
+runtime:
+  tmp_dir: ${work_dir}/tmp/comparison
+  cleanup_tmp: never
+steps:
+  - id: read_runs
+    action: postprocess.multi_run.read_catalog_runs
+    inputs:
+      runs: ${runs}
+    args:
+      columns: [id, ra, dec, rho, net_cc, injection]
+      require_injections: true
+    outputs:
+      output_file: tmp://catalogs.parquet
+      injections_output_file: tmp://injections.parquet
+      manifest_file: tmp://manifest.json
+  - id: sky_errors
+    action: postprocess.angle_comparison.plot_angle_error_comparison
+    inputs:
+      triggers_file: "@read_runs.triggers_file"
+      injections_file: "@read_runs.injections_file"
+      manifest_file: "@read_runs.manifest_file"
+    args:
+      output_dir: public/comparison/plots
+      injection_angle_unit: rad
+      recovered_angle_unit: deg
+      ranking_column: rho
+      strict_truth: true
+      histogram_bin_size_deg: 5
+  - id: report
+    action: postprocess.generic_report.generic_web_report
+    inputs:
+      plots: "@sky_errors.plots"
+    args:
+      title: Sky-mask comparison
+      subtitle: Same source and noise; different search masks.
+      output_file: public/comparison/index.html
+      metadata:
+        runs: "@read_runs.runs"

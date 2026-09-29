@@ -3,39 +3,23 @@
 Background-Only Production
 ==========================
 
-**Goal:** Run a production background search (no injections) for FAR estimation.
+**Use this route for:** estimating a noise background from real detector data.
+Supply frame/DQ inputs and a search configuration without synthetic injections.
 
-**Inputs:**
+1. Prepare a BKG configuration with :doc:`config_repository` and define its
+   nonzero lags and superlags using :doc:`job_control`.
+2. Follow :doc:`run_on_clusters` for execution and completion accounting.
+3. Use :doc:`postproduction_trainingset` and :doc:`postproduction_workflow` to
+   select background events and their analyzed exposure together. Exclude
+   physical zero lag from the FAR sample and keep training intervals separate.
+4. Interpret the resulting FAR curve with :doc:`postproduction_background`;
+   continue to :doc:`postproduction_study` when applying a trained ranking.
 
-- Real detector data with DQ files
-- No ``injection`` block in config
+**Completion check:** selected exposure agrees with completed intervals after
+vetoes, padding and overlap accounting. The cumulative rate is computed from
+the selected sample and exposure; a small sample need not give a smooth curve.
+Report finite exposure when no event exceeds a threshold.
 
-**Key Config:**
-
-.. code-block:: yaml
-
-   # Exclude injection block entirely
-   # Use production DQ and frame settings
-   lagSize: 200          # More lags for better FAR statistics
-   slagSize: 10          # Super lags for multi-detector
-
-**Commands:** Same as all-sky search with ``--job-type BKG``.
-
-**Expected Outputs:**
-
-- Trigger catalog with zero-lag and non-zero-lag events
-- Progress file with livetime per lag
-
-**Validation Checks:**
-
-- Zero-lag excluded from FAR calculation
-- FAR vs. rho curve is smooth and monotonically decreasing
-- Selected livetime agrees with completed progress and selected intervals after vetoes, edges and overlap accounting
-
-**Common Failure Modes:**
-
-- CAT2 veto windows applied as segments instead of windows
-- ``lagOff`` incorrectly set (zero-lag leaks into background)
-- Train/FAR split not respecting interval boundaries
+**Worked example:** :doc:`tutorial_background`.
 
 See :doc:`analysis_recipes` for the other analysis tasks.

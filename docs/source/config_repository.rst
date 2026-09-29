@@ -12,6 +12,32 @@ profiles, and helper scripts for downloading public GWOSC inputs.
 
 Use this guide when you want to create a working directory from a named search
 configuration and run it with ``pycwb config-setup``.
+For a worked search with a supplied public-data configuration, use
+:doc:`tutorial_open_data`.
+
+.. _analysis_local_frames:
+
+Use your own frame and DQ files
+-------------------------------
+
+When adapting an existing YAML, replace ``frFiles`` with your detector
+frame-list paths, ``channelNamesRaw`` with the channels actually present in
+those frames, and ``inRate`` with their sample rate. Update ``gps_start``,
+``gps_end`` and ``DQF`` together. Each frame list must cover the padded analysis
+intervals; keep detector order consistent across ``ifo``, channels and frame
+lists. Use :doc:`job_control` for segment, DQ and frame-discovery behavior.
+
+For already available local frames, omit the GWOSC download step. Validate
+your complete YAML, inspect the listed jobs and run in a new work directory:
+
+.. code-block:: bash
+
+   pycwb validate user_parameters.yaml
+   pycwb run user_parameters.yaml --work-dir RUN_DIRECTORY --list-jobs
+   pycwb run user_parameters.yaml --work-dir RUN_DIRECTORY
+
+For a named configuration-repository run, use the data-source profiles and
+setup procedure below. Continue with :doc:`run_on_clusters` for batch execution.
 
 
 Repository Layout

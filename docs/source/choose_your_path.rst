@@ -19,8 +19,8 @@ keeps the audience-based routes for existing readers.
      - :doc:`getting_started` and :doc:`start_here`
      - :doc:`tutorials`, :doc:`glossary`
    * - Search analyst
-     - :doc:`standard_analysis`
-     - :doc:`analysis_recipes`, :doc:`postproduction`
+     - :doc:`run_analyses` and :doc:`analysis_recipes`
+     - :doc:`standard_analysis`, :doc:`postproduction_study`
    * - Algorithm researcher
      - :doc:`core_concepts`
      - :doc:`pipeline_lifecycle`, :doc:`likelihood_guide`

@@ -5,8 +5,10 @@ Step by Step Injection Search
 
 Intermediate · Prerequisites: :ref:`start_here` and :doc:`tutorial_search`
 
-This tutorial shows how to run and inspect a simulated injection search. For a
-complete runnable example, start from ``examples/injection``.
+This walkthrough explains the Python stages and numerical conventions behind
+an injection search. For a worked recovery experiment, use
+:doc:`tutorial_population`; for configuring your own campaign, use
+:doc:`injection_infrastructure`. The stage example below uses ``examples/injection``.
 
 First, create a project folder and copy the example files:
 
@@ -187,4 +189,5 @@ You have learned
 - ✅ How to inspect the data conditioning pipeline step by step
 - ✅ How likelihood evaluation and cluster acceptance work
 
-**Next:** :doc:`tutorial_multi_injection` — run multiple injections with different parameters
+**Try the workflow:** :doc:`tutorial_population` demonstrates recovery and
+matching for several sources with different amplitudes.

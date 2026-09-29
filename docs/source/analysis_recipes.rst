@@ -1,12 +1,16 @@
 .. _analysis_recipes:
 
-Analysis Recipes
-================
+Choose an Analysis Task
+=======================
 
-Workflow templates for specific tasks. Each recipe retains its goal, required
-inputs, configuration, commands, expected outputs, and validation checks.
-For guided learning, start with :doc:`tutorials`; for detailed production setup,
-see :doc:`standard_analysis`.
+.. raw:: html
+
+   <span id="id1"></span>
+
+These short routes identify the inputs, guides and completion checks for common
+research tasks. Configuration and commands are maintained in the linked
+:doc:`run_analyses`, so each procedure has one authoritative version.
+For a prepared experiment to learn from, use :doc:`tutorials`.
 
 .. _table-of-contents:
 

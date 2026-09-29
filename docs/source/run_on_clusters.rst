@@ -11,6 +11,10 @@ The worker environment must contain PycWB and Python 3.11 or newer. The examples
 use the environment name ``pycwb`` from the installation guide; replace it with
 your site's compatible environment name.
 
+Use this guide with a working local analysis and your cluster's account and
+environment settings. For a worked local resource-and-restart experiment,
+see :doc:`tutorial_resources`.
+
 .. contents:: Table of Contents
    :depth: 2
    :local:
@@ -19,7 +23,7 @@ your site's compatible environment name.
 Configuration Sources
 ---------------------
 
-Job submission settings can be provided via three mechanisms, in order of
+Job submission settings can be provided via four mechanisms, in order of
 priority (highest first):
 
 1. **CLI flags** — passed directly to ``pycwb batch-setup`` or ``pycwb config-setup``
@@ -62,13 +66,13 @@ Common Settings (both Condor and SLURM)
 
 
 HTCondor (on LDG)
-=================
+-----------------
 
 HTCondor is the batch system used on the LIGO Data Grid (LDG). This section
 covers Condor-specific settings, job structure, and submission.
 
 Condor-Specific Settings
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
 
@@ -89,7 +93,7 @@ Condor-Specific Settings
 
 
 Generating and Submitting Condor Jobs
--------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Using ``pycwb batch-setup`` (already-initialised working directory):
 
@@ -126,7 +130,7 @@ Using ``pycwb config-setup`` (starting from config repository):
 
 
 Condor Job Structure
---------------------
+~~~~~~~~~~~~~~~~~~~~
 
 When ``--cluster condor`` is used, the following files are created under
 ``<workdir>/condor/``:
@@ -154,13 +158,13 @@ workers succeed.
 
 
 SLURM
-=====
+-----
 
 SLURM is the batch system used on many HPC clusters (e.g. Picasso, CIT).
 This section covers SLURM-specific settings, job structure, and submission.
 
 SLURM-Specific Settings
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: yaml
 
@@ -176,7 +180,7 @@ SLURM-Specific Settings
 
 
 Generating and Submitting SLURM Jobs
-------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Using ``pycwb batch-setup``:
 
@@ -211,7 +215,7 @@ Using ``pycwb config-setup``:
 
 
 SLURM Job Structure
--------------------
+~~~~~~~~~~~~~~~~~~~
 
 When ``--cluster slurm`` is used, the following files are created under
 ``<workdir>/slurm/``:
@@ -224,7 +228,7 @@ When ``--cluster slurm`` is used, the following files are created under
    * - ``run.sh``
      - SLURM array job script — runs one worker per array task
    * - ``merge.sh``
-     - Single-node merge job — runs ``pycwb merge-catalog`` after all workers finish
+     - Single-node merge job — collects catalog products after all workers finish
 
 Submission Flow:
 
@@ -238,14 +242,14 @@ array job is cancelled or the dependency is invalid, the merge job is
 cancelled automatically (``--kill-on-invalid-dep=yes``).
 
 Automatic Retry
-~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^
 
 Each worker script retries the pycwb command up to ``n_retries`` times
 (default: 5) with a 30-second pause between attempts. The job is submitted
 with ``--requeue`` so SLURM can also reschedule it on node failure.
 
 Generated ``run.sh`` Headers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -263,10 +267,10 @@ Generated ``run.sh`` Headers
 
 
 CLI Reference
-=============
+-------------
 
 ``pycwb batch-setup``
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 Use this command when your working directory is already initialised.
 
@@ -338,7 +342,7 @@ Use this command when your working directory is already initialised.
 
 
 ``pycwb config-setup``
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 
 Use this command when starting from a config repository. It combines project
 directory setup and batch job generation in one step.
@@ -371,7 +375,7 @@ All ``batch-setup`` flags are available, plus:
 
 
 Full Parameter Reference
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -469,8 +473,52 @@ Full Parameter Reference
      - ``5``
 
 
+.. _cluster_injection_campaigns:
+
+Injection campaigns
+-------------------
+
+Use the same injection YAML that you checked locally. Configure the population,
+sky/time distributions and waveform generation with :doc:`injection_infrastructure`;
+then use ``batch-setup`` with either scheduler above. A custom waveform generator
+is optional. The worked population exercise is :doc:`tutorial_population`.
+
+``--job-per-worker`` groups analysis jobs into one scheduler payload. Set
+``--n-proc``, ``--memory`` and ``--disk`` from the workload and allocation;
+use :doc:`workflow_execution` for the scalable execution profile. For
+containerized HTCondor jobs, use ``--container-image``. SLURM additionally
+accepts ``--walltime``, ``--slurm-partition`` and ``--slurm-constraint``.
+The scheduler-specific sections above describe environment initialization,
+accounting groups and generated files.
+
+For a campaign defined in a configuration repository, follow
+:doc:`config_repository` and use ``config-setup`` to prepare it. Inspect the
+generated jobs before adding ``--submit``.
+
+.. _cluster_collect_results:
+
+Collect and preserve results
+----------------------------
+
+After workers finish, inspect progress and collect products:
+
+.. code-block:: bash
+
+   pycwb progress --work-dir RUN_DIRECTORY --verbose
+   pycwb merge --work-dir RUN_DIRECTORY
+   pycwb merge --work-dir RUN_DIRECTORY --wave
+
+Use the waveform merge only when waveform products were enabled. Preserve
+catalog manifests and progress alongside the merged trigger catalog; copying
+one Parquet file can omit referenced job descriptions. See :doc:`catalog_format`
+for the product layout and :doc:`reproducibility` for the complete run record.
+
+For a partial or failed campaign, identify unfinished job/trial/lag tuples
+before rerunning work. Follow :doc:`workflow_execution` for scalable-executor
+recovery and :doc:`troubleshooting` for other failure modes.
+
 Tips
-====
+----
 
 - **Check job count before submitting:** use ``--list-n-jobs`` to verify the
   expected number of array tasks without generating any scripts.

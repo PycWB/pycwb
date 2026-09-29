@@ -3,63 +3,23 @@
 All-Sky Short Burst Search
 ==========================
 
-**Goal:** Run a standard all-sky burst search on real detector data.
+**Use this route for:** a search of your detector data without a sky mask.
+Prepare frame lists and channel names, DQ intervals, a detector network and a
+complete search configuration.
 
-**Inputs:**
+1. Create the run from :doc:`config_repository`, or adapt existing inputs using
+   :ref:`analysis_local_frames`. Select the intended search family and band.
+2. Use :doc:`job_control` to check segment boundaries, padding, lags and superlags.
+   Decide explicitly whether this run analyzes zero lag, background, or both.
+3. Follow :doc:`run_on_clusters` for batch setup, resource requests and submission.
+4. Inspect completion and the saved catalog/progress described in
+   :doc:`understanding_results`. For a background estimate, continue with
+   :doc:`recipe_background`.
 
-- GWOSC frame files or frame-file list
-- DQ segment files (CAT0/1/2)
-- ``user_parameters.yaml``
+**Completion check:** requested work is accounted for, selected exposure is
+understood, and catalog rows use the intended lag selection. An empty catalog
+alone does not mean the run failed, and a nonempty one does not prove correctness.
 
-**Key Config:**
-
-.. code-block:: yaml
-
-   # Network
-   ifo: [H1, L1]
-   fLow: 64
-   fHigh: 2048
-   inRate: 4096
-
-   # Segment
-   segLen: 600
-   segMLS: 300
-   segEdge: 8
-
-   # Lags
-   lagSize: 100
-   lagStep: 1.0
-   lagOff: 6
-
-   # Likelihood
-   netRHO: 4.0
-   netCC: 0.5
-   healpix: 7
-   Acore: 1.414
-
-**Commands:**
-
-.. code-block:: bash
-
-   # Set up working directory
-   pycwb config-setup O4_K02_C00_BurstLF_LH_BKG_standard \
-       --config-base-path ./config --machine default --datatype gwosc
-
-   # Submit to cluster
-   pycwb batch-setup user_parameters.yaml \
-       --cluster condor --submit \
-       --accounting-group ligo.dev.o4.burst.cwb
-
-**Expected Outputs:**
-
-- ``catalog/catalog.parquet`` — trigger list with SNR, sky position, time, frequency
-- ``catalog/progress.parquet`` — per-job processing metadata
-
-**Validation Checks:**
-
-- Triggers appear in catalog (non-empty)
-- Zero-lag triggers present (lag_idx = offset index)
-- Progress shows all lags completed
-- SNR distribution is reasonable (peak near netRHO, long tail)
+**Worked example:** :doc:`tutorial_open_data`.
 
 See :doc:`analysis_recipes` for the other analysis tasks.

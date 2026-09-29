@@ -103,6 +103,20 @@ Reviewers will check:
 Documentation Maintenance
 -------------------------
 
+Keep the documentation roles distinct:
+
+* **Tutorials:** one worked experiment with supplied inputs, runnable steps and
+  an output to inspect. Keep general configuration alternatives in a linked guide.
+* **How-to guides:** procedures for the reader's own data, configuration or
+  environment. Maintain each procedure here once; link a tutorial for practice.
+* **Task routes:** short input/guide/completion summaries. Link the procedure
+  instead of copying its YAML, commands or option tables into a recipe.
+* **Concepts and methods:** explanations and numerical/scientific conventions.
+* **Reference:** exact parameters, interfaces and data formats.
+
+When moving content, update internal links and retain a forwarding page for
+existing URLs and section anchors. Keep shared tutorial inputs in ``examples/``.
+
 Every PR that changes user-facing behavior must update the docs:
 
 .. list-table::
@@ -116,7 +130,7 @@ Every PR that changes user-facing behavior must update the docs:
    * - A pipeline stage or algorithm
      - The relevant :ref:`core_concepts` page + :ref:`pipeline_lifecycle`
    * - A CLI command or workflow
-     - :ref:`analysis_recipes` (if a recipe is affected) + :ref:`standard_analysis`
+     - The owning :ref:`run_analyses` page + :ref:`cli_reference`; update task routes and worked examples when affected
    * - A public Python API
      - Docstring in the source file (auto-documented in :doc:`modules`)
    * - The build or test system
@@ -133,8 +147,9 @@ Every PR that changes user-facing behavior must update the docs:
    - [ ] Docstring updated (if API changed)
    - [ ] Schema page updated (if new/changed params)
    - [ ] Core Concepts page updated (if algorithm changed)
-   - [ ] Recipe updated (if workflow changed)
-   - [ ] Tutorial updated (if user flow changed)
+   - [ ] Owning how-to guide updated (if procedure changed)
+   - [ ] Task route links updated (if workflow changed)
+   - [ ] Tutorial/example inputs updated (if worked experiment changed)
    - [ ] Glossary updated (if new terms)
    - [ ] CHANGES.md entry added
 

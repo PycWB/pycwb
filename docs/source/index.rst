@@ -36,11 +36,11 @@ Explore the documentation
 
    * :doc:`Tutorials <tutorials>`
 
-     Learn with worked examples: injections, custom waveforms, and batch runs.
+     Run prepared experiments and inspect signals, masks, recovery, and reports.
 
-   * :doc:`Run analyses <run_analyses>`
+   * :doc:`How-to guides <run_analyses>`
 
-     Configure searches, run on clusters, and process the results.
+     Adapt searches, cluster execution, and postproduction to your own inputs.
 
    * :doc:`Concepts and methods <core_concepts>`
 
