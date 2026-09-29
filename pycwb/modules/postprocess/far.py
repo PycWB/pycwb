@@ -284,6 +284,8 @@ def write_loudest_background_triggers(
     far_rho_data: Optional[dict] = None,
 ) -> tuple[str, int]:
     """Write the loudest-background trigger CSV."""
+    if far_rho_data is not None:
+        validate_far_ranking(far_rho_data, ranking_par)
     csv_path = os.path.join(out_dir, "loudest_background_triggers.csv")
     if df is None or df.empty:
         pd.DataFrame(columns=trigger_report_columns(ranking_par)).to_csv(csv_path, index=False)
@@ -367,6 +369,17 @@ def resolve_far_rho_data(far_rho_data: Optional[dict], out_dir: str, kwargs: dic
     return far_rho_data
 
 
+def validate_far_ranking(far_rho_data: dict, ranking_par: str) -> None:
+    """Reject calibration with a different statistic; unlabeled legacy tables use rho."""
+    recorded = far_rho_data.get("ranking_par", "rho")
+    if recorded != ranking_par:
+        raise ValueError(
+            f"FAR table ranking_par={recorded!r} does not match "
+            f"requested ranking_par={ranking_par!r}. Use a FAR table "
+            "calibrated with the requested statistic."
+        )
+
+
 def attach_far_and_significance(
     df: pd.DataFrame,
     far_rho_data: dict,
@@ -374,6 +387,7 @@ def attach_far_and_significance(
     livetime_seconds: float,
 ) -> pd.DataFrame:
     """Attach FAR, IFAR, p-value, and significance columns to trigger rows."""
+    validate_far_ranking(far_rho_data, ranking_par)
     df = df.copy()
     bins = np.asarray(far_rho_data["bins"], dtype=float)
     far_values = np.asarray(far_rho_data["far"], dtype=float)

@@ -7,6 +7,9 @@
   selection and background counts can change; production impact has not been
   quantified against a full cWB reference run.
 - Accept bare elementwise `max`/`min` in prediction cuts, matching training cuts.
+- Reject FAR-table attachment when its recorded ranking statistic differs from
+  the requested one. Unlabeled legacy tables retain the `rho` convention;
+  tables for custom statistics must declare `ranking_par`.
 
 - Import the frame-reader job type directly from its defining module, avoiding a cold-import cycle through job segmentation and injection SNR setup.
 

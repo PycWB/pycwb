@@ -48,6 +48,7 @@ def zero_lag_report(
     progress_unshifted_jobs = far.unshifted_jobs_for_progress(prog_path)
 
     far_rho_data = far.resolve_far_rho_data(far_rho_data, out_dir, kwargs)
+    far.validate_far_ranking(far_rho_data, ranking_par)
 
     job_ids = far.read_job_ids(jobs_path)
     columns = far.trigger_read_columns(cat_path, ranking_par)
