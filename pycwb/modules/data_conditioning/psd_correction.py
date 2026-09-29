@@ -2,7 +2,7 @@
 Pure-Python PSD variability correction using wdm_wavelet.
 """
 
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 
 import logging
 

@@ -3,44 +3,28 @@ import random
 
 
 def generate_slags(num_ifos, slag_min, slag_max, slag_off=0, slag_size=None, shuffle=True):
+    """Generate superlag shift tuples for a detector network.
+
+    Parameters
+    ----------
+    num_ifos : int
+        Detector count; the reference detector at index zero has no shift.
+    max_shift : int
+        Maximum absolute shift for the other detectors.
+    slag_min : int
+        Minimum accepted superlag distance.
+    slag_max : int
+        Maximum accepted superlag distance.
+    slag_off : int
+        Number of combinations to skip before selecting output.
+    slag_size : int
+        Maximum number of combinations to return after the offset.
+
+    Returns
+    -------
+    list of tuple of int
+        Shift tuples of length ``num_ifos``, with first element zero.
     """
-     Generate a list of super lag (slag) combinations for a given number of interferometers (ifos),
-     considering a specified range of shift values, slag distance range, offset, and size.
-
-     Parameters:
-     - num_ifos (int): The number of interferometers. ifo[0] is considered the reference and always has a shift of 0.
-     - max_shift (int): The maximum absolute shift value for each ifo (except ifo[0]).
-                        The shifts range from -max_shift to max_shift for each ifo.
-     - slag_min (int): The minimum slag distance to be considered. Combinations with slag distance
-                       less than slag_min are excluded from the result.
-     - slag_max (int): The maximum slag distance to be considered. Combinations with slag distance
-                       greater than slag_max are excluded from the result.
-     - slag_off (int): The offset for slag combinations. The first 'slag_off' combinations are skipped
-                       in the final list. Useful for pagination or skipping certain combinations.
-     - slag_size (int): The number of slag combinations to be included in the final list.
-                        If the number of available combinations after applying the offset is less than slag_size,
-                        the resulting list may be shorter than slag_size.
-
-     Returns:
-     List[Tuple[int]]: A list of tuples, where each tuple represents a combination of shifts for the ifos.
-                       The length of each tuple is equal to 'num_ifos', and the first element of each tuple
-                       (representing ifo[0]) is always 0. The subsequent elements are the shifts for ifos[1] to ifos[n-1].
-
-     Note:
-     - The function ensures that there are no zero shifts for ifos apart from the [0, 0, ..., 0] combination.
-     - The shifts are sorted primarily by the slag distance and secondarily by the order of the shifts themselves.
-     - The function does not return the slag distances themselves, only the combinations of shifts.
-
-     Example:
-     num_ifos = 3
-     max_shift = 2
-     slag_min = 3
-     slag_max = 3
-     slag_off = 2
-     slag_size = 2
-     slags = generate_slags(num_ifos, max_shift, slag_min, slag_max, slag_off, slag_size)
-     print(slags)  # Output would be: [(0, -1, 2), (0, -2, -1)]
-     """
     
     # Generate all possible shifts for ifos except ifo[0]
     shifts = list(itertools.product(range(-slag_max, slag_max + 1), repeat=num_ifos - 1))

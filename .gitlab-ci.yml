@@ -31,7 +31,7 @@ test:
   script:
     - pip install --no-cache-dir --no-build-isolation -e ".[test]"
     - |
-      pytest pycwb/modules/ tests/ \
+      pytest pycwb/ tests/ \
         --ignore=tests/sample \
         --ignore=tests/injection_consistency \
         -m "not slow" \
@@ -65,6 +65,35 @@ injection-consistency:
     reports:
       junit: injection-consistency-report.xml
 
+quality:
+  stage: test
+  # Match mypy's minimum-version target and its third-party stubs.
+  image: python:3.11
+  needs: []
+  script:
+    - python -m pip install -r tools/quality/requirements.txt
+    - python tools/check_quality.py
+    - python -m mypy
+
+# The image already contains the built wheel. Do not install the checkout in
+# this job. Isolate pytest too, so recovery checks import the installed package
+# rather than the fresh checkout (which has no generated _version.py).
+installed-cli-smoke:
+  stage: test
+  image: ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}
+  needs: [build]
+  variables:
+    NUMBA_NUM_THREADS: "1"
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+  script:
+    - python -m pip install pytest
+    - python -I -m pytest tests/test_demo_e2e.py -m slow --junitxml=installed-cli-report.xml -v
+  artifacts:
+    when: always
+    reports:
+      junit: installed-cli-report.xml
+
 build-latest:
   rules:
     - if: $CI_COMMIT_TAG
@@ -87,7 +116,7 @@ build-sdist:
       - dist/*
 
 publish:
-  image: python:3.10
+  image: python:3.11
   stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
   environment: production
   only:

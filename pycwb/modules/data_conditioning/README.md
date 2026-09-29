@@ -3,7 +3,12 @@
 This package regresses and whitens detector strain **once per segment**, before
 coherence and time-lag processing. It returns conditioned time series and noise
 RMS anchor maps used by downstream pixel statistics and injection reconstruction.
-Resampling is performed upstream by the data-reading workflow.
+Resampling is applied before regression and whitening by the segment workflow.
+`resampling.py` owns the cWB target-SNR injection path: noise and SNR estimation
+use FFT resampling; final scaled injections use Meyer(1024) separately from
+noise. `injection_resampling: cwb` is the default; explicit `fft` and fixed-hrss
+trials retain the ordinary data-reading resampler. Mixed target-SNR/fixed-hrss
+sources require separate trials in cWB mode.
 
 ## Public entry points
 
@@ -54,14 +59,17 @@ flowchart TD
 | [`whitening.py`](whitening.py) | Wavelet noise estimation, anchor interpolation, coefficient whitening, and two-quadrature reconstruction. |
 | [`whitening_mesa.py`](whitening_mesa.py) | MESA PSD estimation, optional smoothing/reindexing, FFT whitening, and ratio-based noise anchors. |
 | [`whitening_common.py`](whitening_common.py) | Shared cWB frequency-bin masking and constant filling for noise maps. |
+| [`noise.py`](noise.py) | Noise-anchor construction and lagged pixel RMS lookup. |
+| [`resampling.py`](resampling.py) | cWB target-SNR selection and final-injection Meyer downsampling; called before conditioning. |
+| [`_meyer_coefficients.py`](_meyer_coefficients.py) | Internal cWB Meyer(1024) reference filter coefficients. |
 | [`injection_whitening.py`](injection_whitening.py) | Whitens signal-only injections using a supplied noise estimate. |
 | [`psd_correction.py`](psd_correction.py) | Optional PSD-variability correction; not automatically called by the conditioning entry points. |
 | [`module.yaml`](module.yaml) | Module metadata and dependencies. |
 | [`tests/`](tests/) | API/dispatch, regression-oracle, backend-parity, and frequency-boundary tests. |
 
-Shared noise-map construction and pixel lookup live in
-[`types/noise_rms.py`](../../types/noise_rms.py), with
-[noise-map tests](../../types/tests/test_noise_rms.py).
+Shared noise-map construction and pixel lookup live in [`noise.py`](noise.py),
+with [noise-map tests](tests/test_noise_rms.py).
+[`types/noise_rms.py`](../../types/noise_rms.py) contains only the anchor data class.
 
 The separate [`data_conditioning_root`](../data_conditioning_root/) package serves
 the ROOT-backed workflow. Its APIs and compatibility imports are independent.
@@ -70,7 +78,7 @@ the ROOT-backed workflow. Its APIs and compatibility imports are independent.
 
 - `config.whiteMethod` selects `wavelet` (default), `python` (the same wavelet
   path), or `mesa`. The dispatchers do not implement `mixed`.
-- [`ExecutionProfile`](../../constants/execution_profile.py) selects
+- [`ExecutionProfile`](../../config/processing.py) selects
   `regression_engine='numba'` (default) or `'jax'`. The dispatcher imports the
   selected backend when needed; if Numba cannot import, the existing JAX fallback
   is retained. Other PycWB/WDM components may load JAX independently.
@@ -93,6 +101,13 @@ the ROOT-backed workflow. Its APIs and compatibility imports are independent.
   interchangeable time coordinates.
 - `lookup_pixel_noise_rms` returns `(n_pixels, n_detectors)` float64 values using
   each detector's lagged pixel index and inverse-variance frequency averaging.
+- Optional noise variation is an ordinary PycWB `TimeFrequencyMap` with one row
+  of float32 correction factors. `dt`/`start` describe its time lattice and
+  `f_low`/`f_high` its affected band. It has no wavelet or inverse transform.
+  This corresponds to cWB's `WSeries<float> nVAR`; its construction belongs to
+  the O3a conditioning plugin. Its validation and pixel RMS application live in
+  [`conditioning_plugins/noise_variation.py`](../conditioning_plugins/noise_variation.py);
+  `noise.py` delegates there only when a variation map is attached.
 - Injection whitening must consume the previously estimated noise map. It does
   not re-estimate noise from the injected signal and retains its own band,
   interpolation, and inverse-phase conventions.

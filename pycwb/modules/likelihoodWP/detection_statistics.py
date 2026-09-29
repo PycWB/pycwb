@@ -7,7 +7,7 @@ Hough chirp fitting and its cluster updates live in chirp_hough.py.
 """
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 
 import logging
 from math import sqrt

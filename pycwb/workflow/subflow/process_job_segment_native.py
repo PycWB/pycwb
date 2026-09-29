@@ -1,8 +1,9 @@
-"""
-Core analysis pipeline for a single job segment (native Python path).
+"""Core analysis pipeline for a single job segment (native Python path).
 
 Pipeline overview (one job segment = one GPS time window)
---------------------------------------------------------
+---------------------------------------------------------
+
+.. code-block:: text
 
   ┌──────────────────────────────────────────────────────────┐
   │                  process_job_segment()                   │
@@ -33,6 +34,8 @@ Pipeline overview (one job segment = one GPS time window)
 Data flow between pipeline stages
 ----------------------------------
 
+.. code-block:: text
+
   raw data (TimeSeries[])
     │
     ├─[check_and_resample_py]──► resampled strains
@@ -61,50 +64,52 @@ Reference
 See ``docs/3.run_pycwb_with_yaml_config.md`` for configuration details.
 """
 
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 
 import logging
 import os
 import time
-import psutil
-import numpy as np
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from collections.abc import Callable
 from copy import copy
 from dataclasses import dataclass, replace
+
+import numpy as np
+import psutil
+
 from pycwb.config import Config
-from pycwb.types.time_series import TimeSeries
-from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
-from pycwb.utils.td_vector_batch import build_td_inputs_cache
-from pycwb.modules.xtalk.type import XTalk
-from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-from pycwb.modules.injection import generate_strain_from_injection
-from pycwb.modules.read_data import read_from_job_segment
-from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
-from pycwb.modules.read_data.data_check import check_and_resample_py
-from pycwb.modules.data_conditioning.data_conditioning import condition_strains
+from pycwb.modules.coherence_native.coherence import coherence_single_lag, setup_coherence
 from pycwb.modules.cwb_interop import create_cwb_workdir
+from pycwb.modules.data_conditioning.data_conditioning import condition_strains
+from pycwb.modules.injection import generate_strain_from_injection
+from pycwb.modules.data_conditioning.resampling import uses_cwb_snr_resampling, resample_snr_injection
 from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
+from pycwb.modules.read_data import read_from_job_segment
+from pycwb.modules.read_data.data_check import check_and_resample_py
+from pycwb.modules.read_data.simulations import generate_noise_for_job_seg
+from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
+from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
+from pycwb.modules.xtalk.type import XTalk
 from pycwb.types.job import WaveSegment
 from pycwb.types.network_event import Event
-from pycwb.modules.workflow_utils.job_setup import print_job_info, print_node_info
+from pycwb.types.time_series import TimeSeries
 from pycwb.utils.memory import release_memory
+from pycwb.utils.td_vector_batch import build_td_inputs_cache
 from pycwb.workflow.subflow.job_segment_output import (
+    _catalog_path as _catalog_path,
     _cleanup_lag_output_state,
     _create_and_save_trigger_folders,
     _log_lag_completion,
     _log_lag_output_timing,
     _postprocess_saved_triggers,
+    _record_lag_progress as _record_lag_progress,
     _record_output_progress,
     _write_trigger_records,
 )
-from pycwb.workflow.subflow.job_segment_progress import (
-    _catalog_path as _catalog_path,
-    _lag_metadata,
-    _lag_progress_record,
-    _record_lag_progress as _record_lag_progress,
-)
 from pycwb.workflow.subflow.job_segment_resources import (
     _free_jax_buffers as _free_jax_buffers,
+)
+from pycwb.workflow.subflow.job_segment_resources import (
     _parallel_inner_threads,
     _temporary_numba_threads,
 )
@@ -134,6 +139,8 @@ class LagAnalysisContext:
     nRMS: object
     veto_windows: object
     numba_threads: int | None = None
+    pre_selection_veto_windows: object = None
+    selection_exclusions_applied: bool = False
 
 
 @dataclass(frozen=True)
@@ -162,7 +169,52 @@ class LagResult:
     progress_record: dict
 
 
-def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
+def _lag_metadata(sub_job_seg: WaveSegment, lag: int) -> tuple[list[float], list[float], np.ndarray]:
+    lag_shifts = sub_job_seg.lag_shifts[lag]
+    time_lag = [float(v) for v in lag_shifts]
+    segment_lag = (
+        [float(v) for v in sub_job_seg.shift]
+        if sub_job_seg.shift is not None
+        else [0.0 for _ in sub_job_seg.ifos]
+    )
+    return time_lag, segment_lag, lag_shifts
+
+
+def _lag_progress_record(
+    context,
+    lag: int,
+    n_triggers: int,
+    livetime: float,
+    status: str,
+) -> dict:
+    return dict(
+        job_id=context.sub_job_seg.index,
+        trial_idx=context.trial_idx,
+        lag_idx=lag,
+        n_triggers=n_triggers,
+        livetime=livetime,
+        status=status,
+    )
+
+
+def _run_lag_analysis(
+    context: LagAnalysisContext,
+    lag: int,
+    *,
+    coherence: Callable[..., list] | None = None,
+    supercluster: Callable[..., object] | None = None,
+    likelihood: Callable[..., tuple] | None = None,
+    event_factory: Callable[[], Event] | None = None,
+) -> LagResult:
+    """Run the supplied per-lag recipe with optional function replacements.
+
+    This helper keeps the default coherence → supercluster → likelihood order.
+    A custom segment processor or lag_processor may compose another sequence.
+    """
+    coherence = coherence_single_lag if coherence is None else coherence
+    supercluster = supercluster_single_lag if supercluster is None else supercluster
+    likelihood = evaluate_cluster_likelihood if likelihood is None else likelihood
+    event_factory = Event if event_factory is None else event_factory
     profile = execution_profile(context.config)
     config = context.config
     sub_job_seg = context.sub_job_seg
@@ -173,7 +225,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
     seg_thr = getattr(config, "segTHR", 0.0) or 0.0
     if seg_thr > 0 and context.veto_windows is not None:
-        lag_livetime = _lag_livetime(context, lag)
+        lag_livetime = _lag_livetime(context, lag, before_selection=True)
         if lag_livetime < seg_thr:
             logger.warning(
                 "Skipping lag %d: post-CAT2 livetime %.2f s < segTHR %.2f s",
@@ -213,7 +265,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
 
     with _temporary_numba_threads(context.numba_threads):
         timer_coherence = time.perf_counter()
-        frag_clusters_this_lag = coherence_single_lag(
+        frag_clusters_this_lag = coherence(
             context.coherence_setup,
             lag,
             veto_windows=effective_veto,
@@ -221,7 +273,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
         logger.info("Coherence time for lag %d: %.2f s", lag, time.perf_counter() - timer_coherence)
 
         timer_supercluster = time.perf_counter()
-        fragment_cluster = supercluster_single_lag(
+        fragment_cluster = supercluster(
             context.supercluster_setup,
             config,
             frag_clusters_this_lag,
@@ -264,7 +316,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
             # OOM, NaN propagation) that requires investigation — silently
             # skipping the cluster would mask the root cause.
             likelihood_call_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
-            result_cluster, sky_stats = evaluate_cluster_likelihood(
+            result_cluster, sky_stats = likelihood(
                 config.nIFO,
                 selected_cluster,
                 config,
@@ -297,7 +349,7 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
                 result_cluster.high_frequency,
             )
 
-            event = Event()
+            event = event_factory()
             event.output_py(sub_job_seg, result_cluster, config, lag_shifts=lag_shifts)
             event.job_id = sub_job_seg.index
             event.trial_idx = context.trial_idx
@@ -328,14 +380,14 @@ def _run_lag_analysis(context: LagAnalysisContext, lag: int) -> LagResult:
     )
 
 
-def _save_lag_outputs(output_context: LagOutputContext, result: LagResult) -> None:
+def _save_lag_outputs(output_context: LagOutputContext, result: LagResult, *, postprocess=None) -> None:
     profile = execution_profile(output_context.config)
     output_timer = time.perf_counter() if profile.perf_diagnostics else 0.0
     # Phase A: create trigger folders and persist raw cluster/skymap data.
     trigger_folders = _create_and_save_trigger_folders(output_context, result)
 
     # Phase B: per-event post-processing: waveforms, injections, Q-veto, plots.
-    reconstruct_elapsed, qveto_elapsed, plot_elapsed = _postprocess_saved_triggers(
+    reconstruct_elapsed, qveto_elapsed, plot_elapsed = (postprocess or _postprocess_saved_triggers)(
         output_context,
         result,
         trigger_folders,
@@ -456,15 +508,24 @@ def process_job_segment(
     config: Config,
     job_seg: WaveSegment,
     compress_json: bool = True,
-    catalog_file: str = None,
+    catalog_file: str | None = None,
     queue=None,
     production_mode: bool = False,
     skip_lags: dict[int, set[int]] | None = None,
     *,
     lag_processor=None,
+    input_provider=None,
+    read_data: Callable[..., list[TimeSeries]] | None = None,
+    condition_data: Callable[..., tuple] | None = None,
+    prepare_coherence: Callable[..., list[dict]] | None = None,
+    prepare_td: Callable[..., dict] | None = None,
 ):
     """
-    The core workflow to process single job segment with trials or lags.
+    The supplied native recipe for a job segment with trials or lags.
+
+    Users can select their own segment_processer to assemble a different
+    scientific sequence. The optional callables below replace operations
+    within this recipe; they do not define a universal workflow interface.
 
     Parameters
     ----------
@@ -487,6 +548,15 @@ def process_job_segment(
     lag_processor : callable, optional
         Alternate lag executor receiving analysis context, output context and
         skip_lags. The default retains the native lag-processing behavior.
+    read_data : callable, optional
+        Read detector strain from (config, job_seg), accepting input_provider
+        when the execution cache supplies one. Defaults to read_from_job_segment.
+    condition_data : callable, optional
+        Return conditioned strains and noise RMS maps from (config, data).
+    prepare_coherence : callable, optional
+        Build resolution maps from (config, strains, job_seg=..., nRMS=...).
+    prepare_td : callable, optional
+        Build time-delay inputs from (config, strains).
 
     """
     execution_profile(config)
@@ -506,6 +576,10 @@ def process_job_segment(
     #        d. Post-process   → waveforms, injections, Q-veto, plots
     #        e. Catalog        → persist triggers and release lag memory
     # ─────────────────────────────────────────────────────────────────────────
+    read_data = read_from_job_segment if read_data is None else read_data
+    condition_data = condition_strains if condition_data is None else condition_data
+    prepare_coherence = setup_coherence if prepare_coherence is None else prepare_coherence
+    prepare_td = build_td_inputs_cache if prepare_td is None else prepare_td
     print_job_info(job_seg)
     print_node_info()
     job_timer = time.perf_counter()  # total wall-time for this job segment
@@ -516,14 +590,17 @@ def process_job_segment(
     base_data = None
 
     if job_seg.frames:
-        base_data = read_from_job_segment(config, job_seg)
+        if input_provider is None:
+            base_data = read_data(config, job_seg)
+        else:
+            base_data = read_data(config, job_seg, input_provider=input_provider)
     if job_seg.noise:
         base_data = generate_noise_for_job_seg(job_seg, config.inRate, f_low=config.fLow, data=base_data)
 
     # get all the trial_idx from the injections, if there is no injections, use 0
     trial_idxs = {0}
     if job_seg.injections:
-        trial_idxs = set([inj.get("trial_idx", 0) for inj in job_seg.injections])
+        trial_idxs = {inj.get("trial_idx", 0) for inj in job_seg.injections}
 
     if catalog_file is not None:
         base = os.path.basename(catalog_file)
@@ -551,6 +628,7 @@ def process_job_segment(
             data = base_data
             base_data = None
 
+        separate_injection_resampling = False
         if job_seg.injections:
             # use sub_job_seg for each trial_idx to avoid passing the trial_idx to the following functions.
             sub_job_seg = copy(job_seg)
@@ -573,8 +651,13 @@ def process_job_segment(
                 for _ in sub_job_seg.ifos
             ]
 
-            for injection in sub_job_seg.injections:
+            separate_injection_resampling = uses_cwb_snr_resampling(config, sub_job_seg.injections)
+            from pycwb.modules.injection.snr_scaling import target_snr_scales
+            snr_scales = target_snr_scales(config, sub_job_seg, data)
+            for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)
+                for signal in inj:
+                    signal.data *= snr_scale
                 # Track signal timing envelope across all IFOs.
                 n_ifo = len(sub_job_seg.ifos)
                 real_start = min(float(inj[i].t0) for i in range(n_ifo))
@@ -584,8 +667,9 @@ def process_job_segment(
                 # Both injection_strains and data are owned buffers; inject in-place.
                 for i in range(n_ifo):
                     injection_strains[i].inject(inj[i], copy=False)
-                for i in range(n_ifo):
-                    data[i].inject(inj[i], copy=False)
+                if not separate_injection_resampling:
+                    for i in range(n_ifo):
+                        data[i].inject(inj[i], copy=False)
                 # Free the per-injection signal buffer immediately to reduce peak memory.
                 del inj
         else:
@@ -603,7 +687,9 @@ def process_job_segment(
         # Must run BEFORE resampling so the data is still at config.inRate.
         if getattr(config, "cwb_compare", False):
             _cwb_compare_dir = getattr(config, "cwb_compare_dir", "") or None
-            create_cwb_workdir(working_dir, config, sub_job_seg, data, cwb_compare_dir=_cwb_compare_dir)
+            compare_data = [d.inject(signal, copy=True) for d, signal in zip(data, injection_strains)] if separate_injection_resampling else data
+            create_cwb_workdir(working_dir, config, sub_job_seg, compare_data, cwb_compare_dir=_cwb_compare_dir)
+            del compare_data
 
         # ─────────────────────────────────────────────────────────────────────
         # STEP 2 – RESAMPLING & DATA CONDITIONING
@@ -613,12 +699,28 @@ def process_job_segment(
         # coherence/supercluster allocations below.
         data = [check_and_resample_py(data[i], config, i) for i in range(len(job_seg.ifos))]
         if injection_strains is not None:
-            injection_strains = [check_and_resample_py(strain, config, i) for i, strain in enumerate(injection_strains)]
+            if separate_injection_resampling:
+                injection_strains = [resample_snr_injection(strain, config) for strain in injection_strains]
+                for noise, signal in zip(data, injection_strains):
+                    noise.data += signal.data
+            else:
+                injection_strains = [check_and_resample_py(strain, config, i) for i, strain in enumerate(injection_strains)]
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
         # Whiten and normalise: produces conditioned strains and per-IFO noise RMS.
         stage_timer = time.perf_counter()
-        strains, nRMS = condition_strains(config, data)
+        strains, nRMS = condition_data(config, data)
+        from pycwb.modules.conditioning_plugins.api import (
+            run_hooks, save_diagnostics, subtract_intervals,
+        )
+
+        conditioning_result = run_hooks(config, sub_job_seg, strains, nRMS)
+        strains, nRMS = conditioning_result.strains, conditioning_result.noise_rms
+        if conditioning_result.diagnostics:
+            save_diagnostics(
+                conditioning_result,
+                os.path.join(working_dir, "conditioning", f"job_{job_seg.index}", f"trial_{trial_idx}"),
+            )
         data = None  # raw data no longer needed; drop reference to free memory
         release_memory()
         logger.info("Data conditioning time: %.2f s", time.perf_counter() - stage_timer)
@@ -652,7 +754,7 @@ def process_job_segment(
 
         # 3a. Coherence setup: WDM decomposition + TF maps for all IFOs.
         stage_timer = time.perf_counter()
-        coherence_setup = setup_coherence(config, strains, job_seg=sub_job_seg, nRMS=nRMS)
+        coherence_setup = prepare_coherence(config, strains, job_seg=sub_job_seg, nRMS=nRMS)
         logger.info("Coherence setup time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -660,7 +762,7 @@ def process_job_segment(
         #     Stored in float32 (vs. float64) to halve memory usage;
         #     Numba accumulates in float64 internally, so precision is preserved.
         stage_timer = time.perf_counter()
-        td_inputs_cache = build_td_inputs_cache(config, strains)
+        td_inputs_cache = prepare_td(config, strains)
         logger.info("TD inputs cache build time: %.2f s", time.perf_counter() - stage_timer)
         logger.info("Memory usage: %f.2 MB", psutil.Process().memory_info().rss / 1024 / 1024)
 
@@ -701,6 +803,12 @@ def process_job_segment(
         # and then saves the accepted triggers before releasing lag-local memory.
         likelihood_timer = time.perf_counter()
         veto_windows = _effective_veto_windows(config, sub_job_seg)
+        pre_selection_veto_windows = veto_windows
+        if conditioning_result.excluded_intervals:
+            veto_windows = subtract_intervals(
+                veto_windows, conditioning_result.excluded_intervals,
+                sub_job_seg.analyze_start, sub_job_seg.analyze_end,
+            )
         analysis_context = LagAnalysisContext(
             config=config,
             job_seg=job_seg,
@@ -714,6 +822,8 @@ def process_job_segment(
             likelihood_setup=likelihood_setup,
             nRMS=nRMS,
             veto_windows=veto_windows,
+            pre_selection_veto_windows=pre_selection_veto_windows,
+            selection_exclusions_applied=bool(conditioning_result.excluded_intervals),
         )
         output_context = LagOutputContext(
             working_dir=working_dir,
@@ -751,3 +861,6 @@ def process_job_segment(
     )
     logger.info("Speed factor:              %.2fx  (data / walltime)", speed_factor)
     logger.info("============================================")
+
+
+process_job_segment.supports_input_provider = True

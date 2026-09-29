@@ -66,7 +66,8 @@ def _select_bkg_livetime(
     silently dominate when progress/interval/FAR metadata agree otherwise.
     """
     candidates: list[tuple[str, Optional[float]]] = [
-        ("progress_file", _nested_get(progress_summary, ["total_livetime", "seconds"])),
+        ("progress_file", _nested_get(progress_summary, ["background_livetime", "seconds"])
+         if "background_livetime" in progress_summary else _nested_get(progress_summary, ["total_livetime", "seconds"])),
         ("intervals_file", _nested_get(interval_summary, ["total_livetime", "seconds"])),
         ("far_json", _nested_get(far_data, ["livetime", "seconds"])),
     ]
@@ -327,12 +328,14 @@ def _load_far_curve_data(
     }
 
 
-def _progress_summary(path: Optional[str]) -> dict[str, Any]:
+def _progress_summary(path: Optional[str], catalog_path: Optional[str] = None) -> dict[str, Any]:
     if not path or not os.path.exists(path):
         return {"info": {}, "status_counts": [], "by_lag": _empty_table()}
     info = _parquet_file_info(path)
     existing = _parquet_columns(path)
     cols = [col for col in ["job_id", "lag_idx", "livetime", "status", "n_triggers"] if col in existing]
+    cols.extend(col for col in existing if col.startswith(("time_lag_", "segment_lag_", "segment_shift_", "shift_")) and col not in cols)
+    cols.extend(col for col in ("time_lag", "segment_lag", "shift", "lag") if col in existing and col not in cols)
     if not cols:
         return {"info": info, "status_counts": [], "by_lag": _empty_table()}
 
@@ -350,6 +353,10 @@ def _progress_summary(path: Optional[str]) -> dict[str, Any]:
         completed = df.copy()
 
     total_livetime = float(completed["livetime"].sum()) if "livetime" in completed.columns else None
+    background_livetime = total_livetime
+    if "livetime" in completed and ("lag_idx" in completed or "time_lag" in completed):
+        unshifted = try_unshifted_job_ids_from_catalog(catalog_path) if catalog_path else None
+        background_livetime = float(completed.loc[~zero_lag_mask(completed, unshifted), "livetime"].sum())
     n_jobs = int(completed["job_id"].nunique()) if "job_id" in completed.columns else None
     by_lag = _empty_table()
     if {"lag_idx", "livetime"}.issubset(completed.columns):
@@ -365,6 +372,7 @@ def _progress_summary(path: Optional[str]) -> dict[str, Any]:
     return {
         "info": info,
         "total_livetime": _livetime_dict(total_livetime),
+        "background_livetime": _livetime_dict(background_livetime),
         "n_jobs": n_jobs,
         "status_counts": status_counts,
         "by_lag": by_lag,

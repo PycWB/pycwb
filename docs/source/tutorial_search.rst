@@ -3,7 +3,8 @@
 Search Workflow
 ================
 
-⭐ Beginner  ·  ~15 min  ·  Prerequisites: :ref:`start_here`
+Intermediate · Prerequisite: a completed :ref:`start_here` demo.
+This page explains pipeline internals after the first user-facing run.
 
 The main user-facing entry point is :py:func:`pycwb.workflow.run.search`.
 It reads a YAML user-parameter file, prepares the working directory, creates
@@ -21,6 +22,44 @@ The command-line interface calls the same function:
    from pycwb.workflow.run import search
 
    search("user_parameters.yaml", working_dir=".", n_proc=4)
+
+Execution Profiles
+------------------
+
+Existing configurations use the ``simple`` execution profile. To group jobs by
+shared frame files and retain raw input between segment processes, opt into the
+``scalable`` profile:
+
+.. code-block:: yaml
+
+   execution:
+     profile: scalable
+     memory_limit: 32GiB
+     worker_memory: 8GiB
+     cache_limit: 2GiB
+     headroom: 1GiB
+     batch_size: 8
+     preload: auto
+
+These are example reservations. ``worker_memory`` must cover the entire segment
+process tree, including lag workers, pixel selection and numerical scratch.
+Different search settings can need different reservations even for the same
+frames. The runtime also accounts for full-frame decoding, bounds cache payload,
+and monitors memory; use scheduler/cgroup limits for a hard allocation ceiling.
+
+The same profile is used by ``run``, ``batch-setup`` and ``batch-runner``.
+``segment_processer`` independently selects the scientific processor. Advanced
+users can configure dotted ``execution.planner`` and ``execution.executor``
+factories. Cluster scripts select explicit groups using stable batch IDs.
+
+``batch-setup`` stores each planned group in a catalog fragment before
+submission. Batch runners read their job selection from that fragment.
+
+Use ``preload: off`` to compare direct reads, or ``preload: batch`` to attempt
+bounded loading of a whole group's reusable inputs. Oversized entries fall back
+to direct reads. Plans and resource measurements from scalable execution are
+saved under the run's ``execution`` directory. Keep scientific configuration and
+batch membership unchanged when resuming an existing run.
 
 Job Control
 -----------
@@ -43,6 +82,22 @@ generates job segments, and creates the root catalog.
    )
 
 The user-parameter YAML is loaded into :py:class:`pycwb.config.Config`.
+Both local runs and batch workers use YAML as the runtime configuration.
+The staged ``config/user_parameters.yaml`` is included in Condor file transfers;
+external ``pycwb_schema`` definitions are embedded in that copy. Custom detector
+definition JSON files are copied alongside it and referenced by a relative path.
+
+Before reusing prepared jobs, the YAML settings are compared with a snapshot
+in the existing catalog's Parquet metadata. Defaults are included; comments,
+formatting and key order do not matter. CLI overrides are applied separately.
+A mismatch stops the run and reports the changed settings, even with
+``--overwrite``. Use a new working directory, or clean the existing catalog,
+job manifest, progress and fragment Parquet files and regenerate the run.
+Older catalogs without a YAML snapshot also require regeneration because their
+metadata mixes YAML values, derived fields and runtime overrides.
+Custom detector definitions are checked by content hash, so moving their files
+does not invalidate a run but changing their contents does. Other referenced data
+files are not hashed; changed input data requires regenerating the prepared jobs.
 
 .. code-block:: python
 

@@ -7,7 +7,7 @@ import time
 
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from ..cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
-from ..job_segment import WaveSegment
+from pycwb.types.job import WaveSegment
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ def read_from_catalog(catalog, event, detectors, time_slice=None):
 #     return read_from_gwf(i, config, filenames, config.channelNamesRaw[i])
 
 
-def read_from_job_segment(config, job_seg: WaveSegment):
+def read_from_job_segment(config, job_seg: WaveSegment, input_provider=None):
     """
     Read data from the frame files in job segment in parallel
     and merge them if there are more than one frame files for each ifo
@@ -156,7 +156,10 @@ def read_from_job_segment(config, job_seg: WaveSegment):
     timer_start = time.perf_counter()
 
     # read data from the files in parallel
-    if config.nproc > 1:
+    if input_provider is not None:
+        data = [read_single_frame_from_job_segment(config, frame, job_seg, input_provider)
+                for frame in job_seg.frames]
+    elif config.nproc > 1:
         logger.info(f'Read data from job segment {job_seg} in parallel')
         with Pool(processes=min(config.nproc, len(job_seg.frames))) as pool:
             data = pool.starmap(read_single_frame_from_job_segment, [
@@ -222,7 +225,7 @@ def merge_frames(job_seg, data, seg_edge):
     return merged_data
 
 
-def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
+def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment, input_provider=None):
     """
     Read data from a single frame file in job segment, this functions also handles the shift defined in the WaveSegment.
     It will read the data with the physical start and end time of the frame, and shift the data to the data start time.
@@ -272,7 +275,8 @@ def read_single_frame_from_job_segment(config, frame, job_seg: WaveSegment):
         )
 
     i = job_seg.ifos.index(frame.ifo)
-    data = read_from_gwf(frame.path, job_seg.channels[i], start=start, end=end)
+    reader = input_provider.read if input_provider is not None else read_from_gwf
+    data = reader(frame.path, job_seg.channels[i], start=start, end=end)
     logger.info(f'Read data: start={data.t0}, duration={data.duration}, rate={data.sample_rate}')
     # shift the time label of the physical data to the data start time
     data.shift(data_start - start)

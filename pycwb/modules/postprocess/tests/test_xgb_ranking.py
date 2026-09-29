@@ -7,6 +7,7 @@ import pandas as pd
 
 from pycwb.modules.cwb_xgboost.read_data import apply_user_ranking_statistics
 from pycwb.modules.postprocess import evaluate
+from pycwb.modules.postprocess.model_io import CATALOG_PREPROCESSING_VERSION
 from pycwb.modules.postprocess.train_xgboost import (
     _compact_training_frame,
     _read_and_concat,
@@ -55,6 +56,8 @@ def test_evaluate_far_rho_can_rank_by_config_defined_rhor(tmp_path, monkeypatch)
 import numpy as np
 
 def update_config(*args):
+    # These hook tests use synthetic catalogs without physical cut features.
+    args[4]["cuts(prediction)"] = ""
     return None
 
 def getrhor(xdp, search):
@@ -67,6 +70,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -126,6 +132,8 @@ def test_score_catalog_streams_zero_lag_with_config_defined_rhor(tmp_path, monke
 import numpy as np
 
 def update_config(*args):
+    # These hook tests use synthetic catalogs without physical cut features.
+    args[4]["cuts(prediction)"] = ""
     return None
 
 def getrhor(xdp, search):
@@ -137,6 +145,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -203,6 +214,8 @@ def test_score_mdc_catalog_uses_config_defined_rhor_for_ifar(tmp_path, monkeypat
 import numpy as np
 
 def update_config(*args):
+    # These hook tests use synthetic catalogs without physical cut features.
+    args[4]["cuts(prediction)"] = ""
     return None
 
 def getrhor(xdp, search):
@@ -214,6 +227,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -284,6 +300,8 @@ def test_score_mdc_catalog_keeps_events_in_background_rank_gaps(tmp_path, monkey
 import numpy as np
 
 def update_config(*args):
+    # These hook tests use synthetic catalogs without physical cut features.
+    args[4]["cuts(prediction)"] = ""
     return None
 
 def getrhor(xdp, search):
@@ -296,6 +314,9 @@ def getrhor(xdp, search):
 
     class _Booster:
         feature_names = []
+
+        def attr(self, key):
+            return CATALOG_PREPROCESSING_VERSION
 
     class _Classifier:
         def load_model(self, path):
@@ -347,6 +368,7 @@ def test_xgb_training_helpers_project_and_compact_catalog_columns(tmp_path):
         "net_cc": [0.9, 0.8],
         "coherent_energy": [100.0, 121.0],
         "coherent_energy_norm": [5.0, 6.0],
+        "packet_norm": [1.5, 1.6],
         "penalty": [1.1, 1.2],
         "likelihood": [10.0, 11.0],
         "q_veto": [4.0, 9.0],
@@ -378,7 +400,8 @@ def test_xgb_training_helpers_project_and_compact_catalog_columns(tmp_path):
         include_training_metadata=True,
     )
 
-    assert {"coherent_energy", "coherent_energy_norm", "penalty", "q_veto", "q_factor"} <= set(projected)
+    assert {"coherent_energy", "packet_norm", "penalty", "q_veto", "q_factor"} <= set(projected)
+    assert "coherent_energy_norm" not in projected
     assert {"signal_energy_H1", "signal_energy_L1", "data_energy_H1", "data_energy_L1"} <= set(projected)
     assert {"noise_rms_H1", "noise_rms_L1", "Lveto2", "sim_sim_idx"} <= set(projected)
     assert "sky_error_regions" not in projected

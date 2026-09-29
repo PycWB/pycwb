@@ -19,6 +19,7 @@ component.
    postproduction_workflow
    postproduction_actions
    postproduction_background
+   postproduction_root
    postproduction_xgboost
    postproduction_trainingset
    postproduction_efficiency

@@ -205,6 +205,7 @@ def set_default(params, schema):
     """
     for key in schema['properties'].keys():
         if key not in params:
-            params[key] = schema['properties'][key]['default'] if 'default' in schema['properties'][key] else None
+            # deepcopy so mutable defaults (e.g. gwdatafind: {}) are not shared with the schema
+            params[key] = copy.deepcopy(schema['properties'][key]['default']) if 'default' in schema['properties'][key] else None
 
     return params

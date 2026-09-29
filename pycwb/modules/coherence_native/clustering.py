@@ -1,7 +1,7 @@
 """Connected-component clustering for selected coherence pixels."""
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from pycwb.config.processing import DEFAULT_EXECUTION_PROFILE
 
 import logging
 import time
@@ -26,17 +26,16 @@ def cluster_pixels(
     select_subnet: float | None = None,
     profile=DEFAULT_EXECUTION_PROFILE,
 ) -> FragmentCluster:
-    """
-    Cluster selected pixels using connected-component analysis.
+    """Cluster selected pixels using connected-component analysis.
 
     Parameters
     ----------
     pixel_candidates : dict
         Candidate payload from :func:`select_network_pixels`.
     kt : int
-        Time-connectivity radius in bins (adjacency tolerance |Δtime| ≤ kt).
+        Time-connectivity radius in bins (adjacency tolerance \\|Δtime\\| ≤ kt).
     kf : int
-        Frequency-connectivity radius in bins (adjacency tolerance |Δfreq| ≤ kf).
+        Frequency-connectivity radius in bins (adjacency tolerance \\|Δfreq\\| ≤ kf).
     select_subrho, select_subnet : float or None
         Optional rejection thresholds applied before constructing objects.
         Uses the same strict-less-than rejection as FragmentCluster.select.

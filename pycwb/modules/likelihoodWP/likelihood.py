@@ -8,7 +8,9 @@ chirp_micropixel.py contains the alternative micropixel estimator.
 """
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import execution_profile
+
+from .callbacks import ScalarRegulator, SkyScanner, ChirpUpdater
+from pycwb.config.processing import execution_profile
 
 import logging
 import time
@@ -36,6 +38,7 @@ from .dpf import compute_dpf_regulator as _compute_dpf_regulator
 from .dpf_regulator import compute_dpf_regulator_scalar as _compute_dpf_regulator_scalar
 from .sky_mask import sky_valid_indices_for_cluster
 from .results import SkyStatistics, SkyMapStatistics
+from .pixel_selection import select_likelihood_pixels, restore_likelihood_pixels
 
 from typing import TYPE_CHECKING
 
@@ -207,6 +210,10 @@ def evaluate_cluster_likelihood(
     xtalk: XTalk | None = None,
     supercluster_setup: dict | None = None,
     chirp_seed: int = 1,
+    *,
+    scalar_regulator: ScalarRegulator | None = None,
+    sky_scan: SkyScanner | None = None,
+    chirp_update: ChirpUpdater | None = None,
 ) -> tuple[Cluster | None, SkyMapStatistics | None]:
     """
     Evaluate the likelihood for a single cluster.
@@ -249,7 +256,18 @@ def evaluate_cluster_likelihood(
     tuple[Cluster or None, SkyMapStatistics or None]
         The updated cluster and full skymap statistics, or ``(None, None)`` if the
         cluster is rejected.
+
+    Backend callbacks
+    -----------------
+    scalar_regulator, sky_scan, chirp_update : callable, optional
+        Process-owned implementations with the corresponding native signatures.
+        None selects the native implementation. Shared prepared inputs must remain
+        immutable; cluster/output mutation follows the native contract. These
+        callbacks are not serialized or sent between workers.
     """
+    scalar_regulator = scalar_regulator or _compute_dpf_regulator_scalar
+    sky_scan = sky_scan or _scan_sky
+    chirp_update = chirp_update or _update_cluster_chirp_statistics
     if xtalk is None:
         if MRAcatalog is None:
             raise ValueError(
@@ -300,6 +318,8 @@ def evaluate_cluster_likelihood(
     )
     logger.info("   ----------------------------------------------------")
 
+    cluster, pixel_selection = select_likelihood_pixels(cluster, getattr(config, "BATCH", 10000))
+
     # Populate pixel noise_rms from the nRMS TF maps so downstream physical-unit quantities
     # (hrss, noise) are correct.  Each pixel stores the noise floor at its (freq_bin, time_bin).
     if nRMS is not None and len(nRMS) == nIFO:
@@ -330,7 +350,7 @@ def evaluate_cluster_likelihood(
 
     # --- Big-cluster sky thinning (mirrors C++ network::likelihoodWP bBB logic) ---
     # C++: bBB = (V > wdmMRA.nRes * csize) → use coarser healpix sky grid in the sky loop.
-    # C++ does NOT truncate pixels — it keeps all pixels and reduces the sky resolution.
+    # Precision thins only the sky grid; BATCH has already limited loaded pixels.
     _precision = int(abs(getattr(config, "precision", 0) or 0))
     _csize = _precision % 65536
     _nres = int(getattr(config, "nRES", 1) or 1)
@@ -377,7 +397,7 @@ def evaluate_cluster_likelihood(
 
     # regularization[1]: DPF-based energy regulator (gamma-corrected, sky-scan average)
     _t0 = time.perf_counter()
-    dpf_regulator = _compute_dpf_regulator_scalar if profile.scalar_dpf else _compute_dpf_regulator
+    dpf_regulator = scalar_regulator if profile.scalar_dpf else _compute_dpf_regulator
     regularization[1] = dpf_regulator(
         plus_antenna_patterns,
         cross_antenna_patterns,
@@ -393,7 +413,7 @@ def evaluate_cluster_likelihood(
     # --- Sky scan: find the optimal sky direction (l_max) ---
     # Returns a tuple; numba cannot return dataclasses directly
     _t0 = time.perf_counter()
-    skymap_statistics = _scan_sky(
+    skymap_statistics = sky_scan(
         geometry=(plus_antenna_patterns, cross_antenna_patterns, sky_delay_samples),
         cluster=(noise_weights, td_phase0, td_phase90),
         settings=(regularization, netCC, delta_regulator, network_energy_threshold, sky_valid_indices),
@@ -496,9 +516,11 @@ def evaluate_cluster_likelihood(
     )
     stage_timings["populate_detection_statistics"] = time.perf_counter() - _t0
 
+    cluster = restore_likelihood_pixels(cluster, pixel_selection)
+
     # --- Post-processing: chirp mass and error region ---
     _t0 = time.perf_counter()
-    _update_cluster_chirp_statistics(
+    chirp_update(
         cluster,
         config,
         xgb_rho_mode=xgb_rho_mode,

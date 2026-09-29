@@ -225,3 +225,71 @@ After computing efficiency, verify:
 **See also:** :doc:`postproduction_xgboost` · :doc:`postproduction_background` · :doc:`injection_infrastructure`
 
 **Next:** :doc:`analysis_recipes` — copy-paste workflows for production tasks
+
+Manual simulation summary paths
+-------------------------------
+
+``pycwb simulation-summary --work-dir /production`` defaults to
+``/production/config/user_parameters.yaml`` and writes
+``/production/catalog/simulations.parquet``. An explicitly supplied config
+or ``--output`` path is relative to the caller's directory. Relative paths
+*inside* the config (DQ, frames, waveform inputs) are resolved from the
+production directory, consistently with batch setup and execution.
+
+IFAR duration syntax
+--------------------
+
+IFAR accepts positive numeric seconds (including scientific notation) or
+positive durations with ``s``, ``day``, ``wk``, ``mo``, and ``yr`` suffixes,
+such as ``100yr``. Existing presets retain their exact historical values;
+``1mo`` is 30 days, whereas the historical ``6mo`` is half a Julian year.
+Unknown or nonpositive values fail explicitly, including in MDC scoring.
+
+Choosing a simulation association rule
+--------------------------------------
+
+Native ``match_simulations`` associates waveform/trigger interval overlaps
+within the same trial and scheduled job, then chooses unique pairs. This is
+the practical default for mixed waveform families and extended signals:
+requested injection GPS time can denote a waveform endpoint, while trigger
+GPS time is a reconstructed detector arrival. A blanket 0.1-second cut on
+these two scalar columns does not reproduce cWB's detector-time cut.
+
+Use ``ranking_par: rho_alt`` (or ``pycwb match-simulations --ranking-par
+rho_alt``) when choosing unique events with the cWB ``pp_irho=1`` statistic.
+The default ``rho`` remains available for native analyses. Rank selection
+alone does not make the association algorithm cWB-equivalent.
+
+For exact cWB postproduction comparison, use ``import_cwb_simulation`` on
+ROOT/MDC truth: it uses cWB's recorded injection association and applies
+``time_window: 0.1`` after unique selection. Failed winners stay missed;
+a quieter candidate is not substituted. For native detector-time recovery
+cuts, first establish compatible injected/reconstructed detector timing
+and injection identity. Do not silently substitute a geocentric GPS cut.
+Dense overlapping injections remain potentially ambiguous under interval
+association; controlled populations with adequate separation are preferable.
+
+Keeping background and sensitivity selections consistent
+--------------------------------------------------------
+
+Use the same ranking statistic for FAR, sensitivity, and the report. The
+standard workflow uses ``rhor`` and supplies its already-scored SIM catalog::
+
+    args:
+      ranking_par: rhor
+      scored_file: ${paths.sim_eval_scored}
+      ifar: 100yr
+
+These options are supported by the per-waveform efficiency, hrss curves,
+hrss50, and hrss50 CSV actions. For ``compute_hrss50``, supply the injection
+truth via ``matched_right_file``. Scores are joined by event ID; missed
+injections and events removed by prediction cuts stay in the denominator.
+Without ``scored_file``, model scoring applies the same user ranking hooks
+and prediction cuts as ``score_catalog``. Probability ranking remains the
+backward-compatible default, ``ranking_par: xgb_prob``.
+
+Calibration uses inclusive empirical background tail counts, including ties.
+No background exceedances means empirical FAR zero, not a measured infinite
+exposure. Results identify ``ranking_par``, ``ranking_threshold``, and
+``ifar_convention``. The legacy ``prob_threshold`` field is populated only
+for probability ranking. Plot labels identify the selected statistic.

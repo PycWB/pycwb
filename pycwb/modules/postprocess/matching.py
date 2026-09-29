@@ -29,6 +29,7 @@ def match_simulations(
     output_file: str,
     how: str = "right",
     window_buffer: float = 0.0,
+    ranking_par: str = "rho",
     **kwargs,
 ) -> dict:
     """Match a trigger catalog to simulation summary rows and write parquet."""
@@ -36,12 +37,14 @@ def match_simulations(
     simulation_path = _resolve(work_dir, simulation_file)
     output_path = _resolve(work_dir, output_file)
 
+    selection_args = {"ranking_par": ranking_par} if ranking_par != "rho" else {}
     table = match_simulations_parquet(
         catalog_path,
         simulation_path,
         window_buffer=float(window_buffer),
         how=how,
         output_parquet=output_path,
+        **selection_args,
     )
 
     logger.info(

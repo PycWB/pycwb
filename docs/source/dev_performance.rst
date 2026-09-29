@@ -8,6 +8,14 @@ and optimize pycWB's computational hot paths. Scientific calculation choices
 are explained in :ref:`native_calculation_conventions`; detector inputs are
 explained in :ref:`detector_support`.
 
+For experimental job scheduling, shared raw-input caching, and worker memory
+budgets, see :ref:`workflow_execution`. These use the separate ``execution``
+configuration block; ``execution_profile`` below controls native processing
+options within each job.
+
+For experimental resource-aware scheduling, shared raw-input caching, and
+worker memory budgets, see :ref:`workflow_execution`.
+
 .. contents:: Table of Contents
    :depth: 2
    :local:
@@ -396,8 +404,8 @@ Run before and after performance changes to verify no regressions.
 Avoiding Common Pitfalls
 ------------------------
 
-- **NumPy in hot paths**: Pure NumPy is 10–100× slower than Numba/JAX for
-  inner loops. Always use Numba or JAX for per-pixel or per-lag operations.
+- **NumPy in hot paths**: Measure representative workloads before choosing
+  NumPy, Numba or JAX; compilation and transfer overhead can dominate small tasks.
 - **Python objects in loops**: Never iterate over Python lists inside
   performance-critical code. Use NumPy/JAX arrays.
 - **JAX buffer leaks**: Always free JAX device buffers after each lag.

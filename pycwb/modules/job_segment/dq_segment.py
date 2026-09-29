@@ -236,7 +236,7 @@ def get_job_list(ifos, dq_list, seg_len, seg_mls, seg_edge, sample_rate, shift=N
                                                 seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
             else:
                 seg_index += 1
-                job_list.append(WaveSegment(i, ifos, start, stop,
+                job_list.append(WaveSegment(seg_index, ifos, start, stop,
                                             seg_edge=seg_edge, sample_rate=sample_rate, shift=shift))
             continue
 

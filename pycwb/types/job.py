@@ -1,3 +1,5 @@
+
+from pycwb.utils.intervals import intersect_intervals as _intersect_intervals
 from typing import List, Optional, Dict
 from dataclasses import dataclass, asdict
 import numpy as np
@@ -449,8 +451,10 @@ class WaveSegment:
         seg_duration = float(self.duration)
         lag_step = float(self.lag_step)
 
+        if lag_step == 0 and self.lag_size == 1 and self.lag_off == 0 and self.lag_max == 0:
+            return np.zeros((1, n_ifo), dtype=float)
         if lag_step <= 0:
-            raise ValueError("lag_step must be positive")
+            raise ValueError("lag_step must be positive except for a single zero lag")
 
         # CWB computes lagMaxSeg as int((tfmap_size/rate - 2*edge) / lagStep) - 1.
         # The TFmap spans the *padded* window (analysis + 2*edge), so
@@ -511,22 +515,6 @@ def _merge_intervals(intervals) -> list[tuple[float, float]]:
     return [(s, e) for s, e in merged]
 
 
-def _intersect_intervals(
-    a: list[tuple[float, float]],
-    b: list[tuple[float, float]],
-) -> list[tuple[float, float]]:
-    result: list[tuple[float, float]] = []
-    i = j = 0
-    while i < len(a) and j < len(b):
-        lo = max(a[i][0], b[j][0])
-        hi = min(a[i][1], b[j][1])
-        if hi > lo:
-            result.append((lo, hi))
-        if a[i][1] < b[j][1]:
-            i += 1
-        else:
-            j += 1
-    return result
 
 
 def _shift_intervals_circular(

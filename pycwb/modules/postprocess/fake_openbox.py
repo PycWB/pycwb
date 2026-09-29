@@ -48,6 +48,7 @@ def fake_openbox_report(
     os.makedirs(out_dir, exist_ok=True)
 
     far_rho_data = far.resolve_far_rho_data(far_rho_data, out_dir, kwargs)
+    far.validate_far_ranking(far_rho_data, ranking_par)
 
     intervals = read_intervals_file(intervals_path)
     if intervals.empty:

@@ -38,3 +38,4 @@ examples/**/*.gwf
 *.bin
 *.xbin
 *.pkl
+docs/source/_cli_help.rst.inc

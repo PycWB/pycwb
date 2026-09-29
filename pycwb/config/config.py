@@ -20,11 +20,13 @@ from ..modules.xtalk.monster import read_catalog_metadata
 from ..types.data_quality_file import DQFile
 from ..utils.network import max_delay
 from ..utils.yaml_helper import load_yaml
-from ..utils.skymap_coord import validate_user_sky_config
+from .validation import validate_runtime_settings
 from ..constants import user_parameters_schema
 from ..constants.detectors import resolve_detector_geometries
 from .detector_definitions import load_detector_definitions, restore_detector_registry
-from ..constants.execution_profile import ExecutionProfile, resolve_execution_profile
+from .provenance import snapshot_yaml_parameters
+from pycwb.config.processing import ExecutionProfile, resolve_execution_profile
+from ..constants.gpu_options import GPUOptions, resolve_gpu_options
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,7 @@ class Config:
     """
 
     execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+    gpu: GPUOptions = field(default_factory=GPUOptions)
 
     dq_files: List[DQFile] = field(default_factory=list)
 
@@ -239,23 +242,16 @@ class Config:
         # and merges/replaces the default schema before validation (see
         # yaml_helper.resolve_schema for the supported modes and format).
         params = load_yaml(file_name, schema)
-
-        # JSON Schema cannot validate Astropy quantity dimensionality or infer
-        # a coordinate frame from semantic key names.  Perform that physical
-        # cross-check before values become Config attributes.
-        validate_user_sky_config(params.get("sky_mask"), context="sky_mask", default_coordsys="geo")
-        injection_config = params.get("injection") or {}
-        validate_user_sky_config(
-            injection_config.get("sky_distribution"),
-            context="injection.sky_distribution",
-            default_coordsys="icrs",
-        )
+        # Preserve the validated YAML settings before derived values and CLI
+        # overrides mutate the runtime config. Catalogs serialize this snapshot.
+        self._yaml_parameters = snapshot_yaml_parameters(params, file_name)
 
         for key in params:
             if key not in ("_detectors", "_detectors_by_name"):
                 setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.gpu = resolve_gpu_options(self.gpu)
         self.detector_registry, self.detector_definitions_provenance = load_detector_definitions(
             self.detector_definitions_file, file_name
         )
@@ -264,6 +260,7 @@ class Config:
         )
         self._initialize_detectors()
 
+        validate_runtime_settings(self)
         self.add_derived_key()
         self.check_xtalk_file(self.MRAcatalog)
         self.check_MRA_catalog()
@@ -299,6 +296,7 @@ class Config:
                 setattr(self, key, params[key])
 
         self.execution_profile = resolve_execution_profile(self.execution_profile)
+        self.gpu = resolve_gpu_options(self.gpu)
         self.detector_definitions_file = params.get("detector_definitions_file")
         self.detector_definitions_provenance = deepcopy(params.get("detector_definitions_provenance", {}))
         if params.get("detector_registry") is not None:
@@ -312,6 +310,7 @@ class Config:
         )
         self._initialize_detectors()
 
+        validate_runtime_settings(self)
         # Rebase filter_dir / MRAcatalog if they were serialised on a different
         # machine and no longer resolve on this node.
         if self.filter_dir and not os.path.exists(self.filter_dir):

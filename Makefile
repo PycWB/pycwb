@@ -13,8 +13,11 @@ sdist:
 sdist_clean:
 	rm -rf dist
 
-doc: clean_doc
-	TZ=UTC python -m sphinx.ext.apidoc -o docs/source pycwb 'pycwb/vendor/*' '*/tests' '*/tests/*' '*/test_*.py' '*.pyx' && cd docs && TZ=UTC make html
+doc:
+	TZ=UTC python -m sphinx -b html docs/source docs/build/html
+
+doc-check:
+	TZ=UTC python -m sphinx -W --keep-going -b html docs/source docs/build/html
 
 clean_doc:
 	cd docs && make clean && rm -f source/modules.rst source/pycwb*.rst
@@ -23,4 +26,4 @@ quick_update: sdist_clean sdist
 	pip install dist/*.tar.gz
 
 install_doc_deps:
-	pip install sphinx sphinxawesome-theme
+	python -m pip install -r docs/requirements.txt

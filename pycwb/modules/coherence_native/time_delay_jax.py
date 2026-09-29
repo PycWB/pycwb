@@ -1,7 +1,8 @@
 """JAX implementation of WDM time-delay max-energy."""
 
 from __future__ import annotations
-from pycwb.constants.execution_profile import DEFAULT_EXECUTION_PROFILE
+from collections.abc import Callable
+from pycwb.config.processing import ExecutionProfile, DEFAULT_EXECUTION_PROFILE
 
 import dataclasses
 import logging
@@ -502,8 +503,9 @@ else:
 
 
 def time_delay_max_energy(
-    tf_map: TimeFrequencyMap, dt, downsample=1, pattern=0, hist=None, profile=DEFAULT_EXECUTION_PROFILE
-):
+    tf_map: TimeFrequencyMap, dt: float, downsample: int = 1, pattern: int = 0, hist: list | None = None, profile: ExecutionProfile = DEFAULT_EXECUTION_PROFILE,
+    *, pattern_maximum: Callable | None = None,
+) -> tuple[TimeFrequencyMap, float]:
     """
     Compute the delayed max-energy map for a TF series.
 
@@ -561,7 +563,7 @@ def time_delay_max_energy(
     if pattern_int:
         f_low, f_high = frequency_bounds(tf_map, n_freq)
 
-        current_max = _time_delay_max_energy_pattern_jit(
+        current_max = (pattern_maximum or _time_delay_max_energy_pattern_jit)(
             ts_data,
             sample_rate,
             t0,

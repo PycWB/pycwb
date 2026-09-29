@@ -126,8 +126,8 @@ def build_sky_delay_and_antenna_patterns(
     FP: np.ndarray | None = None,
     FX: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Build sky-delay and antenna-pattern arrays for numba processing.
+    """Build sky-delay and antenna-pattern arrays for numba processing.
+
     Parameters
     ----------
     nIFO : int

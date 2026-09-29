@@ -96,6 +96,32 @@ def test_override_is_complete_local_and_provenanced(config_file, document):
     assert custom.latitude == 0
 
 
+@pytest.mark.parametrize("ifos", [["H1", "X1"], ["X1", "H1"]])
+def test_injection_arrivals_use_configured_detector_instances(config_file, monkeypatch, ifos):
+    from pycwb.modules.reconstruction.injection_timing import (
+        cwb_arrival_times, network_reference_times,
+    )
+
+    cfg = Config()
+    cfg.load_from_yaml(config_file)
+    injection = {"gps_time": 1126259462., "ra": 1., "dec": .2}
+    delays = [
+        cfg.get_detector(ifo).time_delay_from_earth_center(1., .2, 1126259462.)
+        for ifo in ifos
+    ]
+    centroids = [1126259462., 1126259462.01]
+    energies = [1., 2.]
+    expected = network_reference_times(centroids, energies, delays)
+
+    def unexpected_construction(*args, **kwargs):
+        pytest.fail("Arrival timing must reuse the configured detector registry")
+
+    monkeypatch.setattr(Detector, "__init__", unexpected_construction)
+    np.testing.assert_array_equal(
+        cwb_arrival_times(centroids, energies, injection, ifos, cfg), expected,
+    )
+
+
 @pytest.mark.parametrize("change", [
     lambda d: d.update(schema_version=2),
     lambda d: d["geometries"]["X1:custom-v1"].update(detector="Y1"),

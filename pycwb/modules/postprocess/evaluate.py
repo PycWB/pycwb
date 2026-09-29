@@ -1,6 +1,7 @@
 """Model evaluation — workflow-compatible steps for efficiency & FAR.
 
 Applies a trained XGBoost model to a catalog and computes:
+
 - **Efficiency** (fraction of injections recovered above a threshold)
 - **FAR** (false-alarm rate vs. ranking statistic) using live time from the
   progress file.
@@ -117,11 +118,15 @@ def _preprocess_for_scoring(
     else:
         config_path = None
 
+    from .model_io import _validate_catalog_preprocessing
+    booster = clf.get_booster()
+    _validate_catalog_preprocessing(booster, ML_options)
+
     # Preprocess (creates derived features: rho0_40d0, Qa, Qp, ecor/likelihood, …)
     df = preprocess_events(df, nifo, ML_options, ML_caps)
 
     # Build feature matrix
-    feature_names = clf.get_booster().feature_names
+    feature_names = booster.feature_names
     X = pd.DataFrame(index=df.index)
     for f in feature_names:
         X[f] = df[f] if f in df.columns else 0.0
@@ -140,16 +145,22 @@ def _score_catalog_dataframe(
     """Return a catalog copy with XGBoost and user-defined ranking columns."""
     from pycwb.modules.cwb_xgboost.read_data import apply_user_ranking_statistics
 
-    _, X, ML_options, config_path = _preprocess_for_scoring(
+    processed, X, ML_options, config_path = _preprocess_for_scoring(
         df, nifo, search, config_file, work_dir, clf,
     )
     probs = clf.predict_proba(X)[:, 1]
 
     scored = df.copy()
+    # Ranking hooks use cWB feature names (ecor, Qa, Qp, derived rho0, ...).
+    # Keep native identity/measurement columns and expose the same processed
+    # feature values used for prediction before invoking those hooks.
+    for column in processed.columns:
+        scored[column] = processed[column]
     scored["xgb_prob"] = probs
     scored["MLstat"] = probs
     scored = apply_user_ranking_statistics(scored, search, config_path, ML_options)
-    return scored
+    from .prediction_cuts import prediction_mask
+    return scored.loc[prediction_mask(scored, ML_options.get("cuts(prediction)", ""))].copy()
 
 
 def _resolve_path(work_dir: str, path: str) -> str:
@@ -313,11 +324,14 @@ def score_catalog(
 
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)
-    unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    unshifted_jobs = (
+        try_unshifted_job_ids_from_catalog(cat_path) if lag_selection != "all" else None
+    )
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     parquet_file = pq.ParquetFile(cat_path)
     writer: pq.ParquetWriter | None = None
+    empty_scored = None
     n_input = 0
     n_scored = 0
 
@@ -335,7 +349,26 @@ def score_catalog(
             scored = _score_catalog_dataframe(
                 df.reset_index(drop=True), nifo, search, config_file, work_dir, clf,
             )
-            table = pa.Table.from_pandas(scored, preserve_index=False)
+            if writer is not None:
+                if scored.empty:
+                    continue
+                table = pa.Table.from_pandas(scored, preserve_index=False).cast(writer.schema)
+            else:
+                table = pa.Table.from_pandas(scored, preserve_index=False)
+                # Pandas object columns lose their Arrow type when every row is
+                # cut (or every value is null). Recover raw column types from
+                # the input, while retaining the derived scoring columns.
+                source_schema = parquet_file.schema_arrow
+                schema = pa.schema([
+                    source_schema.field(field.name)
+                    if pa.types.is_null(field.type) and field.name in source_schema.names
+                    else field
+                    for field in table.schema
+                ], metadata=table.schema.metadata)
+                table = table.cast(schema)
+                if scored.empty:
+                    empty_scored = table
+                    continue
             if writer is None:
                 table = with_catalog_provenance(table, cat_path, out_path)
                 writer = pq.ParquetWriter(out_path, table.schema)
@@ -346,7 +379,9 @@ def score_catalog(
             writer.close()
 
     if writer is None:
-        empty = pa.Table.from_batches([], schema=parquet_file.schema_arrow)
+        empty = empty_scored if empty_scored is not None else pa.Table.from_batches(
+            [], schema=parquet_file.schema_arrow,
+        )
         pq.write_table(with_catalog_provenance(empty, cat_path, out_path), out_path)
 
     logger.info("Scored %d / %d catalog rows → %s", n_scored, n_input, out_path)
@@ -426,7 +461,9 @@ def evaluate_far_rho(
     """
     cat_path = _resolve_path(work_dir, catalog_file)
     model_path = _resolve_path(work_dir, model_file)
-    trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    trigger_unshifted_jobs = (
+        try_unshifted_job_ids_from_catalog(cat_path) if exclude_zero_lag else None
+    )
 
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)
@@ -465,8 +502,10 @@ def evaluate_far_rho(
     return_per_event = bool(kwargs.get("return_per_event", bin_size is None))
     far_rho_data = []
     if return_per_event:
-        for i, idx in enumerate(valid_indices):
-            n_above = i + 1
+        sorted_ranks = np.sort(rho_vals[valid])
+        for idx in valid_indices:
+            # Inclusive tails assign identical FAR to tied ranking values.
+            n_above = int(n_total - np.searchsorted(sorted_ranks, rho_vals[idx], side="left"))
             far = n_above / max(livetime, 1.0)
             far_rho_data.append({
                 "rho": float(rho_vals[idx]),
@@ -606,13 +645,8 @@ def score_mdc_catalog(
     prog_path = _resolve_path(work_dir, progress_file) if progress_file else None
     jobs_path = _resolve_path(work_dir, job_ids_file) if job_ids_file else None
 
-    # ── IFAR presets ────────────────────────────────────────────────────
-    _IFAR_PRESETS = {
-        "10yr": 315576000, "1yr": 31557600, "6mo": 15778800,
-        "1mo": 2592000, "1wk": 604800, "1day": 86400,
-    }
-    ifar_sec = _IFAR_PRESETS.get(ifar_threshold,
-        float(ifar_threshold) if ifar_threshold.replace(".", "").isdigit() else 31557600)
+    from .efficiency_metrics import _parse_ifar_seconds
+    ifar_sec = _parse_ifar_seconds(ifar_threshold)
 
     # ── Live time ────────────────────────────────────────────────────────
     if livetime is None:

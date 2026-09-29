@@ -1,6 +1,6 @@
 """Native segment-level regression, whitening, and noise-map preparation.
 
-Resampling happens upstream. Condition each detector segment before lag
+The workflow applies resampling.py before regression and whitening. Condition each detector segment before lag
 processing; use signal-only injection whitening with an existing noise map.
 The MESA entry point is loaded on demand to keep its dependencies optional.
 """

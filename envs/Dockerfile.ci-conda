@@ -24,11 +24,11 @@ RUN conda config --set channel_priority strict \
  && conda update -y conda
 
 # ---- Create pycwb environment ----
-RUN conda create -y -n pycwb "python>=3.9,<3.11"
+RUN conda create -y -n pycwb python=3.11
 
 # ---- Install dependencies from conda-forge ----
 RUN conda install -y -n pycwb -c conda-forge \
-    root=6.26.10 \
+    root=6 \
     healpix_cxx=3.81 \
     nds2-client \
     python-nds2-client \

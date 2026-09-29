@@ -13,15 +13,10 @@ from __future__ import annotations
 
 import logging
 import time
-from math import sqrt
+from typing import TYPE_CHECKING
 
 import numpy as np
-import jax
 
-from pycwb.types.network_cluster import Cluster, FragmentCluster
-from pycwb.types.time_series import TimeSeries
-from pycwb.types.time_frequency_map import TimeFrequencyMap
-from pycwb.modules.xtalk.type import XTalk
 
 # Re-use helpers from CPU phase submodules
 from pycwb.modules.likelihoodWP.likelihood import (
@@ -38,27 +33,29 @@ from pycwb.modules.likelihoodWP.detection_statistics import (
 )
 from pycwb.modules.likelihoodWP.chirp_hough import update_chirp_mass_statistics
 from pycwb.modules.likelihoodWP.sky_mask import sky_valid_indices_for_cluster
+from pycwb.modules.xtalk.type import XTalk
+from pycwb.types.network_cluster import Cluster, FragmentCluster
+from pycwb.types.time_frequency_map import TimeFrequencyMap
+from pycwb.types.time_series import TimeSeries
 
-from .types import SkyStatistics, SkyMapStatistics
-from .dpf import compute_dpf, calculate_dpf_regulator
+from .dpf import calculate_dpf_regulator, compute_dpf
 from .sky_scan import find_optimal_sky_localization
 from .sky_stat import (
-    compute_pixel_energy,
-    project_gw_packet,
-    orthogonalise_polarisations,
     compute_coherent_statistics,
+    compute_pixel_energy,
+    orthogonalise_polarisations,
+    project_gw_packet,
 )
+from .types import SkyMapStatistics, SkyStatistics
 from .utils import (
-    compute_packet_rotation,
     compute_noise_correction,
-    set_packet_amplitudes,
     compute_null_packet,
     project_polarisation,
+    set_packet_amplitudes,
     xtalk_energy_sum,
 )
 from .xtalk_ops import compute_packet_norms, compute_signal_norms
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pycwb.config.config import Config
 
@@ -68,6 +65,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # calculate_sky_statistics — detailed evaluation at l_max
 # ---------------------------------------------------------------------------
+
 
 def calculate_sky_statistics_gpu(
     sky_idx: int,
@@ -124,16 +122,28 @@ def calculate_sky_statistics_gpu(
     dpf = compute_dpf(FP_j, FX_j, rms_j)
 
     gw = project_gw_packet(
-        v00_j, v90_j,
-        dpf["f"], dpf["F"], dpf["fp"], dpf["fx"],
-        dpf["network_index"], total_energy_j, mask_j, REG_j,
+        v00_j,
+        v90_j,
+        dpf["f"],
+        dpf["F"],
+        dpf["fp"],
+        dpf["fx"],
+        dpf["network_index"],
+        total_energy_j,
+        mask_j,
+        REG_j,
     )
 
     ort = orthogonalise_polarisations(gw["signal_00"], gw["signal_90"], gw["mask"])
 
     stats = compute_coherent_statistics(
-        v00_j, v90_j, gw["signal_00"], gw["signal_90"],
-        ort["psi_sin"], ort["psi_cos"], gw["mask"],
+        v00_j,
+        v90_j,
+        gw["signal_00"],
+        gw["signal_90"],
+        ort["psi_sin"],
+        ort["psi_cos"],
+        gw["mask"],
     )
 
     # --- Convert JAX arrays back to numpy for xtalk post-processing ---
@@ -163,16 +173,16 @@ def calculate_sky_statistics_gpu(
     S_snr, signal_snr, pS_E_out, pS_norm = compute_signal_norms(pD_norm, pD_E_out, pS_E, coherent_energy)
 
     if DEBUG:
-        print(S_snr, signal_snr)
-        print("Eo =", Eo, ", Lo =", Lo, ", Ep =", D_snr, ", Lp =", S_snr)
+        logger.debug("S_snr=%s signal_snr=%s", S_snr, signal_snr)
+        logger.debug("Eo=%s Lo=%s Ep=%s Lp=%s", Eo, Lo, D_snr, S_snr)
 
     # --- Gaussian noise correction ---
     Gn, Ec, Dc, Rc, Eh, Es, NC, NS = compute_noise_correction(
-        pS_norm, pD_norm, total_energy, mask, coherent_energy, gn, rn)
+        pS_norm, pD_norm, total_energy, mask, coherent_energy, gn, rn
+    )
 
     if DEBUG:
-        print("Gn =", Gn, ", Ec =", Ec, ", Dc =", Dc, ", Rc =", Rc,
-              ", Eh =", Eh, ", Es =", Es, ", NC =", NC, ", NS =", NS)
+        logger.debug("Gn=%s Ec=%s Dc=%s Rc=%s Eh=%s Es=%s NC=%s NS=%s", Gn, Ec, Dc, Rc, Eh, Es, NC, NS)
 
     # --- Set packet amplitudes ---
     N, pd, pD = set_packet_amplitudes(pd, pD, pD_norm, pD_si, pD_co, pD_a, pD_A, mask)
@@ -186,7 +196,7 @@ def calculate_sky_statistics_gpu(
     Em = xtalk_energy_sum(pd, pD, cluster_xtalk, cluster_xtalk_lookup_table, mask)
     Np = xtalk_energy_sum(pn, pN, cluster_xtalk, cluster_xtalk_lookup_table, mask)
     Lm = Em - Np - Gn
-    norm = (Eo - Eh) / Em if Em > 0 else 1.e9
+    norm = (Eo - Eh) / Em if Em > 0 else 1.0e9
     if norm < 1:
         norm = 1
     Ec /= norm
@@ -194,8 +204,7 @@ def calculate_sky_statistics_gpu(
     ch = (Np + Gn) / (N * n_ifo)
 
     if DEBUG:
-        print("Np =", Np, ", Em =", Em, ", Lm =", Lm, ", norm =", norm,
-              ", Ec =", Ec, ", Dc =", Dc, ", ch =", ch)
+        logger.debug("Np=%s Em=%s Lm=%s norm=%s Ec=%s Dc=%s ch=%s", Np, Em, Lm, norm, Ec, Dc, ch)
 
     # --- Detection statistic rho ---
     xrho = 0.0
@@ -263,6 +272,7 @@ def _numpy_packet_rotation(v00, v90, mask):
 # likelihood — main per-cluster entry point
 # ---------------------------------------------------------------------------
 
+
 def likelihood(
     nIFO: int,
     cluster: Cluster,
@@ -297,7 +307,9 @@ def likelihood(
             ml_big=supercluster_setup.get("ml_big_cluster") if supercluster_setup else None,
             FP_big=supercluster_setup.get("FP_big_cluster") if supercluster_setup else None,
             FX_big=supercluster_setup.get("FX_big_cluster") if supercluster_setup else None,
-            big_cluster_healpix_order=supercluster_setup.get("big_cluster_healpix_order") if supercluster_setup else None,
+            big_cluster_healpix_order=supercluster_setup.get("big_cluster_healpix_order")
+            if supercluster_setup
+            else None,
         )
     if config is None:
         raise ValueError("likelihood(): config is required.")
@@ -305,43 +317,45 @@ def likelihood(
     timer_start = time.perf_counter()
     stage_timings: dict[str, float] = {}
     logger.info("-------------------------------------------------------")
-    logger.info("-> [GPU] Processing cluster-id=%d|pixels=%d",
-                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
+    logger.info(
+        "-> [GPU] Processing cluster-id=%d|pixels=%d",
+        int(cluster_id) if cluster_id is not None else -1,
+        len(cluster.pixel_arrays),
+    )
     logger.info("   ----------------------------------------------------")
 
     if nRMS is not None and len(nRMS) == nIFO:
         cluster.pixel_arrays.populate_noise_rms(nRMS)
 
     network_energy_threshold = setup["network_energy_threshold"]
-    xgb_rho_mode             = setup["xgb_rho_mode"]
-    gamma_regulator          = setup["gamma_regulator"]
-    delta_regulator          = setup["delta_regulator"]
-    net_rho_threshold        = setup["net_rho_threshold"]
-    netEC_threshold          = setup["netEC_threshold"]
-    netCC                    = setup["netCC"]
-    ml                       = setup["ml"]
-    FP                       = setup["FP_t"]
-    FX                       = setup["FX_t"]
-    n_sky                    = setup["n_sky"]
-    sky_valid_indices        = setup.get("sky_valid_indices")
+    xgb_rho_mode = setup["xgb_rho_mode"]
+    gamma_regulator = setup["gamma_regulator"]
+    delta_regulator = setup["delta_regulator"]
+    net_rho_threshold = setup["net_rho_threshold"]
+    netEC_threshold = setup["netEC_threshold"]
+    netCC = setup["netCC"]
+    ml = setup["ml"]
+    FP = setup["FP_t"]
+    FX = setup["FX_t"]
+    n_sky = setup["n_sky"]
+    sky_valid_indices = setup.get("sky_valid_indices")
     if sky_valid_indices is None:
         sky_valid_indices = np.arange(n_sky, dtype=np.int64)
-    active_phi_geo_arr       = setup.get("phi_geo_arr")
-    active_latitude_arr      = setup.get("latitude_arr")
+    active_phi_geo_arr = setup.get("phi_geo_arr")
+    active_latitude_arr = setup.get("latitude_arr")
     if active_phi_geo_arr is None:
         active_phi_geo_arr = setup["ra_arr"]
     if active_latitude_arr is None:
         active_latitude_arr = setup["dec_arr"]
 
-    REG = np.array([delta_regulator * np.sqrt(2), 0., 0.], dtype=np.float32)
+    REG = np.array([delta_regulator * np.sqrt(2), 0.0, 0.0], dtype=np.float32)
     n_pix = len(cluster.pixel_arrays)
 
     # --- Big-cluster sky thinning ---
-    _precision = int(abs(getattr(config, 'precision', 0) or 0))
+    _precision = int(abs(getattr(config, "precision", 0) or 0))
     _csize = _precision % 65536
-    _nres = int(getattr(config, 'nRES', 1) or 1)
-    _bBB = (_csize > 0 and n_pix > _nres * _csize
-            and setup.get("ml_big_cluster") is not None)
+    _nres = int(getattr(config, "nRES", 1) or 1)
+    _bBB = _csize > 0 and n_pix > _nres * _csize and setup.get("ml_big_cluster") is not None
     if _bBB:
         ml = setup["ml_big_cluster"]
         FP = setup["FP_big_cluster_t"]
@@ -352,12 +366,9 @@ def likelihood(
             sky_valid_indices = np.arange(n_sky, dtype=np.int64)
         active_phi_geo_arr = setup["phi_geo_arr_big_cluster"]
         active_latitude_arr = setup["latitude_arr_big_cluster"]
-        logger.info("Cluster-id=%s is big (%d px): using coarse sky grid (%d dirs)",
-                    cluster_id, n_pix, n_sky)
+        logger.info("Cluster-id=%s is big (%d px): using coarse sky grid (%d dirs)", cluster_id, n_pix, n_sky)
 
-    cluster_mask_indices = sky_valid_indices_for_cluster(
-        setup, cluster, use_big_grid=_bBB
-    )
+    cluster_mask_indices = sky_valid_indices_for_cluster(setup, cluster, use_big_grid=_bBB)
     if cluster_mask_indices is not None:
         sky_valid_indices = np.asarray(cluster_mask_indices, dtype=np.int64)
     if len(sky_valid_indices) == 0:
@@ -376,7 +387,11 @@ def likelihood(
     # --- DPF regulator (JAX) ---
     _t0 = time.perf_counter()
     REG[1] = calculate_dpf_regulator(
-        FP, FX, rms_t, gamma_regulator, network_energy_threshold,
+        FP,
+        FX,
+        rms_t,
+        gamma_regulator,
+        network_energy_threshold,
         sky_valid_indices=sky_valid_indices,
     )
     stage_timings["dpf_regulator"] = time.perf_counter() - _t0
@@ -384,8 +399,19 @@ def likelihood(
     # --- Sky scan (JAX vmap) ---
     _t0 = time.perf_counter()
     skymap_statistics = find_optimal_sky_localization(
-        nIFO, n_pix, n_sky, FP, FX, rms_t, td00, td90, ml, REG, netCC,
-        delta_regulator, network_energy_threshold,
+        nIFO,
+        n_pix,
+        n_sky,
+        FP,
+        FX,
+        rms_t,
+        td00,
+        td90,
+        ml,
+        REG,
+        netCC,
+        delta_regulator,
+        network_energy_threshold,
         sky_valid_indices=sky_valid_indices,
     )
     skymap_statistics = SkyMapStatistics.from_tuple(skymap_statistics)
@@ -420,8 +446,19 @@ def likelihood(
     # --- Detailed statistics at l_max (JAX + numpy) ---
     _t0 = time.perf_counter()
     sky_statistics = calculate_sky_statistics_gpu(
-        skymap_statistics.l_max, nIFO, n_pix, FP, FX, rms_t, td00, td90, ml, REG,
-        network_energy_threshold, cluster_xtalk, cluster_xtalk_lookup,
+        skymap_statistics.l_max,
+        nIFO,
+        n_pix,
+        FP,
+        FX,
+        rms_t,
+        td00,
+        td90,
+        ml,
+        REG,
+        network_energy_threshold,
+        cluster_xtalk,
+        cluster_xtalk_lookup,
         xgb_rho_mode=xgb_rho_mode,
     )
     stage_timings["sky_statistics_at_lmax"] = time.perf_counter() - _t0
@@ -438,8 +475,9 @@ def likelihood(
     stage_timings["get_likelihood_rejection_reason"] = time.perf_counter() - _t0
     if rejected:
         logger.debug("Cluster rejected: %s", rejected)
-        logger.info("   cluster-id|pixels: %5d|%d",
-                    int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
+        logger.info(
+            "   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays)
+        )
         logger.info("\t <- rejected")
         stage_timings["total"] = time.perf_counter() - timer_start
         logger.info("-------------------------------------------------------")
@@ -451,13 +489,15 @@ def likelihood(
     _t0 = time.perf_counter()
     if config is not None:
         from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
+
         _wdm_list = _create_wdm_set_python(config)
     else:
         _wdm_list = None
     populate_detection_statistics(
         sky_statistics, skymap_statistics, cluster=cluster, n_ifo=nIFO, xtalk=xtalk,
         network_energy_threshold=network_energy_threshold,
-        xgb_rho_mode=xgb_rho_mode, config=config,
+        xgb_rho_mode=xgb_rho_mode,
+        config=config,
         cluster_xtalk=cluster_xtalk,
         cluster_xtalk_lookup=cluster_xtalk_lookup,
         wdm_list=_wdm_list,
@@ -480,8 +520,9 @@ def likelihood(
     cluster.cluster_status = -1
 
     detected = cluster.cluster_status == -1
-    logger.info("   cluster-id|pixels: %5d|%d",
-                int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays))
+    logger.info(
+        "   cluster-id|pixels: %5d|%d", int(cluster_id) if cluster_id is not None else -1, len(cluster.pixel_arrays)
+    )
     if detected:
         logger.info("\t -> SELECTED !!!")
     else:
@@ -494,8 +535,12 @@ def likelihood(
     logger.info("Stage timings (GPU):")
     for _stage, _t in stage_timings.items():
         if _stage != "total":
-            logger.info("  %-30s %.4f s  (%5.1f%%)", _stage, _t,
-                        100.0 * _t / stage_timings["total"] if stage_timings["total"] > 0 else 0)
+            logger.info(
+                "  %-30s %.4f s  (%5.1f%%)",
+                _stage,
+                _t,
+                100.0 * _t / stage_timings["total"] if stage_timings["total"] > 0 else 0,
+            )
     logger.info("-------------------------------------------------------")
 
     # Attach stage timings to skymap_statistics for benchmark collection
@@ -507,6 +552,7 @@ def likelihood(
 # ---------------------------------------------------------------------------
 # likelihood_wrapper — convenience multi-lag wrapper
 # ---------------------------------------------------------------------------
+
 
 def likelihood_wrapper(
     config: Config,
@@ -537,21 +583,23 @@ def likelihood_wrapper(
                 continue
             selected_cluster.cluster_id = k + 1
             result_cluster, sky_stats = likelihood(
-                config.nIFO, selected_cluster, config,
-                cluster_id=k + 1, nRMS=nRMS, setup=likelihood_setup, xtalk=xtalk,
+                config.nIFO,
+                selected_cluster,
+                config,
+                cluster_id=k + 1,
+                nRMS=nRMS,
+                setup=likelihood_setup,
+                xtalk=xtalk,
             )
             if result_cluster is None or result_cluster.cluster_status != -1:
-                logger.info("likelihood rejected cluster %d (%d pixels)",
-                            k + 1, len(selected_cluster.pixel_arrays))
+                logger.info("likelihood rejected cluster %d (%d pixels)", k + 1, len(selected_cluster.pixel_arrays))
                 continue
-            logger.info("likelihood accepted cluster %d (%d pixels)",
-                        k + 1, len(result_cluster.pixel_arrays))
+            logger.info("likelihood accepted cluster %d (%d pixels)", k + 1, len(result_cluster.pixel_arrays))
             lag_results.append((result_cluster, sky_stats))
         results.append(lag_results)
 
     total_accepted = sum(len(r) for r in results)
-    logger.info("[GPU] Likelihood wrapper done: %d accepted across %d lag(s)",
-                total_accepted, len(fragment_clusters))
+    logger.info("[GPU] Likelihood wrapper done: %d accepted across %d lag(s)", total_accepted, len(fragment_clusters))
     logger.info("[GPU] Likelihood wrapper time: %.2f s", time.perf_counter() - timer_start)
 
     return results

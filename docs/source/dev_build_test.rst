@@ -39,9 +39,8 @@ Running Tests
 
 .. code-block:: bash
 
-   pytest
-   # or
-   python -m unittest discover tests/
+   python -m pip install -e ".[test]"
+   python -m pytest pycwb/ tests/ --ignore=tests/sample --ignore=tests/injection_consistency -m "not slow"
 
 **Unit tests only** (per module):
 
@@ -88,20 +87,46 @@ Test Categories
      - ``benchmark/``, ``_test_njit.py``
      - Numba/JAX warm-up and throughput benchmarks
 
-Unit tests use Python's ``unittest`` framework by convention.
+The test suite includes pytest tests and unittest test cases; pytest runs both.
+
+
+Lint and Type Checks
+--------------------
+
+PycWB requires Python 3.11 or newer. Run the quality checks in a separate
+Python 3.11 environment so mypy's target and the installed dependency stubs
+describe the same Python version:
+
+.. code-block:: bash
+
+   python3.11 -m venv .venv-quality
+   .venv-quality/bin/python -m pip install -r tools/quality/requirements.txt
+   .venv-quality/bin/python tools/check_quality.py
+   .venv-quality/bin/python -m mypy
+
+The quality script rejects new lint, public-contract and import-boundary debt
+against the reviewed baseline. Mypy checks the 13 boundary files listed in
+``pyproject.toml``. This environment includes NumPy's real type stubs; the
+NumPy pin in ``tools/quality/requirements.txt`` applies only to these checks.
+The scientific runtime retains its separate ``numpy>=2`` requirement.
+These static checks do not require importing or installing the full scientific
+stack and do not replace runtime tests on the minimum supported Python.
 
 
 Continuous Integration
 ----------------------
 
-CI runs on LIGO GitLab via ``.gitlab-ci.yml``. The pipeline includes:
-
-- Build (pure-Python and ROOT variants)
-- Unit tests (multiple Python versions)
-- Integration tests
-- Linting / static analysis
-
-Badges in the README show current build and test status.
+CI runs on LIGO GitLab via ``.gitlab-ci.yml``. The native Linux image uses
+Python 3.13 and builds without the optional ROOT wavelet extension. The pipeline
+runs unit/integration tests excluding slow and fixture-dependent cases, onboarding
+tests and the standalone synthetic example against the installed package.
+The independent quality job uses Python 3.11 and the pinned requirements above.
+The ``installed-cli-smoke`` job runs pytest with ``python -I`` so both the CLI
+and recovery checks import the installed wheel instead of the source checkout.
+Documentation builds run on Read the Docs using ``.readthedocs.yaml``, with
+Sphinx warnings treated as errors. Use ``make doc-check`` for a local check.
+The injection-consistency reference job is manual. A multi-Python/OS matrix and
+ROOT validation are not implied by the native test badge.
 
 
 Test Conventions
@@ -110,7 +135,7 @@ Test Conventions
 When adding tests:
 
 - Place unit tests in ``pycwb/modules/<module>/tests/`` alongside the code.
-- Use ``unittest.TestCase`` for new unit tests.
+- Follow the conventions of the surrounding tests; pytest discovers both styles.
 - Name test files ``test_<feature>.py``.
 - Use descriptive test method names: ``test_<function>_<scenario>_<expected>``.
 - Mock external dependencies (ROOT, gwdatafind, GraceDB) rather than requiring
@@ -123,12 +148,19 @@ Verifying Before PR
 
 .. code-block:: bash
 
-   # Full check
-   pytest
-   python -m unittest discover tests/
+   python -m pytest tests/test_onboarding.py
+   python -m pip install -r docs/requirements.txt
+   make doc-check
+   python -m build --wheel
+   python -m pip install --force-reinstall --no-deps dist/*.whl
+   python -m pytest tests/test_demo_e2e.py -m slow
 
-   # Build docs (optional — check for warnings)
-   cd docs && make html
+The test invokes ``python -I -m pycwb run`` outside the checkout, so it
+imports PycWB from the installed package with the example YAML copied from
+the source checkout. The checkout and ``PYTHONPATH`` cannot replace installed
+pipeline modules. Use a separate
+environment for this wheel check. Set ``PYCWB_DEMO_XTALK`` to the absolute path
+of a compatible local catalog to avoid downloading it.
 
-   # Check for import issues
-   python -c "import pycwb; print('OK')"
+Use a new demo directory for every verification run. Tests marked ``slow`` are
+opt-in and require the documented reference data or network access.

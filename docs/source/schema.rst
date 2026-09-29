@@ -12,6 +12,9 @@ detailed guides where each parameter is explained in context.
    :local:
 
 
+See :doc:`backends` for the complete nested ``gpu.*`` option reference and
+cross-option restrictions.
+
 Parameter Categories
 --------------------
 
@@ -62,6 +65,9 @@ Parameter Categories
    * - Batch / Cluster
      - ``cluster``, ``conda_env``, ``job_memory``, ``accounting_group``
      - :ref:`run_on_clusters`
+   * - Workflow Scheduling (experimental)
+     - ``execution.profile``, ``execution.worker_memory``, ``execution.preload``
+     - :ref:`workflow_execution`
    * - Postproduction
      - Workflow YAML (separate file)
      - :ref:`postproduction`
@@ -70,193 +76,26 @@ Parameters marked :math:`^*` are auto-derived (``rateANA``, ``nRES``,
 ``WDM_level``, ``max_delay``) — do **not** set them manually.
 
 
-Parameter Quick Reference
--------------------------
+Common parameters
+-----------------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 22 12 12 54
+The following table is generated from the same schema used to validate YAML.
+These are software defaults, not a recommended production search configuration.
+For example, explicitly choose your detector network rather than relying on the
+schema's generic detector list. ``iwindow`` is the full injection window:
+``Tinj - iwindow/2`` through ``Tinj + iwindow/2``.
 
-   * - Parameter
-     - Default
-     - Range
-     - Description
-   * - ``ifo``
-     - [L1, H1, V1, I1, J1, G1]
-     - —
-     - Select the actual network explicitly; geometry availability is listed in :ref:`detector_support`.
-   * - ``detector_geometry``
-     - {}
-     - Per-detector mapping
-     - Omitted entries use bundled LAL-derived geometry; see :ref:`detector_support`.
-   * - ``detector_definitions_file``
-     - ``null``
-     - JSON path
-     - JSON file extending or overriding detector geometries; see :ref:`custom_detector_definitions`.
-   * - ``execution_profile``
-     - Schema defaults
-     - Validated mapping
-     - Recorded native execution choices; see :ref:`execution_profile_options` and :ref:`native_calculation_conventions`.
-   * - ``max_energy_backend``
-     - jax
-     - jax / numba / auto
-     - Coherence max-energy backend; see :ref:`execution_profile`.
-   * - ``coherence_timing``
-     - false
-     - Boolean
-     - Coherence setup timing logs; see :ref:`execution_profile`.
-   * - ``fLow``
-     - 64
-     - ≥ 0
-     - Low frequency [Hz]
-   * - ``fHigh``
-     - 2048
-     - > fLow
-     - High frequency [Hz]
-   * - ``inRate``
-     - 16384
-     - —
-     - Input data sample rate [Hz]
-   * - ``l_low``
-     - 3
-     - 1–10
-     - Lowest WDM resolution level (2\ :sup:`l_low` Hz)
-   * - ``l_high``
-     - 8
-     - > l_low
-     - Highest WDM resolution level (2\ :sup:`l_high` Hz)
-   * - ``levelR``
-     - 2
-     - —
-     - Resampling level
-   * - ``segLen``
-     - 600
-     - > 0
-     - Segment length [s]
-   * - ``segMLS``
-     - 300
-     - ≤ segLen
-     - Minimum segment after CAT1 [s]
-   * - ``segEdge``
-     - 8
-     - ≥ 0
-     - Wavelet boundary offset [s]
-   * - ``segOverlap``
-     - 0
-     - ≥ 0
-     - Overlap between jobs [s]
-   * - ``lagSize``
-     - 1
-     - ≥ 0
-     - Number of lags
-   * - ``lagStep``
-     - 1.0
-     - > 0
-     - Time between lags [s]
-   * - ``lagOff``
-     - 6
-     - ≥ 0
-     - First lag index (0 = include zero-lag)
-   * - ``lagMax``
-     - 150
-     - ≥ lagStep
-     - Maximum lag distance [s]
-   * - ``slagSize``
-     - 0
-     - ≥ 0
-     - Number of super lags
-   * - ``whiteMethod``
-     - wavelet
-     - wavelet/mesa/mixed
-     - Whitening method
-   * - ``whiteWindow``
-     - 60
-     - > 0
-     - Whitening time window [s]
-   * - ``Acore``
-     - 1.414
-     - ≥ 0
-     - Core pixel threshold (:math:`\sqrt{2}`)
-   * - ``netRHO``
-     - 4.0
-     - > 0
-     - Coherent network SNR threshold
-   * - ``netCC``
-     - 0.5
-     - 0–1
-     - Network correlation threshold
-   * - ``delta``
-     - 0.5
-     - −1 to 1
-     - 2-detector sky regulator
-   * - ``cfg_gamma``
-     - 0.5
-     - −1 to 1
-     - Polarization suppression regulator
-   * - ``healpix``
-     - 7
-     - 1–12
-     - Sky map HEALPix order
-   * - ``TFgap``
-     - 6.0
-     - ≥ 0
-     - TF pixel separation for cluster linking
-   * - ``Tgap``
-     - 3.0
-     - ≥ 0
-     - Defragmentation time gap [s]
-   * - ``Fgap``
-     - 130
-     - ≥ 0
-     - Defragmentation frequency gap [Hz]
-   * - ``subnet``
-     - 0.7
-     - 0–0.7
-     - Sub-network coherence threshold
-   * - ``subcut``
-     - 0.33
-     - 0–1
-     - Sub-network skyloop threshold
-   * - ``bpp``
-     - 0.001
-     - 0–1
-     - Black pixel selection probability
-   * - ``TDSize``
-     - 12
-     - 2–20
-     - Time-delay filter size
-   * - ``upTDF``
-     - 4
-     - ≥ 1
-     - TD filter upsample factor
-   * - ``iwindow``
-     - 5.0
-     - > 0
-     - Injection time window half-width [s]
-   * - ``cluster``
-     - —
-     - condor / slurm
-     - Batch submission backend
-   * - ``nproc``
-     - 1
-     - ≥ 1
-     - CPUs per job
-   * - ``job_memory``
-     - 6GB
-     - —
-     - Memory per job
-   * - ``Search``
-     - ""
-     - "" / CBC / BBH / IMBHB
-     - Enable chirp mass computation
-   * - ``xgb_rho_mode``
-     - false
-     - —
-     - Use :math:`\rho_0` instead of :math:`\rho`
-   * - ``EFEC``
-     - true
-     - —
-     - Earth-fixed/celestial coordinate conversion
+.. exec::
+
+    from pycwb.constants import user_parameters_schema
+    from pycwb.utils.generate_params_table import generate_rst_table
+    keys = ['ifo', 'refIFO', 'inRate', 'fLow', 'fHigh', 'levelR', 'l_low', 'l_high',
+            'segLen', 'segMLS', 'segEdge', 'lagSize', 'lagOff', 'healpix',
+            'whiteMethod', 'whiteWindow', 'netRHO', 'netCC', 'subcut', 'iwindow',
+            'nproc', 'job_memory', 'detector_geometry', 'detector_definitions_file',
+            'max_energy_backend', 'coherence_timing']
+    print(generate_rst_table({key: user_parameters_schema['properties'][key] for key in keys}))
+
 
 
 Auto-Derived Fields

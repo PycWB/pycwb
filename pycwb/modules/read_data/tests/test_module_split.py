@@ -39,3 +39,18 @@ def test_generate_noise_requires_explicit_gaussian_module():
 
     assert not hasattr(noise, "generate_noise")
     assert callable(generate_noise)
+
+
+def test_job_setup_imports_in_a_fresh_interpreter():
+    import os
+    from pathlib import Path
+    import subprocess
+
+    root = Path(__file__).resolve().parents[4]
+    env = dict(os.environ, PYTHONPATH=str(root) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    for module in ("pycwb.modules.job_segment", "pycwb.workflow.subflow.prepare_job_runs"):
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            env=env, cwd=root, capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr

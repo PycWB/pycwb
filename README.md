@@ -11,90 +11,67 @@ PycWB is a modular Python implementation of the coherent WaveBurst
 (cWB/cWB-2G) algorithms for gravitational-wave burst searches.
 The documentation can be found at [pycwb.readthedocs.io](https://pycwb.readthedocs.io).
 
-## Installation
+## Get started
 
-### Install PycWB with pip
-
-PycWB is available on [PyPI](https://pypi.org/project/pycWB/). You can install it with pip.
-Some dependencies are required before installing `pycwb` with pip.
-The easiest way is to install them with conda. For regular use, install the pure Python path first.
-ROOT is optional and is only needed when testing ROOT-backed components or comparing against ROOT/C++ cWB behavior.
-
-> Python requirement: `>=3.10`
+This checkout contains new `doctor` and `validate` commands. Until a
+release containing them is published, install this source checkout:
 
 ```bash
-conda create -n pycwb python=3.13
+conda create -n pycwb -c conda-forge python=3.13 pip nds2-client python-nds2-client lalsuite python-ligo-lw
 conda activate pycwb
-conda install -c conda-forge nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
-python3 -m pip install pycwb
-```
-
-### Optional ROOT-backed testing environment
-
-Use this only if you explicitly want to test the ROOT-backed extension or ROOT/C++ interoperability paths. Currently, the ROOT-enabled `pycwb` build is available on `x86_64` platforms.
-
-```bash
-conda create -n pycwb python=3.13
-conda activate pycwb
-conda install -c conda-forge root=6 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
-python3 -m pip install pycwb
-```
-
-For Apple Silicon users, if you need this optional ROOT-enabled environment, install dependencies with the following commands:
-
-```bash
-# make sure rosetta is installed
-softwareupdate --install-rosetta --agree-to-license
-# Optional: export CONDA_BUILD=1
-conda create -n pycwb_x64
-conda activate pycwb_x64
-conda config --env --set subdir osx-64
-conda install python==3.11 root=6.28 healpix_cxx=3 nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config ruamel.yaml htcondor
-python3 -m pip install pycwb
-```
-
-### Install PycWB from source
-
-The default source install does not require ROOT.
-
-```bash
-conda create -n pycwb python
-conda activate pycwb
-conda install -c conda-forge nds2-client python-nds2-client lalsuite python-ligo-lw setuptools_scm cmake pkg-config
-git clone git@git.ligo.org:yumeng.xu/pycwb.git
+git clone https://git.ligo.org/yumeng.xu/pycwb.git
 cd pycwb
 python -m pip install .
+pycwb --version
+pycwb doctor
+pycwb validate examples/demo/user_parameters.yaml
+pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
+pycwb progress --work-dir my_first_search
 ```
 
-To test the optional ROOT-backed extension from source, install `root=6` and `healpix_cxx=3` in the same conda environment before running `python -m pip install .`. If ROOT is not available, setup skips the C++ wavelet extension and installs the native Python path.
+The CLI example in `examples/demo/` generates synthetic data containing a loud
+injected burst and writes the normal pipeline outputs. It needs no detector-data account. The first run may
+download a roughly 53 MiB cross-talk catalog and compile numerical kernels.
+Use a fresh directory for each run. See [Your First Search](https://docs.pycwb.org/en/latest/start_here.html)
+for expected outputs and [troubleshooting](docs/source/troubleshooting.rst).
 
-## Usage
+## Choose the matching version
 
-Example project can be found in [examples](https://git.ligo.org/yumeng.xu/pycwb/-/tree/main/examples)
+A normal `python -m pip install pycwb` selects a stable release; `--pre` allows
+prereleases. Older releases have different dependencies and may require ROOT.
+Match `pycwb --version` to the documentation version. Development documentation
+can describe features not yet available on PyPI.
+
+The current native path requires Python >=3.11 and does not require ROOT.
+Linux x86_64/Python 3.13 is the current CI environment. Other platform coverage
+and optional ROOT/PyCBC/XGBoost setup are described in the
+[installation guide](docs/source/install.rst).
+
+## Run your own analysis
+
+```bash
+pycwb validate user_parameters.yaml
+pycwb run user_parameters.yaml
+```
 
 ```python
 from pycwb.workflow.run import search
 
-search('./user_parameters.yaml')
+search("user_parameters.yaml")
 ```
 
-or run with command line
+For production configuration templates, follow
+[Setup Config Templates](https://docs.pycwb.org/en/latest/config_repository.html).
+Read [Understanding Your Results](docs/source/understanding_results.rst),
+[Reproducibility](docs/source/reproducibility.rst), and
+[Validation Scope](docs/source/validation_status.rst) before interpreting an analysis.
 
-```bash
-pycwb run ./user_parameters.yaml
-```
+## Help and contributions
 
-### Verify installation
+- [Support and bug reports](SUPPORT.md), including an email route without a GitLab account.
+- [Contribution instructions](CONTRIBUTING.md) and [changes](CHANGES.md).
+- [Citation metadata](CITATION.cff) and [scientific citation guidance](docs/source/credit.rst).
+- [Release and compatibility process](docs/source/release_policy.rst).
 
-```bash
-pycwb --version
-pycwb --help
-```
-
-### Quick start for config setup
-
-For one-command project setup and optional job submission, see [QUICKSTART_CONFIG_SETUP.md](./QUICKSTART_CONFIG_SETUP.md).
-
-## Interactive tutorial
-
- - Google Colab tutorial: [GW150914.ipynb](https://colab.research.google.com/github/PycWB/pycwb/blob/main/examples/colab/GW150914.ipynb)
+Legacy notebooks are available in [examples](examples); their installation
+cells may target older releases. The CLI [synthetic example](examples/demo/README.md) is the maintained beginner path.

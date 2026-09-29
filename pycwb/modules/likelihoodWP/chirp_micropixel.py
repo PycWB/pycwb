@@ -5,8 +5,11 @@ cluster. Bootstrap randomness is an explicit input so CPU and future device
 implementations can share the same trial sequence.
 """
 
+from .chirp_bootstrap import prepare_bootstrap, finish_bootstrap
+
 from dataclasses import dataclass
-import math
+from collections.abc import Callable
+from pycwb.types.pixel_arrays import PixelArrays
 import numpy as np
 from numba import njit
 
@@ -122,62 +125,15 @@ def root_uniforms(seed, count):
 def _bootstrap(x, f, energy, mindt, uniforms):
     """Run the fixed-order release bootstrap using an explicit uniform stream."""
     n = len(x)
-    y = np.empty(n)
-    weights = np.empty(n)
-    cdf = np.zeros(n + 1)
-    sx = sy = 0.0
-    for i in range(n):
-        y[i] = 1.0 / (f[i] / 128.0) ** (8.0 / 3.0)
-        # The oracle takes sqrt(likelihood), squares it in double, then
-        # stores the histogram sampling weight in float32.
-        weights[i] = math.sqrt(energy[i]) ** 2
-        cdf[i + 1] = cdf[i] + np.float32(weights[i])
-        sx += x[i]
-        sy += y[i]
-    cdf /= cdf[n]
-    mx, my = sx / n, sy / n
-    xx = yy = xy = 0.0
-    for i in range(n):
-        xx += (x[i] - mx) ** 2
-        yy += (y[i] - my) ** 2
-        xy += (x[i] - mx) * (y[i] - my)
-    delta = math.sqrt((xx - yy) ** 2 + 4 * xy * xy)
-    a, b = math.sqrt(max(0.0, (xx + yy + delta) / 2)), math.sqrt(max(0.0, (xx + yy - delta) / 2))
-    ellipticity = abs((a - b) / (a + b)) if a + b else 0.0
-    used = np.zeros(n, dtype=np.bool_)
-    cursor = 0
+    _, weights, slopes, mergers, valid, ellipticity, cursor, ready = prepare_bootstrap(x, f, energy, mindt, uniforms)
+    if not ready:
+        return np.full(5, np.nan), cursor
     best = slope = merger = symmetry = 0.0
     selected = 0
-    for trial in range(1000):
-        used[:] = False
-        sx = sy = sx2 = sxy = 0.0
-        for pick in range(6):
-            while True:
-                if cursor >= len(uniforms):
-                    return np.full(5, np.nan), cursor
-                r = uniforms[cursor]
-                cursor += 1
-                cell = np.searchsorted(cdf, r, side="right") - 1
-                # TH1F spans [0, n-1] with n bins. Preserve its unusual
-                # interpolation and integer truncation before duplicate checks.
-                width = (n - 1.0) / n
-                sample = cell * width
-                if r > cdf[cell]:
-                    sample += width * (r - cdf[cell]) / (cdf[cell + 1] - cdf[cell])
-                k = int(sample)
-                if not used[k]:
-                    break
-            used[k] = True
-            sx += x[k]
-            sy += y[k]
-            sx2 += x[k] * x[k]
-            sxy += x[k] * y[k]
-        numerator, denominator = sy * sx - sxy * 6, sx2 * 6 - sx * sx
-        if numerator == 0 or denominator == 0:
+    for trial in range(len(slopes)):
+        if not valid[trial]:
             continue
-        sl = numerator / denominator
-        tm = (sy + sl * sx) / 6 / sl
-        sl = -sl
+        sl, tm = slopes[trial], mergers[trial]
         upper = lower = upper_total = lower_total = score = 0.0
         npix = 0
         for i in range(n):
@@ -215,30 +171,10 @@ def _bootstrap(x, f, energy, mindt, uniforms):
             if upper_total + lower_total > 0
             else 0.0
         )
-    if selected < 4:
-        return np.zeros(5), cursor
-    total = signal = 0.0
-    for i in range(n):
-        total += weights[i]
-        offset = 2 * mindt if slope < 0 else -2 * mindt
-        t = x[i] - merger - offset
-        if t * slope <= 0:
-            continue
-        df = f[i] - 128.0 * (slope * t) ** (-3.0 / 8.0)
-        dt = t - (f[i] / 128.0) ** (-8.0 / 3.0) / slope
-        if df > 0:
-            if abs(dt) > abs(offset) and abs(df * (dt + offset)) > 1:
-                continue
-        elif abs(df * dt) > 1:
-            continue
-        signal += weights[i]
-    c = 299792458.0
-    mgc = 256.0 * math.pi / 5.0 * (6.67259e-11 * 1.98892e30 * math.pi / c / c / c) ** (5.0 / 3.0) * 128.0 ** (8.0 / 3.0)
-    mass = abs(slope / mgc) ** 0.6 * (1 if slope < 0 else -1)
-    return np.array([mass, merger, ellipticity, signal / total, symmetry]), cursor
+    return finish_bootstrap(x, f, weights, mindt, slope, merger, selected, ellipticity, symmetry, cursor)
 
 
-def estimate_chirp(pixels, analysis_rate, seed):
+def estimate_chirp(pixels: PixelArrays, analysis_rate: float, seed: int, *, bootstrap: Callable[[np.ndarray, np.ndarray, np.ndarray, float, np.ndarray], tuple[np.ndarray, int]] | None = None) -> ChirpResult:
     """Estimate release micropixel chirp morphology with a reproducible bootstrap.
 
     Parameters
@@ -249,6 +185,10 @@ def estimate_chirp(pixels, analysis_rate, seed):
         Analysis sampling rate in Hz.
     seed : int
         Nonzero uint32 run seed for the local uniform stream.
+
+    bootstrap : callable, optional
+        Process-owned trial scorer accepting an explicit uniform stream; defaults
+        to the CPU implementation. Return metadata and the consumed stream count.
 
     Returns
     -------
@@ -272,7 +212,7 @@ def estimate_chirp(pixels, analysis_rate, seed):
         return ChirpResult(mass_error=-1.0, merger_time_error=-1.0)
     count = 16384
     while True:
-        result, consumed = _bootstrap(cells[:, 0], cells[:, 1], cells[:, 2], mindt, root_uniforms(seed, count))
+        result, consumed = (bootstrap or _bootstrap)(cells[:, 0], cells[:, 1], cells[:, 2], mindt, root_uniforms(seed, count))
         if np.all(np.isfinite(result)):
             stored = [float(np.float32(v)) for v in result]
             return ChirpResult(stored[0], -1.0, stored[1], -1.0, *stored[2:])

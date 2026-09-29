@@ -49,18 +49,6 @@ def hrss_scaling(input, targeted_hrss_list):
     return input * (targeted_hrss_list / hrss)
 
 
-def snr_scaling(input, psd):
-    """
-    This function scales the input waveform to the targeted snr list.
-    The scaling factor is calculated as the ratio of the targeted snr and the input snr.
-
-    :param input: The input waveform
-    :param psd: The power spectral density
-    :return: The scaled waveform
-    """
-    pass
-
-
 def repeat(par_list, n_repeat):
     """
     This function repeats the parameter list n times.

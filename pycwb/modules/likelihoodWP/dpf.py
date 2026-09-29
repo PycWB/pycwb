@@ -115,9 +115,9 @@ def compute_dpf(Fp0, Fx0, noise_weights):
         - F: np.ndarray
             The cross polarization component in the DPF.
         - fp: np.ndarray
-            |f+|^2 
+            ``|f+|^2``
         - fx: np.ndarray
-            |fx|^2
+            ``|fx|^2``
         - si: np.ndarray
             The sine component of the DPF.
         - co: np.ndarray
@@ -164,9 +164,9 @@ def compute_dpf_into(Fp0, Fx0, noise_weights, scratch):
         - F: np.ndarray
             The cross polarization component in the DPF.
         - fp: np.ndarray
-            |f+|^2
+            ``|f+|^2``
         - fx: np.ndarray
-            |fx|^2
+            ``|fx|^2``
         - si: np.ndarray
             The sine component of the DPF.
         - co: np.ndarray

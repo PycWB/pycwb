@@ -79,4 +79,4 @@ Not Sure Where to Start?
    * - Contribute code
      - :ref:`dev_architecture`
    * - Find a Python function's API
-     - :ref:`modules`
+     - :doc:`modules`

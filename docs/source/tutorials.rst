@@ -18,7 +18,7 @@ For help choosing what to learn next, see :ref:`decision_guides`.
 
    <strong>Start Here</strong> &nbsp;→&nbsp; <a href="start_here.html">What is pycWB?</a><br>
    &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
-   <strong>Lesson 1</strong> &nbsp;→&nbsp; <a href="tutorial_search.html">Your First Search</a><br>
+   <strong>Lesson 1</strong> &nbsp;→&nbsp; <a href="tutorial_search.html">Inside the Search Workflow</a><br>
    &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
    <strong>Lesson 2</strong> &nbsp;→&nbsp; <a href="tutorial_injection.html">Injection Search</a><br>
    &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
@@ -90,3 +90,13 @@ After the Learning Path
      - Set up production searches with config templates and cluster submission
    * - :ref:`postproduction`
      - Run background estimation, XGBoost ranking, and detection efficiency
+
+
+.. toctree::
+   :hidden:
+
+   tutorial_search
+   tutorial_injection
+   tutorial_multi_injection
+   tutorial_customized_wf_gen
+   tutorial_batch_inj

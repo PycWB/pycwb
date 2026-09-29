@@ -126,6 +126,14 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
                 events[dest] = arr.apply(lambda x, _n=n: x[_n] if len(x) > _n else None)
             # scalar column that was already named differently — nothing to do
 
+    # Preserve the stored statistic before rho0 is replaced by a derived feature.
+    # Native catalogs store scalar rho; ROOT catalogs may supply flattened rho0.
+    if "rho0_std" not in events.columns:
+        if "rho0" in events.columns:
+            events["rho0_std"] = events["rho0"]
+        elif "rho" in events.columns:
+            events["rho0_std"] = events["rho"]
+
     # ── chirp flat indices (NOT per-IFO; indices go up to 5+ independent of nifo) ──
     # ML_list uses chirp1, chirp3 for bbh/imbhb searches.
     if 'chirp' in events.columns:
@@ -151,8 +159,13 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
         for n in range(0,nifo): events['sSNR'+str(n)+'/likelihood'] = events['sSNR'+str(n)]/events['likelihood']
 
     if 'noise' in xvars:
-        events['noise'] = 1/(events['noise0']*events['noise0'])
-        for n in range(1,nifo): events['noise'] = events['noise']+1/(events['noise'+str(n)]*events['noise'+str(n)])
+        # Catalog RMS values are float32 and typically O(1e-24). Their squares
+        # underflow in float32, so accumulate inverse variances in float64.
+        noise0 = events['noise0'].astype('float64')
+        events['noise'] = 1/(noise0*noise0)
+        for n in range(1,nifo):
+            noise_n = events['noise'+str(n)].astype('float64')
+            events['noise'] = events['noise']+1/(noise_n*noise_n)
         events['noise'] = np.sqrt(1/events['noise'])
 
     # ── Lveto flat indices (not per-IFO; extract from list col if needed) ──────
@@ -169,9 +182,9 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
     # Qa = sqrt(Qveto[0])  — support both catalog column name ('qveto') and
     # flat-Parquet column name ('Qveto0') produced by tree_to_dataframe.
     if 'qveto' in events.columns:
-        events['Qa'] = np.sqrt(events['qveto'].clip(lower=0))
+        events['Qa'] = np.sqrt(events['qveto'].astype('float64').clip(lower=0))
     elif 'Qveto0' in events.columns:
-        events['Qa'] = np.sqrt(events['Qveto0'].clip(lower=0))
+        events['Qa'] = np.sqrt(events['Qveto0'].astype('float64').clip(lower=0))
 
     # check ML_options
     for option, value in ML_options.items():
@@ -182,7 +195,9 @@ def preprocess_events(events: pd.DataFrame, nifo: int, ML_options: dict, ML_caps
                 exit(1)
             # qfactor = Qveto[1] (catalog name); Qveto1 = flat-Parquet name
             qfactor_col = 'qfactor' if 'qfactor' in events.columns else 'Qveto1'
-            events['Qp'] = events[qfactor_col]/(2*np.sqrt(np.log10(np.minimum(200,events['ecor']))))
+            # cWB's array flattening promotes Qveto elements to doubles,
+            # while scalar ecor keeps its ROOT dtype. Preserve that arithmetic.
+            events['Qp'] = events[qfactor_col].astype('float64')/(2*np.sqrt(np.log10(np.minimum(200,events['ecor']))))
         if(option=='rho0(define)'):
             # select rho0 definition
             if (value!=0) and (value!=1):

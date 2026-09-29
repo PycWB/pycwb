@@ -1,0 +1,4 @@
+name: super_cluster_gpu
+author: pycWB
+description: GPU subnet cuts and resident time-delay extraction.
+dependencies: [numpy, numba, jax]

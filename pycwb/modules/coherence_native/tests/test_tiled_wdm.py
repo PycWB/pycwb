@@ -1,6 +1,6 @@
 """Real WDM equivalence across tile seams, segment padding, and parity."""
 
-from pycwb.constants.execution_profile import ExecutionProfile
+from pycwb.config.processing import ExecutionProfile
 
 from types import SimpleNamespace
 

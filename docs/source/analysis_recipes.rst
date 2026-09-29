@@ -32,7 +32,7 @@ All-Sky Short Burst Search
 .. code-block:: yaml
 
    # Network
-   ifos: [H1, L1]
+   ifo: [H1, L1]
    fLow: 64
    fHigh: 2048
    inRate: 4096
@@ -206,7 +206,7 @@ Background-Only Production
 **Validation Checks:**
 - Zero-lag excluded from FAR calculation
 - FAR vs. rho curve is smooth and monotonically decreasing
-- Total livetime matches N_jobs × N_lags × segLen
+- Selected livetime agrees with completed progress and selected intervals after vetoes, edges and overlap accounting
 
 **Common Failure Modes:**
 - CAT2 veto windows applied as segments instead of windows
@@ -274,7 +274,7 @@ hrss50/hrss90 sensitivity metrics.
 
 **Validation Checks:**
 - Efficiency → 100% for loud signals (hrss ≫ hrss50)
-- hrss50/hrss90 consistent across waveform families
+- hrss50/hrss90 agree with the reference for each waveform family; different families can have different sensitivities
 - Binomial error bars decrease with more injections
 
 **Common Failure Modes:**
@@ -297,9 +297,9 @@ Debugging a Failed Production
 5. **Check frames** — do ``.gwf`` files exist for all detectors and times?
 6. **Check zero-lag** — is it excluded from background?
 7. **Check SNR distribution** — does it peak near ``netRHO``? Long tail?
-8. **Check livetime** — does computed livetime match expected N_jobs × N_lags × segLen?
+8. **Check livetime** — compare selected exposure with completed progress and intervals, including veto and overlap losses
 9. **Check memory** — did any job hit OOM? Check ``job_memory`` setting.
-10. **Rescue failed lags** — use ``skip_lags`` to restart from the point of failure
+10. **Rescue failed lags** — identify incomplete job/trial/lag tuples with ``progress`` and consult :ref:`troubleshooting` before selecting work to rerun
 
 **Common Root Causes:**
 

@@ -44,7 +44,7 @@ def test_batch_backends_propagate_fraction_and_keep_legacy_default():
     a[:, 120:124] *= 100
     b[:, 120:124] *= 100
     # K=2, matrix 10x10, top ten eigenvectors; avoid a degenerate eigenspace cut.
-    args = (a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
+    args = (a, b, a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
     old, old_mask = _numba_process_layers(*args, 1)
     explicit, explicit_mask = _numba_process_layers(*args, 1, 1.0)
     np.testing.assert_array_equal(old, explicit)
@@ -60,7 +60,7 @@ def test_search_old_option_selects_uncapped_behavior(monkeypatch):
     from types import SimpleNamespace
     from pycwb.modules.data_conditioning.regression import _regression_apply_fraction
 
-    from pycwb.constants.execution_profile import ExecutionProfile
+    from pycwb.config.processing import ExecutionProfile
 
     enabled = ExecutionProfile(regression_cap=True)
     assert _regression_apply_fraction(SimpleNamespace(execution_profile=enabled, Search="CBC"), 0.95) == 0.95

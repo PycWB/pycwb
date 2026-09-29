@@ -337,3 +337,37 @@ def test_report_uses_only_explicit_simulation_tabs(tmp_path):
     data = json.loads((tmp_path / "public" / "report_data.json").read_text())
     assert data["simulation_runs"] == []
     assert "unrelated_simulation_plot.png" not in (tmp_path / "public" / "index.html").read_text()
+
+
+def test_report_exposes_consistency_checks_and_efficiency_bounds(tmp_path):
+    _write_catalog_with_metadata(tmp_path / 'production.parquet')
+    (tmp_path / 'workflow.yaml').write_text('steps: []\n')
+    (tmp_path / 'validation.json').write_text(json.dumps({
+        'description': 'Standard command comparison',
+        'checks': [{'check':'Injection counts','status':'PASS','details':'4 injections'}],
+        'notes': ['Limited to tested inputs.']}))
+    (tmp_path / 'efficiency.json').write_text(json.dumps({
+        'n_detected':0,'n_injected':4,'ranking_par':'rhor','comparison':'>','threshold':1,
+        'hrss50_method':'No extrapolation',
+        'waveforms':[{'waveform':'SG','n_injected':4,'n_detected':0,'hrss50':None,
+                      'status':'above_sampled_range','bound':1e-21}]}))
+    result=postproduction_report(str(tmp_path),'workflow.yaml','production.parquet',
+        validation_file='validation.json',simulation_runs=[{
+            'label':'Held out','efficiency_summary_file':'efficiency.json'}])
+    html=(tmp_path/result['output_file']).read_text()
+    assert 'Consistency checks' in html and 'Injection counts' in html
+    assert 'above_sampled_range' in html and '0 detected out of 4 injections' in html
+    assert result['n_tabs']==6
+
+
+def test_background_report_excludes_zero_lag_but_keeps_shifted_lag_zero(tmp_path):
+    from pycwb.modules.postprocess.report_summaries import _progress_summary, _select_bkg_livetime
+    progress=tmp_path/'progress.parquet'
+    pd.DataFrame({'job_id':[1,1,2,2],'lag_idx':[0,1,0,1],
+                  'segment_lag_L1':[0.,0.,100.,100.], 'segment_lag_H1':[0.,0.,0.,0.],
+                  'livetime':[10.,20.,30.,40.],
+                  'status':['completed','completed','completed','failed']}).to_parquet(progress)
+    summary=_progress_summary(str(progress))
+    assert summary['total_livetime']['seconds']==60.
+    assert summary['background_livetime']['seconds']==50.
+    assert _select_bkg_livetime(None,summary,{}, {})['seconds']==50.

@@ -1,7 +1,10 @@
-import os
+from pycwb.utils.size import byte_size
 
 
 def init_parser(parser):
+    parser.add_argument("--allocated-cores", type=int, help="Scheduler CPU allocation ceiling")
+    parser.add_argument("--memory-limit", type=byte_size, help="Scheduler memory ceiling, e.g. 8GiB")
+    parser.add_argument('--batch-id', help='Prepared catalog batch, e.g. b000000 (exclusive with --jobs)')
     # Add the arguments
     parser.add_argument('user_parameter_file',
                         metavar='file_path',
@@ -54,4 +57,5 @@ def command(args):
 
     # Run the search function with the specified user parameter file
     batch_run(args.user_parameter_file, working_dir=args.work_dir,
-              jobs=args.jobs, compress_json=args.compress_json, n_proc=args.n_proc, n_workers=args.n_workers)
+              jobs=args.jobs, compress_json=args.compress_json, n_proc=args.n_proc, n_workers=args.n_workers,
+              batch_id=args.batch_id, allocated_cores=args.allocated_cores, memory_limit=args.memory_limit)

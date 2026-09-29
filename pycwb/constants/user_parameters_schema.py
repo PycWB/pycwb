@@ -3,7 +3,9 @@ JSON schema for validating and completing user parameters,
 and will also be used to generate the documentation
 """
 
-from .execution_profile import PROFILE_SCHEMA
+from pycwb.config.processing import PROFILE_SCHEMA
+from .gpu_options import GPU_SCHEMA
+from pycwb.config.execution import EXECUTION_SCHEMA
 
 NIFO_MAX = 8
 
@@ -12,12 +14,14 @@ schema = {
     "type": "object",
     "properties": {
         "execution_profile": PROFILE_SCHEMA,
+        "gpu": GPU_SCHEMA,
         "coherence_timing": {
             "type": "boolean",
             "default": False,
             "description": "Log detailed coherence setup timings.",
             "cwb": False,
         },
+        "execution": {**EXECUTION_SCHEMA, "description": "Job planning, caching and supervised execution policy", "cwb": False},
         "outputDir": {"type": "string", "description": "output directory", "default": "output", "cwb": False},
         "logDir": {"type": "string", "description": "log directory", "default": "log", "cwb": False},
         "catalog_dir": {"type": "string", "description": "catalog directory", "default": "catalog", "cwb": False},
@@ -169,6 +173,11 @@ schema = {
             "cwb": False,
             "category": "job_submission",
         },
+        "slurm_account": {"type": "string", "default": "", "description": "SLURM account", "cwb": False, "category": "job_submission"},
+        "slurm_qos": {"type": "string", "default": "", "description": "SLURM QOS", "cwb": False, "category": "job_submission"},
+        "slurm_merge_memory": {"type": "string", "default": "", "description": "SLURM merge-job memory; empty inherits analysis memory", "cwb": False, "category": "job_submission"},
+        "slurm_summary_memory": {"type": "string", "default": "", "description": "SLURM simulation-summary memory; empty inherits analysis memory", "cwb": False, "category": "job_submission"},
+        "slurm_array_max_parallel": {"type": ["integer", "null"], "minimum": 1, "default": None, "description": "Maximum simultaneous tasks in this SLURM array", "cwb": False, "category": "job_submission"},
         "n_retries": {
             "type": "integer",
             "description": "number of application-level retries per job (SLURM) or DAG retries (HTCondor)",
@@ -208,6 +217,7 @@ schema = {
             "default": "jax",
             "cwb": False,
         },
+        "injection_resampling": {"type": "string", "enum": ["fft", "cwb"], "default": "cwb", "description": "cwb uses Meyer for final target-SNR injections; SNR estimation and fixed-hrss injections retain FFT", "cwb": False},
         "injection": {
             "type": "object",
             "description": (
@@ -269,12 +279,14 @@ schema = {
         },
         "gwdatafind": {
             "type": "object",
-            "description": "If the gwdatafind is set, the framefiles can be pulled from the LIGO data server, "
-            "the support keys are: site, frametype, host. Example: ",
-            "     site: ['L','H']"
-            "     frametype: ['L1_HOFT_C00','H1_HOFT_C00']"
-            "     host: 'datafind.igwn.org'"
-            "     urltype: 'osdf'"
+            "description": "Configure frame-file discovery via gwdatafind. "
+            "Supported keys are: site, frametype, host, urltype. "
+            "If gwdatafind is omitted or empty ({}), frame files are not fetched "
+            "from the data server via gwdatafind. Example: \n"
+            "     site: ['L','H'] \n"
+            "     frametype: ['L1_HOFT_C00','H1_HOFT_C00'] \n"
+            "     host: 'datafind.igwn.org' \n"
+            "     urltype: 'osdf'",
             "default": {},
             "cwb": False,
         },
@@ -528,8 +540,8 @@ schema = {
         "segOverlap": {"type": "number", "description": "overlap between job segments [sec]", "default": 0.0},
         "lagSize": {"type": "integer", "description": "number of lags (simulation:1)", "default": 1},
         "lagStep": {"type": "number", "description": "[sec] time interval between lags", "default": 1.0},
-        "lagOff": {"type": "integer", "description": "first lag id (lagOff=0 - include zero lag )", "default": 6},
-        "lagMax": {"type": "number", "description": "0/>0 -  standard/extended lags", "default": 150},
+        "lagOff": {"type": "integer", "description": "first lag id (lagOff=0 - include zero lag )", "default": 0},
+        "lagMax": {"type": "number", "description": "0/>0 -  standard/extended lags", "default": 0},
         "lagMode": {"enum": ["w", "r"], "description": "w/r  -  write/read lag list", "default": "w"},
         "lagSite": {
             "type": "integer",
@@ -635,6 +647,30 @@ schema = {
             "type": "number",
             "description": "if not 0 use healpix sky map (number of sky pixels = 12*pow(4,healpix))",
             "default": 7,
+        },
+        "conditioning": {
+            "type": "object", "default": {}, "additionalProperties": False, "cwb": False,
+            "properties": {"post_whitening": {
+                "type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["module"], "properties": {
+                        "module": {"type": "string", "minLength": 1},
+                        "options": {"type": "object", "default": {}}
+                    }
+                }
+            }}
+        },
+        "selection": {
+            "type": "object", "default": {}, "additionalProperties": False, "cwb": False,
+            "properties": {"time_vetoes": {
+                "type": "array", "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["module"], "properties": {
+                        "module": {"type": "string", "minLength": 1},
+                        "options": {"type": "object", "default": {}}
+                    }
+                }
+            }}
         },
         "plugin": {"type": "string", "c_type": "TMacro", "default": ""},
         "configPlugin": {"type": "string", "c_type": "TMacro", "default": ""},

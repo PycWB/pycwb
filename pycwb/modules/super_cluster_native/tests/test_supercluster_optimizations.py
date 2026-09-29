@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from pycwb.modules.super_cluster_native.sub_net_cut import (
     mra_statistics,
@@ -11,6 +12,7 @@ from pycwb.modules.super_cluster_native.sub_net_cut import (
 from pycwb.modules.super_cluster_native.super_cluster import supercluster
 from pycwb.modules.super_cluster_native.utils import (
     _top_loudest_indices,
+    aggregate_clusters_from_links,
     calculate_statistics,
     calculate_statistics_arrays,
     get_cluster_links,
@@ -214,7 +216,8 @@ def test_supercluster_grouping_and_rejection_paths():
         Cluster(pixel_arrays=_make_pixel_arrays(time=[16], frequency=[2])),
         Cluster(pixel_arrays=_make_pixel_arrays(time=[16000], frequency=[50])),
     ]
-    assert supercluster(standalone, "L", 0.0, 1.0, 2) is standalone
+    result = supercluster(standalone, "L", 0.0, 1.0, 2)
+    assert [cluster.cluster_status for cluster in result] == [1, 1]
 
 
 class _EmptyXTalk:
@@ -420,3 +423,42 @@ def test_top_loudest_tie_safe_and_prepared_subnet_path_matches_wrapper():
         arrays_prepared=True,
     )
     assert actual == expected
+
+
+@pytest.mark.parametrize("n_pixels, likelihood, threshold, status", [
+    (2, 5., 1., 1),  # cWB nPIX=3 rejects even a loud two-pixel cluster.
+    (3, 1., 4., 1),  # Three pixels still need the per-resolution likelihood cut.
+    (3, 1., 3., 0),  # cWB uses a strict less-than rejection: equality passes.
+    (4, 5., 1., 0),
+])
+def test_isolated_supercluster_applies_cwb_selection(n_pixels, likelihood, threshold, status):
+    cluster = Cluster(pixel_arrays=_make_pixel_arrays(
+        time=np.arange(1, n_pixels + 1) * 16,
+        frequency=[2] * n_pixels,
+        likelihood=[likelihood] * n_pixels,
+    ))
+    result = supercluster([cluster], "L", 0., threshold, 2)
+    assert len(result) == 1
+    assert result[0].cluster_status == status
+    assert len(result[0].pixel_arrays) == n_pixels
+    if status == 0:
+        # One resolution: likelihood-weighted mean time and bin-center frequency.
+        assert result[0].cluster_time == pytest.approx((n_pixels + 1) / 64.)
+        assert result[0].cluster_freq == pytest.approx(32.)
+        assert result[0].cluster_meta.energy == pytest.approx(4. * n_pixels)
+
+
+def test_empty_link_graph_preserves_all_singleton_ids():
+    links = np.empty((0, 2), dtype=np.int32)
+    assert aggregate_clusters_from_links(np.array([2, 5]), links) == [[2], [5]]
+    assert aggregate_clusters_from_links(np.array([], dtype=int), links) == []
+    assert supercluster([], "L", 0., 1., 2) == []
+
+
+def test_isolated_rejection_does_not_depend_on_other_clusters_linking():
+    isolated = Cluster(pixel_arrays=_make_pixel_arrays(time=[16000, 16016], frequency=[50, 50]))
+    linked = [Cluster(pixel_arrays=_make_pixel_arrays(time=[16, 32], frequency=[2, 2]))
+              for _ in range(2)]
+    assert supercluster([isolated], "L", 1., 1., 2)[0].cluster_status == 1
+    result = supercluster(linked + [isolated], "L", 1., 1., 2)
+    assert sorted((len(c.pixel_arrays), c.cluster_status) for c in result) == [(2, 1), (4, 0)]

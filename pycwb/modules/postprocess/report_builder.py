@@ -80,6 +80,7 @@ def postproduction_report(
     bkg: Optional[dict[str, Any]] = None,
     training: Optional[dict[str, Any]] = None,
     simulation_runs: Optional[list[dict[str, Any]]] = None,
+    validation_file: Optional[str] = None,
     max_plot_points: int = DEFAULT_MAX_POINTS,
     max_bins: int = DEFAULT_MAX_BINS,
     table_limit: int = DEFAULT_TABLE_LIMIT,
@@ -175,6 +176,7 @@ def postproduction_report(
         "bkg": bkg_data,
         "training": training_data,
         "simulation_runs": simulation_data,
+        "validation": None,
         "workflow": workflow_section,
         "artifacts": ctx.artifacts,
         "missing_artifacts": ctx.missing_artifacts,
@@ -184,6 +186,11 @@ def postproduction_report(
             "data": ctx.display_path(data_path),
         },
     }
+    if validation_file:
+        artifact = ctx.register_artifact(validation_file, label="Consistency checks", kind="json", required=True)
+        with open(ctx.resolve(validation_file)) as stream:
+            validation = json.load(stream)
+        data["validation"] = {**validation, "artifact": artifact}
     data = _jsonable(data)
 
     with open(data_path, "w") as f:
@@ -193,7 +200,7 @@ def postproduction_report(
     with open(output_path, "w") as f:
         f.write(html)
 
-    n_tabs = 4 + len(simulation_data)
+    n_tabs = 4 + len(simulation_data) + bool(validation_file)
     logger.info("Postproduction report written to %s", output_path)
     logger.info("Postproduction report data written to %s", data_path)
 

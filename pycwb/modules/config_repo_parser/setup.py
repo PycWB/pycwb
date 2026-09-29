@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 def setup_project(work_dir: str, config_base_path: str = "./", machine: Optional[str] = None, data_type: Optional[str] = None, dry_run: bool = False) -> Dict:
-    """
-    Setup a project working directory with configuration and DQ files.
+    """Setup a project working directory with configuration and DQ files.
     
     This function:
+
     1. Parses the project name from the working directory path
     2. Creates the working directory
     3. Copies user_parameters.yaml from the config repository
@@ -31,7 +31,8 @@ def setup_project(work_dir: str, config_base_path: str = "./", machine: Optional
     6. Updates GPS times and chunk ID in user_parameters.yaml using Jinja2 templates
     7. Configures data source (gwdatafind for remote, frFiles for local)
     
-    Directory naming convention:
+    Directory naming convention::
+
         Parent directory base name is treated as the project name.
         Example: /work/O4_K02_C00_BurstLF_LH_BKG_standard/ 
                  → Project name: O4_K02_C00_BurstLF_LH_BKG_standard

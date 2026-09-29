@@ -303,7 +303,10 @@ class JSONCatalog(BaseCatalog):
         pyarrow.Table
             Results as an Arrow table (DuckDB native output).
 
-        Example::
+        Examples
+        --------
+
+        .. code-block:: python
 
             rows = cat.query(
                 "SELECT id, rho, injection.name, injection.approximant FROM triggers"

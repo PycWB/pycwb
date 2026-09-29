@@ -121,7 +121,7 @@ callers need them.
 
 ## Execution choices
 
-The immutable [`ExecutionProfile`](../../constants/execution_profile.py),
+The immutable [`ExecutionProfile`](../../config/processing.py),
 resolved from `config.execution_profile`, controls these alternatives:
 
 | Setting | Default | Effect |

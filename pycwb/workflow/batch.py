@@ -1,23 +1,16 @@
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import faulthandler
 import os
 import getpass
 import logging
-import sys
 from typing import Any
 from pycwb.modules.logger import logger_init
 from pycwb.workflow.subflow.prepare_job_runs import prepare_job_runs, load_batch_run
 from pycwb.utils.module import import_function
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
-
-# ExceptionGroup is available in Python 3.11+; use backport for earlier versions
-if sys.version_info >= (3, 11):
-    from builtins import ExceptionGroup
-else:
-    from exceptiongroup import ExceptionGroup
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +42,7 @@ def batch_setup(
     dry_run=False,
     submit=False,
 ):
+    requested_memory = memory
     logger_init(log_file, log_level)
     job_segments, config, working_dir = prepare_job_runs(
         working_dir,
@@ -95,6 +89,26 @@ def batch_setup(
     if n_retries == 5:
         n_retries = getattr(config, "n_retries", 5)  # 5 is the default; prefer config if set
 
+    from pycwb.config.execution import ExecutionSettings
+    from pycwb.utils.size import byte_size
+    from pycwb.workflow.execution.planner import prepare_plan
+    from pycwb.workflow.execution.scheduling import prepare_batch_fragments
+
+    execution = ExecutionSettings.from_config(config)
+    job_groups = None
+    if execution.enabled:
+        plan = prepare_plan(job_segments, config, execution)
+        job_groups = [[job_segments[i] for i in group] for group in plan.batches]
+        if not job_groups:
+            raise ValueError("No jobs to submit")
+        prepare_batch_fragments(working_dir, config, job_groups)
+        if requested_memory is None:
+            reservation = (execution.worker_memory + execution.headroom + 3 * execution.cache_limit
+                           + 2 * execution.message_limit + 1024**3)
+            allocation = execution.memory_limit or max(byte_size(memory), reservation)
+            memory = f"{(allocation + 1000**2 - 1) // 1000**2}MB"
+
+
     logger.info("Job submission info:")
     logger.info(f"  Cluster type: {cluster}")
     logger.info(f"  Conda environment: {conda_env}")
@@ -122,6 +136,7 @@ def batch_setup(
             disk,
             conda_init=conda_init,
             n_retries=n_retries,
+            job_groups=job_groups,
         )
         condor.create(job_segments, submit=submit)
     elif cluster == "slurm":
@@ -138,6 +153,12 @@ def batch_setup(
             partition=slurm_partition,
             n_retries=n_retries,
             conda_init=conda_init,
+            job_groups=job_groups,
+            account=getattr(config, "slurm_account", None),
+            qos=getattr(config, "slurm_qos", None),
+            array_max_parallel=getattr(config, "slurm_array_max_parallel", None),
+            merge_memory=getattr(config, "slurm_merge_memory", None),
+            summary_memory=getattr(config, "slurm_summary_memory", None),
         )
         slurm.create(job_segments, submit=submit)
     else:
@@ -342,7 +363,8 @@ def processor_wrapper(
 
 
 def batch_run(
-    config_file, working_dir=".", log_file=None, log_level="INFO", jobs=None, n_proc=1, compress_json=True, n_workers=1
+    config_file, working_dir=".", log_file=None, log_level="INFO", jobs=None, n_proc=1, compress_json=True, n_workers=1,
+    batch_id=None, allocated_cores=None, memory_limit=None,
 ):
     logger_init(log_file=None, log_level="INFO", worker_prefix=f"BatchRun-{jobs or 'all'}")
 
@@ -350,7 +372,7 @@ def batch_run(
     # 1. Load configuration and job segments                               #
     # ------------------------------------------------------------------ #
     job_segments, config, working_dir, catalog_file = load_batch_run(
-        working_dir, config_file, jobs, n_proc=n_proc, compress_json=compress_json
+        working_dir, config_file, jobs, n_proc=n_proc, compress_json=compress_json, batch_id=batch_id
     )
     logger_init(log_file, log_level)
 
@@ -359,7 +381,11 @@ def batch_run(
     #     Must run before any subprocess spawns so there are no racing     #
     #     writers when we inspect or delete lock files.                    #
     # ------------------------------------------------------------------ #
-    if catalog_file:
+    from pycwb.config.execution import ExecutionSettings
+
+    # Scalable execution performs this cleanup only after acquiring exclusive
+    # fragment/job ownership; a concurrent runner must not remove a live lock.
+    if catalog_file and not ExecutionSettings.from_config(config).enabled:
         for _lock in (
             catalog_file + ".lock",
             os.path.join(
@@ -373,6 +399,19 @@ def batch_run(
     main_func = import_function(config.segment_processer)
     logger.info(f"Segment processer loaded: {main_func}")
 
+    from pycwb.workflow.execution.executor import ExecutionContext, execute_jobs
+
+    if ExecutionSettings.from_config(config).enabled:
+        return execute_jobs(ExecutionContext(
+            job_segments, config, main_func, working_dir, catalog_file, compress_json,
+            workers=n_workers, allocated_cores=allocated_cores, memory_limit=memory_limit,
+            legacy=lambda ordered: _run_simple_batch(ordered, config, main_func, working_dir,
+                                                       catalog_file, compress_json, n_workers),
+        ))
+    return _run_simple_batch(job_segments, config, main_func, working_dir, catalog_file, compress_json, n_workers)
+
+
+def _run_simple_batch(job_segments, config, main_func, working_dir, catalog_file, compress_json, n_workers):
     # ------------------------------------------------------------------ #
     # 2. Pre-flight resume check (serial, before any subprocess spawns)   #
     #    - Skip already-complete jobs                                      #

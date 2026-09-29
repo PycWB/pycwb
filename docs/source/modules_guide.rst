@@ -8,7 +8,9 @@ PycWB is built from ~40 self-contained modules organized by pipeline stage.
 Each module lives in ``pycwb/modules/`` with its own ``tests/`` subdirectory
 and communicates through plain Python objects and NumPy arrays.
 
-For the full auto-generated API reference, see :doc:`pycwb.modules`.
+For scientific backend distinctions, CUDA stage packages, supported output
+combinations and nested GPU options, see :doc:`backends`. For the full
+auto-generated API reference, see :doc:`pycwb.modules`.
 
 .. tip::
 

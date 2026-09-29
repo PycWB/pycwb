@@ -750,8 +750,7 @@ class Detector:
         vmin=0.0,
         vmax=None,
     ):
-        """
-        Draw antenna pattern for this detector.
+        """Draw antenna pattern for this detector.
 
         .. deprecated::
             Use :func:`pycwb.modules.plot.plot_detector_antenna_pattern` instead.
@@ -759,12 +758,12 @@ class Detector:
         Parameters
         ----------
         polarization : int
-            0 -> |Fx| (DPF)
-            1 -> |F+| (DPF)
-            2 -> |Fx|/|F+| (DPF)
-            3 -> sqrt(|F+|^2+|Fx|^2) (DPF)
-            4 -> |Fx|^2 (DPF)
-            5 -> |F+|^2 (DPF)
+            0 -> \\|Fx\\| (DPF)
+            1 -> \\|F+\\| (DPF)
+            2 -> \\|Fx\\|/\\|F+\\| (DPF)
+            3 -> sqrt(\\|F+\\|^2+\\|Fx\\|^2) (DPF)
+            4 -> \\|Fx\\|^2 (DPF)
+            5 -> \\|F+\\|^2 (DPF)
         palette : str
             Matplotlib colormap name
         resolution : int
@@ -1102,8 +1101,7 @@ class DetectorNetwork:
         ax=None,
         detector_scales=None,
     ):
-        """
-        Draw antenna pattern for the detector network.
+        """Draw antenna pattern for the detector network.
 
         .. deprecated::
             Use :func:`pycwb.modules.plot.plot_network_antenna_pattern` instead.

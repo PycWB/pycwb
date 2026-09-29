@@ -17,3 +17,5 @@ Key design differences from the CPU module:
 """
 
 from .likelihood import prepare_likelihood_inputs, likelihood, likelihood_wrapper
+
+__all__ = ["likelihood", "likelihood_wrapper", "prepare_likelihood_inputs"]

@@ -22,7 +22,7 @@ class TimeFrequencyMap:
     f_low: float | None
     f_high: float | None
     edge: float | None
-    wavelet: Wavelet  # Replace 'object' with the actual type of wavelet if available
+    wavelet: Wavelet | None  # None for sampled maps without an inverse transform
     len_timeseries: int = None  # Original time series length before transform
     ts_data: np.ndarray = None  # Original time series data (avoids roundtrip w2t→t2w in max_energy)
 

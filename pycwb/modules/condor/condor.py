@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from pycwb.utils.size import byte_size
 import socket
 import click
 
@@ -9,7 +10,7 @@ class HTCondor:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", 
                  accounting_group=None, job_per_worker=10, container_image=None,
                  should_transfer_files=False,
-                 n_proc=1, memory="6GB", disk="4GB", conda_init=None, n_retries=5):
+                 n_proc=1, memory="6GB", disk="4GB", conda_init=None, n_retries=5, job_groups=None):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         self.additional_init = additional_init
@@ -30,6 +31,7 @@ class HTCondor:
 
         self.accounting_group = accounting_group
         self.job_per_worker = job_per_worker
+        self.job_groups = job_groups
         if not conda_init:
             conda_init = 'source /cvmfs/software.igwn.org/conda/etc/profile.d/conda.sh' if not container_image else ''
         self.conda_init = conda_init
@@ -61,6 +63,11 @@ class HTCondor:
 
         os.makedirs(dag_dir, exist_ok=True)
 
+        allocation_args = ""
+        if self.job_groups is not None:
+            allocation_args = (f"--allocated-cores={self.n_proc} "
+                               f"--memory-limit={byte_size(self.memory)}B")
+        job_argument = "--batch-id=$1" if self.job_groups is not None else "--jobs=$1"
         # create run.sh
         with open(f"{dag_dir}/run.sh", 'w') as f:
             f.write(f"""#!/bin/bash
@@ -70,7 +77,7 @@ class HTCondor:
 { '''mkdir -p catalog/fragment job_status trigger output log
 # HTCondor flattens individually-listed files to the execute root; restore expected layout.
 for f in catalog_*.parquet progress_*.parquet; do [ -f "$f" ] && mv "$f" catalog/fragment/; done''' if should_transfer_files else ''}
-pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$1 --n-workers={self.n_proc}
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} {allocation_args} --n-workers={self.n_proc}
             """)
 
         # add execute permission to run.sh
@@ -154,6 +161,10 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             "environment": "BEARER_TOKEN_FILE=$$(CondorScratchDir)/.condor_creds/scitokens.use",
         }
 
+        if self.job_groups is not None:
+            for key in ("arguments", "output", "error", "log"):
+                batch_job_config[key] = batch_job_config[key].replace("$(jobs)", "$(batch_id)")
+
         merge_job_config = {
             "universe": "vanilla",
             "initialdir": working_dir,
@@ -211,7 +222,7 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             # Transfer only this job's own catalog and progress fragments.
             # catalog_$(jobs).parquet  — created by prepare_job_runs before submission;
             #                            the job opens it and appends triggers to it.
-            #                            also serves as the config metadata source so
+            #                            also carries config provenance so
             #                            the root catalog.parquet does not need to be transferred.
             # progress_$(jobs).parquet — read by get_completed_lags for per-lag resume;
             #                            empty stubs are pre-created below so HTCondor can
@@ -245,29 +256,29 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             sim_summary_job_config['should_transfer_files'] = "yes"
             sim_summary_job_config['when_to_transfer_output'] = "ON_EXIT_OR_EVICT"
 
+        if should_transfer_files and self.job_groups is not None:
+            batch_job_config["transfer_input_files"] = batch_job_config["transfer_input_files"].replace("$(jobs)", "$(batch_id)")
+            batch_job_config["transfer_output_files"] += ", execution"
+
         batch_job = htcondor.Submit(batch_job_config)
         merge_job = htcondor.Submit(merge_job_config)
         sim_summary_job = htcondor.Submit(sim_summary_job_config) if has_simulations else None
 
         dag = dags.DAG()
 
-        n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
+        groups = self.job_groups
+        if groups is None:
+            groups = [job_segments[i:i + job_per_worker] for i in range(0, len(job_segments), job_per_worker)]
         jobs = []
-        for i in range(n_workers):
-            job_start = i * job_per_worker
-            job_end = min((i + 1) * job_per_worker, len(job_segments))
-            
-            # Collect frame files for this batch of jobs
-            framefiles = set()
-            for seg in job_segments[job_start:job_end]:
-                if seg.frames:
-                    for frame in seg.frames:
-                        framefiles.add(frame.path)
-            
-            jobs.append({
-                'jobs': f"{job_start + 1}-{job_end}",
-                'framefiles': ','.join(sorted(framefiles)) if framefiles else ''
-            })
+        for batch_index, group in enumerate(groups):
+            framefiles = {frame.path for seg in group for frame in seg.frames or []}
+            if should_transfer_files:
+                basenames = [os.path.basename(path) for path in framefiles]
+                if len(set(basenames)) != len(basenames):
+                    raise ValueError("Transferred frame files have colliding basenames")
+            ids = [seg.index for seg in group]
+            selector = (f"{ids[0]}-{ids[-1]}" if self.job_groups is None else ",".join(map(str, ids)))
+            jobs.append({"jobs": selector, "batch_id": f"b{batch_index:06d}", "framefiles": ",".join(sorted(framefiles))})
 
         if should_transfer_files:
             # Pre-create per-job catalog and progress files on the submit node so HTCondor
@@ -279,26 +290,32 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             from pycwb.utils.parser import parse_id_string
             from pycwb.config import Config
 
-            catalog_meta = read_catalog_metadata(
-                os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
-            )
-            config_obj = Config()
-            config_obj.load_from_dict(catalog_meta['config'])
-            all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
+            if self.job_groups is None:
+                catalog_meta = read_catalog_metadata(
+                    os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
+                )
+                config_obj = Config()
+                config_obj.load_from_dict(catalog_meta['config'])
+                all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
+                by_id = {segment.index: segment for segment in all_segments}
 
             fragment_dir = os.path.join(working_dir, 'catalog', 'fragment')
             os.makedirs(fragment_dir, exist_ok=True)
             for job in jobs:
-                job_ids = parse_id_string(job['jobs'])
-                selected = [all_segments[i - 1] for i in job_ids]
-
-                catalog_frag = os.path.join(fragment_dir, f"catalog_{job['jobs']}.parquet")
+                fragment_id = job["batch_id"] if self.job_groups is not None else job["jobs"]
+                catalog_frag = os.path.join(fragment_dir, f"catalog_{fragment_id}.parquet")
                 if not os.path.exists(catalog_frag):
+                    if self.job_groups is not None:
+                        raise FileNotFoundError(
+                            f"Prepared batch fragment not found: {catalog_frag}. "
+                            "Run batch-setup to prepare the catalog fragments."
+                        )
+                    selected = [by_id[i] for i in parse_id_string(job['jobs'])]
                     # Fragments are transferred independently to workers and
                     # must remain readable by existing container images.
                     Catalog.create(catalog_frag, config_obj, selected, jobs_in_metadata=True)
 
-                progress_path = os.path.join(fragment_dir, f"progress_{job['jobs']}.parquet")
+                progress_path = os.path.join(fragment_dir, f"progress_{fragment_id}.parquet")
                 if not os.path.exists(progress_path):
                     import pyarrow as pa
                     import pyarrow.parquet as pq

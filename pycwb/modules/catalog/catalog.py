@@ -50,7 +50,7 @@ from numbers import Integral
 from typing import Optional, Union
 
 import numpy as np
-from pycwb.constants.execution_profile import execution_profile
+from pycwb.config.processing import execution_profile
 import orjson
 import pyarrow as pa
 import pyarrow.compute as pc

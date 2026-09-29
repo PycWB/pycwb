@@ -2,8 +2,10 @@ import os
 import logging
 import shutil
 from datetime import datetime
+import hashlib
+from pathlib import Path
 from pycwb.types.job import WaveSegment
-import filecmp
+import yaml
 
 
 logger = logging.getLogger(__name__)
@@ -59,16 +61,52 @@ def create_output_directory(working_dir: str, output_dir: str, log_dir: str, cat
     if not os.path.exists(input_dir):
         os.makedirs(input_dir)
 
-    if os.path.exists(f"{config_dir}/user_parameters.yaml"):
-        # check if the files are the same with md5, if not, backup the old file
-        if not filecmp.cmp(user_parameter_file, f"{config_dir}/user_parameters.yaml"):
-            logger.info(f"Old user_parameters.yaml file is different from the new one.")
-            # rename the old user parameter file to user_parameters_old_{date}.yaml
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.move(f"{config_dir}/user_parameters.yaml", f"{config_dir}/user_parameters_old_{timestamp}.yaml")
-            logger.info(f"Old user_parameters.yaml file is renamed to user_parameters_old_{timestamp}.yaml")
-    else:
-        shutil.copyfile(user_parameter_file, f"{config_dir}/user_parameters.yaml")
+    _stage_config(user_parameter_file, config_dir)
+
+
+def _stage_config(user_parameter_file, config_dir):
+    source = Path(user_parameter_file).resolve()
+    target = Path(config_dir) / "user_parameters.yaml"
+    content = source.read_text()
+    params = yaml.safe_load(content)
+    changed = False
+    # Embed an external schema so the staged YAML remains self-contained when
+    # the config directory is transferred to a worker on another machine.
+    schema = params.get("pycwb_schema", {})
+    if schema.get("schema_file") is not None:
+        from pycwb.utils.yaml_helper import _load_external_schema_file
+        definition = _load_external_schema_file(
+            schema.pop("schema_file"), source.parent
+        )
+        schema["schema" if schema.get("mode") == "replace" else "properties"] = definition
+        changed = True
+
+    definitions = params.get("detector_definitions_file")
+    if definitions:
+        definitions_path = Path(definitions)
+        if not definitions_path.is_absolute():
+            definitions_path = source.parent / definitions_path
+        data = definitions_path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        # Content-based names avoid collisions and work for absolute paths and
+        # references outside the original YAML directory alike.
+        staged_name = f"detector_definitions_{digest}.json"
+        staged_definitions = Path(config_dir) / staged_name
+        if not staged_definitions.exists() or staged_definitions.read_bytes() != data:
+            staged_definitions.write_bytes(data)
+        params["detector_definitions_file"] = staged_name
+        changed = True
+
+    if changed:
+        content = yaml.safe_dump(params, sort_keys=False)
+    if target.exists():
+        if target.read_text() == content:
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup = target.with_name(f"user_parameters_old_{timestamp}.yaml")
+        shutil.move(target, backup)
+        logger.info("Previous user parameters backed up to %s", backup)
+    target.write_text(content)
 
 
 def check_MRACatalog_setting() -> bool:

@@ -48,23 +48,22 @@ def get_balanced_tail(tpd, ML_caps, seed):
     
     print(f'\n rho0_capname = {rho0_capname} - rho0_capvalue = {rho0_capvalue}')
     
-    # Split into tail (high rho0) and bulk (low rho0)
+    # cWB retains every background event and resamples only the signal tail.
+    # Keeping its row order also preserves the seeded train/evaluation split.
     tail_sim = tpd[(tpd[rho0_capname] >= rho0_capvalue) & (tpd['classifier'] == 1)]
     tail_bkg = tpd[(tpd[rho0_capname] >= rho0_capvalue) & (tpd['classifier'] == 0)]
-    bulk = tpd[tpd[rho0_capname] < rho0_capvalue]
     
     print(f'  Tail events: SIM={len(tail_sim)}, BKG={len(tail_bkg)}')
     
     # Balance tail events to have equal numbers
-    n_tail = min(len(tail_sim), len(tail_bkg))
-    
-    if len(tail_sim) > n_tail:
-        tail_sim = tail_sim.sample(n=n_tail, random_state=seed)
-    if len(tail_bkg) > n_tail:
-        tail_bkg = tail_bkg.sample(n=n_tail, random_state=seed)
-    
-    # Combine balanced tail with bulk
-    tpd = pd.concat([bulk, tail_sim, tail_bkg], ignore_index=True)
+    n_tail = len(tail_bkg)
+    if n_tail and tail_sim.empty:
+        raise ValueError('Cannot balance a nonempty background tail without signal tail events')
+    tail_sim = tail_sim.sample(
+        n=n_tail, replace=len(tail_sim) <= n_tail, random_state=seed,
+    )
+    remaining = tpd[~((tpd[rho0_capname] >= rho0_capvalue) & (tpd['classifier'] == 1))]
+    tpd = pd.concat([remaining, tail_sim], ignore_index=True)
     
     ncount = tpd[tpd['classifier'] == 0].shape[0]
     scount = tpd[tpd['classifier'] == 1].shape[0]

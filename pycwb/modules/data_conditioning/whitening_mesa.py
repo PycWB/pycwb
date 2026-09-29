@@ -6,7 +6,7 @@ This version produces output compatible with whiten_wavelet() from whitening.py,
 using the same anchor-point batching logic as cWB's white() mode=0.
 """
 
-from pycwb.constants.execution_profile import wdm_options
+from pycwb.config.processing import wdm_options
 from .whitening_common import _apply_cwb_bandpass_constant
 
 import logging
@@ -191,7 +191,7 @@ def whiten_mesa(config, h):
         f_high_map=float(config.fHigh),
     )
 
-    from pycwb.types.noise_rms import make_noise_rms_map
+    from pycwb.modules.data_conditioning.noise import make_noise_rms_map
 
     nrms_tf = make_noise_rms_map(tf_white, nrms_anchor, config.segEdge)
     conditioned_strain = TimeSeries(data=whitened, dt=h_ts.dt, t0=h_ts.t0)

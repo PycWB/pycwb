@@ -1,0 +1,6 @@
+# Install in a clean Python 3.11 environment, matching tool.mypy.python_version.
+# NumPy supplies real stubs for the checked interfaces. This is a check-only
+# pin, not a constraint on the scientific runtime's numpy>=2 dependency.
+ruff==0.16.9
+mypy==2.3.1
+numpy==2.4.6

@@ -160,21 +160,28 @@ def _cap_witness_jax(real, imag, fraction=1.0):
 
 
 @partial(jax.jit, static_argnames=("K", "K2", "K4", "half", "fm", "edge_samples", "fltr", "percentile_stride"))
-def _jax_layer_build_stats(real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride=1):
-    """Build normalized vector/matrix statistics for one layer."""
+def _jax_layer_build_stats(target_real, target_imag, real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride=1):
+    """Build target/witness cross-vector and witness matrix statistics."""
+    target_power = target_real * target_real + target_imag * target_imag
+    target_norm = jnp.sqrt(_jax_percentile_mean(target_power, fm, edge_samples, percentile_stride))
+    valid_target = jnp.isfinite(target_norm) & (target_norm > 0)
+    safe_target = jnp.where(valid_target, target_norm, 1.0)
     power = real * real + imag * imag
     norm0_sq = _jax_percentile_mean(power, fm, edge_samples, percentile_stride)
     norm0 = jnp.sqrt(norm0_sq)
     valid_norm = jnp.isfinite(norm0) & (norm0 > 0)
     safe_norm = jnp.where(valid_norm, norm0, 1.0)
 
-    v_cross = _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr, percentile_stride)
+    v_cross = _jax_layer_build_v_cross(
+        target_real, target_imag, real, imag, safe_target, safe_norm,
+        K, K4, half, fm, edge_samples, fltr, percentile_stride,
+    )
     acf, ccf = _jax_layer_build_acf_ccf(real, imag, safe_norm, K2, fm, edge_samples, percentile_stride)
-    return norm0, valid_norm, safe_norm, v_cross, acf, ccf
+    return target_norm, valid_target & valid_norm, safe_norm, v_cross, acf, ccf
 
 
 @partial(jax.jit, static_argnames=("K", "K4", "half", "fm", "edge_samples", "fltr", "percentile_stride"))
-def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_samples, fltr, percentile_stride=1):
+def _jax_layer_build_v_cross(target_real, target_imag, real, imag, safe_target, safe_norm, K, K4, half, fm, edge_samples, fltr, percentile_stride=1):
     """Build cross vector V over lags [-K, K] for one layer."""
     # ROOT fills products for j in [K, n-K] then trims edge_samples from the full array,
     # giving effective trim (edge_samples - K) on the product sub-array.
@@ -182,11 +189,16 @@ def _jax_layer_build_v_cross(real, imag, safe_norm, K, K4, half, fm, edge_sample
 
     def _build_v(i, v_cross):
         lag = i - K
-        ww, WW = _jax_rotated_products(real, imag, lag, K)
+        j = jnp.arange(K, real.shape[0] - K)
+        witness_index = j + jnp.maximum(lag, 0)
+        target_index = j + jnp.maximum(-lag, 0)
+        wr, wi = real[witness_index], imag[witness_index]
+        tr, ti = target_real[target_index], target_imag[target_index]
+        ww = wr * tr + wi * ti
+        WW = ti * wr - tr * wi
         idx = K + lag
-        base = safe_norm * safe_norm
-        v0 = _jax_percentile_mean(ww, fm, edge_v, percentile_stride) / base
-        v1 = _jax_percentile_mean(WW, fm, edge_v, percentile_stride) / base
+        v0 = _jax_percentile_mean(ww, fm, edge_v, percentile_stride) / safe_target / safe_norm
+        v1 = _jax_percentile_mean(WW, fm, edge_v, percentile_stride) / safe_target / safe_norm
         scale = jnp.where(lag == 0, fltr, 1.0)
         v_cross = v_cross.at[idx].set(v0 * scale)
         v_cross = v_cross.at[idx + half].set(v1 * scale)
@@ -324,6 +336,8 @@ def _jax_layer_gate(nn, NN, norm0, valid_norm, apply_threshold, rate_tf, edge_se
     ),
 )
 def _jax_process_one_layer(
+    target_real,
+    target_imag,
     real,
     imag,
     K,
@@ -349,7 +363,7 @@ def _jax_process_one_layer(
     apply filter -> threshold by non-edge RMS -> return predicted noise layer.
     """
     norm0, valid_norm, safe_norm, v_cross, acf, ccf = _jax_layer_build_stats(
-        real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride
+        target_real, target_imag, real, imag, K, K2, K4, half, fm, edge_samples, fltr, percentile_stride
     )
     filt00, filt90 = _jax_layer_solve_filters(
         v_cross,
@@ -389,6 +403,8 @@ def _jax_process_one_layer(
     ),
 )
 def _jax_process_layers(
+    target_real_layers,
+    target_imag_layers,
     real_layers,
     imag_layers,
     K,
@@ -410,9 +426,11 @@ def _jax_process_layers(
     """Vectorized JAX execution of `_jax_process_one_layer` across layers."""
     return jax.vmap(
         _jax_process_one_layer,
-        in_axes=(0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
+        in_axes=(0, 0, 0, 0, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None),
         out_axes=(0, 0),
     )(
+        target_real_layers,
+        target_imag_layers,
         real_layers,
         imag_layers,
         K,

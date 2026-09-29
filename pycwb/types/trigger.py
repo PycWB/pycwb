@@ -141,7 +141,7 @@ class Trigger:
     (legacy ``rho[1]``)."""
 
     net_cc: float = 0.0
-    """MRA network correlation coefficient Ec/(|Ec|+N)  (legacy ``netcc[0]``)."""
+    """MRA network correlation coefficient Ec/(abs(Ec)+N)  (legacy ``netcc[0]``)."""
 
     sky_cc: float = 0.0
     """All-resolution cc statistic  (legacy ``netcc[1]``)."""
@@ -438,7 +438,10 @@ class Trigger:
             This enables Parquet predicate pushdown for per-IFO filters.
             When ``None`` (default) the legacy ``list<float>`` columns are used.
 
-        Usage::
+        Examples
+        --------
+
+        .. code-block:: python
 
             import pyarrow as pa
             # network-independent (list columns)
@@ -550,6 +553,9 @@ class Trigger:
             Detector names, e.g. ``["H1", "L1"]``.  When provided, per-IFO lists
             are expanded into ``{field}_{ifo}`` scalar keys to match a flat schema.
             Must match the ``ifo_list`` passed to :meth:`arrow_schema`.
+
+        Examples
+        --------
 
         Use this to build a :class:`pyarrow.Table`::
 

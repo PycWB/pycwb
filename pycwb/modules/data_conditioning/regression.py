@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 from wdm_wavelet.wdm import WDM
-from pycwb.constants.execution_profile import execution_profile, wdm_options
+from pycwb.config.processing import execution_profile, wdm_options
 
 
 def _regression_apply_fraction(config, fraction):
@@ -96,6 +96,11 @@ def apply_regression(config, h):
     if not selected_layers:
         return h_ts
 
+    # cWB constructs the target before regression::add demeans its self-witness.
+    # Keep both transforms: even a small DC offset can change a percentile trim.
+    witness_map = wdm.t2w(signal_data - np.mean(signal_data), sample_rate=sample_rate, t0=t0, MM=-1)
+    witness_coeff = np.asarray(witness_map.data, dtype=np.complex128)
+
     K = filter_length
     K2 = 2 * K
     K4 = 2 * (2 * K + 1)
@@ -109,10 +114,13 @@ def apply_regression(config, h):
     noise_coeff = np.zeros_like(coeff, dtype=np.complex128)
     regulator_code = 1 if regulator == "s" else (2 if regulator == "m" else 0)
 
-    # Pack selected layers and run batched JAX processing in one call.
+    # Pack the target and demeaned witness for either numerical backend.
     selected_layers_arr = np.asarray(selected_layers, dtype=np.int32)
     real_layers_np = np.asarray(coeff[selected_layers_arr].real, dtype=np.float64)
     imag_layers_np = np.asarray(coeff[selected_layers_arr].imag, dtype=np.float64)
+
+    witness_real_np = np.asarray(witness_coeff[selected_layers_arr].real, dtype=np.float64)
+    witness_imag_np = np.asarray(witness_coeff[selected_layers_arr].imag, dtype=np.float64)
 
     apply_fraction = _regression_apply_fraction(config, fm)
     use_numba = False
@@ -124,6 +132,8 @@ def apply_regression(config, h):
         noise_layers, include_mask = regression_numba._numba_process_layers(
             real_layers_np,
             imag_layers_np,
+            witness_real_np,
+            witness_imag_np,
             K,
             K2,
             K4,
@@ -150,6 +160,8 @@ def apply_regression(config, h):
         noise_layers_jax, include_mask_jax = _jax_process_layers(
             real_layers,
             imag_layers,
+            jnp.asarray(witness_real_np),
+            jnp.asarray(witness_imag_np),
             K,
             K2,
             K4,

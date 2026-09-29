@@ -97,3 +97,32 @@ class TestSlurmInit:
         """additional_init string is stored."""
         s = Slurm(additional_init="module load gcc")
         assert s.additional_init == "module load gcc"
+
+
+def test_shared_allocation_and_utility_resources(tmp_path):
+    from pathlib import Path
+    from types import SimpleNamespace
+    import subprocess
+    s = Slurm(working_dir=str(tmp_path), n_proc=128, memory='320GB',
+              account='uib107', qos='class_a', array_max_parallel=6,
+              merge_memory='64GB', summary_memory='16GB',
+              job_groups=[[SimpleNamespace(index=1)], [SimpleNamespace(index=2)]])
+    s.generate_job_script([SimpleNamespace(index=1), SimpleNamespace(index=2)])
+    s.generate_merge_script()
+    s.generate_simulation_summary_script()
+    for filename, memory in [('run.sh','320GB'), ('merge.sh','64GB'), ('simulation_summary.sh','16GB')]:
+        path = Path(s.slurm_dir) / filename
+        script = path.read_text()
+        assert f'#SBATCH --mem={memory}' in script
+        assert '#SBATCH --account=uib107' in script
+        assert '#SBATCH --qos=class_a' in script
+        assert '#SBATCH --nodes=1' in script
+        assert '--exclusive' not in script and '--constraint' not in script
+        assert ('#SBATCH --array=0-1%6' in script) == (filename == 'run.sh')
+        subprocess.run(['bash','-n',str(path)], check=True)
+
+
+@pytest.mark.parametrize('value', [0, -1, True, 2.5])
+def test_invalid_array_concurrency(value):
+    with pytest.raises(ValueError, match='positive integer'):
+        Slurm(array_max_parallel=value)

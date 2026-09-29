@@ -117,8 +117,7 @@ def build_dag(workflow: dict) -> dict:
     -------
     dict
         ``{'nodes': [...], 'edges': [...]}`` where each node is
-        ``{'id': str, 'label': str, 'description': str, 'action': str,
-          'step_index': int}`` and each edge is
+        ``{'id': str, 'label': str, 'description': str, 'action': str, 'step_index': int}`` and each edge is
         ``{'from': str, 'to': str, 'label': str, 'via': str}``.
         ``via`` is one of ``'file'``, ``'alias'``, or ``'heuristic'``.
     """
@@ -1002,6 +1001,8 @@ def render_diagram(
         'mmd': None, 'png': None, 'png_method': None,
         'dot': None, 'd2': None, 'html': None,
     }
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_prefix)), exist_ok=True)
 
     # --- Mermaid (.mmd) — always generated ---
     mmd_path = f'{output_prefix}.mmd'

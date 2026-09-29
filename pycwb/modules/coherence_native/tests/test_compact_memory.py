@@ -1,6 +1,6 @@
 """Exact-value and storage-ownership contracts for compact coherence setup."""
 
-from pycwb.constants.execution_profile import ExecutionProfile
+from pycwb.config.processing import ExecutionProfile
 
 from types import SimpleNamespace
 import numpy as np

@@ -3,12 +3,14 @@ import re
 import subprocess
 import click
 import shutil
+from pycwb.utils.size import byte_size
 
 
 class Slurm:
     def __init__(self, working_dir='.', conda_env=None, additional_init="", job_per_worker=10,
                  n_proc=1, memory="6GB", disk="4GB",
-                 time="72:00:00", constraint=None, partition=None, n_retries=5, conda_init=None):
+                 time="72:00:00", constraint=None, partition=None, n_retries=5, conda_init=None, job_groups=None, account=None, qos=None,
+                 array_max_parallel=None, merge_memory=None, summary_memory=None):
         self.working_dir = os.path.abspath(working_dir)
         self.conda_env = conda_env
         if not conda_init:
@@ -27,6 +29,16 @@ class Slurm:
         self.merge_script = None
         self.simulation_summary_script = None
         self.job_per_worker = job_per_worker if job_per_worker is not None else 10
+        self.job_groups = job_groups
+        for name, value in (("account", account), ("qos", qos)):
+            if value and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+                raise ValueError(f"Invalid SLURM {name}: {value!r}")
+        if array_max_parallel is not None and (type(array_max_parallel) is not int or array_max_parallel < 1):
+            raise ValueError("array_max_parallel must be a positive integer")
+        self.account, self.qos = account, qos
+        self.array_max_parallel = array_max_parallel
+        self.merge_memory = merge_memory or self.memory
+        self.summary_memory = summary_memory or self.memory
 
     def create(self, job_segments, submit=False):
         if os.path.exists(self.slurm_dir):
@@ -53,22 +65,43 @@ class Slurm:
         conda_env = self.conda_env
 
         n_workers = (len(job_segments) + job_per_worker - 1) // job_per_worker
+        if self.job_groups is not None:
+            n_workers = len(self.job_groups)
         os.makedirs(slurm_dir, exist_ok=True)
 
-        optional_lines = []
+        optional_lines = ["#SBATCH --nodes=1"]
+        if self.account:
+            optional_lines.append(f"#SBATCH --account={self.account}")
+        if self.qos:
+            optional_lines.append(f"#SBATCH --qos={self.qos}")
         if self.constraint:
             optional_lines.append(f"#SBATCH --constraint={self.constraint}")
         if self.partition:
             optional_lines.append(f"#SBATCH --partition={self.partition}")
         optional_sbatch = ('\n' + '\n'.join(optional_lines)) if optional_lines else ''
 
+        selection = """start=$((task_id * jobs_per_worker + 1))
+end=$(((task_id + 1) * jobs_per_worker))
+if [ $end -gt $total ]; then
+    end=$total
+fi
+jobs=$start-$end"""
+        if self.job_groups is not None:
+            # The catalog fragment owns membership; the script only selects it.
+            selection = "printf -v batch_id 'b%06d' \"$task_id\"\njobs=$batch_id"
+
+        allocation_args = ""
+        if self.job_groups is not None:
+            allocation_args = (f"--allocated-cores={self.n_proc} "
+                               f"--memory-limit={byte_size(self.memory)}B")
+        job_argument = "--batch-id=$batch_id" if self.job_groups is not None else "--jobs=$jobs"
         # create run.sh
         with open(f"{slurm_dir}/run.sh", 'w') as f:
             f.write(f"""#!/bin/bash
 #SBATCH --job-name={os.path.basename(working_dir)}
 #SBATCH --output=log/output_%A_%a.out
 #SBATCH --error=log/error_%A_%a.err
-#SBATCH --array=0-{n_workers-1}
+#SBATCH --array=0-{n_workers-1}{f"%{self.array_max_parallel}" if self.array_max_parallel else ""}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task={n_proc}
 #SBATCH --time={self.time}
@@ -81,15 +114,9 @@ n_proc={n_proc}                  # Number of processes per worker
 
 # Compute the start and end indices for this task
 task_id=${{SLURM_ARRAY_TASK_ID}}
-start=$((task_id * jobs_per_worker + 1))
-end=$(((task_id + 1) * jobs_per_worker))
+{selection}
 
-# Cap the end index to not exceed the total
-if [ $end -gt $total ]; then
-    end=$total
-fi
-
-echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
+echo "Task ID: $task_id processing jobs $jobs using $n_proc processes."
 
 {self.conda_init}
 {f'conda activate {conda_env}' if conda_env else ''}
@@ -98,13 +125,13 @@ echo "Task ID: $task_id processing jobs $start to $end using $n_proc processes."
 MAX_RETRIES={self.n_retries}
 attempt=0
 while [ $attempt -lt $MAX_RETRIES ]; do
-    pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} --jobs=$start-$end --n-proc=1 --n-workers={self.n_proc} && break
+pycwb batch-runner {working_dir}/config/user_parameters.yaml --work-dir={working_dir} {job_argument} {allocation_args} --n-proc=1 --n-workers={self.n_proc} && break
     attempt=$((attempt + 1))
     echo "Attempt $attempt failed, retrying in 30s..."
     sleep 30
 done
 if [ $attempt -eq $MAX_RETRIES ]; then
-    echo "All $MAX_RETRIES attempts failed for jobs $start-$end"
+    echo "All $MAX_RETRIES attempts failed for jobs $jobs"
     exit 1
 fi
 """)
@@ -119,7 +146,11 @@ fi
 
         os.makedirs(slurm_dir, exist_ok=True)
 
-        optional_lines = []
+        optional_lines = ["#SBATCH --nodes=1"]
+        if self.account:
+            optional_lines.append(f"#SBATCH --account={self.account}")
+        if self.qos:
+            optional_lines.append(f"#SBATCH --qos={self.qos}")
         if self.constraint:
             optional_lines.append(f"#SBATCH --constraint={self.constraint}")
         if self.partition:
@@ -134,7 +165,7 @@ fi
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=04:00:00
-#SBATCH --mem={self.memory}{optional_sbatch}
+#SBATCH --mem={self.merge_memory}{optional_sbatch}
 
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}
@@ -155,7 +186,11 @@ pycwb merge --work-dir={working_dir}
 
         os.makedirs(slurm_dir, exist_ok=True)
 
-        optional_lines = []
+        optional_lines = ["#SBATCH --nodes=1"]
+        if self.account:
+            optional_lines.append(f"#SBATCH --account={self.account}")
+        if self.qos:
+            optional_lines.append(f"#SBATCH --qos={self.qos}")
         if self.constraint:
             optional_lines.append(f"#SBATCH --constraint={self.constraint}")
         if self.partition:
@@ -170,7 +205,7 @@ pycwb merge --work-dir={working_dir}
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=02:00:00
-#SBATCH --mem={self.memory}{optional_sbatch}
+#SBATCH --mem={self.summary_memory}{optional_sbatch}
 
 {self.conda_init}
 {f'conda activate {self.conda_env}' if self.conda_env else ''}

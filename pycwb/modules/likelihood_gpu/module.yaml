@@ -1,0 +1,4 @@
+name: likelihood_gpu
+author: pycWB
+description: CUDA likelihood, DPF and chirp stages using native scientific contracts.
+dependencies: [numpy, numba]

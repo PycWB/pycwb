@@ -18,7 +18,7 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
     # TODO: optimize the plot control
     logger_init(log_file, log_level)
 
-    job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, 1, dry_run, overwrite,
+    job_segments, config, working_dir = prepare_job_runs(working_dir, file_name, n_proc or None, dry_run, overwrite,
                                                          config_vars=config_vars, input_dir=input_dir,
                                                          plot=plot, compress_json=compress_json)
 
@@ -70,8 +70,33 @@ def search(file_name, working_dir='.', overwrite=False, log_file=None, log_level
 
     # Construct catalog_file path (same as prepare_job_runs creates)
     from pycwb.modules.catalog.catalog import Catalog
-    from pycwb.workflow.batch import data_collector
     catalog_file = os.path.join(working_dir, config.catalog_dir, Catalog.DEFAULT_FILENAME)
+
+    from pycwb.config.execution import ExecutionSettings
+    from pycwb.workflow.execution.executor import ExecutionContext, execute_jobs
+
+    if ExecutionSettings.from_config(config).enabled:
+        selected = []
+        for job_seg in job_segments:
+            if trial_ids is None:
+                selected.append(job_seg)
+            else:
+                for tid in trial_ids:
+                    sub_job = copy.deepcopy(job_seg)
+                    sub_job.trial_idx = tid
+                    if job_seg.injections:
+                        sub_job.injections = [inj for inj in sub_job.injections if inj.get("trial_idx", 0) == tid]
+                    selected.append(sub_job)
+        return execute_jobs(ExecutionContext(
+            selected, config, main_func, working_dir, catalog_file, compress_json,
+            legacy=lambda ordered: _run_simple(ordered, config, main_func, working_dir,
+                                                catalog_file, compress_json, None),
+        ))
+    return _run_simple(job_segments, config, main_func, working_dir, catalog_file, compress_json, trial_ids)
+
+
+def _run_simple(job_segments, config, main_func, working_dir, catalog_file, compress_json, trial_ids):
+    from pycwb.workflow.batch import data_collector
 
     queue = multiprocessing.Queue()
     data_collector_worker = multiprocessing.Process(

@@ -95,7 +95,7 @@ This choice concerns max-energy processing; initial batched map generation uses
 JAX independently of it.
 
 Other choices come from the immutable
-[`ExecutionProfile`](../../constants/execution_profile.py), resolved from
+[`ExecutionProfile`](../../config/processing.py), resolved from
 `config.execution_profile` and carried in the setup dictionaries.
 
 | Setting | Default | Effect |

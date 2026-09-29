@@ -11,7 +11,7 @@ authors = [
     {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
 keywords = ["ligo", "physics", "gravity", "signal processing", "gravitational waves", "cwb", "coherent wave burst"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dynamic = ["version"]
 
 dependencies = [
@@ -43,12 +43,11 @@ dependencies = [
     "htcondor",
     "psutil",
     "memspectrum",
-    "exceptiongroup>=1.0.0; python_version<'3.11'",
     "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
     "wdm-wavelet>=0.4.0",
-    "burst-waveform",
+    "burst-waveform>=0.5.0",
     "pandas",
     "duckdb",
     "tqdm",
@@ -66,6 +65,8 @@ test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit", "xgboost"]
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
 Documentation = "https://pycwb.readthedocs.io"
+Issues = "https://git.ligo.org/yumeng.xu/pycwb/-/issues"
+Changelog = "https://git.ligo.org/yumeng.xu/pycwb/-/blob/main/CHANGES.md"
 
 [tool.setuptools_scm]
 write_to = "pycwb/_version.py"
@@ -81,3 +82,21 @@ where = ["."]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+force-exclude = true
+extend-exclude = ["**/tests/**", "**/vendor/**", "_version.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["pycwb/config/execution.py", "pycwb/config/processing.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/modules/coherence_native/callbacks.py", "pycwb/modules/super_cluster_native/callbacks.py", "pycwb/modules/likelihoodWP/callbacks.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/cli/validate.py", "pycwb/cli/doctor.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
+follow_imports = "skip"
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true

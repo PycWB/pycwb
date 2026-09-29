@@ -1,0 +1,15 @@
+{
+  "job": 109,
+  "ifo": "H1",
+  "layer": 15,
+  "frequency_hz": 60,
+  "cwb_commit": "4dddd134f2cf47768ad22054e95beec888d0ae9c",
+  "analysis_rate": 4096,
+  "tf_rate": 8,
+  "filter_half_length": 8,
+  "matrix_fraction": 0.95,
+  "edge_samples": 80,
+  "eigen_num": 10,
+  "regulator": "h",
+  "notes": "Captured cWB 6.4.8.0 target and demeaned-witness WDM arrays, norms, matrix, cross vector, eigenvalues and filter taps. H1 MDC short0 job109, layer15 exercises a nonzero-mean 95% trim boundary."
+}

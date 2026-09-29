@@ -19,6 +19,8 @@ from .zero_lag import zero_lag_report
 from .fake_openbox import fake_openbox_report
 from .waveform_report import generate_waveform_report
 from .ranking_metrics import cumulative_event_rate
+from .background import process_background
+from .root_adapter import read_cwb_root, import_cwb_root
 from .lag_filters import unshifted_job_ids_from_catalog, zero_lag_mask, nonzero_lag_mask
 from .random_filter import random_filter_parquet
 from .plot_efficiency import compute_hrss50
@@ -47,6 +49,9 @@ __all__ = [
     "fake_openbox_report",
     "generate_waveform_report",
     "cumulative_event_rate",
+    "process_background",
+    "read_cwb_root",
+    "import_cwb_root",
     "unshifted_job_ids_from_catalog",
     "zero_lag_mask",
     "nonzero_lag_mask",

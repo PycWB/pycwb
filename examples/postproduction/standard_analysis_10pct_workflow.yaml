@@ -218,6 +218,7 @@ steps:
       config_file: ${paths.config_file}
     args:
       livetime: "@target_bkg_split.far.livetime.seconds"
+      exclude_zero_lag: false                   # already removed by target_bkg_split
       ranking_par: rhor
       bin_size: 0.0001
       vmin: 0.0
@@ -293,6 +294,8 @@ steps:
       config_file: ${paths.config_file}
     args:
       livetime: "@target_bkg_split.far.livetime.seconds"
+      ranking_par: rhor
+      scored_file: ${paths.sim_eval_scored}
       ifar: 100yr
       use_unique_sim: true
       exclude_vetoed: false

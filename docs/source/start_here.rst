@@ -1,218 +1,107 @@
 .. _start_here:
 
-Start Here
-==========
+Your First Search
+=================
 
-Welcome to pycWB! This page gets you from zero to a working gravitational-wave
-burst search in about 10 minutes.
+PycWB searches for coherent transient signals across gravitational-wave
+detectors. This tutorial recovers one deliberately loud simulated sine-Gaussian
+burst in generated Gaussian noise. It needs no detector data, collaboration
+account or ROOT installation. The example YAML lives in the source checkout
+under ``examples/demo/`` and runs through the ordinary PycWB CLI.
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
+Install the version described by this documentation using :ref:`installing_pycwb`.
+The ``doctor`` and ``validate`` commands are new development features;
+older PyPI releases do not contain them. Use the source installation until a
+release containing these commands is available.
 
+Check the environment
+---------------------
 
-What is a cWB / pycWB Search?
-------------------------------
+.. code-block:: bash
 
-**pycWB** implements the cWB/cWB-2G algorithms for coherent burst searches. It
-analyzes strain data from the LIGO-Virgo-KAGRA detector network, transforms it
-into a wavelet time-frequency representation, and searches for short
-gravitational-wave transients with minimal assumptions about the signal
-waveform by identifying coherent excess-power structures across the detector
-network.
+   pycwb --version
+   pycwb doctor
 
-The key idea: a real gravitational wave appears **coherently** in all detectors
-(with appropriate time delays), while instrumental noise is uncorrelated.
-pycWB exploits this to separate signals from noise.
+``doctor`` records the interpreter, platform and installed package versions.
+It reads distribution metadata and does not check backend imports, devices or
+pipeline readiness. Its zero exit status means the report was generated. Use
+``python -m pip check`` for declared dependency consistency. See :ref:`troubleshooting`.
 
-.. note::
-
-   Coming from cWB documentation, GWTC reconstruction pages, or CED galleries?
-   See :ref:`cwb_heritage` for the mapping from cWB concepts to pycWB, and
-   :ref:`public_gwtc_references` for curated public GWTC links. ROOT/C++ cWB
-   commands such as ``cwb_gwosc`` are reference context; pycWB searches
-   normally run through ``pycwb run``.
-
-
-The Five Key Objects
---------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 25 60
-
-   * - Object
-     - Where Defined
-     - What It Represents
-   * - **Config**
-     - ``user_parameters.yaml``
-     - All settings: detectors, frequency range, data source, thresholds, injection parameters. One file controls everything.
-   * - **Segment**
-     - Built from config
-     - A GPS time window of detector data. A search is split into many independent segments.
-   * - **Job**
-     - segment × lag × trial
-     - One unit of computation submitted to a cluster.
-   * - **Event**
-     - Likelihood pipeline output
-     - A candidate trigger: time, frequency, sky position, SNR, ranking statistic.
-   * - **Postproduction**
-     - Workflow YAML + Parquet files
-     - After jobs finish: background estimation, ranking, efficiency, final report.
-
-
-Minimal Installation Check
+Create and run the example
 --------------------------
 
-.. code-block:: bash
-
-   python -c "import pycwb; print(pycwb.__version__)"
-   pycwb --help
-   python -c "import jax; print('JAX OK:', jax.__version__)"
-
-If any fail, see :ref:`installing_pycwb`.
-
-
-First Run in 10 Minutes
------------------------
-
-Uses built-in noise and waveform generators—no real data needed.
+From the source checkout, validate the YAML and run it in a fresh working directory:
 
 .. code-block:: bash
 
-   # 1. Copy the injection example
-   cp -r examples/injection my_first_search
-   cd my_first_search
+   pycwb validate examples/demo/user_parameters.yaml
+   pycwb run examples/demo/user_parameters.yaml --work-dir my_first_search
 
-   # 2. Run the search
-   pycwb run user_parameters_injection.yaml
+The pipeline generates and processes one 128-second synthetic segment with H1
+and L1. No example-specific Python script is needed. Use a new working directory
+for each tutorial run.
 
-   # 3. Inspect results
-   ls catalog/        # catalog.parquet — trigger list
-   ls trigger/        # Per-event JSON files
-   ls log/            # Run log
+The first execution may download the approximately 53 MiB cross-talk catalog
+and compile numerical kernels. Allow several minutes and several GiB of free
+memory; runtime depends on the CPU and compilation cache. No real strain data
+are downloaded. To reuse a compatible local cross-talk catalog, copy the YAML,
+set ``filter_dir`` to its directory and ``wdmXTalk`` to its filename, then
+validate and run that copy.
 
-The example injects simulated signals into Gaussian noise and recovers them
-in under a minute on a modern laptop.
+Inspect the result
+------------------
 
-**What just happened:**
+.. code-block:: bash
 
-1. pycWB read ``user_parameters_injection.yaml``.
-2. It generated synthetic noise and injected simulated signals.
-3. It ran the full pipeline: wavelet transform → pixel clustering → likelihood → triggers.
-4. Results written to ``catalog/`` as Parquet files.
+   pycwb progress --work-dir my_first_search
 
+.. code-block:: python
 
-Understanding the Output
-------------------------
+   import pandas as pd
 
-``catalog/catalog.parquet``
-   Main trigger catalog—each row is a candidate event. Open with:
+   events = pd.read_parquet("my_first_search/catalog/catalog.parquet")
+   print(events[["time_H1", "time_L1", "rho", "net_cc"]])
 
-   .. code-block:: python
+The injected burst is centered at GPS 1126259526 and 150 Hz. Open the waveform
+plots under ``my_first_search/trigger/`` to compare the reconstructed detector
+signals. Read :ref:`understanding_results` for field meanings and output layout.
 
-      import pandas as pd
-      df = pd.read_parquet("catalog/catalog.parquet")
-      print(df.columns)
+The CLI prints its run log to the terminal. ``pycwb progress`` reports completion,
+not whether an injection was recovered. Inspect the catalog for a finite ``rho``
+above the configured threshold and detector times near the injection. The
+automated smoke test checks for a trigger within one second in both detectors;
+this is not a false-alarm probability or precision-validation claim. If the run
+fails, use :ref:`troubleshooting`; an incomplete run is not zero detections.
 
-``trigger/*.json``
-   Per-event details: waveform reconstruction, pixel maps, sky localization.
+Change one setting
+------------------
 
-``catalog/progress.parquet``
-   Processing metadata: which jobs/lags ran, duration of each.
+From the source checkout, copy the YAML to change one setting:
 
-``log/``
-   Log files—check here first when something fails.
+.. code-block:: bash
 
+   cp examples/demo/user_parameters.yaml quieter_parameters.yaml
 
-Common Parameters
+Edit ``injection.parameters.hrss`` in ``quieter_parameters.yaml`` from ``1.0e-21``
+to ``5.0e-22``. This halves the injected source amplitude while keeping the noise
+seeds, sky position and search settings fixed. Then run:
+
+.. code-block:: bash
+
+   pycwb validate quieter_parameters.yaml
+   pycwb run quieter_parameters.yaml --work-dir quieter_search
+   pycwb progress --work-dir quieter_search
+
+Compare the reconstructed waveform amplitude and ranking statistic. A sufficiently
+weak injection may not be recovered. Estimating efficiency requires many
+injections; one recovery cannot establish sensitivity or significance.
+
+Continue learning
 -----------------
 
-For your first real search, you'll mainly change these:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 15 60
-
-   * - Parameter
-     - Example
-     - What It Does
-   * - ``gps_start`` / ``gps_end``
-     - 1264060000 / 1264063600
-     - Time window to analyze
-   * - ``fLow`` / ``fHigh``
-     - 64 / 2048
-     - Frequency range [Hz]
-   * - ``ifos``
-     - [H1, L1]
-     - Which detectors to use
-   * - ``lagSize`` / ``lagStep``
-     - 100 / 1.0
-     - Number of time-shifts for background estimation
-   * - ``segLen``
-     - 600
-     - Length of each analysis segment [s]
-   * - ``netRHO``
-     - 4.0
-     - SNR threshold (lower = more triggers, more background)
-   * - ``cluster``
-     - condor or slurm
-     - Batch system for cluster submission
-   * - ``healpix``
-     - 7
-     - Sky map resolution (higher = finer but slower)
-
-Most other parameters have sensible defaults.
-
-
-Common Mistakes
----------------
-
-**"My jobs fail with 'frame file not found'"**
-   Check ``frFiles`` or ``gwdatafind`` config. Make sure frame paths point to
-   valid ``.gwf`` files covering your GPS time window.
-
-**"I get zero triggers"**
-   Lower ``netRHO`` to 3–4 for initial tests. Verify ``fLow``/``fHigh`` match
-   your data's sample rate. For injection runs, check injection parameters.
-
-**"The run is extremely slow"**
-   Reduce ``healpix`` (try 5–6). Reduce ``lagSize`` for testing. Enable
-   ``parallel_lag_workers``.
-
-**"My background estimate looks wrong"**
-   Verify ``lagOff`` excludes zero-lag. Check ``segLen`` and ``segOverlap``
-   don't double-count livetime.
-
-**"Simulations aren't being recovered"**
-   Check injection GPS times fall within analysis segments. Verify
-   ``iwindow`` is large enough. Lower ``netRHO`` temporarily.
-
-
-Where to Go Next
-----------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 70
-
-   * - If You Want To...
-     - Read...
-   * - Run a real data search
-     - :ref:`standard_analysis` → Setup Config Templates
-   * - Understand injection/simulation studies
-     - :ref:`injection_infrastructure`
-   * - Submit jobs to a cluster
-     - :ref:`standard_analysis` → :ref:`run_on_clusters`
-   * - Learn how the algorithm works
-     - :ref:`core_concepts`
-   * - Understand cWB migration context
-     - :ref:`cwb_heritage` and :ref:`public_gwtc_references`
-   * - Run postproduction on results
-     - :ref:`postproduction`
-   * - Look up a config parameter
-     - :ref:`schema`
-   * - Find a term's definition
-     - :ref:`glossary`
-   * - See complete workflow examples
-     - :ref:`analysis_recipes`
+* :ref:`understanding_results`: understand the catalog and plots.
+* :ref:`reproducibility`: preserve the configuration, inputs and environment.
+* :ref:`tutorials`: inspect pipeline stages and build larger searches.
+  The Colab notebooks demonstrate individual Python stages on GW150914 open data;
+  they serve a different purpose from this synthetic CLI example.
+* :ref:`support`: ask a question or report a reproducible problem.

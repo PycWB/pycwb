@@ -19,7 +19,8 @@ from .wf_generator import generate_injection
 from .gwsignal_waveform import get_td_waveform
 from .strain import generate_strain_from_injection, project_to_detector
 from .sky_distribution import generate_sky_distribution
-from .par_generator import get_injection_list_from_parameters, hrss_scaling, snr_scaling, repeat
+from .par_generator import get_injection_list_from_parameters, hrss_scaling, repeat
+from .snr_scaling import target_snr_scales
 
 __all__ = [
     "generate_injection_list_from_config_for_job_segments",
@@ -35,6 +36,6 @@ __all__ = [
     "generate_sky_distribution",
     "get_injection_list_from_parameters",
     "hrss_scaling",
-    "snr_scaling",
+    "target_snr_scales",
     "repeat",
 ]

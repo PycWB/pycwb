@@ -10,7 +10,7 @@ import pytest
 from jsonschema import ValidationError
 
 from pycwb.config import Config
-from pycwb.constants.execution_profile import (
+from pycwb.config.processing import (
     ExecutionProfile,
     PROFILE_SCHEMA,
     execution_profile,
@@ -131,7 +131,7 @@ def test_regression_stride_is_an_explicit_jit_specialization():
 
     rng = np.random.default_rng(78)
     a, b = rng.normal(size=(2, 256)), rng.normal(size=(2, 256))
-    args = (a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
+    args = (a, b, a, b, 2, 4, 10, 5, 0.95, 20, 0.0, 0.0, 10, 0, 0.0, 8.0, 2.0)
     outputs = []
     for stride in (1, 2, 1):
         actual, mask = _jax_process_layers(*args, percentile_stride=stride)
@@ -187,7 +187,7 @@ def test_explicit_jax_entrypoint_preserves_caller_profile(monkeypatch):
 
 
 def test_catalog_profile_guard_rejects_mixed_and_unrecorded_runs():
-    from pycwb.constants.execution_profile import check_recorded_execution_profile
+    from pycwb.config.processing import check_recorded_execution_profile
 
     config = Config()
     stored = {"execution_profile": asdict(config.execution_profile)}
@@ -217,6 +217,9 @@ def test_run_setup_checks_profile_before_replacing_saved_yaml(tmp_path, monkeypa
         config.outputDir = "output"
 
     monkeypatch.setattr(Config, "load_from_yaml", load)
+    # This test isolates the effective-profile guard; YAML snapshot checks have
+    # separate integration coverage with real configuration and Parquet files.
+    monkeypatch.setattr(module, "validate_run_config", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "create_job_segment_from_config", lambda config: [])
     monkeypatch.setattr(module, "read_catalog_metadata", lambda path: {"config": recorded})
 
@@ -226,3 +229,25 @@ def test_run_setup_checks_profile_before_replacing_saved_yaml(tmp_path, monkeypa
     monkeypatch.setattr(module, "create_output_directory", forbidden)
     with pytest.raises(ValueError, match="profile"):
         module.prepare_job_runs(str(tmp_path), "user_parameters.yaml", overwrite=True)
+
+
+def test_gpu_yaml_snapshot_catalog_roundtrip_and_resume_guard(tmp_path, monkeypatch):
+    from pycwb.constants.gpu_options import GPUOptions
+    from pycwb.config.processing import check_recorded_execution_profile
+
+    for method in ("add_derived_key", "check_xtalk_file", "check_MRA_catalog",
+                   "check_lagStep", "check_analyze_injection_only"):
+        monkeypatch.setattr(Config, method, lambda *args: None)
+    monkeypatch.setattr(Config, "MRAcatalog", "", raising=False)
+    path = tmp_path / "user_parameters.yaml"
+    path.write_text("analysis: 2G\nifo: [H1, L1]\nrefIFO: L1\ngpu:\n  likelihood: true\n  lag_workers: 6\n")
+    config = Config()
+    config.load_from_yaml(path)
+    assert config.gpu == GPUOptions(likelihood=True, lag_workers=6)
+    stored = orjson.loads(orjson.dumps(config.to_dict(), option=orjson.OPT_SERIALIZE_NUMPY))
+    assert stored["gpu"]["lag_workers"] == 6
+    check_recorded_execution_profile(config, stored)
+    assert pickle.loads(pickle.dumps(config)).gpu == config.gpu
+    stored["gpu"]["likelihood"] = False
+    with pytest.raises(ValueError, match="gpu options differ"):
+        check_recorded_execution_profile(config, stored)

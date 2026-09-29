@@ -182,7 +182,8 @@ def update_chirp_mass_statistics(cluster: Cluster, xgb_rho_mode: bool = False, p
     Computes chirpEllip and chirpEfrac via Hough-transform + PCA ellipticity
     on the cluster's pixels (which must have .likelihood already set by
     populate_detection_statistics).  Updates cluster.cluster_meta.net_rho2 with
-    rho1 = rho0 * chirpEllip * sqrt(chirpEfrac), matching netevent.cc line 977:
+    rho1 = rho0 * chirpEllip * sqrt(chirpEfrac), matching netevent.cc line 977::
+
         rho[1] = pcd->netRHO * chirp[3] * sqrt(chirp[5])   (pat0=false branch)
 
     net_rho2 is only updated for original 2G mode (xgb_rho_mode=False)
