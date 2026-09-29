@@ -24,7 +24,7 @@ def _validate_catalog_configs(config_file, catalog_files, parameters):
         recovery = (
             "Use a new working directory, or clean the existing catalog, job "
             "manifest, progress and fragment Parquet files and regenerate the "
-            "run with the YAML file. --overwrite does not bypass this check."
+            "run with the YAML file. --force-overwrite does not bypass this check."
         )
         if snapshot is None:
             raise ValueError(

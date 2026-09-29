@@ -10,6 +10,7 @@
 - Reject FAR-table attachment when its recorded ranking statistic differs from
   the requested one. Unlabeled legacy tables retain the `rho` convention;
   tables for custom statistics must declare `ranking_par`.
+- Correct the configuration-mismatch message to name `--force-overwrite`.
 
 - Import the frame-reader job type directly from its defining module, avoiding a cold-import cycle through job segmentation and injection SNR setup.
 
