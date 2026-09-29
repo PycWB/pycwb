@@ -121,16 +121,11 @@ with workers. Each job receives an owned copy before modifying input data.
 Preloading is synchronous. This is local raw-input caching; it does not cache
 conditioned data or provide a distributed cache.
 
-To prepare a plan without decoding strain or running analysis:
-
-.. code-block:: bash
-
-   pycwb prepare CONFIG --work-dir RUN --plan-only
-
-Preparation creates the work directory and preparation files, including
-``execution-plan.json``. Cluster setup persists explicit groups selected by
-``--batch-id``. Executed fragments write plans and metrics under
-``RUN/execution/``.
+Cluster setup creates a self-contained catalog fragment for each planned batch,
+for both shared-filesystem and file-transfer runs. ``--batch-id`` selects that
+fragment directly. Missing fragments require running ``batch-setup``; setup
+rejects changes to an existing batch's job definitions or membership. Executed
+fragments write diagnostic plans and metrics under ``RUN/execution/``.
 
 The supervisor coordinates output writes and records progress after corresponding
 trigger products are flushed. Resume skips committed work. Keep batch membership

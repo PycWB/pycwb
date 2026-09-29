@@ -16,15 +16,15 @@ Common workflows
    pycwb demo my_first_search --run
    pycwb validate my_first_search/user_parameters.yaml
    pycwb progress --work-dir my_first_search
-   pycwb prepare user_parameters.yaml --work-dir planned_run --plan-only
    pycwb merge --work-dir my_search
    pycwb merge --work-dir my_search --wave
    pycwb xtalk input.bin --output_dir converted
 
 ``validate`` checks a rendered YAML configuration without data access.
-``prepare`` additionally builds job metadata and can download a missing
-cross-talk catalog. See :ref:`start_here`, :ref:`troubleshooting`, and
-:ref:`run_on_clusters` for complete workflows.
+``batch-setup`` builds job metadata and scheduler files, including catalog
+fragments for planned batches; it can download a missing cross-talk catalog.
+See :ref:`start_here`, :ref:`troubleshooting`, and :ref:`run_on_clusters` for
+complete workflows.
 
 Command options
 ---------------

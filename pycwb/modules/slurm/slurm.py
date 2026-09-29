@@ -87,11 +87,8 @@ if [ $end -gt $total ]; then
 fi
 jobs=$start-$end"""
         if self.job_groups is not None:
-            selectors = [",".join(str(segment.index) for segment in group) for group in self.job_groups]
-            # Numeric IDs are safe shell literals. Embed the immutable mapping so
-            # retries do not depend on a mutable external scheduling file.
-            selection = ("job_groups=(" + " ".join(selectors) + ")\njobs=${job_groups[$task_id]}\n"
-                         "printf -v batch_id 'b%06d' \"$task_id\"")
+            # The catalog fragment owns membership; the script only selects it.
+            selection = "printf -v batch_id 'b%06d' \"$task_id\"\njobs=$batch_id"
 
         allocation_args = ""
         if self.job_groups is not None:

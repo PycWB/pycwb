@@ -218,6 +218,7 @@ def test_reference_commands_match_parser():
         ).output_dir
         == "converted"
     )
-    assert parser.parse_args(["prepare", "config.yaml", "--plan-only"]).plan_only
+    with pytest.raises(SystemExit):
+        parser.parse_args(["prepare", "config.yaml"])
     with pytest.raises(SystemExit):
         parser.parse_args(["demo", "run", "--run", "--check"])

@@ -11,8 +11,8 @@ from pycwb.config import Config
 from pycwb.modules.catalog.catalog import Catalog
 from pycwb.modules.condor.condor import HTCondor
 from pycwb.modules.slurm.slurm import Slurm
-from pycwb.workflow.execution.planner import prepare_plan, write_document
-from pycwb.workflow.execution.scheduling import batch_job_ids
+from pycwb.workflow.execution.planner import prepare_plan
+from pycwb.workflow.execution.scheduling import prepare_batch_fragments
 from pycwb.workflow.execution.settings import ExecutionSettings
 from pycwb.workflow.execution.tests.test_execution import config, job
 from pycwb.workflow.subflow.prepare_job_runs import load_batch_run
@@ -39,7 +39,6 @@ def setup_run(path):
     Catalog.create(str(path / "catalog" / "catalog.parquet"), cfg, jobs)
     settings = ExecutionSettings.from_config(cfg)
     plan = prepare_plan(jobs, cfg, settings)
-    write_document(path / "execution-plan.json", plan.document(jobs, settings))
     return cfg, jobs, plan, source
 
 
@@ -51,7 +50,8 @@ def test_slurm_uses_stable_batches_and_valid_shell(tmp_path):
     )
     scheduler.generate_job_script(jobs)
     text = Path(scheduler.slurm_script).read_text()
-    assert "job_groups=(10,30 20)" in text
+    assert "job_groups=" not in text
+    assert "printf -v batch_id 'b%06d'" in text
     assert "--batch-id=$batch_id" in text
     assert "--memory-limit=" in text
     assert "--allocated-cores=" in text
@@ -59,37 +59,81 @@ def test_slurm_uses_stable_batches_and_valid_shell(tmp_path):
     subprocess.run(["bash", "-n", scheduler.slurm_script], check=True)
 
 
-def test_batch_plan_selection_and_identity(tmp_path, monkeypatch):
-    _, _, _, source = setup_run(tmp_path)
-    assert batch_job_ids(tmp_path, "b000000") == [10, 30]
+@pytest.mark.parametrize("cluster,transfer", [("slurm", False), ("condor", False), ("condor", True)])
+def test_batch_setup_persists_selection_in_fragments(tmp_path, monkeypatch, cluster, transfer):
+    if cluster == "condor":
+        pytest.importorskip("htcondor2")
+    from pycwb.workflow.batch import batch_setup
+    import importlib
+
+    preparation = importlib.import_module("pycwb.workflow.subflow.prepare_job_runs")
+    _, jobs, _, source = setup_run(tmp_path)
+    monkeypatch.setattr(preparation, "create_job_segment_from_config", lambda config: jobs)
     monkeypatch.chdir(tmp_path)
+    batch_setup(str(source), working_dir=str(tmp_path), cluster=cluster,
+                accounting_group="test", should_transfer_files=transfer)
+    assert not (tmp_path / "execution-plan.json").exists()
     selected, cfg, _, catalog = load_batch_run(
         str(tmp_path), str(source), None, batch_id="b000000"
     )
     assert [j.index for j in selected] == [10, 30]
     assert Path(catalog).name == "catalog_b000000.parquet"
     assert cfg.execution["profile"] == "scalable"
+    second, _, _, _ = load_batch_run(
+        str(tmp_path), str(source), None, batch_id="b000001"
+    )
+    assert [j.index for j in second] == [20]
+    # Reading again uses the same prepared membership on resume.
+    resumed, _, _, _ = load_batch_run(str(tmp_path), str(source), None, batch_id="b000000")
+    assert resumed == selected
     with pytest.raises(ValueError, match="either"):
         load_batch_run(str(tmp_path), str(source), "10", batch_id="b000000")
     with pytest.raises(ValueError, match="form"):
-        batch_job_ids(tmp_path, "../escape")
-    path = tmp_path / "execution-plan.json"
-    value = json.loads(path.read_text())
-    value["plan"]["batches"][0] = [1]
-    path.write_text(json.dumps(value))
-    with pytest.raises(ValueError, match="identity"):
-        batch_job_ids(tmp_path, "b000000")
+        load_batch_run(str(tmp_path), str(source), None, batch_id="../escape")
+
+
+def test_missing_batch_fragment_never_falls_back_to_root(tmp_path, monkeypatch):
+    _, _, _, source = setup_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(FileNotFoundError, match="Prepared batch fragment.*batch-setup"):
+        load_batch_run(str(tmp_path), str(source), None, batch_id="b000000")
+    assert not (tmp_path / "catalog/fragment").exists()
+
+
+@pytest.mark.parametrize("change", ["regroup", "remove", "definition"])
+def test_batch_fragments_preserve_existing_results_and_reject_changes(tmp_path, change):
+    from dataclasses import replace
+
+    cfg, jobs, _, _ = setup_run(tmp_path)
+    groups = [[jobs[0], jobs[2]], [jobs[1]]]
+    prepare_batch_fragments(tmp_path, cfg, groups)
+    paths = list((tmp_path / "catalog/fragment").glob("*.parquet"))
+    before = {path: path.read_bytes() for path in paths}
+    prepare_batch_fragments(tmp_path, cfg, groups)
+    assert {path: path.read_bytes() for path in paths} == before
+    if change == "regroup":
+        groups = [[jobs[0]], [jobs[1]], [jobs[2]]]
+    elif change == "remove":
+        groups = groups[:1]
+    else:
+        groups[0][0] = replace(jobs[0], analyze_end=jobs[0].analyze_end + 1)
+    with pytest.raises(ValueError, match="Prepared batch jobs differ"):
+        prepare_batch_fragments(tmp_path, cfg, groups)
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not (tmp_path / "catalog/fragment/catalog_b000002.parquet").exists()
 
 
 def test_condor_transfer_fragments_are_self_contained(tmp_path, monkeypatch):
     pytest.importorskip("htcondor2")
     source_run = tmp_path / "source"
-    _, jobs, plan, _ = setup_run(source_run)
+    cfg, jobs, plan, _ = setup_run(source_run)
+    groups = [[jobs[i] for i in group] for group in plan.batches]
+    prepare_batch_fragments(source_run, cfg, groups)
     scheduler = HTCondor(
         working_dir=str(source_run),
         accounting_group="test",
         should_transfer_files=True,
-        job_groups=[[jobs[i] for i in group] for group in plan.batches],
+        job_groups=groups,
     )
     scheduler.create(jobs)
     dag = Path(scheduler.dag_file).read_text()

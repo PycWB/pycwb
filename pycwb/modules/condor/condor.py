@@ -290,23 +290,27 @@ pycwb simulation-summary {working_dir}/config/user_parameters.yaml --work-dir={w
             from pycwb.utils.parser import parse_id_string
             from pycwb.config import Config
 
-            catalog_meta = read_catalog_metadata(
-                os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
-            )
-            config_obj = Config()
-            config_obj.load_from_dict(catalog_meta['config'])
-            all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
+            if self.job_groups is None:
+                catalog_meta = read_catalog_metadata(
+                    os.path.join(working_dir, 'catalog', Catalog.DEFAULT_FILENAME)
+                )
+                config_obj = Config()
+                config_obj.load_from_dict(catalog_meta['config'])
+                all_segments = [from_dict(WaveSegment, s, config=DaciteConfig(cast=[tuple])) for s in catalog_meta['jobs']]
+                by_id = {segment.index: segment for segment in all_segments}
 
             fragment_dir = os.path.join(working_dir, 'catalog', 'fragment')
             os.makedirs(fragment_dir, exist_ok=True)
             for job in jobs:
-                job_ids = parse_id_string(job['jobs'])
-                by_id = {segment.index: segment for segment in all_segments}
-                selected = [by_id[i] for i in job_ids]
-
                 fragment_id = job["batch_id"] if self.job_groups is not None else job["jobs"]
                 catalog_frag = os.path.join(fragment_dir, f"catalog_{fragment_id}.parquet")
                 if not os.path.exists(catalog_frag):
+                    if self.job_groups is not None:
+                        raise FileNotFoundError(
+                            f"Prepared batch fragment not found: {catalog_frag}. "
+                            "Run batch-setup to prepare the catalog fragments."
+                        )
+                    selected = [by_id[i] for i in parse_id_string(job['jobs'])]
                     # Fragments are transferred independently to workers and
                     # must remain readable by existing container images.
                     Catalog.create(catalog_frag, config_obj, selected, jobs_in_metadata=True)

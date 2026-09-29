@@ -71,7 +71,7 @@ Add a configurable job generator only when there is an actual alternative
 scientific segmentation use case; grouping alone belongs in the planner.
 
 Resolve profile defaults first, then explicit component/resource overrides.
-Resolve CLI overrides before persisting the plan, so submitted workers receive
+Resolve CLI overrides before preparing batch fragments, so submitted workers receive
 the same effective settings. Add the nested execution schema, validate resource
 units and bounds, and report the resolved factories in plan inspection/logs.
 Catalog-loaded configuration must also be normalized and validated at the
@@ -186,12 +186,13 @@ Implement `prepare_execution_plan(...)` with these records:
   resolved scientific configuration identity, resource policy, and input mapping.
 
 Retain `catalog/jobs.parquet` as the authoritative scientific job manifest.
-Store scheduling and deduplicated input metadata in versioned sidecars linked
-to it. Do not duplicate large frame metadata into each execution record.
-Serialize only descriptors, never decoded arrays, into the plan.
+Persist batch membership and the selected job definitions in self-contained
+catalog fragments. Keep execution plans in memory and write diagnostic snapshots
+under `execution/`; these snapshots do not select batch membership at runtime.
+Serialize only descriptors, never decoded arrays, into diagnostic plans.
 
 Separate configuration resolution, metadata validation, planning, and catalog
-initialization. A plan-only operation may inspect local metadata but should not
+initialization. The planner may inspect local metadata but should not
 start analysis, decode strain, submit jobs, or initialize analysis runtimes.
 Resolve relative paths explicitly rather than relying on process-wide cwd.
 
@@ -326,30 +327,29 @@ RSS/PSS for diagnosis, cache resident/pinned bytes, decoder reservations, queue
 bytes, page faults, and swap growth. GC and heap trimming remain cleanup tools;
 they do not replace these limits. Disk-backed mappings on tmpfs consume RAM.
 
-### 6. Route preparation, local, and batch entry points through configuration
+### 6. Route local and batch entry points through configuration
 
 Retain the existing user-facing command family. These commands dispatch using
 the resolved execution profile and components:
 
 ```text
-pycwb prepare CONFIG --work-dir RUN --plan-only
 pycwb run CONFIG --work-dir RUN
 pycwb batch-setup CONFIG --work-dir RUN --cluster slurm|condor
 pycwb batch-runner CONFIG --work-dir RUN
 ```
 
-`prepare` is an optional new plan-inspection/persistence command. Extend existing
-commands with plan/batch selection as needed; there is no requirement to learn
-`run-plan`, `batch-plan`, or a separate optimized command family. Existing
-`--jobs` selection remains supported. A new `--batch-id` selects a persisted
-execution batch in the scalable runner; ambiguous simultaneous selectors should
-be rejected. Old configurations use the simple compatibility adapters.
+Existing `--jobs` selection remains supported. `--batch-id` selects a prepared
+catalog fragment in the scalable runner; ambiguous simultaneous selectors are
+rejected. Batch setup creates the fragments for shared-filesystem and
+file-transfer execution. There is no separate preparation command or root plan
+file; fragments own batch membership. Old configurations use the simple
+compatibility adapters.
 
 Preparation reports predicted reuse, chosen grouping, input and scratch bytes,
 memory reservations, and estimated batch costs. Expose total allocated cores,
 segment concurrency, lag concurrency, inner threads, and I/O concurrency with
-validation and sensible derived values. Optional one-shot local execution can
-compose prepare and run through these same APIs.
+validation and sensible derived values. Local execution constructs its plan
+in memory through the same planner API.
 
 Cluster adapters submit explicit batch IDs instead of deriving consecutive
 scientific job ranges. Transfer only each batch's immutable metadata and unique

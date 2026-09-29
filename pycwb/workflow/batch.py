@@ -90,16 +90,17 @@ def batch_setup(
         n_retries = getattr(config, "n_retries", 5)  # 5 is the default; prefer config if set
 
     from pycwb.constants.execution import ExecutionSettings, byte_size
-    from pycwb.workflow.execution.planner import prepare_plan, write_document
+    from pycwb.workflow.execution.planner import prepare_plan
+    from pycwb.workflow.execution.scheduling import prepare_batch_fragments
 
     execution = ExecutionSettings.from_config(config)
     job_groups = None
     if execution.enabled:
         plan = prepare_plan(job_segments, config, execution)
-        write_document(os.path.join(working_dir, "execution-plan.json"), plan.document(job_segments, execution))
         job_groups = [[job_segments[i] for i in group] for group in plan.batches]
         if not job_groups:
             raise ValueError("No jobs to submit")
+        prepare_batch_fragments(working_dir, config, job_groups)
         if requested_memory is None:
             reservation = (execution.worker_memory + execution.headroom + 3 * execution.cache_limit
                            + 2 * execution.message_limit + 1024**3)

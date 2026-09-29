@@ -52,11 +52,8 @@ The same profile is used by ``run``, ``batch-setup`` and ``batch-runner``.
 users can configure dotted ``execution.planner`` and ``execution.executor``
 factories. Cluster scripts select explicit groups using stable batch IDs.
 
-Inspect a metadata plan before executing:
-
-.. code-block:: bash
-
-   pycwb prepare user_parameters.yaml --work-dir planned_run --plan-only
+``batch-setup`` stores each planned group in a catalog fragment before
+submission. Batch runners read their job selection from that fragment.
 
 Use ``preload: off`` to compare direct reads, or ``preload: batch`` to attempt
 bounded loading of a whole group's reusable inputs. Oversized entries fall back

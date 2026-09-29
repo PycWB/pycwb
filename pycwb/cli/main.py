@@ -10,7 +10,6 @@ COMMANDS = (
     ("doctor", "doctor", "Check the local scientific Python environment"),
     ("validate", "validate", "Check configuration syntax without downloading data"),
     ("run", "run", "Run search"),
-    ("prepare", "prepare", "Inspect and save an execution plan"),
     ("flow", "flow", "Run search through the Prefect wrapper"),
     ("batch-setup", "batch_setup", "Set up batch run"),
     ("config-setup", "config_setup", "Set up project configuration and batch jobs"),

@@ -65,10 +65,12 @@ inputs; unsupported processors use direct reads with a warning.
 - `batch`: preload a group's reusable inputs if they fit, otherwise fall back to
   bounded demand loading.
 
-Preparation without analysis is available through
-`pycwb prepare CONFIG --work-dir RUN --plan-only`. It creates preparation files
-and an `execution-plan.json` without decoding strain or running analysis.
-Executed fragments write plans and metrics under `RUN/execution/`.
+`batch-setup` persists each planned batch in a self-contained catalog fragment
+before generating scheduler submissions. `batch-runner --batch-id` reads job
+membership only from that fragment, on shared filesystems and transferred
+execute nodes alike. Setup rejects changes to existing batch jobs; use a new
+working directory when regrouping. Executed fragments write diagnostic plans
+and metrics under `RUN/execution/`.
 
 ## Package layout
 

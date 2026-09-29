@@ -27,16 +27,14 @@ lag concurrency can require a larger reservation even with identical input files
 ## Commands and configuration
 
 Use the normal `pycwb run`, `pycwb batch-setup`, and `pycwb batch-runner` commands.
-`pycwb prepare CONFIG --work-dir RUN --plan-only` builds metadata and writes
-`execution-plan.json` without decoding strain or running analysis. Preparation
-still creates the work directory, copies supplied inputs and resolves configuration
-and cross-talk metadata; it does not initialize an analysis output catalog.
-
-Cluster setup persists explicit bounded groups. Generated Slurm/Condor scripts
-select them using `--batch-id b000000`; scientific job IDs remain unchanged.
-`--jobs` remains available and cannot be combined with `--batch-id`. Condor
-fragments contain their own job metadata so execute nodes do not require the
-submit-side catalog or plan. Staged frame basename collisions are rejected.
+Cluster setup persists explicit bounded groups in self-contained catalog
+fragments for both shared-filesystem and file-transfer runs. Generated
+Slurm/Condor scripts select them using `--batch-id b000000`; scientific job IDs
+remain unchanged. `--jobs` remains available and cannot be combined with
+`--batch-id`. Each fragment contains its own job metadata, so execute nodes do
+not require the submit-side catalog. A missing batch fragment requires running
+`batch-setup`; there is no fallback to a separate scheduling file. Staged frame
+basename collisions are rejected.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -63,7 +61,9 @@ The planner groups jobs sharing frame/channel sources using a deterministic,
 bounded greedy search. It does not combine scientific windows. Physical request
 intervals include padding and superlag offsets. Metadata plans contain task
 indices as well as scientific IDs, so repeated trial selections remain distinct.
-Batch selection checks the persisted plan identity before dispatch.
+Batch selection reads membership from the prepared catalog fragment. Setup
+rejects changes to existing batch job definitions or membership; use a new
+working directory when changing the grouping.
 
 Only sources reused within a group are candidates for caching. Overlapping or
 adjacent requested intervals are coalesced; large unused gaps are not decoded

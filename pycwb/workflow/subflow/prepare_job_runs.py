@@ -155,19 +155,20 @@ def load_batch_run(working_dir: str, config_file: str, jobs: str, compress_json:
     config = Config()
     config.load_from_yaml(file_name)
 
-    # Prefer the root catalog for metadata; fall back to the per-job fragment when
-    # only that file is present (file-transfer / container mode: the scheduler
-    # transfers catalog_$(jobs).parquet but not catalog.parquet).
+    # Stable batch IDs always select their prepared fragment. Explicit --jobs
+    # selections prefer the root catalog, with a fragment fallback for transfer mode.
     default_catalog_path = f'{config.catalog_dir}/{Catalog.DEFAULT_FILENAME}'
     fragment_id = batch_id or jobs
     per_job_catalog_path = f'{config.catalog_dir}/fragment/catalog_{fragment_id}{Catalog.DEFAULT_EXTENSION}'
-    if batch_id is not None and os.path.exists(per_job_catalog_path):
+    if batch_id is not None:
+        if not os.path.exists(per_job_catalog_path):
+            raise FileNotFoundError(
+                f"Prepared batch fragment not found: {per_job_catalog_path}. "
+                "Run batch-setup to prepare the catalog fragments."
+            )
         catalog_meta_file = per_job_catalog_path
     elif os.path.exists(default_catalog_path):
         catalog_meta_file = default_catalog_path
-        if batch_id is not None:
-            from pycwb.workflow.execution.scheduling import batch_job_ids
-            job_ids = batch_job_ids(working_dir, batch_id)
     elif os.path.exists(per_job_catalog_path):
         catalog_meta_file = per_job_catalog_path
         logger.info(f"Root catalog not found; reading metadata from per-job fragment: {per_job_catalog_path}")

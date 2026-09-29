@@ -4,7 +4,7 @@ from pycwb.utils.size import byte_size
 def init_parser(parser):
     parser.add_argument("--allocated-cores", type=int, help="Scheduler CPU allocation ceiling")
     parser.add_argument("--memory-limit", type=byte_size, help="Scheduler memory ceiling, e.g. 8GiB")
-    parser.add_argument('--batch-id', help='Execution plan batch, e.g. b000000 (exclusive with --jobs)')
+    parser.add_argument('--batch-id', help='Prepared catalog batch, e.g. b000000 (exclusive with --jobs)')
     # Add the arguments
     parser.add_argument('user_parameter_file',
                         metavar='file_path',
