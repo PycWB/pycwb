@@ -64,10 +64,11 @@ Project links
    </p>
 
 
+For citation guidance and BibTeX entries, see :doc:`credit`.
+
 .. toctree::
    :maxdepth: 1
 
-   credit
    cwb_heritage
    public_gwtc_references
    release_policy

@@ -89,4 +89,5 @@ credits, see :doc:`credit`.
    :caption: Project
    :maxdepth: 6
 
+   credit
    about
