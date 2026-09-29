@@ -150,8 +150,8 @@ them as separate trials. The default ``fft`` preserves the existing behavior.
 This option does not select the SNR population: source parameters must still
 provide ``target_snr`` (or ``targeted_snr``).
 
-Waveform generation
--------------------
+Waveform generation and SNR scaling
+----------------------------------
 
 Use ``burst_waveform.interface.generate_waveform_pycwb.get_td_waveform`` for
 cWB SG, SGE, GA, and WNB waveforms. The duplicate
@@ -164,6 +164,11 @@ deviation, and ``frequency`` is the lower band edge. WNB defaults to cWB's
 ``mode: 0``; specify ``mode: 1`` to retain the symmetric construction formerly
 used unconditionally by ``burst_population``. NumPy and ROOT random streams
 differ, so equal seeds do not imply equal WNB realizations.
+
+``pycwb.modules.injection.snr_scaling.target_snr_scales`` computes per-source
+network-SNR multipliers from clean detector data. It replaces ``snr_population``;
+the unimplemented ``par_generator.snr_scaling`` placeholder was removed.
+Population parameter generation remains separate from signal normalization.
 
 The complete ``pycwb run`` path also saves triggers, reconstructed waveforms,
 injection products, Q-veto values, plots, and catalog rows according to the

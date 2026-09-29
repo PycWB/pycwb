@@ -1,7 +1,7 @@
 """Target-SNR scaling and injection scheduling contracts."""
 import numpy as np
 import pytest
-from pycwb.modules.injection.snr_population import _window_energy
+from pycwb.modules.injection.snr_scaling import _window_energy
 from pycwb.types.time_series import TimeSeries
 
 
@@ -42,7 +42,7 @@ def test_exact_length_segment_has_positive_unique_job_id():
 
 def test_target_network_snr_scales_actual_whitened_detector_signals():
     from types import SimpleNamespace
-    from pycwb.modules.injection.snr_population import target_snr_scales
+    from pycwb.modules.injection.snr_scaling import target_snr_scales
     from pycwb.modules.injection.strain import generate_strain_from_injection
     from pycwb.modules.read_data.data_check import check_and_resample_py
     from pycwb.modules.data_conditioning.whitening import whiten_wavelet

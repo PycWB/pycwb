@@ -607,7 +607,7 @@ def process_job_segment(
             ]
 
             separate_injection_resampling = uses_cwb_snr_resampling(config, sub_job_seg.injections)
-            from pycwb.modules.injection.snr_population import target_snr_scales
+            from pycwb.modules.injection.snr_scaling import target_snr_scales
             snr_scales = target_snr_scales(config, sub_job_seg, data)
             for injection, snr_scale in zip(sub_job_seg.injections, snr_scales):
                 inj = generate_strain_from_injection(injection, config, sub_job_seg.sample_rate, sub_job_seg.ifos)

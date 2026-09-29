@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from pycwb.modules.injection import snr_population
+from pycwb.modules.injection import snr_scaling
 from pycwb.types.time_series import TimeSeries
 
 
@@ -27,7 +27,7 @@ def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mod
     waveform = np.zeros(64)
     waveform[32] = 1.0
     monkeypatch.setattr(
-        snr_population,
+        snr_scaling,
         "generate_strain_from_injection",
         lambda *args: [
             TimeSeries(waveform.copy(), dt=1 / 16, t0=0.0) for _ in range(2)
@@ -35,12 +35,12 @@ def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mod
     )
     # A scalar noise RMS isolates calibration from the independently tested WDM estimator.
     monkeypatch.setattr(
-        snr_population,
+        snr_scaling,
         "whiten_wavelet",
         lambda config, noise, **kw: (noise, noise.data[0]),
     )
     monkeypatch.setattr(
-        snr_population,
+        snr_scaling,
         "whiten_injection_strain",
         lambda config, signal, rms: (
             TimeSeries(signal.data / rms, dt=signal.dt, t0=signal.t0),
@@ -48,9 +48,9 @@ def test_nonunit_calibration_matches_final_injection_convention(monkeypatch, mod
         ),
     )
     monkeypatch.setattr(
-        snr_population, "cwb_snr_energy", lambda signal, *args: np.sum(signal.data**2)
+        snr_scaling, "cwb_snr_energy", lambda signal, *args: np.sum(signal.data**2)
     )
-    scale = snr_population.target_snr_scales(config, segment, data)[0]
+    scale = snr_scaling.target_snr_scales(config, segment, data)[0]
     # FFT mode adds signal before calibration; cWB mode adds uncalibrated MDC separately.
     final_energy = sum(
         (scale * (cal if mode == "fft" else 1) / cal) ** 2 for cal in config.dcCal

@@ -1,6 +1,13 @@
-"""Scale burst injections to a target network SNR using clean-data WDM noise."""
+"""Scale injections to a target network SNR using clean-data WDM noise."""
 
 from copy import copy
+from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from pycwb.config import Config
+    from pycwb.types.job import WaveSegment
 
 import numpy as np
 from pycwb.types.time_series import TimeSeries
@@ -26,7 +33,9 @@ def _window_energy(series, gps, half_window):
     return float(np.sum(values[lo:hi] ** 2))
 
 
-def target_snr_scales(config, segment, clean_data):
+def target_snr_scales(
+    config: "Config", segment: "WaveSegment", clean_data: Sequence[TimeSeries]
+) -> NDArray[np.float64]:
     """Return per-injection scales; do not contaminate the noise estimate.
 
     Match cWB simulation=5: estimate WDM noise before regression/injection,
@@ -45,9 +54,7 @@ def target_snr_scales(config, segment, clean_data):
         raise ValueError("Target-SNR injections must have nonoverlapping SNR windows")
     buffers = [TimeSeries(np.zeros(len(d.data)), dt=d.dt, t0=d.t0) for d in clean_data]
     for p in injections:
-        signals = generate_strain_from_injection(
-            p, config, segment.sample_rate, segment.ifos
-        )
+        signals = generate_strain_from_injection(p, config, segment.sample_rate, segment.ifos)
         for buffer, signal in zip(buffers, signals):
             buffer.inject(signal, copy=False)
     reference_mode = getattr(config, "injection_resampling", "fft") == "cwb"
@@ -73,9 +80,7 @@ def target_snr_scales(config, segment, clean_data):
     for i, (p, target) in enumerate(zip(injections, targets)):
         if target:
             if energy[i] <= 0 or not np.isfinite(energy[i]):
-                raise ValueError(
-                    "Cannot scale an injection with zero/nonfinite network SNR"
-                )
+                raise ValueError("Cannot scale an injection with zero/nonfinite network SNR")
             scales[i] = target / np.sqrt(energy[i])
             p["snr_scale"] = float(scales[i])
             p["unscaled_network_snr"] = float(np.sqrt(energy[i]))
