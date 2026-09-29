@@ -16,9 +16,14 @@ Search and reconstruction
 
    pipeline_lifecycle
    tutorial_search
+   tutorial_injection
    job_control
+   data_ingestion
+   data_conditioning
+   wdm_transform
    clustering_algorithm
    likelihood_guide
+   event_output
 
 Significance and sensitivity
 ----------------------------

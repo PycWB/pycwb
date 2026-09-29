@@ -69,23 +69,26 @@ files instead of ROOT job-file cycles.
      - Algorithmic role
      - pycWB implementation
    * - Data conditioning
-     - Read detector strain, add configured injections, remove lines, estimate
-       detector noise RMS, and whiten the data.
-     - :py:mod:`pycwb.modules.data_conditioning`
+     - Read detector strain, add configured injections, resample, remove lines,
+       estimate detector noise RMS, and whiten the data.
+     - :py:mod:`pycwb.modules.read_data`,
+       :py:mod:`pycwb.modules.injection`,
+       :py:mod:`pycwb.modules.data_conditioning`
    * - WDM and MRA setup
      - Initialize WDM transforms for each resolution level and load the
        cross-resolution MRA/XTalk catalog used by reconstruction.
      - :py:mod:`pycwb.modules.coherence_native`,
-       :py:mod:`pycwb.modules.multi_resolution_wdm`,
        :py:mod:`pycwb.modules.xtalk`
    * - Coherence
-     - Build time-frequency maps, compute maximum coherent energy, set the
-       black-pixel threshold, select significant pixels per lag, and perform
-       single-resolution clustering.
+     - Build time-frequency maps, compute each detector's maximum energy over
+       the allowed time delays, set the black-pixel threshold, select
+       significant pixels per lag, and perform single-resolution clustering.
      - :py:mod:`pycwb.modules.coherence_native`
    * - Supercluster
-     - Merge per-resolution clusters, compute time-delay amplitudes, apply the
-       sub-network cut, and defragment nearby structures.
+     - Merge per-resolution clusters, load time-delay amplitudes, link clusters
+       within ``TFgap`` into superclusters, apply the sub-network cut, and
+       defragment nearby structures (defragmentation runs before the
+       sub-network cut when ``pattern ≠ 0``).
      - :py:mod:`pycwb.modules.super_cluster_native`
    * - Likelihood
      - Loop over surviving clusters, scan sky directions, evaluate the coherent
@@ -94,32 +97,40 @@ files instead of ROOT job-file cycles.
        :py:mod:`pycwb.modules.reconstruction`
 
 
-1. Data Ingestion
+1. Segment Construction
+-----------------------
+
+The analysis period is divided into contiguous analysis windows called
+**job segments**, each padded by ``segEdge`` on both sides (analysis windows
+overlap only when ``segOverlap`` is set). Segments are built from the
+configuration and data-quality lists alone, before any strain is read. Each
+segment is an independent unit of work that can run on a separate cluster node.
+
+- CAT0/CAT1 DQ files define the segments; CAT2 files become veto windows
+  inside each segment
+- ``segLen``, ``segMLS``, ``segEdge`` control segment boundaries
+- Frame files are matched to each segment's GPS window
+
+→ Each segment becomes a **job**. Time-slide lags and injection trials are
+looped over inside the job; superlags (and, optionally,
+``parallel_injection_trail``) create additional jobs. See :ref:`job_control`.
+
+
+2. Data Ingestion
 -----------------
 
-Raw gravitational-wave strain data is read from frame files (``.gwf``) or
-streamed from NDS2 servers. The data is resampled to the analysis rate
-(``inRate``) and split into detector-specific time series.
+Each job reads the gravitational-wave strain for its own segment window from
+frame files (``.gwf``) listed in ``frFiles`` or discovered with
+``gwdatafind``, one time series per detector. The frames must already be
+sampled at the input rate ``inRate``; a mismatch is an error. Resampling to the
+analysis rate happens later, during conditioning. NDS2 streaming is used only
+by the online search (``pycwb online``, :py:mod:`pycwb.modules.online`).
 
 - Config: ``frFiles``, ``gwdatafind``, ``inRate``
 - Module: :py:mod:`pycwb.modules.read_data`
 
-→ Next: the data time series is split into **segments** for parallel processing.
-
-
-2. Segment Construction
------------------------
-
-The continuous data stream is divided into overlapping time windows called
-**job segments**. Each segment is an independent unit of work that can run on a
-separate cluster node.
-
-- DQ files (CAT0/1/2) define valid science time
-- ``segLen``, ``segMLS``, ``segEdge`` control segment boundaries
-- Frame files are matched to each segment's GPS window
-
-→ Each segment becomes a **job**, optionally replicated across lags and trials.
-See :ref:`job_control`.
+→ Configured injections are added to the strain, which is then conditioned.
+See :ref:`data_ingestion`.
 
 
 3. Data Conditioning
@@ -127,8 +138,9 @@ See :ref:`job_control`.
 
 Within each segment, the data is prepared for wavelet analysis:
 
-1. **Resampling** to the target rate
-2. **Regression** to remove slow instrumental drifts
+1. **Resampling** to the analysis rate ``rateANA`` = (``fResample`` if set,
+   otherwise ``inRate``) / 2\ :sup:`levelR`
+2. **Regression** (WDM linear-prediction filter) to remove spectral lines
 3. **Whitening** to flatten the noise spectrum
 
 In cWB-2G terminology, this stage produces the whitened detector strain
@@ -136,11 +148,13 @@ In cWB-2G terminology, this stage produces the whitened detector strain
 algorithmic products forward as conditioned strain series and per-detector
 nRMS maps.
 
-- Methods: wavelet whitening, MESA spectral estimation, or mixed
-- Config: ``whiteMethod``, ``whiteWindow``, ``mesaOrder``
+- Methods: wavelet whitening (``wavelet``, alias ``python``) or MESA spectral
+  estimation (``mesa``)
+- Config: ``fResample``, ``levelR``, ``whiteMethod``, ``whiteWindow``, ``mesaOrder``
 - Module: :py:mod:`pycwb.modules.data_conditioning`
 
 → Output: whitened time series ready for time-frequency decomposition.
+See :ref:`data_conditioning`.
 
 
 4. Time-Frequency Transform
@@ -152,31 +166,38 @@ levels are computed (from ``l_low`` to ``l_high``) to capture signals of
 different durations.
 
 The WDM transforms define the time-frequency basis. The MRA/XTalk catalog is a
-separate sparse cross-resolution coupling table used later to remove duplicated
-support between resolutions and reconstruct waveforms.
+separate sparse table of overlaps between basis functions at different
+resolutions. The sub-network cut and the likelihood use it to correct cluster
+energies and pixel amplitudes for energy that appears at several resolutions;
+waveform reconstruction then uses those corrected amplitudes.
 
-- Config: ``l_low``, ``l_high``, ``levelR``
+- Config: ``l_low``, ``l_high``
 - Module: :py:mod:`pycwb.modules.coherence_native`
 
 → Output: time-frequency pixels (amplitude vs. time vs. frequency vs. detector).
+See :ref:`wdm_transform`.
 
 
 5. Coherence & Pixel Selection
 ------------------------------
 
-For each time-frequency pixel, the coherent energy across the detector network
-is computed. The data is time-shifted for each sky direction to account for
-gravitational-wave travel time differences between detectors. Pixels with
-excess coherent power are selected.
+Each detector's time-frequency map is replaced by its maximum pixel energy over
+time delays up to the maximum inter-detector light-travel time
+(``max_delay``); no sky directions are scanned at this stage. A pixel-energy
+threshold is derived from the black-pixel probability ``bpp``. For each lag,
+the maps are time-shifted by that lag's per-detector shifts, and pixels whose
+energy summed over detectors exceeds the threshold (and that pass a
+neighbouring-pixel support check) are selected.
 
 This corresponds to the cWB-2G ``maxEnergy`` → threshold → significant-pixel
 selection path. Selected pixels are clustered at each resolution before the
 multi-resolution supercluster step.
 
-- Config: ``bpp``, ``pattern``, ``BATCH``
+- Config: ``bpp``, ``pattern``
 - Module: :py:mod:`pycwb.modules.coherence_native`
 
 → Output: selected pixels above threshold, grouped by resolution.
+See :ref:`clustering_algorithm`.
 
 
 6. Clustering & Superclustering
@@ -186,9 +207,14 @@ Selected pixels are grouped into **clusters** (per resolution level) and then
 merged into **superclusters** across resolutions. A sub-network cut removes
 clusters unlikely to be astrophysical.
 
-This is the pycWB equivalent of the cWB-2G ``netcluster::supercluster`` stage:
-merge across resolutions, attach time-delay amplitudes, apply
-``subNetCut``, and defragment surviving clusters.
+This is the pycWB equivalent of the cWB-2G ``Supercluster`` stage: merge the
+per-resolution clusters into one list, load time-delay amplitudes for all of
+their pixels, link clusters within ``TFgap`` into superclusters (when links are
+found, dropping those with fewer than 3 pixels or energy below ``e2or``), apply
+``subNetCut``, and defragment surviving clusters within ``Tgap``/``Fgap``. With
+the default
+``pattern = 0`` defragmentation runs after the sub-network cut; with
+``pattern ≠ 0`` it runs before it.
 
 - Config: ``TFgap``, ``Tgap``, ``Fgap``, ``subnet``, ``subcut``
 - Module: :py:mod:`pycwb.modules.super_cluster_native`
@@ -201,42 +227,52 @@ merge across resolutions, attach time-delay amplitudes, apply
 
 For each supercluster, the likelihood pipeline:
 
-1. Scans all sky directions using precomputed time delays
-2. Projects data onto the Dominant Polarization Frame (DPF)
-3. Computes SNR (:math:`\rho`), network correlation (:math:`cc`), :math:`\chi^2`
-4. Selects the best-fit sky position
+1. Keeps at most ``BATCH`` of the loudest pixels (time-delay amplitudes were
+   already attached in the supercluster stage)
+2. Scans all sky directions using precomputed time delays, projecting the data
+   onto the Dominant Polarization Frame (DPF)
+3. Selects the best-fit sky position
+4. Computes SNR (:math:`\rho`), network correlation (:math:`cc`) and the
+   :math:`\chi^2` penalty at that position, and applies the threshold cuts
 5. Reconstructs the waveform and computes :math:`h_{rss}`
 
 This corresponds to the cWB-2G ``likelihood2G`` / ``likelihoodWP`` stage:
-loop over superclusters, attach time-delay amplitudes to pixels, evaluate the
-coherent network likelihood, and output reconstructed event parameters.
+loop over superclusters, evaluate the coherent network likelihood, and output
+reconstructed event parameters.
 
-- Config: ``netRHO``, ``netCC``, ``delta``, ``cfg_gamma``, ``healpix``
+- Config: ``netRHO``, ``netCC``, ``delta``, ``cfg_gamma``, ``healpix``, ``BATCH``
 - Module: :py:mod:`pycwb.modules.likelihoodWP`
 
-→ Each supercluster becomes an **event** in the trigger catalog.
-See :ref:`likelihood_guide`.
+→ Each supercluster that passes the likelihood cuts becomes an **event** in the
+trigger catalog. See :ref:`likelihood_guide`.
 
 
 8. Event Output
 ---------------
 
-Events passing thresholds are written to the Parquet trigger catalog
-(``catalog/catalog.parquet``) and per-event JSON files (``trigger/``).
+Event parameters of the accepted triggers are written to the Parquet trigger
+catalog (``catalog/catalog.parquet``). Each trigger also gets a folder under
+``trigger/`` holding its cluster JSON (``save_cluster``, on by default) and,
+optionally, its sky-map statistics JSON (``save_sky_map``).
 Progress metadata is written to ``catalog/progress.parquet``.
 
 - Each event includes: GPS time, frequency, sky position, SNR, :math:`\chi^2`, network correlation
-- When ``Search`` is CBC/BBH/IMBHB: chirp mass is also computed
+- Chirp mass is estimated only when ``execution_profile.native_chirp`` and
+  ``xgb_rho_mode`` are both enabled, ``Search`` is CBC/BBH/IMBHB, ``optim`` is
+  false and ``cfg_search`` is a lower-case search code; otherwise the chirp
+  columns stay 0 (see :ref:`event_output`)
 
-→ Jobs complete. Postproduction begins.
+→ Jobs complete. Postproduction begins. See :ref:`event_output`.
 
 
 9. Background Estimation
 ------------------------
 
-Non-zero-lag triggers from all jobs are collected. The false alarm rate (FAR)
-is computed as a function of ranking statistic. The background livetime is
-the total analyzed time across all non-zero-lag analyses.
+Background triggers are collected from all jobs: every trigger that is not at
+physical zero lag, i.e. with a non-zero time-slide lag or a non-zero
+superlag (segment) shift. The false alarm rate (FAR) is computed as a function
+of ranking statistic. The background livetime is the total analyzed time
+across all of these shifted analyses.
 
 - :math:`FAR(\rho^*) = N_{bkg}(\rho \ge \rho^*) / T_{bkg}`
 - Train/FAR splitting ensures unbiased estimation
@@ -274,16 +310,16 @@ Where Each Config Parameter Lives
      - ``segLen``, ``lagSize``, ``lagStep``, ``lagOff``
      - :ref:`job_control`
    * - Conditioning
-     - ``whiteMethod``, ``mesaOrder``
+     - ``fResample``, ``levelR``, ``whiteMethod``, ``mesaOrder``
      - :ref:`schema`
    * - TF Transform
-     - ``l_low``, ``l_high``, ``levelR``
+     - ``l_low``, ``l_high``
      - :ref:`schema`
    * - Clustering
      - ``TFgap``, ``Tgap``, ``Fgap``, ``subnet``
      - :ref:`clustering_algorithm`
    * - Likelihood
-     - ``netRHO``, ``netCC``, ``healpix``, ``delta``
+     - ``netRHO``, ``netCC``, ``healpix``, ``delta``, ``BATCH``
      - :ref:`likelihood_guide`
    * - Postproduction
      - Workflow YAML, train fraction, FAR threshold

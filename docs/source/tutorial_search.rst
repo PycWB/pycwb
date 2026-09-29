@@ -65,8 +65,11 @@ Job Control
 -----------
 
 Job setup is handled by :py:func:`pycwb.workflow.subflow.prepare_job_runs.prepare_job_runs`.
-It initializes logging, loads the configuration, creates output directories,
-generates job segments, and creates the root catalog.
+It checks the YAML against any existing catalogs, loads the configuration,
+generates job segments, creates output directories, and creates the root
+catalog. It does not initialize logging; :py:func:`pycwb.workflow.run.search`
+calls :py:func:`~pycwb.modules.logger.logger.logger_init` first, so call it yourself
+when using ``prepare_job_runs`` directly.
 
 .. code-block:: python
 
@@ -91,8 +94,9 @@ Before reusing prepared jobs, the YAML settings are compared with a snapshot
 in the existing catalog's Parquet metadata. Defaults are included; comments,
 formatting and key order do not matter. CLI overrides are applied separately.
 A mismatch stops the run and reports the changed settings, even with
-``--overwrite``. Use a new working directory, or clean the existing catalog,
-job manifest, progress and fragment Parquet files and regenerate the run.
+``--force-overwrite`` (``overwrite=True`` in Python). Use a new working
+directory, or clean the existing catalog, job manifest, progress and fragment
+Parquet files and regenerate the run.
 Older catalogs without a YAML snapshot also require regeneration because their
 metadata mixes YAML values, derived fields and runtime overrides.
 Custom detector definitions are checked by content hash, so moving their files
@@ -136,9 +140,10 @@ Data Analysis
 The native segment processor analyzes one :py:class:`pycwb.types.job.WaveSegment`
 at a time. The high-level stages are:
 
-1. Read frame data or generate configured noise.
+1. Read frame data and/or generate configured noise.
 2. Generate and inject simulated signals when the segment has injections.
-3. Resample, whiten, and compute per-detector noise RMS maps.
+3. Resample to the analysis rate, regress (line removal), whiten, and compute
+   per-detector noise RMS maps.
 4. Build lag-independent coherence, time-delay, supercluster, and likelihood
    setup objects.
 5. For each lag, run coherence, supercluster, likelihood, waveform
@@ -158,44 +163,91 @@ Data loading uses :py:func:`pycwb.modules.read_data.read_from_job_segment`,
    if job_segment.frames:
        data = read_from_job_segment(config, job_segment)
    if job_segment.noise:
-       data = generate_noise_for_job_seg(job_segment, config.inRate, data=data)
+       data = generate_noise_for_job_seg(job_segment, config.inRate, f_low=config.fLow, data=data)
+   # Injections (generate_strain_from_injection) are omitted here;
+   # see tutorial_injection.
 
-Data conditioning returns conditioned strains and per-detector nRMS maps.
+The raw data are first resampled to the analysis rate
+(``fResample`` or ``inRate``, divided by 2\ :sup:`levelR`) with
+:py:func:`pycwb.modules.read_data.data_check.check_and_resample_py`. Data
+conditioning then regresses and whitens each detector and returns conditioned
+strains and per-detector nRMS maps.
 
 .. code-block:: python
 
-   from pycwb.modules.data_conditioning import data_conditioning
+   from pycwb.modules.data_conditioning import condition_strains
+   from pycwb.modules.read_data import check_and_resample_py
 
-   strains, nRMS = data_conditioning(config, data)
+   data = [check_and_resample_py(data[i], config, i) for i in range(len(job_segment.ifos))]
+   strains, nRMS = condition_strains(config, data)
 
-The current native path builds reusable setup objects once per trial and then
-processes each lag.
+The production processor then runs any configured post-whitening conditioning
+hooks. The current native path builds reusable setup objects once per trial and
+then processes each lag.
 
 .. code-block:: python
 
    from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-   from pycwb.modules.likelihoodWP.likelihood import setup_likelihood, likelihood
+   from pycwb.modules.likelihoodWP.likelihood import evaluate_cluster_likelihood, prepare_likelihood_inputs
    from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
    from pycwb.modules.xtalk.type import XTalk
    from pycwb.utils.td_vector_batch import build_td_inputs_cache
 
-   coherence_setup = setup_coherence(config, strains, job_seg=job_segment)
+   # One-time, lag-independent setup
+   coherence_setup = setup_coherence(config, strains, job_seg=job_segment, nRMS=nRMS)
    td_inputs_cache = build_td_inputs_cache(config, strains)
-   supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
-   likelihood_setup = setup_likelihood(config, strains, config.nIFO)
    xtalk = XTalk.load(config.MRAcatalog)
-
-   fragment_clusters = coherence_single_lag(coherence_setup, lag_idx=0)
-   selected_clusters = supercluster_single_lag(
-       supercluster_setup,
+   supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
+   likelihood_setup = prepare_likelihood_inputs(
        config,
-       fragment_clusters,
-       lag_idx=0,
-       xtalk=xtalk,
-       td_inputs_cache=td_inputs_cache,
+       strains,
+       config.nIFO,
+       ml=supercluster_setup.get("ml_likelihood", supercluster_setup["ml"]),
+       FP=supercluster_setup.get("FP_likelihood", supercluster_setup["FP"]),
+       FX=supercluster_setup.get("FX_likelihood", supercluster_setup["FX"]),
    )
 
-The production processor also handles lag bookkeeping, veto windows, waveform
+   # CAT2 keep windows for this segment (None when no CAT2 files are configured)
+   veto_windows = (
+       job_segment.cwb_veto_windows
+       if job_segment.cwb_veto_windows is not None
+       else job_segment.veto_windows
+   )
+
+   accepted = []
+   for lag in range(job_segment.n_lag):
+       fragment_clusters = coherence_single_lag(coherence_setup, lag_idx=lag, veto_windows=veto_windows)
+       selected_clusters = supercluster_single_lag(
+           supercluster_setup,
+           config,
+           fragment_clusters,
+           lag_idx=lag,
+           xtalk=xtalk,
+           td_inputs_cache=td_inputs_cache,
+       )
+       if selected_clusters is None:
+           continue
+       for k, cluster in enumerate(selected_clusters.clusters):
+           if cluster.cluster_status > 0:
+               continue
+           cluster.cluster_id = k + 1
+           result_cluster, sky_stats = evaluate_cluster_likelihood(
+               config.nIFO,
+               cluster,
+               config,
+               cluster_id=k + 1,
+               nRMS=nRMS,
+               setup=likelihood_setup,
+               xtalk=xtalk,
+               chirp_seed=job_segment.index,
+           )
+           if result_cluster is not None and result_cluster.cluster_status == -1:
+               accepted.append((lag, result_cluster, sky_stats))
+
+The production processor also skips lags whose post-CAT2 livetime is below
+``segTHR``, removes intervals excluded by conditioning hooks from the veto
+windows, intersects them with the injection windows when
+``analyze_injection_only`` is set, and handles lag bookkeeping, waveform
 reconstruction, Q-veto, plots, memory cleanup, and catalog writes. For the full
 implementation, see
 :py:func:`pycwb.workflow.subflow.process_job_segment_native.process_job_segment`.

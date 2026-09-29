@@ -38,8 +38,11 @@ and the catalog's ``pycwb_version`` metadata before combining releases.
      - Reconstructed event time in each detector
      - GPS seconds; arrival times may differ between detectors
    * - ``central_freq_H1``, ``central_freq_L1``
-     - Reconstructed central frequency per detector
-     - Hz
+     - Central frequency. As in cWB, the first detector's column holds the
+       network waveform centroid; the other detectors hold a pixel-based
+       network estimate, not a per-detector measurement
+     - Hz; ``bandwidth_*`` and ``duration_*`` follow the same convention
+       (:ref:`event_output`)
    * - ``rho``
      - Coherent ranking statistic for the configured search mode
      - Dimensionless; not a probability or FAR

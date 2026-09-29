@@ -22,7 +22,7 @@ Project Layout
    ├── modules/            # Pipeline stages (one sub-package each)
    │   ├── read_data/
    │   ├── data_conditioning/
-   │   ├── coherence/
+   │   ├── coherence_native/
    │   ├── super_cluster_native/
    │   ├── likelihoodWP/
    │   ├── catalog/
@@ -32,7 +32,7 @@ Project Layout
    ├── types/              # Data classes: WaveSegment, Cluster, PixelArrays, etc.
    ├── utils/              # Shared utilities: time-delay vectors, ROOT checks
    ├── workflow/           # Orchestration: run.py, batch.py, online.py
-   │   └── subflow/        # Per-job pipeline: process_job_segment.py
+   │   └── subflow/        # Per-job pipeline: process_job_segment_native.py
    └── post_production/    # YAML-driven workflow engine
    cwb-core/               # C++ wavelet/ROOT core (being phased out)
    tests/                  # Integration & numerical parity tests

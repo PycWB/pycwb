@@ -243,8 +243,12 @@ Glossary
       combine multiple event features into a single ranking statistic.
 
    XTalk
-      **Cross-talk** — coherent instrumental artifacts that mimic GW signals.
-      pycWB includes XTalk identification and subtraction.
+      **Cross-talk catalog** — the table of overlaps between WDM basis
+      functions at different resolutions (cWB ``monster`` / MRA catalog).
+      Because the multi-resolution bases are not orthogonal, the same energy
+      appears in several maps; the sub-network cut and the likelihood use the
+      catalog to account for it. Set by ``wdmXTalk``; see
+      :ref:`wdm_transform`.
 
    zero-lag
       The unshifted (physical) coincidence between detectors where a real

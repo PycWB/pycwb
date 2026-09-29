@@ -3,7 +3,8 @@
 Clustering Algorithm
 ====================
 
-.. rubric:: Pipeline: :doc:`data <pipeline_lifecycle>` → :doc:`segments <job_control>` → :doc:`conditioning <pipeline_lifecycle>` → :doc:`WDM <pipeline_lifecycle>` → :doc:`pixels <pipeline_lifecycle>` → **[clusters & superclusters]** ← you are here → :doc:`likelihood <likelihood_guide>` → :doc:`events <pipeline_lifecycle>` → :doc:`bkg <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → :doc:`eff <postproduction_efficiency>`
+.. stage-nav:: search
+   :current: clusters
 
 This guide describes pycWB's pixel clustering and superclustering algorithms,
 including the configurable parameters that control how time-frequency pixels
@@ -26,8 +27,8 @@ and glitch rejection. Tune only if you understand the trade-offs.
 Overview
 --------
 
-After the coherent wavelet transform identifies excess power pixels in the
-time-frequency plane, pycWB groups these pixels into **clusters** and then
+After pixel selection identifies excess-power pixels in each WDM
+time-frequency map, pycWB groups these pixels into **clusters** and then
 merges nearby clusters into **superclusters**. The superclustering step is
 critical: it determines which pixel groups are treated as a single
 gravitational-wave candidate for likelihood evaluation.
@@ -35,18 +36,22 @@ gravitational-wave candidate for likelihood evaluation.
 .. image:: _static/diagrams/clustering.svg
    :alt: Clustering pipeline
 
-The production clustering code lives in
-:py:mod:`pycwb.modules.super_cluster_native`. An experimental
-:py:mod:`pycwb.modules.clustering` module exists for future algorithm
-development (DBSCAN, HDBSCAN, OPTICS, etc.) but is not yet production-ready.
+Per-resolution clustering is part of
+:py:mod:`pycwb.modules.coherence_native`
+(:py:func:`~pycwb.modules.coherence_native.clustering.cluster_pixels`);
+superclustering, the sub-network cut and defragmentation live in
+:py:mod:`pycwb.modules.super_cluster_native`. The
+:py:mod:`pycwb.modules.clustering` package is scaffolding for future
+algorithms (DBSCAN, HDBSCAN, OPTICS, etc.) and has no implementation yet.
 
 In the cWB-2G stage names, single-resolution clustering happens during the
 ``Coherence`` stage after significant pixels are selected. The
-``Supercluster`` stage then reads those per-resolution clusters, merges them
-across WDM resolutions, loads time-delay amplitudes for the surviving pixels,
-applies the sub-network cut, and defragments the result. pycWB preserves this
-division even though the data now flows through Python objects rather than ROOT
-job-file cycles.
+``Supercluster`` stage then merges those per-resolution clusters into one
+list, loads time-delay amplitudes for all of their pixels, links them into
+superclusters, applies the sub-network cut, and defragments the result
+(defragmentation runs before the sub-network cut when ``pattern ≠ 0``).
+pycWB preserves this division even though the data now flows through Python
+objects rather than ROOT job-file cycles.
 
 
 Pipeline: From Pixels to Fragment Clusters
@@ -58,14 +63,19 @@ The clustering pipeline proceeds through these steps:
    in the time-frequency plane.
 2. **Per-Resolution Clustering** — pixels at each WDM resolution level are
    clustered independently.
-3. **Multi-Resolution Merging** — clusters from different resolution levels
-   are merged.
-4. **Sub-Network Cut** — per-sky-direction threshold cuts are applied to
+3. **Multi-Resolution Merging** — clusters from all resolution levels are
+   collected into one list.
+4. **Time-Delay Amplitudes** — delayed pixel amplitudes are loaded for the
+   merged clusters.
+5. **Superclustering** — clusters closer than ``TFgap`` in time-frequency are
+   linked into superclusters; superclusters with fewer than 3 pixels or
+   energy below ``e2or`` are dropped (this cut is applied only when at least
+   one link was found).
+6. **Sub-Network Cut** — per-sky-direction threshold cuts are applied to
    remove accidental coincidences.
-5. **Superclustering** — nearby clusters in time-frequency are merged into
-   superclusters.
-6. **Defragmentation** — a final cleanup pass merges any remaining close
-   clusters.
+7. **Defragmentation** — superclusters within ``Tgap`` and ``Fgap`` are
+   merged. With the default ``pattern = 0`` this runs after the sub-network
+   cut; with ``pattern ≠ 0`` it runs before it.
 
 The output of this stage is the set of surviving multi-resolution
 superclusters. Those are the candidate structures that the likelihood stage
@@ -83,11 +93,27 @@ for each lag.
 Pixel Selection
 ---------------
 
-Pixels are selected based on their coherent energy and network correlation.
-In cWB-2G terms, the threshold is derived from the black-pixel probability
-(``bpp``) after the maximum-energy time-frequency maps are computed. The
-selected pixels are then clustered at the current WDM resolution before any
-cross-resolution merging is attempted.
+Selection uses energy only; no network correlation enters at this stage.
+For each detector, the time-frequency map is replaced by its maximum pixel
+energy over time shifts within the network light-travel time
+(cWB-2G ``maxEnergy``). For each lag, the lag-shifted detector maps are summed
+into a network energy :math:`E(t,f)`:
+
+- pixels with :math:`E < E_o` are discarded and values are clipped at
+  :math:`2E_o`;
+- a pixel at or above :math:`2E_o` is kept on its own;
+- a pixel between :math:`E_o` and :math:`2E_o` is kept only with neighbour
+  support: one of the products of :math:`E` with its summed neighbour energies
+  must reach :math:`(2E_o)^2`.
+
+The threshold :math:`E_o` is set from the black-pixel probability ``bpp``.
+For ``pattern = 0`` it averages the empirical ``bpp`` upper quantile of the
+summed map with the ``bpp`` quantile of a Gamma model fitted to it
+(:py:func:`~pycwb.modules.coherence_native.veto_threshold.compute_threshold`);
+``pattern ≠ 0`` uses a separate Gamma fit. The kept pixels are then clustered
+at the current WDM resolution: neighbours within one pixel in time and
+frequency (``pattern = 0``), or within 2 time bins and 3 frequency bins
+(``pattern ≠ 0``), are joined by union-find.
 
 Key parameters controlling pixel selection:
 
@@ -100,16 +126,18 @@ Key parameters controlling pixel selection:
      - Description
    * - ``bpp``
      - 0.001
-     - Black pixel selection probability (fraction of pixels kept)
-   * - ``BATCH``
-     - 10000
-     - Maximum pixels per loadTDamp batch
-   * - ``LOUD``
-     - 200
-     - Pixels per cluster for time-delay amplitude loading
+     - Black-pixel probability used to set the energy threshold :math:`E_o`
    * - ``pattern``
      - 0
-     - Pixel selection pattern: 0 = single pixel, 1–8 = multi-pixel packets, <0 = mixed, >0 = packed
+     - Pixel pattern: 0 = single pixel, 1–9 = multi-pixel packet shapes (other
+       non-zero values act as a single-pixel packet); the sign selects the
+       likelihood flavour (< 0 likelihood2G, > 0 likelihoodWP)
+   * - ``select_subrho``
+     - 5.0
+     - Fragment-cluster ``subrho`` cut in the Coherence stage (``pattern ≠ 0`` only)
+   * - ``select_subnet``
+     - 0.1
+     - Fragment-cluster ``subnet`` cut in the Coherence stage (``pattern ≠ 0`` only)
 
 
 Superclustering Algorithm
@@ -123,16 +151,16 @@ merges pixel clusters that are close in time and frequency:
    matrix with these columns per pixel:
 
    - Central time (normalized by rate × layer)
-   - Central frequency
+   - Frequency index × rate (twice the pixel frequency in Hz)
    - Inverse rate (:math:`1 / \text{rate}`)
    - Half-rate (:math:`\text{rate} / 2`)
    - Parent cluster ID
-   - Per-interferometer pixel indices
+   - Per-interferometer pixel times in seconds
 
 2. **Find cluster links**: Using
    :py:func:`~pycwb.modules.super_cluster_native.utils.get_cluster_links`,
-   identify pairs of clusters whose pixels are within a time-frequency gap
-   threshold.
+   identify pairs of clusters that have at least one pixel pair within the
+   time-frequency gap threshold.
 
 3. **Union-Find merging**: Linked clusters are merged using a Numba
    JIT-compiled union-find data structure with path compression and
@@ -140,32 +168,45 @@ merges pixel clusters that are close in time and frequency:
    (:py:func:`~pycwb.modules.super_cluster_native.utils.aggregate_clusters_from_links`).
 
 4. **Compute supercluster statistics**: For each merged supercluster,
-   calculate combined time, frequency, rate range, energy, and likelihood.
+   calculate the centroid time and frequency, the rates of the dominant and
+   secondary resolutions, and the total energy; then drop superclusters with
+   fewer than 3 pixels or with the largest per-resolution energy sum below
+   ``e2or``.
 
-The gap threshold for linking is controlled by ``TFgap``:
+The gap threshold for linking is controlled by ``TFgap``. Two pixels
+:math:`p, q` from different clusters, with WDM rates :math:`r_p, r_q`
+(pixel rate :math:`= 1/\Delta t`) and :math:`\max(r_p/r_q, r_q/r_p) \le 3`,
+link their clusters when
 
 .. math::
 
-   \text{linked if } \Delta t < \text{TFgap} \text{ AND } \Delta f \cdot \text{rate} < \text{TFgap}
+   \max(\delta t, 0)\,(r_p + r_q) + \max(\delta f, 0)\left(\frac{1}{r_p} + \frac{1}{r_q}\right) \le \text{TFgap},
 
-where :math:`\Delta t` and :math:`\Delta f` are the time and frequency
-separations between pixels, and ``rate`` is the WDM analysis rate at that
-resolution level.
+with :math:`\delta t = \max_k |t_{p,k} - t_{q,k}| - \tfrac12(1/r_p + 1/r_q)`
+(largest per-detector time separation) and
+:math:`\delta f = |2f_p - 2f_q| - \tfrac12(r_p + r_q)`. Both terms are gaps
+measured in units of pixel size, so ``TFgap`` counts pixels. Links are
+transitive: one qualifying pixel pair merges whole clusters.
 
 
 Sub-Network Cut
 ---------------
 
 The sub-network cut
-(:py:func:`pycwb.modules.super_cluster_native.sub_net_cut.sub_net_cut`) is a
-per-sky-direction selection that removes pixel clusters unlikely to be
-astrophysical:
+(:py:func:`pycwb.modules.super_cluster_native.utils.apply_subnet_cut`) decides
+once per supercluster whether it is kept:
 
-- For each sky direction, the algorithm evaluates whether the pixel subnetwork
-  exceeds coherence thresholds.
-- Two sky arrays are precomputed for efficiency: full resolution (for
-  likelihood) and reduced resolution (capped at ``MIN_SKYRES_HEALPIX`` for the
-  sub-network cut).
+- It uses the ``LOUD`` loudest pixels of the supercluster and scans a coarse
+  sky (HEALPix order capped at ``MIN_SKYRES_HEALPIX``) with delays on the
+  analysis-rate grid.
+- ``subcut`` is a per-direction pre-filter: directions where the
+  sub-network fraction :math:`(a-m)/(a+m)` is below ``subcut`` are skipped
+  (a negative ``subcut`` disables this filter).
+- At the direction with the largest sub-network statistic, an MRA/XTalk step
+  gives the final values. The supercluster passes when
+  :math:`\min(\text{suball}, \text{submra}) > \text{subnet}`,
+  :math:`\rho_{\rm sub} > |\text{subrho}|` and
+  :math:`E_m > \text{subnorm}\cdot E_o`.
 - The cut is Numba-accelerated and handles cross-talk (XTalk) pixel lookups
   internally.
 
@@ -188,7 +229,7 @@ Parameters controlling the sub-network cut:
      - Sub-network coherence threshold :math:`\in [0, 0.7]`
    * - ``subcut``
      - 0.33
-     - Sub-network threshold in sky loop :math:`\in [0, 1]`
+     - Sub-network pre-filter in the sky loop :math:`\in [0, 1]`; < 0 disables it
    * - ``subnorm``
      - 0.0
      - Sub-network norm threshold (enabled if > 0) :math:`\in [0, 2 \times nRes]`
@@ -198,12 +239,12 @@ Parameters controlling the sub-network cut:
    * - ``subacor``
      - 0.0
      - Sub-network sky loop Acore threshold (≤ 0 → uses ``Acore``)
-   * - ``select_subnet``
-     - 0.1
-     - Subnet netcluster selection threshold
-   * - ``select_subrho``
-     - 5.0
-     - Subrho netcluster selection threshold
+   * - ``LOUD``
+     - 200
+     - Loudest pixels per supercluster used in the sub-network cut
+   * - ``MIN_SKYRES_HEALPIX``
+     - 4
+     - Maximum HEALPix order of the sub-network sky scan
 
 When ``subrho`` ≤ 0, the standard ``netRHO`` threshold is used for the
 sub-network cut. Similarly, ``subacor`` ≤ 0 falls back to ``Acore``.
@@ -214,11 +255,13 @@ Defragmentation
 
 After superclustering, a defragmentation pass
 (:py:func:`pycwb.modules.super_cluster_native.super_cluster.defragment`)
-merges any remaining clusters that are close in time and frequency:
+merges superclusters that have a pixel pair (rate ratio ≤ 3) within ``Tgap``
+in time and ``Fgap`` in frequency, both measured edge to edge.
 
-In the cWB-2G flow this cleanup is applied after sub-network rejection so that
-nearby surviving fragments are presented to likelihood as a single candidate
-structure.
+With the default ``pattern = 0`` this cleanup runs after the sub-network cut,
+as in the cWB-2G flow, so that nearby surviving fragments are presented to
+likelihood as a single candidate structure. With ``pattern ≠ 0`` it runs
+before the sub-network cut.
 
 .. list-table::
    :header-rows: 1
@@ -233,9 +276,8 @@ structure.
    * - ``Fgap``
      - 130 Hz
      - Defragmentation frequency gap—clusters within this frequency are merged
-   * - ``TFgap``
-     - 6.0
-     - Time-frequency pixel separation threshold for linking
+
+``TFgap`` (default 6) is used only for supercluster linking, not here.
 
 
 Time-Delay Precomputation
@@ -249,8 +291,11 @@ the time-delay range is precomputed:
 
    K_{td} = \max(TDSize \times upTDF,\ \lfloor \text{max\_delay} \times TDRate \rfloor + 1)
 
-This determines the number of time-delay samples needed for the sky-dependent
-time shifting of detector data during likelihood evaluation.
+:math:`K_{td}` is the half-range of the delay grid: each pixel stores
+:math:`2K_{td}+1` delayed amplitudes per quadrature, used for the
+sky-dependent time shifts in likelihood evaluation. The sub-network cut uses
+a separate range at the analysis rate,
+:math:`K_{\rm subnet} = \max(TDSize,\ \lfloor \text{max\_delay} \times \text{rateANA} \rfloor + 1)`.
 
 Related parameters: ``TDSize`` (default 12, max 20), ``upTDF`` (default 4,
 upsample factor for TD filter rate).
@@ -279,8 +324,10 @@ Tune these only if you understand the impact on background and sensitivity:
   reject real signals).
 - ``bpp``: black pixel probability. Lower = fewer pixels selected. Affects
   sensitivity to short-duration signals.
-- ``pattern``: multi-pixel packet mode. Non-zero values group neighboring
-  pixels, which helps for extended signals but can merge distinct events.
+- ``pattern``: multi-pixel packet mode. Non-zero values compute energies over
+  fixed multi-pixel packet shapes, widen the clustering neighbourhood, and
+  enable the Coherence-stage ``select_subrho``/``select_subnet`` cuts. This
+  helps for extended signals but can merge distinct events.
 
 Developer notes
 ~~~~~~~~~~~~~~~
@@ -313,13 +360,13 @@ Config Quick Reference
      - Black pixel selection probability
    * - ``BATCH``
      - 10000
-     - Max pixels per loadTDamp batch
+     - Max loudest pixels per cluster passed to likelihood (0 = no limit)
    * - ``LOUD``
      - 200
-     - Pixels per cluster for TD amplitude loading
+     - Loudest pixels per supercluster used in the sub-network cut
    * - ``pattern``
      - 0
-     - Pixel selection pattern (0 = single, 1–8 = packets)
+     - Pixel pattern (0 = single, 1–9 = packets)
    * - ``TFgap``
      - 6.0
      - TF pixel separation for cluster linking
@@ -346,10 +393,10 @@ Config Quick Reference
      - Sub-network skyloop Acore
    * - ``select_subnet``
      - 0.1
-     - Subnet netcluster selection
+     - Coherence-stage subnet cut (``pattern ≠ 0``)
    * - ``select_subrho``
      - 5.0
-     - Subrho netcluster selection
+     - Coherence-stage subrho cut (``pattern ≠ 0``)
    * - ``TDSize``
      - 12
      - Time-delay filter size (max 20)
@@ -366,9 +413,10 @@ After tuning clustering parameters, verify:
 - **Number of clusters scales with segment length**: longer segments should
   produce proportionally more clusters. A flat or zero count suggests the
   pixel selection threshold is too strict.
-- **Superclusters merge within TFgap**: check that merged superclusters'
-  constituent pixels are within ``TFgap`` in time-frequency. Pixels outside
-  this range should not be in the same supercluster.
+- **Superclusters merge within TFgap**: every merge must be justified by at
+  least one pixel pair within the ``TFgap`` metric. Because links are
+  transitive (and defragmentation merges further within ``Tgap``/``Fgap``),
+  constituent pixels themselves can be far apart.
 - **Defragmentation doesn't merge independent events**: verify that
   ``Tgap`` and ``Fgap`` are small enough that distinct astrophysical
   signals (e.g., from different sources) are not merged into one event.
