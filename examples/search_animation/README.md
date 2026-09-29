@@ -71,6 +71,21 @@ Useful options: `--ifos`, `--levels` (must include 64, the display
 resolution), `--bpp`, `--noise-sigma`, `--nside`, `--lags`, `--lag-step`,
 `--duration`, `--scenes`, `--frames-limit`.
 
+### Home-page hero loop
+
+`--hero` renders a separate 12 s seamless loop for the documentation home
+page: whitening, coherent pixel selection and the sky scan, with larger panels
+and no stage bar. It skips the time slides, so it takes about 30 s:
+
+```bash
+conda run -n pycwb-dev-py13 python examples/search_animation/render_search_animation.py \
+  --hero --out docs/source/_static/media
+```
+
+This writes `pycwb_hero.mp4` (about 0.45 MB, muted H.264) and
+`pycwb_hero_poster.png` (the final frame, shown instead of the video when the
+reader prefers reduced motion).
+
 The default signal is `tests/logo/cWB_logo_waveform.txt`, used as `h+` with
 `hx = 0` and sky position `(ra, dec) = (1.4, 0.3)` rad. It is placed in an
 8 s segment, coloured together with unit-variance white noise (noise level

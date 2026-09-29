@@ -286,3 +286,51 @@
     box-shadow: none;
   }
 }
+
+/* Home-page hero loop (index.rst). The poster image replaces the video when
+   the reader prefers reduced motion. */
+#content .docs-hero {
+  margin: 1.25rem 0 1.5rem;
+}
+
+#content .docs-hero > a {
+  display: block;
+  overflow: hidden;
+  line-height: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #05070b;
+}
+
+#content .docs-hero video,
+#content .docs-hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+#content .docs-hero .docs-hero-still {
+  display: none;
+}
+
+#content .docs-hero figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+.dark #content .docs-hero > a {
+  border-color: #475569;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #content .docs-hero .docs-hero-video {
+    display: none;
+  }
+
+  #content .docs-hero .docs-hero-still {
+    display: block;
+  }
+}

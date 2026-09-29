@@ -95,12 +95,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--noise-seed", default=defaults.noise_seed, type=int)
     parser.add_argument("--bpp", default=defaults.bpp, type=float, help="black-pixel probability of the selection threshold")
     parser.add_argument("--nside", default=None, type=int, help="HEALPix nside (default 16 for two detectors, 64 otherwise)")
-    parser.add_argument("--lags", default=defaults.n_lags, type=int, help="number of circular time slides")
+    parser.add_argument("--lags", default=None, type=int, help=f"number of circular time slides (default {defaults.n_lags}; 0 with --hero)")
     parser.add_argument("--lag-step", default=defaults.lag_step, type=float)
     parser.add_argument("--width", default=1280, type=int)
     parser.add_argument("--height", default=720, type=int)
     parser.add_argument("--fps", default=24, type=int)
-    parser.add_argument("--duration", default=60.0, type=float)
+    parser.add_argument("--duration", default=None, type=float, help="video length in s (default 60; 12 with --hero)")
+    parser.add_argument("--hero", action="store_true", help="render only the seamless home-page loop (pycwb_hero.mp4 + poster)")
     parser.add_argument("--scenes", nargs="+", choices=[s[0] for s in SCENES], default=[s[0] for s in SCENES])
     parser.add_argument("--frames-limit", default=None, type=int)
     parser.add_argument("--format", nargs="*", choices=("mp4", "gif"), default=["mp4", "gif"])
@@ -109,6 +110,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stills", nargs="*", type=float, default=None, help="also save PNG stills of every scene at these progress values")
     parser.add_argument("--dpi", default=100, type=int)
     args = parser.parse_args()
+    if args.duration is None:
+        args.duration = HERO_LOOP if args.hero else 60.0
+    if args.lags is None:
+        args.lags = 0 if args.hero else defaults.n_lags
     if args.levels and 64 not in args.levels:
         parser.error("--levels must include 64 (the display resolution)")
     return args
@@ -1144,6 +1149,149 @@ def scene_background(fig: plt.Figure, ctx: RenderContext, p: float) -> None:
     text_lines(ax, lines, 0.06, 0.85, 0.062, show_card, size=9.5)
 
 
+# ---------------------------------------------------------------------------
+# home-page hero loop
+
+
+HERO_LOOP = 12.0
+HERO_WINDOW = (0.35, 1.65)
+HERO_FMAX = 700.0
+HERO_CAPTIONS = (
+    ("Whiten the detector data", "the injected “pycWB” burst emerges from coloured noise"),
+    ("Select coherent excess power", "pixels above the bpp threshold, then clustered"),
+    ("Scan the sky", "the coherent statistic peaks on the H1–L1 delay ring"),
+)
+
+
+def _linear(t: float, start: float, length: float) -> float:
+    return float(np.clip((t - start) / length, 0.0, 1.0))
+
+
+def hero_state(t: float) -> dict[str, float]:
+    """Animation parameters at time t of the seamless 12 s loop.
+
+    Every parameter returns to its t = 0 value by the end of the loop, so the
+    last frame flows into the first.
+    """
+    back = ramp(t, 11.1, 0.8)
+    return {
+        "white": ramp(t, 0.6, 1.8) * (1.0 - back),
+        "select": ramp(t, 3.8, 1.4) * (1.0 - back),
+        "scan": _linear(t, 6.8, 3.4),
+        "sky": 1.0 - back,
+        "finish": ramp(t, 10.1, 0.5) * (1.0 - back),
+        "caption": (
+            1.0 - ramp(t, 3.3, 0.4) + ramp(t, 11.3, 0.6),
+            ramp(t, 3.5, 0.4) * (1.0 - ramp(t, 6.4, 0.4)),
+            ramp(t, 6.6, 0.4) * (1.0 - ramp(t, 11.0, 0.4)),
+        ),
+    }
+
+
+def draw_hero(fig: plt.Figure, ctx: RenderContext, t: float) -> None:
+    s = hero_state(t)
+    fig.clear()
+    fig.patch.set_facecolor(BG)
+    disp = ctx.zero.resolutions[ctx.display]
+    sel = ctx.res_selected[ctx.display]
+
+    # left: whitening and pixel selection in both detectors
+    for d, y0 in enumerate((0.525, 0.07)):
+        if d >= ctx.n_det:
+            break
+        ax = fig.add_axes([0.035, y0, 0.545, 0.405])
+        ax.set_facecolor(PANEL)
+        show_tf(ax, ctx.raw_tf[d], ctx.tf_cmap, alpha=1.0 - s["white"])
+        if s["white"] > 0.001:
+            white = ctx.white_tf[d].image
+            img = np.where(sel.image, white, white * (1.0 - 0.82 * s["select"]))
+            show_tf(ax, ctx.white_tf[d], ctx.tf_cmap, alpha=s["white"], image=img)
+        if s["select"] > 0.02:
+            centers_t = np.linspace(sel.extent[0], sel.extent[1], sel.image.shape[1] + 1)
+            centers_t = 0.5 * (centers_t[:-1] + centers_t[1:])
+            centers_f = np.arange(sel.image.shape[0]) * disp.df
+            ax.contour(centers_t, centers_f, sel.image.astype(float), levels=[0.5], colors=[INK], linewidths=0.9, alpha=0.9 * s["select"])
+        ax.set_xlim(*HERO_WINDOW)
+        ax.set_ylim(0.0, HERO_FMAX)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_color(SPINE)
+        ax.text(0.015, 0.95, ctx.ifos[d], color=ctx.colors[d], fontsize=20, fontweight="bold", transform=ax.transAxes, va="top")
+        ax.text(0.985, 0.95, "time–frequency (WDM)", color=INK_3, fontsize=12, transform=ax.transAxes, va="top", ha="right")
+
+    # right: the sky scan
+    ax = fig.add_axes([0.600, 0.30, 0.385, 0.62])
+    ax.set_facecolor(BG)
+    ax.axis("off")
+    count = int(round(s["scan"] * ctx.n_sky))
+    revealed = (ctx.rank[ctx.sky_idx] < count).astype(float)[..., None] * s["sky"]
+    empty = np.array(matplotlib.colors.to_rgba("#0a0f16"))
+    rgba = empty * (1.0 - revealed) + ctx.sky_cmap(ctx.stat_norm[ctx.sky_idx]) * revealed
+    rgba[~ctx.sky_inside] = (0, 0, 0, 0)
+    ax.imshow(rgba, extent=ctx.sky_extent, origin="lower", interpolation="nearest")
+    for ra_h in range(0, 24, 3):
+        lat = np.linspace(-np.pi / 2, np.pi / 2, 90)
+        x, y = mollweide_forward(np.full_like(lat, float(ra_to_lon(ra_h / 24 * 2 * np.pi))), lat)
+        ax.plot(x, y, color="#2a3a4d", lw=0.6)
+    for dec_deg in (-60, -30, 0, 30, 60):
+        lon = np.linspace(-np.pi, np.pi, 180)
+        x, y = mollweide_forward(lon, np.full_like(lon, np.radians(dec_deg)))
+        ax.plot(x, y, color="#2a3a4d", lw=0.6)
+    edge = np.linspace(0, 2 * np.pi, 300)
+    ax.plot(2 * np.sqrt(2) * np.cos(edge), np.sqrt(2) * np.sin(edge), color="#34475c", lw=1.2)
+    if 0 < count < ctx.n_sky and s["sky"] > 0.5:
+        current = int(ctx.scan_order[count - 1])
+        ax.scatter([ctx.sky_xy[0][current]], [ctx.sky_xy[1][current]], s=110, facecolors="none", edgecolors=INK, linewidths=1.5, zorder=6)
+    if s["finish"] > 0.01:
+        X = np.linspace(ctx.sky_extent[0], ctx.sky_extent[1], ctx.sky_idx.shape[1])
+        Y = np.linspace(ctx.sky_extent[2], ctx.sky_extent[3], ctx.sky_idx.shape[0])
+        for d, img in enumerate(ctx.delay_imgs, start=1):
+            ax.contour(X, Y, img, levels=[float(ctx.scan.rel_delay[d][ctx.scan.best])], colors=[ACCENT_2], linewidths=1.3, linestyles="--", alpha=0.95 * s["finish"])
+        ax.scatter([ctx.best_xy[0]], [ctx.best_xy[1]], marker="*", s=420, c=ACCENT, edgecolors="#ffffff", linewidths=1.0, zorder=8, alpha=s["finish"])
+    ax.set_xlim(-2 * np.sqrt(2) * 1.02, 2 * np.sqrt(2) * 1.02)
+    ax.set_ylim(-np.sqrt(2) * 1.05, np.sqrt(2) * 1.05)
+    ax.set_aspect("equal")
+
+    # captions: step chips plus one crossfading title/subtitle
+    for k, alpha in enumerate(s["caption"]):
+        x = 0.612 + k * 0.05
+        active = float(np.clip(alpha, 0.0, 1.0))
+        face = matplotlib.colors.to_rgba(ACCENT, 0.15 + 0.85 * active)
+        fig.text(x, 0.235, f" {k + 1} ", fontsize=15, fontweight="bold", va="center", ha="left",
+                 color="#05070b" if active > 0.5 else INK_2,
+                 bbox=dict(boxstyle="round,pad=0.3", facecolor=face, edgecolor=ACCENT, linewidth=1.0))
+    for (title, sub), alpha in zip(HERO_CAPTIONS, s["caption"]):
+        alpha = float(np.clip(alpha, 0.0, 1.0))
+        if alpha < 0.01:
+            continue
+        fig.text(0.612, 0.165, title, color=INK, fontsize=22, fontweight="bold", va="center", alpha=alpha)
+        fig.text(0.612, 0.108, sub, color=INK_2, fontsize=13.5, va="center", alpha=alpha)
+    fig.text(0.985, 0.035, "simulated event · every panel is computed by the search", color=INK_3, fontsize=10.5, ha="right", va="center")
+
+
+def render_hero(ctx: RenderContext, args: argparse.Namespace, out_dir: Path) -> tuple[Path, Path]:
+    """Seamless, muted home-page loop and its poster frame."""
+    output = out_dir / "pycwb_hero.mp4"
+    poster = out_dir / "pycwb_hero_poster.png"
+    fig = plt.figure(figsize=(args.width / args.dpi, args.height / args.dpi), dpi=args.dpi)
+    n_frames = int(round(args.duration * args.fps))
+    writer = FFMpegWriter(
+        fps=args.fps, codec="libx264", bitrate=-1,
+        extra_args=["-crf", "30", "-preset", "slow", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an"],
+        metadata={"title": "pycWB coherent search"},
+    )
+    print(f"Rendering {n_frames} hero frame(s) to {output}")
+    with writer.saving(fig, str(output), dpi=args.dpi):
+        for frame in range(n_frames):
+            draw_hero(fig, ctx, HERO_LOOP * frame / n_frames)
+            writer.grab_frame(facecolor=fig.get_facecolor())
+    draw_hero(fig, ctx, 10.8)
+    fig.savefig(poster, dpi=args.dpi, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    return output, poster
+
+
 SCENE_FUNCS = {
     "projection": scene_projection,
     "whitening": scene_whitening,
@@ -1371,6 +1519,10 @@ def main() -> None:
     matplotlib.rcParams.update(RC_STYLE)
     ctx = RenderContext(result, args)
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.hero:
+        video, poster = render_hero(ctx, args, args.out)
+        print(f"Saved hero loop to {video} and poster to {poster}")
+        return
     save_data(ctx, args.out, args)
     print(f"Saved data to {args.out / 'animation_data.npz'} and {args.out / 'metadata.json'}")
 

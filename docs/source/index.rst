@@ -6,6 +6,23 @@ PycWB documentation
 PycWB is a modular Python implementation of coherent WaveBurst (cWB/cWB-2G)
 for gravitational-wave burst searches.
 
+.. raw:: html
+
+   <figure class="docs-hero">
+     <a href="pipeline_lifecycle.html#search-lifecycle-animation">
+       <video class="docs-hero-video" autoplay muted loop playsinline preload="auto"
+              width="1280" height="720" poster="_static/media/pycwb_hero_poster.png"
+              aria-label="A simulated H1–L1 burst spelling pycWB is whitened, its coherent pixels are selected, and the sky scan peaks on the H1–L1 delay ring. Opens the full search animation.">
+         <source src="_static/media/pycwb_hero.mp4" type="video/mp4">
+       </video>
+       <img class="docs-hero-still" src="_static/media/pycwb_hero_poster.png" width="1280" height="720"
+            alt="Whitened H1 and L1 time-frequency maps of a simulated burst spelling pycWB, with its selected pixels outlined, and the sky map with the H1–L1 delay ring. Opens the full search animation.">
+     </a>
+     <figcaption>A simulated H1–L1 burst through whitening, coherent pixel selection and
+       the sky scan, computed by the search.
+       <a href="pipeline_lifecycle.html#search-lifecycle-animation">Watch the full 60-second search lifecycle</a>.</figcaption>
+   </figure>
+
 .. rst-class:: docs-version
 
    Version |release|. Match it to ``pycwb --version``. Development documentation
