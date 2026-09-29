@@ -49,8 +49,10 @@ Most production workflows need only the following path through the catalog:
      - Use a right-matched simulation table so non-recoveries are counted.
    * - Report background and candidates
      - ``postprocess.report.standard_background_report``
-     - Give zero-lag and fake-open-box inputs explicitly when enabling those
-       report sections.
+     - Zero lag is included by default (``include_zero_lag: true``), which
+       opens the box. While blind, set ``include_zero_lag: false`` and use
+       ``include_fake_openbox: true``. Give zero-lag and fake-open-box inputs
+       explicitly.
    * - Assemble the final report
      - ``postprocess.report_builder.postproduction_report``
      - Point its nested sections to artifacts already produced by earlier
@@ -260,11 +262,20 @@ Reports and specialized studies
      - Sample background intervals reproducibly and present them with
        open-box-style significance for validation.
    * - ``postprocess.report.standard_background_report``
-     - Composite background action combining FAR products with optional zero
-       lag and fake-open-box sections.
+     - Composite background action combining FAR products with zero-lag
+       (on by default) and fake-open-box (off by default) sections.
    * - ``postprocess.report_builder.postproduction_report``
      - Build the standard multi-tab HTML and JSON report from background,
        training, and simulation artifacts.
+   * - ``postprocess.training_report.training_diagnostics``
+     - Write learning-curve and feature-gain plots for a saved model; fail if
+       an optional reference model differs.
+   * - ``postprocess.simulation_report.simulation_efficiency``
+     - Apply one explicit ranking cut to a right-matched simulation table and
+       write efficiency counts with Wilson intervals.
+   * - ``postprocess.cwb_report.collect_comparisons``
+     - Combine recorded JSON comparison checks into one validation file for
+       the report's Consistency checks tab.
    * - ``postprocess.generic_report.generic_web_report``
      - Package arbitrary interactive HTML plots from upstream actions into a
        portable single-page report.

@@ -7,15 +7,21 @@ The postproduction pipeline takes the trigger catalogs produced by pycWB
 search jobs and produces final analysis products: background estimates, ranked
 candidate lists, detection efficiency curves, and HTML summary reports.
 
-Follow the workflow, prepare training inputs, or import cWB ROOT results.
+Start with :doc:`postproduction_study` to adapt the maintained ranking and
+efficiency workflow to your catalogs. Use :doc:`postproduction_workflow` to
+assemble a custom workflow, or prepare training inputs and import cWB results
+with the guides below. For a worked report using tutorial runs, see
+:doc:`tutorial_custom_postproduction`.
 Scientific explanations live under :doc:`core_concepts`; exact action signatures
 live in :doc:`postproduction_actions`.
 
 .. toctree::
    :maxdepth: 1
 
+   postproduction_study
    postproduction_workflow
    postproduction_trainingset
+   postproduction_report
    postproduction_root
 
 Quick Start
@@ -62,7 +68,8 @@ A complete postproduction analysis follows this sequence:
 6. **Score** simulations and compute **detection efficiency**
    (:ref:`postproduction_efficiency`).
 7. **Analyze zero-lag** candidates and compute Poisson significance.
-8. **Generate HTML report** with all results.
+8. **Generate HTML report** with all results
+   (:ref:`postproduction_report`).
 
 See :ref:`postproduction_workflow` for detailed YAML examples of each step.
 

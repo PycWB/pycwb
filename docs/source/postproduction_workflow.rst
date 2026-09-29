@@ -428,7 +428,11 @@ simulation, including missed injections.
 
 Score zero lag if needed, produce the standard background report, optionally
 score MDC detections at an IFAR threshold, and aggregate everything into the
-post-production HTML report.
+post-production HTML report. The report's background tab embeds only the
+images listed under ``bkg.plots`` and fills its zero-lag table from
+``bkg.zero_lag_csv``.
+See :ref:`postproduction_report` for every report section and the blind-analysis
+settings.
 
 .. code-block:: yaml
 
@@ -459,7 +463,7 @@ post-production HTML report.
        exclude_zero_lag: true
        far_rho_file: ${paths.far_rho_file}
        output_dir: ${paths.output_dir}
-       include_zero_lag: true
+       include_zero_lag: true           # opens the box; false while blind
        include_fake_openbox: true
 
    - id: postproduction_report
@@ -481,6 +485,14 @@ post-production HTML report.
          zero_lag_catalog_file: ${paths.bkg_zero_lag_scored}
          livetime: "@k21_bkg_split.far.livetime.seconds"
          ranking_par: rhor
+         zero_lag_csv: ${paths.output_dir}/zero_lag_triggers.csv   # omit while blind
+         plots:
+           - ${paths.output_dir}/far_rho.png
+           - ${paths.output_dir}/far_rho_n_events.png
+           - ${paths.output_dir}/zero_lag_report.png
+           - ${paths.output_dir}/zero_lag_poisson.png
+           - ${paths.output_dir}/fake_openbox_01_report.png
+           - ${paths.output_dir}/fake_openbox_01_poisson.png
        training:
          bkg_catalog: "@k21_bkg_split.train.triggers_file"
          sim_catalog: "@k21_sim_train_select.triggers_file"

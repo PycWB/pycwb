@@ -3,6 +3,9 @@
 Training Set Preparation
 ========================
 
+.. stage-nav:: postproduction
+   :current: training
+
 This guide explains how pycWB selects and prepares training data for the
 XGBoost ranking classifier, including background/simulation splitting
 strategies and injection matching.
