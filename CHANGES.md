@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Preserve Parquet list types across prediction-cut batches, including scored
-  catalogs with no surviving rows.
+  catalogs with no surviving rows. Keep zero-lag separation in the upstream
+  selection stage; training consumes its selected background unchanged and
+  the standard example disables redundant FAR lag filtering.
 - Reuse configured detector instances for injection arrival times, including
   external geometries. Already projected strains without sky coordinates keep
   their measured detector centroids instead of aborting reconstruction.

@@ -64,7 +64,6 @@ import xgboost as xgb
 from sklearn.model_selection import train_test_split
 
 from pycwb.post_production.action_spec import action_spec
-from pycwb.modules.postprocess.lag_filters import nonzero_lag_mask
 
 logger = logging.getLogger(__name__)
 
@@ -168,10 +167,9 @@ def train_xgboost(
     sdf = _read_and_concat(sim_paths, "SIM", columns=read_columns)
     bkg_rows_input = len(bdf)
     sim_rows_input = len(sdf)
-    if "lag_idx" in bdf.columns:
-        n_before = len(bdf)
-        bdf = bdf[nonzero_lag_mask(bdf)].reset_index(drop=True)
-        logger.info("Filtered BKG lag 0 for training: %d -> %d rows", n_before, len(bdf))
+    # Selection owns the zero-lag split and the corresponding exposure. Do not
+    # reinterpret regular lag indices after concatenating selected catalogs:
+    # a selected superlag can legitimately have regular lag_idx == 0.
     bkg_rows_after_lag_filter = len(bdf)
     bdf["classifier"] = 0
     sdf["classifier"] = 1

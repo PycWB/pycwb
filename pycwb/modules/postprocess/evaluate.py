@@ -320,7 +320,9 @@ def score_catalog(
 
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)
-    unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    unshifted_jobs = (
+        try_unshifted_job_ids_from_catalog(cat_path) if lag_selection != "all" else None
+    )
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     parquet_file = pq.ParquetFile(cat_path)
@@ -455,7 +457,9 @@ def evaluate_far_rho(
     """
     cat_path = _resolve_path(work_dir, catalog_file)
     model_path = _resolve_path(work_dir, model_file)
-    trigger_unshifted_jobs = try_unshifted_job_ids_from_catalog(cat_path)
+    trigger_unshifted_jobs = (
+        try_unshifted_job_ids_from_catalog(cat_path) if exclude_zero_lag else None
+    )
 
     clf = xgb.XGBClassifier()
     clf.load_model(model_path)

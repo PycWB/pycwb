@@ -140,6 +140,12 @@ JSON. The model includes:
 Inference (Scoring)
 -------------------
 
+Training consumes background catalogs already selected upstream. Perform the
+zero-lag split with ``trigger_selection`` before training or FAR estimation, as
+in ``examples/postproduction/standard_analysis_10pct_workflow.yaml``. For that
+selected FAR holdout, use ``exclude_zero_lag: false``; do not discard a selected
+superlag merely because its regular ``lag_idx`` is zero.
+
 Trained models are applied to new catalogs via the scoring actions:
 
 - :py:func:`~pycwb.modules.postprocess.evaluate.evaluate_far_rho` — score background for FAR

@@ -58,6 +58,32 @@ def test_prediction_cuts_preserve_batch_schema(tmp_path, model_file, energies):
     assert scored["coherent_energy"].to_pylist() == [e for e in energies if e > 7.2 ** 2]
 
 
+def test_already_selected_catalog_does_not_recheck_lags(tmp_path, model_file, monkeypatch):
+    source = tmp_path / "selected.parquet"
+    row = catalog_row(100.)
+    # This can be a nonzero superlag even though the regular lag index is zero.
+    row["segment_lag_H1"] = 10.
+    pd.DataFrame([row]).to_parquet(source, index=False)
+
+    def unexpected_filter(*args, **kwargs):
+        pytest.fail("The selection stage already separated zero lag")
+
+    monkeypatch.setattr(evaluate, "try_unshifted_job_ids_from_catalog", unexpected_filter)
+    monkeypatch.setattr(evaluate, "zero_lag_mask", unexpected_filter)
+    monkeypatch.setattr(evaluate, "nonzero_lag_mask", unexpected_filter)
+    result = evaluate.score_catalog(
+        str(tmp_path), str(source), model_file, output_file="scored.parquet",
+        lag_selection="all", batch_size=1,
+    )
+    assert result["n_scored"] == 1
+
+    # The FAR holdout in the example is already selected too.
+    result = evaluate.evaluate_far_rho(
+        str(tmp_path), str(source), model_file, livetime=100., exclude_zero_lag=False,
+    )
+    assert len(result["far_rho"]) == 1
+
+
 def test_null_optional_list_in_first_batch_keeps_source_type(tmp_path, model_file):
     source = tmp_path / "input.parquet"
     frame = pd.DataFrame([catalog_row(100.), catalog_row(100.)])

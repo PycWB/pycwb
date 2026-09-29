@@ -2,9 +2,11 @@
 import importlib
 import numpy as np
 import pandas as pd
+import pytest
 
 
-def test_configured_seed_controls_all_training_randomness(tmp_path, monkeypatch):
+@pytest.mark.parametrize("lag_idx", [0, 1])
+def test_configured_seed_controls_all_training_randomness(tmp_path, monkeypatch, lag_idx):
     train = importlib.import_module('pycwb.modules.postprocess.train_xgboost')
     config = importlib.import_module('pycwb.modules.cwb_xgboost.config')
     data = importlib.import_module('pycwb.modules.cwb_xgboost.read_data')
@@ -12,7 +14,9 @@ def test_configured_seed_controls_all_training_randomness(tmp_path, monkeypatch)
     seen = {}
     monkeypatch.setattr(config, 'xgb_config', lambda *a: ({'seed': 150914}, ['rho0'], {}, {'tail(training)': True}, {}))
     monkeypatch.setattr(train, '_xgb_required_input_columns', lambda *a, **k: None)
-    monkeypatch.setattr(train, '_read_and_concat', lambda *a, **k: pd.DataFrame({'rho0': np.arange(20)+8.}))
+    monkeypatch.setattr(train, '_read_and_concat', lambda *a, **k: pd.DataFrame({
+        'rho0': np.arange(20)+8., 'lag_idx': lag_idx,
+    }))
     monkeypatch.setattr(data, 'preprocess_events', lambda frame, *a: frame)
     def tail(frame, caps, seed):
         seen['tail'] = seed
