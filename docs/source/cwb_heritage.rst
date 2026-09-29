@@ -3,7 +3,8 @@
 Migration from cWB
 ==================
 
-pycWB is a Python implementation of the coherent WaveBurst (cWB/cWB-2G)
+pycWB is a Python implementation of the
+`coherent WaveBurst (cWB/cWB-2G) <https://gwburst.gitlab.io>`_
 search algorithms, the wavelet-based pipeline for unmodeled gravitational-wave
 transient searches. This page explains how public cWB documentation and
 ROOT/C++ cWB workflows map to the current pycWB documentation.

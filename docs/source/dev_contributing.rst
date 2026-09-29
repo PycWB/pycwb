@@ -14,7 +14,9 @@ process.
 Getting Started
 ---------------
 
-1. **Fork the repo** on LIGO GitLab.
+1. **Fork the repo** on `GitHub <https://github.com/PycWB/pycwb>`_ or
+   `LIGO GitLab <https://git.ligo.org/yumeng.xu/pycwb>`_. The repositories are
+   mirrored; contributors outside LVK can use GitHub without an LVK account.
 2. **Set up your dev environment** (:ref:`dev_setup`).
 3. **Find an issue** or propose a new feature.
 4. **Create a branch**: ``feature/<description>`` or ``fix/<description>``.
@@ -22,6 +24,9 @@ Getting Started
 
 Pull Request Workflow
 ---------------------
+
+Submit a pull request on GitHub or a merge request on LIGO GitLab after
+pushing your branch to your fork.
 
 .. code-block:: bash
 

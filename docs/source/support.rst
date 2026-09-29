@@ -3,17 +3,19 @@
 Help and Community
 ==================
 
-Public source and issues are hosted on
-`LIGO GitLab <https://git.ligo.org/yumeng.xu/pycwb>`_. Use an anonymous HTTPS
-clone for reading the source; an SSH key is not required for downloading it.
-Creating issues or merge requests may require an account.
+PycWB is hosted on `LIGO GitLab <https://git.ligo.org/yumeng.xu/pycwb>`_
+and `GitHub <https://github.com/PycWB/pycwb>`_, with the repositories mirrored.
+Contributors outside the LIGO–Virgo–KAGRA (LVK) collaboration can use GitHub
+to report issues and submit pull requests; no LVK account is needed.
+Both repositories can be cloned over HTTPS without an SSH key.
 
 Ask a question or report a problem
 ----------------------------------
 
-Use the `issue tracker <https://git.ligo.org/yumeng.xu/pycwb/-/issues>`_ when
-you have access. If you cannot access it or do not have a collaboration account,
-email the package contact at `yumeng.xu@ligo.org <mailto:yumeng.xu@ligo.org>`_.
+Use `GitHub issues <https://github.com/PycWB/pycwb/issues>`_ or
+`GitLab issues <https://git.ligo.org/yumeng.xu/pycwb/-/issues>`_.
+If you cannot access either tracker, email the package contact at
+`yumeng.xu@ligo.org <mailto:yumeng.xu@ligo.org>`_.
 You do not need access to LIGO Slack to report a problem. No response-time
 commitment is currently advertised.
 
@@ -33,7 +35,8 @@ Contribute
 ----------
 
 Documentation fixes, reproducible bug reports, installation reports and tests
-are useful contributions. See :ref:`dev_contributing`. Start with a small
+are useful contributions. Submit a pull request on GitHub or a merge request
+on LIGO GitLab; see :ref:`dev_contributing`. Start with a small
 change and explain the user-facing behavior it improves. Be respectful and
 constructive; critique the work rather than the person.
 
