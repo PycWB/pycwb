@@ -7,7 +7,7 @@ import time
 
 from pycwb.types.time_series import TimeSeries as PycwbTimeSeries
 from ..cwb_conversions import convert_to_wavearray, convert_wavearray_to_timeseries
-from ..job_segment import WaveSegment
+from pycwb.types.job import WaveSegment
 
 logger = logging.getLogger(__name__)
 
