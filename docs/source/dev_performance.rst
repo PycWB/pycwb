@@ -61,8 +61,10 @@ with a different profile is rejected. Catalogs created before profiles were
 recorded require a new run; historical environment switches cannot be recovered
 reliably from those catalogs.
 
-The old ``PYCWB_*`` execution and ``WDM_*`` transform environment switches are no
-longer read. Installation paths such as ``HOME_WAT_FILTERS`` and external library
+The old ``PYCWB_*`` execution and ``WDM_*`` transform environment switches no
+longer control processing. Configuration loading warns when recognized retired
+switches are set and names their YAML replacements. Installation paths such as
+``HOME_WAT_FILTERS`` and external library
 thread counts/device visibility remain outside this profile. The scheduler or
 launcher still controls CPU/GPU allocation.
 

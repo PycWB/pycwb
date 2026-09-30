@@ -113,6 +113,55 @@ def test_numba_backend_selection_ignores_environment(monkeypatch):
     assert _max_energy_backend(SimpleNamespace(max_energy_backend="jax")) == "jax"
 
 
+@pytest.mark.parametrize("loader", ["yaml", "dict"])
+def test_config_warns_about_ignored_legacy_switches(loader, tmp_path, monkeypatch, caplog):
+    from pycwb.config.legacy_environment import _REPLACEMENTS
+
+    for name in _REPLACEMENTS:
+        monkeypatch.delenv(name, raising=False)
+    for method in ("add_derived_key", "check_xtalk_file", "check_MRA_catalog",
+                   "check_lagStep", "check_analyze_injection_only"):
+        monkeypatch.setattr(Config, method, lambda *args: None)
+    monkeypatch.setattr(Config, "MRAcatalog", "", raising=False)
+    monkeypatch.setenv("PYCWB_REGRESSION_ENGINE", "jax")
+    monkeypatch.setenv("PYCWB_MAX_ENERGY_BACKEND", "numba")
+    monkeypatch.setenv("PYCWB_GPU_LIKELIHOOD", "1")
+    monkeypatch.setenv("WDM_BOUNDED_NUMBA", "1")
+    monkeypatch.setenv("PYCWB_DOCS_OFFLINE", "1")
+    monkeypatch.setenv("PYCWB_DEMO_XTALK", "active-test-setting")
+    config = Config()
+    if loader == "yaml":
+        path = tmp_path / "config.yaml"
+        path.write_text("analysis: 2G\nifo: [H1, L1]\nrefIFO: L1\n")
+        config.load_from_yaml(path)
+    else:
+        config.load_from_dict({})
+    assert config.execution_profile.regression_engine == "numba"
+    assert config.max_energy_backend == "jax"
+    assert not config.execution_profile.wdm_bounded_numba
+    assert not config.gpu.likelihood
+    messages = [record.message for record in caplog.records
+                if record.name == "pycwb.config.legacy_environment"]
+    assert len(messages) == 1
+    assert "PYCWB_REGRESSION_ENGINE (use YAML execution_profile.regression_engine)" in messages[0]
+    assert "PYCWB_MAX_ENERGY_BACKEND (use YAML max_energy_backend)" in messages[0]
+    assert "WDM_BOUNDED_NUMBA (use YAML execution_profile.wdm_bounded_numba)" in messages[0]
+    assert "PYCWB_GPU_LIKELIHOOD (use YAML gpu.likelihood)" in messages[0]
+    assert "PYCWB_DOCS_OFFLINE" not in messages[0]
+    assert "PYCWB_DEMO_XTALK" not in messages[0]
+
+
+def test_active_environment_controls_do_not_warn(monkeypatch, caplog):
+    from pycwb.config.legacy_environment import _REPLACEMENTS, warn_legacy_environment
+
+    for name in _REPLACEMENTS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PYCWB_DEMO_XTALK", "test-catalog")
+    monkeypatch.setenv("PYCWB_DOCS_OFFLINE", "1")
+    warn_legacy_environment()
+    assert not caplog.records
+
+
 def test_wdm_options_and_reconstruction_cache_are_profile_specific(monkeypatch):
     from pycwb.modules.reconstruction.getMRAwaveform import _create_wdm_set_python
 
