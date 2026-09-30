@@ -1,5 +1,6 @@
 import os
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 
 import yaml
@@ -67,7 +68,11 @@ def copy_user_parameters(user_parameters_path):
     print(f"Copied {file_to_copy} to {destination_file}")
 
 
-def configure_downloaded_frames(parameter_file, input_dir, ifos):
+def configure_downloaded_frames(
+    parameter_file: str | os.PathLike[str],
+    input_dir: str | os.PathLike[str],
+    ifos: Sequence[str],
+) -> None:
     """Match the bundled template to the actual 4 kHz GWOSC frame release."""
     from gwpy.io.gwf import get_channel_names
 

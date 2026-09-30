@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from gwosc.datasets import event_gps, event_detectors
 from math import ceil, floor
 from gwosc.locate import get_urls
@@ -5,7 +7,12 @@ from gwosc.timeline import get_segments
 import os
 import requests
 
-def event_info(event_name, ifos, time_left=610, time_right=610):
+def event_info(
+    event_name: str,
+    ifos: Sequence[str],
+    time_left: float = 610,
+    time_right: float = 610,
+) -> tuple[list[str], float, int, int]:
     """
     Retrieve key information about the specified gravitational wave event.
 
@@ -34,7 +41,13 @@ def event_info(event_name, ifos, time_left=610, time_right=610):
 
     return detectors, event_gps_time, start_time, end_time
 
-def download_frames_files(event_name, output_dir, ifos, time_left=610, time_right=610):
+def download_frames_files(
+    event_name: str,
+    output_dir: str | os.PathLike[str],
+    ifos: Sequence[str],
+    time_left: float = 610,
+    time_right: float = 610,
+) -> None:
     """
     Download frame files for the given gravitational wave event and save a list of their paths.
 
@@ -83,7 +96,13 @@ def download_frames_files(event_name, output_dir, ifos, time_left=610, time_righ
 
         print(f"Frame list saved to {frame_list_file}")
 
-def get_cat_files(event_name, output_dir, ifos, time_left=610, time_right=610):
+def get_cat_files(
+    event_name: str,
+    output_dir: str | os.PathLike[str],
+    ifos: Sequence[str],
+    time_left: float = 610,
+    time_right: float = 610,
+) -> None:
     """
     Generate files containing Data Quality (DQ) segments for the given gravitational wave event.
 
