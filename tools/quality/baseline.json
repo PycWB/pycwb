@@ -1012,7 +1012,6 @@
   "typing|pycwb/types/wdm_xtalk.py|WDMXTalkCatalog.n_res|return": 1,
   "typing|pycwb/types/wdm_xtalk.py|WDMXTalkCatalog.precision|return": 1,
   "typing|pycwb/types/wdm_xtalk.py|WDMXTalkCatalog.tag|return": 1,
-  "typing|pycwb/utils/async_write.py|write_file|data,filename,mode,return": 1,
   "typing|pycwb/utils/check_ROOT.py|check_and_load_wavelet|ROOT,return": 1,
   "typing|pycwb/utils/conversions/timeseries.py|convert_to_pycbc_timeseries|lal_ts,return": 1,
   "typing|pycwb/utils/dataclass_object_io.py|load_dataclass_from_json|dataclass_object,input_file,return": 1,

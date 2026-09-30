@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=77", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "PycWB"
 description = "A Python package for coherent gravitational wave burst analysis"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [
     {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
@@ -19,13 +20,13 @@ dependencies = [
     "astropy",
     "pyyaml",
     "jsonschema",
-    "watchfiles",
     "numba",
     "jax",
     "gwpy",
-    "ligo-segments",
+    "gwosc",
+    "gwdatafind",
+    "requests",
     "ligo-gracedb",
-    "aiohttp",
     "filelock",
     "numpy>=2",
     "scipy>=1.13",
@@ -43,7 +44,6 @@ dependencies = [
     "htcondor",
     "psutil",
     "memspectrum",
-    "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
     "wdm-wavelet>=0.4.0",
@@ -76,7 +76,15 @@ include-package-data = true
 script-files = ["bin/pycwb"]
 
 [tool.setuptools.packages.find]
+# Without include, namespace discovery installs every top-level directory
+# (tests, tools, benchmark, ...) into site-packages. Tests stay in the sdist.
 where = ["."]
+include = ["pycwb", "pycwb.*"]
+exclude = ["pycwb.tests", "pycwb.tests.*", "pycwb.*.tests", "pycwb.*.tests.*"]
+
+[tool.setuptools.exclude-package-data]
+# include-package-data would otherwise ship excluded test directories as data.
+"*" = ["tests/*", "tests/**/*"]
 
 [tool.pytest.ini_options]
 markers = [
