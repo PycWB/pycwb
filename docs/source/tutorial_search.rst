@@ -55,7 +55,7 @@ factories. Cluster scripts select explicit groups using stable batch IDs.
 ``batch-setup`` stores each planned group in a catalog fragment before
 submission. Batch runners read their job selection from that fragment.
 
-Use ``preload: off`` to compare direct reads, or ``preload: batch`` to attempt
+Use ``preload: "off"`` (quoted, because YAML reads bare ``off`` as false) to compare direct reads, or ``preload: batch`` to attempt
 bounded loading of a whole group's reusable inputs. Oversized entries fall back
 to direct reads. Plans and resource measurements from scalable execution are
 saved under the run's ``execution`` directory. Keep scientific configuration and

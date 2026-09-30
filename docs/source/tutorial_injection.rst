@@ -67,13 +67,18 @@ the configured waveform into each detector stream:
        for i, strain in enumerate(injected):
            data[i].inject(strain, copy=False)
 
-Use the data-conditioning module to whiten the data. It returns the conditioned
+Resample to the analysis rate before conditioning; the example uses
+``levelR: 3``. This walkthrough injects before resampling, whereas the segment
+workflow resamples target-SNR injections separately (see below). The
+data-conditioning module then whitens the data and returns the conditioned
 strains and the nRMS maps used by the later stages:
 
 .. code-block:: python
 
    from pycwb.modules.data_conditioning import condition_strains
+   from pycwb.modules.read_data.data_check import check_and_resample_py
 
+   data = [check_and_resample_py(strain, config, i) for i, strain in enumerate(data)]
    strains, nRMS = condition_strains(config, data)
 
 The native production path then performs setup once and reuses it for each
@@ -87,7 +92,7 @@ time-slide lag:
    from pycwb.modules.xtalk.type import XTalk
    from pycwb.utils.td_vector_batch import build_td_inputs_cache
 
-   coherence_setup = setup_coherence(config, strains, job_seg=job_segment)
+   coherence_setup = setup_coherence(config, strains, job_seg=job_segment, nRMS=nRMS)
    td_inputs_cache = build_td_inputs_cache(config, strains)
    supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
    likelihood_setup = prepare_likelihood_inputs(
@@ -109,13 +114,15 @@ time-slide lag:
        xtalk=xtalk,
        td_inputs_cache=td_inputs_cache,
    )
+   # None means that no supercluster survived for this lag.
+   clusters = [] if selected_clusters is None else selected_clusters.clusters
 
 Finally, calculate likelihood statistics for accepted clusters:
 
 .. code-block:: python
 
    accepted = []
-   for cluster_id, cluster in enumerate(selected_clusters.clusters, start=1):
+   for cluster_id, cluster in enumerate(clusters, start=1):
        if cluster.cluster_status > 0:
            continue
        result_cluster, sky_stats = evaluate_cluster_likelihood(

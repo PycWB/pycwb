@@ -112,10 +112,12 @@ stored below that ID, and a later step can read it with ``@step.path``:
 .. code-block:: yaml
 
    inputs:
-     catalog_file: "@far.scored_catalog"
+     catalog_file: "@bkg_split.far.triggers_file"
 
-The reference is to a **returned key**, not merely to the name written in the
-earlier step's ``outputs`` block.  The steps still execute in YAML order; the
+Here ``bkg_split`` is a ``trigger_selection`` split step whose ``far``
+partition wrote ``triggers_file``. The reference is to a **returned key**, not
+merely to the name written in the earlier step's ``outputs`` block; for
+example, ``evaluate_far_rho`` returns only ``far_rho`` and ``binned``.  The steps still execute in YAML order; the
 DAG diagram visualizes dependencies but does not reorder them.
 
 Use ``${name}`` or ``${nested.name}`` for values under ``vars``.  A whole-value
