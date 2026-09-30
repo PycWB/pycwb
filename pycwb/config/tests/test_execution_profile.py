@@ -125,6 +125,7 @@ def test_config_warns_about_ignored_legacy_switches(loader, tmp_path, monkeypatc
     monkeypatch.setattr(Config, "MRAcatalog", "", raising=False)
     monkeypatch.setenv("PYCWB_REGRESSION_ENGINE", "jax")
     monkeypatch.setenv("PYCWB_MAX_ENERGY_BACKEND", "numba")
+    monkeypatch.setenv("PYCWB_COHERENCE_TIMING", "1")
     monkeypatch.setenv("PYCWB_GPU_LIKELIHOOD", "1")
     monkeypatch.setenv("WDM_BOUNDED_NUMBA", "1")
     monkeypatch.setenv("PYCWB_DOCS_OFFLINE", "1")
@@ -138,6 +139,7 @@ def test_config_warns_about_ignored_legacy_switches(loader, tmp_path, monkeypatc
         config.load_from_dict({})
     assert config.execution_profile.regression_engine == "numba"
     assert config.max_energy_backend == "jax"
+    assert not getattr(config, "coherence_timing", False)
     assert not config.execution_profile.wdm_bounded_numba
     assert not config.gpu.likelihood
     messages = [record.message for record in caplog.records
@@ -145,6 +147,7 @@ def test_config_warns_about_ignored_legacy_switches(loader, tmp_path, monkeypatc
     assert len(messages) == 1
     assert "PYCWB_REGRESSION_ENGINE (use YAML execution_profile.regression_engine)" in messages[0]
     assert "PYCWB_MAX_ENERGY_BACKEND (use YAML max_energy_backend)" in messages[0]
+    assert "PYCWB_COHERENCE_TIMING (use YAML coherence_timing)" in messages[0]
     assert "WDM_BOUNDED_NUMBA (use YAML execution_profile.wdm_bounded_numba)" in messages[0]
     assert "PYCWB_GPU_LIKELIHOOD (use YAML gpu.likelihood)" in messages[0]
     assert "PYCWB_DOCS_OFFLINE" not in messages[0]

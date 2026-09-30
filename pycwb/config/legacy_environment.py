@@ -18,9 +18,12 @@ _REPLACEMENTS.update({
     f"PYCWB_GPU_{field.name.upper()}": f"gpu.{field.name}"
     for field in fields(GPUOptions)
 })
+# Released switches whose replacements are top-level YAML keys. v1.1.0a3 read
+# these and PYCWB_REGRESSION_ENGINE, PYCWB_REGRESSION_PERCENTILE_STRIDE and
+# PYCWB_NUMBA_MAX_ENERGY_MODE; the remaining names were development-only.
 _REPLACEMENTS.update({
     "PYCWB_MAX_ENERGY_BACKEND": "max_energy_backend",
-    "PYCWB_COHERENCE_TIMING": "execution_profile.perf_diagnostics",
+    "PYCWB_COHERENCE_TIMING": "coherence_timing",
 })
 
 

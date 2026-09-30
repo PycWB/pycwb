@@ -20,10 +20,27 @@ Environment and prepared runs
   directory supplies the missing provenance.
 * Current workers load YAML and check analysis settings against the saved
   snapshot. Submission memory, disk and walltime can change on resubmission.
-* Move retired processing environment switches into YAML. For example,
-  ``PYCWB_REGRESSION_ENGINE`` becomes ``execution_profile.regression_engine``,
-  ``WDM_BOUNDED_NUMBA`` becomes ``execution_profile.wdm_bounded_numba``, and
-  ``PYCWB_GPU_LIKELIHOOD`` becomes ``gpu.likelihood``. Config loading warns
+* Move retired processing environment switches into YAML. The switches read by
+  v1.1.0a3 become:
+
+  .. list-table::
+     :header-rows: 1
+
+     * - Environment switch
+       - YAML setting
+     * - ``PYCWB_REGRESSION_ENGINE``
+       - ``execution_profile.regression_engine``
+     * - ``PYCWB_REGRESSION_PERCENTILE_STRIDE``
+       - ``execution_profile.regression_percentile_stride``
+     * - ``PYCWB_NUMBA_MAX_ENERGY_MODE``
+       - ``execution_profile.numba_max_energy_mode``
+     * - ``PYCWB_MAX_ENERGY_BACKEND``
+       - ``max_energy_backend``
+     * - ``PYCWB_COHERENCE_TIMING``
+       - ``coherence_timing``
+
+  Development-only ``PYCWB_*``, ``WDM_*`` and ``PYCWB_GPU_*`` switches map to
+  the matching ``execution_profile`` or ``gpu`` field. Config loading warns
   about recognized retired switches but never applies their values. See
   :ref:`execution_profile_options` for the available settings.
 * Scheduler scripts allocate parallel batch workers, with one processing thread
