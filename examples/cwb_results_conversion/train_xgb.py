@@ -29,8 +29,7 @@ import logging
 import os
 import sys
 
-# ── use local pyBurst source ───────────────────────────────────────────────────
-sys.path.insert(0, "/Users/yumengxu/Project/Physics/cwb/pyBurst")
+# Use the PycWB package installed in the active Python environment.
 
 from pycwb.modules.cwb_xgboost import (
     load_flat_parquet,

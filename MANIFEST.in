@@ -1,7 +1,4 @@
-include bin/*
-include cwb_wrapper/vendor/*
 include cwb-core/*
-include cwb-core/cmake
 recursive-include pycwb/vendor *
 recursive-include pycwb/modules/postprocess/templates *
 include pycwb/modules/*/module.yaml
@@ -14,6 +11,23 @@ include CITATION.cff
 recursive-include pycwb/modules/coherence_gpu *.cu
 recursive-include pycwb/modules/super_cluster_gpu *.cu
 recursive-include pycwb/modules/likelihood_gpu *.cu
+
+# The documentation and its media are built by Read the Docs from the
+# repository, and examples are used from a checkout; neither is needed to
+# build or install the package.
+prune docs
+prune examples
+
+# Development-only material: benchmarks, prototypes, quality and container
+# tooling, CI configuration, and notebooks or media not used by the tests.
+prune benchmark
+prune prototypes
+prune tools
+prune envs
+prune .gitlab
+prune tests/sample
+prune tests/logo
+exclude .gitlab-ci.yml .readthedocs.yaml Dockerfile
 
 # Runtime/benchmark caches are machine-local, never source or wheel assets.
 global-exclude *.py[cod] *.nbc *.nbi

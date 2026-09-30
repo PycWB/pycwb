@@ -8,25 +8,29 @@ PycWB support multiple sky distribution types to place the injected signal on th
 
 ```yaml
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   seed: 150914
   parameters_from_python:
-    function: "./injection_parameters.get_injection_parameters"
+    function: ./injection_parameters.get_injection_parameters
   repeat_injection: 20
   sky_distribution:
     type: Patch
+    coordsys: icrs
     patch:
-      unit: 'deg'
       center:
-        ra: 0.0
-        dec: 90.0
-      radius: 5.0
+        ra: 0 deg
+        dec: 90 deg
+      radius: 5 deg
   time_distribution:
-    type: 'rate'
+    type: rate
     rate: 1/100
     jitter: 30
   noise:
-    type: "GaussianNoise"
-    delta_seeds: 
+    type: GaussianNoise
+    psds:
+      H1: input/aligo_O4high.txt
+      L1: input/aligo_O4high.txt
+    delta_seeds:
       H1: 10
       L1: 20
 ```
@@ -51,7 +55,7 @@ The injected signal is 36-29 solar mass binary black hole similar to GW150914, w
 }
 ```
 
-The `t_start` and `t_end` are the estimated start time and end time relative to the `t0` given by the waveform generator (`pycbc.get_td_waveform` by default). These are used to estimate the start gps time and end gps time of the injection, to place the injection correctly in the job segments. It is ok to overestimate the `t_start` and `t_end`, but it should not be underestimated, otherwise some injections may be missed.
+The `t_start` and `t_end` are the estimated start time and end time relative to the `t0` given by the waveform generator (the configured waveform generator; the default is the LALSuite gwsignal adapter). These are used to estimate the start gps time and end gps time of the injection, to place the injection correctly in the job segments. It is ok to overestimate the `t_start` and `t_end`, but it should not be underestimated, otherwise some injections may be missed.
 
 
 ## Run the search

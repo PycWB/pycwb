@@ -63,6 +63,8 @@ vars:
     # --- Training background catalogs ---
     train_bkg_1_catalog: ${roots.bkg}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_BKG_tst1/catalog/catalog.parquet
     train_bkg_2_catalog: ${roots.bkg}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_BKG_tst1/catalog/catalog.parquet
+    train_bkg_1_progress: ${roots.bkg}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_BKG_tst1/catalog/progress.parquet
+    train_bkg_2_progress: ${roots.bkg}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_BKG_tst1/catalog/progress.parquet
 
     # --- Target background (will be split train/FAR) ---
     target_bkg_catalog: ${roots.bkg}/O4_${chunks.target}_C00_BurstLF_LH_BKG_tst2/catalog/catalog.parquet
@@ -71,6 +73,8 @@ vars:
     # --- Training simulation catalogs ---
     train_sim_1_catalog: ${roots.sim}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
     train_sim_2_catalog: ${roots.sim}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
+    train_sim_1_simulations: ${roots.sim}/O4_${chunks.train_bkg_1}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/simulations.parquet
+    train_sim_2_simulations: ${roots.sim}/O4_${chunks.train_bkg_2}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/simulations.parquet
     target_sim_train_catalog: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/catalog.parquet
     target_sim_train_progress: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/progress.parquet
     target_sim_train_simulations: ${roots.sim}/O4_${chunks.target}_C00_BurstLF_LH_SIM_Training_Set1_tst5/catalog/simulations.parquet
@@ -179,6 +183,82 @@ steps:
       jobs_file: tmp://target_sim_train_jobs.txt
       triggers_file: tmp://target_sim_train.parquet
 
+  # Training uses its inputs as given: remove zero lag from the full training
+  # chunks and keep only clean recovered SIM triggers, as for the target.
+  - id: train_bkg_1_select
+    name: Select Training Background 1 (No Zero Lag)
+    action: postprocess.selection.trigger_selection
+    inputs:
+      catalog_file: ${paths.train_bkg_1_catalog}
+      progress_file: ${paths.train_bkg_1_progress}
+    args:
+      exclude_zero_lag: true
+      returns: [triggers, livetime]
+    outputs:
+      triggers_file: tmp://train_bkg_1.parquet
+
+  - id: train_bkg_2_select
+    name: Select Training Background 2 (No Zero Lag)
+    action: postprocess.selection.trigger_selection
+    inputs:
+      catalog_file: ${paths.train_bkg_2_catalog}
+      progress_file: ${paths.train_bkg_2_progress}
+    args:
+      exclude_zero_lag: true
+      returns: [triggers, livetime]
+    outputs:
+      triggers_file: tmp://train_bkg_2.parquet
+
+  - id: train_sim_1_match
+    name: Match Training SIM 1
+    action: postprocess.matching.match_simulations
+    inputs:
+      catalog_file: ${paths.train_sim_1_catalog}
+      simulation_file: ${paths.train_sim_1_simulations}
+    args:
+      how: outer
+      window_buffer: 0.0
+    outputs:
+      output_file: tmp://train_sim_1_matched_outer.parquet
+
+  - id: train_sim_1_real
+    name: Filter Training SIM 1 (Recovered + Non-Vetoed Only)
+    action: postprocess.selection.filter_real_simulation
+    inputs:
+      matched_file: "@train_sim_1_match.matched_file"
+      sim_catalog: ${paths.train_sim_1_catalog}
+    args:
+      require_recovered: true
+      exclude_vetoed: true
+      output_schema: matched
+    outputs:
+      output_file: tmp://train_sim_1_real.parquet
+
+  - id: train_sim_2_match
+    name: Match Training SIM 2
+    action: postprocess.matching.match_simulations
+    inputs:
+      catalog_file: ${paths.train_sim_2_catalog}
+      simulation_file: ${paths.train_sim_2_simulations}
+    args:
+      how: outer
+      window_buffer: 0.0
+    outputs:
+      output_file: tmp://train_sim_2_matched_outer.parquet
+
+  - id: train_sim_2_real
+    name: Filter Training SIM 2 (Recovered + Non-Vetoed Only)
+    action: postprocess.selection.filter_real_simulation
+    inputs:
+      matched_file: "@train_sim_2_match.matched_file"
+      sim_catalog: ${paths.train_sim_2_catalog}
+    args:
+      require_recovered: true
+      exclude_vetoed: true
+      output_schema: matched
+    outputs:
+      output_file: tmp://train_sim_2_real.parquet
+
   # ────────────────────────────────────────────────────────────────────────
   # Phase 2: TRAINING — Train the XGBoost ranking model
   # ────────────────────────────────────────────────────────────────────────
@@ -188,12 +268,12 @@ steps:
     action: postprocess.train_xgboost.train_xgboost
     inputs:
       bkg_catalogs:
-        - ${paths.train_bkg_1_catalog}
-        - ${paths.train_bkg_2_catalog}
+        - "@train_bkg_1_select.triggers_file"
+        - "@train_bkg_2_select.triggers_file"
         - "@target_bkg_split.train.triggers_file"
       sim_catalogs:
-        - ${paths.train_sim_1_catalog}
-        - ${paths.train_sim_2_catalog}
+        - "@train_sim_1_real.triggers_file"
+        - "@train_sim_2_real.triggers_file"
         - "@target_sim_train_select.triggers_file"
       config_file: ${paths.config_file}
     args:

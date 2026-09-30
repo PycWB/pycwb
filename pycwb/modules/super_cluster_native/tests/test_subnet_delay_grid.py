@@ -47,6 +47,25 @@ def test_likelihood_keeps_fine_delay_grid():
     assert setup["K_td"] == 165
 
 
+@pytest.mark.parametrize("rate", [1024, 2048, 4096, 8192])
+@pytest.mark.parametrize("upsampling", [1, 2, 4, 8])
+def test_both_sky_grids_fit_time_delay_buffers(rate, upsampling):
+    cfg = config(upsampling, 4)
+    cfg.rateANA = rate
+    cfg.TDRate = rate * upsampling
+    setup = setup_supercluster(cfg, 1387221730)
+    half_width = setup["K_td"]
+    for key in ("ml", "ml_likelihood"):
+        indices = setup[key] + half_width
+        assert indices.min() >= 0
+        assert indices.max() < 2 * half_width + 1
+    # Staged TD extraction samples the same buffer at analysis-rate steps.
+    coarse_half_width = half_width // upsampling
+    coarse_indices = setup["ml"] // upsampling + coarse_half_width
+    assert coarse_indices.min() >= 0
+    assert coarse_indices.max() < 2 * coarse_half_width + 1
+
+
 def _config(**kwargs):
     result = Config()
     result.load_from_dict(kwargs)

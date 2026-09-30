@@ -3,11 +3,14 @@
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+# The installed ``pycwb`` executable calls this [project.scripts] target.
+SCRIPT_TARGET = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["scripts"]["pycwb"]
 
 
 def run_entrypoint(entrypoint, prelude, arguments):
@@ -15,7 +18,9 @@ def run_entrypoint(entrypoint, prelude, arguments):
     if entrypoint == "module":
         code += "runpy.run_module('pycwb', run_name='__main__')\n"
     else:
-        code += f"runpy.run_path({str(ROOT / 'bin/pycwb')!r}, run_name='__main__')\n"
+        module, function = SCRIPT_TARGET.split(":")
+        code += (f"import importlib\n"
+                 f"sys.exit(getattr(importlib.import_module({module!r}), {function!r})())\n")
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         filter(None, [str(ROOT), env.get("PYTHONPATH")])
@@ -34,8 +39,8 @@ def run_entrypoint(entrypoint, prelude, arguments):
 def test_shell_receives_command_status(entrypoint, status, expected):
     result = run_entrypoint(
         entrypoint,
-        f"import pycwb.cli.validate\npycwb.cli.validate.command = lambda args: {status!r}",
-        ["validate", "unused.yaml"],
+        f"import pycwb.cli.run\npycwb.cli.run.command = lambda args: {status!r}",
+        ["run", "unused.yaml"],
     )
     assert result.returncode == expected, result.stderr
 

@@ -3,50 +3,55 @@
 Releases and Compatibility
 ==========================
 
-Match software, examples and documentation
-------------------------------------------
+Release versions
+----------------
 
-``latest`` documentation is built from the development checkout. Stable and
-prerelease documentation should be built from the corresponding Git tags. The
-page title contains the checkout's package version. Until a tagged build is
-published, use the source checkout for newly documented features.
+.. raw:: html
 
-``pip install pycwb`` normally selects a stable release. ``--pre`` allows
-prereleases; an explicit ``pycwb==VERSION`` selects a recorded version. Consult
-`PyPI <https://pypi.org/project/PycWB/#history>`_ for available versions, then
-follow that release's requirements. Never infer compatibility from the word
-"latest" across PyPI, documentation and container tags.
+   <span id="match-software-examples-and-documentation"></span>
 
-Release checklist for maintainers
----------------------------------
+The ``latest`` documentation follows development. For a released version,
+select its documentation in the version menu. Available releases are listed
+in the `PyPI release history <https://pypi.org/project/PycWB/#history>`_.
 
-1. Update ``CHANGES.md`` with user-visible changes, known limitations and upgrade
-   instructions, including scientific behavior changes.
-2. Run the regular tests, strict documentation build and standalone recovery example. Record
-   which numerical reference comparisons were run and their outcome.
-3. Verify a clean installation from the built wheel/source distribution,
-   including packaged templates. Check version reporting outside the checkout.
-4. Create the release tag using the existing release process. The GitLab tag
-   pipeline builds and publishes the source distribution; avoid a second manual
-   upload of the same version.
-5. Enable the tag's documentation build in Read the Docs, retain older release
-   documentation, and point the stable alias only at a stable release.
-6. Publish release notes and, when available, an immutable software archive/DOI.
-   Document container tags and digests that were actually built and tested.
+.. _release-checklist-for-maintainers:
 
-Enabling hosted documentation versions and publishing archives are maintainer
-service settings; changing the repository alone does not publish a release.
+Maintainers: follow :doc:`dev_release` for the release checklist, publication
+steps, and hosted documentation settings.
+
+.. _installation_release_channels:
+
+Choose a release channel
+------------------------
+
+**Stable release:** install the latest stable package from PyPI.
+
+.. code-block:: bash
+
+   python -m pip install pycwb
+   pycwb --version
+
+**Prerelease:** include ``--pre`` to install alpha and other prereleases.
+
+.. code-block:: bash
+
+   python -m pip install --pre pycwb
+   pycwb --version
+
+To install a specific version, use ``python -m pip install pycwb==VERSION``.
+See :doc:`install` for environment setup and optional dependencies.
 
 Compatibility changes
 ---------------------
 
-Document CLI, YAML, Python API and output-format changes separately. For each
-breaking change, provide an old/new example and state whether existing runs can
-be resumed or must be regenerated. Scientific changes such as detector geometry,
-normalization, thresholds or matching conventions need explicit release notes
-even when the file format is unchanged.
+Read ``CHANGES.md`` for changes to commands, configuration and output formats.
+Catalog and job-manifest compatibility is described in :doc:`catalog_format`.
 
-The project does not yet promise a fixed deprecation-support interval or a
-stable interface for every internal module. Prefer documented workflow APIs;
-record exact revisions for custom integrations. Existing catalog compatibility
-rules are described in :ref:`postproduction`.
+For the current upgrade instructions, see :ref:`migration`.
+
+.. toctree::
+   :maxdepth: 1
+
+   migration
+
+Use the documented interfaces in :doc:`reference` when writing integrations.

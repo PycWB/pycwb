@@ -6,10 +6,7 @@ from importlib import import_module
 from pycwb import __version__
 
 COMMANDS = (
-    ("doctor", "doctor", "Report interpreter, platform and installed package versions"),
-    ("validate", "validate", "Check configuration syntax without downloading data"),
     ("run", "run", "Run search"),
-    ("flow", "flow", "Run search through the Prefect wrapper"),
     ("batch-setup", "batch_setup", "Set up batch run"),
     ("config-setup", "config_setup", "Set up project configuration and batch jobs"),
     ("clone-dir", "clone_dir", "Clone a directory to a new location"),

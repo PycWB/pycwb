@@ -1,7 +1,8 @@
 from pyseobnr.generate_waveform import GenerateWaveform
+from pycwb.types.time_series import TimeSeries
 
 
-def waveform_generator(mass1, mass2, spin1x, spin1y, spin1z, spin2x, spin2y, spin2z, distance, inclination, polarization, coa_phase,
+def waveform_generator(mass1, mass2, spin1x, spin1y, spin1z, spin2x, spin2y, spin2z, distance, inclination, coa_phase,
                        f_lower, delta_t, **kwargs):
     parameters = {
         'mass1': mass1,
@@ -14,8 +15,8 @@ def waveform_generator(mass1, mass2, spin1x, spin1y, spin1z, spin2x, spin2y, spi
         'spin2z': spin2z,
         'distance': distance,
         'inclination': inclination,
-        'polarization': polarization,
-        'coa_phase': coa_phase,
+        # Sky polarization is applied by PycWB's detector projection.
+        'phi_ref': coa_phase,
         'f_ref': f_lower,
         'f22_start': f_lower,
         'deltaT': delta_t,
@@ -24,5 +25,10 @@ def waveform_generator(mass1, mass2, spin1x, spin1y, spin1z, spin2x, spin2y, spi
     wfm_gen = GenerateWaveform(parameters)
     hp, hc = wfm_gen.generate_td_polarizations_conditioned_2()
 
-    return hp, hc
-
+    # pySEOBNR returns LAL REAL8TimeSeries; the injection API takes native,
+    # GWpy or PyCBC time series. Preserve the epoch and sampling explicitly.
+    return {
+        "type": "polarizations",
+        "hp": TimeSeries(data=hp.data.data.copy(), t0=float(hp.epoch), dt=hp.deltaT),
+        "hc": TimeSeries(data=hc.data.data.copy(), t0=float(hc.epoch), dt=hc.deltaT),
+    }

@@ -3,7 +3,8 @@
 Job Control
 ===========
 
-.. rubric:: Pipeline: :doc:`data <pipeline_lifecycle>` → **[jobs & segments]** ← you are here → :doc:`conditioning <pipeline_lifecycle>` → :doc:`WDM <pipeline_lifecycle>` → :doc:`pixels <clustering_algorithm>` → :doc:`clusters <clustering_algorithm>` → :doc:`likelihood <likelihood_guide>` → :doc:`events <pipeline_lifecycle>` → :doc:`bkg <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → :doc:`eff <postproduction_efficiency>`
+.. stage-nav:: search
+   :current: segments
 
 This guide explains how pycWB defines and manages analysis jobs, including the
 lag/slag structure, trial indexing, segment construction from data-quality
@@ -49,10 +50,13 @@ Job Segment Construction
 
 pycWB supports five modes for defining job segment time windows:
 
-1. **Pure Simulation** — no real data; segments defined solely by injection
-   times. Used for waveform injection studies with synthetic noise.
+1. **Pure Simulation** (deprecated) — no ``DQF`` entries and no period are
+   given. Segments come from ``injection.segment.start`` / ``end`` and the
+   ``simulation`` mode (``all_inject_in_one_segment`` or
+   ``one_inject_in_one_segment``), with optional synthetic noise from
+   ``injection.segment.noise``.
 
-2. ``gps_start`` / ``gps_end`` — a single explicit time interval:
+2. ``gps_start`` / ``gps_end`` — an explicit analysis period:
 
    .. code-block:: yaml
 
@@ -70,26 +74,53 @@ pycWB supports five modes for defining job segment time windows:
 4. ``superevent`` + ``time_left``/``time_right`` — queries GraceDB for the
    GPS time of a superevent (e.g., ``S190521g``) and builds a window around it.
 
-5. **DQ Files** — builds segments from science-quality data flags. This is the
-   standard mode for production searches:
+   Modes 2–4 only define an analysis *period*. The period goes through the
+   same algorithm as mode 5: it is intersected with any ``DQF`` entries,
+   trimmed by ``segEdge`` at both ends and split into jobs of at most
+   ``segLen`` seconds.
+
+5. **DQ Files** — builds segments from the data-quality lists in ``DQF``.
+   This is the standard mode for production searches. Each row is
+   ``[ifo, file, category, shift, invert, c4]``. Every file is read as a list
+   of ``start stop`` intervals (``c4: True`` for 4-column files), shifted by
+   ``shift`` seconds. ``invert: True`` uses the complement, which turns a veto
+   list into a keep list:
 
    .. code-block:: yaml
 
-      DQ_CAT1: input/H1_cat1.txt     # CAT1 veto segments
-      DQ_CAT2: input/H1_cat2.txt     # CAT2 veto segments (applied as windows)
-      DQ_CAT0: input/H1_cat0.txt     # Science-mode segments (CAT0)
+      DQF: [
+        [ "H1", "input/H1_cat0.txt", CWB_CAT0, 0., False, False ],  # science segments
+        [ "L1", "input/L1_cat0.txt", CWB_CAT0, 0., False, False ],
+        [ "H1", "input/H1_cat1.txt", CWB_CAT1, 0., True,  False ],  # CAT1 veto list
+        [ "L1", "input/L1_cat1.txt", CWB_CAT1, 0., True,  False ],
+        [ "H1", "input/H1_cat2.txt", CWB_CAT2, 0., True,  False ],  # CAT2 veto list
+        [ "L1", "input/L1_cat2.txt", CWB_CAT2, 0., True,  False ],
+      ]
 
-   The segment-building algorithm:
-   
-   a. Read CAT1 segments and remove them from science time.
-   b. Merge remaining science segments that are separated by less than
-      ``segTHR`` seconds.
-   c. Keep segments longer than ``segMLS`` seconds.
-   d. Apply CAT2 veto **windows** (not segments) around each veto edge.
-   e. Split long segments into chunks of ``segLen`` seconds with
-      ``segOverlap`` overlap.
-   f. Add ``segEdge`` seconds of padding on each side for wavelet boundary
-      effects.
+   The segment-building algorithm
+   (:py:func:`~pycwb.modules.job_segment.job_segment.job_segment_from_dq`):
+
+   a. For each detector, intersect all ``CWB_CAT0`` and ``CWB_CAT1`` entries,
+      plus the period from modes 2–4 if one is given, into one good-time list.
+   b. Intersect the per-detector lists across detectors to get coincident
+      segments. With super lags, each detector's list is first shifted by
+      ``slag[k] × segLen`` (see `Super Lags (Segments)`_).
+   c. Trim ``segEdge`` seconds from both ends of every coincident segment. The
+      trimmed margin becomes the wavelet boundary padding, so padded data stays
+      inside good time.
+   d. Discard trimmed segments shorter than ``segMLS``. Split the rest into
+      jobs of at most ``segLen`` seconds: full ``segLen`` chunks, with the
+      final remainder split into two halves if each half is at least
+      ``segMLS``. Otherwise the remainder becomes one ``segLen`` job and the
+      leftover time is not analysed.
+   e. Shorten a job by 1 s if its length breaks WDM pixel parity, then extend
+      the end of every job by ``segOverlap`` seconds.
+   f. If any ``CWB_CAT2`` entry exists, intersect the CAT0, CAT1 and CAT2
+      entries per detector and across detectors into CAT2 *keep windows*. These
+      are clipped to each job and stored on the segment (``veto_windows``,
+      plus a superlag-shifted copy in ``cwb_veto_windows``). CAT2 never splits
+      or drops jobs. It masks time-frequency pixels during coherence and sets
+      the post-CAT2 livetime that ``segTHR`` is checked against.
 
 
 Segment Sizing Parameters
@@ -104,19 +135,25 @@ Segment Sizing Parameters
      - Description
    * - ``segLen``
      - 600 s
-     - Nominal segment (job) length
+     - Nominal (maximum) job length
    * - ``segMLS``
      - 300 s
-     - Minimum segment length after CAT1 veto
+     - Minimum job length after CAT1 and ``segEdge`` trimming
    * - ``segTHR``
      - 30 s
-     - Minimum separation after CAT2 veto
+     - Minimum post-CAT2 livetime per lag; lags below it are skipped
+       (0 disables)
    * - ``segEdge``
      - 8 s
-     - Wavelet boundary padding on each side
+     - Wavelet boundary padding on each side, trimmed from good time
    * - ``segOverlap``
      - 0 s
-     - Overlap between consecutive job segments
+     - Seconds added to the end of each job (overlap with the next job)
+
+``segTHR`` is applied at run time, per lag. When a job has CAT2 keep windows,
+the post-CAT2 livetime is computed with that lag's (circular) shifts. If the
+result is below ``segTHR``, the lag is skipped and recorded with status
+``skipped_segTHR``.
 
 
 Lag Structure
@@ -124,8 +161,9 @@ Lag Structure
 
 Lags implement the time-shift analysis used to estimate the background
 (accidental coincidence rate). For an :math:`N`-detector network, time-shifting
-one detector's data relative to the others breaks any real gravitational-wave
-coincidence.
+detectors' data relative to each other breaks any real gravitational-wave
+coincidence. The animation in :ref:`lags_and_superlags` shows how lags and
+superlags shift the data.
 
 Regular Lags
 ~~~~~~~~~~~~
@@ -134,95 +172,151 @@ Regular Lags
 
    lagSize: 100       # Number of lags to generate
    lagStep: 1.0       # Time step between lags [s]
-   lagOff: 6          # Offset: first N lags are skipped (0 = include zero-lag)
-   lagMax: 150        # Maximum time shift [s]
+   lagOff: 0          # First lag id / row (0 = include zero-lag)
+   lagMax: 0          # 0 = standard lags; >0 = extended lags (max lag id, in lagStep units)
 
-Lags are generated as:
+Lags are computed per job by ``WaveSegment.lag_shifts``. Each lag is a vector
+of integer lag ids, one per detector, and detector :math:`k` is shifted by
+:math:`\text{id}_k \times \text{lagStep}` seconds.
+
+**Standard lags** (``lagMax: 0``). Only the first detector in ``ifo`` is
+shifted:
 
 .. math::
 
-   \text{lag}[i] = (\text{lagOff} + i) \times \text{lagStep},
-   \quad i = 0, 1, \dots, \text{lagSize} - 1
+   \text{shift}_m = (m \times \text{lagStep},\ 0,\ \dots,\ 0),
+   \quad m = \text{lagOff}, \dots, \text{lagOff} + \text{lagSize} - 1
 
-subject to :math:`\text{lag}[i] \leq \text{lagMax}`.
+**Extended lags** (``lagMax > 0``). Lag-id vectors are drawn at random with a
+fixed seed (13). The first detector is fixed at 0 and every other detector gets
+a uniform integer id in :math:`[-\text{lagMax}, \text{lagMax}]`. A vector is
+rejected if two detectors share an id or if it repeats an earlier vector.
+Each accepted vector is then shifted so its minimum id is 0. Row 0 is always
+the zero lag, and rows ``lagOff`` … ``lagOff + lagSize − 1`` are used.
 
-- **Zero-lag** (:math:`i` such that :math:`\text{lagOff} + i = 0`) represents
+**Segment-duration cap** (both modes). A lag is dropped if any of its ids
+exceeds :math:`\lfloor T / \text{lagStep} \rfloor - 1`, where :math:`T` is the
+job's analysis duration. The number of lags per job (``n_lag``) can therefore
+be smaller than ``lagSize`` and depends on the job length.
+
+- **Zero-lag** (all shifts zero, included when ``lagOff: 0``) represents
   the physical (unshifted) coincidence—where a real GW signal would appear.
 - **Non-zero lags** are used for background estimation.
 
-You can also provide an explicit lag array or lag file:
+.. note::
+
+   The schema defaults are ``lagSize: 1``, ``lagOff: 0`` and ``lagMax: 0``,
+   so a configuration without lag settings analyzes only the zero lag.
+   v1.1.0a3 and earlier defaulted to ``lagOff: 6`` and ``lagMax: 150``, which
+   selected one extended lag instead; see :ref:`migration` before resuming
+   runs prepared with those defaults.
+
+In extended mode, ``lagSite`` gives one site index per detector (for example
+``lagSite: [0, 0, 1]``). Ids are then drawn per site: detectors with the same
+site index get the same shift, and only detectors at different sites must have
+different ids.
+
+You can also provide the lag shifts explicitly in a lag file:
 
 .. code-block:: yaml
 
-   lagMode: r                    # "r" = read from file, "w" = write to file
-   lagFile: input/lags.txt       # Path to lag list file
-   lagSite: 0                    # Site index for time-shift reference
+   lagSize: 0                    # required when lagFile is set
+   lagFile: input/lags.txt       # one row per lag, one column per detector [s]
 
-When ``lagMode`` is ``r``, lags are read from ``lagFile``. When ``w``, lags
-are written to ``lagFile`` for inspection or sharing.
+``lagFile`` is a whitespace-separated table of shifts in seconds, with one
+column per detector in ``ifo`` order. When it is set, ``lagSize`` must be 0 or
+job setup raises an error. The native pipeline always reads ``lagFile`` when it
+is set. ``lagMode`` (``w``/``r``) only affects the ROOT (cWB network) backend.
+An explicit lag array can also be given for one run on the command line, e.g.
+``pycwb run ... --lags "0,0;0,600"``. This cannot be combined with ``lagFile``.
 
 Super Lags (Segments)
 ~~~~~~~~~~~~~~~~~~~~~
 
-Super lags (slang) provide an additional layer of time shifts at the segment
+Super lags (slags) provide an additional layer of time shifts at the segment
 level, used for multi-detector networks:
 
 .. code-block:: yaml
 
-   slagSize: 10       # Number of super lags
-   slagMin: -5.0      # Minimum super lag [s]
-   slagMax: 5.0       # Maximum super lag [s]
-   slagOff: 0         # Super lag offset [s]
+   slagSize: 10       # Number of super lags (0 = standard segments, no super lags)
+   slagMin: 0         # Minimum super-lag distance (integer)
+   slagMax: 5         # Maximum super-lag distance; also bounds each shift (integer)
+   slagOff: 0         # Number of super lags skipped (0 = include the zero super lag)
 
-Super lags are generated as linearly spaced offsets between ``slagMin`` and
-``slagMax`` or as explicit step/offset combinations.
+Super lags are generated by
+:py:func:`~pycwb.modules.superlag.superlag.generate_slags`. Each super lag is
+an integer vector :math:`(0, s_1, \dots, s_{N-1})` with one entry per detector,
+and the first detector is fixed at 0. The other entries are non-zero, pairwise
+distinct and satisfy :math:`|s_k| \leq \text{slagMax}`. The all-zero vector is
+also a candidate. The distance of a vector is :math:`\sum_k |s_k|`.
+Candidates with ``slagMin`` ≤ distance ≤ ``slagMax`` are sorted by distance.
+The first ``slagOff`` are skipped, the next ``slagSize`` are kept, and the kept
+list is shuffled with a fixed seed (0). The zero super lag is included only
+when ``slagMin`` and ``slagOff`` are both 0.
 
-Each super lag produces a new "shifted" version of the job segment, increasing
-the total number of analysis units by a factor of ``slagSize``.
+Shifts are in units of ``segLen``. Detector :math:`k`'s CAT1 segment list is
+shifted by :math:`s_k \times \text{segLen}` seconds before the cross-detector
+intersection, and jobs are built separately for each super lag (the shift is
+stored in ``WaveSegment.shift``). The number of jobs per super lag depends on
+how much shifted coincident time exists. Setup fails if a super lag has none.
+The total job count is the sum over the selected super lags (at most
+``slagSize``).
 
 
 Trial Indexing
 --------------
 
 For simulation (injection) studies, each job segment can contain multiple
-**trials**—groups of injections that share the same noise background:
+**trials**—groups of injections that share the same noise background.
+A job is one ``WaveSegment``. Trials and lags are loops *inside* a job: the job
+processes every trial present in its injections, and every lag for each
+trial. By default:
 
 .. math::
 
-   \text{total\_jobs} = N_{segments} \times N_{slags} \times N_{trials}
+   \text{total\_jobs} = \sum_{\text{slags}} N_{segments}(\text{slag})
+
+(with no super lags this is just the number of segments).
 
 - ``trial_idx``: identifies which trial an injection belongs to within a
   job segment.
 - ``sim_idx``: unique identifier for each injection across all trials and
   jobs.
-- ``job_id``: unique identifier for each analysis job (segment × slag ×
-  trial combination).
+- ``job_id``: the ``WaveSegment.index``, numbered from 1 across all super
+  lags. It does not encode the trial unless jobs are flattened (below).
 
 When ``parallel_injection_trail`` is enabled, job segments are flattened by
 trial via
 :py:func:`~pycwb.modules.job_segment.job_segment.flatten_job_segments_by_trial`,
-so each trial becomes a separate job with a contiguous ``job_id``. This enables
-trivial parallelization across trials.
+so each (job, trial) pair present in the injections becomes a separate job.
+Jobs are renumbered with contiguous ``job_id`` values, and each injection keeps
+the original id in ``source_job_id``. This enables trivial parallelization
+across trials.
 
 
 Job Directory Structure
 -----------------------
 
-Each job creates this directory layout:
+A run creates this layout once in its working directory (not once per job):
 
 .. code-block:: text
 
    <workdir>/
-   ├── output/           # Waveform and trigger output files
+   ├── output/           # Waveform output files
    ├── log/              # Job log files
    ├── config/           # Copy of user_parameters.yaml
    ├── catalog/          # Parquet trigger catalogs
    │   ├── catalog.parquet
-   │   └── progress.parquet
-   ├── trigger/          # Per-event JSON trigger files
-   ├── job_status/       # Job completion status files
+   │   ├── progress.parquet
+   │   └── fragment/     # Batch catalog_<id>.parquet / progress_<id>.parquet
+   ├── trigger/          # Per-trigger folders with JSON files
+   ├── job_status/       # Created at setup; the pipeline writes nothing here
    ├── public/           # Public-facing results
    └── input/            # DQ files, frame lists, etc.
+
+Batch workers write to fragment catalogs under ``catalog/fragment/``.
+``pycwb merge`` combines them into ``catalog.parquet`` and
+``progress.parquet``.
 
 
 Frame File Selection
@@ -230,25 +324,31 @@ Frame File Selection
 
 Frame files (containing detector strain data) are selected in two ways:
 
-1. **Explicit file list** via the ``frFiles`` parameter:
+1. **Frame-list files** via the ``frFiles`` parameter:
 
    .. code-block:: yaml
 
-      frFiles:
-        - /path/to/H-H1_GWOSC-1264060000-4096.gwf
-        - /path/to/L-L1_GWOSC-1264060000-4096.gwf
+      frFiles: ["input/H1_frames.in", "input/L1_frames.in"]
+
+   There is one frame-list text file per detector, in the same order as
+   ``ifo``. Each line is the path to a ``.gwf`` file. The GPS start and
+   duration are parsed from the file name (``...-<gps>-<duration>.gwf``).
 
 2. **gwdatafind query** via the ``gwdatafind`` config block:
 
    .. code-block:: yaml
 
       gwdatafind:
-        site: H1
-        frametype: H1_GWOSC_O4_C01_4KHZ_R1
-        host: datafind.ligo.org
+        site: [H, L]
+        frametype: [H1_HOFT_C00, L1_HOFT_C00]
+        host: datafind.igwn.org
 
-   This automatically queries the LIGO data-find server for frames covering
-   each job segment's time window.
+   ``site`` and ``frametype`` are lists with one entry per detector, in
+   ``ifo`` order. ``site`` defaults to the first letter of each detector name.
+   ``urltype`` (default ``file``) sets the URL type. pycWB runs one query per
+   detector over the full GPS span of all jobs (± ``segEdge``). It then attaches
+   to each job the frames that overlap its padded window. If both ``frFiles``
+   and ``gwdatafind`` are set, ``frFiles`` is used.
 
 
 Parallelization
@@ -256,8 +356,10 @@ Parallelization
 
 Jobs are parallelized at two levels:
 
-- **Across lags** — multiple lags within a segment can be processed
-  concurrently (controlled by ``parallel_lag_workers``, default 1).
+- **Across lags** — within one job, background lags can run concurrently in
+  threads (controlled by ``parallel_lag_workers``, default 1). This applies
+  only when the job has no injections and more than one lag. Otherwise lags
+  run sequentially.
 - **Across segments** — different job segments are independent and can run on
   different cluster nodes (see :ref:`run_on_clusters`).
 
@@ -268,9 +370,15 @@ For SLURM/HTCondor batch submission, jobs are bundled into workers via
 Progress Tracking
 -----------------
 
-Each job writes a ``progress.parquet`` file containing per-lag processing
-status (start time, end time, success/failure, number of triggers). The
-``pycwb progress`` CLI command summarizes this information:
+Each completed or skipped lag adds one row to the progress file next to the
+catalog. Local runs use ``catalog/progress.parquet``. Batch workers use
+``catalog/fragment/progress_<id>.parquet``, which ``pycwb merge`` combines.
+Each row stores ``job_id``, ``trial_idx``, ``lag_idx``, ``n_triggers``,
+``livetime`` (post-veto seconds), ``timestamp`` (write time) and ``status``
+(``completed`` or ``skipped_segTHR``). A lag that fails writes no row. When a
+batch worker restarts, lags already recorded are skipped, so an interrupted job
+resumes at the missing lags. The ``pycwb progress`` CLI command summarizes this
+information:
 
 .. code-block:: bash
 
@@ -281,4 +389,4 @@ status (start time, end time, success/failure, number of triggers). The
 
 **See also:** :doc:`pipeline_lifecycle` · :doc:`run_on_clusters` · :doc:`injection_infrastructure`
 
-**Next:** :doc:`injection_infrastructure` — how to configure simulated signals
+**Next:** :doc:`data_ingestion` — how each job reads its strain

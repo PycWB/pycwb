@@ -43,15 +43,13 @@ Available definitions
 
 Here ``pycwb-1`` identifies the bundled geographic table and conversion in this
 repository. It is not a LALSuite release number and does not select the locally
-installed LAL version. The registry lists geometry definitions, not a guarantee
-of end-to-end data access or scientific validation for every instrument. Use
-instrument names present in the bundled or custom registry; there is no ``J1`` entry in this table.
+installed LAL version. Use instrument names present in the bundled or custom
+registry; there is no ``J1`` entry in this table. Supply strain data and noise
+models separately for the detectors in your analysis.
 
-The cWB vectors were checked against ``wat/detector.cc`` from release 6.4.6.9,
-commit ``e03cf7f``. This identifies the verification source; it is not part of
-the user-facing geometry name. Only H1/L1 have validated cWB definitions here.
-A network can explicitly combine those entries with bundled definitions for
-other detectors. Selecting an unavailable entry such as ``V1:cwb`` fails.
+The cWB definitions are available for H1 and L1. A network can combine them
+with bundled definitions for other detectors. Selecting an unavailable entry
+such as ``V1:cwb`` fails.
 
 Configuration loading resolves defaults and aliases into a complete per-detector
 mapping, which is recorded in catalog metadata and restored by workers.
@@ -234,35 +232,10 @@ For cWB-selected detectors, event antenna exports retain the release's stored
 angle precision convention. See :ref:`native_calculation_conventions` for that
 boundary and its distinction from waveform-statistic options.
 
-The cWB definition was added to reproduce release outputs. PycWB's bundled
-LAL-derived definition reconstructs vectors from geographic angles, whereas
-cWB uses literal rounded vectors. The geometry audit measured:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 30 55
-
-   * - Detector
-     - Vertex displacement
-     - Maximum absolute antenna-response difference in sampled sky
-   * - H1
-     - 5.367 mm
-     - 3.006 × 10\ :sup:`−6`
-   * - L1
-     - 3.524 mm
-     - 2.921 × 10\ :sup:`−6`
-
-The antenna comparison covered 4,099 directions. These are absolute differences,
-not relative errors or bounds over the continuous sky. With matched literal
-vectors, differences from the cWB antenna oracle were below 1.6 × 10\ :sup:`−15`.
-The stored oracle and its provenance are under
-``pycwb/types/tests/reference/RELEASE_GEOMETRY.md``.
-
-These checks establish reproduction of cWB, not which set is physically closer
-to the surveyed instrument. More decimal digits alone do not establish physical
-accuracy. Keep the bundled default to preserve existing PycWB geometry; use
-``:cwb`` when comparing against the validated cWB reference. Neither choice is
-a performance preset.
+The bundled LAL-derived definition reconstructs vectors from geographic
+angles; the cWB definition uses literal rounded vectors. Use ``:cwb`` to match
+the cWB geometry when comparing results. The numerical comparison is described
+in :ref:`detector_geometry_reference`.
 
 For the upstream constants, see
 `LALDetectors.h <https://lscsoft.docs.ligo.org/lalsuite/lal/_l_a_l_detectors_8h.html>`_.
@@ -274,8 +247,7 @@ Python use and definition location
 
 All bundled geometry constants and selections are centralized in
 ``pycwb/constants/detectors.py``. ``DETECTORS`` contains geographic parameters;
-``DETECTOR_GEOMETRIES`` registers selectable definitions. There is no separate
-release-geometry table module.
+``DETECTOR_GEOMETRIES`` registers selectable definitions.
 
 .. code-block:: python
 

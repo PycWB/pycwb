@@ -30,7 +30,8 @@ class TriggerHandler(threading.Thread):
     trigger_queue : queue.Queue
         Queue of :class:`OnlineTrigger` objects (or ``None`` sentinel).
     stop_event : threading.Event
-        Set to signal graceful shutdown.
+        Shared shutdown flag. The handler keeps consuming worker results after
+        it is set and stops only on the ``None`` sentinel.
     working_dir : str
         Directory for local trigger output.
     """
@@ -72,7 +73,9 @@ class TriggerHandler(threading.Thread):
     def run(self):
         logger.info("TriggerHandler started")
 
-        while not self.stop_event.is_set():
+        # The manager sets stop_event before waiting for in-flight workers.
+        # Keep consuming their results until it sends the final sentinel.
+        while True:
             try:
                 trigger = self.trigger_queue.get(timeout=5)
             except queue.Empty:
@@ -243,6 +246,7 @@ class TriggerHandler(threading.Thread):
         trigger_dir = os.path.join(
             self.working_dir, "triggers",
             f"seg_{trigger.segment_index:06d}",
+            str(trigger.event.hash_id),
         )
         os.makedirs(trigger_dir, exist_ok=True)
 
@@ -250,6 +254,11 @@ class TriggerHandler(threading.Thread):
         try:
             save_trigger(trigger_dir, trigger_data)
             trigger_obj = Trigger.from_event(trigger.event)
+            from pycwb.modules.catalog import Catalog
+            catalog_path = self._catalog_path()
+            if not os.path.isfile(catalog_path):
+                os.makedirs(os.path.dirname(catalog_path), exist_ok=True)
+                Catalog.create(catalog_path, self.config, [], jobs_in_metadata=True)
             add_trigger_to_catalog(
                 trigger_obj, self.working_dir, "catalog",
             )

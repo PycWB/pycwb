@@ -24,6 +24,8 @@ release = __version__
 
 extensions = [
     'generate_reference',
+    'stage_nav',
+    'image_cache',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.autosummary',
@@ -32,20 +34,15 @@ extensions = [
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "pycwb/vendor/*"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "pycwb/vendor/*",
+                    "pycwb.*.tests.rst", "pycwb.*.tests.*.rst"]
 
 autodoc_mock_imports = [
     "ROOT",
-    "aiofiles",
-    "dask",
-    "dask.distributed",
-    "dask_jobqueue",
     "healpy",
     "htcondor",
     "iminuit",
     "memspectrum",
-    "prefect",
-    "prefect_dask",
     "psutil",
     "pycbc",
     "tensorflow",
@@ -64,6 +61,8 @@ html_static_path = ['_static']
 # Read the Docs injects its version flyout. The version in the page title
 # always comes from the checkout being built, including prerelease suffixes.
 html_title = f"PycWB {release} documentation"
+html_short_title = "PycWB documentation"
+html_css_files = ['documentation.css']
 
 # -- external links ----------------------------------------------------------
 

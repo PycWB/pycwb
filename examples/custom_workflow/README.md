@@ -30,7 +30,6 @@ Use an absolute path because the CLI changes into the output working directory
 before importing the processor. Then run:
 
 ```bash
-pycwb validate custom_parameters.yaml
 pycwb run custom_parameters.yaml --work-dir custom_search
 pycwb progress --work-dir custom_search
 ```

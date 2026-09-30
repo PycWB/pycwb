@@ -3,9 +3,8 @@
 Coordinate Systems
 ==================
 
-This page is the canonical definition of sky coordinates in pycWB. It applies
-to injection positions, sky masks, detector projection, reconstructed event
-positions, catalog fields, and sky-map plots.
+These coordinate conventions apply to injection positions, sky masks, detector
+projection, reconstructed events, catalog fields and sky-map plots.
 
 .. contents:: On this page
    :depth: 2

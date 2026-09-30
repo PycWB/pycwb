@@ -83,6 +83,8 @@ def trigger_selection(
         ``seed`` and ``exclude_zero_lag``.
     outputs : dict, optional
         Output paths.  For split mode this is nested by partition name.
+        ``progress_file`` writes the selected job/lag exposure rows, which
+        match ``triggers_file`` for ``process_background``.
 
     Returns
     -------
@@ -204,6 +206,7 @@ def trigger_selection(
                 returns=returns,
                 exclude_zero_lag=split_exclude_zero_lag,
                 unshifted_job_ids=unshifted_job_ids,
+                progress=progress,
             )
         if stream_triggers:
             counts = _stream_catalog_job_partitions(
@@ -222,6 +225,16 @@ def trigger_selection(
         return result
 
     selection = selection or {}
+    sel_exclude_zero_lag = bool(selection.get("exclude_zero_lag", exclude_zero_lag))
+    if sel_exclude_zero_lag != exclude_zero_lag:
+        # Exposure must follow the same lag selection as the triggers.
+        progress = _filter_progress(
+            progress_raw,
+            exclude_zero_lag=sel_exclude_zero_lag,
+            job_filter=job_filter,
+            unshifted_job_ids=unshifted_job_ids,
+        )
+        job_lt = progress.groupby("job_id")["livetime"].sum()
     sel_fraction = float(selection.get("fraction", fraction))
     sel_seed = int(selection.get("seed", seed))
     sel_job_ids = _select_jobs_by_livetime(job_lt, sel_fraction, sel_seed)
@@ -239,8 +252,9 @@ def trigger_selection(
         catalog_file=catalog_file,
         outputs=outputs,
         returns=returns,
-        exclude_zero_lag=bool(selection.get("exclude_zero_lag", exclude_zero_lag)),
+        exclude_zero_lag=sel_exclude_zero_lag,
         unshifted_job_ids=unshifted_job_ids,
+        progress=progress,
     )
     if stream_triggers:
         counts = _stream_catalog_job_partitions(
@@ -248,7 +262,7 @@ def trigger_selection(
             catalog_file=catalog_file,
             partition_job_ids={"selected": sel_job_ids},
             output_files={"selected": trigger_file},
-            exclude_zero_lag=bool(selection.get("exclude_zero_lag", exclude_zero_lag)),
+            exclude_zero_lag=sel_exclude_zero_lag,
             unshifted_job_ids=unshifted_job_ids,
             trigger_filter=trigger_filter,
         )
@@ -388,7 +402,8 @@ def _read_job_metadata(
     -------
     unshifted_job_ids : set[int] or None
         Job IDs whose segment/superlag shift is zero (or None if the
-        catalog has no job metadata).
+        catalog has no job metadata). Empty when every job is shifted, so
+        regular lag 0 of a superlag remains background.
     shift_by_job : dict[int, tuple[float, ...]]
         Mapping from job_id to its ``(shift_ifo0, shift_ifo1, ...)`` tuple.
         Empty if the catalog has no job metadata.
@@ -414,7 +429,7 @@ def _read_job_metadata(
         if shift is None or _sequence_is_zero(shift):
             unshifted_job_ids.add(jid)
 
-    return unshifted_job_ids or None, shift_by_job
+    return unshifted_job_ids, shift_by_job
 
 
 def _read_catalog_filtered(
@@ -835,6 +850,7 @@ def _materialize_partition(
     exclude_zero_lag: bool,
     unshifted_job_ids: Optional[set[int]],
     catalog_file: str,
+    progress: pd.DataFrame,
 ) -> dict:
     result: dict[str, Any] = {}
     n_triggers: Optional[int] = None
@@ -849,6 +865,19 @@ def _materialize_partition(
             for jid in job_ids:
                 f.write(f"{jid}\n")
         result["jobs_file"] = jobs_file
+
+    # The selected job/lag exposure matches the selected triggers, so later
+    # rate calculations can use both as given.
+    progress_file = outputs.get("progress_file")
+    if progress_file or "progress" in returns:
+        selected_progress = progress[progress["job_id"].isin(job_ids)].reset_index(drop=True)
+    if progress_file:
+        progress_path = _resolve(work_dir, progress_file)
+        os.makedirs(os.path.dirname(progress_path) or ".", exist_ok=True)
+        selected_progress.to_parquet(progress_path, index=False)
+        result["progress_file"] = progress_file
+    elif "progress" in returns:
+        result["progress"] = selected_progress
 
     triggers_file = outputs.get("triggers_file") or outputs.get("catalog_file")
     if catalog is not None:

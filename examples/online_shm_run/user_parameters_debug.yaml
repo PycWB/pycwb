@@ -1,6 +1,6 @@
 # PyCWB online search — DEBUG configuration
 # Uses /tmp/fake_stream as the data source (written by fake_data_generator.py)
-# and limits the run to 120 s of pre-generated data.
+# The generator duration is chosen by debug_run.sh; the manager runs until stopped.
 #
 # Usage:
 #   bash debug_run.sh   (automatically uses this file via CONFIG variable)

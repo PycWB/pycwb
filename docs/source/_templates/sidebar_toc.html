@@ -1,0 +1,7 @@
+{# Expand the active section only; all pages retain their canonical toctree parent. #}
+<nav aria-label="Documentation" class="table w-full min-w-full my-6 lg:my-8">
+  {{ toctree(titles_only=true, collapse=true, includehidden=true) }}
+</nav>
+<p class="docs-sidebar-version">
+  <a href="{{ pathto('release_policy') }}" title="{{ release | e }}">Version {{ release | e }}</a>
+</p>

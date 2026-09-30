@@ -18,7 +18,7 @@ optim: False
 ifo: ["L1","H1"]
 refIFO: "L1"
 
-inRate: 16384
+inRate: 4096
 # lags
 lagSize: 1
 lagStep: 1.
@@ -42,7 +42,7 @@ fLow: 16.
 fHigh: 1024.
 
 
-levelR: 3
+levelR: 1
 l_low: 4 # low frequency resolution level		// std (sthr = 2)
 l_high: 10 # high frequency resolution level	// std (sthr = 8)
 
@@ -73,7 +73,10 @@ nSky: 196608
 # simulation
 nfactor: 1
 
-channelNamesRaw: ["L1:GWOSC-4KHZ_R1_STRAIN","H1:GWOSC-4KHZ_R1_STRAIN"]
+gps_start: 1126258852.4
+gps_end: 1126260072.4
+
+channelNamesRaw: ["L1:LOSC-STRAIN","H1:LOSC-STRAIN"]
 frFiles: ["./input/L1_frames.in", "./input/H1_frames.in"]
 
 DQF: [
@@ -83,11 +86,10 @@ DQF: [
   [ "H1" ,"./input/H1_cat1.txt", CWB_CAT1, 0., False, False ],
   [ "L1" ,"./input/L1_cat2.txt", CWB_CAT2, 0., False, False ],
   [ "H1" ,"./input/H1_cat2.txt", CWB_CAT2, 0., False, False ],
-  [ "L1" ,"./input/cwb_period.txt", CWB_CAT0, 0., False, False ],
-  [ "H1" ,"./input/cwb_period.txt", CWB_CAT0, 0., False, False ],
 ]
 
 injection:
+  seed: 150914
   allow_reuse_data: True
   repeat_injection: 1
   sky_distribution:
@@ -97,6 +99,5 @@ injection:
     rate: 1/200
     jitter: 50
   parameters_from_python:
-    file: "injection_parameters.py"
-    function: "get_injection_parameters"
-  approximant: "IMRPhenomXPHM"
+    function: "./injection_parameters.get_injection_parameters"
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform

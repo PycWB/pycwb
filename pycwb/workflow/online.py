@@ -24,6 +24,11 @@ from pycwb.modules.online.trigger_handler import TriggerHandler
 
 logger = logging.getLogger(__name__)
 
+# Shutdown waits [s]: in-flight segment analyses, then the trigger handler's
+# final flush (each saved trigger rewrites the local catalog and may alert).
+SHUTDOWN_WORKER_WAIT = 120.0
+SHUTDOWN_HANDLER_WAIT = 120.0
+
 
 def _worker_initializer(log_level="INFO"):
     """Run once per worker process — configure logging and import heavy
@@ -228,22 +233,35 @@ class OnlineSearchManager:
         self.stop_event.set()
         self.data_acq.stop()
 
-        # Wait for in-flight analysis (with timeout)
-        for f in as_completed(pending_futures, timeout=120):
-            try:
-                triggers = f.result()
-                for t in triggers:
-                    self.trigger_queue.put(t)
-            except Exception:
-                pass
-
-        # Signal trigger handler to drain and exit
-        self.trigger_queue.put(None)  # sentinel
-        self.trigger_handler.join(timeout=30)
-        self.latency_monitor.stop()
-        self.executor.shutdown(wait=False)
-        self.data_source.close()
-        logger.info("Online search stopped")
+        try:
+            # Wait for in-flight analysis (with timeout)
+            for f in as_completed(pending_futures, timeout=SHUTDOWN_WORKER_WAIT):
+                try:
+                    triggers = f.result()
+                    for t in triggers:
+                        self.trigger_queue.put(t)
+                except Exception:
+                    pass
+        except TimeoutError:
+            unfinished = sum(not f.done() for f in pending_futures)
+            logger.warning(
+                "Stopped waiting after %.0f s; discarding %d unfinished segment(s)",
+                SHUTDOWN_WORKER_WAIT, unfinished,
+            )
+        finally:
+            # The handler exits only on this sentinel, after flushing the
+            # triggers it still buffers for deduplication.
+            self.trigger_queue.put(None)
+            self.trigger_handler.join(timeout=SHUTDOWN_HANDLER_WAIT)
+            if self.trigger_handler.is_alive():
+                logger.warning(
+                    "Trigger handler still saving after %.0f s; remaining "
+                    "triggers may be lost", SHUTDOWN_HANDLER_WAIT,
+                )
+            self.latency_monitor.stop()
+            self.executor.shutdown(wait=False)
+            self.data_source.close()
+            logger.info("Online search stopped")
 
     def _handle_signal(self, signum, frame):
         logger.info("Received signal %d, initiating shutdown", signum)

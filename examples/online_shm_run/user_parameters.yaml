@@ -109,7 +109,7 @@ online_alert:
   gracedb_pipeline: "CWB"
   gracedb_search: "AllSky"
   gracedb_ifar_threshold: 1.0
-  local_catalog: true         # always write triggers to output/catalog.json
+  local_catalog: true         # write triggers to output/catalog/catalog.parquet
   webhook_url: ""             # optional HTTP webhook for custom alerts
 
 # Crash recovery

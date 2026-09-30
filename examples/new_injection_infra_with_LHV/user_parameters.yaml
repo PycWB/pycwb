@@ -78,6 +78,7 @@ gps_start: 1242432800
 gps_end: 1242440000
 
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   seed: 150914
   parameters_from_python:
     function: "./injection_parameters.get_injection_parameters"

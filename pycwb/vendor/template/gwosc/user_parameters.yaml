@@ -18,7 +18,7 @@ optim: False
 ifo: ["L1","H1"]
 refIFO: "L1"
 
-inRate: 16384
+inRate: 4096
 # lags
 lagSize: 1
 lagStep: 1.
@@ -42,7 +42,7 @@ fLow: 16.
 fHigh: 1024.
 
 
-levelR: 3
+levelR: 1
 l_low: 4 # low frequency resolution level		// std (sthr = 2)
 l_high: 10 # high frequency resolution level	// std (sthr = 8)
 
@@ -71,7 +71,7 @@ iwindow: 30
 nSky: 196608
 
 # simulation
-simulation: None  #PREVIOUSLY COMMENTED
+simulation: ""
 nfactor: 1
 
 channelNamesRaw: ["L1:GWOSC-4KHZ_R1_STRAIN","H1:GWOSC-4KHZ_R1_STRAIN"]

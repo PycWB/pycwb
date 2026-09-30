@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="560" viewBox="0 0 700 560" role="img" aria-labelledby="title desc">
+<title id="title">Lags and superlags</title>
+<desc id="desc">Animated illustration. (a) Lags: inside one job segment the first detector is read at t plus m times lagStep with circular wrap-around while the others stay fixed; only lag 0 keeps a real signal coincident. (b) Superlags: detector k reads data from s_k times segLen earlier, pairing different segments without wrap-around; unpaired segments are not analysed.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#90a4ae"/></marker>
+<clipPath id="clipB"><rect x="12" y="342" width="676" height="110"/></clipPath>
+<clipPath id="clipA"><rect x="118" y="95" width="528" height="36"/></clipPath>
+<style>
+text { font-family: Helvetica, Arial, sans-serif; }
+@keyframes lagshift { 0.0% {transform:translateX(0.0px)} 21.0% {transform:translateX(0.0px)} 29.0% {transform:translateX(-66.0px)} 46.0% {transform:translateX(-66.0px)} 54.0% {transform:translateX(-132.0px)} 71.0% {transform:translateX(-132.0px)} 79.0% {transform:translateX(-198.0px)} 96.0% {transform:translateX(-198.0px)} 100% {transform:translateX(0px)} }
+@keyframes slagshift { 0.0% {transform:translateX(0.0px)} 29.3% {transform:translateX(0.0px)} 37.3% {transform:translateX(100.0px)} 62.7% {transform:translateX(100.0px)} 70.7% {transform:translateX(200.0px)} 96.0% {transform:translateX(200.0px)} 100% {transform:translateX(0px)} }
+@keyframes showA { 0% {opacity:1} 23.0% {opacity:1} 25.0% {opacity:0} 98.5% {opacity:0} 100% {opacity:1} }
+@keyframes showB { 0% {opacity:1} 31.3% {opacity:1} 33.3% {opacity:0} 98.5% {opacity:0} 100% {opacity:1} }
+@keyframes coinc { 0% {stroke:#2e7d32;opacity:1} 23% {stroke:#2e7d32;opacity:1} 25% {stroke:#90a4ae;opacity:0.6} 98.5% {stroke:#90a4ae;opacity:0.6} 100% {stroke:#2e7d32;opacity:1} }
+@keyframes nopair1 { 0% {opacity:0} 31.3% {opacity:0} 35.3% {opacity:0.7} 98% {opacity:0.7} 100% {opacity:0} }
+@keyframes nopair2 { 0% {opacity:0} 64.7% {opacity:0} 68.7% {opacity:0.7} 98% {opacity:0.7} 100% {opacity:0} }
+.h1lag { animation: lagshift 12s ease-in-out infinite; }
+.l1slag { animation: slagshift 12s ease-in-out infinite; }
+.capA { animation: showA 12s linear infinite; }
+.capB { animation: showB 12s linear infinite; }
+.coinc { animation: coinc 12s linear infinite; }
+.nopair1 { animation: nopair1 12s linear infinite; }
+.nopair2 { animation: nopair2 12s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .h1lag, .l1slag, .capA, .capB, .coinc, .nopair1, .nopair2 { animation: none; } }
+</style>
+</defs>
+<rect x="1" y="1" width="698" height="558" rx="8" fill="#ffffff" stroke="#455a64" stroke-width="2"/>
+<text x="24" y="36" font-size="15" fill="#263238" font-weight="bold" text-anchor="start">(a) Lags: circular time slides inside one job segment</text>
+<text x="24" y="56" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">The first detector in ifo is read at t + m × lagStep; the other detectors stay fixed.</text>
+<path d="M 124 90 C 124 68, 640 68, 640 90" fill="none" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<text x="382.0" y="70" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="middle">data leaving the start re-enter at the end (circular)</text>
+<text x="24" y="112" font-size="14" fill="#d65151" font-weight="bold" text-anchor="start">H1</text>
+<text x="24" y="126" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">shifted</text>
+<text x="24" y="172" font-size="14" fill="#2f78d0" font-weight="bold" text-anchor="start">L1</text>
+<text x="24" y="186" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">fixed</text>
+<rect class="coinc" x="247" y="93" width="72" height="100" rx="5" fill="none" stroke="#2e7d32" stroke-width="2" stroke-dasharray="5 3"/>
+<g clip-path="url(#clipA)"><g class="h1lag">
+<rect x="118" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="128" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t1</text>
+<rect x="184" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="194" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t2</text>
+<rect x="250" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="260" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t3</text>
+<polygon points="300.0,105.0 302.1,110.1 307.6,110.5 303.4,114.1 304.7,119.5 300.0,116.6 295.3,119.5 296.6,114.1 292.4,110.5 297.9,110.1" fill="#ffd43b" stroke="#9a7400" stroke-width="1"/>
+<rect x="316" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="326" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t4</text>
+<rect x="382" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="392" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t5</text>
+<rect x="448" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="458" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t6</text>
+<rect x="514" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="524" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t7</text>
+<rect x="580" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="590" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t8</text>
+<rect x="646" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="656" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t1</text>
+<rect x="712" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="722" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t2</text>
+<rect x="778" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="788" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t3</text>
+<polygon points="828.0,105.0 830.1,110.1 835.6,110.5 831.4,114.1 832.7,119.5 828.0,116.6 823.3,119.5 824.6,114.1 820.4,110.5 825.9,110.1" fill="#ffd43b" stroke="#9a7400" stroke-width="1"/>
+<rect x="844" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="854" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t4</text>
+<rect x="910" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="920" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t5</text>
+<rect x="976" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="986" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t6</text>
+<rect x="1042" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="1052" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t7</text>
+<rect x="1108" y="96" width="66" height="34" fill="#fde8e8" stroke="#d65151" stroke-width="1.2"/>
+<text x="1118" y="118" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t8</text>
+</g></g>
+<rect x="118" y="96" width="528" height="34" fill="none" stroke="#d65151" stroke-width="2"/>
+<rect x="118" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="128" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t1</text>
+<rect x="184" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="194" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t2</text>
+<rect x="250" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="260" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t3</text>
+<polygon points="300.0,165.0 302.1,170.1 307.6,170.5 303.4,174.1 304.7,179.5 300.0,176.6 295.3,179.5 296.6,174.1 292.4,170.5 297.9,170.1" fill="#ffd43b" stroke="#9a7400" stroke-width="1"/>
+<rect x="316" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="326" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t4</text>
+<rect x="382" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="392" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t5</text>
+<rect x="448" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="458" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t6</text>
+<rect x="514" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="524" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t7</text>
+<rect x="580" y="156" width="66" height="34" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.2"/>
+<text x="590" y="178" font-size="11" fill="#263238" font-weight="normal" text-anchor="start">t8</text>
+<rect x="118" y="156" width="528" height="34" fill="none" stroke="#2f78d0" stroke-width="2"/>
+<text x="118" y="206" font-size="10.5" fill="#546e7a" font-weight="normal" text-anchor="start">analysis window of one job segment (segEdge padding not shown)</text>
+<g class="capA" style="animation-delay:0s"><text x="118" y="234" font-size="13" fill="#2e7d32" font-weight="bold" text-anchor="start">lag 0 (zero lag): the signal is coincident</text><text x="118" y="252" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">a real event appears as a candidate</text></g>
+<g class="capA" style="animation-delay:-9.00s" opacity="0"><text x="118" y="234" font-size="13" fill="#263238" font-weight="bold" text-anchor="start">lag 1: H1 read at t + 1 × lagStep</text><text x="118" y="252" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">the signal no longer lines up: background</text></g>
+<g class="capA" style="animation-delay:-6.00s" opacity="0"><text x="118" y="234" font-size="13" fill="#263238" font-weight="bold" text-anchor="start">lag 2: H1 read at t + 2 × lagStep</text><text x="118" y="252" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">coincidences are accidental: background</text></g>
+<g class="capA" style="animation-delay:-3.00s" opacity="0"><text x="118" y="234" font-size="13" fill="#263238" font-weight="bold" text-anchor="start">lag 3: H1 read at t + 3 × lagStep</text><text x="118" y="252" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">each lag reuses the same data: background</text></g>
+<line x1="24" y1="268" x2="676" y2="268" stroke="#cfd8dc" stroke-width="1"/>
+<text x="24" y="290" font-size="15" fill="#263238" font-weight="bold" text-anchor="start">(b) Superlags: pair different segments of the run</text>
+<text x="24" y="310" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">Detector k reads data from s_k × segLen earlier. Not circular: unpaired time is not analysed.</text>
+<text x="24" y="366" font-size="14" fill="#d65151" font-weight="bold" text-anchor="start">H1</text>
+<text x="24" y="380" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">s = 0</text>
+<text x="24" y="426" font-size="14" fill="#2f78d0" font-weight="bold" text-anchor="start">L1</text>
+<text x="24" y="440" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">shift s</text>
+<rect x="118" y="350" width="88" height="34" rx="3" fill="#fde8e8" stroke="#d65151" stroke-width="1.5"/>
+<text x="128" y="372" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S1</text>
+<rect x="218" y="350" width="88" height="34" rx="3" fill="#fde8e8" stroke="#d65151" stroke-width="1.5"/>
+<text x="228" y="372" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S2</text>
+<rect x="318" y="350" width="88" height="34" rx="3" fill="#fde8e8" stroke="#d65151" stroke-width="1.5"/>
+<text x="328" y="372" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S3</text>
+<polygon points="390.0,359.0 392.1,364.1 397.6,364.5 393.4,368.1 394.7,373.5 390.0,370.6 385.3,373.5 386.6,368.1 382.4,364.5 387.9,364.1" fill="#ffd43b" stroke="#9a7400" stroke-width="1"/>
+<rect x="418" y="350" width="88" height="34" rx="3" fill="#fde8e8" stroke="#d65151" stroke-width="1.5"/>
+<text x="428" y="372" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S4</text>
+<rect x="518" y="350" width="88" height="34" rx="3" fill="#fde8e8" stroke="#d65151" stroke-width="1.5"/>
+<text x="528" y="372" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S5</text>
+<g clip-path="url(#clipB)"><g class="l1slag">
+<line x1="162.0" y1="386" x2="162.0" y2="408" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="3 3"/>
+<rect x="118" y="410" width="88" height="34" rx="3" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.5"/>
+<text x="128" y="432" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S1</text>
+<line x1="262.0" y1="386" x2="262.0" y2="408" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="3 3"/>
+<rect x="218" y="410" width="88" height="34" rx="3" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.5"/>
+<text x="228" y="432" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S2</text>
+<line x1="362.0" y1="386" x2="362.0" y2="408" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="3 3"/>
+<rect x="318" y="410" width="88" height="34" rx="3" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.5"/>
+<text x="328" y="432" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S3</text>
+<polygon points="390.0,419.0 392.1,424.1 397.6,424.5 393.4,428.1 394.7,433.5 390.0,430.6 385.3,433.5 386.6,428.1 382.4,424.5 387.9,424.1" fill="#ffd43b" stroke="#9a7400" stroke-width="1"/>
+<line x1="462.0" y1="386" x2="462.0" y2="408" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="3 3"/>
+<rect x="418" y="410" width="88" height="34" rx="3" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.5"/>
+<text x="428" y="432" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S4</text>
+<line x1="562.0" y1="386" x2="562.0" y2="408" stroke="#90a4ae" stroke-width="1.4" stroke-dasharray="3 3"/>
+<rect x="518" y="410" width="88" height="34" rx="3" fill="#e1ecfb" stroke="#2f78d0" stroke-width="1.5"/>
+<text x="528" y="432" font-size="12" fill="#263238" font-weight="normal" text-anchor="start">S5</text>
+</g></g>
+<rect x="612.0" y="344" width="78.0" height="106" fill="#ffffff" opacity="0.72"/>
+<text x="622" y="370" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">end of</text>
+<text x="622" y="384" font-size="11" fill="#546e7a" font-weight="normal" text-anchor="start">the run</text>
+<rect class="nopair1" x="116" y="348" width="92" height="38" fill="#ffffff" opacity="0"/>
+<rect class="nopair2" x="216" y="348" width="92" height="38" fill="#ffffff" opacity="0"/>
+<g class="capB" style="animation-delay:0s"><text x="118" y="474" font-size="13" fill="#2e7d32" font-weight="bold" text-anchor="start">superlag 0: the same segments are paired</text><text x="118" y="492" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">lag 0 here is the physical zero lag; the other lags are background</text></g>
+<g class="capB" style="animation-delay:-8.00s" opacity="0"><text x="118" y="474" font-size="13" fill="#263238" font-weight="bold" text-anchor="start">superlag s = 1: H1 segment j + 1 with L1 segment j</text><text x="118" y="492" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">a new set of job segments; all of their lags are background</text></g>
+<g class="capB" style="animation-delay:-4.00s" opacity="0"><text x="118" y="474" font-size="13" fill="#263238" font-weight="bold" text-anchor="start">superlag s = 2: H1 segment j + 2 with L1 segment j</text><text x="118" y="492" font-size="12" fill="#546e7a" font-weight="normal" text-anchor="start">H1 S1–S2 and L1 S4–S5 have no partner and are not analysed</text></g>
+<text x="24" y="544" font-size="10.5" fill="#546e7a" font-weight="normal" text-anchor="start">Background livetime sums the post-CAT2 livetime of every (superlag job, lag) pair except the physical zero lag. Not to scale.</text>
+</svg>

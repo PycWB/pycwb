@@ -3,11 +3,8 @@
 Post-Production Action Reference
 ================================
 
-This page is the canonical catalog of actions that can be used in the
-``steps`` section of a post-production workflow.  It lists every function in
-``pycwb.modules.postprocess`` registered with ``@action_spec``.  For a
-complete pipeline assembled from these actions, start with
-:ref:`postproduction_workflow`.
+Use these actions in the ``steps`` section of a postproduction workflow.
+For a complete example, start with :ref:`postproduction_workflow`.
 
 
 Choosing The Main Actions
@@ -49,8 +46,10 @@ Most production workflows need only the following path through the catalog:
      - Use a right-matched simulation table so non-recoveries are counted.
    * - Report background and candidates
      - ``postprocess.report.standard_background_report``
-     - Give zero-lag and fake-open-box inputs explicitly when enabling those
-       report sections.
+     - Zero lag is included by default (``include_zero_lag: true``), which
+       opens the box. While blind, set ``include_zero_lag: false`` and use
+       ``include_fake_openbox: true``. Give zero-lag and fake-open-box inputs
+       explicitly.
    * - Assemble the final report
      - ``postprocess.report_builder.postproduction_report``
      - Point its nested sections to artifacts already produced by earlier
@@ -113,10 +112,12 @@ stored below that ID, and a later step can read it with ``@step.path``:
 .. code-block:: yaml
 
    inputs:
-     catalog_file: "@far.scored_catalog"
+     catalog_file: "@bkg_split.far.triggers_file"
 
-The reference is to a **returned key**, not merely to the name written in the
-earlier step's ``outputs`` block.  The steps still execute in YAML order; the
+Here ``bkg_split`` is a ``trigger_selection`` split step whose ``far``
+partition wrote ``triggers_file``. The reference is to a **returned key**, not
+merely to the name written in the earlier step's ``outputs`` block; for
+example, ``evaluate_far_rho`` returns only ``far_rho`` and ``binned``.  The steps still execute in YAML order; the
 DAG diagram visualizes dependencies but does not reorder them.
 
 Use ``${name}`` or ``${nested.name}`` for values under ``vars``.  A whole-value
@@ -127,15 +128,21 @@ relative to ``work_dir``.  Keep ``cleanup_tmp: never`` until the workflow is
 validated, then choose ``on_success`` for routine production.
 
 
-Scientific And Reproducibility Checks
--------------------------------------
+.. raw:: html
 
-Before running a production pipeline, verify all of the following:
+   <span id="scientific-and-reproducibility-checks"></span>
+
+Prepare consistent inputs
+-------------------------
+
+Use consistent selections and inputs across workflow actions:
 
 * Background used for FAR is disjoint from model training data, and its live
   time describes exactly the selected rows or intervals.
-* Zero lag is excluded from background training and FAR estimation, but is
-  selected deliberately for candidate evaluation.
+* Remove zero lag when selecting background for training and FAR estimation
+  (``trigger_selection`` with ``exclude_zero_lag: true``), and select it
+  deliberately for candidate evaluation. Training uses its inputs as given and
+  only warns about unshifted background triggers.
 * Simulation training and evaluation sets are disjoint.  Missed injections
   remain in efficiency denominators.
 * Model scoring uses the same ``config_file``, feature definitions, detector
@@ -260,11 +267,20 @@ Reports and specialized studies
      - Sample background intervals reproducibly and present them with
        open-box-style significance for validation.
    * - ``postprocess.report.standard_background_report``
-     - Composite background action combining FAR products with optional zero
-       lag and fake-open-box sections.
+     - Composite background action combining FAR products with zero-lag
+       (on by default) and fake-open-box (off by default) sections.
    * - ``postprocess.report_builder.postproduction_report``
      - Build the standard multi-tab HTML and JSON report from background,
        training, and simulation artifacts.
+   * - ``postprocess.training_report.training_diagnostics``
+     - Write learning-curve and feature-gain plots for a saved model; fail if
+       an optional reference model differs.
+   * - ``postprocess.simulation_report.simulation_efficiency``
+     - Apply one explicit ranking cut to a right-matched simulation table and
+       write efficiency counts with Wilson intervals.
+   * - ``postprocess.cwb_report.collect_comparisons``
+     - Combine recorded JSON comparison checks into one validation file for
+       the report's Consistency checks tab.
    * - ``postprocess.generic_report.generic_web_report``
      - Package arbitrary interactive HTML plots from upstream actions into a
        portable single-page report.
@@ -317,7 +333,6 @@ Training, scoring, and FAR
 
 .. autofunction:: pycwb.modules.postprocess.train_xgboost.train_xgboost
    :no-index:
-
 
 
 .. autofunction:: pycwb.modules.postprocess.evaluate.score_catalog

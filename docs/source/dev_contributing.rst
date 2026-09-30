@@ -14,7 +14,9 @@ process.
 Getting Started
 ---------------
 
-1. **Fork the repo** on LIGO GitLab.
+1. **Fork the repo** on `GitHub <https://github.com/PycWB/pycwb>`_ or
+   `LIGO GitLab <https://git.ligo.org/yumeng.xu/pycwb>`_. The repositories are
+   mirrored; contributors outside LVK can use GitHub without an LVK account.
 2. **Set up your dev environment** (:ref:`dev_setup`).
 3. **Find an issue** or propose a new feature.
 4. **Create a branch**: ``feature/<description>`` or ``fix/<description>``.
@@ -22,6 +24,9 @@ Getting Started
 
 Pull Request Workflow
 ---------------------
+
+Submit a pull request on GitHub or a merge request on LIGO GitLab after
+pushing your branch to your fork.
 
 .. code-block:: bash
 
@@ -98,6 +103,20 @@ Reviewers will check:
 Documentation Maintenance
 -------------------------
 
+Keep the documentation roles distinct:
+
+* **Tutorials:** one worked experiment with supplied inputs, runnable steps and
+  an output to inspect. Keep general configuration alternatives in a linked guide.
+* **How-to guides:** procedures for the reader's own data, configuration or
+  environment. Maintain each procedure here once; link a tutorial for practice.
+* **Task routes:** short input/guide/completion summaries. Link the procedure
+  instead of copying its YAML, commands or option tables into a recipe.
+* **Concepts and methods:** explanations and numerical/scientific conventions.
+* **Reference:** exact parameters, interfaces and data formats.
+
+When moving content, update internal links and retain a forwarding page for
+existing URLs and section anchors. Keep shared tutorial inputs in ``examples/``.
+
 Every PR that changes user-facing behavior must update the docs:
 
 .. list-table::
@@ -111,7 +130,7 @@ Every PR that changes user-facing behavior must update the docs:
    * - A pipeline stage or algorithm
      - The relevant :ref:`core_concepts` page + :ref:`pipeline_lifecycle`
    * - A CLI command or workflow
-     - :ref:`analysis_recipes` (if a recipe is affected) + :ref:`standard_analysis`
+     - The owning :ref:`run_analyses` page + :ref:`cli_reference`; update task routes and worked examples when affected
    * - A public Python API
      - Docstring in the source file (auto-documented in :doc:`modules`)
    * - The build or test system
@@ -119,7 +138,7 @@ Every PR that changes user-facing behavior must update the docs:
    * - A new term or concept
      - :ref:`glossary`
    * - Anything user-facing
-     - :ref:`choose_your_path` (check if paths need updating)
+     - :doc:`index` and the relevant section index (check navigation and links)
 
 **PR doc checklist** (add to PR description):
 
@@ -128,8 +147,9 @@ Every PR that changes user-facing behavior must update the docs:
    - [ ] Docstring updated (if API changed)
    - [ ] Schema page updated (if new/changed params)
    - [ ] Core Concepts page updated (if algorithm changed)
-   - [ ] Recipe updated (if workflow changed)
-   - [ ] Tutorial updated (if user flow changed)
+   - [ ] Owning how-to guide updated (if procedure changed)
+   - [ ] Task route links updated (if workflow changed)
+   - [ ] Tutorial/example inputs updated (if worked experiment changed)
    - [ ] Glossary updated (if new terms)
    - [ ] CHANGES.md entry added
 
@@ -138,7 +158,8 @@ Release Process
 ---------------
 
 Releases are versioned with ``setuptools_scm`` from Git tags. Follow
-:ref:`release_policy` for the release checklist and compatibility notes.
+:doc:`dev_release` for the release checklist and :ref:`release_policy` for
+compatibility notes.
 The GitLab tag pipeline publishes the source distribution; do not duplicate
 that upload manually.
 

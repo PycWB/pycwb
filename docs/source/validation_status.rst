@@ -1,10 +1,14 @@
 .. _validation_status:
 
-Validation Scope and Limitations
-================================
+Test Coverage
+=============
 
-Different checks support different claims. A successful installation or demo
-does not establish equivalence to every cWB production configuration.
+.. raw:: html
+
+   <span id="validation-scope-and-limitations"></span>
+
+This page describes the automated checks, platform coverage and reference
+comparisons used in development. See :doc:`dev_build_test` for commands.
 
 .. list-table::
    :header-rows: 1
@@ -12,12 +16,9 @@ does not establish equivalence to every cWB production configuration.
    * - Check
      - What it establishes
      - What it does not establish
-   * - ``pycwb doctor``
-     - Interpreter, platform and installed distribution versions are recorded
-     - Backend imports, device availability, pipeline readiness or numerical agreement
-   * - ``pycwb validate``
-     - YAML/schema validity, sky units, execution/GPU settings and detector definitions
-     - Data availability, all cross-field constraints or scientific suitability
+   * - Configuration-loading tests
+     - Rejection of invalid YAML, schema values, sky units, execution/GPU settings and detector definitions
+     - Data availability or scientific suitability
    * - Synthetic CLI recovery test (``tests/test_demo_e2e.py``)
      - When passing: one loud SGE injection is recovered through the installed CLI
      - FAR calibration, sensitivity, other networks or GPU equivalence
@@ -27,6 +28,31 @@ does not establish equivalence to every cWB production configuration.
    * - Injection consistency job
      - The explicitly invoked reference fixtures and comparison tolerances
      - Unexamined configurations; this CI job is currently manual
+
+.. _platform_coverage:
+
+Platform coverage
+-----------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Environment
+     - Evidence and limitations
+   * - Linux x86_64, Python 3.13, CPU
+     - Native CI container and automated tests. Recommended starting point.
+   * - Python 3.11
+     - Minimum supported version; lint/type checks run in a separate 3.11 environment. Full runtime tests currently run on 3.13.
+   * - Other Python versions >=3.11
+     - Permitted by package metadata; no full multi-version runtime CI matrix yet.
+   * - macOS Intel / Apple Silicon, CPU
+     - Dependency availability must be checked locally; not covered by the current CI.
+   * - Windows / WSL2
+     - Native Windows is not tested. A Linux environment under WSL2 is a possible route, not a validated configuration.
+   * - GPU backends
+     - Require backend-specific dependencies and validation. The beginner demo uses the CPU workflow.
+   * - ROOT interoperability
+     - Legacy backend reference tests are separate from native CI. For ROOT-based analyses, use the original cWB; see :ref:`cwb_heritage`.
 
 Reference comparisons
 ---------------------
@@ -43,6 +69,5 @@ For a scientific release, attach a validation record with:
 * compared quantities, tolerances, measured differences and test commands;
 * known exceptions and the release/configurations to which the record applies.
 
-The presence of a comparison script is not evidence that it passed for the
-release being used. No comprehensive release validation matrix is claimed by
-this page. Experimental modules are identified in :ref:`modules_guide`.
+Include the results of the comparisons you ran in the release record.
+Experimental modules are listed in :ref:`modules_guide`.

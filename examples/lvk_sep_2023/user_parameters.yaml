@@ -71,6 +71,7 @@ simulation: "all_inject_in_one_segment"
 nfactor: 1
 
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   segment:
     start: 1126258862.4
     end: 1126260062.4
@@ -84,9 +85,10 @@ injection:
     distance: 300
     inclination: 0
     polarization: 0
+    pol: 0
     gps_time: 1126259462.4
     coa_phase: 0
     ra: 0
     dec: 0
-  approximant: "IMRPhenomXHM"
-
+    approximant: "IMRPhenomXHM"
+    f_lower: 20.0

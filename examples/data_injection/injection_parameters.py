@@ -2,9 +2,11 @@ import numpy as np
 from pycwb.modules.injection.par_generator import inc_pol_replicator
 
 def get_injection_parameters():
-    # b range from 50 to 120, with 10 steps
+    # Six inclination/polarization pairs for one CBC source.
     mass_list = [{
         'mass1': 30,
+        'approximant': 'IMRPhenomXPHM',
+        'f_lower': 20.0,
         'mass2': 20,
         'spin1z': 0,
         'spin2z': 0,
@@ -20,5 +22,7 @@ def get_injection_parameters():
     pol_list = np.random.uniform(0, 2*np.pi, 6)
 
     final_list = inc_pol_replicator(mass_list, inc_list, pol_list)
+    for parameters in final_list:
+        parameters['pol'] = parameters['polarization']
 
     return final_list

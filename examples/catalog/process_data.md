@@ -5,8 +5,16 @@ from a pycWB Arrow/Parquet catalog.  All examples use the
 `Catalog` class and standard Python data-science libraries
 (`pandas`, `matplotlib`, `numpy`).
 
-> **Sample file used below:** `catalog.parquet` (SGE injection run,
-> ~470 triggers, 2 jobs, HL network).  Adjust the path to your own catalog.
+Run this guide from a completed SGE injection production directory. It requires
+`catalog/catalog.parquet` and, for sections 9–10, the corresponding truth summary:
+
+```bash
+pycwb simulation-summary --work-dir .
+```
+
+The Q/frequency plots require SGE injections with those parameters; they do not
+apply to CBC catalogs. Empty selections are valid and should be reported as such.
+For a small general-purpose recovery example, see the population tutorial.
 
 ---
 
@@ -22,8 +30,8 @@ import pandas as pd
 
 from pycwb.modules.catalog import Catalog
 
-cat = Catalog.open("catalog.parquet")
-print(cat)                       # Catalog('…', triggers=471)
+cat = Catalog.open("catalog/catalog.parquet")
+print(cat)                       # Inspect the actual trigger count
 ```
 
 ---
@@ -175,6 +183,9 @@ qf_df = qf_table.to_pandas()
 counts = qf_df.groupby(["Q", "freq"]).size().reset_index(name="count")
 pivot = counts.pivot(index="Q", columns="freq", values="count").fillna(0)
 
+if pivot.empty:
+    raise ValueError("This heatmap requires recovered injections with Q and frequency parameters.")
+
 fig, ax = plt.subplots(figsize=(10, 4))
 im = ax.imshow(pivot.values, aspect="auto", origin="lower",
                extent=[pivot.columns.min(), pivot.columns.max(),
@@ -239,7 +250,7 @@ ax.set_title("Injected sky position")
 
 # Reconstructed sky positions
 ax = axes[1]
-sc = ax.scatter(np.degrees(sky_df["rec_ra"]), np.degrees(sky_df["rec_dec"]),
+sc = ax.scatter(sky_df["rec_ra"], sky_df["rec_dec"],
                 c=sky_df["rho"], cmap="viridis", s=10, alpha=0.6)
 fig.colorbar(sc, ax=ax, label="rho")
 ax.set_xlabel("RA (deg)")
@@ -253,9 +264,19 @@ plt.show()
 ### Sky position error
 
 ```python
-# Angular separation (small-angle approximation)
-sky_df["delta_ra"]  = np.degrees(sky_df["rec_ra"]  - sky_df["inj_ra"])
-sky_df["delta_dec"] = np.degrees(sky_df["rec_dec"] - sky_df["inj_dec"])
+# Injection coordinates are radians; reconstructed coordinates are degrees.
+# Coordinate residuals are not the spherical angular separation.
+sky_df["delta_ra"] = (sky_df["rec_ra"] - np.degrees(sky_df["inj_ra"]) + 180) % 360 - 180
+sky_df["delta_dec"] = sky_df["rec_dec"] - np.degrees(sky_df["inj_dec"])
+
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+
+injected = SkyCoord(ra=sky_df["inj_ra"].to_numpy() * u.rad,
+                    dec=sky_df["inj_dec"].to_numpy() * u.rad)
+recovered = SkyCoord(ra=sky_df["rec_ra"].to_numpy() * u.deg,
+                     dec=sky_df["rec_dec"].to_numpy() * u.deg)
+sky_df["separation_deg"] = injected.separation(recovered).deg
 
 fig, ax = plt.subplots()
 sc = ax.scatter(sky_df["delta_ra"], sky_df["delta_dec"],
@@ -300,33 +321,23 @@ job_inj.head()
 
 ## 9. Compare Injected vs Recovered: Finding Missing Injections
 
-For each job, compare the full injection schedule (from metadata) with the
-triggers actually recovered. This reveals which (Q, frequency)
-combinations the pipeline missed.
+Use the simulation summary as truth and a **right** interval match so every
+scheduled source remains in the table, including misses. The matcher chooses
+unique trigger/source associations. Counting trigger rows directly can count a
+source more than once and produce efficiencies above one.
 
 ```python
-job = jobs[0]
-job_id = job["index"]
+from pycwb.modules.catalog.matching import match_simulations_parquet
 
-# --- All scheduled injections in this job ---
-sched_df = pd.DataFrame(job["injections"])
-sched_counts = sched_df.groupby(["Q", "frequency"]).size().reset_index(name="scheduled")
-
-# --- Recovered triggers for this job ---
-rec_table = cat.query(f"""
-    SELECT json_extract(injection.parameters, '$.Q')::FLOAT         AS Q,
-           json_extract(injection.parameters, '$.frequency')::FLOAT AS freq
-    FROM   triggers
-    WHERE  injection IS NOT NULL
-      AND  job_id = {job_id}
-""")
-rec_df = rec_table.to_pandas()
-rec_counts = rec_df.groupby(["Q", "freq"]).size().reset_index(name="recovered")
-rec_counts.rename(columns={"freq": "frequency"}, inplace=True)
-
-# --- Merge ---
-merged = sched_counts.merge(rec_counts, on=["Q", "frequency"], how="left").fillna(0)
-merged["recovered"] = merged["recovered"].astype(int)
+matched = match_simulations_parquet(
+    "catalog/catalog.parquet", "catalog/simulations.parquet", how="right"
+).to_pandas()
+# This example counts all scheduled sources. For an eligible-only denominator,
+# apply CAT0/1/2 and across-segment exclusions as in postproduction_efficiency.
+matched["recovered"] = matched["id"].notna()
+matched["scheduled"] = 1
+merged = matched.groupby(["sim_Q", "sim_frequency"])[["scheduled", "recovered"]].sum()
+merged = merged.reset_index().rename(columns={"sim_Q": "Q", "sim_frequency": "frequency"})
 merged["missed"] = merged["scheduled"] - merged["recovered"]
 merged["efficiency"] = merged["recovered"] / merged["scheduled"]
 print(merged.to_string(index=False))
@@ -340,7 +351,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 for ax, col, title, cmap in zip(
     axes,
     ["scheduled", "recovered", "efficiency"],
-    ["Scheduled injections", "Recovered triggers", "Recovery efficiency"],
+    ["Scheduled injections", "Recovered injections", "Recovery efficiency"],
     ["Blues", "Greens", "RdYlGn"],
 ):
     pivot = merged.pivot(index="Q", columns="frequency", values=col).fillna(0)
@@ -377,29 +388,12 @@ else:
 
 ## 10. Per-hrss Detection Efficiency Curve
 
-For injection studies it is common to plot the fraction of recovered
-triggers as a function of injected hrss for each waveform family:
+Plot the fraction of uniquely recovered injections as a function of source hrss.
+Use the same matched truth table and denominator policy as section 9:
 
 ```python
-job = jobs[0]
-job_id = job["index"]
-
-# Scheduled: count per (name, hrss)
-sched_df = pd.DataFrame(job["injections"])
-sched_by_hrss = sched_df.groupby(["name", "hrss"]).size().reset_index(name="scheduled")
-
-# Recovered: count per (name, hrss)
-rec_hrss = cat.query(f"""
-    SELECT injection.name,
-           injection.hrss
-    FROM   triggers
-    WHERE  injection IS NOT NULL
-      AND  job_id = {job_id}
-""").to_pandas()
-rec_by_hrss = rec_hrss.groupby(["name", "hrss"]).size().reset_index(name="recovered")
-
-eff = sched_by_hrss.merge(rec_by_hrss, on=["name", "hrss"], how="left").fillna(0)
-eff["recovered"] = eff["recovered"].astype(int)
+eff = matched.groupby(["sim_name", "sim_hrss"])[["scheduled", "recovered"]].sum()
+eff = eff.reset_index().rename(columns={"sim_name": "name", "sim_hrss": "hrss"})
 eff["efficiency"] = eff["recovered"] / eff["scheduled"]
 
 # Plot one curve per waveform name

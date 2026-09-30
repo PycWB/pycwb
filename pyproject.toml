@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=77", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "PycWB"
 description = "A Python package for coherent gravitational wave burst analysis"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [
     {name = "The PycWB team", email = "yumeng.xu@ligo.org"},
 ]
@@ -19,13 +20,13 @@ dependencies = [
     "astropy",
     "pyyaml",
     "jsonschema",
-    "watchfiles",
     "numba",
     "jax",
     "gwpy",
-    "ligo-segments",
+    "gwosc",
+    "gwdatafind",
+    "requests",
     "ligo-gracedb",
-    "aiohttp",
     "filelock",
     "numpy>=2",
     "scipy>=1.13",
@@ -43,7 +44,6 @@ dependencies = [
     "htcondor",
     "psutil",
     "memspectrum",
-    "python-ligo-lw<2.0.0",
     "jinja2",
     "plotly",
     "wdm-wavelet>=0.4.0",
@@ -59,8 +59,15 @@ pycbc = ["pycbc"]
 # nds2-client and python-nds2-client are not on PyPI; install via conda-forge.
 # gwpy (a hard dependency) will use them automatically when present.
 nds2 = ["python-nds2-client"]
+# Postproduction imports XGBoost; production searches do not need it.
 xgboost = ["xgboost"]
-test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit", "xgboost"]
+autoencoder = ["tensorflow"]
+# Reads cWB ROOT output files without PyROOT.
+root = ["uproot", "awkward"]
+test = ["pytest>=7", "pytest-mock", "pytest-cov", "iminuit", "xgboost", "uproot", "awkward"]
+
+[project.scripts]
+pycwb = "pycwb.cli.main:main"
 
 [project.urls]
 Homepage = "https://git.ligo.org/yumeng.xu/pycwb"
@@ -73,10 +80,17 @@ write_to = "pycwb/_version.py"
 
 [tool.setuptools]
 include-package-data = true
-script-files = ["bin/pycwb"]
 
 [tool.setuptools.packages.find]
+# Without include, namespace discovery installs every top-level directory
+# (tests, tools, benchmark, ...) into site-packages. Tests stay in the sdist.
 where = ["."]
+include = ["pycwb", "pycwb.*"]
+exclude = ["pycwb.tests", "pycwb.tests.*", "pycwb.*.tests", "pycwb.*.tests.*"]
+
+[tool.setuptools.exclude-package-data]
+# include-package-data would otherwise ship excluded test directories as data.
+"*" = ["tests/*", "tests/**/*"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -94,7 +108,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["pycwb/config/execution.py", "pycwb/config/processing.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/modules/coherence_native/callbacks.py", "pycwb/modules/super_cluster_native/callbacks.py", "pycwb/modules/likelihoodWP/callbacks.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/cli/validate.py", "pycwb/cli/doctor.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
+files = ["pycwb/config/execution.py", "pycwb/config/processing.py", "pycwb/constants/gpu_options.py", "pycwb/config/validation.py", "pycwb/modules/coherence_native/callbacks.py", "pycwb/modules/super_cluster_native/callbacks.py", "pycwb/modules/likelihoodWP/callbacks.py", "pycwb/utils/size.py", "pycwb/utils/intervals.py", "pycwb/modules/coherence_gpu/coherence.py", "pycwb/modules/likelihood_gpu/likelihood.py", "pycwb/modules/super_cluster_gpu/super_cluster.py"]
 follow_imports = "skip"
 ignore_missing_imports = true
 check_untyped_defs = true

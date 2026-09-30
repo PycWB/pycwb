@@ -27,7 +27,7 @@ These containers are part of the built-in configuration schema. Each plugin expo
 
 The correction returns an ordinary `pycwb.types.time_frequency_map.TimeFrequencyMap` on the layer's 64 Hz time lattice, matching cWB's use of `WSeries<float> nVAR` rather than a dedicated variability type. Its data has shape `(1, n_samples)` and float32 storage; `dt` and `start` describe sampling, while `f_low` and `f_high` give the affected 16–48 Hz band. The map contains correction factors, so `wavelet` is `None`. `NoiseRMSMap.variation` carries this map through coherence and likelihood pixel-noise lookups in `modules/data_conditioning/noise.py`, which delegates optional variation to `conditioning_plugins/noise_variation.py`, including partial overlap with the affected band and lagged detector sample indices. Physical waveform reconstruction consumes the resulting per-pixel noise RMS. A second variation-producing plugin is rejected until an explicit composition rule exists. Saved diagnostic arrays remain one-dimensional for compatibility.
 
-Zero-energy/constant envelopes receive identity behavior; zero correction autocorrelation skips the multiplicity adjustment. These safeguards avoid reference divisions by zero. These safeguards do not change the tested ordinary-data reference result. This module is different from `data_conditioning/PSD_correction.py`.
+Zero-energy/constant envelopes receive identity behavior; zero correction autocorrelation skips the multiplicity adjustment. These safeguards avoid reference divisions by zero. These safeguards do not change the tested ordinary-data reference result. This module is different from `data_conditioning/psd_correction.py`.
 
 ## Gate semantics
 

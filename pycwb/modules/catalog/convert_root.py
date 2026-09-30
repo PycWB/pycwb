@@ -1,7 +1,7 @@
 """
 Convert cWB ROOT ``waveburst`` trees to the pycWB Arrow/Parquet catalog format.
 
-Requires ``uproot`` (``pip install uproot awkward``).
+Requires ``uproot`` (``pip install 'pycwb[root]'``).
 
 Typical usage
 -------------
@@ -314,7 +314,7 @@ def read_root_triggers(
     try:
         import uproot
     except ImportError as exc:
-        raise ImportError("uproot is required: pip install uproot awkward") from exc
+        raise ImportError("uproot is required: pip install 'pycwb[root]'") from exc
 
     all_branches = _SCALAR_BRANCHES + _ARRAY_BRANCHES
 

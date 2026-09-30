@@ -3,10 +3,16 @@
 Targeted Search
 ===============
 
-.. rubric:: Pipeline: :doc:`data <pipeline_lifecycle>` → :doc:`segments <job_control>` → :doc:`conditioning <pipeline_lifecycle>` → :doc:`WDM <pipeline_lifecycle>` → :doc:`pixels <clustering_algorithm>` → :doc:`clusters <clustering_algorithm>` → **[sky mask]** ← you are here → :doc:`likelihood <likelihood_guide>` → :doc:`events <pipeline_lifecycle>` → :doc:`bkg <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → :doc:`eff <postproduction_efficiency>`
+.. stage-nav:: search
+   :touches: likelihood
+
+   Sky masks restrict the sky directions scanned in the **Likelihood** stage.
 
 This guide explains how to configure pycWB for targeted (pointed) searches,
 including sky masks, coordinate systems, and HEALPix resolution settings.
+Use it with your own source location, time interval and data selection. To see
+the effect of several masks on one prepared signal first, use
+:doc:`tutorial_sky_masks`.
 
 .. contents:: Table of Contents
    :depth: 2

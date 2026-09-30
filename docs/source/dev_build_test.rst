@@ -32,6 +32,27 @@ bindings. This step is optional and only needed for the ROOT-backed wavelet
 extension or legacy ROOT I/O.
 
 
+.. _building_documentation:
+
+Build the documentation
+-----------------------
+
+From a source checkout with its runtime dependencies installed:
+
+.. code-block:: bash
+
+   python -m pip install -r docs/requirements.txt
+   python -m pip install --no-deps -e .
+   make doc-check
+
+Installing the checkout generates ``pycwb/_version.py``, which is not tracked
+in Git and is required when Sphinx imports the package.
+
+HTML is written to ``docs/build/html``. API pages and CLI help are generated
+automatically for both local and hosted builds; edit the source docstrings and
+parser definitions rather than generated ``pycwb*.rst``, ``modules.rst`` or
+``_cli_help.rst.inc`` files.
+
 Running Tests
 -------------
 
@@ -105,7 +126,7 @@ describe the same Python version:
    .venv-quality/bin/python -m mypy
 
 The quality script rejects new lint, public-contract and import-boundary debt
-against the reviewed baseline. Mypy checks the 13 boundary files listed in
+against the reviewed baseline. Mypy checks the boundary files listed in
 ``pyproject.toml``. This environment includes NumPy's real type stubs; the
 NumPy pin in ``tools/quality/requirements.txt`` applies only to these checks.
 The scientific runtime retains its separate ``numpy>=2`` requirement.
@@ -164,3 +185,69 @@ of a compatible local catalog to avoid downloading it.
 
 Use a new demo directory for every verification run. Tests marked ``slow`` are
 opt-in and require the documented reference data or network access.
+
+Backend checks
+--------------
+
+The output combinations in :doc:`backends` are checked by
+``tests/test_runtime_validation.py`` and the GPU output, pipeline, resume and
+numerical tests. Numerical tests skip when CUDA is unavailable, so run them on
+a CUDA host for GPU changes. Whole-job comparisons cover catalog-only LF/HF/LD
+background; injection behavior needs its own end-to-end checks.
+
+A historical 128-lag LF comparison of worker-side output found matching
+records but slower execution. The worker-output path was retired; the parent
+now writes output. See ``docs/dev/quality_cleanup.md`` for the measurements.
+
+.. _detector_geometry_reference:
+
+Detector-geometry reference
+---------------------------
+
+The reference vectors come from ``wat/detector.cc`` in cWB release 6.4.6.9,
+commit ``e03cf7f``. This revision identifies the test oracle; configuration uses
+``H1:cwb`` and ``L1:cwb``.
+
+The cWB definition was added to reproduce release outputs. PycWB's bundled
+LAL-derived definition reconstructs vectors from geographic angles, whereas
+cWB uses literal rounded vectors. The geometry audit measured:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 30 55
+
+   * - Detector
+     - Vertex displacement
+     - Maximum absolute antenna-response difference in sampled sky
+   * - H1
+     - 5.367 mm
+     - 3.006 × 10\ :sup:`−6`
+   * - L1
+     - 3.524 mm
+     - 2.921 × 10\ :sup:`−6`
+
+The antenna comparison covered 4,099 directions. These are absolute differences,
+not relative errors or bounds over the continuous sky. With matched literal
+vectors, differences from the cWB antenna oracle were below 1.6 × 10\ :sup:`−15`.
+The stored oracle and its provenance are under
+``pycwb/types/tests/reference/RELEASE_GEOMETRY.md``.
+
+These checks establish reproduction of cWB, not which set is physically closer
+to the surveyed instrument. More decimal digits alone do not establish physical
+accuracy. Keep the bundled default to preserve existing PycWB geometry; use
+``:cwb`` when comparing against the validated cWB reference. Neither choice is
+a performance preset.
+
+Regression target and witness
+-----------------------------
+
+Both native regression engines (Numba and JAX) preserve the original target
+transform and transform a separate, mean-subtracted self-witness, following
+cWB's witness preparation. Cross-correlations use both transforms; the filter
+matrix and capped filter input use the witness. Predicted noise is restored
+with the target normalization. The caller's strain array is not modified.
+
+This correction can change regression trim decisions and downstream event
+parameters for nonzero-mean input. Use a new run directory when comparing with
+results generated before this correction and retain the source revision.
+The independent cWB sliced-RMS normalization discrepancy is not emulated.

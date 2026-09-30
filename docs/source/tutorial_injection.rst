@@ -5,8 +5,10 @@ Step by Step Injection Search
 
 Intermediate · Prerequisites: :ref:`start_here` and :doc:`tutorial_search`
 
-This tutorial shows how to run and inspect a simulated injection search. For a
-complete runnable example, start from ``examples/injection``.
+This walkthrough explains the Python stages and numerical conventions behind
+an injection search. For a worked recovery experiment, use
+:doc:`tutorial_population`; for configuring your own campaign, use
+:doc:`injection_infrastructure`. The stage example below uses ``examples/injection``.
 
 First, create a project folder and copy the example files:
 
@@ -65,14 +67,19 @@ the configured waveform into each detector stream:
        for i, strain in enumerate(injected):
            data[i].inject(strain, copy=False)
 
-Use the data-conditioning module to whiten the data. It returns the conditioned
+Resample to the analysis rate before conditioning; the example uses
+``levelR: 3``. This walkthrough injects before resampling, whereas the segment
+workflow resamples target-SNR injections separately (see below). The
+data-conditioning module then whitens the data and returns the conditioned
 strains and the nRMS maps used by the later stages:
 
 .. code-block:: python
 
-   from pycwb.modules.data_conditioning import data_conditioning
+   from pycwb.modules.data_conditioning import condition_strains
+   from pycwb.modules.read_data.data_check import check_and_resample_py
 
-   strains, nRMS = data_conditioning(config, data)
+   data = [check_and_resample_py(strain, config, i) for i, strain in enumerate(data)]
+   strains, nRMS = condition_strains(config, data)
 
 The native production path then performs setup once and reuses it for each
 time-slide lag:
@@ -80,15 +87,15 @@ time-slide lag:
 .. code-block:: python
 
    from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-   from pycwb.modules.likelihoodWP.likelihood import setup_likelihood, likelihood
+   from pycwb.modules.likelihoodWP import prepare_likelihood_inputs, evaluate_cluster_likelihood
    from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
    from pycwb.modules.xtalk.type import XTalk
    from pycwb.utils.td_vector_batch import build_td_inputs_cache
 
-   coherence_setup = setup_coherence(config, strains, job_seg=job_segment)
+   coherence_setup = setup_coherence(config, strains, job_seg=job_segment, nRMS=nRMS)
    td_inputs_cache = build_td_inputs_cache(config, strains)
    supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
-   likelihood_setup = setup_likelihood(
+   likelihood_setup = prepare_likelihood_inputs(
        config,
        strains,
        config.nIFO,
@@ -107,16 +114,18 @@ time-slide lag:
        xtalk=xtalk,
        td_inputs_cache=td_inputs_cache,
    )
+   # None means that no supercluster survived for this lag.
+   clusters = [] if selected_clusters is None else selected_clusters.clusters
 
 Finally, calculate likelihood statistics for accepted clusters:
 
 .. code-block:: python
 
    accepted = []
-   for cluster_id, cluster in enumerate(selected_clusters.clusters, start=1):
+   for cluster_id, cluster in enumerate(clusters, start=1):
        if cluster.cluster_status > 0:
            continue
-       result_cluster, sky_stats = likelihood(
+       result_cluster, sky_stats = evaluate_cluster_likelihood(
            config.nIFO,
            cluster,
            config,
@@ -166,8 +175,7 @@ used unconditionally by ``burst_population``. NumPy and ROOT random streams
 differ, so equal seeds do not imply equal WNB realizations.
 
 ``pycwb.modules.injection.snr_scaling.target_snr_scales`` computes per-source
-network-SNR multipliers from clean detector data. It replaces ``snr_population``;
-the unimplemented ``par_generator.snr_scaling`` placeholder was removed.
+network-SNR multipliers from clean detector data.
 Population parameter generation remains separate from signal normalization.
 Meyer resampling lives in ``pycwb.modules.data_conditioning.resampling`` and
 is applied by the segment workflow before regression and whitening.
@@ -187,4 +195,5 @@ You have learned
 - ✅ How to inspect the data conditioning pipeline step by step
 - ✅ How likelihood evaluation and cluster acceptance work
 
-**Next:** :doc:`tutorial_multi_injection` — run multiple injections with different parameters
+**Try the workflow:** :doc:`tutorial_population` demonstrates recovery and
+matching for several sources with different amplitudes.

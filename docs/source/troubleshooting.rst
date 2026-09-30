@@ -9,34 +9,26 @@ declared dependency consistency:
 .. code-block:: bash
 
    pycwb --version
-   pycwb doctor
+   python --version
+   python -m pip list
    python -m pip check
 
-``doctor`` lists installed package metadata; it does not probe imports or
-certify that a chosen backend can run.
-
-If Python cannot import PycWB at all, ``doctor`` may not start. Confirm the active
-interpreter with ``python -c "import sys; print(sys.executable)"`` and reinstall
-into the environment described by :ref:`installing_pycwb`.
+If PycWB cannot be imported, confirm the active interpreter with
+``python -c "import sys; print(sys.executable)"`` and reinstall into the
+environment described by :ref:`installing_pycwb`.
 
 Command not found or unrecognized command
 -----------------------------------------
 
 Activate the environment in which PycWB was installed. Try
-``python -m pycwb --help`` with the current source version. An older release may
-lack ``doctor`` or ``validate``; select matching release
-documentation or install the development checkout. Avoid mixing a new tutorial
-with an older environment.
+``python -m pycwb --help`` to list the commands available in that environment.
 
 Configuration rejected
 ----------------------
 
-.. code-block:: bash
-
-   pycwb validate user_parameters.yaml
-
-This check does not download cross-talk files, open detector frames, or run
-waveform generators. Render configuration templates first. The detector key is
+``pycwb run`` checks the configuration when it loads your YAML. Use the error
+message to locate the rejected setting. Render configuration templates first.
+The detector key is
 ``ifo``, not ``ifos``. ``iwindow`` is the full time window in seconds. For sky
 masks and distributions, include explicit angle units and the coordinate frame.
 See :ref:`schema` and :ref:`coordinate_systems_angles`.

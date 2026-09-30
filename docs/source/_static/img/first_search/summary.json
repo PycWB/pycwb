@@ -1,0 +1,33 @@
+{
+  "pycwb_version": "1.1.0a4.dev137+g29b1eecce.d20260929",
+  "burst_waveform_version": "0.5.0",
+  "wdm_wavelet_version": "0.4.0",
+  "yaml_sha256": "789ba3713adc11bca6d8b457e02ba6596ac49b32ab5ff27405000fad91b3bdd9",
+  "source_hrss": 1e-21,
+  "injection_gps": 1126259526.0,
+  "total_triggers": 1,
+  "triggers_within_one_second": 1,
+  "selected_event": {
+    "id": "0_0_0_1126259526.75_5bd6e82fff",
+    "job_id": 0,
+    "trial_idx": 0,
+    "lag_idx": 0,
+    "rho": 169.9625091553,
+    "net_cc": 0.997705996,
+    "time_L1": 1126259525.9794824,
+    "central_freq_L1": 150.4088134766,
+    "time_H1": 1126259525.984121,
+    "central_freq_H1": 150.4550018311
+  },
+  "progress": [
+    {
+      "job_id": 0,
+      "trial_idx": 0,
+      "lag_idx": 0,
+      "n_triggers": 1,
+      "livetime": 128.0,
+      "timestamp": 1790698561.324599,
+      "status": "completed"
+    }
+  ]
+}

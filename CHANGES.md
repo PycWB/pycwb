@@ -2,10 +2,59 @@
 
 ## Unreleased
 
+### Breaking and result changes
+
+- The native conditioning and likelihood Python APIs were renamed, and detector
+  helpers now require configured `Detector` instances. Update imports and calls
+  using [the migration guide](docs/source/migration.rst); retired function names
+  are not compatibility aliases. Current tutorials and the native Colab notebook
+  now use the supported entry points. ROOT-era examples are historical references.
+- Master/merged catalogs use a referenced `jobs.parquet` manifest. Archive it
+  with the catalog and progress, and use the current `Catalog.jobs` reader.
+  Older inline-metadata readers can silently lose the job list and exposure.
+- Time-delay rounding, Hz-based defragmentation, noise RMS, packet normalization,
+  regression, injection scaling/placement/whitening, ranking features and
+  efficiency/FAR conventions can change results for unchanged YAML inputs.
+  `BATCH` is now enforced (`0` disables the cap). Revalidate fresh runs and
+  retrain native XGBoost models; see the migration guide for required inputs,
+  supported IFAR labels and opt-in numerical settings.
+- Runtime dependencies now include `wdm-wavelet>=0.4.0`,
+  `burst-waveform>=0.5.0` and `joblib>=1.3`, with Python 3.11 or newer.
+  Package versions are generated from Git tags by `setuptools_scm`; a new
+  release version is assigned by the release-tag workflow.
+- The experimental `pycwb flow` command and `pycwb.prefect_flow` (Prefect and
+  Dask wrapper) were removed; use `pycwb run` or `batch-setup`.
+- Packaging: the wheel installs only the `pycwb` package. Earlier wheels also
+  placed top-level `tests`, `tools`, `benchmark`, `prototypes`, `envs`, `bin`
+  and `cwb-core` directories in `site-packages`; reinstall to remove them.
+  Test suites stay in the sdist but not the wheel; documentation and examples
+  are in neither, and the injection example downloads its cross-talk catalog
+  on first use. `pycwb`
+  is a console-script entry point (`bin/pycwb` is gone). `requests`, `gwosc`
+  and `gwdatafind` are now declared; unused `watchfiles`, `aiohttp`,
+  `ligo-segments` and `python-ligo-lw` are not. New extras: `root` (`uproot`,
+  `awkward`) and `autoencoder` (`tensorflow`); postproduction needs `xgboost`.
+
+### Review fixes
+
+- Size shared time-delay buffers for rounded subnet indices as well as the
+  fine likelihood grid. At 2048 Hz, an H1/L1 subnet could previously address
+  delays outside the buffer with `upTDF: 4` or `8`.
+- Keep zero-lag selection in `trigger_selection`. `process_background` now uses
+  its triggers and exposure as given, ignores `exclude_zero_lag` and
+  `unshifted_job_ids` with a warning, and warns about unshifted triggers.
+  Whole-job selections and splits write the matching `progress_file`, and a
+  run whose jobs are all superlag-shifted keeps every regular lag 0 as
+  background instead of dropping its exposure.
+
+### Other changes
+
 - Preserve Parquet list types across prediction-cut batches, including scored
   catalogs with no surviving rows. Keep zero-lag separation in the upstream
   selection stage; training consumes its selected background unchanged and
-  the standard example disables redundant FAR lag filtering.
+  warns when a background input still contains unshifted triggers. The
+  standard example now selects and cleans every training chunk before
+  training and disables redundant FAR lag filtering.
 - Reuse configured detector instances for injection arrival times, including
   external geometries. Already projected strains without sky coordinates keep
   their measured detector centroids instead of aborting reconstruction.
@@ -25,10 +74,11 @@
   scoring config; this declaration does not convert old feature definitions.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
-  unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved
-  YAML snapshot used those implicit defaults will fail the resume consistency
-  check after upgrading. To continue such a run, explicitly restore its recorded
-  lag settings; use a new working directory to change the run to zero-lag.
+  unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Catalogs
+  prepared with v1.1.0a3 or earlier have no YAML snapshot, and the resume check
+  compares every schema key including defaults, so earlier runs cannot be
+  resumed after upgrading. Finish them with their original software, or
+  regenerate them in a new working directory with explicit lag settings.
 - Apply native supercluster size and statistics cuts to isolated clusters even
   when no clusters link. Previously those candidates bypassed the cuts. Trigger
   selection and background counts can change; production impact has not been
@@ -51,13 +101,11 @@
 - Propagate command exit statuses to the shell and defer scientific implementation imports until the selected command runs.
 
 - Run the synthetic injection YAML in `examples/demo/` through the ordinary `pycwb` CLI; keep recovery assertions in the test suite.
-- Add offline configuration checks, including execution/GPU settings and detector definitions (`pycwb validate`), a metadata-based environment inventory (`pycwb doctor`), and `python -m pycwb`.
+- Support `python -m pycwb`.
 - Generate CLI help and parameter summaries from the implementation. Correct detector-key and injection-window guidance.
 - Document installation channels, output interpretation, troubleshooting, analysis archiving, support access and release validation scope.
 - Build generated references consistently on local builds and Read the Docs; add documentation and onboarding checks to CI.
 
-`doctor` reports installed package versions without a hard-coded dependency list or backend-readiness verdict.
-
-These commands are new in this checkout and are not available in older published releases. The demo tests a small native H1/L1 CPU search; it is not a production sensitivity or significance validation.
+These CLI features are new in this checkout and are not available in older published releases. The demo tests a small native H1/L1 CPU search; it is not a production sensitivity or significance validation.
 
 Earlier releases are listed in the [GitLab releases](https://git.ligo.org/yumeng.xu/pycwb/-/releases) and [PyPI history](https://pypi.org/project/PycWB/#history). Their notes have not been reconstructed here.

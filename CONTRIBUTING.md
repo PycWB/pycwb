@@ -6,4 +6,6 @@ Use Python 3.11 or newer. For a development environment, install the checkout wi
 
 Explain the problem and resulting behavior, add relevant regression tests, and update documentation and `CHANGES.md` for user-visible changes. The scientific tests may require additional fixtures; see the [build/test guide](docs/source/dev_build_test.rst).
 
-Questions and bug reports: use [GitLab issues](https://git.ligo.org/yumeng.xu/pycwb/-/issues), or email yumeng.xu@ligo.org if you cannot access the tracker. See [SUPPORT.md](SUPPORT.md).
+The [GitHub](https://github.com/PycWB/pycwb) and [LIGO GitLab](https://git.ligo.org/yumeng.xu/pycwb) repositories are mirrored. Fork either repository and submit a GitHub pull request or GitLab merge request. Contributors outside LVK can use GitHub without an LVK account.
+
+Questions and bug reports: use [GitHub issues](https://github.com/PycWB/pycwb/issues) or [GitLab issues](https://git.ligo.org/yumeng.xu/pycwb/-/issues), or email yumeng.xu@ligo.org if you cannot access either tracker. See [SUPPORT.md](SUPPORT.md).

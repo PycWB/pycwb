@@ -172,6 +172,9 @@ def load_yaml(file_name, schema):
     with open(file_name, 'r') as file:
         params = yaml.safe_load(file)
 
+    if not isinstance(params, dict):
+        raise TypeError("Expected a YAML mapping of parameter names to values")
+
     # Resolve effective schema from any pycwb_schema metadata in the YAML file,
     # then remove the metadata key so it does not reach validation.
     base_dir = os.path.dirname(os.path.abspath(file_name))

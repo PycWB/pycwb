@@ -4,37 +4,59 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from jsonschema import ValidationError
 
 from synthetic_recovery_helpers import check_recovery, copy_example
 from pycwb.cli.main import create_parser, main
-from pycwb.cli.validate import validate_config
+from pycwb.config import Config
 
 
-def test_example_validates_without_downloading(tmp_path, monkeypatch):
+@pytest.fixture
+def without_wavelet_catalog(monkeypatch):
+    """Exercise configuration loading without the unrelated binary catalog."""
+    monkeypatch.setattr(Config, "check_xtalk_file", lambda *args: None)
+    monkeypatch.setattr(Config, "check_MRA_catalog", lambda *args: None)
+
+
+@pytest.fixture
+def offline_working_directory(tmp_path, monkeypatch):
     import requests
 
     def offline(*args, **kwargs):
-        pytest.fail("Configuration checking must not access the network")
+        pytest.fail("Configuration tests must not access the network")
 
     monkeypatch.setattr(requests, "get", offline)
-    config = copy_example(tmp_path / "demo")
-    params = validate_config(config)
-    assert params["ifo"] == ["L1", "H1"]
-    assert params["injection"]["segment"]["noise"]["seeds"] == [150914, 150915]
-    assert not (config.parent / "wdmXTalk").exists()
+    monkeypatch.chdir(tmp_path)
+
+
+def test_example_configuration_loads(tmp_path, without_wavelet_catalog, offline_working_directory):
+    path = copy_example(tmp_path / "demo")
+    config = Config()
+    config.load_from_yaml(path)
+    assert config.ifo == ["L1", "H1"]
+    assert config.injection["segment"]["noise"]["seeds"] == [150914, 150915]
 
 
 @pytest.mark.parametrize(
-    "content", ["", "[]", "ifo: [H1]\n", "ifos: [H1, L1]\nanalysis: 2G\nrefIFO: H1\n"]
+    "content,error",
+    [
+        ("", TypeError),
+        ("[]", TypeError),
+        ("ifo: [H1]\n", ValidationError),
+        ("ifos: [H1, L1]\nanalysis: 2G\nrefIFO: H1\n", ValidationError),
+    ],
 )
-def test_invalid_configuration_has_nonzero_exit(tmp_path, content, capsys):
+def test_run_rejects_invalid_configuration(tmp_path, content, error, offline_working_directory):
     path = tmp_path / "bad.yaml"
     path.write_text(content)
-    assert main(["validate", str(path)]) == 1
-    assert "INVALID" in capsys.readouterr().err
+    working_dir = tmp_path / "search"
+    with pytest.raises(error):
+        main(["run", str(path), "--work-dir", str(working_dir)])
+    assert not (working_dir / "catalog").exists()
+    assert not (working_dir / "wdmXTalk").exists()
 
 
-def test_validate_honors_external_schema_extension(tmp_path):
+def test_config_honors_external_schema_extension(tmp_path, without_wavelet_catalog, offline_working_directory):
     config = copy_example(tmp_path / "demo")
     params = yaml.safe_load(config.read_text())
     (config.parent / "extra.yaml").write_text(
@@ -42,7 +64,9 @@ def test_validate_honors_external_schema_extension(tmp_path):
     )
     params.update(pycwb_schema={"schema_file": "extra.yaml"}, label="my-analysis")
     config.write_text(yaml.safe_dump(params))
-    assert validate_config(config)["label"] == "my-analysis"
+    loaded = Config()
+    loaded.load_from_yaml(config)
+    assert loaded.label == "my-analysis"
 
 
 @pytest.mark.parametrize(
@@ -57,26 +81,23 @@ def test_validate_honors_external_schema_extension(tmp_path):
         {"detector_definitions_file": "missing.json"},
     ],
 )
-def test_validate_rejects_invalid_runtime_settings(tmp_path, updates, capsys):
+def test_run_rejects_invalid_runtime_settings(tmp_path, updates, offline_working_directory):
     path = copy_example(tmp_path / "demo")
     params = yaml.safe_load(path.read_text())
     path.write_text(yaml.safe_dump({**params, **updates}))
-    assert main(["validate", str(path)]) == 1
-    assert "INVALID" in capsys.readouterr().err
+    working_dir = tmp_path / "search"
+    with pytest.raises((ValueError, OSError, ValidationError)):
+        main(["run", str(path), "--work-dir", str(working_dir)])
+    assert not (working_dir / "catalog").exists()
+    assert not (working_dir / "wdmXTalk").exists()
 
 
-def test_validate_resolves_local_detector_definitions_offline(tmp_path, monkeypatch):
+def test_config_resolves_local_detector_definitions(tmp_path, without_wavelet_catalog, offline_working_directory):
     import json
     from copy import deepcopy
 
-    import requests
-
     from pycwb.constants.detectors import DETECTOR_GEOMETRIES
 
-    def offline(*args, **kwargs):
-        pytest.fail("Configuration checking must not access the network")
-
-    monkeypatch.setattr(requests, "get", offline)
     path = copy_example(tmp_path / "demo")
     entry = deepcopy(DETECTOR_GEOMETRIES["H1:lal@pycwb-1"])
     definitions = {
@@ -97,13 +118,14 @@ def test_validate_resolves_local_detector_definitions_offline(tmp_path, monkeypa
         execution_profile={"sky_delay_reuse": False},
     )
     path.write_text(yaml.safe_dump(params))
-    monkeypatch.chdir(tmp_path)
-    assert validate_config(path)["detector_geometry"] == {"H1": "H1:custom"}
+    loaded = Config()
+    loaded.load_from_yaml(path)
+    assert loaded.detector_geometry["H1"] == "H1:custom"
     # A syntactically valid file can still contain physically invalid geometry.
     definitions["geometries"]["H1:custom"]["parameters"]["y"] = entry["parameters"]["x"]
     (path.parent / "detectors.json").write_text(json.dumps(definitions))
     with pytest.raises(ValueError, match="collinear"):
-        validate_config(path)
+        Config().load_from_yaml(path)
 
 
 @pytest.fixture
@@ -192,3 +214,6 @@ def test_reference_commands_match_parser():
         parser.parse_args(["prepare", "config.yaml"])
     with pytest.raises(SystemExit):
         parser.parse_args(["demo", "run"])
+    with pytest.raises(SystemExit) as error:
+        parser.parse_args(["validate", "config.yaml"])
+    assert error.value.code == 2

@@ -3,15 +3,18 @@
 Injection Infrastructure
 ========================
 
-.. rubric:: Pipeline: :doc:`data <pipeline_lifecycle>` → :doc:`segments <job_control>` → **[inject signals]** ← you are here → :doc:`conditioning <pipeline_lifecycle>` → :doc:`WDM <pipeline_lifecycle>` → :doc:`pixels <clustering_algorithm>` → :doc:`clusters <clustering_algorithm>` → :doc:`likelihood <likelihood_guide>` → **[recover injections]** → :doc:`events <pipeline_lifecycle>` → :doc:`bkg <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → :doc:`eff <postproduction_efficiency>`
+.. stage-nav:: search
+   :touches: conditioning events
 
-The injection path begins before conditioning and follows the signal through
-conditioning, time-frequency decomposition, pixel and cluster formation, and
-likelihood-based recovery.
+   Signals are added to each segment's strain before **Conditioning** and
+   matched against the recovered **Events**.
 
 This guide covers pycWB's flexible injection infrastructure for simulation
 studies, including injection methods, sky distributions, time scheduling, and
 waveform generation.
+Use it to configure your own population. The worked :doc:`tutorial_population`
+lesson supplies four sources and demonstrates recovery and missed-event
+matching; :doc:`tutorial_customized_wf_gen` supplies a small custom generator.
 
 .. contents:: Table of Contents
    :depth: 2
@@ -364,8 +367,12 @@ Related Config Parameters
      - Flatten job segments by trial for parallel processing
 
 
-Validation Checks
------------------
+.. raw:: html
+
+   <span id="validation-checks"></span>
+
+Inspect injection recovery
+--------------------------
 
 After setting up injections, verify:
 
@@ -374,13 +381,14 @@ After setting up injections, verify:
   injections usually mean the time range or DQ segments are wrong.
 - **Recovered sim_idx matches injection table**: after running, match
   ``catalog.parquet`` against ``simulations.parquet`` with
-  ``pycwb match-simulations``. Unmatched injections indicate recovery failure.
+  ``pycwb match-simulations``. Inspect unmatched sources alongside their
+  amplitudes, search cuts and matching window.
 - **Sky distribution matches requested mask**: plot the RA/Dec of injected
   signals to verify they follow the requested distribution (UniformAllSky,
   Patch, Fixed, or Custom).
-- **Waveform amplitudes scale correctly**: for ``hrss_scaling``, verify that
-  the injected :math:`h_{rss}` matches the target value (± a few percent after
-  resampling).
+- **Waveform amplitude**: for ``hrss_scaling``, compare the requested source
+  :math:`h_{rss}` with the generated polarizations, and inspect the detector
+  projections after resampling.
 
 
 ----

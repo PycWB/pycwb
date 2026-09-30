@@ -14,7 +14,9 @@ Run these in the analysis environment and save them beside the run:
 .. code-block:: bash
 
    pycwb --version > pycwb-version.txt
-   pycwb doctor --json > environment-report.json
+   python --version > python-version.txt
+   python -c "import platform, sys; print(sys.executable); print(platform.platform())" > platform.txt
+   python -m pip list --format=json > packages.json
    python -m pip freeze > requirements-analysis.txt
    conda env export > environment-analysis.yml
 

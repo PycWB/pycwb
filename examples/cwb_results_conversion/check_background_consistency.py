@@ -70,9 +70,20 @@ def main():
         "comparison": ">",
         "trigger_query": args.query,
     }
+    # In-memory adapter tables and their Parquet files give identical rates.
     memory = process_background(adapted.triggers, adapted.progress, **kwargs)
     disk = process_background(paths["catalog_file"], paths["progress_file"], **kwargs)
     pd.testing.assert_frame_equal(memory["curve"], disk["curve"])
+    # The reference excludes zero lag; selection owns that choice and writes
+    # the matching exposure, which the rate calculation then uses as given.
+    background = {
+        "triggers_file": str(out / "background.parquet"),
+        "progress_file": str(out / "background_progress.parquet"),
+    }
+    selection = trigger_selection(
+        ".", paths["catalog_file"], paths["progress_file"], outputs=background,
+    )
+    memory = process_background(background["triggers_file"], background["progress_file"], **kwargs)
     actual = memory["triggers"]
     selected = sorted(zip(actual.root_file, actual.root_entry))
     assert selected == sorted(tuple(r) for r in reference["selected"]), (
@@ -81,14 +92,14 @@ def main():
     np.testing.assert_allclose(memory["livetime"], reference["livetime"], rtol=1e-12)
     np.testing.assert_array_equal(memory["curve"]["count"], reference["counts"])
     np.testing.assert_allclose(memory["curve"].far_hz, reference["far_hz"], rtol=1e-12)
-    # Exercise the existing file-based selection action too.
-    selection = trigger_selection(
+    # The selection's own trigger filter agrees with the event-quality query.
+    filtered = trigger_selection(
         ".",
         paths["catalog_file"],
         paths["progress_file"],
         trigger_filter={"query": args.query} if args.query else None,
     )
-    assert len(selection["triggers"]) == len(actual)
+    assert len(filtered["triggers"]) == len(actual)
     np.testing.assert_allclose(
         selection["livetime"]["seconds"], memory["livetime"], rtol=1e-12
     )

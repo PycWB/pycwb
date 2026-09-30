@@ -1,72 +1,37 @@
-"""
-Smoke test: run the full online pipeline for 2 segments then stop.
-Run from the online_shm_run directory:
-    /path/to/pycwb-dev-py13/python3 _test_pipeline.py
-"""
-import sys, os, logging, signal, time, threading
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+"""Process a bounded number of local online segments without dispatching alerts.
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
-logger = logging.getLogger("pipeline-test")
+This exercises frame reading and the worker pipeline. Use debug_run.sh to
+exercise continuous acquisition and orchestration at real-time speed.
+"""
 
+import logging
+from _test_integration import parser, read_segment
 from pycwb.config import Config
 from pycwb.modules.online.data_source import SharedMemoryDataSource
-from pycwb.types.online import OnlineSegment
 from pycwb.workflow.subflow.process_online_segment import process_online_segment
 
-# ── Config ────────────────────────────────────────────────────────────────────
-c = Config()
-c.load_from_yaml('user_parameters.yaml')
-# point to test SHM
-c.online_data_source = {'type': 'shm', 'base_path': '/tmp/shm_test',
-                        'timeout': 10, 'poll_interval': 0.1}
-logger.info("Config loaded: ifo=%s rateANA=%s", c.ifo, c.rateANA)
 
-# ── Data source ───────────────────────────────────────────────────────────────
-src = SharedMemoryDataSource(base_path='/tmp/shm_test', timeout=10, poll_interval=0.1)
-src.connect()
+def main():
+    arguments = parser()
+    arguments.description = __doc__
+    arguments.add_argument('--segments', type=int, default=2)
+    args = arguments.parse_args()
+    if args.segments < 1:
+        arguments.error('--segments must be positive')
+    logging.basicConfig(level=logging.INFO)
+    config = Config()
+    config.load_from_yaml(args.config)
+    source = SharedMemoryDataSource(base_path=args.shm_base, timeout=10, poll_interval=0.1)
+    source.connect()
+    try:
+        for index in range(args.segments):
+            segment = read_segment(config, source, args.gps_start, index)
+            triggers = process_online_segment(config, segment)
+            print(f'Segment {index}: {len(triggers)} triggers', flush=True)
+    finally:
+        source.close()
+    print(f'Worker pipeline passed: {args.segments} segments')
 
-channels = c.online_channels
-seg_dur = int(getattr(c, 'online_segment_duration', 60))
-stride  = int(getattr(c, 'online_segment_stride', 8))
-gps_start = 1257894000
 
-n_segments = 0
-for i in range(2):
-    gps = gps_start + i * stride
-    gps_end = gps + seg_dur
-    if gps_end > gps_start + 120:
-        logger.info("Not enough pre-filled data for segment %d, stopping", i)
-        break
-
-    logger.info("--- Segment %d: GPS %d - %d ---", i, gps, gps_end)
-    t0 = time.time()
-    chunk = src.read_chunk(channels, start_gps=gps, duration=seg_dur)
-    logger.info("  Data read: %.2f s", time.time() - t0)
-
-    seg = OnlineSegment(
-        index=i,
-        ifos=c.ifo,
-        segment_gps_start=gps,
-        segment_gps_end=gps_end,
-        seg_edge=c.segEdge,
-        sample_rate=c.inRate,
-        data_payload=chunk,
-        wall_time_received=time.time(),
-        stride=stride,
-        overlap_frac=0.0,
-    )
-
-    t1 = time.time()
-    triggers = process_online_segment(c, seg)
-    elapsed = time.time() - t1
-    logger.info("  process_online_segment returned %d trigger(s) in %.1f s",
-                len(triggers), elapsed)
-    n_segments += 1
-
-src.close()
-logger.info("Pipeline smoke test PASSED (%d segments processed)", n_segments)
+if __name__ == '__main__':
+    main()

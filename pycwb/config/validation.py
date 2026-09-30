@@ -1,4 +1,4 @@
-"""Pure semantic checks shared by offline validation and runtime restoration."""
+"""Pure semantic checks shared by configuration loading and runtime restoration."""
 
 from typing import Any
 

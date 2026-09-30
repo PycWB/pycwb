@@ -22,7 +22,7 @@ Project Layout
    ├── modules/            # Pipeline stages (one sub-package each)
    │   ├── read_data/
    │   ├── data_conditioning/
-   │   ├── coherence/
+   │   ├── coherence_native/
    │   ├── super_cluster_native/
    │   ├── likelihoodWP/
    │   ├── catalog/
@@ -32,7 +32,7 @@ Project Layout
    ├── types/              # Data classes: WaveSegment, Cluster, PixelArrays, etc.
    ├── utils/              # Shared utilities: time-delay vectors, ROOT checks
    ├── workflow/           # Orchestration: run.py, batch.py, online.py
-   │   └── subflow/        # Per-job pipeline: process_job_segment.py
+   │   └── subflow/        # Per-job pipeline: process_job_segment_native.py
    └── post_production/    # YAML-driven workflow engine
    cwb-core/               # C++ wavelet/ROOT core (being phased out)
    tests/                  # Integration & numerical parity tests
@@ -138,3 +138,43 @@ Active design plans live in the repo root:
 - ``PER_LAG_PROGRESS_PLAN.md`` — progress tracking per lag
 - ``ONLINE_WORKFLOW_PLAN.md`` — streaming/online architecture
 - ``DOCS_REDESIGN_PLAN.md`` — documentation structure plan
+
+Backend stage interfaces
+------------------------
+
+The supplied native recipe accepts ordinary, keyword-only function replacements.
+The GPU entry point chooses these functions directly and shares native trial,
+resume and output handling. There is no fixed stage bundle. A user-selected
+``segment_processer`` owns its composition and can call scientific modules in a
+different sequence, subject to their data dependencies. Reusing the native
+recipe is optional; its ``lag_processor`` argument also allows replacing the
+whole lag loop. See ``examples/custom_workflow`` for a CLI-driven example.
+
+Detailed numerical callback contracts live beside their consumers, in
+``coherence_native.callbacks``, ``super_cluster_native.callbacks`` and
+``likelihoodWP.callbacks`` under ``pycwb.modules``. They describe individual
+operations, not a workflow order. GPU factories create process-owned callables;
+modules may reuse native payloads and algorithms without importing the workflow.
+CUDA kernel handles are cached by source, architecture and context identity;
+reset/unloaded handles are rebuilt on the next load. Recreate GPU callables after
+resetting a device: their existing buffers also belong to the old context.
+
+``pycwb.config.execution`` defines scheduling settings;
+``pycwb.config.processing`` defines numerical processing options.
+
+Backend imports and compatibility
+---------------------------------
+
+Code imports the stage packages listed in :doc:`backends` directly. CUDA runtime helpers live
+in ``pycwb.utils.gpu``; scientific comparison helpers live in
+``pycwb.modules.stage_validation`` and profiling lives in ``pycwb.workflow.profiling``.
+The development-only ``background_cuda`` compatibility namespace has been removed.
+Use the processor path in :doc:`backends` and explicit scheduling arguments
+for ``read_data.parallel`` and ``data_conditioning.parallel``. Regression tests
+live alongside their owning modules and workflows.
+
+The retired worker-output import is removed with its experimental implementation.
+Chirp bootstrap host helpers live in ``likelihoodWP.chirp_bootstrap``.
+Existing YAML spellings ``segment_processer`` and ``parallel_injection_trail`` remain supported.
+The corrected ``optimize_sky_loc_from_td`` also retains the historical misspelled
+import alias. Avoid renaming persisted configuration keys without a migration.

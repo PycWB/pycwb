@@ -55,17 +55,25 @@ def test_adapter_common_processing_and_native_selection(tmp_path):
     assert events.Qveto3.tolist() == [1, 1, 1]
     assert events.time_L1.iloc[0] == 1387222477.6453857
     paths = result.write(tmp_path / "converted")
-    kwargs = {"thresholds": [5, 6], "comparison": ">"}
+    kwargs = {"thresholds": [3, 5, 6], "comparison": ">"}
+    # Rates use the adapted tables as given, including the rho-4 zero lag.
     memory = process_background(result.triggers, result.progress, **kwargs)
     disk = process_background(paths["catalog_file"], paths["progress_file"], **kwargs)
-    assert memory["livetime"] == 90  # includes zero-event lag and shifted lag-zero
-    assert memory["curve"]["count"].tolist() == [1, 0]
+    assert memory["livetime"] == 100
+    assert memory["curve"]["count"].tolist() == [3, 1, 0]
     pd.testing.assert_frame_equal(memory["curve"], disk["curve"])
-    inclusive = process_background(result.triggers, result.progress, thresholds=[5, 6])
-    assert inclusive["curve"]["count"].tolist() == [2, 1]
-    selection = trigger_selection(".", paths["catalog_file"], paths["progress_file"])
+    selection = trigger_selection(
+        ".", paths["catalog_file"], paths["progress_file"],
+        outputs={"triggers_file": str(tmp_path / "bkg.parquet"),
+                 "progress_file": str(tmp_path / "bkg_progress.parquet")},
+    )
     assert selection["livetime"]["seconds"] == 90
-    assert len(selection["triggers"]) == 2
+    background = process_background(tmp_path / "bkg.parquet", tmp_path / "bkg_progress.parquet", **kwargs)
+    assert background["livetime"] == 90  # includes zero-event lag and shifted lag-zero
+    assert background["curve"]["count"].tolist() == [2, 1, 0]
+    inclusive = process_background(tmp_path / "bkg.parquet", tmp_path / "bkg_progress.parquet",
+                                   thresholds=[5, 6])
+    assert inclusive["curve"]["count"].tolist() == [2, 1]
 
 
 def test_no_events_still_retains_exposure(tmp_path):
@@ -73,7 +81,7 @@ def test_no_events_still_retains_exposure(tmp_path):
     fixture(path, empty=True)
     result = read_cwb_root(path, ["L1", "H1"])
     out = process_background(result.triggers, result.progress, thresholds=[5])
-    assert out["livetime"] == 90
+    assert out["livetime"] == 100  # all exposure as given, including zero lag
     assert out["curve"]["count"].tolist() == [0]
 
 

@@ -3,7 +3,8 @@
 Detection Efficiency
 ====================
 
-.. rubric:: Postproduction: :doc:`triggers <postproduction_workflow>` → :doc:`background <postproduction_background>` → :doc:`ranking <postproduction_xgboost>` → **[efficiency]** ← you are here → :doc:`report <postproduction>`
+.. stage-nav:: postproduction
+   :current: efficiency
 
 This guide explains how pycWB computes detection efficiency—the probability
 of recovering an injected signal as a function of its parameters—and how
@@ -18,11 +19,12 @@ Overview
 --------
 
 Detection efficiency measures the fraction of simulated signals recovered by
-the search pipeline. Efficiency is typically reported as a function of:
+the search pipeline. pycWB reports efficiency as a function of:
 
-- **Signal amplitude** (:math:`h_{rss}` for bursts, distance for CBC)
-- **Waveform type** (sine-Gaussian, BBH, etc.)
-- **Sky location** or other injection parameters
+- **Signal amplitude**: the injected :math:`h_{rss}` (``sim_hrss``). Only
+  fixed-:math:`h_{rss}` populations are supported; target-SNR or SNR-scaled
+  injections are rejected by the efficiency actions.
+- **Waveform**: one curve per injected waveform name (``sim_name``).
 
 The key metrics are **hrss50** and **hrss90**—the root-sum-squared strain
 amplitude at which 50% and 90% of injections are recovered, respectively.
@@ -31,134 +33,197 @@ amplitude at which 50% and 90% of injections are recovered, respectively.
 Computing Efficiency
 --------------------
 
-Efficiency computation follows these steps:
+Efficiency computation follows these steps (as implemented by the
+``postprocess.plot_efficiency`` actions):
 
-1. **Score simulations**: Apply the trained XGBoost model to the simulation
-   trigger catalog.
+1. **Match simulations**: ``match_simulations`` with ``how: right`` writes one
+   row per injection (unique ``sim_sim_idx``). Recovered injections carry the
+   matched trigger's columns (non-null ``id``); missed injections keep null
+   trigger columns and stay in the denominator.
 
-2. **Apply FAR threshold**: Select a fixed false-alarm-rate threshold (e.g.,
-   FAR < 1/year) and count recovered injections above this threshold.
+2. **Score simulations**: ranking values are joined to the matched rows by
+   trigger ``id``, either from a pre-scored SIM catalog (``scored_file``) or
+   by scoring with ``model_file``. Injections without a trigger, or whose
+   trigger was removed by the prediction cuts, have no score.
 
-3. **Count injections per amplitude bin**: Group injections by :math:`h_{rss}`
-   (or distance) and count both injected and recovered.
-
-4. **Compute efficiency per bin**:
+3. **Apply the IFAR threshold**: an injection is *detected* if it is recovered
+   and the inclusive empirical background tail of its score satisfies
 
    .. math::
 
-      \epsilon(h_{rss}) = \frac{N_{recovered}(h_{rss})}{N_{injected}(h_{rss})}
+      \frac{N_{bkg}(\rho_{bkg} \geq \rho)}{T_{bkg}} \le \frac{1}{\text{IFAR}}
 
-   with binomial error bars:
+   where the background values are the ``ranking_par`` column of
+   ``bkg_catalog`` (the scored FAR background), :math:`T_{bkg}` is
+   ``livetime`` in seconds and IFAR is parsed from ``ifar``.
+
+4. **Count injections per waveform and per injected amplitude**: for each
+   ``sim_name`` and each distinct ``sim_hrss`` value (no amplitude binning):
+
+   .. math::
+
+      \epsilon(h_{rss}) = \frac{N_{detected}(h_{rss})}{N_{injected}(h_{rss})}
+
+   where :math:`N_{injected}` counts unique ``sim_sim_idx``. With
+   ``exclude_vetoed: true``, injections flagged ``sim_vetoed_cat0``,
+   ``sim_vetoed_cat1``, ``sim_vetoed_cat2`` or ``sim_across_segments`` are
+   removed from numerator and denominator; with the default ``false`` they
+   remain and count as missed unless detected.
+
+   The plotted error bars are the binomial standard error:
 
    .. math::
 
       \sigma_\epsilon = \sqrt{\frac{\epsilon (1 - \epsilon)}{N_{injected}}}
 
-5. **Fit efficiency curve**: Fit a sigmoid function to the binned efficiency
-   values for smooth interpolation.
+5. **Fit efficiency curve**: a cWB sigmoid (``logNfit``) is fitted to the
+   per-amplitude efficiencies of each waveform (see `hrss50 and hrss90`_).
 
 
 Efficiency Workflow Steps
 -------------------------
 
-Scoring simulations:
+Matching and scoring simulations (``evaluate_efficiency`` writes the scored
+SIM catalog used as ``scored_file``; its ``threshold`` only affects the
+returned summary, the fraction of scored rows with ``xgb_prob`` at or above
+it):
 
 .. code-block:: yaml
 
-   - id: score_sim
-     name: Score Simulation Catalog
-     action: postprocess.evaluate.score_mdc_catalog
+   - id: sim_eval_match
+     name: Match SIM Evaluation Catalog
+     action: postprocess.matching.match_simulations
      inputs:
-       catalog_file: "@sim_match.matched_file"
-       model_file: "@model.model_file"
+       catalog_file: ${paths.sim_eval_catalog}
+       simulation_file: ${paths.sim_eval_simulations}
      args:
-       ranking_statistic: xgb_ranking
+       how: right                    # one row per simulation for efficiency
+       window_buffer: 0.0
      outputs:
-       output_file: tmp://sim_scored.parquet
+       output_file: tmp://sim_eval_matched_right.parquet
 
-Computing efficiency:
-
-.. code-block:: yaml
-
-   - id: efficiency
-     name: Compute Detection Efficiency
+   - id: sim_efficiency_score
+     name: Score SIM Evaluation Triggers
      action: postprocess.evaluate.evaluate_efficiency
      inputs:
-       scored_file: "@score_sim.output_file"
-       simulation_file: ${paths.simulations}
+       catalog_file: ${paths.sim_eval_catalog}
+       model_file: ${paths.model_file}
+       config_file: ${paths.config_file}
      args:
-       far_threshold: 0.001           # 1/1000 years → ~1/year
-       amplitude_column: hrss
-       waveform_groups:               # Group by waveform type
-         - name: SG_Q9
-           filter: approximant == "SineGaussian" and Q == 9
-         - name: BBH_35_35
-           filter: mass1 == 35 and mass2 == 35
+       threshold: 0.5
      outputs:
-       efficiency_file: tmp://efficiency.parquet
-       plots_dir: tmp://efficiency_plots/
+       output_file: ${paths.sim_eval_scored}
+
+Computing efficiency vs. :math:`h_{rss}` per waveform at a fixed IFAR
+(``bkg_catalog`` is the ``scored_catalog`` written by ``evaluate_far_rho``, and
+``livetime`` is the livetime of that FAR background):
+
+.. code-block:: yaml
+
+   - id: waveform_hrss_curves_100yr
+     name: Sensitivity Curves At 100-Year IFAR
+     action: postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform
+     inputs:
+       sim_catalog: ${paths.sim_eval_catalog}
+       matched_file: "@sim_eval_match.matched_file"
+       bkg_catalog: ${paths.bkg_far_scored}
+       model_file: ${paths.model_file}
+       config_file: ${paths.config_file}
+     args:
+       livetime: "@bkg_split.far.livetime.seconds"
+       ranking_par: rhor
+       scored_file: ${paths.sim_eval_scored}
+       ifar: 100yr
+       use_unique_sim: true
+       exclude_vetoed: false
+     outputs:
+       output_file: ${paths.output_dir}/simulations/efficiency_vs_hrss_by_waveform_100yr.png
+       fit_parameters_file: ${paths.output_dir}/simulations/fit_parameters_by_waveform_100yr.csv
 
 
 hrss50 and hrss90
 -----------------
 
-The hrss50 and hrss90 values are computed by interpolating the efficiency
-curve at 50% and 90% efficiency:
+The per-waveform actions
+(:py:func:`~pycwb.modules.postprocess.plot_efficiency.compute_efficiency_vs_hrss_by_waveform`
+and
+:py:func:`~pycwb.modules.postprocess.plot_efficiency.compute_hrss50_by_waveform_csv`)
+fit the cWB sigmoid
+:py:func:`pycwb.modules.statistics.sigmoid_fit.logNfit` to the points
+:math:`(\log_{10} h_{rss}, \epsilon)` with Minuit
+(:py:func:`pycwb.modules.statistics.sigmoid_fit.fit`). With
+:math:`y = \pm(\log_{10} h_{rss} - \log_{10} h_{rss}^{50})` (the sign set by
+the orientation flag), the fitted curve is
 
 .. math::
 
-   h_{rss}^{50} &= h_{rss} \text{ where } \epsilon(h_{rss}) = 0.50 \\
-   h_{rss}^{90} &= h_{rss} \text{ where } \epsilon(h_{rss}) = 0.90
+   \epsilon = \begin{cases}
+     \tfrac{1}{2}\,\mathrm{erfc}\!\left(|y|/s\right), & y < 0,
+       \quad s = \sigma\, e^{\beta_- y} \\
+     1 - \tfrac{1}{2}\,\mathrm{erfc}\!\left(y/s\right), & y > 0,
+       \quad s = \sigma\, e^{\beta_+ y}
+   \end{cases}
 
-Implementation in
-:py:func:`pycwb.modules.postprocess.efficiency_metrics._interpolate_hrss50`:
+and :math:`\epsilon = 0.5` at :math:`y = 0`. When :math:`\beta_+ y > 1` the
+code uses :math:`s = \sigma \beta_+ e` and :math:`y = 1`. Both orientation
+flags are tried and the fit with the lower :math:`\chi^2` is kept; the
+:math:`\chi^2` is unweighted (residuals divided by the standard deviation of
+the efficiency values), not binomially weighted.
 
-- Linear interpolation in log-space between efficiency bins
-- Sigmoid fit (:py:func:`~._fit_efficiency_curve`) for smooth curves when
-  statistics are limited
+- **hrss50** is the fitted parameter :math:`10^{\log_{10} h_{rss}^{50}}`
+  (bounded to :math:`10^{-25}`–:math:`10^{-19}`), with ``hrssEr`` from its
+  fit error.
+- **hrss10** and **hrss90** are the amplitudes where the fitted curve crosses
+  0.1 and 0.9, root-found only inside the sampled :math:`h_{rss}` range; they
+  are NaN when the curve does not reach that level there.
+- The fit is not attempted when all efficiencies are below 0.5
+  (status ``above_sampled_range``, ``hrss50`` empty, ``bound`` = largest
+  :math:`h_{rss}`), all are above 0.5 (``below_sampled_range``), or fewer
+  than three amplitudes are available (``skipped``).
+
+:py:func:`~pycwb.modules.postprocess.plot_efficiency.compute_hrss50` (and its
+plotting alias
+:py:func:`~pycwb.modules.postprocess.plot_efficiency.plot_efficiency_vs_hrss`)
+instead pools all injections in ``matched_right_file`` into one curve and
+reports only hrss50, by linear interpolation in :math:`\log h_{rss}` between
+the two amplitudes that bracket 50% efficiency. It returns no value when 50%
+is not bracketed, and computes no hrss90.
 
 
 Efficiency by Waveform Type
 ---------------------------
 
-Efficiency is typically computed separately for each waveform family to
-characterize the search's sensitivity to different signal morphologies:
+Efficiency is computed separately for each injected waveform name
+(``sim_name``), characterizing the search's sensitivity to different signal
+morphologies (for example sine-Gaussian bursts at various central frequencies
+and Q-factors, or white-noise bursts), provided each population has fixed
+:math:`h_{rss}` values.
 
-- **Sine-Gaussian bursts** at various central frequencies and Q-factors
-- **BBH mergers** at various mass combinations
-- **White-noise bursts** (WNB) for agnostic searches
-- **Generic ADE** waveforms
-
-The ``waveform_groups`` argument in the efficiency action defines filters
-based on injection parameters to group signals for separate efficiency
-computation.
-
-
-Efficiency vs. Sky Location
----------------------------
-
-When sufficient simulation statistics are available, efficiency can be mapped
-across the sky using HEALPix to produce a **sensitivity sky map**:
-
-.. math::
-
-   \epsilon(\phi, \theta) = \frac{N_{recovered}(\phi, \theta)}{N_{injected}(\phi, \theta)}
-
-This reveals directional sensitivity variations due to antenna pattern
-asymmetries.
+Grouping is automatic; there is no filter argument. For plotting, the Q-factor
+and frequency are parsed from the waveform name (native ``..._Q<q>_...`` /
+``..._<f>Hz...`` names or cWB ``SG<f>Q<q>`` / ``SGE<f>Q<q>`` names); names
+without a Q-factor are drawn in a ``Q = 0`` panel.
+:py:func:`~pycwb.modules.postprocess.plot_efficiency.compute_efficiency_by_waveform`
+reports one efficiency per waveform, pooled over all amplitudes, together
+with the fraction recovered by cWB regardless of the IFAR threshold.
 
 
 Visualization
 -------------
 
-Efficiency curves are plotted via
-:py:func:`pycwb.modules.postprocess.efficiency_plots` and included in the
-HTML report (:ref:`postproduction_workflow`). Typical plots include:
+Efficiency figures are rendered by the helpers in
+:py:mod:`pycwb.modules.postprocess.efficiency_plots` and included in the
+HTML report (:ref:`postproduction_workflow`) through the ``plots`` of each
+``simulation_runs`` entry. The plots are:
 
-- **Efficiency vs.** :math:`h_{rss}` with hrss50/hrss90 annotations
-- **Multi-panel** plots by waveform type
-- **Sigmoid fit** overlay on binned data points
-- **Sky map** of efficiency (when applicable)
+- **Efficiency vs.** :math:`h_{rss}` **by waveform**: one panel per Q-factor,
+  one curve per frequency, binomial error bars, the fitted sigmoid overlaid
+  (when the fit succeeded) and a dotted line at each fitted hrss50
+  (``compute_efficiency_vs_hrss_by_waveform``)
+- **Pooled efficiency vs.** :math:`h_{rss}` with the interpolated hrss50
+  (``compute_hrss50`` / ``plot_efficiency_vs_hrss``)
+- **Per-waveform bar chart** of detection efficiency
+  (``compute_efficiency_by_waveform``)
 
 
 Configurable Thresholds
@@ -166,23 +231,36 @@ Configurable Thresholds
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 15 60
+   :widths: 25 20 55
 
    * - Parameter
-     - Typical Value
+     - Default
      - Description
-   * - ``far_threshold``
-     - 0.001 (1/1000 yr)
-     - FAR threshold for detection :math:`[\text{yr}^{-1}]`
-   * - ``amplitude_column``
-     - ``hrss``
-     - Column name for signal amplitude
-   * - ``n_amplitude_bins``
-     - 20
-     - Number of amplitude bins for efficiency calculation
-   * - ``confidence_level``
-     - 0.9
-     - Confidence level for error bars (binomial)
+   * - ``ifar``
+     - ``1mo`` (per-waveform actions); ``1yr`` (``compute_hrss50``,
+       ``plot_efficiency_vs_hrss``)
+     - IFAR threshold for detection (see `IFAR duration syntax`_)
+   * - ``ifars``
+     - ``1mo,1yr,10yr``
+     - Comma-separated IFARs for ``compute_hrss50_by_waveform_csv``
+   * - ``ranking_par``
+     - ``xgb_prob``
+     - Statistic used for both the background calibration and the injection
+       scores
+   * - ``scored_file``
+     - none
+     - Pre-scored SIM catalog, joined by ``id``; takes precedence over
+       ``model_file``
+   * - ``livetime``
+     - required
+     - Background livetime of ``bkg_catalog`` in seconds
+   * - ``exclude_vetoed``
+     - ``false``
+     - Remove CAT0/1/2-vetoed and across-segment injections from the
+       denominator
+   * - ``use_unique_sim``
+     - ``true``
+     - Must be ``true``; other values raise an error
 
 
 Interpreting Efficiency Results
@@ -191,8 +269,12 @@ Interpreting Efficiency Results
 - **hrss50** represents the amplitude at which the search is 50% efficient—a
   common figure of merit for burst searches.
 - **hrss90** is often quoted as the "sensitive range" of the search.
-- **Flat efficiency at high amplitude**: All loud signals should be recovered
-  (efficiency → 1). Failure to saturate at 100% indicates a pipeline bug.
+- **Flat efficiency at high amplitude**: loud signals should be recovered
+  (efficiency → 1). With the default ``exclude_vetoed: false``, vetoed and
+  across-segment injections, and injections whose trigger fails the
+  prediction cuts, count as missed, so a plateau below 100% is expected when
+  such injections exist. A plateau below 100% with ``exclude_vetoed: true``
+  points to a pipeline problem.
 - **Efficiency at low amplitude**: Should approach the false-alarm probability
   (not zero) due to accidental coincidences with background triggers.
 - **Statistical uncertainty**: Binomial error bars shrink with more
@@ -200,31 +282,30 @@ Interpreting Efficiency Results
   injections per waveform type.
 
 
-Validation Checks
------------------
+.. raw:: html
 
-After computing efficiency, verify:
+   <span id="validation-checks"></span>
 
-- **Efficiency saturates at 100% for loud signals**: the efficiency curve
-  should approach 1.0 at high :math:`h_{rss}`. If it plateaus below 100%,
-  check for a pipeline bug (e.g., injections outside segments, waveform
-  generation errors).
-- **hrss50/hrss90 are consistent across waveform families**: similar waveform
-  types should have similar sensitivity. Large outliers suggest injection
-  parameter errors.
-- **Binomial error bars are reasonable**: with N injections per bin, the
-  error is :math:`\sqrt{\epsilon(1-\epsilon)/N}`. Error bars > 20% indicate
-  insufficient statistics.
-- **Efficiency at low amplitude approaches FAR probability**: very faint
-  signals are indistinguishable from background, so efficiency should
-  approach (not equal) the false-alarm probability at threshold.
+Read efficiency curves
+----------------------
 
+Read each curve together with its eligible injection count, uncertainty and
+ranking threshold. Include missed eligible injections in the denominator and
+account for the ``exclude_vetoed`` setting when interpreting the plateau.
+
+Compare waveform families using their frequency content and chosen amplitude
+coordinate. Inspect the fit ``status`` column (``fit_status`` in the hrss50 CSV)
+before quoting hrss50 or hrss90; the sampled amplitudes must cover the requested
+crossing. Add trials or amplitude points where the curve is poorly determined.
 
 ----
 
 **See also:** :doc:`postproduction_xgboost` · :doc:`postproduction_background` · :doc:`injection_infrastructure`
 
-**Next:** :doc:`analysis_recipes` — copy-paste workflows for production tasks
+**Next:** :doc:`postproduction_report` — assembling the final reports
+
+**Apply the method:** :doc:`postproduction_study` describes the study workflow;
+:doc:`analysis_recipes` routes other production tasks to their guides.
 
 Manual simulation summary paths
 -------------------------------

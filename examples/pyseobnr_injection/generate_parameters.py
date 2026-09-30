@@ -4,6 +4,9 @@ import numpy as np
 def get_injection_parameters():
     return [{
         'mass1': 20,
+        'approximant': 'SEOBNRv5HM',
+        'f_lower': 20.0,
+        'pol': 0.0,
         'mass2': 20,
         'spin1x': 0,
         'spin1y': 0,
@@ -19,4 +22,3 @@ def get_injection_parameters():
         'ra': 0,
         'dec': 0
     } for spin1z in np.arange(-0.5, 0.5, 1 / 10)]
-

@@ -1,4 +1,4 @@
-# Example to run injection with a circular patch sky distribution
+# Injection population in the LHV detector network
 
 This example demonstrates how to use the new injection infrastructure to inject a gravitational wave signal into generated Gaussian noise to the signal.
 
@@ -8,23 +8,24 @@ To use detectors other than LH with aLIGO Zero Det High Power PSD, you need to p
 
 ```yaml
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   seed: 150914
   parameters_from_python:
-    function: "./injection_parameters.get_injection_parameters"
+    function: ./injection_parameters.get_injection_parameters
   repeat_injection: 100
   sky_distribution:
     type: UniformAllSky
   time_distribution:
-    type: 'rate'
+    type: rate
     rate: 1/30
     jitter: 10
   noise:
-    type: "GaussianNoise"
+    type: GaussianNoise
     psds:
-      H1: "input/aligo_O4high.txt"
-      L1: "input/aligo_O4high.txt"
-      V1: "input/avirgo_O4high_NEW.txt"
-    delta_seeds: 
+      H1: input/aligo_O4high.txt
+      L1: input/aligo_O4high.txt
+      V1: input/avirgo_O4high_NEW.txt
+    delta_seeds:
       H1: 10
       L1: 20
       V1: 30
@@ -54,7 +55,7 @@ The injected signal is 36-29 solar mass binary black hole similar to GW150914, w
 }
 ```
 
-The `t_start` and `t_end` are the estimated start time and end time relative to the `t0` given by the waveform generator (`pycbc.get_td_waveform` by default). These are used to estimate the start gps time and end gps time of the injection, to place the injection correctly in the job segments. It is ok to overestimate the `t_start` and `t_end`, but it should not be underestimated, otherwise some injections may be missed.
+The `t_start` and `t_end` are the estimated start time and end time relative to the `t0` given by the waveform generator (the configured waveform generator; the default is the LALSuite gwsignal adapter). These are used to estimate the start gps time and end gps time of the injection, to place the injection correctly in the job segments. It is ok to overestimate the `t_start` and `t_end`, but it should not be underestimated, otherwise some injections may be missed.
 
 
 ## Run the search
