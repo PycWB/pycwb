@@ -455,6 +455,11 @@ def setup_supercluster(config: Any, gps_time: float) -> dict:
     else:
         ml_subnet, FP_subnet, FX_subnet = ml, FP, FX
 
+    # Rounding at the analysis rate before upsampling can exceed the physical
+    # delay bound rounded on the fine grid (HL at 2048 Hz: 21 * 4 > 83).
+    # Both sky grids index the same TD buffer, including the staged coarse view.
+    K_td = max(K_td, int(np.max(np.abs(ml_subnet))))
+
     logger.info(
         "[setup_supercluster] sky pixels: full=%d (healpix=%s), subnet=%d (healpix=%s)",
         int(ml.shape[1]),
