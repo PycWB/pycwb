@@ -68,9 +68,8 @@ The clustering pipeline proceeds through these steps:
 4. **Time-Delay Amplitudes** — delayed pixel amplitudes are loaded for the
    merged clusters.
 5. **Superclustering** — clusters closer than ``TFgap`` in time-frequency are
-   linked into superclusters; superclusters with fewer than 3 pixels or
-   energy below ``e2or`` are dropped (this cut is applied only when at least
-   one link was found).
+   linked into superclusters; superclusters, including unlinked single
+   clusters, with fewer than 3 pixels or energy below ``e2or`` are dropped.
 6. **Sub-Network Cut** — per-sky-direction threshold cuts are applied to
    remove accidental coincidences.
 7. **Defragmentation** — superclusters within ``Tgap`` and ``Fgap`` are

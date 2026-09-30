@@ -209,8 +209,9 @@ clusters unlikely to be astrophysical.
 
 This is the pycWB equivalent of the cWB-2G ``Supercluster`` stage: merge the
 per-resolution clusters into one list, load time-delay amplitudes for all of
-their pixels, link clusters within ``TFgap`` into superclusters (when links are
-found, dropping those with fewer than 3 pixels or energy below ``e2or``), apply
+their pixels, link clusters within ``TFgap`` into superclusters (dropping
+those, including unlinked clusters, with fewer than 3 pixels or energy below
+``e2or``), apply
 ``subNetCut``, and defragment surviving clusters within ``Tgap``/``Fgap``. With
 the default
 ``pattern = 0`` defragmentation runs after the sub-network cut; with

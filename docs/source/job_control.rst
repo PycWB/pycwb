@@ -205,11 +205,11 @@ be smaller than ``lagSize`` and depends on the job length.
 
 .. note::
 
-   The schema defaults are ``lagSize: 1``, ``lagOff: 6`` and ``lagMax: 150``.
-   Together they select one extended lag (row 6 of the random list), not the
-   zero lag. Set ``lagOff`` and ``lagMax`` explicitly. The example
-   configurations use ``lagSize: 1``, ``lagOff: 0``, ``lagMax: 0`` for a
-   zero-lag run.
+   The schema defaults are ``lagSize: 1``, ``lagOff: 0`` and ``lagMax: 0``,
+   so a configuration without lag settings analyzes only the zero lag.
+   v1.1.0a3 and earlier defaulted to ``lagOff: 6`` and ``lagMax: 150``, which
+   selected one extended lag instead; see :ref:`migration` before resuming
+   runs prepared with those defaults.
 
 In extended mode, ``lagSite`` gives one site index per detector (for example
 ``lagSite: [0, 0, 1]``). Ids are then drawn per site: detectors with the same

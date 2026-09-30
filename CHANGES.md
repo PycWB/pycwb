@@ -61,10 +61,11 @@
   scoring config; this declaration does not convert old feature definitions.
 
 - Default omitted `lagOff` and `lagMax` to zero, so the default single lag is
-  unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Runs whose saved
-  YAML snapshot used those implicit defaults will fail the resume consistency
-  check after upgrading. To continue such a run, explicitly restore its recorded
-  lag settings; use a new working directory to change the run to zero-lag.
+  unshifted. Earlier defaults were `lagOff: 6` and `lagMax: 150`. Catalogs
+  prepared with v1.1.0a3 or earlier have no YAML snapshot, and the resume check
+  compares every schema key including defaults, so earlier runs cannot be
+  resumed after upgrading. Finish them with their original software, or
+  regenerate them in a new working directory with explicit lag settings.
 - Apply native supercluster size and statistics cuts to isolated clusters even
   when no clusters link. Previously those candidates bypassed the cuts. Trigger
   selection and background counts can change; production impact has not been
