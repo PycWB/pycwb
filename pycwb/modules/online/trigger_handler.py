@@ -30,7 +30,8 @@ class TriggerHandler(threading.Thread):
     trigger_queue : queue.Queue
         Queue of :class:`OnlineTrigger` objects (or ``None`` sentinel).
     stop_event : threading.Event
-        Set to signal graceful shutdown.
+        Shared shutdown flag. The handler keeps consuming worker results after
+        it is set and stops only on the ``None`` sentinel.
     working_dir : str
         Directory for local trigger output.
     """

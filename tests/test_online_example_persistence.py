@@ -47,6 +47,26 @@ def test_shutdown_request_does_not_discard_queued_worker_results(tmp_path):
     assert queue.empty()
 
 
+def test_manager_shutdown_flushes_buffered_triggers_when_a_worker_hangs(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from pycwb.workflow import online
+
+    monkeypatch.setattr(online, 'SHUTDOWN_WORKER_WAIT', 0.05)
+    queue, stop = Queue(), StopEvent()
+    consumer = handler(tmp_path, queue, stop)
+    consumer.start()
+    queue.put(candidate(1000.))  # Held by deduplication until the final flush.
+    idle = SimpleNamespace(stop=lambda: None, close=lambda: None,
+                           shutdown=lambda wait: None)
+    manager = object.__new__(online.OnlineSearchManager)
+    manager.__dict__.update(stop_event=stop, data_acq=idle, trigger_queue=queue,
+                            trigger_handler=consumer, latency_monitor=idle,
+                            executor=idle, data_source=idle)
+    manager._shutdown({Future(): 'never finishes'})
+    assert not consumer.is_alive()
+    assert Catalog.open(str(tmp_path / 'catalog/catalog.parquet')).triggers().num_rows == 1
+
+
 def test_overlapping_segments_match_native_event_arrival_times():
     dedup = TriggerDeduplicator(gps_window=.5, sky_tolerance=5.)
     weaker = candidate(1000., rho=7., segment=0)
