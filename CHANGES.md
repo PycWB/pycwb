@@ -22,6 +22,8 @@
   `burst-waveform>=0.5.0` and `joblib>=1.3`, with Python 3.11 or newer.
   Package versions are generated from Git tags by `setuptools_scm`; a new
   release version is assigned by the release-tag workflow.
+- The experimental `pycwb flow` command and `pycwb.prefect_flow` (Prefect and
+  Dask wrapper) were removed; use `pycwb run` or `batch-setup`.
 
 ### Review fixes
 
