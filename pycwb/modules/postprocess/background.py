@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 
 from pycwb.modules.postprocess.lag_filters import recorded_zero_lag_count
 from pycwb.modules.postprocess.ranking_metrics import cumulative_event_rate
 from pycwb.post_production.action_spec import action_spec
+
+# A Parquet path, a pandas DataFrame, or an Arrow table.
+TableSource = str | Path | pd.DataFrame | pa.Table
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +38,16 @@ def _frame(value):
     description="Compute background rates on a common threshold grid",
 )
 def process_background(
-    triggers,
-    progress,
+    triggers: TableSource,
+    progress: TableSource,
     *,
-    ranking_par="rho",
-    thresholds=None,
-    comparison=">=",
-    trigger_query=None,
-    work_dir=".",
-    **kwargs,
-):
+    ranking_par: str = "rho",
+    thresholds: Sequence[float] | np.ndarray | None = None,
+    comparison: str = ">=",
+    trigger_query: str | None = None,
+    work_dir: str | Path = ".",
+    **kwargs: Any,
+) -> dict[str, Any]:
     """Process native or adapted tables/Parquet identically; rates are Hz.
 
     Triggers and exposure are used as given: this function applies no lag

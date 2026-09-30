@@ -639,7 +639,6 @@
   "typing|pycwb/modules/plot/waveform.py|plot_reconstructed_waveforms|outputDir,reconstructed_waves,return,xlim": 1,
   "typing|pycwb/modules/plot/waveform.py|plot|ifo,return": 1,
   "typing|pycwb/modules/postprocess/angle_comparison.py|plot_angle_error_comparison|kwargs": 1,
-  "typing|pycwb/modules/postprocess/background.py|process_background|comparison,exclude_zero_lag,kwargs,progress,ranking_par,return,thresholds,trigger_query,triggers,unshifted_job_ids,work_dir": 1,
   "typing|pycwb/modules/postprocess/cwb_report.py|attach_cwb_ifar|catalog_file,far_file,kwargs,output_file,ranking_par,return,work_dir": 1,
   "typing|pycwb/modules/postprocess/cwb_report.py|compare_cwb_report|catalog_file,efficiency_file,kwargs,output_file,progress_file,ranking_par,reference_dir,return,simulation_reference_dir,work_dir": 1,
   "typing|pycwb/modules/postprocess/evaluate.py|evaluate_efficiency|kwargs": 1,
