@@ -17,11 +17,13 @@ def generate(app):
             "-o",
             str(source),
             str(package),
+            # apidoc resolves exclude patterns against the working directory,
+            # and Read the Docs runs Sphinx from docs/source, so anchor them.
             str(package / "vendor" / "*"),
-            "*/tests",
-            "*/tests/*",
-            "*/test_*.py",
-            "*.pyx",
+            str(package / "*" / "tests"),
+            str(package / "*" / "tests" / "*"),
+            str(package / "*" / "test_*.py"),
+            str(package / "*.pyx"),
         ]
     )
     parser = create_parser()
