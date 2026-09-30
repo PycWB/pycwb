@@ -45,12 +45,15 @@ def process_background(
     Event-quality cuts do not reduce exposure. Supply already veto-adjusted
     progress for time vetoes. A trained ranking can be supplied as a column;
     this function neither trains a model nor creates missing ranking values.
+    For manifest-backed catalogs, pass the catalog path or provide
+    ``unshifted_job_ids`` explicitly: an in-memory table has no source path
+    against which to resolve its relative job-manifest reference.
     """
 
     def resolve(value):
         return Path(work_dir) / value if isinstance(value, (str, Path)) else value
 
-    if unshifted_job_ids is None:
+    if exclude_zero_lag and unshifted_job_ids is None:
         source = resolve(triggers)
         if isinstance(source, Path):
             from pycwb.modules.postprocess.lag_filters import (
@@ -59,7 +62,15 @@ def process_background(
 
             unshifted_job_ids = try_unshifted_job_ids_from_catalog(str(source))
         elif hasattr(source, "schema"):
+            from pycwb.modules.catalog.provenance import MANIFEST_KEY
+
             metadata = source.schema.metadata or {}
+            if b"jobs" not in metadata and MANIFEST_KEY in metadata:
+                raise ValueError(
+                    "Zero-lag selection for a manifest-backed table requires the "
+                    "catalog path or explicit unshifted_job_ids; an in-memory "
+                    "table cannot resolve a relative job manifest."
+                )
             jobs = json.loads(metadata.get(b"jobs", b"[]"))
             if jobs:
                 unshifted_job_ids = {
