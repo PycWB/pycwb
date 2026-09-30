@@ -28,6 +28,9 @@ In-memory processing
 
 ``process_background`` accepts Arrow tables, pandas DataFrames or Parquet
 paths. Native pycWB and ROOT-adapted tables use the same implementation.
+It uses triggers and exposure as given, including zero lag, and logs a warning
+when triggers have no time or segment shift. Select background first, as in
+the next section, to match a cWB background report.
 ``comparison=">="`` remains the native cumulative-rate default. This does not
 change the existing histogram-based ``far_rho_plot`` action; compare explicit
 threshold grids using ``process_background`` when testing cWB boundaries.
@@ -39,10 +42,18 @@ Parquet and workflow integration
 
 .. code-block:: python
 
+   from pycwb.modules.postprocess.selection import trigger_selection
+
    paths = inputs.write("converted")
-   # catalog.parquet and progress.parquet contain matching job metadata.
+   # catalog.parquet and progress.parquet contain matching job metadata, so
+   # selection can identify zero lag and write the matching exposure.
+   trigger_selection(
+       ".", paths["catalog_file"], paths["progress_file"], exclude_zero_lag=True,
+       outputs={"triggers_file": "converted/background.parquet",
+                "progress_file": "converted/background_progress.parquet"},
+   )
    result = process_background(
-       paths["catalog_file"], paths["progress_file"],
+       "converted/background.parquet", "converted/background_progress.parquet",
        thresholds=[5., 6., 7., 8.], comparison=">",
    )
 
@@ -148,8 +159,8 @@ truth. The following example assumes the ROOT imports and scores already exist::
     - id: comparison
       action: postprocess.cwb_report.compare_cwb_report
       args:
-        catalog_file: bkg/scored.parquet
-        progress_file: bkg/progress.parquet
+        catalog_file: bkg/scored.parquet             # scored selected background
+        progress_file: bkg/background_progress.parquet  # trigger_selection progress_file
         ranking_par: rhor
         reference_dir: /path/to/cwb/background/report/data
         efficiency_file: efficiency/efficiency.csv
@@ -157,7 +168,9 @@ truth. The following example assumes the ROOT imports and scores already exist::
         output_file: comparison.json
 
 ``compare_cwb_report`` compares the actual cWB text-table counts, with allowances
-only for their printed numerical precision. It records disagreements and raises
+only for their printed numerical precision. Its background files are used as
+given, so pass selected background triggers and the ``progress_file`` written
+by the same ``trigger_selection`` step. It records disagreements and raises
 on failure. ``compare_cwb_scores`` additionally checks event membership,
 classification probabilities, ROOT-precision rankings, optional IFAR values,
 and scores from an independently trained native model.

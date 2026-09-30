@@ -53,11 +53,12 @@ together. Read job metadata through ``Catalog.jobs`` with the current software;
 older readers that inspect only inline ``jobs`` metadata can silently lose
 exposure. Old inline-job catalogs remain readable for postproduction.
 
-When calling ``process_background``, pass a catalog filename to resolve this
-reference. If passing an in-memory Arrow table with a manifest reference,
-provide ``unshifted_job_ids`` explicitly. The table alone has no source directory
-from which to resolve the manifest. Missing job information must not turn a
-shifted job's regular lag zero into physical zero lag.
+``process_background`` uses its triggers and exposure as given and no longer
+accepts ``exclude_zero_lag`` or ``unshifted_job_ids``. Select background first
+with ``trigger_selection``, which resolves this reference from the catalog path,
+and pass its ``triggers_file`` and ``progress_file`` outputs. Missing job
+information must not turn a shifted job's regular lag zero into physical zero
+lag.
 
 Python callers and notebooks
 ----------------------------

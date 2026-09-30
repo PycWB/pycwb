@@ -30,7 +30,9 @@ def compare_cwb_report(
 
     Reference directories must be the data subdirectories of cwb_report.
     FAR values are printed to six significant digits and amplitudes to seven.
-    The caller supplies matching selections and the complete injection truth.
+    The caller supplies matching selections and the complete injection truth:
+    background files are used as given, so pass selected triggers and the
+    matching ``progress_file`` from ``trigger_selection``.
     A failed check is recorded in JSON, then raises to stop the workflow.
     """
     def resolve(path: str) -> Path:

@@ -28,10 +28,12 @@
 - Size shared time-delay buffers for rounded subnet indices as well as the
   fine likelihood grid. At 2048 Hz, an H1/L1 subnet could previously address
   delays outside the buffer with `upTDF: 4` or `8`.
-- Reject ambiguous in-memory manifest-backed tables during background zero-lag
-  selection. Supply the catalog path or explicit `unshifted_job_ids` so shifted
-  jobs' lag-zero events and livetime remain background. Inline job metadata and
-  catalog filenames continue to resolve automatically.
+- Keep zero-lag selection in `trigger_selection`. `process_background` now uses
+  its triggers and exposure as given, ignores `exclude_zero_lag` and
+  `unshifted_job_ids` with a warning, and warns about unshifted triggers.
+  Whole-job selections and splits write the matching `progress_file`, and a
+  run whose jobs are all superlag-shifted keeps every regular lag 0 as
+  background instead of dropping its exposure.
 - Warn at configuration loading when recognized retired `PYCWB_*` or `WDM_*`
   execution switches are set, naming their YAML replacements without applying
   environment values.

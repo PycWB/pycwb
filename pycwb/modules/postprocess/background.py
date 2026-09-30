@@ -1,16 +1,21 @@
-"""Shared background selection and cumulative rates for any catalog source."""
+"""Shared background rates for any catalog source."""
 
 from __future__ import annotations
 
-import json
+import logging
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from pycwb.modules.postprocess.lag_filters import nonzero_lag_mask
+from pycwb.modules.postprocess.lag_filters import recorded_zero_lag_count
 from pycwb.modules.postprocess.ranking_metrics import cumulative_event_rate
 from pycwb.post_production.action_spec import action_spec
+
+logger = logging.getLogger(__name__)
+
+# Lag selection belongs to trigger_selection; these former options are ignored.
+_RETIRED_SELECTION_ARGUMENTS = ("exclude_zero_lag", "unshifted_job_ids")
 
 
 def _frame(value):
@@ -24,7 +29,7 @@ def _frame(value):
 @action_spec(
     inputs=["triggers", "progress"],
     outputs=[],
-    description="Select background and compute rates on a common threshold grid",
+    description="Compute background rates on a common threshold grid",
 )
 def process_background(
     triggers,
@@ -34,50 +39,31 @@ def process_background(
     thresholds=None,
     comparison=">=",
     trigger_query=None,
-    exclude_zero_lag=True,
-    unshifted_job_ids=None,
     work_dir=".",
     **kwargs,
 ):
     """Process native or adapted tables/Parquet identically; rates are Hz.
 
-    Apply the same completed job/lag exposure selection to events and progress.
+    Triggers and exposure are used as given: this function applies no lag
+    selection. Select background upstream, for example with
+    ``trigger_selection`` and its ``triggers_file`` and ``progress_file``
+    outputs. Every trigger needs a completed job/lag exposure row; a warning is
+    logged when triggers carry no time or segment shift (zero lag).
     Event-quality cuts do not reduce exposure. Supply already veto-adjusted
     progress for time vetoes. A trained ranking can be supplied as a column;
     this function neither trains a model nor creates missing ranking values.
-    For manifest-backed catalogs, pass the catalog path or provide
-    ``unshifted_job_ids`` explicitly: an in-memory table has no source path
-    against which to resolve its relative job-manifest reference.
     """
+    retired = [name for name in _RETIRED_SELECTION_ARGUMENTS if name in kwargs]
+    if retired:
+        logger.warning(
+            "process_background ignores %s; it uses triggers and exposure as "
+            "given. Select background upstream with trigger_selection.",
+            ", ".join(retired),
+        )
 
     def resolve(value):
         return Path(work_dir) / value if isinstance(value, (str, Path)) else value
 
-    if exclude_zero_lag and unshifted_job_ids is None:
-        source = resolve(triggers)
-        if isinstance(source, Path):
-            from pycwb.modules.postprocess.lag_filters import (
-                try_unshifted_job_ids_from_catalog,
-            )
-
-            unshifted_job_ids = try_unshifted_job_ids_from_catalog(str(source))
-        elif hasattr(source, "schema"):
-            from pycwb.modules.catalog.provenance import MANIFEST_KEY
-
-            metadata = source.schema.metadata or {}
-            if b"jobs" not in metadata and MANIFEST_KEY in metadata:
-                raise ValueError(
-                    "Zero-lag selection for a manifest-backed table requires the "
-                    "catalog path or explicit unshifted_job_ids; an in-memory "
-                    "table cannot resolve a relative job manifest."
-                )
-            jobs = json.loads(metadata.get(b"jobs", b"[]"))
-            if jobs:
-                unshifted_job_ids = {
-                    int(job["index"])
-                    for job in jobs
-                    if all(abs(float(x)) <= 1e-12 for x in (job.get("shift") or []))
-                }
     events, live = _frame(resolve(triggers)), _frame(resolve(progress))
     for name, frame, columns in (
         ("triggers", events, ["job_id", "lag_idx", ranking_par]),
@@ -98,13 +84,12 @@ def process_background(
     covered = pd.MultiIndex.from_frame(events[keys]).isin(available)
     if not covered.all():
         raise ValueError("Triggers without completed job/lag exposure")
-    if exclude_zero_lag:
-        live = live[nonzero_lag_mask(live, unshifted_job_ids)]
-        events = events[nonzero_lag_mask(events, unshifted_job_ids)]
-    # Guard against mismatched shift metadata between the two tables.
-    available = pd.MultiIndex.from_frame(live[keys])
-    if not pd.MultiIndex.from_frame(events[keys]).isin(available).all():
-        raise ValueError("Trigger/progress zero-lag selection disagrees")
+    unshifted = recorded_zero_lag_count(events)
+    if unshifted:
+        logger.warning(
+            "%d background triggers have no time or segment shift (zero lag); "
+            "rates include them as given.", unshifted,
+        )
     if trigger_query:
         events = events.query(trigger_query)
     values = events[ranking_par].to_numpy(dtype=float)
