@@ -1,3 +1,14 @@
+# Compare a supplied cWB reference with PycWB
+
+Run from the repository root with PycWB, `uproot`, pandas and matplotlib installed.
+The commands below show study-specific inputs; those ROOT files, Parquet catalogs,
+logs and reference-event CSVs are external and are not bundled. Replace the paths
+with matching outputs from your own runs, preserving detector order. `--help`
+lists the available tolerances and optional inputs. Write reports to a fresh
+output directory with `--out` and `--csv`.
+
+These commands read reference products; they do not run or modify cWB source.
+
 ```bash
 python examples/pycwb_cwb_consistency/compare_pycwb_vs_cwb.py \
   --parquet tests/postprod/O4_K21b0_C00_BurstLF_LH_SIM_MDC_short0_test5/catalog/catalog4.M1.parquet \
@@ -36,5 +47,4 @@ python examples/pycwb_cwb_consistency/compare_pycwb_vs_cwb.py \
   --csv matched_triggers_short1.csv \
   --ifo L1 H1 --tol 0.05
 ```
-
 

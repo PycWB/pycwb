@@ -9,14 +9,15 @@ import argparse
 import json
 from pathlib import Path
 
-import ROOT
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
+    # Keep --help usable in the main PycWB environment. Reference execution
+    # itself runs under the ROOT-enabled interpreter supplied by the caller.
+    import ROOT
+
     request = json.loads(Path(args.request).read_text())
     nifo = request["nifo"]
     background = f"!(lag[{nifo}]==0 && slag[{nifo}]==0)"

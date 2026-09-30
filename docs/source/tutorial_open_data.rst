@@ -12,7 +12,8 @@ Download a short interval
 
 ``tutorial-work/open_data.yaml`` selects H1/L1 data for a 20-minute interval
 around GW150914. It removes the synthetic injection block, uses 4096-Hz input
-and the corresponding GWOSC channel names, and analyzes zero lag.
+and the ``L1:LOSC-STRAIN`` / ``H1:LOSC-STRAIN`` channels in the downloaded
+LOSC V1 frames, and analyzes zero lag.
 
 .. code-block:: bash
 

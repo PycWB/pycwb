@@ -15,6 +15,7 @@ nproc: 6
 
 analysis: "2G"
 cfg_search: "r"
+whiteMethod: mesa
 
 plot_trigger: False
 save_waveform: True

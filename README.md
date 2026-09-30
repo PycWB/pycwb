@@ -69,5 +69,5 @@ Read [Understanding Your Results](docs/source/understanding_results.rst),
 - [Citation metadata](CITATION.cff) and [scientific citation guidance](docs/source/credit.rst).
 - [Release and compatibility process](docs/source/release_policy.rst).
 
-Legacy notebooks are available in [examples](examples); their installation
-cells may target older releases. The CLI [synthetic example](examples/demo/README.md) is the maintained beginner path.
+Current native notebooks and optional integrations are listed in the
+[example guide](examples/README.md). The CLI [synthetic example](examples/demo/README.md) is the maintained beginner path.

@@ -601,9 +601,10 @@ schema = {
             "default": "Fast",
         },
         "mesaOrder": {
-            "type": "number",
+            "type": "integer",
+            "minimum": 1,
             "description": "Maximum Autoregressive order for the Lenvinson Recursion",
-            "default": 800.0,
+            "default": 800,
         },
         "mesaHalfSeg": {
             "type": "number",

@@ -67,7 +67,7 @@ pattern: 10
 iwindow: 100
 
 # simulation
-simulation: 'one_inject_in_one_segments'
+simulation: 'one_inject_in_one_segment'
 nfactor: 1
 
 injection:
@@ -77,9 +77,5 @@ injection:
     noise:
       seeds: [0, 1]
   parameters_from_python:
-    file: "generate_parameters.py"
-    function: "get_injection_parameters"
-  approximant: "pyseobnr"
-  generator:
-    module: "waveform_model/waveform.py"
-    function: waveform_generator
+    function: "./generate_parameters.get_injection_parameters"
+  generator: "./waveform_model/waveform.waveform_generator"

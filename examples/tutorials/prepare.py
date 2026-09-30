@@ -98,7 +98,8 @@ def prepare(destination):
     real.update(inRate=4096, levelR=2, gps_start=1126258862,
                 gps_end=1126260062, segLen=600, segMLS=64, slagSize=0,
                 save_injection=False, plot_injection=False,
-                channelNamesRaw=["L1:GWOSC-4KHZ_R1_STRAIN", "H1:GWOSC-4KHZ_R1_STRAIN"],
+                # GWOSC serves this O1 interval in LOSC 4 kHz V1 frames.
+                channelNamesRaw=["L1:LOSC-STRAIN", "H1:LOSC-STRAIN"],
                 frFiles=[str(destination / "input/L1_frames.in"),
                          str(destination / "input/H1_frames.in")])
     real["DQF"] = [[ifo, str(destination / f"input/{ifo}_cat{cat}.txt"),

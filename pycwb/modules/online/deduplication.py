@@ -85,8 +85,7 @@ class TriggerDeduplicator:
                         "Dedup: replacing trigger (rho %.4f -> %.4f) "
                         "at GPS %.3f",
                         old_rho, new_rho,
-                        getattr(trigger.event, "gps_time",
-                                trigger.segment_gps),
+                        self._get_gps(trigger),
                     )
                     self.pending[i] = trigger
                 matched = True
@@ -117,9 +116,21 @@ class TriggerDeduplicator:
 
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _get_gps(trigger: OnlineTrigger) -> float:
+        gps = getattr(trigger.event, "gps_time", None)
+        if gps is not None:
+            return float(gps)
+        # Native Event stores per-detector arrival times; segment starts
+        # differ between overlapping windows even for the same candidate.
+        arrival = getattr(trigger.event, "time", None)
+        if arrival is not None and len(arrival):
+            return _scalar_angle(arrival)
+        return float(trigger.segment_gps)
+
     def _is_duplicate(self, a: OnlineTrigger, b: OnlineTrigger) -> bool:
-        gps_a = getattr(a.event, "gps_time", a.segment_gps)
-        gps_b = getattr(b.event, "gps_time", b.segment_gps)
+        gps_a = self._get_gps(a)
+        gps_b = self._get_gps(b)
         if abs(gps_a - gps_b) >= self.gps_window:
             return False
 

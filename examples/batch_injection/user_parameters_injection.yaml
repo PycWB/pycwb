@@ -67,7 +67,7 @@ pattern: 10
 iwindow: 100
 
 # simulation
-simulation: 'one_inject_in_one_segments'
+simulation: 'one_inject_in_one_segment'
 nfactor: 1
 
 injection:
@@ -78,9 +78,5 @@ injection:
     noise:
       seeds: [0, 1]
   parameters_from_python:
-    file: "generate_parameters.py"
-    function: "get_injection_parameters"
-  approximant: "IMRPhenomXPHM"
-  generator:
-    module: "pycbc_inject/hyperbolicTD/waveform.py"
-    function: get_td_waveform
+    function: "./generate_parameters.get_injection_parameters"
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform

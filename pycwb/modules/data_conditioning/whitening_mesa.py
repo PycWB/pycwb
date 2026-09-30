@@ -93,7 +93,10 @@ def whiten_mesa(config, h):
     for i in range(n_windows + 1):
         start = i * stride
         segment = data[start : start + window]
-        mesa.solve(segment, method=getattr(config, "mesaSolver", "Fast"), m=getattr(config, "mesaOrder", 500))
+        # JSON schema accepts integral floats (e.g. 800.0) as integers too;
+        # memspectrum uses the order in array slices and range().
+        mesa.solve(segment, method=getattr(config, "mesaSolver", "Fast"),
+                   m=int(getattr(config, "mesaOrder", 800)))
         freqs, psd = mesa.spectrum(1.0 / sample_rate)
         psds.append(np.asarray(psd, dtype=np.float64))
 

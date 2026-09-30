@@ -1,10 +1,11 @@
-from gwosc.datasets import event_gps, event_detectors, event_segment
+from gwosc.datasets import event_gps, event_detectors
+from math import ceil, floor
 from gwosc.locate import get_urls
 from gwosc.timeline import get_segments
 import os
 import requests
 
-def event_info(event_name, ifos):
+def event_info(event_name, ifos, time_left=610, time_right=610):
     """
     Retrieve key information about the specified gravitational wave event.
 
@@ -20,15 +21,20 @@ def event_info(event_name, ifos):
         - The GPS time of the event.
         - The start and end GPS time of the event segment.
     """
-    allowed_cWB_detectors = ifos
-    detectors = event_detectors(event_name)  
-    detectors = [detector for detector in detectors if detector in allowed_cWB_detectors]
+    available = event_detectors(event_name)
+    detectors = [detector for detector in ifos if detector in available]
+    if not detectors:
+        raise ValueError(f"No requested detectors have data for {event_name}")
     event_gps_time = event_gps(event_name)
-    start_time, end_time = event_segment(event_name)
+    # Event metadata can exist without event-specific strain files in the
+    # newest catalog release. Request the public observing-run strain over
+    # the requested analysis interval, plus the bundled template's edges.
+    start_time = floor(event_gps_time - time_left - 10)
+    end_time = ceil(event_gps_time + time_right + 10)
 
     return detectors, event_gps_time, start_time, end_time
 
-def download_frames_files(event_name, output_dir, ifos):
+def download_frames_files(event_name, output_dir, ifos, time_left=610, time_right=610):
     """
     Download frame files for the given gravitational wave event and save a list of their paths.
 
@@ -43,12 +49,13 @@ def download_frames_files(event_name, output_dir, ifos):
     --------
     None
     """
+    output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    detectors, event_gps_time, start_time, end_time = event_info(event_name, ifos)
+    detectors, event_gps_time, start_time, end_time = event_info(event_name, ifos, time_left, time_right)
 
     for detector in detectors:
-        urls = get_urls(detector=detector, start=start_time, end=end_time, dataset=event_name, format='gwf', sample_rate=4096)
+        urls = get_urls(detector=detector, start=start_time, end=end_time, format='gwf', sample_rate=4096)
         
         # Exclude files with '-32.gwf'
         urls = [url for url in urls if "-32.gwf" not in url] 
@@ -62,7 +69,8 @@ def download_frames_files(event_name, output_dir, ifos):
         for url in urls:
             frame_file_path = os.path.join(frame_dir, os.path.basename(url))
             print(f"Downloading {frame_file_path} from {url}...")
-            response = requests.get(url)
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
             with open(frame_file_path, 'wb') as frame_file:
                 frame_file.write(response.content)
             local_paths.append(frame_file_path)
@@ -75,7 +83,7 @@ def download_frames_files(event_name, output_dir, ifos):
 
         print(f"Frame list saved to {frame_list_file}")
 
-def get_cat_files(event_name, output_dir, ifos):
+def get_cat_files(event_name, output_dir, ifos, time_left=610, time_right=610):
     """
     Generate files containing Data Quality (DQ) segments for the given gravitational wave event.
 
@@ -92,7 +100,7 @@ def get_cat_files(event_name, output_dir, ifos):
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    detectors, event_gps_time, start_time, end_time = event_info(event_name, ifos)
+    detectors, event_gps_time, start_time, end_time = event_info(event_name, ifos, time_left, time_right)
 
     for detector in detectors:
         for category, cat_name in [

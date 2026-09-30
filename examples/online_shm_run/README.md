@@ -9,7 +9,10 @@ Self-contained run directory for testing the PyCWB online workflow reading
 |------|---------|
 | `user_parameters.yaml` | Full run configuration (edit before running) |
 | `online_schema_extension.yaml` | YAML schema for online extension params |
-| `run.sh` | Convenience launch script |
+| `run.sh` | Continuous live launch script |
+| `debug_run.sh`, `user_parameters_debug.yaml` | Real-time local fake-stream example |
+| `fake_data_generator.py` | PyCBC noise/CBC generator and GWF writer |
+| `_test_integration.py`, `_test_pipeline.py` | Bounded local frame-read and worker checks |
 
 ## Expected data layout on the server
 
@@ -57,12 +60,38 @@ bash run.sh --log-level DEBUG
 pycwb online user_parameters.yaml --work-dir output --n-workers 4
 ```
 
+## Local fake-data checks
+
+Install PyCBC in the active PycWB environment (`python -m pip install pycbc`).
+The GWF writer used by GWpy must also be available. From this directory, use a
+fresh location for the fake frames:
+
+```bash
+python fake_data_generator.py --gps-start 1257894000 --duration 120 \
+  --shm-base ./fake-stream --no-realtime
+python _test_integration.py --shm-base ./fake-stream --gps-start 1257894000
+python _test_pipeline.py --shm-base ./fake-stream --gps-start 1257894000 --segments 2
+```
+
+The checks read padding on both sides of the analysis windows. They raise errors
+for missing data or failed stages. The worker check exercises two segments and
+returns candidates locally; it does not start the continuous acquisition manager.
+For that path, `bash debug_run.sh --duration 120` starts a real-time generator
+and the online manager. The manager keeps polling after the generator finishes;
+stop it with Ctrl-C. `PYCWB_PYTHON` and `PYCWB_BIN` optionally select explicit
+executables; otherwise the active environment is used. The debug script clears
+its fixed `/tmp/fake_stream` test directory before starting.
+
 ## Output
 
 All output lands in `output/` (created automatically):
-- `output/catalog.json` — local trigger catalog (appended continuously)
+- `output/catalog/catalog.parquet` — local trigger catalog (updated continuously)
 - `output/online_state.json` — crash-recovery checkpoint
-- `output/` — per-trigger JSON + waveforms if `save_waveform: true`
+- `output/triggers/seg_*/<event-hash>/` — cluster and sky-statistics JSON for each retained trigger
+
+The online worker reconstructs waveforms for quality statistics but does not
+currently persist the offline search's `wave.h5` products. Use the offline
+workflow when those waveform files are needed.
 
 ## Key tuning parameters
 

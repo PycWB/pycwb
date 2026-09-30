@@ -41,7 +41,7 @@ two delays at once; that run is slower, so use `--lags 8` or fewer.
 Run from the repository root with the development environment:
 
 ```bash
-conda run -n pycwb-dev-py13 python examples/search_animation/render_search_animation.py
+python examples/search_animation/render_search_animation.py
 ```
 
 The search runs in about a minute, most of it on the 31 time slides.
@@ -58,11 +58,11 @@ Quick checks:
 
 ```bash
 # PNG stills of every scene at 40% and 100% progress, no video
-conda run -n pycwb-dev-py13 python examples/search_animation/render_search_animation.py \
+python examples/search_animation/render_search_animation.py \
   --format --stills 0.4 1.0 --lags 6 --out examples/search_animation/output_stills
 
 # only the sky-loop and background scenes, short and coarse
-conda run -n pycwb-dev-py13 python examples/search_animation/render_search_animation.py \
+python examples/search_animation/render_search_animation.py \
   --scenes sky background --duration 10 --fps 12 --format mp4 \
   --out examples/search_animation/output_tiny
 ```
@@ -78,7 +78,7 @@ page: whitening, coherent pixel selection and the sky scan, with larger panels
 and no stage bar. It skips the time slides, so it takes about 30 s:
 
 ```bash
-conda run -n pycwb-dev-py13 python examples/search_animation/render_search_animation.py \
+python examples/search_animation/render_search_animation.py \
   --hero --out docs/source/_static/media
 ```
 

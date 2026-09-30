@@ -173,6 +173,12 @@ def _check_lal_pars(p):
         lalsimulation.SimInspiralWaveformParamsInsertNonGRDBeta3(lal_pars,p['dbeta3'])
     # Parameters for HyperbolicTD waveform
     if p['hyp_eccentricity'] is not None:
+        if not hasattr(lalsimulation, 'SimInspiralWaveformParamsInsertHyperbolicEccentricity'):
+            raise RuntimeError(
+                "This optional adapter requires the custom hyperbolic LALSuite build; "
+                "see examples/batch_injection/README.md. Use the standard CBC "
+                "configuration with an unmodified LALSuite installation."
+            )
         lalsimulation.SimInspiralWaveformParamsInsertHyperbolicEccentricity(lal_pars, p['hyp_eccentricity'])
     if p['b'] is not None:
         b_SI = (float(pnutils.solar_mass_to_kg(p['mass1']))+float(pnutils.solar_mass_to_kg(p['mass2'])))*lal.G_SI/lal.C_SI**2

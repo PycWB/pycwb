@@ -94,9 +94,9 @@ DQF: [
 ]
 
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   parameters_from_python:
-    file: "injection_parameters.py"
-    function: "get_injection_parameters"
+    function: "./injection_parameters.get_injection_parameters"
   repeat_injection: 20
   sky_distribution:
     type: UniformAllSky

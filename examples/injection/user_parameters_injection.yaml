@@ -79,6 +79,7 @@ simulation: "all_inject_in_one_segment"
 nfactor: 1
 
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   segment:
     start: 1126258862.4
     end: 1126260062.4
@@ -99,4 +100,3 @@ injection:
     pol: 0
     f_lower: 20.0 
     approximant: "IMRPhenomXHM"
-

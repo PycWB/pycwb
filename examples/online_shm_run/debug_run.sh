@@ -24,9 +24,9 @@ CONFIG="${SCRIPT_DIR}/user_parameters_debug.yaml"
 WORK_DIR="${SCRIPT_DIR}/output"
 GENERATOR="${SCRIPT_DIR}/fake_data_generator.py"
 
-# Python interpreter — prefer pycwb-dev-py13 conda env, fall back to system python3
-PYTHON="${PYCWB_PYTHON:-/Users/yumengxu/miniforge3/envs/pycwb-dev-py13/bin/python3}"
-# pycwb CLI — derived from the same conda env directory as PYTHON
+# Use the active environment, or an explicit PYCWB_PYTHON override.
+PYTHON="${PYCWB_PYTHON:-$(command -v python3)}"
+# pycwb CLI from the same environment as Python; override with PYCWB_BIN.
 PYCWB_BIN="${PYCWB_BIN:-$(dirname "${PYTHON}")/pycwb}"
 
 # Defaults

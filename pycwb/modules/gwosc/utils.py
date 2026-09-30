@@ -19,6 +19,9 @@ def download_frames_files(output_dir, detectors, gps_start, gps_end, sample_rate
     --------
     None
     """
+    # Searches change into their run directory before opening the frame lists.
+    # Persist paths that remain valid independently of that working directory.
+    output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
 
@@ -41,7 +44,8 @@ def download_frames_files(output_dir, detectors, gps_start, gps_end, sample_rate
                 local_paths.append(frame_file_path)
                 continue
             print(f"Downloading {frame_file_path} from {url}...")
-            response = requests.get(url)
+            response = requests.get(url, timeout=120)
+            response.raise_for_status()
             with open(frame_file_path, 'wb') as frame_file:
                 frame_file.write(response.content)
             local_paths.append(frame_file_path)

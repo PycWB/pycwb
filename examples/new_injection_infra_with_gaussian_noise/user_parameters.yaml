@@ -78,6 +78,7 @@ gps_start: 1242432800
 gps_end: 1242440000
 
 injection:
+  generator: pycwb.modules.injection.gwsignal_waveform.get_td_waveform
   seed: 150914
   parameters_from_python:
     function: "./injection_parameters.get_injection_parameters"
@@ -90,6 +91,8 @@ injection:
     jitter: 300
   noise:
     type: "GaussianNoise"
+    # null selects the built-in analytic aLIGO noise model.
+    psds: {H1: null, L1: null}
     delta_seeds: 
       H1: 10
       L1: 20

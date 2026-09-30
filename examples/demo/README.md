@@ -46,6 +46,6 @@ validation. The automated recovery assertion belongs to `tests/test_demo_e2e.py`
 This example demonstrates configuration-driven use of the production CLI with
 synthetic input. The notebooks in [`examples/colab`](../colab/) analyse real
 GW150914 open data by calling individual Python stages and inspecting intermediate
-results. Some notebook APIs and installation cells target older releases. They
-serve a different educational purpose and are not a replacement for this CLI
-example or its recovery test.
+results. Install the matching source checkout and follow the
+[notebook prerequisites](../README.md#notebooks). The CLI example also exercises
+progress tracking, saved products and its automated recovery assertion.

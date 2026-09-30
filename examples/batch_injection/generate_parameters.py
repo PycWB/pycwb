@@ -1,20 +1,13 @@
+"""A small reproducible population of supported CBC waveforms."""
+
 import numpy as np
 
 
 def get_injection_parameters():
-    # b range from 50 to 120, with 10 steps
-    return [{
-        'mass1': 20,
-        'mass2': 20,
-        'spin1z': 0,
-        'spin2z': 0,
-        'hyp_eccentricity': 1.15,
-        'b': b,
-        'distance': 200,
-        'inclination': 0,
-        'polarization': 0,
-        'gps_time': 1126259462.4,
-        'coa_phase': 0,
-        'ra': 0,
-        'dec': 0
-    } for b in np.arange(50, 120, (120 - 50) / 10)]
+    return [dict(
+        approximant="IMRPhenomXPHM", mass1=20.0, mass2=20.0,
+        spin1z=float(spin), spin2z=0.0, distance=200.0,
+        inclination=0.0, pol=0.0, coa_phase=0.0, f_lower=20.0,
+        gps_time=1126259462.4, ra=0.0, dec=0.0,
+        t_start=-10.0, t_end=1.0,
+    ) for spin in np.linspace(-0.5, 0.5, 10)]

@@ -25,9 +25,9 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # INFO and WARNING and ERROR tensorflow messages are not printed
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
-from tensorflow.python.keras.layers import Flatten, Reshape, AveragePooling1D, Input, Dense, Conv1D, MaxPooling1D, \
+from tensorflow.keras.layers import Flatten, Reshape, AveragePooling1D, Input, Dense, Conv1D, MaxPooling1D, \
     UpSampling1D
-from tensorflow.python.keras.models import Model
+from tensorflow.keras.models import Model
 
 
 # functions:
@@ -114,7 +114,7 @@ def autoencoder(dim1):
     x2 = Conv1D(16, 3, activation='relu', padding='same')(x1)
     x3 = MaxPooling1D(2)(x2)
     x4 = Conv1D(16, 3, activation='relu', padding='same')(x3)
-    x5 = AveragePooling1D()(x4)
+    x5 = AveragePooling1D(pool_size=2)(x4)
     flat = Flatten()(x5)
     encoded = Dense(200)(flat)
 
