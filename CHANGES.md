@@ -34,9 +34,6 @@
   Whole-job selections and splits write the matching `progress_file`, and a
   run whose jobs are all superlag-shifted keeps every regular lag 0 as
   background instead of dropping its exposure.
-- Warn at configuration loading when recognized retired `PYCWB_*` or `WDM_*`
-  execution switches are set, naming their YAML replacements without applying
-  environment values.
 
 ### Other changes
 
