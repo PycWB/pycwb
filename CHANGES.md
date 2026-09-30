@@ -24,6 +24,16 @@
   release version is assigned by the release-tag workflow.
 - The experimental `pycwb flow` command and `pycwb.prefect_flow` (Prefect and
   Dask wrapper) were removed; use `pycwb run` or `batch-setup`.
+- Packaging: the wheel installs only the `pycwb` package. Earlier wheels also
+  placed top-level `tests`, `tools`, `benchmark`, `prototypes`, `envs`, `bin`
+  and `cwb-core` directories in `site-packages`; reinstall to remove them.
+  Test suites stay in the sdist but not the wheel; documentation and examples
+  are in neither, and the injection example downloads its cross-talk catalog
+  on first use. `pycwb`
+  is a console-script entry point (`bin/pycwb` is gone). `requests`, `gwosc`
+  and `gwdatafind` are now declared; unused `watchfiles`, `aiohttp`,
+  `ligo-segments` and `python-ligo-lw` are not. New extras: `root` (`uproot`,
+  `awkward`) and `autoencoder` (`tensorflow`); postproduction needs `xgboost`.
 
 ### Review fixes
 

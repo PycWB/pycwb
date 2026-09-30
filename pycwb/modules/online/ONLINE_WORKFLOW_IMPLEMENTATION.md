@@ -112,7 +112,7 @@ parallelism lives in the new workflow layer.
 | `pycwb/modules/online/trigger_handler.py` | `_handle_one()` calls `_check_catalog_rho()` before upload |
 | `pycwb/workflow/online.py` | Startup GPS gap → `unprocessed_gaps.json`; `seg.data_payload = None` after `executor.submit()` |
 | `pycwb/workflow/subflow/process_online_segment.py` | `max_threads = nIFO` cap on all `ThreadPoolExecutor`s; `del strains…; release_memory()` at end |
-| `bin/pycwb` | Registered `online` subcommand |
+| `pycwb/cli/main.py` | Registered `online` subcommand |
 | `examples/online_shm_run/fake_data_generator.py` | Writes `DMT-DQ_VECTOR` (1 Hz, value=1) into GWF frames alongside strain; `--dq-channel` CLI arg |
 | `examples/online_shm_run/user_parameters_debug.yaml` | Added `online_dq_channels` and `online_dq_bits` |
 | `examples/online_shm_run/debug_run.sh` | Passes `--dq-channel` to generator |

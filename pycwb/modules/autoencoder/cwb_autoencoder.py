@@ -25,9 +25,15 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # INFO and WARNING and ERROR tensorflow messages are not printed
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
-from tensorflow.keras.layers import Flatten, Reshape, AveragePooling1D, Input, Dense, Conv1D, MaxPooling1D, \
-    UpSampling1D
-from tensorflow.keras.models import Model
+try:
+    from tensorflow.keras.layers import Flatten, Reshape, AveragePooling1D, Input, Dense, Conv1D, MaxPooling1D, \
+        UpSampling1D
+    from tensorflow.keras.models import Model
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "TensorFlow is required for the autoencoder: pip install 'pycwb[autoencoder]'",
+        name=exc.name,
+    ) from exc
 
 
 # functions:

@@ -5,7 +5,7 @@ cWB ROOT input and same-trigger cross-checks
 
 The ROOT adapter makes cWB background results usable by native postproduction
 without rerunning production. It reads ``waveburst`` and ``liveTime`` through
-``uproot`` (install with ``pip install uproot``); PyROOT is needed only for the
+``uproot`` (install with ``pip install 'pycwb[root]'``); PyROOT is needed only for the
 independent reference check. Supply detector names in **cWB network order**.
 
 In-memory processing

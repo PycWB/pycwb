@@ -1,4 +1,3 @@
-include bin/*
 include cwb-core/*
 recursive-include pycwb/vendor *
 recursive-include pycwb/modules/postprocess/templates *

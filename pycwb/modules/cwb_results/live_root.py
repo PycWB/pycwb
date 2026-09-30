@@ -71,7 +71,7 @@ class CwbLiveRoot:
         except ImportError as exc:
             raise ImportError(
                 "uproot is required to read cWB live ROOT files: "
-                "pip install uproot awkward"
+                "pip install 'pycwb[root]'"
             ) from exc
 
         return uproot.open(f"{self.root_file}:{self.tree_name}")
@@ -223,7 +223,7 @@ class CwbLiveRoot:
         except ImportError as exc:
             raise ImportError(
                 "awkward is required to read cWB live ROOT files: "
-                "pip install uproot awkward"
+                "pip install 'pycwb[root]'"
             ) from exc
 
         return {
