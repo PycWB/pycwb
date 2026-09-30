@@ -72,9 +72,9 @@ strains and the nRMS maps used by the later stages:
 
 .. code-block:: python
 
-   from pycwb.modules.data_conditioning import data_conditioning
+   from pycwb.modules.data_conditioning import condition_strains
 
-   strains, nRMS = data_conditioning(config, data)
+   strains, nRMS = condition_strains(config, data)
 
 The native production path then performs setup once and reuses it for each
 time-slide lag:
@@ -82,7 +82,7 @@ time-slide lag:
 .. code-block:: python
 
    from pycwb.modules.coherence_native.coherence import setup_coherence, coherence_single_lag
-   from pycwb.modules.likelihoodWP.likelihood import setup_likelihood, likelihood
+   from pycwb.modules.likelihoodWP import prepare_likelihood_inputs, evaluate_cluster_likelihood
    from pycwb.modules.super_cluster_native.super_cluster import setup_supercluster, supercluster_single_lag
    from pycwb.modules.xtalk.type import XTalk
    from pycwb.utils.td_vector_batch import build_td_inputs_cache
@@ -90,7 +90,7 @@ time-slide lag:
    coherence_setup = setup_coherence(config, strains, job_seg=job_segment)
    td_inputs_cache = build_td_inputs_cache(config, strains)
    supercluster_setup = setup_supercluster(config, gps_time=float(strains[0].start_time))
-   likelihood_setup = setup_likelihood(
+   likelihood_setup = prepare_likelihood_inputs(
        config,
        strains,
        config.nIFO,
@@ -118,7 +118,7 @@ Finally, calculate likelihood statistics for accepted clusters:
    for cluster_id, cluster in enumerate(selected_clusters.clusters, start=1):
        if cluster.cluster_status > 0:
            continue
-       result_cluster, sky_stats = likelihood(
+       result_cluster, sky_stats = evaluate_cluster_likelihood(
            config.nIFO,
            cluster,
            config,

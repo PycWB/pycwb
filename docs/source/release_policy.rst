@@ -47,4 +47,11 @@ Compatibility changes
 Read ``CHANGES.md`` for changes to commands, configuration and output formats.
 Catalog and job-manifest compatibility is described in :doc:`catalog_format`.
 
+For the current upgrade instructions, see :ref:`migration`.
+
+.. toctree::
+   :maxdepth: 1
+
+   migration
+
 Use the documented interfaces in :doc:`reference` when writing integrations.

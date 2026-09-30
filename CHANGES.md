@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Breaking and result changes
+
+- The native conditioning and likelihood Python APIs were renamed, and detector
+  helpers now require configured `Detector` instances. Update imports and calls
+  using [the migration guide](docs/source/migration.rst); retired function names
+  are not compatibility aliases. Current tutorials and the native Colab notebook
+  now use the supported entry points. ROOT-era examples are historical references.
+- Master/merged catalogs use a referenced `jobs.parquet` manifest. Archive it
+  with the catalog and progress, and use the current `Catalog.jobs` reader.
+  Older inline-metadata readers can silently lose the job list and exposure.
+- Time-delay rounding, Hz-based defragmentation, noise RMS, packet normalization,
+  regression, injection scaling/placement/whitening, ranking features and
+  efficiency/FAR conventions can change results for unchanged YAML inputs.
+  `BATCH` is now enforced (`0` disables the cap). Revalidate fresh runs and
+  retrain native XGBoost models; see the migration guide for required inputs,
+  supported IFAR labels and opt-in numerical settings.
+- Runtime dependencies now include `wdm-wavelet>=0.4.0`,
+  `burst-waveform>=0.5.0` and `joblib>=1.3`, with Python 3.11 or newer.
+  Package versions are generated from Git tags by `setuptools_scm`; a new
+  release version is assigned by the release-tag workflow.
+
+### Review fixes
+
+- Size shared time-delay buffers for rounded subnet indices as well as the
+  fine likelihood grid. At 2048 Hz, an H1/L1 subnet could previously address
+  delays outside the buffer with `upTDF: 4` or `8`.
+- Reject ambiguous in-memory manifest-backed tables during background zero-lag
+  selection. Supply the catalog path or explicit `unshifted_job_ids` so shifted
+  jobs' lag-zero events and livetime remain background. Inline job metadata and
+  catalog filenames continue to resolve automatically.
+- Warn at configuration loading when recognized retired `PYCWB_*` or `WDM_*`
+  execution switches are set, naming their YAML replacements without applying
+  environment values.
+
+### Other changes
+
 - Preserve Parquet list types across prediction-cut batches, including scored
   catalogs with no surviving rows. Keep zero-lag separation in the upstream
   selection stage; training consumes its selected background unchanged and
