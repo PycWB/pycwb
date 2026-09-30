@@ -36,7 +36,8 @@ A complete training setup requires these artifacts from the search jobs:
    * - Artifact
      - Description
    * - Background catalog (``catalog.parquet``)
-     - Trigger rows from non-zero-lag analysis of background data
+     - Trigger rows from all analyzed lags of background data, including zero
+       lag when it was analyzed; remove it with ``trigger_selection``
    * - Background progress (``progress.parquet``)
      - Per-job/per-lag processing metadata with livetime
    * - Simulation catalog (``catalog.parquet``)

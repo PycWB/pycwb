@@ -313,19 +313,37 @@ Select the target simulation training fraction after filtering.  Keep
 Train the ranking model with the full training chunks plus the selected target
 training subset.  Then score the target FAR holdout and build the FAR lookup.
 
+Training uses its inputs as given, so prepare the full training chunks like the
+target: select each background chunk without zero lag, and match and filter each
+simulation chunk as in step 2 (``train_sim_1_real`` and ``train_sim_2_real`` in
+the template).  Training warns if a background input still contains unshifted
+triggers.
+
 .. code-block:: yaml
+
+   - id: train_bkg_1_select
+     name: Select Training BKG 1 (No Zero Lag)
+     action: postprocess.selection.trigger_selection
+     inputs:
+       catalog_file: ${paths.train_bkg_1_catalog}
+       progress_file: ${paths.train_bkg_1_progress}
+     args:
+       exclude_zero_lag: true
+       returns: [triggers, livetime]
+     outputs:
+       triggers_file: tmp://train_bkg_1.parquet
 
    - id: model
      name: Train XGBoost
      action: postprocess.train_xgboost.train_xgboost
      inputs:
        bkg_catalogs:
-         - ${paths.train_bkg_1_catalog}
-         - ${paths.train_bkg_2_catalog}
+         - "@train_bkg_1_select.triggers_file"
+         - "@train_bkg_2_select.triggers_file"
          - "@k21_bkg_split.train.triggers_file"
        sim_catalogs:
-         - ${paths.train_sim_1_catalog}
-         - ${paths.train_sim_2_catalog}
+         - "@train_sim_1_real.triggers_file"
+         - "@train_sim_2_real.triggers_file"
          - "@k21_sim_train_select.triggers_file"
        config_file: ${paths.config_file}
      args:

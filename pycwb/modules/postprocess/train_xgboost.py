@@ -170,6 +170,7 @@ def train_xgboost(
     # Selection owns the zero-lag split and the corresponding exposure. Do not
     # reinterpret regular lag indices after concatenating selected catalogs:
     # a selected superlag can legitimately have regular lag_idx == 0.
+    _warn_zero_lag_background(bkg_paths)
     bkg_rows_after_lag_filter = len(bdf)
     bdf["classifier"] = 0
     sdf["classifier"] = 1
@@ -395,6 +396,31 @@ def _read_and_concat(paths: list[str], label: str, columns: Optional[list[str]] 
     if len(frames) == 1:
         return frames[0].reset_index(drop=True)
     return pd.concat(frames, ignore_index=True)
+
+
+def _warn_zero_lag_background(paths: list[str]) -> None:
+    """Warn, without filtering, when BKG inputs contain unshifted triggers.
+
+    Background inputs are used as given, so a workflow may deliberately treat
+    other lags as its reference. Only the shift columns are read.
+    """
+    import pyarrow.parquet as pq
+
+    from pycwb.modules.postprocess.lag_filters import recorded_zero_lag_count
+
+    for path in paths:
+        if not os.path.exists(path):
+            continue  # Already reported by the catalog reader.
+        columns = [name for name in pq.read_schema(path).names
+                   if name == "lag_idx" or name.startswith(("time_lag", "segment_lag"))]
+        count = recorded_zero_lag_count(pd.read_parquet(path, columns=columns))
+        if count:
+            logger.warning(
+                "%s: %d BKG rows have no time or segment shift (zero lag) and are "
+                "labelled background. Select background upstream, for example with "
+                "trigger_selection and exclude_zero_lag: true, unless this is intended.",
+                path, count,
+            )
 
 
 def _detect_nifo_from_schema(paths: list[str]) -> int:

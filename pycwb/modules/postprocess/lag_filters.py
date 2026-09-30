@@ -86,6 +86,18 @@ def nonzero_lag_mask(
     return ~zero_lag_mask(df, unshifted_job_ids=unshifted_job_ids)
 
 
+def recorded_zero_lag_count(df: pd.DataFrame) -> int | None:
+    """Count event rows whose recorded time and segment shifts are all zero.
+
+    Uses only the row columns, so it needs no job metadata. Returns ``None``
+    when the table has no ``time_lag`` columns (for example progress tables),
+    because zero lag cannot then be identified from the rows alone.
+    """
+    if not _matching_columns(df, ("time_lag_", "time_lag")):
+        return None
+    return int(zero_lag_mask(df).sum())
+
+
 def _matching_columns(df: pd.DataFrame, names: tuple[str, ...]) -> list[str]:
     columns: list[str] = []
     for col in df.columns:

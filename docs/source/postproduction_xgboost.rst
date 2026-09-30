@@ -103,12 +103,12 @@ Training is configured through the workflow YAML using the
      name: Train XGBoost Classifier
      action: postprocess.train_xgboost.train_xgboost
      inputs:
-       bkg_catalogs:                    # Background training catalogs
-         - /path/to/bkg_train_1/catalog.parquet
+       bkg_catalogs:                    # Background selected upstream
          - "@bkg_split.train.triggers_file"
-       sim_catalogs:                    # Simulation training catalogs
-         - /path/to/sim_train_1/catalog.parquet
-         - /path/to/sim_train_2/catalog.parquet
+         - /path/to/bkg_train_1/selected_background.parquet
+       sim_catalogs:                    # Recovered, non-vetoed SIM triggers
+         - /path/to/sim_train_1/clean_matched.parquet
+         - /path/to/sim_train_2/clean_matched.parquet
        config_file: ${paths.config_file}   # update_config(...) and ranking hooks
      args:
        model_file: ${paths.model_file}
@@ -119,6 +119,13 @@ Training is configured through the workflow YAML using the
      outputs:
        training_settings_file: ${paths.xgb_training_settings}
        training_output_file: ${paths.xgb_training_output}
+
+Training uses these catalogs as given. Prepare every input upstream: select
+background with ``trigger_selection`` (``exclude_zero_lag: true`` removes zero
+lag), and keep recovered, non-vetoed simulation triggers with
+``filter_real_simulation``. Training logs a warning when a background catalog
+still contains triggers with no time or segment shift, but does not remove them,
+so a workflow may deliberately use a different reference lag.
 
 XGBoost hyper-parameters are **not** action arguments: extra keys such as
 ``n_estimators`` or ``max_depth`` under ``args`` are ignored. They are set in
@@ -158,7 +165,8 @@ Common to all searches: ``objective: binary:logistic``, ``tree_method: hist``,
 **Training procedure** (as implemented):
 
 1. BKG catalogs selected upstream are concatenated and labelled
-   ``classifier = 0``; training preserves that selection. SIM catalogs are
+   ``classifier = 0``; training preserves that selection and warns about any
+   unshifted (zero-lag) triggers it contains. SIM catalogs are
    labelled ``classifier = 1``;
    rows flagged ``sim_vetoed_cat0``, ``sim_vetoed_cat2`` or
    ``sim_across_segments`` are removed when those columns exist. Every other

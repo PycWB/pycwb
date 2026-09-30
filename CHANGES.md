@@ -41,7 +41,9 @@
 - Preserve Parquet list types across prediction-cut batches, including scored
   catalogs with no surviving rows. Keep zero-lag separation in the upstream
   selection stage; training consumes its selected background unchanged and
-  the standard example disables redundant FAR lag filtering.
+  warns when a background input still contains unshifted triggers. The
+  standard example now selects and cleans every training chunk before
+  training and disables redundant FAR lag filtering.
 - Reuse configured detector instances for injection arrival times, including
   external geometries. Already projected strains without sky coordinates keep
   their measured detector centroids instead of aborting reconstruction.

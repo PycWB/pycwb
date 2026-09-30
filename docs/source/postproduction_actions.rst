@@ -139,8 +139,10 @@ Use consistent selections and inputs across workflow actions:
 
 * Background used for FAR is disjoint from model training data, and its live
   time describes exactly the selected rows or intervals.
-* Zero lag is excluded from background training and FAR estimation, but is
-  selected deliberately for candidate evaluation.
+* Remove zero lag when selecting background for training and FAR estimation
+  (``trigger_selection`` with ``exclude_zero_lag: true``), and select it
+  deliberately for candidate evaluation. Training uses its inputs as given and
+  only warns about unshifted background triggers.
 * Simulation training and evaluation sets are disjoint.  Missed injections
   remain in efficiency denominators.
 * Model scoring uses the same ``config_file``, feature definitions, detector
